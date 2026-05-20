@@ -1,0 +1,55 @@
+{
+  "app": {
+    "name": "FlowOps",
+    "tagline": "Tactical OS"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "shipments": "Shipments",
+    "waybills": "Waybills",
+    "waybillInbox": "Waybill Inbox",
+    "clients": "Clients",
+    "collections": "Collections",
+    "podDeliveries": "POD / Deliveries",
+    "driverDispatch": "Driver Dispatch",
+    "manifests": "Manifests",
+    "whatsapp": "WhatsApp",
+    "email": "Email Hub",
+    "rateCards": "Rate Cards",
+    "billingBatches": "Billing Batches",
+    "invoices": "Invoices",
+    "quotes": "Quotes",
+    "creditControl": "Credit Control",
+    "aiControlTower": "AI Control Tower",
+    "highRiskQueue": "High Risk Queue",
+    "userRoles": "User Roles",
+    "settings": "Settings"
+  },
+  "auth": {
+    "login": "Sign In",
+    "logout": "Log Out",
+    "email": "Email Address",
+    "password": "Password",
+    "agreement": "I agree to the",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Notice",
+    "sessionExpired": "Session expired. Please log in again."
+  },
+  "common": {
+    "loading": "Loading",
+    "error": "Something went wrong",
+    "retry": "Try Again",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "search": "Search",
+    "noData": "No data found",
+    "confirm": "Are you sure?"
+  },
+  "errors": {
+    "network": "Network error. Please check your connection.",
+    "unauthorized": "You are not authorized to access this page.",
+    "notFound": "Page not found.",
+    "server": "Server error. Please try again later."
+  }
+}

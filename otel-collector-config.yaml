@@ -1,0 +1,77 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://localhost:5174"      # Vite dev frontend
+            - "http://localhost:3000"      # Backend
+            - "http://localhost:5173"      # Alternative frontend port
+            - "http://127.0.0.1:5174"
+            - "http://127.0.0.1:3000"
+          allowed_headers:
+            - "Content-Type"
+            - "Authorization"
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          static_configs:
+            - targets: ['localhost:8888']
+
+processors:
+  # Batch processor for efficiency
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Attributes processor to add service info
+  attributes:
+    actions:
+      - key: service.version
+        value: "3.5.0"
+        action: insert
+
+exporters:
+  # Export traces to Jaeger
+  jaeger:
+    endpoint: "http://jaeger:14268/api/traces"
+
+  # Export metrics to Prometheus
+  prometheus:
+    endpoint: "0.0.0.0:8888"
+    namespace: flowops
+    const_labels:
+      environment: "development"
+      cluster: "local"
+
+  # Optional: logging exporter (useful for debugging)
+  logging:
+    loglevel: debug
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, attributes]
+      exporters: [jaeger, logging]
+
+    metrics:
+      receivers: [prometheus, otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, logging]
+
+  telemetry:
+    logs:
+      level: info

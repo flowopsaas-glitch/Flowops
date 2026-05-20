@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # ✨ OpenTelemetry Collector - Receives traces from both backend and frontend
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: flowops-otel-collector
+    ports:
+      # OTLP HTTP (gRPC and HTTP)
+      - "4318:4318"       # HTTP receiver (frontend uses this)
+      - "4317:4317"       # gRPC receiver (backend can use this)
+      # Prometheus metrics
+      - "8888:8888"       # Prometheus scrape endpoint
+      # Debugging UI
+      - "13133:13133"     # Health check endpoint
+      - "55679:55679"     # ZPages debugging UI
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    environment:
+      - GOGC=80
+      - GOMAXPROCS=2
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    networks:
+      - flowops-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13133"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 🔍 Jaeger - UI for viewing traces
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: flowops-jaeger
+    ports:
+      - "16686:16686"     # Jaeger UI (http://localhost:16686)
+      - "14268:14268"     # Jaeger Collector HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - flowops-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:16686/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 📊 Prometheus - Metrics scraping
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: flowops-prometheus
+    ports:
+      - "9090:9090"       # Prometheus UI (http://localhost:9090)
+    volumes:
+      - ./prometheus-config.yaml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    networks:
+      - flowops-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  prometheus-data:
+    driver: local
+
+networks:
+  flowops-net:
+    driver: bridge

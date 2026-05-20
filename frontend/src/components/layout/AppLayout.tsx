@@ -1,0 +1,276 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
+  ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
+  ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
+  Layers
+} from "lucide-react";
+
+// ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
+import { cn } from "../../lib/utils"; 
+import logo from "../../assets/logo.png";
+
+type NavItem = {
+  label: string;
+  desc: string;
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+  section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN";
+};
+
+type DeferredInstallPrompt = Event & {
+  prompt: () => Promise<void>;
+  userChoice?: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+// --- Helper Components ---
+
+function SidebarSection(props: {
+  title: string;
+  items: NavItem[];
+  currentPath: string;
+  onNavigate: () => void;
+}) {
+  if (!props.items || props.items.length === 0) return null;
+
+  return (
+    <div className="mb-6">
+      <div className="mb-2 px-4 text-[10px] font-black uppercase tracking-[0.24em] text-white/40">
+        {props.title}
+      </div>
+
+      <div className="space-y-1.5 px-2">
+        {props.items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={props.onNavigate}
+              className={({ isActive }) =>
+                cn(
+                  "group flex items-start gap-3 rounded-2xl border px-3 py-3 transition",
+                  isActive
+                    ? "border-sky-300/20 bg-sky-300/10 text-white shadow-[0_0_15px_rgba(125,211,252,0.05)]"
+                    : "border-transparent bg-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
+                )
+              }
+            >
+              <div className="mt-0.5 rounded-xl border border-white/10 bg-white/[0.05] p-2">
+                <Icon className="h-4 w-4" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold leading-5">{item.label}</div>
+                <div className="mt-0.5 text-[11px] leading-4 text-white/45">
+                  {item.desc}
+                </div>
+              </div>
+            </NavLink>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SidebarContent(props: {
+  grouped: Record<string, NavItem[]>;
+  currentPath: string;
+  onNavigate: () => void;
+  canInstall: boolean;
+  onInstall: () => void;
+  onLogout: () => void;
+}) {
+  const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
+    ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
+
+  return (
+    <div className="flex h-full flex-col bg-[#081120]">
+      <div className="shrink-0 border-b border-white/10 px-5 py-5">
+        <div className="flex items-center gap-3">
+          <img 
+            src={logo} 
+            alt="FlowOps" 
+            className="h-12 w-12 rounded-2xl border border-white/10 bg-white/5 object-cover" 
+            onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/48?text=FO'; }}
+          />
+          <div className="min-w-0">
+            <div className="text-lg font-black tracking-tight text-white uppercase italic">FlowOps</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/50">Tactical OS v1.8.2</div>
+          </div>
+        </div>
+      </div>
+
+      <div role="navigation" aria-label="Main navigation" className="flex-1 overflow-y-auto py-6 custom-scrollbar min-h-0">
+        {sections.map((sec) => (
+          <SidebarSection 
+            key={sec} 
+            title={sec} 
+            items={props.grouped[sec] || []} 
+            currentPath={props.currentPath} 
+            onNavigate={props.onNavigate} 
+          />
+        ))}
+      </div>
+
+      <div className="shrink-0 border-t border-white/10 p-4 space-y-2 bg-[#081120]">
+        <button 
+          onClick={props.onInstall}
+          aria-label="Install application"
+          disabled={!props.canInstall} 
+          className={cn(
+            "flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold transition", 
+            props.canInstall 
+              ? "border-sky-300/20 bg-sky-300/10 text-sky-100 cursor-pointer hover:bg-sky-300/20" 
+              : "border-white/5 bg-white/[0.02] text-white/20 cursor-not-allowed"
+          )}
+        >
+          <Download className="h-4 w-4" /> Install Application
+        </button>
+        <button 
+          onClick={props.onLogout}
+          aria-label="Log out"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/10 bg-red-500/5 px-4 py-3 text-xs font-bold text-red-400/80 transition hover:bg-red-500/10"
+        >
+          <LogOut className="h-4 w-4" /> Terminate Session
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Main Layout Component ---
+
+export default function AppLayout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handler = (e: Event) => { 
+      e.preventDefault(); 
+      setInstallPrompt(e as DeferredInstallPrompt); 
+    };
+    window.addEventListener("beforeinstallprompt", handler as EventListener);
+    return () => window.removeEventListener("beforeinstallprompt", handler as EventListener);
+  }, []);
+
+  const nav: NavItem[] = useMemo(() => [
+    { section: "CORE", label: "Dashboard", desc: "Executive command", to: "/dashboard", icon: LayoutDashboard },
+    { section: "CORE", label: "Shipments", desc: "Operations console", to: "/shipments", icon: Package },
+    { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search },
+    { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList },
+    { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users },
+    
+    { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck },
+    { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck },
+    { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route },
+    { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers },
+    
+    { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle },
+    { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail },
+    
+    { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard },
+    { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText },
+    { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt },
+    { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText },
+    { section: "BILLING", label: "Credit Control", desc: "Arrears management", to: "/credit-control", icon: ShieldAlert },
+    
+    { section: "AI", label: "AI Control Tower", desc: "6-Claw Mesh Status", to: "/ai-control-tower", icon: Sparkles },
+    { section: "AI", label: "High Risk Queue", desc: "Exception management", to: "/high-risk-queue", icon: ShieldAlert },
+    
+    { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/users-roles", icon: Users },
+    { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings },
+  ], []);
+
+  const grouped = useMemo(() => ({
+    CORE: nav.filter(i => i.section === "CORE"),
+    OPS: nav.filter(i => i.section === "OPS"),
+    COMMUNICATIONS: nav.filter(i => i.section === "COMMUNICATIONS"),
+    BILLING: nav.filter(i => i.section === "BILLING"),
+    AI: nav.filter(i => i.section === "AI"),
+    ADMIN: nav.filter(i => i.section === "ADMIN"),
+  }), [nav]);
+
+  const currentLabel = useMemo(() => {
+    const found = [...nav].sort((a,b) => b.to.length - a.to.length).find(i => location.pathname.startsWith(i.to));
+    return found?.label ?? "FlowOps";
+  }, [location.pathname, nav]);
+
+  const handleLogout = () => { 
+    localStorage.clear(); 
+    navigate("/login", { replace: true }); 
+  };
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice || { outcome: 'dismissed' };
+    if (outcome === "accepted") setInstallPrompt(null);
+  };
+
+  return (
+    <div className="flex h-screen bg-[#07111f] text-white overflow-hidden font-sans">
+      {/* Desktop Sidebar */}
+      <aside className="hidden w-[300px] shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col">
+        <SidebarContent 
+          grouped={grouped} 
+          currentPath={location.pathname} 
+          onNavigate={() => setMobileOpen(false)} 
+          canInstall={!!installPrompt} 
+          onInstall={handleInstall} 
+          onLogout={handleLogout} 
+        />
+      </aside>
+
+      {/* Main UI Area */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="z-30 border-b border-white/5 bg-[#081120]/80 backdrop-blur-md px-6 py-4 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setMobileOpen(true)} className="xl:hidden p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400">
+              <Menu className="h-5 w-5" />
+            </button>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-[0.3em] text-white/30">System Sector</div>
+              <div className="text-xl font-black tracking-tight text-white">{currentLabel}</div>
+            </div>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            AI Monitoring Active
+          </div>
+        </header>
+
+        <main role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(56,189,248,0.03),transparent)] pointer-events-none" />
+          <div className="relative z-10 p-6">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+
+      {/* Mobile Drawer */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 flex xl:hidden">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <aside className="relative w-[300px] border-r border-white/10 bg-[#081120] shadow-2xl">
+            <button onClick={() => setMobileOpen(false)} className="absolute right-4 top-4 z-50 p-2 text-white/20 hover:text-white transition">
+              <X className="h-6 w-6" />
+            </button>
+            <SidebarContent 
+              grouped={grouped} 
+              currentPath={location.pathname} 
+              onNavigate={() => setMobileOpen(false)} 
+              canInstall={!!installPrompt} 
+              onInstall={handleInstall} 
+              onLogout={handleLogout} 
+            />
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}

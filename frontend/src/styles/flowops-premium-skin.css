@@ -1,0 +1,1162 @@
+﻿/* ============================================================
+   FlowOps Premium Visual Skin Pass 15
+   One Shot Unified Premium Theme
+   Waybill Inbox inspired
+   Calm premium blue glass
+   Structure-safe
+   ============================================================ */
+
+:root {
+  --fo-bg-0: #06101d;
+  --fo-bg-1: #0a1526;
+  --fo-bg-2: #0f1d34;
+  --fo-bg-3: #142746;
+
+  --fo-surface-0: rgba(8, 18, 32, 0.78);
+  --fo-surface-1: rgba(11, 23, 40, 0.86);
+  --fo-surface-2: rgba(16, 31, 52, 0.88);
+  --fo-surface-3: rgba(20, 38, 65, 0.94);
+
+  --fo-border-1: rgba(123, 169, 255, 0.12);
+  --fo-border-2: rgba(123, 169, 255, 0.18);
+  --fo-border-3: rgba(123, 169, 255, 0.26);
+
+  --fo-text-1: #eef4ff;
+  --fo-text-2: #d4e3fb;
+  --fo-text-3: #9fb5d9;
+  --fo-text-4: #7e95bb;
+
+  --fo-blue-1: #9fc5ff;
+  --fo-blue-2: #79adff;
+  --fo-blue-3: #5d8cf4;
+  --fo-blue-4: #3f6fd6;
+
+  --fo-good: #7ad7b7;
+  --fo-warn: #f0c97d;
+  --fo-bad: #ef97a2;
+  --fo-info: #8fb8ff;
+
+  --fo-shadow-1: 0 12px 30px rgba(0, 0, 0, 0.18);
+  --fo-shadow-2: 0 20px 44px rgba(0, 0, 0, 0.24);
+  --fo-shadow-3: 0 28px 60px rgba(0, 0, 0, 0.30);
+
+  --fo-radius-sm: 12px;
+  --fo-radius-md: 16px;
+  --fo-radius-lg: 20px;
+  --fo-radius-xl: 24px;
+
+  --fo-blur: blur(18px);
+
+  --fo-grid-gap: 16px;
+  --fo-card-pad: 16px;
+  --fo-card-pad-lg: 20px;
+}
+
+/* ------------------------------------------------------------
+   Page foundation
+   ------------------------------------------------------------ */
+
+html,
+body,
+#root {
+  min-height: 100%;
+  color: var(--fo-text-1);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(93, 140, 244, 0.18), transparent 30%),
+    radial-gradient(circle at 100% 0%, rgba(121, 173, 255, 0.10), transparent 26%),
+    linear-gradient(180deg, var(--fo-bg-0) 0%, var(--fo-bg-1) 32%, var(--fo-bg-2) 100%);
+}
+
+body {
+  color: var(--fo-text-1);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ------------------------------------------------------------
+   Scrollbars
+   ------------------------------------------------------------ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(123, 169, 255, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(123, 169, 255, 0.22);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(123, 169, 255, 0.34);
+}
+
+/* ------------------------------------------------------------
+   Typography
+   ------------------------------------------------------------ */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: #f4f8ff !important;
+  letter-spacing: 0.01em;
+}
+
+p,
+span,
+small,
+label,
+li,
+td,
+th,
+div {
+  color: inherit;
+}
+
+.text-muted,
+.text-soft,
+.text-secondary,
+.muted,
+.subtle,
+.helper-text,
+.description,
+.caption,
+[class*="muted"],
+[class*="helper"],
+[class*="description"],
+[class*="subtitle"] {
+  color: var(--fo-text-3) !important;
+}
+
+/* ------------------------------------------------------------
+   Structural wrappers
+   ------------------------------------------------------------ */
+
+.app-shell,
+.workspace-shell,
+.dashboard-shell,
+.admin-shell,
+.owner-shell,
+[class*="shell"],
+[class*="Shell"],
+[class*="page"],
+[class*="Page"],
+[class*="layout"],
+[class*="Layout"] {
+  background: transparent !important;
+  color: var(--fo-text-1);
+}
+
+/* ------------------------------------------------------------
+   Cards
+   ------------------------------------------------------------ */
+
+.card,
+.panel,
+.surface,
+.widget,
+.tile,
+.metric-card,
+.stat-card,
+.summary-card,
+.table-card,
+.form-card,
+.list-card,
+.detail-card,
+.modal-card,
+.drawer-card,
+.glass-card,
+[class*="card"],
+[class*="Card"],
+[class*="panel"],
+[class*="Panel"],
+[class*="surface"],
+[class*="Surface"],
+[class*="widget"],
+[class*="Widget"] {
+  background:
+    linear-gradient(180deg, rgba(18, 34, 57, 0.92) 0%, rgba(11, 23, 41, 0.88) 100%) !important;
+  border: 1px solid var(--fo-border-2) !important;
+  border-radius: var(--fo-radius-lg) !important;
+  box-shadow: var(--fo-shadow-1) !important;
+  backdrop-filter: var(--fo-blur);
+  -webkit-backdrop-filter: var(--fo-blur);
+  color: var(--fo-text-1) !important;
+}
+
+.card:hover,
+.panel:hover,
+.surface:hover,
+.widget:hover,
+.tile:hover,
+.metric-card:hover,
+.stat-card:hover,
+.summary-card:hover,
+.table-card:hover,
+.form-card:hover,
+.list-card:hover,
+.detail-card:hover,
+.modal-card:hover,
+.drawer-card:hover,
+.glass-card:hover,
+[class*="card"]:hover,
+[class*="Card"]:hover,
+[class*="panel"]:hover,
+[class*="Panel"]:hover,
+[class*="surface"]:hover,
+[class*="Surface"]:hover,
+[class*="widget"]:hover,
+[class*="Widget"]:hover {
+  border-color: var(--fo-border-3) !important;
+}
+
+/* ------------------------------------------------------------
+   Sidebar
+   ------------------------------------------------------------ */
+
+.sidebar,
+.app-sidebar,
+.left-sidebar,
+.admin-sidebar,
+.owner-sidebar,
+[class*="sidebar"],
+[class*="Sidebar"] {
+  background:
+    linear-gradient(180deg, rgba(8, 18, 32, 0.98) 0%, rgba(10, 20, 37, 0.97) 60%, rgba(11, 21, 38, 0.98) 100%) !important;
+  border-right: 1px solid rgba(123, 169, 255, 0.14) !important;
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.02);
+  color: var(--fo-text-1) !important;
+}
+
+.sidebar a,
+.sidebar button,
+.app-sidebar a,
+.app-sidebar button,
+.left-sidebar a,
+.left-sidebar button,
+.admin-sidebar a,
+.admin-sidebar button,
+.owner-sidebar a,
+.owner-sidebar button,
+[class*="sidebar"] a,
+[class*="sidebar"] button,
+[class*="Sidebar"] a,
+[class*="Sidebar"] button {
+  color: var(--fo-text-2) !important;
+  border-radius: 14px !important;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.sidebar a:hover,
+.sidebar button:hover,
+.app-sidebar a:hover,
+.app-sidebar button:hover,
+.left-sidebar a:hover,
+.left-sidebar button:hover,
+.admin-sidebar a:hover,
+.admin-sidebar button:hover,
+.owner-sidebar a:hover,
+.owner-sidebar button:hover,
+[class*="sidebar"] a:hover,
+[class*="sidebar"] button:hover,
+[class*="Sidebar"] a:hover,
+[class*="Sidebar"] button:hover {
+  background: rgba(121, 173, 255, 0.08) !important;
+  border-color: transparent !important;
+  color: #f3f8ff !important;
+}
+
+.sidebar a.active,
+.sidebar button.active,
+.sidebar .active,
+.app-sidebar a.active,
+.app-sidebar button.active,
+.app-sidebar .active,
+.left-sidebar a.active,
+.left-sidebar button.active,
+.left-sidebar .active,
+.admin-sidebar a.active,
+.admin-sidebar button.active,
+.admin-sidebar .active,
+.owner-sidebar a.active,
+.owner-sidebar button.active,
+.owner-sidebar .active,
+[class*="sidebar"] a.active,
+[class*="sidebar"] button.active,
+[class*="sidebar"] .active,
+[class*="Sidebar"] a.active,
+[class*="Sidebar"] button.active,
+[class*="Sidebar"] .active,
+[aria-current="page"] {
+  background:
+    linear-gradient(180deg, rgba(121, 173, 255, 0.16) 0%, rgba(93, 140, 244, 0.10) 100%) !important;
+  color: #f5f8ff !important;
+  border: 1px solid rgba(123, 169, 255, 0.22) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 10px 24px rgba(58, 101, 202, 0.14) !important;
+}
+
+/* ------------------------------------------------------------
+   Top bars
+   ------------------------------------------------------------ */
+
+header,
+.page-header,
+.section-header,
+.toolbar,
+.filters,
+.action-bar,
+[class*="header"],
+[class*="toolbar"],
+[class*="filterBar"],
+[class*="actionBar"] {
+  color: var(--fo-text-1);
+}
+
+/* ------------------------------------------------------------
+   Inputs
+   ------------------------------------------------------------ */
+
+input,
+select,
+textarea {
+  background: rgba(8, 18, 32, 0.78) !important;
+  color: var(--fo-text-1) !important;
+  border: 1px solid var(--fo-border-2) !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--fo-text-4) !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: rgba(121, 173, 255, 0.42) !important;
+  box-shadow: 0 0 0 4px rgba(121, 173, 255, 0.12) !important;
+}
+
+/* ------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------ */
+
+button,
+.btn,
+a.btn,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+[class*="button"],
+[class*="Button"] {
+  border-radius: 14px !important;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+button:hover,
+.btn:hover,
+a.btn:hover,
+input[type="button"]:hover,
+input[type="submit"]:hover,
+input[type="reset"]:hover,
+[class*="button"]:hover,
+[class*="Button"]:hover {
+  transform: translateY(-1px);
+}
+
+button:active,
+.btn:active,
+a.btn:active,
+input[type="button"]:active,
+input[type="submit"]:active,
+input[type="reset"]:active,
+[class*="button"]:active,
+[class*="Button"]:active {
+  transform: translateY(0);
+}
+
+button:not(.ghost):not(.link):not(.unstyled),
+.btn-primary,
+.primary-btn,
+.primary-button,
+[class*="primaryButton"],
+[class*="PrimaryButton"] {
+  background:
+    linear-gradient(180deg, #8ebcff 0%, #6fa5ff 48%, #5f8ff1 100%) !important;
+  color: #07111d !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  box-shadow: 0 14px 28px rgba(70, 122, 238, 0.22) !important;
+}
+
+button.secondary,
+.btn-secondary,
+.secondary-btn,
+.secondary-button,
+[class*="secondaryButton"],
+[class*="SecondaryButton"] {
+  background: rgba(121, 173, 255, 0.10) !important;
+  color: var(--fo-text-1) !important;
+  border: 1px solid rgba(123, 169, 255, 0.20) !important;
+  box-shadow: none !important;
+}
+
+button.ghost,
+.btn-ghost,
+.link-button,
+[class*="ghostButton"],
+[class*="GhostButton"] {
+  background: transparent !important;
+  color: var(--fo-text-2) !important;
+  border: 1px solid transparent !important;
+}
+
+/* ------------------------------------------------------------
+   Tables
+   ------------------------------------------------------------ */
+
+table,
+.data-table,
+[class*="table"],
+[class*="Table"] {
+  width: 100%;
+  color: var(--fo-text-1) !important;
+  background: transparent !important;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+thead th {
+  background: rgba(121, 173, 255, 0.08) !important;
+  color: #dce9ff !important;
+  border-bottom: 1px solid var(--fo-border-2) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+
+tbody tr {
+  background: transparent !important;
+  transition: background-color 160ms ease;
+}
+
+tbody tr:hover {
+  background: rgba(121, 173, 255, 0.05) !important;
+}
+
+th,
+td {
+  border-color: rgba(123, 169, 255, 0.10) !important;
+}
+
+/* ------------------------------------------------------------
+   Statuses and badges
+   ------------------------------------------------------------ */
+
+.badge,
+.chip,
+.tag,
+.pill,
+.status,
+[class*="badge"],
+[class*="Badge"],
+[class*="chip"],
+[class*="Chip"],
+[class*="tag"],
+[class*="Tag"],
+[class*="status"],
+[class*="Status"] {
+  border-radius: 999px !important;
+  border: 1px solid rgba(123, 169, 255, 0.16) !important;
+  background: rgba(121, 173, 255, 0.08) !important;
+  color: #dce9ff !important;
+}
+
+.success,
+.is-success,
+.status-success,
+[class*="success"] {
+  background: rgba(122, 215, 183, 0.14) !important;
+  border-color: rgba(122, 215, 183, 0.26) !important;
+  color: #c9f6e5 !important;
+}
+
+.warning,
+.is-warning,
+.status-warning,
+[class*="warning"] {
+  background: rgba(240, 201, 125, 0.14) !important;
+  border-color: rgba(240, 201, 125, 0.24) !important;
+  color: #ffe8bc !important;
+}
+
+.error,
+.danger,
+.is-danger,
+.status-error,
+.status-danger,
+[class*="error"],
+[class*="danger"] {
+  background: rgba(239, 151, 162, 0.14) !important;
+  border-color: rgba(239, 151, 162, 0.24) !important;
+  color: #ffd7de !important;
+}
+
+.info,
+.is-info,
+.status-info,
+[class*="info"] {
+  background: rgba(143, 184, 255, 0.14) !important;
+  border-color: rgba(143, 184, 255, 0.24) !important;
+  color: #d9e8ff !important;
+}
+
+/* ------------------------------------------------------------
+   Tabs
+   ------------------------------------------------------------ */
+
+.tabs,
+.tab-list,
+.segmented,
+[class*="tabs"],
+[class*="Tabs"] {
+  background: rgba(8, 18, 32, 0.48) !important;
+  border: 1px solid rgba(123, 169, 255, 0.12) !important;
+  border-radius: 16px !important;
+}
+
+.tab,
+.tabs button,
+.tab-list button,
+[class*="tab"],
+[class*="Tab"] {
+  color: var(--fo-text-3) !important;
+  border-radius: 12px !important;
+}
+
+.tab.active,
+.tabs button.active,
+.tab-list button.active,
+[class*="tab"].active,
+[class*="Tab"].active {
+  background: rgba(121, 173, 255, 0.12) !important;
+  color: var(--fo-text-1) !important;
+}
+
+/* ------------------------------------------------------------
+   Dropdowns and overlays
+   ------------------------------------------------------------ */
+
+.menu,
+.dropdown,
+.popover,
+.command-menu,
+.modal-content,
+.dialog-content,
+.drawer-content,
+.sheet-content,
+[class*="dropdown"],
+[class*="Dropdown"],
+[class*="menu"],
+[class*="Menu"],
+[class*="popover"],
+[class*="Popover"],
+[class*="dialogContent"],
+[class*="drawerContent"],
+[class*="sheetContent"] {
+  background:
+    linear-gradient(180deg, rgba(17, 32, 55, 0.96) 0%, rgba(9, 19, 34, 0.94) 100%) !important;
+  color: var(--fo-text-1) !important;
+  border: 1px solid var(--fo-border-2) !important;
+  border-radius: 18px !important;
+  box-shadow: var(--fo-shadow-2) !important;
+  backdrop-filter: var(--fo-blur);
+  -webkit-backdrop-filter: var(--fo-blur);
+}
+
+/* ------------------------------------------------------------
+   Charts and metric values
+   ------------------------------------------------------------ */
+
+canvas,
+svg,
+.recharts-wrapper {
+  border-radius: 16px !important;
+}
+
+.stat-value,
+.metric-value,
+.kpi-value,
+.total-value,
+.amount,
+[class*="statValue"],
+[class*="metricValue"],
+[class*="kpiValue"] {
+  color: #f6f9ff !important;
+}
+
+.stat-label,
+.metric-label,
+.kpi-label,
+.overline,
+[class*="statLabel"],
+[class*="metricLabel"],
+[class*="kpiLabel"] {
+  color: var(--fo-text-3) !important;
+}
+
+/* ------------------------------------------------------------
+   Neutralize loud colors
+   ------------------------------------------------------------ */
+
+.bg-red,
+.bg-green,
+.bg-yellow,
+.bg-orange,
+.bg-purple,
+.bg-pink,
+.bg-fuchsia,
+.bg-emerald,
+.bg-lime,
+.text-red,
+.text-green,
+.text-yellow,
+.text-orange,
+.text-purple,
+.text-pink,
+.text-fuchsia,
+.text-emerald,
+.text-lime,
+[class*="red"],
+[class*="green"],
+[class*="yellow"],
+[class*="orange"],
+[class*="purple"],
+[class*="pink"],
+[class*="fuchsia"],
+[class*="emerald"],
+[class*="lime"] {
+  filter: saturate(0.78);
+}
+
+/* ------------------------------------------------------------
+   Waybill Inbox alignment
+   ------------------------------------------------------------ */
+
+.inbox,
+.waybill-inbox,
+.inbox-page,
+.waybills,
+.waybills-page,
+[class*="inbox"],
+[class*="Inbox"],
+[class*="waybill"],
+[class*="Waybill"] {
+  color: var(--fo-text-1) !important;
+}
+
+.inbox .card,
+.waybill-inbox .card,
+.inbox-page .card,
+.waybills .card,
+.waybills-page .card,
+[class*="inbox"] [class*="card"],
+[class*="Inbox"] [class*="Card"],
+[class*="waybill"] [class*="card"],
+[class*="Waybill"] [class*="Card"] {
+  background:
+    linear-gradient(180deg, rgba(18, 34, 57, 0.94) 0%, rgba(10, 21, 39, 0.88) 100%) !important;
+}
+
+/* ------------------------------------------------------------
+   Safe spacing polish
+   ------------------------------------------------------------ */
+
+.grid,
+[class*="grid"],
+[class*="Grid"] {
+  gap: var(--fo-grid-gap) !important;
+}
+
+.page-header,
+.section-header,
+.toolbar,
+.filters,
+.action-bar,
+[class*="header"],
+[class*="toolbar"],
+[class*="filters"],
+[class*="actions"] {
+  gap: 12px !important;
+}
+
+.card,
+.panel,
+.surface,
+.widget,
+.tile,
+[class*="card"],
+[class*="Card"],
+[class*="panel"],
+[class*="Panel"] {
+  padding: var(--fo-card-pad);
+}
+
+.metric-card,
+.stat-card,
+.summary-card,
+.detail-card,
+[class*="metricCard"],
+[class*="statCard"],
+[class*="summaryCard"] {
+  padding: var(--fo-card-pad-lg);
+}
+
+/* ------------------------------------------------------------
+   Utility surface normalization
+   ------------------------------------------------------------ */
+
+.shadow,
+.shadow-sm,
+.shadow-md,
+.shadow-lg,
+[class*="shadow"] {
+  box-shadow: var(--fo-shadow-1) !important;
+}
+
+.bg-white,
+.bg-light,
+[class*="bg-white"],
+[class*="bg-light"] {
+  background: rgba(16, 30, 51, 0.80) !important;
+  color: var(--fo-text-1) !important;
+}
+
+.text-black,
+.text-dark,
+[class*="text-black"],
+[class*="text-dark"] {
+  color: var(--fo-text-1) !important;
+}
+
+/* ------------------------------------------------------------
+   Premium page banner feel
+   ------------------------------------------------------------ */
+
+.fo-page-polish,
+[class*="pageHero"],
+[class*="PageHero"],
+[class*="heroBar"],
+[class*="HeroBar"] {
+  background:
+    linear-gradient(135deg, rgba(121, 173, 255, 0.10) 0%, rgba(121, 173, 255, 0.03) 100%) !important;
+  border: 1px solid rgba(123, 169, 255, 0.14) !important;
+  border-radius: 22px !important;
+  box-shadow: var(--fo-shadow-1) !important;
+  backdrop-filter: var(--fo-blur);
+  -webkit-backdrop-filter: var(--fo-blur);
+}
+
+/* ------------------------------------------------------------
+   Link tone
+   ------------------------------------------------------------ */
+
+a {
+  color: var(--fo-blue-1);
+}
+
+a:hover {
+  color: #c5dbff;
+}
+
+/* ------------------------------------------------------------
+   Preserve hidden owner separation visually
+   ------------------------------------------------------------ */
+
+.owner-console-root,
+[class*="owner-console"],
+[class*="OwnerConsole"] {
+  color: var(--fo-text-1) !important;
+}
+
+/* FLOWOPS_PHASE_1B_PREMIUM_LAYOUT_START */
+
+/* ============================================================
+   FLOWOPS PHASE 1B
+   Premium shell polish
+   - safer CSS-only pass
+   - widens content experience
+   - improves sidebar rhythm
+   - increases click comfort
+   - keeps current architecture intact
+   ============================================================ */
+
+:root {
+  --flowops-sidebar-width: 284px;
+  --flowops-content-max-width: 1540px;
+  --flowops-content-pad-x: 28px;
+  --flowops-content-pad-y: 24px;
+  --flowops-card-radius: 18px;
+}
+
+/* ------------------------------------------------------------
+   GLOBAL APP BALANCE
+------------------------------------------------------------ */
+body,
+#root {
+  min-height: 100vh;
+}
+
+/* Try to widen the working canvas without breaking pages */
+main,
+[data-page-root],
+[data-app-content],
+.page-shell,
+.page-content,
+.app-content,
+.content-area,
+.content-shell,
+.workspace-content {
+  width: 100%;
+  max-width: none;
+}
+
+/* Generic outlet/content wrappers */
+main > div,
+.app-main,
+.app-main-content,
+.layout-main,
+.layout-content,
+.workspace-main,
+.workspace-shell,
+.page-shell,
+.page-content,
+.content-shell {
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------
+   SIDEBAR WIDTH + STRUCTURE
+------------------------------------------------------------ */
+:root {
+  --sidebar-width: var(--flowops-sidebar-width);
+}
+
+.sidebar,
+.app-sidebar,
+.left-sidebar,
+.admin-sidebar,
+.owner-sidebar,
+[class*="sidebar"] {
+  width: var(--flowops-sidebar-width) !important;
+}
+
+/* Improve left nav breathing room */
+.sidebar,
+.app-sidebar,
+.left-sidebar,
+.admin-sidebar,
+.owner-sidebar,
+[data-sidebar="sidebar"] {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+/* Section spacing */
+.sidebar h6,
+.sidebar .section-title,
+.app-sidebar h6,
+.app-sidebar .section-title,
+.left-sidebar h6,
+.left-sidebar .section-title,
+[data-sidebar="group-label"] {
+  margin-top: 14px !important;
+  margin-bottom: 8px !important;
+  letter-spacing: 0.08em;
+  font-size: 10px !important;
+  opacity: 0.82;
+}
+
+/* Sidebar item spacing */
+.sidebar a,
+.sidebar button,
+.app-sidebar a,
+.app-sidebar button,
+.left-sidebar a,
+.left-sidebar button,
+.admin-sidebar a,
+.admin-sidebar button,
+.owner-sidebar a,
+.owner-sidebar button,
+[data-sidebar="menu-button"] {
+  min-height: 42px !important;
+  border-radius: 12px !important;
+  padding-top: 9px !important;
+  padding-bottom: 9px !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+  margin-bottom: 6px !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+}
+
+/* Better icon/text balance */
+.sidebar a svg,
+.sidebar button svg,
+.app-sidebar a svg,
+.app-sidebar button svg,
+.left-sidebar a svg,
+.left-sidebar button svg,
+[data-sidebar="menu-button"] svg {
+  width: 15px !important;
+  height: 15px !important;
+  margin-right: 8px !important;
+}
+
+/* Active states feel stronger */
+.sidebar a.active,
+.sidebar button.active,
+.sidebar .active,
+.app-sidebar a.active,
+.app-sidebar button.active,
+.app-sidebar .active,
+.left-sidebar a.active,
+.left-sidebar button.active,
+.left-sidebar .active,
+.admin-sidebar a.active,
+.admin-sidebar button.active,
+.admin-sidebar .active,
+.owner-sidebar a.active,
+.owner-sidebar button.active,
+.owner-sidebar .active,
+[data-sidebar="menu-button"][data-active="true"] {
+  box-shadow:
+    0 0 0 1px rgba(123, 164, 255, 0.22),
+    0 8px 24px rgba(9, 20, 46, 0.22) !important;
+}
+
+/* Give sidebar bottom utility buttons breathing room */
+.sidebar .bottom-actions,
+.app-sidebar .bottom-actions,
+.left-sidebar .bottom-actions,
+.sidebar-footer,
+[data-sidebar="footer"] {
+  margin-top: 18px !important;
+  padding-top: 12px !important;
+}
+
+/* ------------------------------------------------------------
+   MAIN CONTENT WIDTH + BREATHING ROOM
+------------------------------------------------------------ */
+
+/* Common main wrappers */
+main,
+.app-main,
+.app-main-content,
+.layout-main,
+.layout-content,
+.workspace-main,
+.workspace-content,
+.page-shell,
+.page-content,
+.content-shell {
+  padding-left: var(--flowops-content-pad-x) !important;
+  padding-right: var(--flowops-content-pad-x) !important;
+  padding-top: var(--flowops-content-pad-y) !important;
+  padding-bottom: var(--flowops-content-pad-y) !important;
+}
+
+/* Inner content should feel less tiny and less centered */
+main > section,
+main > div,
+.app-main > section,
+.app-main > div,
+.layout-main > section,
+.layout-main > div,
+.layout-content > section,
+.layout-content > div,
+.workspace-main > section,
+.workspace-main > div,
+.workspace-content > section,
+.workspace-content > div,
+.page-shell > section,
+.page-shell > div,
+.page-content > section,
+.page-content > div,
+.content-shell > section,
+.content-shell > div {
+  width: min(100%, var(--flowops-content-max-width));
+  max-width: var(--flowops-content-max-width);
+}
+
+/* Prefer left-aligned premium workspace instead of narrow floating center cards */
+main > section,
+main > div,
+.app-main > section,
+.app-main > div,
+.layout-main > section,
+.layout-main > div,
+.layout-content > section,
+.layout-content > div,
+.workspace-main > section,
+.workspace-main > div,
+.workspace-content > section,
+.workspace-content > div,
+.page-shell > section,
+.page-shell > div,
+.page-content > section,
+.page-content > div,
+.content-shell > section,
+.content-shell > div {
+  margin-left: 0 !important;
+  margin-right: auto !important;
+}
+
+/* ------------------------------------------------------------
+   CARD / PANEL POLISH
+------------------------------------------------------------ */
+.card,
+.panel,
+.tile,
+.widget,
+.module-card,
+.dashboard-card,
+[data-card],
+[data-panel] {
+  border-radius: var(--flowops-card-radius) !important;
+}
+
+/* Page header spacing */
+h1,
+.page-title,
+.section-heading {
+  margin-bottom: 10px !important;
+}
+
+.page-subtitle,
+.section-subtitle,
+.muted-subtitle {
+  margin-bottom: 18px !important;
+  opacity: 0.84;
+}
+
+/* Tables and filters should not feel cramped */
+table,
+.table-wrap,
+.table-container,
+.grid-table {
+  width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+  border-radius: 10px;
+}
+
+/* Search/filter bar rhythm */
+.filters-row,
+.filter-row,
+.toolbar-row,
+.command-bar,
+.page-toolbar {
+  gap: 10px !important;
+  margin-bottom: 14px !important;
+}
+
+/* ------------------------------------------------------------
+   RESPONSIVE SAFETY
+------------------------------------------------------------ */
+@media (max-width: 1280px) {
+  :root {
+    --flowops-sidebar-width: 268px;
+    --flowops-content-max-width: 1400px;
+    --flowops-content-pad-x: 20px;
+  }
+}
+
+@media (max-width: 980px) {
+  :root {
+    --flowops-content-pad-x: 14px;
+    --flowops-content-pad-y: 14px;
+  }
+
+  .sidebar,
+  .app-sidebar,
+  .left-sidebar,
+  .admin-sidebar,
+  .owner-sidebar,
+  [class*="sidebar"] {
+    width: auto !important;
+  }
+}
+
+/* FLOWOPS_PHASE_1B_PREMIUM_LAYOUT_END */
+
+/* ============================================================
+   FLOWOPS PHASE 2 — Benchmark polish (logistics SaaS class)
+   Accessibility + motion + focus (Linear / modern TMS parity)
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid rgba(121, 173, 255, 0.55);
+  outline-offset: 2px;
+}
+
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Trust density for command surfaces (optional utility) */
+.fo-trust-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fo-text-3);
+  border-top: 1px solid rgba(123, 169, 255, 0.1);
+  padding-top: 10px;
+  margin-top: 4px;
+}

@@ -1,0 +1,300 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useToast } from "../components/ToastProvider";
+import {
+  FileText, Plus, Save, Upload, ScanLine, Sparkles, AlertTriangle,
+  BadgeCheck, Hash, CreditCard, Truck, ClipboardList, Package,
+  ChevronRight, UserRound, Calculator, Trash2
+} from "lucide-react";
+import { Button } from "../components/ui/button";
+import { cn } from "../lib/utils";
+
+// --- Types ---
+type ChargeSide = "SENDER" | "RECEIVER";
+type PaymentType = "PREPAID" | "COD";
+type StepKey = "DETAILS" | "PARTIES" | "PARCELS" | "BILLING";
+
+type ParcelLine = {
+  id: string;
+  qty: number;
+  weightKg: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+};
+
+type WaybillDraft = {
+  waybillNo: string;
+  orderDate: string;
+  serviceLevel: "Same Day" | "Next Day" | "Economy" | "International";
+  paymentType: PaymentType;
+  codAmount: number;
+  chargeSide: ChargeSide;
+  clientContractCode: string;
+  senderName: string;
+  senderCompany: string;
+  senderPhone: string;
+  senderAddress1: string;
+  senderCity: string;
+  receiverName: string;
+  receiverCompany: string;
+  receiverPhone: string;
+  receiverAddress1: string;
+  receiverCity: string;
+  reference: string;
+  notes: string;
+  parcels: ParcelLine[];
+};
+
+// --- Helper Functions ---
+const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
+const todayISO = () => new Date().toISOString().split('T')[0];
+const nnum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const moneyZAR = (v: any) => `R${nnum(v).toFixed(2)}`;
+const VOL_DIVISOR = 5000;
+
+function volumetricKg(p: ParcelLine) {
+  return (nnum(p.lengthCm) * nnum(p.widthCm) * nnum(p.heightCm)) / VOL_DIVISOR;
+}
+
+function chargeableKg(p: ParcelLine) {
+  return Math.max(nnum(p.weightKg), volumetricKg(p));
+}
+
+function totals(parcels: ParcelLine[]) {
+  return parcels.reduce((acc, p) => {
+    const q = Math.max(1, Math.floor(nnum(p.qty)));
+    acc.parcelsCount += q;
+    acc.actualKg += nnum(p.weightKg) * q;
+    acc.volKg += volumetricKg(p) * q;
+    acc.chargeKg += chargeableKg(p) * q;
+    return acc;
+  }, { parcelsCount: 0, actualKg: 0, volKg: 0, chargeKg: 0 });
+}
+
+// --- Sub-Components (The missing pieces) ---
+
+const Field = ({ label, children }: { label: string, children: React.ReactNode }) => (
+  <div className="space-y-1.5">
+    <label className="text-[11px] font-bold uppercase tracking-wider text-white/50">{label}</label>
+    {children}
+  </div>
+);
+
+const Tab = ({ active, onClick, children }: { active: boolean, onClick: () => void, children: React.ReactNode }) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      "flex items-center rounded-xl px-4 py-2 text-sm font-bold transition-all",
+      active ? "bg-white/15 text-white shadow-lg" : "text-white/50 hover:bg-white/5 hover:text-white"
+    )}
+  >
+    {children}
+  </button>
+);
+
+const Card = ({ title, children }: { title: string, children: React.ReactNode }) => (
+  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-md">
+    <h3 className="mb-3 text-sm font-extrabold text-white/90">{title}</h3>
+    <div className="text-sm text-white/70">{children}</div>
+  </div>
+);
+
+const PillButton = ({ active, onClick, text, icon: Icon }: any) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={cn(
+      "flex flex-1 items-center justify-center gap-2 rounded-xl border py-2 text-xs font-bold transition",
+      active ? "border-sky-400/50 bg-sky-400/20 text-white" : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10"
+    )}
+  >
+    {Icon && <Icon className="h-3.5 w-3.5" />}
+    {text}
+  </button>
+);
+
+const NumInput = ({ value, onChange, placeholder }: any) => (
+  <input
+    type="number"
+    value={value || ""}
+    onChange={(e) => onChange(nnum(e.target.value))}
+    placeholder={placeholder}
+    className="w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-center text-sm text-white outline-none focus:border-sky-400/50"
+  />
+);
+
+const PartyCard = ({ title, name, company, phone, address, city, onChange, payerActive }: any) => (
+  <div className={cn(
+    "rounded-2xl border p-5 transition-all",
+    payerActive ? "border-sky-400/30 bg-sky-400/5 shadow-[0_0_20px_rgba(56,189,248,0.05)]" : "border-white/10 bg-white/5"
+  )}>
+    <div className="mb-4 flex items-center justify-between">
+      <div className="flex items-center gap-2 font-extrabold text-white">
+        <UserRound className={cn("h-5 w-5", payerActive ? "text-sky-400" : "text-white/40")} />
+        {title} Details
+      </div>
+      {payerActive && <span className="text-[10px] font-black uppercase tracking-widest text-sky-400">Payer Account</span>}
+    </div>
+    <div className="space-y-3">
+      <input className={glassInput()} placeholder="Full Name" value={name} onChange={e => onChange({ name: e.target.value })} />
+      <input className={glassInput()} placeholder="Company Name" value={company} onChange={e => onChange({ company: e.target.value })} />
+      <input className={glassInput()} placeholder="Phone Number" value={phone} onChange={e => onChange({ phone: e.target.value })} />
+      <input className={glassInput()} placeholder="Street Address" value={address} onChange={e => onChange({ address: e.target.value })} />
+      <input className={glassInput()} placeholder="City" value={city} onChange={e => onChange({ city: e.target.value })} />
+    </div>
+  </div>
+);
+
+// --- Styling Hooks ---
+const glassCard = (className?: string) => cn("rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-xl", className);
+const glassInput = () => cn("w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-sky-400/30");
+const glassSelect = () => cn("w-full rounded-xl border border-white/10 bg-[#1a1f2e] px-3 py-2 text-sm text-white outline-none");
+
+// --- Main Component ---
+export default function Waybills() {
+  const { showToast } = useToast();
+  const [mode, setMode] = useState<"CAPTURE" | "SCAN" | "UPLOAD">("CAPTURE");
+  const [step, setStep] = useState<StepKey>("DETAILS");
+  const [draft, setDraft] = useState<WaybillDraft>(() => ({
+    waybillNo: `WB-${Math.floor(100000 + Math.random() * 900000)}`,
+    orderDate: todayISO(),
+    serviceLevel: "Next Day",
+    paymentType: "PREPAID",
+    codAmount: 0,
+    chargeSide: "SENDER",
+    clientContractCode: "",
+    senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "",
+    receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "",
+    reference: "", notes: "",
+    parcels: [{ id: uid(), qty: 1, weightKg: 2.5, lengthCm: 30, widthCm: 20, heightCm: 15 }],
+  }));
+
+  const t = useMemo(() => totals(draft.parcels), [draft.parcels]);
+  
+  // Logic for UI handling
+  function set<K extends keyof WaybillDraft>(key: K, value: WaybillDraft[K]) { setDraft(d => ({ ...d, [key]: value })); }
+  function setParcel(id: string, patch: Partial<ParcelLine>) {
+    setDraft(d => ({ ...d, parcels: d.parcels.map(p => p.id === id ? { ...p, ...patch } : p) }));
+  }
+  const addParcel = () => setDraft(d => ({ ...d, parcels: [...d.parcels, { id: uid(), qty: 1, weightKg: 0, lengthCm: 0, widthCm: 0, heightCm: 0 }] }));
+  const removeParcel = (id: string) => setDraft(d => ({ ...d, parcels: d.parcels.filter(p => p.id !== id) }));
+
+  const stepItems = [
+    { key: "DETAILS" as StepKey, label: "Details", icon: ClipboardList },
+    { key: "PARTIES" as StepKey, label: "Parties", icon: UserRound },
+    { key: "PARCELS" as StepKey, label: "Parcels", icon: Package },
+    { key: "BILLING" as StepKey, label: "Billing & AI", icon: Calculator },
+  ];
+
+  return (
+    <div className="relative min-h-screen bg-[#060B1A] text-white p-4 font-sans">
+      <div className="mx-auto max-w-6xl space-y-6">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight">Waybill <span className="text-sky-400">Capture</span></h1>
+            <p className="text-sm text-white/50">Flowops Logistics Management System v2.0</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="border-white/10 bg-white/5" onClick={() => setMode("SCAN")}><ScanLine className="mr-2 h-4 w-4"/> Scan</Button>
+            <Button className="bg-sky-500 hover:bg-sky-400" onClick={() => showToast("Saved to database", "success")}><Save className="mr-2 h-4 w-4"/> Save Draft</Button>
+          </div>
+        </div>
+
+        {/* Mode Selector */}
+        <div className={cn(glassCard(), "p-2 flex gap-2")}>
+          <Tab active={mode === "CAPTURE"} onClick={() => setMode("CAPTURE")}><FileText className="mr-2 h-4 w-4"/> Manual</Tab>
+          <Tab active={mode === "UPLOAD"} onClick={() => setMode("UPLOAD")}><Upload className="mr-2 h-4 w-4"/> Import</Tab>
+        </div>
+
+        {/* Step Navigation */}
+        <div className="grid grid-cols-4 gap-3">
+          {stepItems.map(s => (
+            <button key={s.key} onClick={() => setStep(s.key)} className={cn(
+              "flex flex-col items-center gap-2 rounded-2xl border p-4 transition-all",
+              step === s.key ? "border-sky-400/40 bg-sky-400/10" : "border-white/5 bg-white/5 opacity-50"
+            )}>
+              <s.icon className="h-5 w-5" />
+              <span className="text-[10px] font-black uppercase tracking-widest">{s.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Dynamic Content */}
+        {step === "DETAILS" && (
+           <div className={cn(glassCard(), "p-6 grid md:grid-cols-3 gap-6")}>
+              <Field label="Waybill Number"><input className={glassInput()} value={draft.waybillNo} onChange={e => set("waybillNo", e.target.value)}/></Field>
+              <Field label="Order Date"><input type="date" className={glassInput()} value={draft.orderDate} onChange={e => set("orderDate", e.target.value)}/></Field>
+              <Field label="Service Level">
+                <select className={glassSelect()} value={draft.serviceLevel} onChange={e => set("serviceLevel", e.target.value as any)}>
+                  <option>Next Day</option><option>Same Day</option><option>Economy</option>
+                </select>
+              </Field>
+              <Field label="Payer Account"><div className="flex gap-2">
+                <PillButton text="Sender" active={draft.chargeSide === "SENDER"} onClick={() => set("chargeSide", "SENDER")}/>
+                <PillButton text="Receiver" active={draft.chargeSide === "RECEIVER"} onClick={() => set("chargeSide", "RECEIVER")}/>
+              </div></Field>
+              <Field label="Contract Code"><input className={glassInput()} placeholder="e.g. Q94" value={draft.clientContractCode} onChange={e => set("clientContractCode", e.target.value.toUpperCase())}/></Field>
+              <Field label="Ref Number"><input className={glassInput()} value={draft.reference} onChange={e => set("reference", e.target.value)}/></Field>
+           </div>
+        )}
+
+        {step === "PARTIES" && (
+          <div className="grid md:grid-cols-2 gap-6">
+            <PartyCard title="Sender" payerActive={draft.chargeSide === "SENDER"} {...draft} onChange={(p: any) => setDraft(d => ({...d, senderName: p.name ?? d.senderName, senderCity: p.city ?? d.senderCity, senderPhone: p.phone ?? d.senderPhone, senderAddress1: p.address ?? d.senderAddress1, senderCompany: p.company ?? d.senderCompany}))} />
+            <PartyCard title="Receiver" payerActive={draft.chargeSide === "RECEIVER"} {...draft} onChange={(p: any) => setDraft(d => ({...d, receiverName: p.name ?? d.receiverName, receiverCity: p.city ?? d.receiverCity, receiverPhone: p.phone ?? d.receiverPhone, receiverAddress1: p.address ?? d.receiverAddress1, receiverCompany: p.company ?? d.receiverCompany}))} />
+          </div>
+        )}
+
+        {step === "PARCELS" && (
+          <div className={cn(glassCard(), "overflow-hidden")}>
+            <table className="w-full text-left">
+              <thead className="bg-white/5 text-[10px] font-black uppercase text-white/40">
+                <tr>
+                  <th className="p-4">Qty</th><th className="p-4">Weight(kg)</th><th className="p-4">L(cm)</th><th className="p-4">W(cm)</th><th className="p-4">H(cm)</th><th className="p-4">Charge(kg)</th><th className="p-4"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {draft.parcels.map(p => (
+                  <tr key={p.id} className="group hover:bg-white/[0.02]">
+                    <td className="p-3"><NumInput value={p.qty} onChange={(v: number) => setParcel(p.id, { qty: v })}/></td>
+                    <td className="p-3"><NumInput value={p.weightKg} onChange={(v: number) => setParcel(p.id, { weightKg: v })}/></td>
+                    <td className="p-3"><NumInput value={p.lengthCm} onChange={(v: number) => setParcel(p.id, { lengthCm: v })}/></td>
+                    <td className="p-3"><NumInput value={p.widthCm} onChange={(v: number) => setParcel(p.id, { widthCm: v })}/></td>
+                    <td className="p-3"><NumInput value={p.heightCm} onChange={(v: number) => setParcel(p.id, { heightCm: v })}/></td>
+                    <td className="p-3 font-mono text-sky-400 font-bold">{chargeableKg(p).toFixed(2)}</td>
+                    <td className="p-3"><button onClick={() => removeParcel(p.id)} className="text-white/20 hover:text-red-400"><Trash2 className="h-4 w-4"/></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button onClick={addParcel} className="w-full py-4 text-xs font-black uppercase text-sky-400 hover:bg-sky-400/5">+ Add Parcel Line</button>
+          </div>
+        )}
+
+        {step === "BILLING" && (
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className={cn(glassCard(), "md:col-span-2 p-6")}>
+              <h3 className="text-lg font-bold mb-4">Cost Breakdown</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm text-white/60"><span>Total Parcels</span><span>{t.parcelsCount}</span></div>
+                <div className="flex justify-between text-sm text-white/60"><span>Chargeable Weight</span><span>{t.chargeKg.toFixed(2)} kg</span></div>
+                <div className="border-t border-white/10 pt-3 flex justify-between text-xl font-black text-sky-400">
+                  <span>Estimated Total</span><span>{moneyZAR(t.chargeKg * 15.5)}</span>
+                </div>
+              </div>
+            </div>
+            <div className={cn(glassCard(), "p-6 border-amber-400/20 bg-amber-400/5")}>
+              <div className="flex items-center gap-2 text-amber-400 font-bold mb-3"><Sparkles className="h-4 w-4"/> AI Auditor</div>
+              <p className="text-xs leading-relaxed text-amber-200/70">
+                Ensure "Contract Code" is correct for month-end billing. Large volumetric weight detected for Parcel 1.
+              </p>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}

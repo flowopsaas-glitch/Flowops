@@ -1,0 +1,73 @@
+# ─── Secrets ───
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# ─── Node ───
+node_modules/
+
+# ─── Build artifacts ───
+dist/
+build/
+release/
+server-ready/
+
+# ─── Backups (all of them) ──
+backup-*/
+**/backup-*/
+*.bak
+*.backup
+backend_backup/
+database-backups/
+cloud-backups/
+
+# ─── Desktop/Electron builds ──
+desktop/dist-installer/
+desktop/renderer/
+
+# ─── Playwright ──
+test-results/
+playwright-report/
+blob-report/
+
+# ─── Coverage ──
+coverage/
+
+# ─── Logs & temp ──
+*.log
+*.pid
+*.txt
+
+# ─── Database dumps ──
+*.sql
+*.backup
+*.pg_dump
+
+# ─── Uploads ──
+uploads/
+
+# ─── Junk directories ──
+archive/
+signoz/
+flowops-web/
+platform-control-audit-*/
+postman/
+electron/
+
+# ─── IDE ──
+.idea/
+.vscode/
+*.swp
+
+# ─── OS ──
+.DS_Store
+Thumbs.db
+
+# ─── Binary/build files ──
+*.exe
+*.dll
+*.pak
+*.bin
+package-lock.json
+pnpm-lock.yaml
