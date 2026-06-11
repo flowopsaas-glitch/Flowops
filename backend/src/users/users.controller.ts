@@ -96,7 +96,7 @@ export class UsersController {
   }
 
   @Post(':id/reset-password')
-  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_ADMIN')
   async resetPassword(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { newPassword: string }

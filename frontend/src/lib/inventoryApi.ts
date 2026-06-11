@@ -22,6 +22,8 @@ export const inventoryApi = {
   
   // Mutations
   createWarehouse: (data: any) => api.post('/warehouses', data),
+  updateWarehouse: (id: number, data: any) => api.patch(`/warehouses/${id}`, data),
+  deleteWarehouse: (id: number) => api.delete(`/warehouses/${id}`),
   createItem: (data: any) => api.post('/items', data),
   recordMovement: (data: any) => api.post('/movements', data),
   markAlertRead: (id: number) => api.patch(`/alerts/${id}/read`),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, Plus, Search, RefreshCw, Building2, Mail, Phone, X } from 'lucide-react';
+import { Users, Plus, Search, RefreshCw, Building2, Mail, Phone, X, CreditCard } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import PageSkeleton from '@/components/ui/PageSkeleton';
 import EmptyState from '@/components/ui/EmptyState';
@@ -11,7 +11,9 @@ interface Client {
   name: string;
   email?: string;
   phone?: string;
-  subscriptionPlan?: string;
+  billingType?: string;
+  accountCode?: string;
+  creditLimit?: number;
   createdAt?: string;
 }
 
@@ -20,7 +22,7 @@ export default function Clients() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', billingType: 'PREPAID', accountCode: '', creditLimit: '' });
   const [saving, setSaving] = useState(false);
 
   const token = localStorage.getItem('access_token');
@@ -44,9 +46,16 @@ export default function Clients() {
     try {
       const res = await fetch(`${API_URL}/clients`, {
         method: 'POST', headers,
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          billingType: formData.billingType,
+          accountCode: formData.accountCode || undefined,
+          creditLimit: formData.creditLimit ? Number(formData.creditLimit) : undefined,
+        }),
       });
-      if (res.ok) { setShowForm(false); setFormData({ name: '', email: '', phone: '' }); loadData(); }
+      if (res.ok) { setShowForm(false); setFormData({ name: '', email: '', phone: '', billingType: 'PREPAID', accountCode: '', creditLimit: '' }); loadData(); }
     } catch (e) { console.error(e); }
     setSaving(false);
   };
@@ -103,7 +112,7 @@ export default function Clients() {
           <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                {['Client', 'Email', 'Phone', 'Plan', 'Added'].map(h => (
+                {['Client', 'Email', 'Phone', 'Billing', 'Added'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>{h}</th>
                 ))}
               </tr>
@@ -123,9 +132,20 @@ export default function Clients() {
                   <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.6)' }}>{c.email || '—'}</td>
                   <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.6)' }}>{c.phone || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: 'rgba(108,158,255,0.12)', color: '#6C9EFF' }}>
-                      {c.subscriptionPlan || 'Standard'}
-                    </span>
+                    {(() => {
+                      const bt = (c.billingType || 'PREPAID').toUpperCase();
+                      const colors: Record<string, { bg: string; color: string }> = {
+                        PREPAID: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80' },
+                        CONTRACT: { bg: 'rgba(108,158,255,0.12)', color: '#6C9EFF' },
+                        CODE: { bg: 'rgba(167,139,250,0.12)', color: '#A78BFA' },
+                      };
+                      const cc = colors[bt] || colors.PREPAID;
+                      return (
+                        <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: cc.bg, color: cc.color }}>
+                          {bt}{bt === 'CODE' && c.accountCode ? ` · ${c.accountCode}` : ''}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
                     {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '—'}
@@ -149,6 +169,39 @@ export default function Clients() {
               <FormInput icon={Building2} label="Company Name *" value={formData.name} onChange={v => setFormData({ ...formData, name: v })} placeholder="Client company name" />
               <FormInput icon={Mail} label="Email" value={formData.email} onChange={v => setFormData({ ...formData, email: v })} placeholder="client@company.co.za" type="email" />
               <FormInput icon={Phone} label="Phone" value={formData.phone} onChange={v => setFormData({ ...formData, phone: v })} placeholder="+27 XX XXX XXXX" />
+              {/* Billing Type */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, marginBottom: '6px', color: 'rgba(255,255,255,0.5)' }}>
+                  <CreditCard size={11} /> Billing Type
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {[
+                    { v: 'PREPAID', label: 'Prepaid', desc: 'Pay upfront' },
+                    { v: 'CONTRACT', label: 'Contract', desc: 'Monthly account' },
+                    { v: 'CODE', label: 'Code', desc: 'Account code' },
+                  ].map(opt => {
+                    const active = formData.billingType === opt.v;
+                    return (
+                      <button key={opt.v} type="button" onClick={() => setFormData({ ...formData, billingType: opt.v })}
+                        style={{
+                          flex: 1, padding: '10px 8px', borderRadius: '10px', cursor: 'pointer', textAlign: 'center',
+                          border: `2px solid ${active ? '#4ADE80' : 'rgba(255,255,255,0.08)'}`,
+                          background: active ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.03)',
+                        }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: active ? '#4ADE80' : 'rgba(255,255,255,0.6)' }}>{opt.label}</div>
+                        <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.35)', marginTop: '2px' }}>{opt.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Conditional fields based on billing type */}
+              {formData.billingType === 'CODE' && (
+                <FormInput icon={Building2} label="Account Code" value={formData.accountCode} onChange={v => setFormData({ ...formData, accountCode: v })} placeholder="e.g. ACC-00123" />
+              )}
+              {formData.billingType === 'CONTRACT' && (
+                <FormInput icon={Building2} label="Credit Limit (R)" value={formData.creditLimit} onChange={v => setFormData({ ...formData, creditLimit: v })} placeholder="e.g. 50000" type="number" />
+              )}
             </div>
             <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
               <button onClick={() => setShowForm(false)} style={{ flex: 1, padding: '10px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', border: 'none', cursor: 'pointer' }}>Cancel</button>

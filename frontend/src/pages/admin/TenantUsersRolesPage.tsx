@@ -151,6 +151,24 @@ export default function TenantUsersRolesPage() {
     } catch (e) { console.error(e); }
   };
 
+  const handleResetPassword = async (user: StaffUser) => {
+    const newPassword = generatePassword();
+    try {
+      const res = await fetch(`${API_URL}/users/${user.id}/reset-password`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ newPassword }),
+      });
+      if (res.ok) {
+        setStatus(`✓ Password reset for ${user.name || user.email} — new password: ${newPassword}`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to reset password');
+      }
+    } catch (e: any) {
+      setStatus(e.message);
+    }
+  };
+
   const filteredStaff = staff.filter(s =>
     s.name?.toLowerCase().includes(search.toLowerCase()) || s.email?.toLowerCase().includes(search.toLowerCase())
   );
@@ -225,7 +243,7 @@ export default function TenantUsersRolesPage() {
             <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                  {['Name', 'Email', 'Role', 'Status', 'Joined'].map(h => <th key={h} style={th}>{h}</th>)}
+                  {['Name', 'Email', 'Role', 'Status', 'Joined', ''].map(h => <th key={h} style={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -249,6 +267,12 @@ export default function TenantUsersRolesPage() {
                         </span>
                       </td>
                       <td style={{ ...td, color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                      <td style={td}>
+                        <button onClick={() => handleResetPassword(u)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 500, color: '#FBBF24', background: 'none', border: 'none', cursor: 'pointer' }}>
+                          <Key size={12} /> Reset Password
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}

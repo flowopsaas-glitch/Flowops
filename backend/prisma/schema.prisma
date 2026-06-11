@@ -236,12 +236,15 @@ model User {
 }
 
 model Client {
-  id        Int     @id @default(autoincrement())
-  name      String
-  email     String?
-  phone     String?
-  address   String?
-  companyId Int
+  id          Int     @id @default(autoincrement())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  billingType String  @default("PREPAID") // PREPAID, CONTRACT, CODE
+  accountCode String? // For CODE billing — the client's account/reference code
+  creditLimit Float?  @default(0) // For CONTRACT clients
+  companyId   Int
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
