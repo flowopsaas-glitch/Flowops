@@ -291,13 +291,45 @@ export default function Collections() {
           </div>
 
           <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-xl">
-            <h3 className="text-lg font-black mb-5">Tenant Driver Fleet + Tracking</h3>
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                 <Field label="Driver Name"><input value={driverName} onChange={e=>setDriverName(e.target.value)} placeholder="Sipho Dlamini" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none focus:border-emerald-400/40" /></Field>
-                 <Field label="Phone"><input value={driverPhone} onChange={e=>setDriverPhone(e.target.value)} placeholder="0821234567" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
-              </div>
-              <button className="bg-emerald-600 p-4 rounded-2xl font-bold flex justify-center gap-2 mt-4 hover:bg-emerald-500 transition-colors"><Save className="h-5 w-5"/> Add Driver</button>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-black">Available Drivers</h3>
+              <button
+                onClick={() => navigate('/settings/roles')}
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 transition-colors"
+              >
+                <CarFront className="h-3.5 w-3.5" /> Manage Fleet
+              </button>
+            </div>
+            <div className="grid gap-2 max-h-[280px] overflow-y-auto pr-1">
+              {drivers.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center">
+                  <CarFront className="h-7 w-7 text-white/20 mx-auto mb-2" />
+                  <p className="text-xs text-white/40 mb-3">No drivers in your fleet yet.</p>
+                  <button
+                    onClick={() => navigate('/settings/roles')}
+                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300"
+                  >
+                    + Add drivers in Team Management
+                  </button>
+                </div>
+              ) : (
+                drivers.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 p-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                        <CarFront className="h-4 w-4 text-emerald-400" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-white">{d.name}</div>
+                        <div className="text-[11px] text-white/40">{d.vehicleType || d.vehicleReg || 'No vehicle'} {d.zone ? `• ${d.zone}` : ''}</div>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${(d.availabilityStatus || d.status) === 'AVAILABLE' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                      {d.availabilityStatus || d.status || 'AVAILABLE'}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

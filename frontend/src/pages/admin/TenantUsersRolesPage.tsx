@@ -1,929 +1,412 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from 'react';
+import {
+  Users, UserPlus, Truck, Shield, Key, Trash2, RefreshCw, Search,
+  Mail, Phone, Car, X, CheckCircle, Eye, EyeOff
+} from 'lucide-react';
+import PageHeader from '@/components/ui/PageHeader';
+import PageSkeleton from '@/components/ui/PageSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
 
-type UserRow = {
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+
+interface StaffUser {
   id: number;
-  fullName?: string;
   name?: string;
-  email?: string;
-  role?: string;
+  email: string;
+  role: string;
   isActive?: boolean;
-  active?: boolean;
-  companyId?: number;
-  companyName?: string;
-  mustChangePassword?: boolean;
-  permissions?: Record<string, boolean> | null;
-};
+  createdAt?: string;
+}
 
-type CompanyRow = {
+interface Driver {
   id: number;
-  name?: string;
-  companyName?: string;
-};
-
-const API_BASE =
-  (import.meta as any)?.env?.VITE_API_URL ||
-  (import.meta as any)?.env?.VITE_API_BASE_URL ||
-  "http://localhost:3000/api/v1";
-
-const PERMISSION_KEYS = [
-  "dashboard",
-  "collections",
-  "dispatch",
-  "drivers",
-  "clients",
-  "invoices",
-  "billing",
-  "quotes",
-  "whatsapp",
-  "emailhub",
-  "settings",
-  "reports",
-  "aitools",
-] as const;
-
-type PermissionKey = (typeof PERMISSION_KEYS)[number];
-
-const DEFAULT_ROLE_PRESETS: Record<string, Record<string, boolean>> = {
-  COMPANY_ADMIN: {
-    dashboard: true,
-    collections: true,
-    dispatch: true,
-    drivers: true,
-    clients: true,
-    invoices: true,
-    billing: true,
-    quotes: true,
-    whatsapp: true,
-    emailhub: true,
-    settings: true,
-    reports: true,
-    aitools: true,
-  },
-  COMPANY_USER: {
-    dashboard: true,
-    collections: true,
-    dispatch: false,
-    drivers: false,
-    clients: true,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: false,
-    aitools: false,
-  },
-  OPERATIONS: {
-    dashboard: true,
-    collections: true,
-    dispatch: true,
-    drivers: true,
-    clients: true,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: true,
-    aitools: false,
-  },
-  DISPATCH: {
-    dashboard: true,
-    collections: true,
-    dispatch: true,
-    drivers: true,
-    clients: false,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: false,
-    aitools: false,
-  },
-  ACCOUNTS: {
-    dashboard: true,
-    collections: false,
-    dispatch: false,
-    drivers: false,
-    clients: true,
-    invoices: true,
-    billing: true,
-    quotes: true,
-    whatsapp: false,
-    emailhub: true,
-    settings: false,
-    reports: true,
-    aitools: false,
-  },
-  VIEW_ONLY: {
-    dashboard: true,
-    collections: false,
-    dispatch: false,
-    drivers: false,
-    clients: false,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: false,
-    aitools: false,
-  },
-};
-
-const pageWrap: React.CSSProperties = {
-  minHeight: "100vh",
-  background:
-    "radial-gradient(circle at top left, rgba(58,123,255,0.18), transparent 18%), radial-gradient(circle at top right, rgba(0,212,255,0.10), transparent 20%), linear-gradient(180deg, #03132f 0%, #051a3d 40%, #061a38 100%)",
-  color: "#EAF2FF",
-  padding: "28px 20px 80px",
-};
-
-const shell: React.CSSProperties = {
-  maxWidth: 1500,
-  margin: "0 auto",
-};
-
-const hero: React.CSSProperties = {
-  border: "1px solid rgba(120,170,255,0.18)",
-  background:
-    "linear-gradient(135deg, rgba(8,18,40,0.96) 0%, rgba(7,28,68,0.92) 55%, rgba(8,18,40,0.96) 100%)",
-  borderRadius: 24,
-  padding: 24,
-  boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-  marginBottom: 18,
-};
-
-const statGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 14,
-  marginBottom: 18,
-};
-
-const statCard: React.CSSProperties = {
-  border: "1px solid rgba(120,170,255,0.18)",
-  background: "rgba(7,18,40,0.78)",
-  borderRadius: 18,
-  padding: 16,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
-};
-
-const gridMain: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1.05fr 0.95fr 1.2fr",
-  gap: 16,
-  alignItems: "start",
-};
-
-const card: React.CSSProperties = {
-  border: "1px solid rgba(120,170,255,0.16)",
-  background: "rgba(6,18,38,0.82)",
-  borderRadius: 20,
-  padding: 18,
-  boxShadow: "0 14px 40px rgba(0,0,0,0.24)",
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 11,
-  letterSpacing: 1.4,
-  textTransform: "uppercase",
-  color: "#86A9E6",
-  marginBottom: 6,
-  display: "block",
-  fontWeight: 700,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  background: "rgba(5,18,42,0.96)",
-  color: "#F3F7FF",
-  border: "1px solid rgba(84,133,224,0.28)",
-  borderRadius: 12,
-  padding: "12px 14px",
-  outline: "none",
-  fontSize: 14,
-  marginBottom: 12,
-  boxSizing: "border-box",
-};
-
-const buttonStyle: React.CSSProperties = {
-  border: "none",
-  borderRadius: 12,
-  padding: "11px 16px",
-  fontWeight: 800,
-  fontSize: 13,
-  cursor: "pointer",
-  color: "#071427",
-  background: "linear-gradient(135deg, #9CC2FF 0%, #5D91F6 100%)",
-  boxShadow: "0 8px 20px rgba(93,145,246,0.35)",
-};
-
-const softButton: React.CSSProperties = {
-  ...buttonStyle,
-  background: "rgba(11,28,58,0.92)",
-  color: "#DDEAFF",
-  border: "1px solid rgba(120,170,255,0.22)",
-  boxShadow: "none",
-};
-
-const badge = (active?: boolean): React.CSSProperties => ({
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "5px 10px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-  letterSpacing: 0.6,
-  background: active ? "rgba(36,209,122,0.12)" : "rgba(255,92,92,0.12)",
-  color: active ? "#71F0AE" : "#FF9D9D",
-  border: active
-    ? "1px solid rgba(36,209,122,0.24)"
-    : "1px solid rgba(255,92,92,0.24)",
-});
-
-function getToken() {
-  return (
-    localStorage.getItem("flowops_token") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("accessToken") ||
-    ""
-  );
+  name: string;
+  phone: string;
+  email?: string;
+  vehicleReg?: string;
+  vehicleType?: string;
+  zone?: string;
+  status?: string;
+  availabilityStatus?: string;
 }
 
-function getUser() {
-  try {
-    const raw =
-      localStorage.getItem("flowops_user") ||
-      localStorage.getItem("user") ||
-      "";
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
+type Tab = 'staff' | 'drivers';
 
-function text(v: any, fallback = "") {
-  return String(v ?? fallback ?? "").trim();
-}
-
-async function readJson(response: Response) {
-  const t = await response.text();
-  try {
-    return t ? JSON.parse(t) : {};
-  } catch {
-    return { raw: t };
-  }
-}
-
-function normalizePermissions(input: any, role?: string): Record<string, boolean> {
-  const preset = DEFAULT_ROLE_PRESETS[String(role || "").toUpperCase()] || {};
-  const out: Record<string, boolean> = {};
-  for (const key of PERMISSION_KEYS) {
-    out[key] = Boolean(input?.[key] ?? preset[key] ?? false);
-  }
-  return out;
-}
+const roleConfig: Record<string, { label: string; color: string }> = {
+  COMPANY_ADMIN: { label: 'Company Admin', color: '#A78BFA' },
+  ADMIN: { label: 'Admin', color: '#A78BFA' },
+  DISPATCHER: { label: 'Dispatcher', color: '#6C9EFF' },
+  WAREHOUSE_CLERK: { label: 'Warehouse Clerk', color: '#FBBF24' },
+  OPERATOR: { label: 'Operator', color: '#4ADE80' },
+  USER: { label: 'User', color: 'rgba(255,255,255,0.5)' },
+  DRIVER: { label: 'Driver', color: '#22D3EE' },
+};
 
 export default function TenantUsersRolesPage() {
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [companies, setCompanies] = useState<CompanyRow[]>([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<number>(1);
-  const [selectedUserId, setSelectedUserId] = useState<number>(0);
+  const [tab, setTab] = useState<Tab>('staff');
+  const [staff, setStaff] = useState<StaffUser[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [showDriverModal, setShowDriverModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [status, setStatus] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("COMPANY_ADMIN");
+  // Staff form
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', password: '', role: 'DISPATCHER' });
+  // Driver form
+  const [driverForm, setDriverForm] = useState({ name: '', phone: '', email: '', vehicleReg: '', vehicleType: '', zone: '', pin: '' });
 
-  const [resetPassword, setResetPassword] = useState("");
-  const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
+  const token = localStorage.getItem('access_token');
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  const [permissionDraft, setPermissionDraft] = useState<Record<string, boolean>>(
-    normalizePermissions({}, "COMPANY_ADMIN")
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [staffRes, driversRes] = await Promise.all([
+        fetch(`${API_URL}/users/my-company`, { headers }),
+        fetch(`${API_URL}/drivers`, { headers }),
+      ]);
+      if (staffRes.ok) {
+        const data = await staffRes.json();
+        setStaff(Array.isArray(data) ? data : data.users || []);
+      }
+      if (driversRes.ok) {
+        const data = await driversRes.json();
+        setDrivers(Array.isArray(data) ? data : []);
+      }
+    } catch (e) { console.error('Failed to load team:', e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let pwd = '';
+    for (let i = 0; i < 10; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+    return pwd + '!' + new Date().getFullYear();
+  };
+
+  const handleCreateStaff = async () => {
+    if (!staffForm.name.trim() || !staffForm.email.trim()) {
+      setStatus('Name and email are required');
+      return;
+    }
+    setSaving(true);
+    setStatus('');
+    const password = staffForm.password || generatePassword();
+    try {
+      const res = await fetch(`${API_URL}/users/my-company`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ name: staffForm.name, email: staffForm.email.toLowerCase().trim(), password, role: staffForm.role }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to create staff member');
+      }
+      setStatus(`✓ Created ${staffForm.name} (${staffForm.role}) — password: ${password}`);
+      setStaffForm({ name: '', email: '', password: '', role: 'DISPATCHER' });
+      setShowStaffModal(false);
+      loadData();
+    } catch (e: any) {
+      setStatus(e.message);
+    }
+    setSaving(false);
+  };
+
+  const handleCreateDriver = async () => {
+    if (!driverForm.name.trim() || !driverForm.phone.trim()) {
+      setStatus('Driver name and phone are required');
+      return;
+    }
+    setSaving(true);
+    setStatus('');
+    try {
+      const res = await fetch(`${API_URL}/drivers`, {
+        method: 'POST', headers,
+        body: JSON.stringify(driverForm),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to create driver');
+      }
+      setStatus(`✓ Driver ${driverForm.name} added to fleet`);
+      setDriverForm({ name: '', phone: '', email: '', vehicleReg: '', vehicleType: '', zone: '', pin: '' });
+      setShowDriverModal(false);
+      loadData();
+    } catch (e: any) {
+      setStatus(e.message);
+    }
+    setSaving(false);
+  };
+
+  const handleDeleteDriver = async (id: number) => {
+    if (!confirm('Remove this driver from your fleet?')) return;
+    try {
+      await fetch(`${API_URL}/drivers/${id}`, { method: 'DELETE', headers });
+      loadData();
+    } catch (e) { console.error(e); }
+  };
+
+  const filteredStaff = staff.filter(s =>
+    s.name?.toLowerCase().includes(search.toLowerCase()) || s.email?.toLowerCase().includes(search.toLowerCase())
   );
-
-  const currentUser = getUser();
-  const token = getToken();
-  const isOwner =
-    String(currentUser?.role || "").toUpperCase().includes("OWNER") ||
-    window.location.pathname.includes("/admin") ||
-    window.location.pathname.includes("/owner");
-
-  const selectedCompany = useMemo(
-    () => companies.find((c) => Number(c.id) === Number(selectedCompanyId)),
-    [companies, selectedCompanyId]
+  const filteredDrivers = drivers.filter(d =>
+    d.name?.toLowerCase().includes(search.toLowerCase()) || d.phone?.includes(search)
   );
-
-  const selectedUser = useMemo(
-    () => users.find((u) => Number(u.id) === Number(selectedUserId)),
-    [users, selectedUserId]
-  );
-
-  const stats = useMemo(() => {
-    const active = users.filter((u) => u.isActive ?? u.active).length;
-    const inactive = users.length - active;
-    const admins = users.filter((u) =>
-      String(u.role || "").toUpperCase().includes("ADMIN")
-    ).length;
-    return { total: users.length, active, inactive, admins };
-  }, [users]);
-
-  async function api(path: string, options: RequestInit = {}) {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(options.headers as Record<string, string>),
-    };
-    if (token) headers.Authorization = `Bearer ${token}`;
-
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-    });
-
-    const data = await readJson(response);
-    if (!response.ok) {
-      throw new Error(text(data?.message, "Request failed"));
-    }
-    return data;
-  }
-
-  async function loadCompanies() {
-    try {
-      const data = await api("/owner/access/companies");
-      const rows = Array.isArray(data) ? data : Array.isArray(data?.companies) ? data.companies : [];
-      const mapped = rows.map((item: any) => ({
-        id: Number(item?.id || 0),
-        name: text(item?.name || item?.companyName || `Company ${item?.id}`),
-      }));
-      setCompanies(mapped);
-      if (mapped.length && !mapped.find((c: any) => c.id === selectedCompanyId)) {
-        setSelectedCompanyId(Number(mapped[0].id));
-      }
-    } catch (err: any) {
-      console.warn("loadCompanies failed", err?.message);
-    }
-  }
-
-  async function loadUsers(companyId?: number) {
-    setBusy(true);
-    setStatus("");
-    try {
-      let data: any;
-
-      if (isOwner) {
-        const safeCompanyId = Number(companyId || selectedCompanyId || 1);
-        data = await api(`/owner/access/company/${safeCompanyId}/users`);
-      } else {
-        data = await api("/users/my-company");
-      }
-
-      const rows = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.users)
-        ? data.users
-        : [];
-
-      const mapped = rows.map((item: any) => ({
-        id: Number(item?.id || 0),
-        fullName: text(item?.fullName || item?.name || item?.firstName || "Unnamed User"),
-        email: text(item?.email),
-        role: text(item?.role || "COMPANY_USER"),
-        isActive: Boolean(item?.isActive ?? item?.active ?? true),
-        companyId: Number(item?.companyId || companyId || selectedCompanyId || 1),
-        companyName: text(item?.companyName || selectedCompany?.name || ""),
-        mustChangePassword: Boolean(item?.mustChangePassword ?? false),
-        permissions: normalizePermissions(item?.permissions || {}, item?.role),
-      }));
-
-      setUsers(mapped);
-      if (mapped.length) {
-        setSelectedUserId(Number(mapped[0].id));
-      } else {
-        setSelectedUserId(0);
-      }
-    } catch (err: any) {
-      setUsers([]);
-      setStatus(err?.message || "Failed to load users");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    if (isOwner) {
-      loadCompanies().then(() => loadUsers(selectedCompanyId));
-    } else {
-      loadUsers();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (isOwner && selectedCompanyId) {
-      loadUsers(selectedCompanyId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCompanyId]);
-
-  useEffect(() => {
-    if (selectedUser) {
-      setPermissionDraft(normalizePermissions(selectedUser.permissions || {}, selectedUser.role));
-    } else {
-      setPermissionDraft(normalizePermissions({}, role));
-    }
-  }, [selectedUser, role]);
-
-  async function handleCreateUser() {
-    setBusy(true);
-    setStatus("");
-    try {
-      if (!fullName || !email || !password) {
-        throw new Error("Full name, email, and password are required.");
-      }
-
-      const payload = {
-        fullName,
-        email,
-        password,
-        role,
-        permissions: normalizePermissions(permissionDraft, role),
-      };
-
-      if (isOwner) {
-        await api(`/owner/access/company/${selectedCompanyId}/admins`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await api("/users/my-company", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      }
-
-      setStatus("Tenant user created successfully.");
-      setFullName("");
-      setEmail("");
-      setPassword("");
-      setRole("COMPANY_ADMIN");
-      setPermissionDraft(normalizePermissions({}, "COMPANY_ADMIN"));
-      await loadUsers(selectedCompanyId);
-    } catch (err: any) {
-      setStatus(err?.message || "Failed to create user");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleResetPassword() {
-    setBusy(true);
-    setStatus("");
-    try {
-      if (!selectedUserId) throw new Error("Select a user first.");
-      if (!resetPassword || resetPassword.length < 6) {
-        throw new Error("New password must be at least 6 characters.");
-      }
-
-      await api(`/owner/access/users/${selectedUserId}/password`, {
-        method: "PATCH",
-        body: JSON.stringify({ password: resetPassword }),
-      });
-
-      setStatus("Password reset completed.");
-      setResetPassword("");
-      await loadUsers(selectedCompanyId);
-    } catch (err: any) {
-      setStatus(err?.message || "Failed to reset password");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleToggleUser() {
-    setBusy(true);
-    setStatus("");
-    try {
-      if (!selectedUserId) throw new Error("Select a user first.");
-
-      await api(`/owner/access/users/${selectedUserId}/toggle`, {
-        method: "PATCH",
-      });
-
-      setStatus("User status updated.");
-      await loadUsers(selectedCompanyId);
-    } catch (err: any) {
-      setStatus(err?.message || "Failed to toggle user");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDeleteUser() {
-    setBusy(true);
-    setStatus("");
-    try {
-      if (!selectedUserId) throw new Error("Select a user first.");
-
-      await api(`/owner/access/users/${selectedUserId}/delete`, {
-        method: "POST",
-      });
-
-      setStatus("Tenant user deleted.");
-      await loadUsers(selectedCompanyId);
-    } catch (err: any) {
-      setStatus(err?.message || "Failed to delete user");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleSavePermissions() {
-    setBusy(true);
-    setStatus("");
-    try {
-      if (!selectedUserId) throw new Error("Select a user first.");
-
-      const payload = {
-        permissions: normalizePermissions(permissionDraft, selectedUser?.role),
-      };
-
-      await api(`/users/${selectedUserId}`, {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      });
-
-      setStatus("Permissions saved successfully.");
-      await loadUsers(selectedCompanyId);
-    } catch (err: any) {
-      setStatus(err?.message || "Failed to save permissions");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function applyRolePreset(nextRole: string) {
-    const normalized = String(nextRole || "COMPANY_USER").toUpperCase();
-    setRole(normalized);
-    setPermissionDraft(normalizePermissions({}, normalized));
-  }
-
-  function updatePermission(key: PermissionKey, value: boolean) {
-    setPermissionDraft((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-  }
 
   return (
-    <div style={pageWrap}>
-      <div style={shell}>
-        <div style={hero}>
-          <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8FB5FF", fontWeight: 800 }}>
-            FlowOps Tenant Access Layer
-          </div>
-          <h1 style={{ margin: "10px 0 8px", fontSize: 34, lineHeight: 1.05 }}>
-            Users, Roles & Permissions Control Center
-          </h1>
-          <div style={{ color: "#9DB6E6", maxWidth: 900, fontSize: 14 }}>
-            Manage tenant company users, role assignment, account access, temporary password resets, and page-level visibility from one premium operational control surface.
-          </div>
+    <div style={{ padding: '24px', minHeight: '100%' }}>
+      <PageHeader icon={Users} title="Team Management" description="Manage your staff, dispatchers, warehouse clerks, and driver fleet" color="#6C9EFF">
+        <button onClick={loadData} style={btnGhost}>
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </PageHeader>
 
-          <div
-            style={{
-              marginTop: 16,
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(57,203,161,0.25)",
-              background: "rgba(18,73,66,0.18)",
-              color: "#87F1D2",
-              fontSize: 13,
-              fontWeight: 700,
-            }}
-          >
-            {status || `Connected to ${API_BASE}`}
-          </div>
+      {/* Status banner */}
+      {status && (
+        <div style={{
+          marginBottom: '16px', padding: '12px 16px', borderRadius: '10px', fontSize: '13px',
+          background: status.startsWith('✓') ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)',
+          color: status.startsWith('✓') ? '#4ADE80' : '#fca5a5',
+          border: `1px solid ${status.startsWith('✓') ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'}`,
+        }}>
+          {status}
         </div>
+      )}
 
-        <div style={statGrid}>
-          <div style={statCard}>
-            <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>Total Users</div>
-            <div style={{ fontSize: 34, fontWeight: 900, marginTop: 8 }}>{stats.total}</div>
-            <div style={{ color: "#8CA5D6", fontSize: 13, marginTop: 6 }}>All tenant user accounts.</div>
-          </div>
-          <div style={statCard}>
-            <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>Active Users</div>
-            <div style={{ fontSize: 34, fontWeight: 900, marginTop: 8 }}>{stats.active}</div>
-            <div style={{ color: "#8CA5D6", fontSize: 13, marginTop: 6 }}>Users currently active.</div>
-          </div>
-          <div style={statCard}>
-            <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>Inactive Users</div>
-            <div style={{ fontSize: 34, fontWeight: 900, marginTop: 8 }}>{stats.inactive}</div>
-            <div style={{ color: "#8CA5D6", fontSize: 13, marginTop: 6 }}>Accounts needing review.</div>
-          </div>
-          <div style={statCard}>
-            <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>Admin-Level Users</div>
-            <div style={{ fontSize: 34, fontWeight: 900, marginTop: 8 }}>{stats.admins}</div>
-            <div style={{ color: "#8CA5D6", fontSize: 13, marginTop: 6 }}>Operational control holders.</div>
-          </div>
-        </div>
-
-        <div style={gridMain}>
-          <div style={card}>
-            <h2 style={{ marginTop: 0, marginBottom: 14 }}>Create Tenant User</h2>
-
-            {isOwner && (
-              <>
-                <label style={labelStyle}>Target Company</label>
-                <select
-                  style={inputStyle}
-                  value={selectedCompanyId}
-                  onChange={(e) => setSelectedCompanyId(Number(e.target.value))}
-                >
-                  {companies.map((company) => (
-                    <option key={company.id} value={company.id}>
-                      {company.name || `Company ${company.id}`}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-
-            <label style={labelStyle}>Full Name</label>
-            <input style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Operations Manager" />
-
-            <label style={labelStyle}>Email</label>
-            <input style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="manager@company.com" />
-
-            <label style={labelStyle}>Temporary Password</label>
-            <input style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-
-            <label style={labelStyle}>Role</label>
-            <select
-              style={inputStyle}
-              value={role}
-              onChange={(e) => applyRolePreset(e.target.value)}
-            >
-              <option value="COMPANY_ADMIN">COMPANY_ADMIN</option>
-              <option value="COMPANY_USER">COMPANY_USER</option>
-              <option value="OPERATIONS">OPERATIONS</option>
-              <option value="DISPATCH">DISPATCH</option>
-              <option value="ACCOUNTS">ACCOUNTS</option>
-              <option value="VIEW_ONLY">VIEW_ONLY</option>
-            </select>
-
-            <button style={{ ...buttonStyle, width: "100%" }} onClick={handleCreateUser} disabled={busy}>
-              {busy ? "Creating..." : "Create Tenant User"}
-            </button>
-          </div>
-
-          <div style={card}>
-            <h2 style={{ marginTop: 0, marginBottom: 14 }}>Reset Password + Access</h2>
-
-            <label style={labelStyle}>Select User</label>
-            <select
-              style={inputStyle}
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(Number(e.target.value))}
-            >
-              <option value={0}>Select tenant user</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.fullName} — {user.role}
-                </option>
-              ))}
-            </select>
-
-            <div
-              style={{
-                border: "1px solid rgba(120,170,255,0.16)",
-                borderRadius: 14,
-                padding: 14,
-                marginBottom: 12,
-                background: "rgba(7,16,34,0.75)",
-              }}
-            >
-              <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>
-                Selected User
-              </div>
-              <div style={{ fontWeight: 800, fontSize: 18, marginTop: 8 }}>
-                {selectedUser?.fullName || "No user selected"}
-              </div>
-              <div style={{ color: "#91A9D8", marginTop: 6 }}>
-                {selectedUser?.email || "Choose a user to reset credentials."}
-              </div>
-              {selectedUser?.role ? (
-                <div style={{ color: "#86A9E6", marginTop: 8, fontSize: 13 }}>
-                  Role: {selectedUser.role}
-                </div>
-              ) : null}
-            </div>
-
-            <label style={labelStyle}>New Password</label>
-            <input
-              style={inputStyle}
-              type="password"
-              value={resetPassword}
-              onChange={(e) => setResetPassword(e.target.value)}
-              placeholder="Reset password for selected user"
-            />
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button style={{ ...buttonStyle, flex: 1 }} onClick={handleResetPassword} disabled={busy}>
-                Reset Tenant Password
-              </button>
-              <button style={{ ...softButton, flex: 1 }} onClick={handleToggleUser} disabled={busy}>
-                Toggle Active
-              </button>
-            </div>
-
-            <button
-              style={{
-                ...softButton,
-                width: "100%",
-                marginTop: 10,
-                borderColor: "rgba(255,102,102,0.22)",
-                color: "#FFB3B3",
-              }}
-              onClick={handleDeleteUser}
-              disabled={busy}
-            >
-              Delete Selected User
-            </button>
-          </div>
-
-          <div style={card}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <h2 style={{ margin: 0 }}>Tenant User Directory</h2>
-              <button style={softButton} onClick={() => loadUsers(selectedCompanyId)} disabled={busy}>
-                Refresh
-              </button>
-            </div>
-
-            <div style={{ display: "grid", gap: 12, maxHeight: 420, overflowY: "auto", paddingRight: 4 }}>
-              {users.length === 0 ? (
-                <div
-                  style={{
-                    border: "1px dashed rgba(120,170,255,0.18)",
-                    borderRadius: 16,
-                    padding: 18,
-                    color: "#89A3D6",
-                  }}
-                >
-                  No tenant users found.
-                </div>
-              ) : (
-                users.map((user) => (
-                  <div
-                    key={user.id}
-                    onClick={() => setSelectedUserId(Number(user.id))}
-                    style={{
-                      border: selectedUserId === user.id
-                        ? "1px solid rgba(125,175,255,0.44)"
-                        : "1px solid rgba(120,170,255,0.14)",
-                      borderRadius: 16,
-                      padding: 14,
-                      background:
-                        selectedUserId === user.id
-                          ? "linear-gradient(135deg, rgba(83,134,230,0.20), rgba(6,17,37,0.92))"
-                          : "rgba(6,17,37,0.74)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: 16 }}>{user.fullName}</div>
-                        <div style={{ color: "#92ABDB", fontSize: 13, marginTop: 4 }}>{user.email}</div>
-                        <div style={{ color: "#86A9E6", fontSize: 12, marginTop: 8 }}>
-                          {user.role} {user.mustChangePassword ? "• Must change password" : ""}
-                        </div>
-                      </div>
-                      <div style={badge(user.isActive)}>
-                        {user.isActive ? "ACTIVE" : "INACTIVE"}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ ...card, marginTop: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>
-                Role & Permission Matrix
-              </div>
-              <h2 style={{ margin: "8px 0 0", fontSize: 28 }}>
-                Sidebar + Access Visibility Control
-              </h2>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                style={softButton}
-                onClick={() => {
-                  if (selectedUser?.role) {
-                    setPermissionDraft(normalizePermissions({}, selectedUser.role));
-                    setStatus(`Applied ${selectedUser.role} role preset.`);
-                  }
-                }}
-                disabled={!selectedUser?.role || busy}
-              >
-                Apply Selected User Role Preset
-              </button>
-
-              <button style={buttonStyle} onClick={handleSavePermissions} disabled={!selectedUserId || busy}>
-                Save Permissions
-              </button>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 14,
-            }}
-          >
-            {PERMISSION_KEYS.map((key) => {
-              const enabled = Boolean(permissionDraft[key]);
-              return (
-                <div
-                  key={key}
-                  style={{
-                    border: enabled
-                      ? "1px solid rgba(88,184,255,0.32)"
-                      : "1px solid rgba(120,170,255,0.14)",
-                    borderRadius: 18,
-                    padding: 16,
-                    background: enabled
-                      ? "linear-gradient(135deg, rgba(36,78,155,0.22), rgba(8,20,42,0.92))"
-                      : "rgba(7,18,38,0.70)",
-                    boxShadow: enabled ? "0 10px 28px rgba(63,118,255,0.18)" : "none",
-                  }}
-                >
-                  <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>
-                    Access Area
-                  </div>
-
-                  <div style={{ fontWeight: 900, fontSize: 18, marginTop: 8, marginBottom: 12 }}>
-                    {key}
-                  </div>
-
-                  <button
-                    onClick={() => updatePermission(key, !enabled)}
-                    style={{
-                      ...buttonStyle,
-                      width: "100%",
-                      background: enabled
-                        ? "linear-gradient(135deg, #8FF1C0 0%, #56D29D 100%)"
-                        : "linear-gradient(135deg, #9CC2FF 0%, #5D91F6 100%)",
-                    }}
-                  >
-                    {enabled ? "Enabled" : "Disabled"}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          <div
-            style={{
-              marginTop: 18,
-              border: "1px solid rgba(120,170,255,0.14)",
-              borderRadius: 18,
-              padding: 16,
-              background: "rgba(7,18,38,0.55)",
-            }}
-          >
-            <div style={{ fontSize: 11, color: "#88A6DD", letterSpacing: 1.2, textTransform: "uppercase" }}>
-              AI Access Guidance
-            </div>
-            <div style={{ marginTop: 10, color: "#DDEAFF", lineHeight: 1.7 }}>
-              Recommended approach:
-              <br />
-              • <strong>COMPANY_ADMIN</strong> = full tenant control
-              <br />
-              • <strong>OPERATIONS</strong> = collections, dispatch, drivers, clients
-              <br />
-              • <strong>DISPATCH</strong> = dispatch workflow only
-              <br />
-              • <strong>ACCOUNTS</strong> = invoices, billing, quotes, email
-              <br />
-              • <strong>VIEW_ONLY</strong> = safe read-only visibility
-            </div>
-          </div>
-        </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ marginBottom: '20px' }}>
+        <MiniStat label="Total Staff" value={staff.length} icon={Users} color="#6C9EFF" />
+        <MiniStat label="Dispatchers" value={staff.filter(s => s.role === 'DISPATCHER').length} icon={Truck} color="#6C9EFF" />
+        <MiniStat label="Warehouse Clerks" value={staff.filter(s => s.role === 'WAREHOUSE_CLERK').length} icon={Shield} color="#FBBF24" />
+        <MiniStat label="Drivers" value={drivers.length} icon={Car} color="#22D3EE" />
       </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+        <button onClick={() => setTab('staff')} style={tabBtn(tab === 'staff', '#6C9EFF')}>
+          <Users size={14} /> Staff ({staff.length})
+        </button>
+        <button onClick={() => setTab('drivers')} style={tabBtn(tab === 'drivers', '#22D3EE')}>
+          <Car size={14} /> Drivers ({drivers.length})
+        </button>
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+          <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={tab === 'staff' ? 'Search staff...' : 'Search drivers...'}
+            style={{ width: '100%', paddingLeft: '36px', paddingRight: '12px', paddingTop: '10px', paddingBottom: '10px', borderRadius: '10px', fontSize: '13px', color: 'white', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }} />
+        </div>
+        {tab === 'staff' ? (
+          <button onClick={() => { setShowStaffModal(true); setStatus(''); }} style={btnPrimary('#6C9EFF', '#A78BFA')}>
+            <UserPlus size={14} /> Add Staff
+          </button>
+        ) : (
+          <button onClick={() => { setShowDriverModal(true); setStatus(''); }} style={btnPrimary('#22D3EE', '#6C9EFF')}>
+            <Car size={14} /> Add Driver
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      {loading ? (
+        <PageSkeleton type="table" rows={5} />
+      ) : tab === 'staff' ? (
+        filteredStaff.length === 0 ? (
+          <EmptyState icon={Users} title={search ? 'No matching staff' : 'No staff members'} description={search ? 'Try a different search.' : 'Add dispatchers, warehouse clerks, and operators to your team.'} actionLabel={!search ? 'Add Staff Member' : undefined} onAction={() => setShowStaffModal(true)} color="#6C9EFF" />
+        ) : (
+          <div style={tableWrap}>
+            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  {['Name', 'Email', 'Role', 'Status', 'Joined'].map(h => <th key={h} style={th}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStaff.map((u, i) => {
+                  const rc = roleConfig[u.role] || roleConfig.USER;
+                  return (
+                    <tr key={u.id} style={{ borderBottom: i < filteredStaff.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }} className="hover:bg-white/[0.02] transition-colors">
+                      <td style={{ ...td, fontWeight: 600, color: 'white' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, background: `${rc.color}15`, color: rc.color }}>
+                            {(u.name || u.email)[0].toUpperCase()}
+                          </div>
+                          {u.name || u.email.split('@')[0]}
+                        </div>
+                      </td>
+                      <td style={{ ...td, color: 'rgba(255,255,255,0.6)' }}>{u.email}</td>
+                      <td style={td}><span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: `${rc.color}15`, color: rc.color }}>{rc.label}</span></td>
+                      <td style={td}>
+                        <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: (u.isActive ?? true) ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)', color: (u.isActive ?? true) ? '#4ADE80' : '#F87171' }}>
+                          {(u.isActive ?? true) ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td style={{ ...td, color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : (
+        filteredDrivers.length === 0 ? (
+          <EmptyState icon={Car} title={search ? 'No matching drivers' : 'No drivers in fleet'} description={search ? 'Try a different search.' : 'Add drivers to your fleet. They become available for collection and dispatch assignment.'} actionLabel={!search ? 'Add First Driver' : undefined} onAction={() => setShowDriverModal(true)} color="#22D3EE" />
+        ) : (
+          <div style={tableWrap}>
+            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  {['Driver', 'Phone', 'Vehicle', 'Zone', 'Status', ''].map(h => <th key={h} style={th}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDrivers.map((d, i) => (
+                  <tr key={d.id} style={{ borderBottom: i < filteredDrivers.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }} className="hover:bg-white/[0.02] transition-colors">
+                    <td style={{ ...td, fontWeight: 600, color: 'white' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(34,211,238,0.12)' }}>
+                          <Car size={14} color="#22D3EE" />
+                        </div>
+                        {d.name}
+                      </div>
+                    </td>
+                    <td style={{ ...td, color: 'rgba(255,255,255,0.6)' }}>{d.phone}</td>
+                    <td style={{ ...td, color: 'rgba(255,255,255,0.6)' }}>{d.vehicleReg || d.vehicleType || '—'}</td>
+                    <td style={{ ...td, color: 'rgba(255,255,255,0.6)' }}>{d.zone || '—'}</td>
+                    <td style={td}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: (d.availabilityStatus || d.status) === 'AVAILABLE' ? 'rgba(74,222,128,0.12)' : 'rgba(251,191,36,0.12)', color: (d.availabilityStatus || d.status) === 'AVAILABLE' ? '#4ADE80' : '#FBBF24' }}>
+                        {d.availabilityStatus || d.status || 'AVAILABLE'}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      <button onClick={() => handleDeleteDriver(d.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F87171', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                        <Trash2 size={12} /> Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+
+      {/* Add Staff Modal */}
+      {showStaffModal && (
+        <Modal title="Add Staff Member" onClose={() => setShowStaffModal(false)}>
+          <FieldInput icon={Users} label="Full Name *" value={staffForm.name} onChange={v => setStaffForm({ ...staffForm, name: v })} placeholder="John Smith" />
+          <FieldInput icon={Mail} label="Email *" value={staffForm.email} onChange={v => setStaffForm({ ...staffForm, email: v })} placeholder="john@company.co.za" type="email" />
+          <div style={{ marginBottom: '14px' }}>
+            <label style={fieldLabel}><Shield size={11} /> Role</label>
+            <select value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })} style={selectStyle}>
+              <option value="DISPATCHER" style={optStyle}>Dispatcher</option>
+              <option value="WAREHOUSE_CLERK" style={optStyle}>Warehouse Clerk</option>
+              <option value="OPERATOR" style={optStyle}>Operator</option>
+              <option value="COMPANY_ADMIN" style={optStyle}>Company Admin</option>
+            </select>
+          </div>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ ...fieldLabel, justifyContent: 'space-between' }}>
+              <span><Key size={11} style={{ display: 'inline', marginRight: '4px' }} /> Password (blank = auto-generate)</span>
+              <button type="button" onClick={() => setStaffForm({ ...staffForm, password: generatePassword() })} style={{ fontSize: '11px', color: '#6C9EFF', background: 'none', border: 'none', cursor: 'pointer' }}>Generate</button>
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input type={showPassword ? 'text' : 'password'} value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="Auto-generated if empty"
+                style={{ ...inputStyle, paddingRight: '38px' }} />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                {showPassword ? <EyeOff size={15} color="rgba(255,255,255,0.4)" /> : <Eye size={15} color="rgba(255,255,255,0.4)" />}
+              </button>
+            </div>
+          </div>
+          <ModalActions onCancel={() => setShowStaffModal(false)} onSave={handleCreateStaff} saving={saving} saveLabel="Create Staff" />
+        </Modal>
+      )}
+
+      {/* Add Driver Modal */}
+      {showDriverModal && (
+        <Modal title="Add Driver to Fleet" onClose={() => setShowDriverModal(false)}>
+          <FieldInput icon={Users} label="Driver Name *" value={driverForm.name} onChange={v => setDriverForm({ ...driverForm, name: v })} placeholder="Sipho Dlamini" />
+          <FieldInput icon={Phone} label="Phone *" value={driverForm.phone} onChange={v => setDriverForm({ ...driverForm, phone: v })} placeholder="0821234567" />
+          <FieldInput icon={Mail} label="Email" value={driverForm.email} onChange={v => setDriverForm({ ...driverForm, email: v })} placeholder="driver@company.co.za" type="email" />
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ flex: 1 }}><FieldInput icon={Car} label="Vehicle Reg" value={driverForm.vehicleReg} onChange={v => setDriverForm({ ...driverForm, vehicleReg: v })} placeholder="CA 123-456" /></div>
+            <div style={{ flex: 1 }}><FieldInput icon={Truck} label="Vehicle Type" value={driverForm.vehicleType} onChange={v => setDriverForm({ ...driverForm, vehicleType: v })} placeholder="Van" /></div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ flex: 1 }}><FieldInput icon={Search} label="Zone" value={driverForm.zone} onChange={v => setDriverForm({ ...driverForm, zone: v })} placeholder="Sandton" /></div>
+            <div style={{ flex: 1 }}><FieldInput icon={Key} label="Driver PIN" value={driverForm.pin} onChange={v => setDriverForm({ ...driverForm, pin: v })} placeholder="4-digit PIN" /></div>
+          </div>
+          <ModalActions onCancel={() => setShowDriverModal(false)} onSave={handleCreateDriver} saving={saving} saveLabel="Add Driver" />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── Reusable styles ──
+const btnGhost: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 500, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', border: 'none', cursor: 'pointer' };
+const btnPrimary = (c1: string, c2: string): React.CSSProperties => ({ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, background: `linear-gradient(135deg, ${c1}, ${c2})`, color: 'white', border: 'none', cursor: 'pointer' });
+const tabBtn = (active: boolean, color: string): React.CSSProperties => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', border: `1px solid ${active ? `${color}40` : 'rgba(255,255,255,0.06)'}`, background: active ? `${color}15` : 'rgba(255,255,255,0.03)', color: active ? color : 'rgba(255,255,255,0.5)' });
+const tableWrap: React.CSSProperties = { borderRadius: '12px', overflow: 'hidden', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)' };
+const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' };
+const td: React.CSSProperties = { padding: '12px 16px' };
+const fieldLabel: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, marginBottom: '6px', color: 'rgba(255,255,255,0.5)' };
+const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', color: 'white', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' };
+const selectStyle: React.CSSProperties = { ...inputStyle };
+const optStyle: React.CSSProperties = { background: '#0f1629' };
+
+function MiniStat({ label, value, icon: Icon, color }: { label: string; value: number; icon: any; color: string }) {
+  return (
+    <div style={{ borderRadius: '10px', padding: '14px 16px', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}12` }}>
+        <Icon size={15} color={color} />
+      </div>
+      <div>
+        <div style={{ fontSize: '20px', fontWeight: 700, color: 'white' }}>{value}</div>
+        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+      <div style={{ borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '460px', background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'white' }}>{title}</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} color="rgba(255,255,255,0.4)" /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ModalActions({ onCancel, onSave, saving, saveLabel }: { onCancel: () => void; onSave: () => void; saving: boolean; saveLabel: string }) {
+  return (
+    <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+      <button onClick={onCancel} style={{ flex: 1, padding: '10px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', border: 'none', cursor: 'pointer' }}>Cancel</button>
+      <button onClick={onSave} disabled={saving} style={{ flex: 1, padding: '10px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, background: 'linear-gradient(135deg, #6C9EFF, #A78BFA)', color: 'white', border: 'none', cursor: 'pointer' }}>
+        {saving ? 'Saving...' : saveLabel}
+      </button>
+    </div>
+  );
+}
+
+function FieldInput({ icon: Icon, label, value, onChange, placeholder, type = 'text' }: any) {
+  return (
+    <div style={{ marginBottom: '14px' }}>
+      <label style={fieldLabel}><Icon size={11} /> {label}</label>
+      <input type={type} value={value} onChange={(e: any) => onChange(e.target.value)} placeholder={placeholder} style={inputStyle} />
     </div>
   );
 }
