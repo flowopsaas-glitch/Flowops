@@ -13,6 +13,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
 const planColors: Record<string, string> = {
   ENTERPRISE: '#A78BFA',
+  PROFESSIONAL: '#6C9EFF',
   PRO: '#6C9EFF',
   STARTER: '#4ADE80',
 };

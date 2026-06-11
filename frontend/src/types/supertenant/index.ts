@@ -1,8 +1,8 @@
 export interface Company {
   id: number;
   name: string;
-  status: 'Active' | 'Inactive' | 'Suspended';
-  plan: 'STARTER' | 'PRO' | 'ENTERPRISE';
+  status: 'Active' | 'Inactive' | 'Suspended' | 'Locked';
+  plan: 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

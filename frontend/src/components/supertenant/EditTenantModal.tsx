@@ -86,7 +86,7 @@ export default function EditTenantModal({ tenant, onClose, onSaved }: EditTenant
               className="w-full px-3 py-2.5 rounded-lg text-sm text-white outline-none"
               style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <option value="STARTER" style={{ background: '#0f1629' }}>Starter</option>
-              <option value="PRO" style={{ background: '#0f1629' }}>Pro</option>
+              <option value="PROFESSIONAL" style={{ background: '#0f1629' }}>Pro</option>
               <option value="ENTERPRISE" style={{ background: '#0f1629' }}>Enterprise</option>
             </select>
           </div>
