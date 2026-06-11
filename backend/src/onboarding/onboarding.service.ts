@@ -52,7 +52,7 @@ export class OnboardingService {
   /**
    * PUBLIC: Submit a signup request (from public signup page)
    */
-  async submitSignupRequest(dto: SignupRequestDto): Promise<SignupRequest> {
+  async submitSignupRequest(dto: SignupRequestDto) {
     if (!dto.companyName?.trim() || !dto.contactEmail?.trim() || !dto.contactName?.trim()) {
       throw new BadRequestException('Company name, contact email, and contact name are required');
     }
@@ -111,7 +111,7 @@ export class OnboardingService {
   /**
    * SUPER_ADMIN: List all signup requests
    */
-  async listRequests(status?: string): Promise<SignupRequest[]> {
+  async listRequests(status?: string) {
     const where = status ? { status: status as any } : {};
     return this.prisma.signupRequest.findMany({
       where,
