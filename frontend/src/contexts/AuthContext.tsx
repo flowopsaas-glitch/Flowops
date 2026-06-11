@@ -64,10 +64,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       setUser(data.user);
       
-      // ✅ IMMEDIATE REDIRECT BASED ON ROLE
+      // ✅ ROLE-BASED REDIRECT — each role lands on their optimal page
       const role = data.user?.role?.toUpperCase();
-      const path = role === 'SUPER_ADMIN' ? '/superadmin' : role === 'DISPATCHER' ? '/tools/dispatch' : '/dashboard';
-      console.log(' Redirecting to:', path);
+      let path = '/dashboard'; // default for OPERATOR, USER
+      
+      switch (role) {
+        case 'SUPER_ADMIN':
+          path = '/superadmin';
+          break;
+        case 'ADMIN':
+        case 'COMPANY_ADMIN':
+          path = '/dashboard'; // Tenant admin → main ops dashboard (full access)
+          break;
+        case 'DISPATCHER':
+          path = '/driver-dispatch'; // Dispatch board
+          break;
+        case 'WAREHOUSE_CLERK':
+          path = '/inventory'; // Warehouse/inventory dashboard
+          break;
+        case 'DRIVER':
+          path = '/driver/portal';
+          break;
+        case 'OPERATOR':
+        default:
+          path = '/dashboard';
+          break;
+      }
+      
+      console.log(`🧭 Redirecting ${role} to: ${path}`);
       window.location.href = path;
       
     } catch (err: any) {

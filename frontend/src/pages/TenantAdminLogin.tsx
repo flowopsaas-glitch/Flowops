@@ -23,13 +23,8 @@ export default function TenantAdminLogin() {
     setSubmitting(true);
 
     try {
-      await login({
-        email: email.trim(),
-        password,
-        mode: "tenant",
-      });
-
-      navigate("/tenant-admin", { replace: true });
+      await login(email.trim(), password);
+      // AuthContext handles redirect based on role
     } catch (err: any) {
       setError(err?.message || "Tenant admin login failed.");
     } finally {
