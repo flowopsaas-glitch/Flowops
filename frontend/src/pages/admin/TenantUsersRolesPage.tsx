@@ -71,7 +71,9 @@ export default function TenantUsersRolesPage() {
       ]);
       if (staffRes.ok) {
         const data = await staffRes.json();
-        setStaff(Array.isArray(data) ? data : data.users || []);
+        const list = Array.isArray(data) ? data : data.users || [];
+        // Never show the platform owner (SUPER_ADMIN) in tenant team management
+        setStaff(list.filter((u: StaffUser) => u.role !== 'SUPER_ADMIN'));
       }
       if (driversRes.ok) {
         const data = await driversRes.json();

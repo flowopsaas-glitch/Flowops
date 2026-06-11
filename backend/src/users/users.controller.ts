@@ -99,10 +99,16 @@ export class UsersController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_ADMIN')
   async resetPassword(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { newPassword: string }
+    @Body() body: { newPassword: string },
+    @Req() req: any,
   ) {
     if (!body.newPassword || body.newPassword.length < 6) {
       throw new BadRequestException('Password must be at least 6 characters');
+    }
+    // Protect the platform owner: only a SUPER_ADMIN can reset a SUPER_ADMIN
+    const target = await this.usersService.getById(id);
+    if (target.role === 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      throw new UnauthorizedException('You cannot modify the platform owner account');
     }
     return this.usersService.resetPassword(id, body.newPassword);
   }

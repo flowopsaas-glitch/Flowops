@@ -129,7 +129,13 @@ async resetPassword(userId: number, newPassword: string) {
   }
 
   async listByCompany(companyId: number) {
-    return this.prisma.user.findMany({ where: { companyId } });
+    // Exclude SUPER_ADMIN (platform owner) — tenant admins must never see/manage it
+    return this.prisma.user.findMany({
+      where: {
+        companyId,
+        role: { not: 'SUPER_ADMIN' },
+      },
+    });
   }
 }
 
