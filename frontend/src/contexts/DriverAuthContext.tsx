@@ -1,7 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { api, setMemoryToken } from '../api/client';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { api } from '../api/client';
 
-interface DriverProfile { id: number; name: string; vehicle: string; }
+interface DriverProfile {
+  id: number;
+  name: string;
+  vehicle: string;
+  companyId?: number;
+}
 
 interface DriverAuthContextType {
   driver: DriverProfile | null;
@@ -13,46 +18,45 @@ interface DriverAuthContextType {
 
 const DriverAuthContext = createContext<DriverAuthContextType | undefined>(undefined);
 
+const STORAGE_KEY = 'flowops_driver';
+
 export const DriverAuthProvider = ({ children }: { children: ReactNode }) => {
   const [driver, setDriver] = useState<DriverProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🔄 Silent Session Bootstrap
+  // 🔄 Restore driver session from localStorage (driver endpoints are driverId-based)
   useEffect(() => {
-    const verify = async () => {
-      try {
-        // api client interceptor returns response.data directly
-        const ref: any = await api.post('/auth/refresh');
-        if (ref?.accessToken) setMemoryToken(ref.accessToken);
-
-        const me: any = await api.get('/auth/me');
-        if (me?.role === 'DRIVER') {
-          setDriver({ id: me.id, name: me.name, vehicle: me.vehicle || 'Fleet Unit' });
-        }
-      } catch {
-        setDriver(null);
-      } finally { setIsLoading(false); }
-    };
-    verify();
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) setDriver(JSON.parse(stored));
+    } catch {
+      setDriver(null);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const login = async (phone: string, pin: string) => {
     setIsLoading(true);
     try {
-      const data: any = await api.post('/auth/driver-login', { phone, pin });
-      if (data?.accessToken) {
-        setMemoryToken(data.accessToken);
-        localStorage.setItem('access_token', data.accessToken);
-      }
-      setDriver(data?.driver || null);
-    } finally { setIsLoading(false); }
+      // Uses the existing /driver-portal/login (phone + PIN, returns driver info)
+      const data: any = await api.post('/driver-portal/login', { phone, pin });
+      const profile: DriverProfile = {
+        id: data?.driverId ?? data?.id,
+        name: data?.name || 'Driver',
+        vehicle: data?.vehicleReg || data?.vehicle || 'Fleet Unit',
+        companyId: data?.companyId,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+      setDriver(profile);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const logout = async () => {
-    try { await api.post('/auth/logout'); } finally {
-      setMemoryToken(null);
-      setDriver(null);
-    }
+    localStorage.removeItem(STORAGE_KEY);
+    setDriver(null);
   };
 
   return (

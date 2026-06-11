@@ -66,20 +66,6 @@ export class AuthController {
     return { accessToken: result.accessToken };
   }
 
-  // ── DRIVER LOGIN (phone + PIN) ──
-  @Public()
-  @Post('driver-login')
-  async driverLogin(@Body() body: { phone: string; pin: string }, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.driverLogin(body.phone, body.pin);
-    res.cookie('flowops_refresh_token', result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-    return { accessToken: result.accessToken, driver: result.driver };
-  }
-
   // ── PASSWORD RESET FLOW ──
   @Public()
   @Post('forgot-password')

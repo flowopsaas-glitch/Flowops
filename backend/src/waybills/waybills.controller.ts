@@ -16,13 +16,6 @@ export class WaybillsController {
     return this.service.getInbox(req.user?.companyId);
   }
 
-  // Driver's assigned manifest (waybills assigned to the logged-in driver)
-  @Get('driver/manifest')
-  async getDriverManifest(@Req() req: any) {
-    const driverId = req.user?.driverId || req.user?.sub;
-    return this.service.getDriverManifest(driverId, req.user?.companyId);
-  }
-
   @Get()
   async getAll(@Req() req: any) {
     return this.service.findAll(req.user?.companyId);

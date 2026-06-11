@@ -37,29 +37,6 @@ export class WaybillsService {
   }
 
   /**
-   * Get the manifest (assigned waybills) for a specific driver.
-   */
-  async getDriverManifest(driverId: number, companyId: number) {
-    if (!driverId) return [];
-    const waybills = await this.prisma.waybill.findMany({
-      where: {
-        driverId,
-        companyId,
-        status: { in: ['IN_TRANSIT', 'PENDING', 'PENDING_COLLECTION', 'ARRIVED_AT_HUB', 'READY_FOR_COLLECTION'] as any },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return waybills.map((w: any) => ({
-      id: w.id,
-      waybillNumber: w.waybillNumber,
-      recipient: w.receiverName || w.recipient || 'Unknown',
-      recipientPhone: w.receiverPhone || w.recipientPhone || null,
-      deliveryAddress: w.deliveryAddress || w.receiverAddress || '',
-      status: w.status,
-    }));
-  }
-
-  /**
    * ✅ Get inbox items for a company
    */
   async getInbox(companyId?: number) {

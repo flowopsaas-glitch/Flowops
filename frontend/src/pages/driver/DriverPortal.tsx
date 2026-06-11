@@ -11,11 +11,21 @@ export default function DriverPortal() {
   const [syncing, setSyncing] = useState(false);
 
   const fetchManifest = async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !driver?.id) return;
     try {
       setSyncing(true);
-      const res: any = await api.get('/waybills/driver/manifest');
-      setJobs(Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []));
+      // Use the existing rich driver-portal module
+      const res: any = await api.get(`/driver-portal/deliveries/${driver.id}`);
+      const raw = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+      // Map raw waybill fields to the shape this page renders
+      setJobs(raw.map((w: any) => ({
+        id: w.id,
+        waybillNumber: w.waybillNumber || `WB-${w.id}`,
+        recipient: w.receiverName || w.recipient || 'Unknown',
+        recipientPhone: w.receiverPhone || w.recipientPhone || null,
+        deliveryAddress: w.deliveryAddress || w.receiverAddress || '',
+        status: w.status,
+      })));
     } catch (err: any) {
       if (err.response?.status === 401) navigate('/driver/login');
     } finally { setSyncing(false); }
