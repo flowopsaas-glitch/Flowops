@@ -56,4 +56,64 @@ export class DriverPortalService {
     await this.prisma.waybill.update({ where: { id: waybillId }, data: { status: newStatus } });
     return { success: true, podId: pod.id, newStatus };
   }
+
+  /**
+   * Get the driver's assigned collections (pickups).
+   * Collections are linked to drivers via Dispatch records.
+   */
+  async getCollections(driverId: number) {
+    const dispatches = await this.prisma.dispatch.findMany({
+      where: {
+        driverId,
+        status: { in: ['ASSIGNED', 'IN_PROGRESS'] as any },
+      },
+      include: { collection: { include: { client: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return dispatches
+      .filter((d: any) => d.collection)
+      .map((d: any) => ({
+        id: d.collection.id,
+        dispatchId: d.id,
+        name: d.collection.name,
+        referenceNo: d.collection.referenceNo,
+        status: d.collection.status,
+        collectionAddress: d.collection.collectionAddress,
+        scheduledDate: d.collection.scheduledDate,
+        clientName: d.collection.client?.name || null,
+        collectorName: d.collection.collectorName,
+        collectedAt: d.collection.collectedAt,
+      }));
+  }
+
+  /**
+   * Capture Proof of Collection (POC): signature + photo when the driver
+   * picks up the parcels. Marks the collection COLLECTED and dispatch complete.
+   */
+  async uploadPoc(driverId: number, collectionId: number, signatureData?: string, photoData?: string, collectorName?: string, notes?: string) {
+    const collection = await this.prisma.collection.findUnique({ where: { id: collectionId } });
+    if (!collection) throw new BadRequestException('Collection not found');
+
+    await this.prisma.collection.update({
+      where: { id: collectionId },
+      data: {
+        status: 'COLLECTED',
+        collectedAt: new Date(),
+        completedAt: new Date(),
+        collectorName: collectorName || null,
+        pocSignature: signatureData || null,
+        pocPhoto: photoData || null,
+        pocNotes: notes || null,
+      },
+    });
+
+    // Mark the related dispatch(es) as completed
+    await this.prisma.dispatch.updateMany({
+      where: { collectionId, driverId },
+      data: { status: 'COMPLETED' as any },
+    });
+
+    return { success: true, collectionId, newStatus: 'COLLECTED' };
+  }
 }

@@ -30,4 +30,14 @@ export class DriverPortalController {
   async uploadPod(@Body() body: { driverId: number; waybillId: number; signatureData?: string; photoData?: string; recipientName?: string; notes?: string; source?: string }) {
     return this.service.uploadPod(body.driverId, body.waybillId, body.signatureData, body.photoData, body.recipientName, body.notes, body.source || 'PWA');
   }
+
+  @Get('collections/:driverId')
+  async getCollections(@Param('driverId', ParseIntPipe) driverId: number) {
+    return this.service.getCollections(driverId);
+  }
+
+  @Post('poc')
+  async uploadPoc(@Body() body: { driverId: number; collectionId: number; signatureData?: string; photoData?: string; collectorName?: string; notes?: string }) {
+    return this.service.uploadPoc(body.driverId, body.collectionId, body.signatureData, body.photoData, body.collectorName, body.notes);
+  }
 }

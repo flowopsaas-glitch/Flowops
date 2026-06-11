@@ -393,6 +393,13 @@ model Collection {
   scheduledDate     DateTime?
   completedAt       DateTime?
 
+  // ── Proof of Collection (POC) ──
+  collectorName String?
+  pocSignature  String?   @db.Text
+  pocPhoto      String?   @db.Text
+  pocNotes      String?
+  collectedAt   DateTime?
+
   companyId Int
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
