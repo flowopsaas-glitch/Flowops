@@ -53,6 +53,9 @@ import { RedisModule } from './redis/redis.module';
 // Subscription Expiry Monitor
 import { SubscriptionMonitorModule } from './subscription-monitor/subscription-monitor.module';
 
+// AI Platform Health Monitor
+import { PlatformHealthModule } from './platform-health/platform-health.module';
+
 // ✅ FIXED: Import ClientsModule (was missing!)
 import { ClientsModule } from './_clients/clients.module';
 import { FleetMapModule } from './fleet-map/fleet-map.module';
@@ -138,6 +141,9 @@ import { RatingService } from './rating/rating.service';
 
     // Subscription Expiry Monitor (hourly cron checks trial/demo expiry)
     SubscriptionMonitorModule,
+
+    // AI Platform Health Monitor (5-min cron checks system metrics)
+    PlatformHealthModule,
   ],
   controllers: [
     LocationController,

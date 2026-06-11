@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Building2, Users, DollarSign, Activity, Zap, AlertTriangle, Radio } from 'lucide-react';
 import SuperAdminLayout from '@/components/supertenant/SuperAdminLayout';
 import StatCard from '@/components/supertenant/StatCard';
+import SubscriptionAlerts from '@/components/supertenant/SubscriptionAlerts';
 import PerformanceCharts from '@/components/supertenant/PerformanceCharts';
 import TenantTable from '@/components/supertenant/TenantTable';
 import QuickActions from '@/components/supertenant/QuickActions';
@@ -38,6 +39,9 @@ export default function SuperTenantDashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {stats1.map(s => <StatCard key={s.title} {...s} />)}
         </div>
+
+        {/* Subscription Alerts */}
+        <SubscriptionAlerts />
 
         {/* Stats Row 2 */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
