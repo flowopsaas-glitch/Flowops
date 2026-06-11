@@ -28,7 +28,7 @@ export function useTenants() {
       let analyticsData: any = null;
       try {
         const analyticsRes = await fetch(
-          `${API_BASE}/analytics/admin-dashboard?companyId=1&period=month`, 
+          `${API_BASE}/analytics/admin?companyId=1&period=month`, 
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (analyticsRes.ok) analyticsData = await analyticsRes.json();

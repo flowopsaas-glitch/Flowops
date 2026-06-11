@@ -58,6 +58,7 @@ const LiveTracking = lazy(() => import("./pages/gps-tracking/LiveTracking"));
 // Owner pages (lazy-loaded)
 const SuperAdminDashboard = lazy(() => import("./pages/owner/SuperAdminDashboard"));
 const SuperTenantDashboard = lazy(() => import("./pages/superadmin/SuperTenantDashboard"));
+const SuperAdminSettings = lazy(() => import("./pages/superadmin/SuperAdminSettings"));
 const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
 const PasswordManager = lazy(() => import("./pages/owner/PasswordManager"));
@@ -266,12 +267,21 @@ export default function App() {
               <Route path="/inventory/catalog" element={<InventoryItems />} />
 
               {/* Settings */}
+              {/* Settings */}
               <Route path="/settings" element={<SettingsPage />} />
-
-              {/* 👑 SuperAdmin */}
-              <Route path="/superadmin" element={<Suspense fallback={<PageLoader />}><SuperTenantDashboard /></Suspense>} />
-              <Route path="/superadmin/companies" element={<Suspense fallback={<PageLoader />}><SuperTenantDashboard /></Suspense>} />
             </Route>
+          </Route>
+
+          {/* ================================================================== */}
+          {/* 👑 SUPERADMIN STANDALONE ROUTES (own layout, no AppLayout wrapper) */}
+          {/* ================================================================== */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/superadmin" element={<Suspense fallback={<PageLoader />}><SuperTenantDashboard /></Suspense>} />
+            <Route path="/superadmin/companies" element={<Suspense fallback={<PageLoader />}><SuperTenantDashboard /></Suspense>} />
+            <Route path="/superadmin/users" element={<Suspense fallback={<PageLoader />}><SuperTenantDashboard /></Suspense>} />
+            <Route path="/superadmin/billing" element={<Suspense fallback={<PageLoader />}><SuperTenantDashboard /></Suspense>} />
+            <Route path="/superadmin/dispatches" element={<Suspense fallback={<PageLoader />}><SuperTenantDashboard /></Suspense>} />
+            <Route path="/superadmin/settings" element={<Suspense fallback={<PageLoader />}><SuperAdminSettings /></Suspense>} />
           </Route>
 
           {/* 👑 SUPERADMIN ROUTE */}

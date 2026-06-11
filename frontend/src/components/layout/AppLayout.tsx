@@ -151,8 +151,9 @@ function SidebarContent(props: {
               ? "border-sky-300/20 bg-sky-300/10 text-sky-100 cursor-pointer hover:bg-sky-300/20" 
               : "border-white/5 bg-white/[0.02] text-white/20 cursor-not-allowed"
           )}
+          title={!props.canInstall ? "Available on Pro and Enterprise plans" : "Install FlowOps as a desktop app"}
         >
-          <Download className="h-4 w-4" /> Install Application
+          <Download className="h-4 w-4" /> {props.canInstall ? 'Install Application' : 'Install App (Pro+)'}
         </button>
         <button 
           onClick={props.onLogout}
@@ -241,6 +242,28 @@ export default function AppLayout() {
   const { user } = useAuth();
   const userRole = user?.role || "USER";
 
+  // Fetch company plan for Install App gating (Pro/Enterprise only)
+  const [companyPlan, setCompanyPlan] = useState<string>('STARTER');
+  useEffect(() => {
+    const fetchPlan = async () => {
+      if (!user?.companyId) return;
+      try {
+        const token = localStorage.getItem('access_token');
+        const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+        const res = await fetch(`${API_BASE}/companies/${user.companyId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const company = await res.json();
+          setCompanyPlan(company.subscriptionPlan || company.plan || 'STARTER');
+        }
+      } catch (e) { /* ignore - default to STARTER */ }
+    };
+    fetchPlan();
+  }, [user?.companyId]);
+
+  const canInstallApp = ['PRO', 'ENTERPRISE'].includes(companyPlan.toUpperCase());
+
   // Debug logging
   console.log('🔍 User role:', userRole);
   console.log('🔍 User object:', user);
@@ -297,7 +320,7 @@ export default function AppLayout() {
           grouped={grouped} 
           currentPath={location.pathname} 
           onNavigate={() => setMobileOpen(false)} 
-          canInstall={!!installPrompt} 
+          canInstall={!!installPrompt && canInstallApp} 
           onInstall={handleInstall} 
           onLogout={handleLogout} 
         />
@@ -341,7 +364,7 @@ export default function AppLayout() {
               grouped={grouped} 
               currentPath={location.pathname} 
               onNavigate={() => setMobileOpen(false)} 
-              canInstall={!!installPrompt} 
+              canInstall={!!installPrompt && canInstallApp} 
               onInstall={handleInstall} 
               onLogout={handleLogout} 
             />
