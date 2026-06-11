@@ -44,7 +44,7 @@ export const DispatcherConsole: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#0f172a]">
+      <div className="flex items-center justify-center bg-[#0f172a]" style={{ minHeight: '100%' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-slate-400">Loading Dispatch Console...</p>
@@ -55,7 +55,7 @@ export const DispatcherConsole: React.FC = () => {
 
   if (error) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#0f172a] p-8">
+      <div className="flex items-center justify-center bg-[#0f172a] p-8" style={{ minHeight: '100%' }}>
         <div className="bg-[#1e293b] p-6 rounded-lg border border-red-500/30 max-w-md text-center">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-white mb-2">Error Loading Console</h3>
@@ -77,7 +77,7 @@ export const DispatcherConsole: React.FC = () => {
   const busyDrivers = drivers.filter((d: any) => d?.status === 'BUSY');
 
   return (
-    <div className="h-screen flex flex-col bg-[#0f172a] text-white overflow-hidden">
+    <div className="flex flex-col bg-[#0f172a] text-white" style={{ minHeight: '100%' }}>
       {/* Header */}
       <div className="bg-[#1e293b] border-b border-slate-700 p-4 flex justify-between items-center shrink-0">
         <h1 className="text-xl font-bold flex items-center gap-2">
@@ -85,6 +85,9 @@ export const DispatcherConsole: React.FC = () => {
           Dispatch Command Center
         </h1>
         <div className="flex gap-3">
+          <button onClick={fetchData} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-full text-sm flex items-center gap-2 transition-colors">
+            <RefreshCw className="w-3 h-3" /> Refresh
+          </button>
           <div className="px-3 py-1 bg-green-900/30 text-green-400 rounded-full text-sm flex items-center gap-2">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
             {availableDrivers.length} Available Drivers
@@ -97,7 +100,7 @@ export const DispatcherConsole: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex" style={{ minHeight: '600px' }}>
         {/* Left Panel: Data Lists */}
         <div className="w-96 bg-[#1e293b] border-r border-slate-700 overflow-y-auto shrink-0">
           <div className="p-4 space-y-6">

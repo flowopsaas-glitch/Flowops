@@ -77,10 +77,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           path = '/dashboard'; // Tenant admin → main ops dashboard (full access)
           break;
         case 'DISPATCHER':
-          path = '/driver-dispatch'; // Dispatch board
+          path = '/tools/dispatch'; // Dispatcher console (drivers + manifests)
           break;
         case 'WAREHOUSE_CLERK':
-          path = '/inventory'; // Warehouse/inventory dashboard
+          path = '/warehouse'; // Warehouse clerk check-in/check-out dashboard
           break;
         case 'DRIVER':
           path = '/driver/portal';

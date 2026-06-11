@@ -13,7 +13,8 @@ import PageLoader from "./components/PageLoader";
 import FleetMap from './pages/FleetMap';
 import DriverAnalytics from './pages/DriverAnalytics';
 const Analytics = lazy(() => import('./pages/Analytics'));
-const DispatcherConsole = lazy(() => import('./pages/tools/dispatch/DispatcherConsole'));
+const DispatcherConsole = lazy(() => import('./pages/tools/dispatch/DispatcherConsole').then(m => ({ default: m.DispatcherConsole })));
+const WarehouseClerkDashboard = lazy(() => import('./pages/warehouse/WarehouseClerkDashboard'));
 import DispatchChat from './pages/DispatchChat';
 
 // ============================================================================
@@ -223,6 +224,8 @@ export default function App() {
               <Route path="/pod-deliveries" element={<PodDeliveries />} />
               <Route path="/driver-dispatch" element={<DriverDispatch />} />
               <Route path="/dispatch" element={<DriverDispatch />} />
+              <Route path="/tools/dispatch" element={<Suspense fallback={<PageLoader />}><DispatcherConsole /></Suspense>} />
+              <Route path="/warehouse" element={<Suspense fallback={<PageLoader />}><WarehouseClerkDashboard /></Suspense>} />
 
               <Route path="/fleet-map" element={<FleetMap />} />
               <Route path="/driver-analytics" element={<DriverAnalytics />} />
