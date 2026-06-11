@@ -28,8 +28,8 @@ export class ClientsService {
     if (!dto.name?.trim()) throw new BadRequestException('Client name is required');
 
     const billingType = (dto.billingType || 'PREPAID').toUpperCase();
-    if (!['PREPAID', 'CONTRACT', 'CODE'].includes(billingType)) {
-      throw new BadRequestException('Billing type must be PREPAID, CONTRACT, or CODE');
+    if (!['PREPAID', 'CONTRACT', 'COD'].includes(billingType)) {
+      throw new BadRequestException('Billing type must be PREPAID, CONTRACT, or COD');
     }
 
     const client = await this.prisma.client.create({

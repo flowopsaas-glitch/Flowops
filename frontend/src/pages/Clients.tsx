@@ -137,12 +137,12 @@ export default function Clients() {
                       const colors: Record<string, { bg: string; color: string }> = {
                         PREPAID: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80' },
                         CONTRACT: { bg: 'rgba(108,158,255,0.12)', color: '#6C9EFF' },
-                        CODE: { bg: 'rgba(167,139,250,0.12)', color: '#A78BFA' },
+                        COD: { bg: 'rgba(251,191,36,0.12)', color: '#FBBF24' },
                       };
                       const cc = colors[bt] || colors.PREPAID;
                       return (
                         <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: cc.bg, color: cc.color }}>
-                          {bt}{bt === 'CODE' && c.accountCode ? ` · ${c.accountCode}` : ''}
+                          {bt}{bt === 'CONTRACT' && c.accountCode ? ` · ${c.accountCode}` : ''}
                         </span>
                       );
                     })()}
@@ -178,7 +178,7 @@ export default function Clients() {
                   {[
                     { v: 'PREPAID', label: 'Prepaid', desc: 'Pay upfront' },
                     { v: 'CONTRACT', label: 'Contract', desc: 'Monthly account' },
-                    { v: 'CODE', label: 'Code', desc: 'Account code' },
+                    { v: 'COD', label: 'COD', desc: 'Cash on delivery' },
                   ].map(opt => {
                     const active = formData.billingType === opt.v;
                     return (
@@ -196,11 +196,11 @@ export default function Clients() {
                 </div>
               </div>
               {/* Conditional fields based on billing type */}
-              {formData.billingType === 'CODE' && (
-                <FormInput icon={Building2} label="Account Code" value={formData.accountCode} onChange={v => setFormData({ ...formData, accountCode: v })} placeholder="e.g. ACC-00123" />
-              )}
               {formData.billingType === 'CONTRACT' && (
-                <FormInput icon={Building2} label="Credit Limit (R)" value={formData.creditLimit} onChange={v => setFormData({ ...formData, creditLimit: v })} placeholder="e.g. 50000" type="number" />
+                <>
+                  <FormInput icon={Building2} label="Account Code (optional)" value={formData.accountCode} onChange={v => setFormData({ ...formData, accountCode: v })} placeholder="e.g. ACC-00123" />
+                  <FormInput icon={CreditCard} label="Credit Limit (R)" value={formData.creditLimit} onChange={v => setFormData({ ...formData, creditLimit: v })} placeholder="e.g. 50000" type="number" />
+                </>
               )}
             </div>
             <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
