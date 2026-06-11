@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, Shield, User, Search } from 'lucide-react';
-import Sidebar from '@/components/supertenant/Sidebar';
-import TopBar from '@/components/supertenant/TopBar';
+import SuperAdminLayout from '@/components/supertenant/SuperAdminLayout';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -15,7 +14,6 @@ interface UserRecord {
 }
 
 export default function SuperAdminUsers() {
-  const [currentUser, setCurrentUser] = useState<any>(null);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -24,11 +22,7 @@ export default function SuperAdminUsers() {
     const load = async () => {
       const token = localStorage.getItem('access_token');
       try {
-        const [meRes, usersRes] = await Promise.all([
-          fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API_BASE}/users`, { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
-        if (meRes.ok) setCurrentUser(await meRes.json());
+        const usersRes = await fetch(`${API_BASE}/users`, { headers: { Authorization: `Bearer ${token}` } });
         if (usersRes.ok) {
           const data = await usersRes.json();
           setUsers(Array.isArray(data) ? data : data.users || []);
@@ -66,11 +60,8 @@ export default function SuperAdminUsers() {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: '#0a0f1e' }}>
-      <Sidebar />
-      <TopBar user={currentUser} />
-      <main style={{ paddingLeft: '175px', paddingTop: '56px' }}>
-        <div className="p-6 space-y-6 max-w-[1400px]">
+    <SuperAdminLayout>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Header */}
           <div>
             <h1 className="text-2xl font-bold text-white">Users</h1>
@@ -162,8 +153,7 @@ export default function SuperAdminUsers() {
               </tbody>
             </table>
           </div>
-        </div>
-      </main>
-    </div>
+      </div>
+    </SuperAdminLayout>
   );
 }

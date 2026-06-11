@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Zap, Users, BarChart3, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import Sidebar from '@/components/supertenant/Sidebar';
-import TopBar from '@/components/supertenant/TopBar';
+import SuperAdminLayout from '@/components/supertenant/SuperAdminLayout';
 import StatCard from '@/components/supertenant/StatCard';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
@@ -11,7 +10,6 @@ const axisStyle = { fill: 'rgba(255,255,255,0.35)', fontSize: 11 };
 const tooltipStyle = { backgroundColor: 'rgba(10,15,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '12px' };
 
 export default function SuperAdminDispatches() {
-  const [user, setUser] = useState<any>(null);
   const [tenants, setTenants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,11 +17,7 @@ export default function SuperAdminDispatches() {
     const load = async () => {
       const token = localStorage.getItem('access_token');
       try {
-        const [userRes, tenantsRes] = await Promise.all([
-          fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API_BASE}/companies`, { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
-        if (userRes.ok) setUser(await userRes.json());
+        const tenantsRes = await fetch(`${API_BASE}/companies`, { headers: { Authorization: `Bearer ${token}` } });
         if (tenantsRes.ok) {
           const data = await tenantsRes.json();
           setTenants(Array.isArray(data) ? data : []);
@@ -68,11 +62,8 @@ export default function SuperAdminDispatches() {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: '#0a0f1e' }}>
-      <Sidebar />
-      <TopBar user={user} />
-      <main style={{ paddingLeft: '175px', paddingTop: '56px' }}>
-        <div className="p-6 space-y-6 max-w-[1400px]">
+    <SuperAdminLayout>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Header */}
           <div>
             <h1 className="text-2xl font-bold text-white">Dispatches</h1>
@@ -146,8 +137,7 @@ export default function SuperAdminDispatches() {
               </tbody>
             </table>
           </div>
-        </div>
-      </main>
-    </div>
+      </div>
+    </SuperAdminLayout>
   );
 }

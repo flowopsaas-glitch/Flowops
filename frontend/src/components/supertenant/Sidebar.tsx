@@ -21,31 +21,57 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="fixed left-0 top-0 h-screen flex flex-col z-40"
-      style={{ width: '175px', background: '#080d1a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+    <aside style={{
+      width: '200px',
+      minWidth: '200px',
+      height: '100vh',
+      position: 'sticky',
+      top: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      background: '#080d1a',
+      borderRight: '1px solid rgba(255,255,255,0.06)',
+      zIndex: 40,
+    }}>
       {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-          style={{ background: 'linear-gradient(135deg,#6C9EFF,#A78BFA)' }}>
-          <Crown size={14} className="text-white" />
-        </div>
-        <div>
-          <div className="text-xs font-black text-white tracking-wide">FLOWOPS</div>
-          <div className="text-[9px] font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>GOD MODE</div>
+      <div style={{ padding: '20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '28px', height: '28px', borderRadius: '8px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'linear-gradient(135deg, #6C9EFF, #A78BFA)',
+          }}>
+            <Crown size={14} color="white" />
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 900, color: 'white', letterSpacing: '0.5px' }}>FLOWOPS</div>
+            <div style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(255,255,255,0.35)' }}>GOD MODE</div>
+          </div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
+      <nav style={{ flex: 1, padding: '16px 8px', overflowY: 'auto' }}>
         {navItems.map(({ label, icon: Icon, path }) => {
           const active = location.pathname === path || (path !== '/superadmin' && location.pathname.startsWith(path));
           return (
             <button key={path} onClick={() => navigate(path)}
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-all text-left"
               style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+                marginBottom: '2px',
                 color: active ? '#6C9EFF' : 'rgba(255,255,255,0.5)',
                 background: active ? 'rgba(108,158,255,0.12)' : 'transparent',
                 fontWeight: active ? 600 : 400,
+                transition: 'all 0.15s',
               }}>
               <Icon size={15} />
               {label}
@@ -55,10 +81,22 @@ export default function Sidebar() {
       </nav>
 
       {/* Logout */}
-      <div className="px-2 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ padding: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={handleLogout}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-all"
-          style={{ color: 'rgba(255,255,255,0.4)' }}>
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            fontSize: '14px',
+            color: 'rgba(255,255,255,0.4)',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}>
           <LogOut size={15} />
           Sign Out
         </button>
