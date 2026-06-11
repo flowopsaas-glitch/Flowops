@@ -1,10 +1,11 @@
-import { Crown, LayoutDashboard, Building2, Users, CreditCard, Settings, LogOut, Zap, Activity, UserPlus } from 'lucide-react';
+import { Crown, LayoutDashboard, Building2, Users, CreditCard, Settings, LogOut, Zap, Activity, UserPlus, Key } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/superadmin' },
   { label: 'Tenants', icon: Building2, path: '/superadmin/companies' },
   { label: 'Signups', icon: UserPlus, path: '/superadmin/signups' },
+  { label: 'Credentials', icon: Key, path: '/superadmin/credentials' },
   { label: 'Users', icon: Users, path: '/superadmin/users' },
   { label: 'Billing', icon: CreditCard, path: '/superadmin/billing' },
   { label: 'Dispatches', icon: Zap, path: '/superadmin/dispatches' },

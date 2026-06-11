@@ -65,6 +65,7 @@ const SuperAdminUsers = lazy(() => import("./pages/superadmin/SuperAdminUsers"))
 const SuperAdminDispatches = lazy(() => import("./pages/superadmin/SuperAdminDispatches"));
 const SuperAdminHealth = lazy(() => import("./pages/superadmin/SuperAdminHealth"));
 const SuperAdminSignups = lazy(() => import("./pages/superadmin/SuperAdminSignups"));
+const SuperAdminCredentials = lazy(() => import("./pages/superadmin/SuperAdminCredentials"));
 const SignupPage = lazy(() => import("./pages/Signup"));
 const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
@@ -291,6 +292,7 @@ export default function App() {
             <Route path="/superadmin/dispatches" element={<Suspense fallback={<PageLoader />}><SuperAdminDispatches /></Suspense>} />
             <Route path="/superadmin/health" element={<Suspense fallback={<PageLoader />}><SuperAdminHealth /></Suspense>} />
             <Route path="/superadmin/signups" element={<Suspense fallback={<PageLoader />}><SuperAdminSignups /></Suspense>} />
+            <Route path="/superadmin/credentials" element={<Suspense fallback={<PageLoader />}><SuperAdminCredentials /></Suspense>} />
             <Route path="/superadmin/settings" element={<Suspense fallback={<PageLoader />}><SuperAdminSettings /></Suspense>} />
           </Route>
 
