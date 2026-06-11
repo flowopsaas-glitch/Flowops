@@ -76,6 +76,46 @@ export class AuthService {
     return this.login(email, password);
   }
 
+  /**
+   * Driver login via phone + PIN. Drivers live in the Driver table (not User),
+   * so we mint a JWT with role DRIVER.
+   */
+  async driverLogin(phone: string, pin: string) {
+    const safePhone = String(phone || '').trim();
+    const safePin = String(pin || '').trim();
+
+    if (!safePhone) throw new UnauthorizedException('Phone number is required');
+    if (!safePin) throw new UnauthorizedException('PIN is required');
+
+    const driver = await this.prisma.driver.findFirst({ where: { phone: safePhone } });
+    if (!driver) throw new UnauthorizedException('Invalid phone number or PIN');
+    if (!driver.pin) throw new UnauthorizedException('No PIN set for this driver. Contact your dispatcher.');
+    if (driver.pin !== safePin) throw new UnauthorizedException('Invalid phone number or PIN');
+
+    const payload = {
+      sub: driver.id,
+      driverId: driver.id,
+      phone: driver.phone,
+      role: 'DRIVER',
+      companyId: driver.companyId,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+
+    return {
+      accessToken,
+      refreshToken,
+      driver: {
+        id: driver.id,
+        name: driver.name,
+        phone: driver.phone,
+        vehicle: driver.vehicleReg || driver.vehicleType || 'Fleet Unit',
+        companyId: driver.companyId,
+      },
+    };
+  }
+
   async refreshSession(refreshToken: string) {
     try {
       const payload = this.jwtService.verify(refreshToken);

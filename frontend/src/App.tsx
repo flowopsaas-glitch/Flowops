@@ -3,6 +3,7 @@ import { useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { io } from "socket.io-client";
 import { Toaster } from "sonner";
+import { DriverAuthProvider } from "./contexts/DriverAuthContext";
 
 // Eager imports (initial shell)
 import AppLayout from "./components/layout/AppLayout";
@@ -76,7 +77,8 @@ const PasswordManager = lazy(() => import("./pages/owner/PasswordManager"));
 
 // Driver pages
 const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
-const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
+const DriverPortal = lazy(() => import("./pages/driver/DriverPortal"));
+const DriverLogin = lazy(() => import("./pages/driver/DriverLogin"));
 
 // Admin pages
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
@@ -166,8 +168,10 @@ export default function App() {
           <Route path="/legal/privacy" element={<PrivacyPage />} />
           <Route path="/status" element={<StatusPage />} />
           <Route path="/setup" element={<CompanySetupPage />} />
-          <Route path="/driver/portal" element={<DriverPortalPage />} />
-          <Route path="/driver/manifest/:id" element={<DriverManifest />} />
+          {/* 🚚 DRIVER ROUTES (phone + PIN auth, own provider) */}
+          <Route path="/driver/login" element={<DriverAuthProvider><Suspense fallback={<PageLoader />}><DriverLogin /></Suspense></DriverAuthProvider>} />
+          <Route path="/driver/portal" element={<DriverAuthProvider><Suspense fallback={<PageLoader />}><DriverPortal /></Suspense></DriverAuthProvider>} />
+          <Route path="/driver/manifest/:id" element={<DriverAuthProvider><DriverManifest /></DriverAuthProvider>} />
 
           {/* 🔧 TEMPORARY DEBUG ROUTE - REMOVE AFTER TESTING */}
           <Route path="/debug-dispatch" element={

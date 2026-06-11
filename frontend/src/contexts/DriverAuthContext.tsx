@@ -21,12 +21,12 @@ export const DriverAuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const verify = async () => {
       try {
-        // Path is relative to baseURL, ensuring NO /api/api doubling
-        const { data: ref } = await api.post('/auth/refresh');
-        setMemoryToken(ref.accessToken);
+        // api client interceptor returns response.data directly
+        const ref: any = await api.post('/auth/refresh');
+        if (ref?.accessToken) setMemoryToken(ref.accessToken);
 
-        const { data: me } = await api.get('/auth/me');
-        if (me.role === 'DRIVER') {
+        const me: any = await api.get('/auth/me');
+        if (me?.role === 'DRIVER') {
           setDriver({ id: me.id, name: me.name, vehicle: me.vehicle || 'Fleet Unit' });
         }
       } catch {
@@ -39,9 +39,12 @@ export const DriverAuthProvider = ({ children }: { children: ReactNode }) => {
   const login = async (phone: string, pin: string) => {
     setIsLoading(true);
     try {
-      const { data } = await api.post('/auth/driver-login', { phone, pin });
-      setMemoryToken(data.accessToken);
-      setDriver(data.driver);
+      const data: any = await api.post('/auth/driver-login', { phone, pin });
+      if (data?.accessToken) {
+        setMemoryToken(data.accessToken);
+        localStorage.setItem('access_token', data.accessToken);
+      }
+      setDriver(data?.driver || null);
     } finally { setIsLoading(false); }
   };
 

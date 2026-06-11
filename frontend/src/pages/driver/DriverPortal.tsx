@@ -14,8 +14,8 @@ export default function DriverPortal() {
     if (!isAuthenticated) return;
     try {
       setSyncing(true);
-      const res = await api.get('/waybills/driver/manifest');
-      setJobs(Array.isArray(res.data) ? res.data : []);
+      const res: any = await api.get('/waybills/driver/manifest');
+      setJobs(Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []));
     } catch (err: any) {
       if (err.response?.status === 401) navigate('/driver/login');
     } finally { setSyncing(false); }
