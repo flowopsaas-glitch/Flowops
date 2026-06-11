@@ -1,309 +1,175 @@
-import React from "react";
-import {
-  ScrollText,
-  MessageCircleQuestion,
-  Receipt,
-  ClipboardCheck,
-  ArrowUpRight,
-  Search,
-  Users,
-  Mail,
-  MessageCircle,
-  ShieldAlert,
-  Clock3,
-  Sparkles,
-  FileText,
-} from "lucide-react";
+import { useEffect, useState } from 'react';
+import { MessageCircleQuestion, Search, Clock, CheckCircle, AlertTriangle, RefreshCw, Receipt, ClipboardCheck, Mail } from 'lucide-react';
+import PageHeader from '@/components/ui/PageHeader';
+import PageSkeleton from '@/components/ui/PageSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
+import { getEmailHubItems, resolveEmailHubItem, markEmailHubRead, EmailHubItem } from '@/api/emailHubApi';
 
-function MetricCard(props: {
-  title: string;
-  value: string;
-  desc: string;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  const Icon = props.icon;
+const categoryConfig: Record<string, { label: string; color: string; icon: any }> = {
+  FEEDBACK: { label: 'Feedback', color: '#FBBF24', icon: MessageCircleQuestion },
+  QUOTE: { label: 'Quote Query', color: '#A78BFA', icon: Receipt },
+  POD: { label: 'POD Dispute', color: '#4ADE80', icon: ClipboardCheck },
+  COLLECTION_REQUEST: { label: 'Collection', color: '#22D3EE', icon: Mail },
+  GENERAL: { label: 'General', color: '#6C9EFF', icon: MessageCircleQuestion },
+};
 
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">
-            {props.title}
-          </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-white">
-            {props.value}
-          </div>
-          <div className="mt-2 text-sm leading-relaxed text-white/62">
-            {props.desc}
-          </div>
-        </div>
-
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/10">
-          <Icon className="h-5 w-5 text-white" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QueueCard(props: {
-  title: string;
-  desc: string;
-  count: string;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  const Icon = props.icon;
-
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.26)] backdrop-blur-xl">
-      <div className="flex items-start justify-between gap-4">
-        <div className="grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/10">
-          <Icon className="h-5 w-5 text-white" />
-        </div>
-        <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-bold text-white/80">
-          {props.count}
-        </div>
-      </div>
-
-      <div className="mt-4 text-lg font-extrabold text-white">{props.title}</div>
-      <div className="mt-2 text-sm leading-relaxed text-white/65">{props.desc}</div>
-    </div>
-  );
-}
-
-function ListRow(props: {
-  title: string;
-  meta: string;
-  status: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-      <div className="min-w-0">
-        <div className="truncate text-sm font-bold text-white">{props.title}</div>
-        <div className="mt-1 text-xs text-white/50">{props.meta}</div>
-      </div>
-      <div className="shrink-0 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-bold text-white/78">
-        {props.status}
-      </div>
-    </div>
-  );
-}
+const statusConfig: Record<string, { bg: string; color: string }> = {
+  NEW: { bg: 'rgba(108,158,255,0.12)', color: '#6C9EFF' },
+  TRIAGED: { bg: 'rgba(167,139,250,0.12)', color: '#A78BFA' },
+  IN_PROGRESS: { bg: 'rgba(251,191,36,0.12)', color: '#FBBF24' },
+  WAITING: { bg: 'rgba(251,191,36,0.12)', color: '#FBBF24' },
+  RESOLVED: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80' },
+  ARCHIVED: { bg: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' },
+};
 
 export default function ClientQueries() {
-  const queues = [
-    {
-      title: "Open Queries",
-      desc: "Track unresolved customer questions and support cases in one operational queue.",
-      count: "28 open",
-      icon: Search,
-    },
-    {
-      title: "Delivery Questions",
-      desc: "Handle ETA, parcel status, route delays, and delivery troubleshooting.",
-      count: "12 active",
-      icon: MessageCircleQuestion,
-    },
-    {
-      title: "Invoice Disputes",
-      desc: "Resolve billing, contract-code, surcharge, and invoice clarification issues.",
-      count: "7 flagged",
-      icon: Receipt,
-    },
-    {
-      title: "POD Disputes",
-      desc: "Manage proof-of-delivery disagreements and evidence follow-up workflow.",
-      count: "5 urgent",
-      icon: ClipboardCheck,
-    },
-  ];
+  const [items, setItems] = useState<EmailHubItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [actionId, setActionId] = useState<number | null>(null);
 
-  const recentItems = [
-    {
-      title: "Invoice mismatch on Q94 shipment batch",
-      meta: "Budget Couriers • Invoice dispute • 14 min ago",
-      status: "Needs review",
-    },
-    {
-      title: "Customer asking for POD copy and signed evidence",
-      meta: "GoGet Couriers • POD dispute • 27 min ago",
-      status: "Awaiting POD",
-    },
-    {
-      title: "ETA follow-up for delayed Polokwane route",
-      meta: "J/D Fasteners • Delivery question • 41 min ago",
-      status: "Dispatch update",
-    },
-    {
-      title: "Waybill reference not matching client statement",
-      meta: "Client finance desk • Billing query • 1 hr ago",
-      status: "Investigating",
-    },
-  ];
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // Client queries = FEEDBACK, QUOTE, POD, and GENERAL email hub items
+      const all = await getEmailHubItems({ search });
+      const queries = all.filter(item =>
+        ['FEEDBACK', 'QUOTE', 'POD', 'GENERAL', 'COLLECTION_REQUEST'].includes(item.type)
+      );
+      setItems(queries);
+    } catch (e) {
+      console.error('Failed to load client queries:', e);
+      setItems([]);
+    }
+    setLoading(false);
+  };
 
-  const nextUpgrades = [
-    "Live open-query board linked to real messages",
-    "Link each query to waybill, invoice, or collection",
-    "Assign an owner and SLA clock to every case",
-    "POD dispute evidence workflow with attachments",
-    "AI categorization, routing, and severity scoring",
-    "Escalation lane for high-risk client issues",
-  ];
+  useEffect(() => { loadData(); }, []);
+
+  const handleResolve = async (id: number) => {
+    setActionId(id);
+    try {
+      await resolveEmailHubItem(id);
+      setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'RESOLVED' as any } : i));
+    } catch (e) { console.error(e); }
+    setActionId(null);
+  };
+
+  const filtered = items.filter(i =>
+    !search || i.subject?.toLowerCase().includes(search.toLowerCase()) ||
+    i.senderEmail?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const openCount = items.filter(i => i.status !== 'RESOLVED' && i.status !== 'ARCHIVED').length;
+  const urgentCount = items.filter(i => i.priority === 'CRITICAL' || i.priority === 'HIGH').length;
+  const resolvedCount = items.filter(i => i.status === 'RESOLVED').length;
 
   return (
-    <div className="min-h-full bg-[radial-gradient(circle_at_top_left,rgba(86,124,255,0.14),transparent_28%),radial-gradient(circle_at_top_right,rgba(64,196,255,0.10),transparent_22%),linear-gradient(180deg,#07111f_0%,#0b1530_52%,#0e1b3f_100%)] px-4 py-5 sm:px-6 xl:px-0">
-      <div className="w-full max-w-[1820px] space-y-6">
-        <section className="rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.34)] backdrop-blur-2xl md:p-8">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/85 ring-1 ring-white/15">
-                <ScrollText className="h-4 w-4" />
-                Client Support & Query Flow
-              </div>
+    <div style={{ padding: '24px', minHeight: '100%' }}>
+      <PageHeader icon={MessageCircleQuestion} title="Client Queries" description="Manage customer support cases, disputes, and questions" color="#FBBF24">
+        <button onClick={loadData} style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 500,
+          background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)',
+          border: 'none', cursor: 'pointer',
+        }}>
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </PageHeader>
 
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-white sm:text-4xl xl:text-5xl">
-                Client Queries Command Center
-              </h1>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ marginBottom: '20px' }}>
+        <MiniStat label="Open Queries" value={openCount} icon={Search} color="#6C9EFF" />
+        <MiniStat label="Urgent" value={urgentCount} icon={AlertTriangle} color="#F87171" />
+        <MiniStat label="Resolved" value={resolvedCount} icon={CheckCircle} color="#4ADE80" />
+        <MiniStat label="Total" value={items.length} icon={Mail} color="#A78BFA" />
+      </div>
 
-              <p className="mt-3 max-w-[1100px] text-sm leading-6 text-white/72 sm:text-[15px]">
-                Centralized queue for tenant client delivery queries, POD disputes, invoice
-                questions, ETA follow-ups, and support issues coming from WhatsApp, email,
-                internal teams, and operational exceptions.
-              </p>
-            </div>
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: '20px', maxWidth: '400px' }}>
+        <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search queries by subject or sender..."
+          style={{ width: '100%', paddingLeft: '36px', paddingRight: '12px', paddingTop: '10px', paddingBottom: '10px', borderRadius: '10px', fontSize: '13px', color: 'white', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }} />
+      </div>
 
-            <div className="grid gap-3 sm:grid-cols-3 xl:w-[540px]">
-              <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">
-                  Inbox sources
-                </div>
-                <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-white">
-                  <MessageCircle className="h-4 w-4 text-white/70" />
-                  WhatsApp
-                </div>
-                <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-white">
-                  <Mail className="h-4 w-4 text-white/70" />
-                  Email
-                </div>
-                <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-white">
-                  <Users className="h-4 w-4 text-white/70" />
-                  Internal staff
-                </div>
-              </div>
-
-              <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">
-                  SLA focus
-                </div>
-                <div className="mt-3 text-2xl font-black text-white">2h</div>
-                <div className="mt-2 text-sm text-white/65">
-                  Target first-response window for active customer issues.
-                </div>
-              </div>
-
-              <div className="rounded-[22px] border border-sky-300/20 bg-sky-300/10 p-4">
-                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-100/85">
-                  <Sparkles className="h-4 w-4" />
-                  AI assist
-                </div>
-                <div className="mt-3 text-sm font-semibold text-white">
-                  Categorize, route, summarize, and escalate client cases faster.
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-          <MetricCard
-            title="Active queue"
-            value="28"
-            desc="Queries currently waiting for action, follow-up, or closure."
-            icon={ScrollText}
-          />
-          <MetricCard
-            title="Urgent today"
-            value="5"
-            desc="High-priority items tied to POD disputes, billing, or route delays."
-            icon={ShieldAlert}
-          />
-          <MetricCard
-            title="Avg response"
-            value="42m"
-            desc="Average first-response time across current client support flow."
-            icon={Clock3}
-          />
-          <MetricCard
-            title="Resolved today"
-            value="19"
-            desc="Customer issues closed by ops, finance, or support teams."
-            icon={FileText}
-          />
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-4">
-          {queues.map((item) => (
-            <QueueCard
-              key={item.title}
-              title={item.title}
-              desc={item.desc}
-              count={item.count}
-              icon={item.icon}
-            />
-          ))}
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-[1.35fr_0.95fr]">
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.30)] backdrop-blur-xl">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm font-bold text-white">Recent queue activity</div>
-                <div className="mt-1 text-sm text-white/58">
-                  Live examples of the kinds of issues the command center should surface.
+      {/* Content */}
+      {loading ? (
+        <PageSkeleton type="list" rows={5} />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={MessageCircleQuestion}
+          title={search ? "No matching queries" : "No client queries"}
+          description={search ? "Try a different search term." : "Client queries from email, WhatsApp, and support channels will appear here. They flow in via the Email Hub."}
+          actionLabel={!search ? "Go to Email Hub" : undefined}
+          actionPath="/communications/email"
+          color="#FBBF24"
+        />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {filtered.map(item => {
+            const cat = categoryConfig[item.type] || categoryConfig.GENERAL;
+            const sc = statusConfig[item.status] || statusConfig.NEW;
+            const CatIcon = cat.icon;
+            return (
+              <div key={item.id} style={{
+                borderRadius: '12px', padding: '16px 20px',
+                background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+                  <div style={{ display: 'flex', gap: '12px', flex: 1, minWidth: 0 }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${cat.color}12` }}>
+                      <CatIcon size={16} color={cat.color} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'white' }}>{item.subject}</span>
+                        <span style={{ fontSize: '9px', fontWeight: 600, padding: '2px 7px', borderRadius: '5px', background: `${cat.color}15`, color: cat.color, textTransform: 'uppercase' }}>{cat.label}</span>
+                        <span style={{ fontSize: '9px', fontWeight: 600, padding: '2px 7px', borderRadius: '5px', background: sc.bg, color: sc.color }}>{item.status?.replace('_', ' ')}</span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '6px' }}>
+                        {item.senderName ? `${item.senderName} • ` : ''}{item.senderEmail}
+                        {item.waybillNumber ? ` • Waybill: ${item.waybillNumber}` : ''}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {item.body}
+                      </div>
+                      {item.aiSuggestedAction && (
+                        <div style={{ fontSize: '11px', color: '#A78BFA', marginTop: '6px' }}>
+                          🤖 AI suggests: {item.aiSuggestedAction}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {item.status !== 'RESOLVED' && (
+                    <button onClick={() => handleResolve(item.id)} disabled={actionId === item.id}
+                      style={{
+                        flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
+                        padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                        background: 'rgba(74,222,128,0.15)', color: '#4ADE80',
+                        border: '1px solid rgba(74,222,128,0.3)', cursor: 'pointer',
+                      }}>
+                      <CheckCircle size={13} /> {actionId === item.id ? '...' : 'Resolve'}
+                    </button>
+                  )}
                 </div>
               </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
-              <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-bold text-white/72">
-                Working queue
-              </div>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {recentItems.map((item) => (
-                <ListRow
-                  key={item.title}
-                  title={item.title}
-                  meta={item.meta}
-                  status={item.status}
-                />
-              ))}
-            </div>
-
-            <div className="mt-5 rounded-[22px] border border-white/10 bg-black/20 p-4 text-sm leading-6 text-white/65">
-              Client communication should not disappear into personal inboxes or chat threads.
-              Tenant teams need a structured place to see, route, resolve, and learn from
-              customer issues across operations, billing, POD, and dispatch.
-            </div>
-          </div>
-
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.30)] backdrop-blur-xl">
-            <div className="text-sm font-bold text-white">Next upgrade path</div>
-            <div className="mt-1 text-sm text-white/58">
-              Production-grade capabilities to wire next into the real platform flow.
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {nextUpgrades.map((item) => (
-                <div
-                  key={item}
-                  className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/78"
-                >
-                  <ArrowUpRight className="h-4 w-4 shrink-0 text-white/45" />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+function MiniStat({ label, value, icon: Icon, color }: { label: string; value: number; icon: any; color: string }) {
+  return (
+    <div style={{ borderRadius: '10px', padding: '14px 16px', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}12` }}>
+        <Icon size={15} color={color} />
+      </div>
+      <div>
+        <div style={{ fontSize: '20px', fontWeight: 700, color: 'white' }}>{value}</div>
+        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{label}</div>
       </div>
     </div>
   );

@@ -16,12 +16,14 @@ export class EmailHubService {
 
   // Commercial Fix: Statistics are now scoped to the user's company
   async stats(companyId: number) {
-    const [total, pending, anomalies] = await Promise.all([
+    const [total, unread, needsOpsAction, critical] = await Promise.all([
       this.prisma.emailHubItem.count({ where: { companyId } }),
-      this.prisma.emailHubItem.count({ where: { status: 'NEW', companyId } }),
-      this.prisma.emailHubItem.count({ where: { status: 'ANOMALY', companyId } }),
+      this.prisma.emailHubItem.count({ where: { isRead: false, companyId } }),
+      this.prisma.emailHubItem.count({ where: { needsOpsAction: true, companyId } }),
+      this.prisma.emailHubItem.count({ where: { priority: 'CRITICAL', companyId } }),
     ]);
-    return { total, pending, anomalies };
+    // Return both new + legacy field names for compatibility
+    return { total, unread, needsOpsAction, critical, pending: unread, anomalies: critical };
   }
 
   // Multi-tenant List

@@ -56,51 +56,54 @@ export type EmailHubStats = {
   unread: number;
   needsOpsAction: number;
   critical: number;
-  byType: Array<{ type: EmailHubType; _count: { _all: number } }>;
 };
 
+// ── NOTE: Backend controller is mounted at /communications (not /email-hub) ──
+const BASE = "/communications";
+
+// The axios interceptor in client.ts already unwraps response.data,
+// so these helpers return the data directly (no .data needed).
 export async function getEmailHubItems(params?: {
   search?: string;
   type?: EmailHubType | "";
   status?: EmailHubStatus | "";
   priority?: EmailHubPriority | "";
-}) {
-  const res = await api.get<EmailHubItem[]>("/email-hub", { params });
-  return res.data;
+}): Promise<EmailHubItem[]> {
+  const data = await api.get<EmailHubItem[], EmailHubItem[]>(BASE, { params });
+  return Array.isArray(data) ? data : [];
 }
 
-export async function getEmailHubStats() {
-  const res = await api.get<EmailHubStats>("/email-hub/stats");
-  return res.data;
+export async function getEmailHubStats(): Promise<EmailHubStats> {
+  const raw = await api.get<any, any>(`${BASE}/stats`);
+  // Backend returns { total, pending, anomalies }; normalize to UI shape
+  return {
+    total: raw?.total ?? 0,
+    unread: raw?.unread ?? raw?.pending ?? 0,
+    needsOpsAction: raw?.needsOpsAction ?? raw?.pending ?? 0,
+    critical: raw?.critical ?? raw?.anomalies ?? 0,
+  };
 }
 
-export async function getEmailHubItem(id: number) {
-  const res = await api.get<EmailHubItem>(`/email-hub/${id}`);
-  return res.data;
+export async function getEmailHubItem(id: number): Promise<EmailHubItem> {
+  return await api.get<EmailHubItem, EmailHubItem>(`${BASE}/${id}`);
 }
 
 export async function createEmailHubItem(payload: Partial<EmailHubItem>) {
-  const res = await api.post<EmailHubItem>("/email-hub", payload);
-  return res.data;
+  return await api.post<EmailHubItem, EmailHubItem>(BASE, payload);
 }
 
-export async function updateEmailHubItem(
-  id: number,
-  payload: Partial<EmailHubItem>
-) {
-  const res = await api.patch<EmailHubItem>(`/email-hub/${id}`, payload);
-  return res.data;
+export async function updateEmailHubItem(id: number, payload: Partial<EmailHubItem>) {
+  return await api.patch<EmailHubItem, EmailHubItem>(`${BASE}/${id}`, payload);
 }
 
 export async function markEmailHubRead(id: number) {
-  await api.patch(`/email-hub/${id}/read`);
+  return await api.patch(`${BASE}/${id}/read`);
 }
 
 export async function resolveEmailHubItem(id: number) {
-  await api.patch(`/email-hub/${id}/resolve`);
+  return await api.patch(`${BASE}/${id}/resolve`);
 }
 
 export async function seedEmailHubDemo() {
-  const res = await api.post<{ created: number }>("/email-hub/seed-demo");
-  return res.data;
+  return await api.post<{ created: number }, { created: number }>(`${BASE}/seed-demo`);
 }
