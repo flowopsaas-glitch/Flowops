@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { apiGet } from "../api/client";
-import { Search, FileText, Filter, MoreHorizontal, ArrowUpRight } from "lucide-react";
+import { useEffect, useState } from 'react';
+import { ScrollText, Search, RefreshCw, Plus, DollarSign, CheckCircle, Clock } from 'lucide-react';
+import { apiGet } from '../api/client';
+import PageHeader from '@/components/ui/PageHeader';
+import PageSkeleton from '@/components/ui/PageSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
 
 interface Quote {
   id: string | number;
@@ -11,142 +14,94 @@ interface Quote {
   createdAt?: string;
 }
 
-// 🦴 INTERNAL COMPONENT: Skeleton Loader for "Instant" feel
-const SkeletonRow = () => (
-  <tr className="animate-pulse border-b border-slate-800/50">
-    <td className="p-4"><div className="h-4 w-32 bg-slate-800 rounded"></div></td>
-    <td className="p-4"><div className="h-4 w-24 bg-slate-800 rounded"></div></td>
-    <td className="p-4"><div className="h-4 w-20 bg-slate-800 rounded"></div></td>
-    <td className="p-4"><div className="h-6 w-16 bg-slate-800 rounded-full"></div></td>
-  </tr>
-);
+const verdictConfig: Record<string, { bg: string; color: string }> = {
+  APPROVED: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80' },
+  ACCEPTED: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80' },
+  PENDING: { bg: 'rgba(251,191,36,0.12)', color: '#FBBF24' },
+  DRAFT: { bg: 'rgba(108,158,255,0.12)', color: '#6C9EFF' },
+  REJECTED: { bg: 'rgba(248,113,113,0.12)', color: '#F87171' },
+  EXPIRED: { bg: 'rgba(248,113,113,0.12)', color: '#F87171' },
+};
 
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState('');
 
   const fetchQuotes = async () => {
     setLoading(true);
-    setError("");
     try {
-      const data = await apiGet<any>("/quotes");
+      const data = await apiGet<any>('/quotes');
       const list = Array.isArray(data) ? data : (data?.items || data?.data || []);
       setQuotes(list.map((item: any) => ({
         id: item?.id ?? crypto.randomUUID(),
-        title: String(item?.title ?? "Untitled").trim(),
-        clientName: String(item?.clientName ?? "Unknown Client").trim(),
+        title: String(item?.title ?? 'Untitled').trim(),
+        clientName: String(item?.clientName ?? 'Unknown Client').trim(),
         total: Number(item?.total ?? 0),
-        verdict: String(item?.verdict ?? "DRAFT").toUpperCase(),
+        verdict: String(item?.verdict ?? 'DRAFT').toUpperCase(),
+        createdAt: item?.createdAt,
       })));
-    } catch (err: any) {
-      setError("Connectivity issue: Unable to reach Quotes service.");
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error('Failed to fetch quotes:', err);
+      setQuotes([]);
     }
+    setLoading(false);
   };
 
   useEffect(() => { fetchQuotes(); }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return quotes.filter(i => 
-      i.title.toLowerCase().includes(q) || 
-      i.clientName.toLowerCase().includes(q)
-    );
-  }, [quotes, query]);
+  const filtered = quotes.filter(q =>
+    !search || q.title.toLowerCase().includes(search.toLowerCase()) || q.clientName.toLowerCase().includes(search.toLowerCase())
+  );
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'APPROVED': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'REJECTED': return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-      case 'EXPIRED': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-      default: return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
-    }
-  };
+  const totalValue = quotes.reduce((s, q) => s + q.total, 0);
 
   return (
-    <div className="min-h-screen bg-[#020617] p-8 text-slate-200">
-      {/* Header Section */}
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-blue-500 font-bold text-xs uppercase tracking-widest mb-1">
-            <FileText size={14} /> Revenue Management
-          </div>
-          <h1 className="text-3xl font-black tracking-tight text-white">Quotes & Estimates</h1>
-        </div>
+    <div style={{ padding: '24px', minHeight: '100%' }}>
+      <PageHeader icon={ScrollText} title="Quotes" description={`${quotes.length} quotes • R${totalValue.toLocaleString()} total value`} color="#22D3EE">
+        <button onClick={fetchQuotes} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 500, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', border: 'none', cursor: 'pointer' }}>
+          <RefreshCw size={13} />
+        </button>
+      </PageHeader>
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-            <input 
-              className="w-72 rounded-xl border border-slate-800 bg-slate-900/50 py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              placeholder="Filter by client or reference..."
-              onChange={e => setQuery(e.target.value)}
-            />
-          </div>
-          <button className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-slate-100 transition-colors flex items-center gap-2">
-            Create Quote <ArrowUpRight size={16} />
-          </button>
-        </div>
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: '20px', maxWidth: '400px' }}>
+        <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search quotes by title or client..."
+          style={{ width: '100%', paddingLeft: '36px', paddingRight: '12px', paddingTop: '10px', paddingBottom: '10px', borderRadius: '10px', fontSize: '13px', color: 'white', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }} />
       </div>
 
-      {/* Main Content Card */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 backdrop-blur-xl overflow-hidden shadow-2xl">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-800 bg-slate-800/30">
-              <th className="p-4 font-semibold text-slate-400">REFERENCE</th>
-              <th className="p-4 font-semibold text-slate-400">CLIENT</th>
-              <th className="p-4 font-semibold text-slate-400">TOTAL VALUE</th>
-              <th className="p-4 font-semibold text-slate-400">STATUS</th>
-              <th className="p-4 text-right font-semibold text-slate-400 italic">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {loading ? (
-              <>
-                <SkeletonRow /><SkeletonRow /><SkeletonRow />
-              </>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-20 text-center text-slate-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <Filter size={32} className="opacity-20" />
-                    <p>No quotes found in current ledger.</p>
-                  </div>
-                </td>
+      {loading ? (
+        <PageSkeleton type="table" rows={5} />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={ScrollText} title={search ? "No matching quotes" : "No quotes yet"} description={search ? "Try a different search." : "Create quotes to send pricing proposals to your clients."} color="#22D3EE" />
+      ) : (
+        <div style={{ borderRadius: '12px', overflow: 'hidden', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {['Quote', 'Client', 'Amount', 'Status', 'Date'].map(h => (
+                  <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>{h}</th>
+                ))}
               </tr>
-            ) : (
-              filtered.map(q => (
-                <tr key={q.id} className="hover:bg-slate-800/30 transition-colors group">
-                  <td className="p-4 font-bold text-white uppercase tracking-tight">{q.title}</td>
-                  <td className="p-4 text-slate-400">{q.clientName}</td>
-                  <td className="p-4 font-mono font-bold text-blue-400">
-                    R {q.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td className="p-4">
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black ${getStatusColor(q.verdict)}`}>
-                      {q.verdict}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="p-2 text-slate-600 hover:text-white transition-colors">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {error && (
-        <div className="mt-4 flex items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-400">
-          <div className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-          {error}
+            </thead>
+            <tbody>
+              {filtered.map((q, i) => {
+                const vc = verdictConfig[q.verdict] || verdictConfig.DRAFT;
+                return (
+                  <tr key={q.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }} className="hover:bg-white/[0.02] transition-colors">
+                    <td style={{ padding: '12px 16px', fontWeight: 600, color: 'white' }}>{q.title}</td>
+                    <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.6)' }}>{q.clientName}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 600, color: 'white' }}>R{q.total.toLocaleString()}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: vc.bg, color: vc.color }}>{q.verdict}</span>
+                    </td>
+                    <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>{q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

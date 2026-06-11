@@ -1,8 +1,10 @@
-// frontend/src/pages/BillingBatches.tsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { toast } from 'sonner';
-import { FileText, Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { FileSpreadsheet, Download, RefreshCw, Plus, CheckCircle, Clock, AlertTriangle, DollarSign } from 'lucide-react';
+import PageHeader from '@/components/ui/PageHeader';
+import PageSkeleton from '@/components/ui/PageSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
 
 interface BillingBatch {
   id: string;
@@ -14,202 +16,98 @@ interface BillingBatch {
   processedAt: string | null;
 }
 
+const statusConfig: Record<string, { bg: string; color: string }> = {
+  completed: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80' },
+  processing: { bg: 'rgba(108,158,255,0.12)', color: '#6C9EFF' },
+  pending: { bg: 'rgba(251,191,36,0.12)', color: '#FBBF24' },
+  failed: { bg: 'rgba(248,113,113,0.12)', color: '#F87171' },
+};
+
 export default function BillingBatches() {
   const [batches, setBatches] = useState<BillingBatch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const fetchBatches = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      setError(null);
       const data = await api.get('/billing/batches');
       setBatches(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to fetch billing batches:', err);
-      setError(err.message || 'Failed to load billing batches');
       toast.error('Failed to load billing batches');
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
-  useEffect(() => {
-    fetchBatches();
-  }, []);
+  useEffect(() => { fetchBatches(); }, []);
 
-  const handleRefresh = () => {
-    fetchBatches();
-  };
-
-  const handleExport = () => {
-    const csv = [
-      ['Batch Number', 'Status', 'Total Invoices', 'Total Amount', 'Created At'].join(','),
-      ...batches.map(b => 
-        [b.batchNumber, b.status, b.totalInvoices, b.totalAmount, b.createdAt].join(',')
-      )
-    ].join('\n');
-    
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `billing-batches-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Exported billing batches');
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-slate-400">Loading billing batches...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center bg-red-500/10 border border-red-500/30 p-6 rounded-xl">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-red-400 mb-2">Failed to Load</h2>
-          <p className="text-slate-400 mb-4">{error}</p>
-          <button
-            onClick={handleRefresh}
-            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const totalRevenue = batches.reduce((s, b) => s + (b.totalAmount || 0), 0);
+  const completedCount = batches.filter(b => b.status === 'completed').length;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <FileText className="w-8 h-8 text-cyan-400" />
-            Billing Batches
-          </h1>
-          <p className="text-slate-400 mt-1">Invoice batch processing and reconciliation</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleRefresh}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-white transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={batches.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-slate-950 font-bold transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
-        </div>
-      </div>
+    <div style={{ padding: '24px', minHeight: '100%' }}>
+      <PageHeader icon={FileSpreadsheet} title="Billing Batches" description="Reconcile and process billing in batches" color="#A78BFA">
+        <button onClick={fetchBatches} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 500, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', border: 'none', cursor: 'pointer' }}>
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </PageHeader>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard 
-          label="Total Batches" 
-          value={batches.length} 
-          color="text-cyan-400" 
-        />
-        <StatCard 
-          label="Completed" 
-          value={batches.filter(b => b.status === 'completed').length} 
-          color="text-emerald-400" 
-        />
-        <StatCard 
-          label="Processing" 
-          value={batches.filter(b => b.status === 'processing').length} 
-          color="text-amber-400" 
-        />
-        <StatCard 
-          label="Total Invoices" 
-          value={batches.reduce((sum, b) => sum + b.totalInvoices, 0)} 
-          color="text-purple-400" 
-        />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ marginBottom: '20px' }}>
+        <MiniStat label="Total Batches" value={String(batches.length)} icon={FileSpreadsheet} color="#A78BFA" />
+        <MiniStat label="Revenue" value={`R${totalRevenue.toLocaleString()}`} icon={DollarSign} color="#FBBF24" />
+        <MiniStat label="Completed" value={String(completedCount)} icon={CheckCircle} color="#4ADE80" />
+        <MiniStat label="Pending" value={String(batches.filter(b => b.status === 'pending').length)} icon={Clock} color="#6C9EFF" />
       </div>
 
-      {/* Table */}
-      <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          {batches.length > 0 ? (
-            <table className="w-full">
-              <thead className="bg-slate-800/50">
-                <tr>
-                  {['Batch Number', 'Status', 'Total Invoices', 'Total Amount', 'Created', 'Processed'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {batches.map((batch) => (
-                  <tr key={batch.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3 text-sm font-mono text-white">{batch.batchNumber}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        batch.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
-                        batch.status === 'processing' ? 'bg-amber-500/20 text-amber-400' :
-                        batch.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                        'bg-slate-700 text-slate-400'
-                      }`}>
-                        {batch.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">{batch.totalInvoices}</td>
-                    <td className="px-4 py-3 text-sm font-mono text-slate-300">
-                      ZAR {batch.totalAmount.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-500">
-                      {new Date(batch.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-500">
-                      {batch.processedAt ? new Date(batch.processedAt).toLocaleDateString() : '-'}
-                    </td>
-                  </tr>
+      {loading ? (
+        <PageSkeleton type="table" rows={5} />
+      ) : batches.length === 0 ? (
+        <EmptyState icon={FileSpreadsheet} title="No billing batches" description="Billing batches will appear here once waybills are delivered and ready for invoicing." color="#A78BFA" />
+      ) : (
+        <div style={{ borderRadius: '12px', overflow: 'hidden', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {['Batch #', 'Status', 'Invoices', 'Amount', 'Created', 'Processed'].map(h => (
+                  <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>{h}</th>
                 ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="text-center py-12">
-              <FileText className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-500 text-sm">No billing batches found</p>
-              <button
-                onClick={handleRefresh}
-                className="mt-2 text-cyan-400 hover:text-cyan-300 text-sm font-medium"
-              >
-                Refresh to load data
-              </button>
-            </div>
-          )}
+              </tr>
+            </thead>
+            <tbody>
+              {batches.map((b, i) => {
+                const sc = statusConfig[b.status] || statusConfig.pending;
+                return (
+                  <tr key={b.id} style={{ borderBottom: i < batches.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }} className="hover:bg-white/[0.02] transition-colors">
+                    <td style={{ padding: '12px 16px', fontWeight: 600, color: '#A78BFA' }}>{b.batchNumber || `BATCH-${b.id}`}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: sc.bg, color: sc.color, textTransform: 'uppercase' }}>{b.status}</span>
+                    </td>
+                    <td style={{ padding: '12px 16px', color: 'white' }}>{b.totalInvoices || 0}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 600, color: 'white' }}>R{(b.totalAmount || 0).toLocaleString()}</td>
+                    <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>{b.createdAt ? new Date(b.createdAt).toLocaleDateString() : '—'}</td>
+                    <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>{b.processedAt ? new Date(b.processedAt).toLocaleDateString() : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-// ── Helper Components ──────────────────────────────────────
-
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+function MiniStat({ label, value, icon: Icon, color }: { label: string; value: string; icon: any; color: string }) {
   return (
-    <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+    <div style={{ borderRadius: '10px', padding: '14px 16px', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}12` }}>
+        <Icon size={15} color={color} />
+      </div>
+      <div>
+        <div style={{ fontSize: '16px', fontWeight: 700, color: 'white' }}>{value}</div>
+        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{label}</div>
+      </div>
     </div>
   );
 }
