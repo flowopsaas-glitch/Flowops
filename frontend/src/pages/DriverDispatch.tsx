@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import PageHeader from '@/components/ui/PageHeader';
 import { 
   RefreshCw, Sparkles, Truck, MapPin, Clock, Package, 
   PackagePlus, UserCheck, AlertTriangle, LayoutList, Map as MapIcon, ExternalLink 
@@ -136,12 +137,8 @@ export default function DriverDispatch() {
   return (
     <div className="min-h-screen bg-[#07111f] p-7">
       <div className="mx-auto max-w-[1820px] space-y-6">
+        <PageHeader icon={Truck} title="Driver Dispatch" description="Live route execution and driver assignment" color="#6C9EFF" />
         
-        <CommandCenterHeader
-          eyebrow="Operations · Branch Dispatch"
-          title="Control Tower"
-          subtitle="Toggle between high-density list and tactical map routing."
-        >
           <div className="flex items-center gap-4">
              <div className="bg-black/40 p-1.5 rounded-[22px] border border-white/10 flex gap-1">
                 <button onClick={() => setViewMode('LIST')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all ${viewMode === 'LIST' ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
@@ -161,7 +158,7 @@ export default function DriverDispatch() {
                 <StatCard label="Fleet Ready" value={stats.ready} hint="Active drivers" />
              </div>
           </div>
-        </CommandCenterHeader>
+        
 
         {viewMode === 'LIST' ? (
           <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr_1fr] animate-in fade-in zoom-in-95 duration-300">

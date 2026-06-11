@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bot, CheckCircle2, Receipt, ShieldAlert, Sparkles, TrendingUp } from "lucide-react";
+import { Bot, CheckCircle2, Receipt, ShieldAlert, Sparkles, TrendingUp, CreditCard } from "lucide-react";
+import PageHeader from '@/components/ui/PageHeader';
 import { useToast } from "../components/ToastProvider";
 import { FLOWOPS_API_URL } from "../lib/env";
 
@@ -233,6 +234,7 @@ export default function RateCardsPage() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(55,90,180,0.18),transparent_30%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8">
       <div className="mx-auto max-w-[1650px] space-y-5">
+        <PageHeader icon={CreditCard} title="Rate Cards" description="Commercial pricing and rate management" color="#FBBF24" />
         <div className="rounded-[30px] border border-white/10 bg-white/6 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
             <div>

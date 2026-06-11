@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import PageHeader from '@/components/ui/PageHeader';
 import {
   Truck,
   CalendarClock,
@@ -234,6 +235,7 @@ export default function Collections() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(43,76,168,0.16),transparent_30%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 text-white">
       <div className="mx-auto max-w-[1700px] space-y-6">
+        <PageHeader icon={Truck} title="Collections" description="Schedule and manage pickups with AI-powered routing" color="#22D3EE" />
         
         {/* STAT BAR */}
         <div className="rounded-[30px] border border-white/10 bg-white/6 p-6 shadow-2xl backdrop-blur-2xl">

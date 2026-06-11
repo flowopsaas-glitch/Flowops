@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import PageHeader from '@/components/ui/PageHeader';
 import {
   ClipboardCheck,
   Image as ImageIcon,
@@ -221,6 +222,7 @@ export default function PodDeliveries() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(31,104,140,0.18),transparent_30%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 overflow-y-auto">
       <div className="mx-auto max-w-[1600px] space-y-6">
+        <PageHeader icon={ClipboardCheck} title="POD / Deliveries" description="Proof of delivery management and signature capture" color="#4ADE80" />
         
         {/* Header Block */}
         <div className="rounded-[30px] border border-white/10 bg-white/6 p-6 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
