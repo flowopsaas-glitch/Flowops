@@ -1,0 +1,10 @@
+// prisma/test.prisma
+enum TestEnum {
+  ONE
+  TWO
+}
+
+model Test {
+  id Int @id @default(autoincrement())
+  t  TestEnum
+}

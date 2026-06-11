@@ -1,0 +1,49 @@
+{
+  "name": "FlowOps Driver",
+  "short_name": "FlowOps",
+  "description": "FlowOps Driver Portal - Manage deliveries, chat with dispatch, and capture POD",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#1e40af",
+  "scope": "/",
+  "lang": "en-US",
+  "categories": ["business", "productivity", "logistics"],
+  "icons": [
+    {
+      "src": "/logos/flowops-logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logos/flowops-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logos/flowops-logo-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "My Deliveries",
+      "short_name": "Deliveries",
+      "description": "View today's deliveries",
+      "url": "/dashboard",
+      "icons": [{ "src": "/logos/flowops-logo-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Messages",
+      "short_name": "Chat",
+      "description": "Chat with dispatch",
+      "url": "/chat",
+      "icons": [{ "src": "/logos/flowops-logo-96.png", "sizes": "96x96" }]
+    }
+  ]
+}

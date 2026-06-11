@@ -1,0 +1,47 @@
+name: FlowOps Production Delivery System
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  audit-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Install Node Ecosystem
+      uses: pnpm/action-setup@v3
+      with:
+        version: 9.1.0
+
+    - name: Setup Cache Metrics
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: pnpm
+
+    - name: Ingest Modules
+      run: pnpm install --frozen-lockfile
+
+    - name: Static Analysis Check
+      run: pnpm run lint
+
+  deploy-to-vps:
+    needs: audit-and-verify
+    runs-on: ubuntu-latest
+    steps:
+    - name: Remote Cluster Command Invocation
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.PRODUCTION_VPS_IP }}
+        username: ${{ secrets.PRODUCTION_SSH_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+        script: |
+          cd /opt/Flowops/backend
+          git pull origin main
+          docker compose down
+          docker compose build --no-cache
+          docker compose up -d
+          docker exec flowops-backend npx prisma db push --accept-data-loss

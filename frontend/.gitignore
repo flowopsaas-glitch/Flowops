@@ -28,3 +28,20 @@ dist-ssr
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+# Frontend environment files (never commit secrets)
+.env.local
+.env*.local
+
+# 🔐 Environment files (NEVER commit secrets)
+.env.local
+.env*.local
+.env.production.local
+.env.development.local
+
+
+# 🔐 Environment files (NEVER commit secrets)
+.env.local
+.env*.local
+.env.production.local
+.env.development.local
+

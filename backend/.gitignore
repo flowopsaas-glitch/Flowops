@@ -1,0 +1,73 @@
+# ==============================
+# Node / NestJS
+# ==============================
+node_modules/
+dist/
+build/
+.tmp/
+*.log
+*.tsbuildinfo
+
+# ==============================
+# Environment
+# ==============================
+.env
+.env.local
+.env.*.local
+
+# ==============================
+# Prisma
+# ==============================
+prisma/migrations/
+prisma/dev.db
+prisma/dev.db-journal
+prisma/seed-temp.ts
+prisma/seed-users.ts
+prisma/seed.js
+prisma/seed.js.map
+prisma/test.ts
+prisma/prisma.config.js
+prisma/prisma.config.js.map
+prisma/prisma.config.ts.txt
+prisma/types.ts
+
+# ==============================
+# Jest / Testing
+# ==============================
+coverage/
+jest.config.js
+jest.config.ts
+jest-e2e.json
+
+# ==============================
+# Scripts / Utilities
+# ==============================
+*.ps1
+*.js.map
+*.ts.map
+*.bak
+*.sql
+
+# ==============================
+# Frontend (completely ignored)
+# ==============================
+../frontend/
+../flowops-web/
+../frontend/package-lock.json
+../frontend/pnpm-lock.yaml
+../frontend/.vite/
+../frontend/dist/
+../frontend/node_modules/
+
+# ==============================
+# VSCode / IDE
+# ==============================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.env
+.env.local
+.env*.local

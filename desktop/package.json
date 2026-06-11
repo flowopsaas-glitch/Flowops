@@ -1,0 +1,58 @@
+{
+  "name": "flowops-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "description": "FlowOps Desktop (Electron)",
+  "author": "FlowOps",
+  "scripts": {
+    "clean": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Test-Path renderer) { Remove-Item renderer -Recurse -Force }; if (Test-Path dist-installer) { Remove-Item dist-installer -Recurse -Force }; if (Test-Path dist) { Remove-Item dist -Recurse -Force }; if (Test-Path release) { Remove-Item release -Recurse -Force }\"",
+    "build:renderer": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Set-Location C:\\flowops\\frontend; npm run build; Set-Location C:\\flowops\\desktop; if (Test-Path renderer) { Remove-Item renderer -Recurse -Force }; Copy-Item C:\\flowops\\frontend\\dist renderer -Recurse\"",
+    "start": "electron .",
+    "dist": "npm run build:renderer && npx electron-builder --win dir",
+    "build": "npm run build:renderer && npx electron-builder --win dir"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.4",
+    "asar": "^3.2.0",
+    "electron": "^29.4.6",
+    "electron-builder": "^26.8.1",
+    "vite": "^7.3.1"
+  },
+  "build": {
+    "appId": "com.flowops.desktop",
+    "productName": "FlowOps",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "asar": false,
+    "compression": "store",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json",
+      "!dist-installer/**/*",
+      "!release/**/*",
+      "!src/**/*",
+      "!node_modules/.cache/**/*",
+      "!**/*.map",
+      "!**/*.log",
+      "!**/thumbs.db",
+      "!**/.DS_Store"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}

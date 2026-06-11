@@ -20,7 +20,10 @@ export type TenantNavPermissionKey =
   | "aiControlTower"
   | "risksExceptions"
   | "usersRoles"
-  | "settings";
+  | "settings"
+  | "fleetMap"
+  | "dispatchChat"
+  | "driverAnalytics";
 
 export type TenantNavPermissions = Record<TenantNavPermissionKey, boolean>;
 
@@ -47,6 +50,9 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   risksExceptions: "High Risk Queue",
   usersRoles: "Users & Roles",
   settings: "Settings",
+  fleetMap: "Live Fleet Map",
+  dispatchChat: "Dispatch Chat",
+  driverAnalytics: "Driver Analytics",
 };
 
 export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [

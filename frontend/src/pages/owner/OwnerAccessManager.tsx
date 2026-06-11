@@ -89,7 +89,7 @@ const API_BASE =
     (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE_URL) ||
   (typeof import.meta !== "undefined" &&
     (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL) ||
-  "http://127.0.0.1:3000/api";
+  "http://localhost:3000/api/v1";
 
 const shellStyle: React.CSSProperties = {
   minHeight: "100vh",

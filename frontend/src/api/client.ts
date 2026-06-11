@@ -1,10 +1,10 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+const API_BASE = import.meta.env.VITE_FLOWOPS_API_URL || 'http://localhost:3000/api/v1';
 
 // ── Token storage ───────────────────────────────────────────
-const TOKEN_KEY = 'access_token';
-const MODE_KEY = 'flowops_login_mode';
+const TOKEN_KEY = "access_token";
+const MODE_KEY = "flowops_login_mode";
 let memoryToken: string | null = null;
 
 export const getToken = () => memoryToken || localStorage.getItem(TOKEN_KEY);
@@ -12,9 +12,12 @@ export const setToken = (token: string | null) => {
   if (token) localStorage.setItem(TOKEN_KEY, token);
   else localStorage.removeItem(TOKEN_KEY);
 };
-export const setMemoryToken = (token: string | null) => { memoryToken = token; };
-export const getLoginMode = () => localStorage.getItem(MODE_KEY) || 'tenant';
-export const setLoginMode = (mode: string) => localStorage.setItem(MODE_KEY, mode);
+export const setMemoryToken = (token: string | null) => {
+  memoryToken = token;
+};
+export const getLoginMode = () => localStorage.getItem(MODE_KEY) || "tenant";
+export const setLoginMode = (mode: string) =>
+  localStorage.setItem(MODE_KEY, mode);
 export const clearAuth = () => {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(MODE_KEY);
@@ -24,9 +27,9 @@ export const clearToken = clearAuth;
 export const clearClientSession = clearAuth;
 
 // Login mode helpers
-export const isOwnerMode = () => getLoginMode() === 'owner';
-export const isTenantMode = () => getLoginMode() === 'tenant';
-export const isDriverMode = () => getLoginMode() === 'driver';
+export const isOwnerMode = () => getLoginMode() === "owner";
+export const isTenantMode = () => getLoginMode() === "tenant";
+export const isDriverMode = () => getLoginMode() === "driver";
 
 // ── Error class (matches old api/axios.ts signature) ──────────
 export class ApiError extends Error {
@@ -41,7 +44,7 @@ export class ApiError extends Error {
 // ── Axios instance ────────────────────────────────────────
 const api = axios.create({
   baseURL: API_BASE,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { "Content-Type": "application/json" },
   withCredentials: true,
 });
 
@@ -72,11 +75,15 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         clearAuth();
-        return Promise.reject(new ApiError('Session expired. Please log in again.', 401));
+        return Promise.reject(
+          new ApiError("Session expired. Please log in again.", 401),
+        );
       }
     }
 
-    const message = error.response?.data?.message || 'An infrastructure error occurred during data transmission.';
+    const message =
+      error.response?.data?.message ||
+      "An infrastructure error occurred during data transmission.";
     return Promise.reject(new ApiError(message, error.response?.status));
   },
 );
@@ -87,25 +94,24 @@ export default api;
 // ── Convenience helpers (return unwrapped data) ──────────────────
 export const get = <T>(url: string, params?: any) =>
   api.get<T, T>(url, { params });
-export const post = <T>(url: string, data?: any) =>
-  api.post<T, T>(url, data);
-export const put = <T>(url: string, data?: any) =>
-  api.put<T, T>(url, data);
-export const patch = <T>(url: string, data?: any) =>
-  api.patch<T, T>(url, data);
-export const del = <T>(url: string) =>
-  api.delete<T, T>(url);
+export const post = <T>(url: string, data?: any) => api.post<T, T>(url, data);
+export const put = <T>(url: string, data?: any) => api.put<T, T>(url, data);
+export const patch = <T>(url: string, data?: any) => api.patch<T, T>(url, data);
+export const del = <T>(url: string) => api.delete<T, T>(url);
 
 // ── Legacy aliases ─────────────────────────────────────────
 export const apiGet = get;
 export const apiPost = post;
-export const apiFetch = async <T>(url: string, opts?: RequestInit): Promise<T> => {
+export const apiFetch = async <T>(
+  url: string,
+  opts?: RequestInit,
+): Promise<T> => {
   const token = getToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(opts?.headers as Record<string, string> || {}),
+    "Content-Type": "application/json",
+    ...((opts?.headers as Record<string, string>) || {}),
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${API_BASE}${url}`, { ...opts, headers });
   if (!res.ok) throw new ApiError(res.statusText, res.status);
   return res.json();

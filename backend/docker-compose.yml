@@ -1,0 +1,233 @@
+services:
+
+  # =========================================
+  # PostgreSQL Database
+  # =========================================
+  flowops-db:
+    image: postgres:15-alpine
+    container_name: flowops-db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: kadi
+      POSTGRES_PASSWORD: flowops_secure_pass
+      POSTGRES_DB: flowops_engine
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - flowops_db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kadi -d flowops_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    networks:
+      - flowops-mesh
+
+
+
+  # =========================================
+  # PgBouncer Connection Pooler
+  # =========================================
+  flowops-pooler:
+    image: edoburu/pgbouncer:latest
+    container_name: flowops-pooler
+    restart: unless-stopped
+
+    depends_on:
+      flowops-db:
+        condition: service_healthy
+
+    ports:
+      - "6432:5432"
+
+    volumes:
+      - ./infra/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./infra/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+
+    command: ["pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 5432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - flowops-mesh
+
+  # =========================================
+  # Redis Cache & Queue Engine
+  # =========================================
+  flowops-redis:
+    image: redis:7-alpine
+    container_name: flowops-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    command: redis-server --appendonly yes
+
+    volumes:
+      - flowops_redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - flowops-mesh
+
+
+
+  # =========================================
+  # FlowOps Backend API
+  # =========================================
+  flowops-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: flowops-backend
+    restart: unless-stopped
+
+    depends_on:
+      flowops-db:
+        condition: service_healthy
+
+      flowops-redis:
+        condition: service_healthy
+
+      flowops-pooler:
+        condition: service_started
+
+    ports:
+      - "3005:3000"
+      - "3001:3001"
+
+    volumes:
+      - flowops_uploads_volume:/app/uploads
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    environment:
+
+      # =====================================
+      # Core Runtime
+      # =====================================
+      APP_ENV: ${APP_ENV}
+      NODE_ENV: ${NODE_ENV}
+
+      APP_KEY: ${APP_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+
+      # =====================================
+      # DATABASE THROUGH PGBOUNCER
+      # =====================================
+      DATABASE_URL: postgresql://kadi:flowops_secure_pass@flowops-pooler:5432/flowops_engine
+
+      # =====================================
+      # Redis
+      # =====================================
+      REDIS_HOST: flowops-redis
+      REDIS_PORT: 6379
+
+      # =====================================
+      # AI Systems
+      # =====================================
+      Z_AI_API_KEY: ${Z_AI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OLLAMA_URL: ${OLLAMA_URL}
+      EXTRACTION_MODEL: ${EXTRACTION_MODEL}
+
+      AI_DEFAULT_PROVIDER: ${AI_DEFAULT_PROVIDER}
+      AI_REPAIR_ENABLED: ${AI_REPAIR_ENABLED}
+      AI_DRIVER_ASSIST_LEVEL: ${AI_DRIVER_ASSIST_LEVEL}
+
+      CLAW_AGGRESSION_LEVEL: ${CLAW_AGGRESSION_LEVEL}
+      CLAW_SCAN_INTERVAL_MINUTES: ${CLAW_SCAN_INTERVAL_MINUTES}
+
+      AUTO_REPAIR_ENABLED: ${AUTO_REPAIR_ENABLED}
+
+      # =====================================
+      # Email & Messaging
+      # =====================================
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USER: ${MAIL_USER}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_GRAPH_TOKEN: ${WHATSAPP_GRAPH_TOKEN}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION}
+      WHATSAPP_BUSINESS_PHONE_ID: ${WHATSAPP_BUSINESS_PHONE_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+
+      # =====================================
+      # Geo Services
+      # =====================================
+      NEUTRINO_API_KEY: ${NEUTRINO_API_KEY}
+      MAPTILER_KEY: ${MAPTILER_KEY}
+
+      GEO_TRUST_COLLECTION_RADIUS: ${GEO_TRUST_COLLECTION_RADIUS}
+      GEO_MIN_BROADCAST_DISTANCE: ${GEO_MIN_BROADCAST_DISTANCE}
+
+      # =====================================
+      # Billing & Branding
+      # =====================================
+      BILLING_AUTO_ENABLED: ${BILLING_AUTO_ENABLED}
+
+      ENABLE_WHITE_LABEL: ${ENABLE_WHITE_LABEL}
+      DEFAULT_BRAND_PRIMARY: ${DEFAULT_BRAND_PRIMARY}
+      DEFAULT_BRAND_SECONDARY: ${DEFAULT_BRAND_SECONDARY}
+
+      # =====================================
+      # Telemetry & Cloud
+      # =====================================
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID}
+      CLOUDFLARE_ID: ${CLOUDFLARE_ID}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+
+      SLACK_DEVOPS_WEBHOOK_URL: ${SLACK_DEVOPS_WEBHOOK_URL}
+
+    networks:
+      - flowops-mesh
+
+
+
+# =========================================
+# Persistent Volumes
+# =========================================
+volumes:
+
+  flowops_db_data:
+    driver: local
+
+  flowops_redis_data:
+    driver: local
+
+  flowops_uploads_volume:
+    driver: local
+
+
+
+# =========================================
+# Internal Network Mesh
+# =========================================
+networks:
+  flowops-mesh:
+    driver: bridge

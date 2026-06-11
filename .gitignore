@@ -71,3 +71,38 @@ Thumbs.db
 *.bin
 package-lock.json
 pnpm-lock.yaml
+.env
+.env.local
+.env*.local
+
+# ─── Extra backup/junk patterns ──
+*.bak*
+*.broken*
+*.save
+*.save.*
+*.test
+backups_archive/
+
+# ─── Extra backup/junk patterns ──
+*.bak*
+*.broken*
+*.save
+*.save.*
+*.test
+backups_archive/
+
+# ─── DB dumps / compressed backups ──
+*.sql.gz
+*.gz
+backend/storage/snapshots/
+
+# ─── Runtime data stores & sample fixtures (kept local only) ──
+backend/data/
+backend/all-companies.json
+backend/companies-1-2-3.json
+backend/company-1.json
+backend/data.json
+backend/flowops-full-data.json
+backend/owner-billing-automation-log.json
+backend/owner-platform-snapshot.json
+backend/*.pdf

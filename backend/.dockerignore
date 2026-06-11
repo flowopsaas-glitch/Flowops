@@ -1,0 +1,42 @@
+# ==============================================================================
+# 📦 FLOWOPS OS - COMPREHENSIVE PRODUCTION CONTAINER IGNORE SCHEMA
+# ==============================================================================
+
+# Local Dependency Vaults (Forced generation inside Dockerfile instead)
+node_modules/
+.pnpm-store/
+.npm/
+pnpm-debug.log*
+
+# Git Version Control Metadata Trackers
+.git/
+.gitignore
+.gitattributes
+
+# Environment Variables & Secret Signature Vaults (Never include in images)
+.env
+.env.production
+.env.staging
+.env.development
+.env.local
+
+# Build Distribution & Compilation Targets
+dist/
+build/
+.nest/
+*.tsbuildinfo
+
+# Staging Snapshots & Database Backup Targets (Prevents image bloat)
+storage/snapshots/
+storage/snapshots/db-backups/
+*.sql
+*.sql.gz
+*.sql.tar
+
+# Local Development System Trash Tracking Files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+.clwb/
