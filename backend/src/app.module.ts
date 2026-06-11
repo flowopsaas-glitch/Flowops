@@ -50,6 +50,9 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
 // NEW: Import Redis module
 import { RedisModule } from './redis/redis.module';
 
+// Subscription Expiry Monitor
+import { SubscriptionMonitorModule } from './subscription-monitor/subscription-monitor.module';
+
 // ✅ FIXED: Import ClientsModule (was missing!)
 import { ClientsModule } from './_clients/clients.module';
 import { FleetMapModule } from './fleet-map/fleet-map.module';
@@ -132,6 +135,9 @@ import { RatingService } from './rating/rating.service';
     
     // NEW: Add Redis module
     RedisModule,
+
+    // Subscription Expiry Monitor (hourly cron checks trial/demo expiry)
+    SubscriptionMonitorModule,
   ],
   controllers: [
     LocationController,
