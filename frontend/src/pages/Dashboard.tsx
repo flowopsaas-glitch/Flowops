@@ -6,6 +6,7 @@ import {
   BarChart3, Zap, Users, MapPin
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import AiChat from '@/components/analytics/AiChat';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -304,6 +305,9 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Ask AI floating assistant */}
+      <AiChat />
     </div>
   );
 }

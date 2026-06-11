@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import AiChat from '@/components/analytics/AiChat';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -38,6 +39,8 @@ export default function SuperAdminLayout({ children, onRefresh, loading }: Super
           </div>
         </main>
       </div>
+      {/* Ask AI floating assistant */}
+      <AiChat />
     </div>
   );
 }

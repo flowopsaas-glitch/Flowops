@@ -16,6 +16,7 @@ import DriverAnalytics from './pages/DriverAnalytics';
 const Analytics = lazy(() => import('./pages/Analytics'));
 const DispatcherConsole = lazy(() => import('./pages/tools/dispatch/DispatcherConsole').then(m => ({ default: m.DispatcherConsole })));
 const WarehouseClerkDashboard = lazy(() => import('./pages/warehouse/WarehouseClerkDashboard'));
+const WarehouseLogin = lazy(() => import('./pages/warehouse/WarehouseLogin'));
 import DispatchChat from './pages/DispatchChat';
 
 // ============================================================================
@@ -161,6 +162,7 @@ export default function App() {
           <Route path="/track/:token" element={<Suspense fallback={<PageLoader />}><TrackPublic /></Suspense>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<Suspense fallback={<PageLoader />}><SignupPage /></Suspense>} />
+          <Route path="/warehouse/login" element={<Suspense fallback={<PageLoader />}><WarehouseLogin /></Suspense>} />
           <Route path="/forgot-password" element={<Suspense fallback={<PageLoader />}><ForgotPassword /></Suspense>} />
           <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>} />
           <Route path="/client-portal" element={<ClientPortal />} />
@@ -234,7 +236,6 @@ export default function App() {
               <Route path="/dispatch" element={<DriverDispatch />} />
               <Route path="/tools/dispatch" element={<Suspense fallback={<PageLoader />}><DispatcherConsole /></Suspense>} />
               <Route path="/warehouse" element={<Suspense fallback={<PageLoader />}><WarehouseClerkDashboard /></Suspense>} />
-
               <Route path="/fleet-map" element={<FleetMap />} />
               <Route path="/driver-analytics" element={<DriverAnalytics />} />
               <Route path="/analytics" element={<Suspense fallback={<PageLoader />}><Analytics /></Suspense>} />

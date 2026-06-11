@@ -70,15 +70,14 @@ export default function DriverLogin() {
         
         {/* Branding */}
         <div className="flex flex-col items-center mb-6">
-          <div className="bg-gradient-to-br from-blue-500 to-cyan-500 p-4 rounded-2xl mb-4 shadow-lg shadow-blue-500/20 ring-1 ring-white/10 relative">
-            <Truck className="w-10 h-10 text-white relative z-10" />
-            {/* Pulsing security dot */}
-            <span className="absolute top-0 right-0 -mt-1 -mr-1 flex h-4 w-4">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 ring-2 ring-[#06111f]"></span>
-            </span>
-          </div>
+          <img 
+            src="/logos/flowops-logo.png" 
+            alt="FlowOps" 
+            className="w-16 h-16 rounded-2xl mb-3 object-contain"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
           <h1 className="text-3xl font-black text-white tracking-tight">FlowOps <span className="text-blue-400">Driver</span></h1>
+          <p className="text-xs text-blue-400/60 font-semibold uppercase tracking-widest mt-1">Logistics, Evolved.</p>
         </div>
 
         {/* 🚀 AI Security Briefing Banner */}
