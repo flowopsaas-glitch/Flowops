@@ -1,0 +1,38 @@
+#!/bin/bash
+clear
+echo "################################################################################"
+echo "#      _____ _                 ____             _____                          #"
+#      |  ___| | _____      __ / __ \ _ __  ___ |___ /                          #"
+#      | |_  | |/ _ \ \ /\ / /| |  | | '_ \/ __|  |_ \                          #"
+#      |  _| | | (_) \ V  V / | |__| | |_) \__ \ ___) |                         #"
+#      |_|   |_|\___/ \_/\_/   \____/| .__/|___/|____/                          #"
+#                                    |_|         GAP ANALYSIS V4.0              #"
+################################################################################"
+
+echo -e "\n[01/03] PHYSICAL INFRASTRUCTURE STATUS"
+echo "--------------------------------------------------------------------------------"
+lsof -i :3000 > /dev/null && echo "  [✔] BACKEND (3000) : ONLINE" || echo "  [✘] BACKEND (3000) : OFFLINE"
+lsof -i :5174 > /dev/null && echo "  [✔] FRONTEND (5174): ONLINE (Check console for runtime errors)" || echo "  [✘] FRONTEND (5174): OFFLINE"
+ls /opt/Flowops/cloud-backups &>/dev/null && echo "  [✔] CLOUD VAULT    : MOUNTED" || echo "  [✘] CLOUD VAULT    : NOT FOUND"
+pgrep ollama > /dev/null && echo "  [✔] OLLAMA AI      : RUNNING" || echo "  [✘] OLLAMA AI      : STOPPED"
+
+echo -e "\n[02/03] LOGICAL PLATFORM GAPS (WHAT IS MISSING)"
+echo "--------------------------------------------------------------------------------"
+echo "1. FRONTEND STABILITY | [CRITICAL] -> ReferenceError in tracing.ts is blocking UI."
+echo "2. WHATSAPP MEDIA     | [MISSING]  -> Webhook exists, but REAL file download logic"
+echo "                      |               (Axios stream to Vault) needs finishing."
+echo "3. REAL-TIME UI       | [MISSING]  -> Backend has BroadcastGateway, but Frontend"
+echo "                      |               needs to swap Polling for WebSocket hooks."
+echo "4. BULK UI CONTROLS   | [MISSING]  -> Need 'Select All' checkboxes on Inbox cards"
+echo "                      |               to trigger /api/waybills/inbox/bulk-commit."
+
+echo -e "\n[03/03] PREMIUM ROADMAP (ADD THESE FOR HIGH-TICKET CLIENTS)"
+echo "--------------------------------------------------------------------------------"
+echo "[ ] GEO-TRUST VERIFIER : Link waybill address to Driver GPS (Backend module exists!)"
+echo "[ ] AUTO-BILLING CRON  : Automated Friday 17:00 invoice generation script."
+echo "[ ] GHOST SEARCH       : AI-indexed search through the 1TB archived vault."
+echo "[ ] WHITE-LABEL PORTAL : Isolated login for shippers to download their own PODs."
+
+echo -e "\n================================================================================"
+echo "AUDIT COMPLETE: Fix the 'exporter' error to restore UI visibility."
+echo "================================================================================"

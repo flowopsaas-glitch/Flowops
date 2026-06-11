@@ -1,24 +1,24 @@
-﻿const rawApiUrl = String(import.meta.env.VITE_API_URL || "").trim();
-const rawEnv = String(import.meta.env.VITE_APP_ENV || "development")
-  .trim()
-  .toLowerCase();
+// Environment configuration - Complete exports for all components
 
-export const FLOWOPS_ENV = rawEnv || "development";
+// API Configuration
+export const FLOWOPS_API_URL = import.meta.env.VITE_FLOWOPS_API_URL || 'http://localhost:3000/api/v1';
+export const FLOWOPS_HTTP_ORIGIN = import.meta.env.VITE_FLOWOPS_API_URL?.replace('/api/v1', '') || 'http://localhost:3000';
+export const FLOWOPS_WS_ORIGIN = import.meta.env.VITE_WS_ORIGIN || 'http://localhost:3000';
 
-export const FLOWOPS_API_URL =
-  rawApiUrl && /^https?:\/\//i.test(rawApiUrl)
-    ? rawApiUrl.replace(/\/+$/, "")
-    : "http://localhost:3000/api"; // 🚀 Changed 127.0.0.1 to localhost to match your browser tab
+// WebSocket Configuration
+export const WS_ORIGIN = import.meta.env.VITE_WS_ORIGIN || 'http://localhost:3000';
 
-/** Origin without `/api` — uploads, PDFs, Socket.IO namespace host. */
-export const FLOWOPS_HTTP_ORIGIN = FLOWOPS_API_URL.replace(/\/api\/?$/, "");
+// Dev Credentials
+export const DEV_EMAIL = import.meta.env.VITE_DEV_EMAIL || '';
+export const DEV_PASSWORD = import.meta.env.VITE_DEV_PASSWORD || '';
 
-const rawWs = String(import.meta.env.VITE_WS_ORIGIN || "").trim();
+// Feature Flags
+export const ENABLE_PASSWORD_STRENGTH = import.meta.env.VITE_ENABLE_PASSWORD_STRENGTH === 'true';
+export const ENABLE_RATE_LIMITING = import.meta.env.VITE_ENABLE_RATE_LIMITING === 'true';
+export const ENABLE_DEV_CREDENTIALS = import.meta.env.VITE_ENABLE_DEV_CREDENTIALS === 'true';
 
-/** Base URL for Socket.IO (Nest `/broadcast` namespace). */
-export const FLOWOPS_WS_ORIGIN =
-  rawWs && /^https?:\/\//i.test(rawWs)
-    ? rawWs.replace(/\/+$/, "")
-    : FLOWOPS_HTTP_ORIGIN;
+// Sentry (optional)
+export const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN || '';
 
-export const IS_PRODUCTION = FLOWOPS_ENV === "production";
+// OpenTelemetry
+export const OTEL_EXPORTER_OTLP_ENDPOINT = import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces';

@@ -1,14 +1,16 @@
+// frontend/src/components/layout/AppLayout.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import {
-  LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
+import { useAuth } from "../../contexts/AuthContext";
+import { TrendingUp, 
+  LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search, BarChart3,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
-  ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers
+  ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, 
+  Sparkles, Layers, Building2, Key, Shield, FileSpreadsheet, Radio, Crown,
+  MessageSquare, Bot, AlertTriangle, Inbox, PackageCheck, MapPin, Warehouse, ArrowLeftRight
 } from "lucide-react";
 
-// ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
-import { cn } from "../../lib/utils"; 
+import { cn } from "../../lib/utils";
 import logo from "../../assets/logo.png";
 
 type NavItem = {
@@ -16,15 +18,14 @@ type NavItem = {
   desc: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN";
+  section: "CORE" | "OPS" | "INVENTORY" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN";
+  roles?: string[];
 };
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
   userChoice?: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
-
-// --- Helper Components ---
 
 function SidebarSection(props: {
   title: string;
@@ -39,7 +40,6 @@ function SidebarSection(props: {
       <div className="mb-2 px-4 text-[10px] font-black uppercase tracking-[0.24em] text-white/40">
         {props.title}
       </div>
-
       <div className="space-y-1.5 px-2">
         {props.items.map((item) => {
           const Icon = item.icon;
@@ -60,7 +60,6 @@ function SidebarSection(props: {
               <div className="mt-0.5 rounded-xl border border-white/10 bg-white/[0.05] p-2">
                 <Icon className="h-4 w-4" />
               </div>
-
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold leading-5">{item.label}</div>
                 <div className="mt-0.5 text-[11px] leading-4 text-white/45">
@@ -83,8 +82,8 @@ function SidebarContent(props: {
   onInstall: () => void;
   onLogout: () => void;
 }) {
-  const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
-    ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
+  const sections: ("CORE" | "OPS" | "INVENTORY" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
+    ["CORE", "OPS", "INVENTORY", "COMMUNICATIONS", "BILLING", "AI", "ADMIN", "SUPERADMIN" as any];
 
   return (
     <div className="flex h-full flex-col bg-[#081120]">
@@ -115,7 +114,33 @@ function SidebarContent(props: {
         ))}
       </div>
 
-      <div className="shrink-0 border-t border-white/10 p-4 space-y-2 bg-[#081120]">
+      
+      {/* 🤖 AI Intelligence */}
+      <div className="mt-6 pt-4 border-t border-white/10">
+        <h3 className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          AI Intelligence
+        </h3>
+        <div className="space-y-1 px-2">
+          <a href="/ai-features" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-purple-500/10 hover:text-purple-300 rounded-lg transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            AI Dashboard
+          </a>
+          <a href="/ai/fraud-detection" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-red-500/10 hover:text-red-300 rounded-lg transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+            Fraud Detection
+          </a>
+          <a href="/ai/dynamic-pricing" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-purple-500/10 hover:text-purple-300 rounded-lg transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Dynamic Pricing
+          </a>
+          <a href="/pricing" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-green-500/10 hover:text-green-300 rounded-lg transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Pricing & Plans
+          </a>
+        </div>
+      </div>
+
+<div className="shrink-0 border-t border-white/10 p-4 space-y-2 bg-[#081120]">
         <button 
           onClick={props.onInstall}
           aria-label="Install application"
@@ -141,8 +166,6 @@ function SidebarContent(props: {
   );
 }
 
-// --- Main Layout Component ---
-
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
@@ -158,42 +181,95 @@ export default function AppLayout() {
     return () => window.removeEventListener("beforeinstallprompt", handler as EventListener);
   }, []);
 
+  // ✅ FIXED: All paths now match App.tsx routes EXACTLY
   const nav: NavItem[] = useMemo(() => [
+    // CORE
     { section: "CORE", label: "Dashboard", desc: "Executive command", to: "/dashboard", icon: LayoutDashboard },
+    { section: "CORE", label: "Analytics", desc: "Advanced insights", to: "/analytics", icon: BarChart3, roles: ["ADMIN", "OWNER", "OPS", "DISPATCHER"] },
     { section: "CORE", label: "Shipments", desc: "Operations console", to: "/shipments", icon: Package },
-    { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search },
+    { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Inbox },
     { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList },
-    { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users },
+    { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, roles: ["ADMIN", "OWNER", "SALES"] },
+    { section: "CORE", label: "Notifications", desc: "System alerts", to: "/notifications", icon: Bell },
     
+    // OPS
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck },
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers },
+    { section: "OPS", label: "Live Tracking", desc: "Real-time GPS", to: "/live-tracking", icon: MapPin, roles: ["ADMIN", "OWNER", "OPS"] },
+
+    // DISPATCHER FEATURES
+    { section: "OPS", label: "🗺️ Live Fleet Map", desc: "Real-time driver tracking", to: "/fleet-map", icon: MapPin, roles: ["ADMIN", "OWNER", "OPS", "DISPATCHER"] },
+    { section: "OPS", label: "📊 Driver Analytics", desc: "Performance metrics", to: "/driver-analytics", icon: TrendingUp, roles: ["ADMIN", "OWNER", "OPS", "DISPATCHER"] },
+    { section: "OPS", label: "💬 Dispatch Chat", desc: "Driver communication", to: "/dispatch-chat", icon: MessageSquare, roles: ["ADMIN", "OWNER", "OPS", "DISPATCHER"] },
+
     
-    { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle },
-    { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail },
+    // INVENTORY
+    { section: "INVENTORY", label: "Inventory Dashboard", desc: "Stock command center", to: "/inventory", icon: LayoutDashboard, roles: ["ADMIN", "OWNER", "OPS"] },
+    { section: "INVENTORY", label: "Items", desc: "Product catalog", to: "/inventory/items", icon: Package, roles: ["ADMIN", "OWNER", "OPS"] },
+    { section: "INVENTORY", label: "Warehouses", desc: "Storage locations", to: "/inventory/warehouses", icon: Warehouse, roles: ["ADMIN", "OWNER", "OPS"] },
+    { section: "INVENTORY", label: "Movements", desc: "Stock audit trail", to: "/inventory/movements", icon: ArrowLeftRight, roles: ["ADMIN", "OWNER", "OPS"] },
+    { section: "INVENTORY", label: "Alerts", desc: "Low stock warnings", to: "/inventory/alerts", icon: AlertTriangle, roles: ["ADMIN", "OWNER", "OPS"] },
     
-    { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard },
-    { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText },
-    { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt },
-    { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText },
-    { section: "BILLING", label: "Credit Control", desc: "Arrears management", to: "/credit-control", icon: ShieldAlert },
+    // COMMUNICATIONS
+    { section: "COMMUNICATIONS", label: "WhatsApp Hub", desc: "Tactical messaging", to: "/communications/whatsapp", icon: Radio, roles: ["ADMIN", "OWNER"] },
+    { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/communications/email", icon: Mail, roles: ["ADMIN", "OWNER"] },
+    { section: "COMMUNICATIONS", label: "Client Queries", desc: "Support tickets", to: "/communications/client-queries", icon: MessageSquare, roles: ["ADMIN", "OWNER"] },
     
-    { section: "AI", label: "AI Control Tower", desc: "6-Claw Mesh Status", to: "/ai-control-tower", icon: Sparkles },
-    { section: "AI", label: "High Risk Queue", desc: "Exception management", to: "/high-risk-queue", icon: ShieldAlert },
+    // BILLING
+    { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, roles: ["ADMIN", "OWNER", "SALES"] },
+    { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing/batches", icon: FileSpreadsheet, roles: ["ADMIN", "OWNER", "SALES"] },
+    { section: "BILLING", label: "Invoice Drafts", desc: "Pending invoices", to: "/invoice-drafts", icon: FileText, roles: ["ADMIN", "OWNER", "SALES"] },
+    { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt, roles: ["ADMIN", "OWNER", "SALES"] },
+    { section: "BILLING", label: "Client Portal", desc: "Tenant access links", to: "/billing/client-portal-links", icon: Bot, roles: ["ADMIN", "OWNER"] },
+    { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText, roles: ["ADMIN", "OWNER", "SALES"] },
     
-    { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/users-roles", icon: Users },
-    { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings },
+    // AI
+    { section: "AI", label: "AI Control Tower", desc: "6-Claw Mesh Status", to: "/ai/control-tower", icon: Sparkles, roles: ["ADMIN", "OWNER", "OPS"] },
+    { section: "AI", label: "High Risk Queue", desc: "Exception management", to: "/security/high-risk", icon: ShieldAlert, roles: ["ADMIN", "OWNER", "OPS"] },
+    
+    // ADMIN
+    { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/settings/roles", icon: Users, roles: ["ADMIN", "OWNER", "COMPANY_ADMIN"] },
+    { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings, roles: ["ADMIN", "OWNER", "COMPANY_ADMIN"] },
+
+    // SUPERADMIN
+    { section: "SUPERADMIN" as any, label: "Platform Overview", desc: "All tenants", to: "/superadmin", icon: Crown, roles: ["SUPER_ADMIN"] },
+    { section: "SUPERADMIN" as any, label: "Manage Companies", desc: "Tenant manager", to: "/superadmin/companies", icon: Building2, roles: ["SUPER_ADMIN"] },
   ], []);
 
+  const { user } = useAuth();
+  const userRole = user?.role || "USER";
+
+  // Debug logging
+  console.log('🔍 User role:', userRole);
+  console.log('🔍 User object:', user);
+
+  const filteredNav = useMemo(() => {
+    const filtered = nav.filter(item => {
+      // If no roles specified, show to everyone
+      if (!item.roles || item.roles.length === 0) return true;
+      // Otherwise check if user has required role
+      const hasAccess = item.roles.includes(userRole);
+      if (item.label && item.label.includes('Fleet Map')) {
+        console.log(`🔍 ${item.label}: roles=${JSON.stringify(item.roles)}, userRole=${userRole}, hasAccess=${hasAccess}`);
+      }
+      return hasAccess;
+    });
+    console.log('🔍 Filtered nav items:', filtered.map(i => i.label));
+    return filtered;
+  }, [nav, userRole]);
+
   const grouped = useMemo(() => ({
-    CORE: nav.filter(i => i.section === "CORE"),
-    OPS: nav.filter(i => i.section === "OPS"),
-    COMMUNICATIONS: nav.filter(i => i.section === "COMMUNICATIONS"),
-    BILLING: nav.filter(i => i.section === "BILLING"),
-    AI: nav.filter(i => i.section === "AI"),
-    ADMIN: nav.filter(i => i.section === "ADMIN"),
-  }), [nav]);
+    CORE: filteredNav.filter(i => i.section === "CORE"),
+    OPS: filteredNav.filter(i => i.section === "OPS"),
+    INVENTORY: filteredNav.filter(i => i.section === "INVENTORY"),
+    COMMUNICATIONS: filteredNav.filter(i => i.section === "COMMUNICATIONS"),
+    BILLING: filteredNav.filter(i => i.section === "BILLING"),
+    AI: filteredNav.filter(i => i.section === "AI"),
+    ADMIN: filteredNav.filter(i => i.section === "ADMIN"),
+    SUPERADMIN: filteredNav.filter(i => i.section === ("SUPERADMIN" as any)),
+  }), [filteredNav]);
 
   const currentLabel = useMemo(() => {
     const found = [...nav].sort((a,b) => b.to.length - a.to.length).find(i => location.pathname.startsWith(i.to));
@@ -201,7 +277,8 @@ export default function AppLayout() {
   }, [location.pathname, nav]);
 
   const handleLogout = () => { 
-    localStorage.clear(); 
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("flowops_owner_token");
     navigate("/login", { replace: true }); 
   };
 

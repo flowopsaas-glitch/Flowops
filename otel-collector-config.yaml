@@ -1,3 +1,4 @@
+# /opt/Flowops/otel-collector-config.yaml
 receivers:
   otlp:
     protocols:
@@ -5,26 +6,33 @@ receivers:
         endpoint: 0.0.0.0:4318
         cors:
           allowed_origins:
-            - "http://localhost:5174"      # Vite dev frontend
-            - "http://localhost:3000"      # Backend
-            - "http://localhost:5173"      # Alternative frontend port
-            - "http://127.0.0.1:5174"
-            - "http://127.0.0.1:3000"
+            # Development
+            - "http://localhost:5173"
+            - "http://localhost:5174"
+            - "http://localhost:3000"
+            - "http://localhost:3001"
+            - "http://127.0.0.1:*"
+            # Production (your Cloudflare domains)
+            - "https://platform.flowop.work"
+            - "https://holdings.flowop.work"
+            - "https://api.flowop.work"
           allowed_headers:
             - "Content-Type"
             - "Authorization"
+            - "X-FlowOps-Trace-Id"
       grpc:
         endpoint: 0.0.0.0:4317
 
+  # Optional: Prometheus receiver for scraping backend metrics
   prometheus:
     config:
       scrape_configs:
-        - job_name: 'otel-collector'
+        - job_name: 'otel-collector-self'
           static_configs:
-            - targets: ['localhost:8888']
+            - targets: ['0.0.0.0:8888']
 
 processors:
-  # Batch processor for efficiency
+  # Batch for efficiency
   batch:
     timeout: 10s
     send_batch_size: 1024
@@ -36,42 +44,70 @@ processors:
     limit_mib: 512
     spike_limit_mib: 128
 
-  # Attributes processor to add service info
+  # Add service metadata
   attributes:
     actions:
       - key: service.version
         value: "3.5.0"
         action: insert
+      - key: deployment.environment
+        value: "${env:DEPLOYMENT_ENV:-development}"
+        action: insert
+      - key: cluster
+        value: "${env:CLUSTER_NAME:-local}"
+        action: insert
 
 exporters:
-  # Export traces to Jaeger
+  # Export traces to Jaeger (using Docker service name)
   jaeger:
-    endpoint: "http://jaeger:14268/api/traces"
+    endpoint: "jaeger:14268"  # ← Docker service name, not localhost
+    tls:
+      insecure: true  # Disable for local dev; enable with certs in prod
 
-  # Export metrics to Prometheus
+  # Export metrics to Prometheus endpoint
   prometheus:
-    endpoint: "0.0.0.0:8888"
+    endpoint: "0.0.0.0:8889"  # ← Different port than receiver to avoid conflict
     namespace: flowops
     const_labels:
-      environment: "development"
-      cluster: "local"
+      environment: "${env:DEPLOYMENT_ENV:-development}"
+      cluster: "${env:CLUSTER_NAME:-local}"
 
-  # Optional: logging exporter (useful for debugging)
+  # Logging exporter for debugging (disable in prod)
   logging:
-    loglevel: debug
+    loglevel: info  # Change to 'debug' for verbose logs during troubleshooting
+
+  # Optional: OTLP exporter for cloud backends (Signoz, Grafana Cloud, etc.)
+  # otlphttp:
+  #   endpoint: "https://your-cloud-endpoint/v1/traces"
+  #   headers:
+  #     authorization: "${env:OTEL_CLOUD_TOKEN}"
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
 
 service:
+  extensions: [health_check, zpages]
   pipelines:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch, attributes]
-      exporters: [jaeger, logging]
+      exporters: [jaeger, logging]  # Add otlphttp for cloud export
 
     metrics:
-      receivers: [prometheus, otlp]
-      processors: [memory_limiter, batch]
+      receivers: [otlp, prometheus]  # OTLP from apps + self-scraping
+      processors: [memory_limiter, batch, attributes]
       exporters: [prometheus, logging]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [logging]
 
   telemetry:
     logs:
-      level: info
+      level: "${env:OTEL_LOG_LEVEL:-info}"
+    metrics:
+      level: detailed

@@ -1,42 +1,46 @@
-﻿import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { ReactNode } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  requiredRole?: string;
+  allowedRoles?: string[];
 }
 
-export default function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
+export default function ProtectedRoute({ 
+  children, 
+  allowedRoles = ['ADMIN', 'DISPATCHER', 'WAREHOUSE_CLERK', 'ULTIMATE_OWNER', 'SUPER_ADMIN'] 
+}: ProtectedRouteProps) {
   const { isAuthenticated, booting, user } = useAuth();
+  const location = useLocation();
 
-  // Show loading state while checking authentication
+  console.log('️ ProtectedRoute:', { 
+    path: location.pathname,
+    booting, 
+    isAuthenticated, 
+    userRole: user?.role 
+  });
+
   if (booting) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
+      <div className="flex items-center justify-center h-screen bg-[#0f172a]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
-  // Redirect to login if not authenticated
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
+    // Save intended destination for post-login redirect
+    sessionStorage.setItem('redirectAfterLogin', location.pathname);
     return <Navigate to="/login" replace />;
   }
 
-  // Check role if required
-  if (requiredRole && user?.role) {
-    const normalizedUserRole = String(user.role).toUpperCase();
-    const normalizedRequiredRole = String(requiredRole).toUpperCase();
-    
-    if (normalizedUserRole !== normalizedRequiredRole && normalizedUserRole !== 'ULTIMATE_OWNER' && normalizedUserRole !== 'SUPER_ADMIN') {
-      return <Navigate to="/dashboard" replace />;
-    }
+  const userRole = String(user.role || '').toUpperCase();
+  
+  if (!allowedRoles.includes(userRole)) {
+    console.log(` Role ${userRole} not authorized for ${location.pathname}`);
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
 }
-

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+// --- TYPES ---
+
 type TenantRow = {
   id?: number;
   tenantId?: number;
@@ -20,14 +22,21 @@ type TenantRow = {
   demo?: {
     enabled?: boolean;
     expiresAt?: string | null;
+    notes?: string | null;
   };
+  plan?: string;
+  demoEnabled?: boolean;
+  demoExpiresAt?: string | null;
+  monthlyPrice?: number | null;
 };
+
+// --- API HELPERS ---
 
 function getApiBase() {
   const raw =
     import.meta.env.VITE_API_BASE_URL ||
     import.meta.env.VITE_API_URL ||
-    "http://127.0.0.1:3000/api";
+    "http://localhost:3000/api/v1";
   return String(raw).replace(/\/+$/, "");
 }
 
@@ -72,6 +81,8 @@ async function ownerFetch(path: string, init?: RequestInit) {
   return data;
 }
 
+// --- UTILS ---
+
 function formatMoney(value?: number | null) {
   if (value == null || !Number.isFinite(Number(value))) return "—";
   return `ZAR ${Number(value).toLocaleString("en-ZA")}`;
@@ -88,6 +99,8 @@ function formatDate(value?: string | null) {
   });
 }
 
+// --- COMPONENT ---
+
 export default function OwnerTenants() {
   const navigate = useNavigate();
 
@@ -97,14 +110,30 @@ export default function OwnerTenants() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
+  const [debugToken, setDebugToken] = useState<string>("");
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const data = await ownerFetch("/companies");
-      setRows(Array.isArray(data) ? data : []);
+      // 🔍 DEBUG: Check the Token first
+      const currentToken = getOwnerToken();
+      setDebugToken(currentToken || "NO TOKEN FOUND");
+      console.log("🔑 [TenantManager] Token Found:", currentToken ? "YES" : "NO");
+
+      console.log("🟢 [TenantManager] Fetching /companies...");
+      
+      const data = await ownerFetch(`/companies?t=${Date.now()}`);
+      
+      console.log("🟢 [TenantManager] Data received:", data);
+
+      const rows = Array.isArray(data) ? data : [];
+      
+      console.log("🟢 [TenantManager] Rows to display:", rows);
+      
+      setRows(rows);
     } catch (err: any) {
+      console.error("🔴 [TenantManager] Error:", err);
       setError(err?.message || "Failed to load tenants.");
     } finally {
       setLoading(false);
@@ -143,7 +172,7 @@ export default function OwnerTenants() {
       await ownerFetch(`/companies/${id}/subscription`, {
         method: "PATCH",
         body: JSON.stringify({
-          subscriptionPlan: plan,
+          plan: plan,
           isActive: true,
         }),
       });
@@ -184,8 +213,18 @@ export default function OwnerTenants() {
           Owner Tenant Manager
         </h1>
         <p className="mt-3 max-w-3xl text-slate-300">
-          Live hidden owner-only tenant management with search, plan control, demo activation, and pricing visibility.
+          Live hidden owner-only tenant management.
         </p>
+
+        {/* 🔴 DEBUG PANEL */}
+        <div className="mt-4 p-4 bg-black/50 rounded-lg border border-red-500/30 font-mono text-xs text-red-300">
+          <strong>DEBUG INFO:</strong><br/>
+          Token Status: {debugToken ? "Token Found" : "NO TOKEN"}<br/>
+          {debugToken && <span className="text-[10px] break-all">Token: {debugToken.substring(0, 20)}...</span>}
+          <br/>
+          <br/>
+          <span className="text-yellow-400">IF NO TOKEN IS FOUND, PLEASE LOG IN AGAIN AS THE SUPER OWNER.</span>
+        </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
           <button
@@ -250,10 +289,12 @@ export default function OwnerTenants() {
               const id = row.id ?? row.tenantId ?? index + 1;
               const name = row.name ?? row.tenantName ?? "Unknown Tenant";
               const email = row.email ?? row.contactEmail ?? "—";
-              const plan = row.subscriptionPlan ?? row.planCode ?? "—";
+              const plan = row.subscriptionPlan ?? row.planCode ?? row.plan ?? "—";
               const status =
                 row.status || (row.isActive === false ? "INACTIVE" : "ACTIVE");
-              const demo = row.demo?.enabled ? "YES" : "NO";
+              const demo = (row.demo?.enabled as boolean) || (row.demoEnabled as boolean) ? "YES" : "NO";
+              const demoExpiry = row.demo?.expiresAt || row.demoExpiresAt;
+              const monthlyPrice = row.pricing?.monthlyPrice ?? row.monthlyPrice;
 
               return (
                 <tr key={String(id)} className="border-b border-white/5 align-top">
@@ -268,10 +309,10 @@ export default function OwnerTenants() {
                   </td>
                   <td className="px-4 py-4 text-slate-300">{demo}</td>
                   <td className="px-4 py-4 text-slate-300">
-                    {formatDate(row.demo?.expiresAt)}
+                    {formatDate(demoExpiry)}
                   </td>
                   <td className="px-4 py-4 text-slate-300">
-                    {formatMoney(row.pricing?.monthlyPrice)}
+                    {formatMoney(monthlyPrice)}
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap gap-2">

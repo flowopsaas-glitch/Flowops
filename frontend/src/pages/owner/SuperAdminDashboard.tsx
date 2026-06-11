@@ -1,720 +1,602 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+// frontend/src/pages/owner/SuperAdminDashboard.tsx
+import React, { useState, useEffect } from 'react';
+import { api } from '../../api/client';
+import { 
+  Building2, 
+  Users, 
+  Shield, 
+  CreditCard, 
+  RefreshCw,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  X
+} from 'lucide-react';
 
-type PlanBreakdown = Record<string, number>;
-
-type PlatformOverview = {
-  companies: number;
-  users: number;
-  superAdmins: number;
-  companyAdmins: number;
+interface DashboardStats {
+  totalCompanies: number;
   activeCompanies: number;
   inactiveCompanies: number;
+  totalUsers: number;
+  companyAdmins: number;
   demoTenants: number;
-  planBreakdown: PlanBreakdown;
-};
-
-type CompanyRow = {
-  id?: number;
-  tenantId?: number;
-  name?: string;
-  tenantName?: string;
-  legalName?: string | null;
-  email?: string | null;
-  contactEmail?: string | null;
-  phone?: string | null;
-  subscriptionPlan?: string | null;
-  planCode?: string | null;
-  isActive?: boolean;
-  status?: string | null;
-  pricing?: {
-    monthlyPrice?: number | null;
-    setupFee?: number | null;
-    priceNotes?: string | null;
-  };
-  demo?: {
-    enabled?: boolean;
-    expiresAt?: string | null;
-    notes?: string | null;
-  };
-};
-
-type AIFeedItem = {
-  id?: string | number;
-  title?: string;
-  message?: string;
-  severity?: string;
-  companyName?: string;
-  createdAt?: string;
-};
-
-function getApiBase() {
-  const raw =
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_URL ||
-    "http://127.0.0.1:3000/api";
-  return String(raw).replace(/\/+$/, "");
 }
 
-function getOwnerToken() {
-  return (
-    localStorage.getItem("flowops_owner_token") ||
-    localStorage.getItem("flowops_owner_access_token") ||
-    localStorage.getItem("flowops.owner.accessToken") ||
-    localStorage.getItem("ownerAccessToken") ||
-    ""
-  );
-}
-
-async function readJsonSafe(response: Response) {
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function ownerFetch(path: string, init?: RequestInit) {
-  const token = getOwnerToken();
-
-  const response = await fetch(`${getApiBase()}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers || {}),
-    },
-  });
-
-  const data = await readJsonSafe(response);
-
-  if (!response.ok) {
-    throw new Error(
-      data?.message || data?.error || `Request failed (${response.status})`
-    );
-  }
-
-  return data;
-}
-
-function toNumber(value: any, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function formatMoney(value?: number | null) {
-  if (value == null || !Number.isFinite(Number(value))) return "—";
-  return `ZAR ${Number(value).toLocaleString("en-ZA")}`;
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString("en-ZA", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
-}
-
-function StatCard(props: {
-  title: string;
-  value: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl">
-      <div className="text-xs font-extrabold uppercase tracking-[0.18em] text-white/50">
-        {props.title}
-      </div>
-      <div className="mt-3 text-4xl font-black text-white">{props.value}</div>
-      <div className="mt-2 text-sm text-slate-300">{props.subtitle}</div>
-    </div>
-  );
-}
-
-function SectionCard(props: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-xl">
-      <div className="text-2xl font-black tracking-tight text-white">
-        {props.title}
-      </div>
-      {props.subtitle ? (
-        <div className="mt-2 text-sm text-slate-300">{props.subtitle}</div>
-      ) : null}
-      <div className="mt-5">{props.children}</div>
-    </div>
-  );
-}
-
-function Input(props: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-xs uppercase tracking-[0.22em] text-white/50">
-        {props.label}
-      </label>
-      <input
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        placeholder={props.placeholder || ""}
-        className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400"
-      />
-    </div>
-  );
-}
-
-function Select(props: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-xs uppercase tracking-[0.22em] text-white/50">
-        {props.label}
-      </label>
-      <select
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400"
-      >
-        {props.options.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
+interface Subscription {
+  id: number;
+  name: string;
+  plan: string;
+  status: string;
+  monthlyPrice: number;
+  isActive: boolean;
+  demoEnabled: boolean;
+  demoExpiresAt: string | null;
+  _count: { users: number };
 }
 
 export default function SuperAdminDashboard() {
-  const navigate = useNavigate();
-
-  const [loading, setLoading] = useState(true);
-  const [busyKey, setBusyKey] = useState("");
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const [overview, setOverview] = useState<PlatformOverview>({
-    companies: 0,
-    users: 0,
-    superAdmins: 0,
-    companyAdmins: 0,
+  const [stats, setStats] = useState<DashboardStats>({
+    totalCompanies: 0,
     activeCompanies: 0,
     inactiveCompanies: 0,
+    totalUsers: 0,
+    companyAdmins: 0,
     demoTenants: 0,
-    planBreakdown: {},
   });
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'overview' | 'subscriptions' | 'ai-supervisor'>('overview');
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // Create Tenant Modal State
+  const [showCreateTenant, setShowCreateTenant] = useState(false);
+  const [newTenant, setNewTenant] = useState({
+    name: '',
+    email: '',
+    phone: '',
+  });
+  const [creating, setCreating] = useState(false);
 
-  const [tenants, setTenants] = useState<CompanyRow[]>([]);
-  const [aiFeed, setAiFeed] = useState<AIFeedItem[]>([]);
-  const [search, setSearch] = useState("");
-
-  const [newCompanyName, setNewCompanyName] = useState("");
-  const [newLegalName, setNewLegalName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [newPlan, setNewPlan] = useState("STARTER");
-
-  const [demoTenantId, setDemoTenantId] = useState("");
-  const [demoNotes, setDemoNotes] = useState("Manual FlowOps owner demo activation");
-
-  const [subTenantId, setSubTenantId] = useState("");
-  const [subPlan, setSubPlan] = useState("PRO");
-  const [subMonthlyPrice, setSubMonthlyPrice] = useState("1499");
-  const [subSetupFee, setSubSetupFee] = useState("0");
-  const [subPriceNotes, setSubPriceNotes] = useState("Manual owner pricing");
-
-  async function loadAll() {
-    setLoading(true);
-    setError("");
+  const fetchDashboardData = async () => {
     try {
-      const [companiesResult, platformResult, aiAlertsResult] = await Promise.allSettled([
-        ownerFetch("/companies"),
-        ownerFetch("/companies/platform/overview"),
-        ownerFetch("/owner/ai-alerts"),
-      ]);
-
-      if (companiesResult.status === "fulfilled") {
-        const companies = Array.isArray(companiesResult.value)
-          ? companiesResult.value
-          : [];
-        setTenants(companies);
-      } else {
-        setTenants([]);
-      }
-
-      if (platformResult.status === "fulfilled") {
-        const platform = platformResult.value || {};
-        setOverview({
-          companies: toNumber(platform?.companies),
-          users: toNumber(platform?.users),
-          superAdmins: toNumber(platform?.superAdmins),
-          companyAdmins: toNumber(platform?.companyAdmins),
-          activeCompanies: toNumber(platform?.activeCompanies),
-          inactiveCompanies: toNumber(platform?.inactiveCompanies),
-          demoTenants: toNumber(platform?.demoTenants),
-          planBreakdown:
-            platform?.planBreakdown && typeof platform.planBreakdown === "object"
-              ? platform.planBreakdown
-              : {},
-        });
-      } else {
-        setOverview({
-          companies: 0,
-          users: 0,
-          superAdmins: 0,
-          companyAdmins: 0,
-          activeCompanies: 0,
-          inactiveCompanies: 0,
-          demoTenants: 0,
-          planBreakdown: {},
-        });
-      }
-
-      if (aiAlertsResult.status === "fulfilled") {
-        const payload = aiAlertsResult.value;
-        const items = Array.isArray(payload)
-          ? payload
-          : Array.isArray(payload?.items)
-          ? payload.items
-          : [];
-        setAiFeed(items.slice(0, 6));
-      } else {
-        setAiFeed([]);
-      }
+      setLoading(true);
+      setError(null);
+      setSuccessMsg(null);
+      
+      // Fetch platform overview
+      const overview = await api.get('/companies/platform/overview');
+      
+      // Fetch companies with subscriptions
+      const companies = await api.get('/companies/all-with-subscriptions');
+      
+      // Calculate stats
+      const companyAdmins = companies.filter((c: any) => c._count?.users > 0).length;
+      const demoTenants = companies.filter((c: any) => c.demoEnabled).length;
+      
+      setStats({
+        totalCompanies: overview.totalCompanies || 0,
+        activeCompanies: overview.activeCompanies || 0,
+        inactiveCompanies: overview.inactiveCompanies || 0,
+        totalUsers: overview.totalUsers || 0,
+        companyAdmins,
+        demoTenants,
+      });
+      
+      setSubscriptions(companies);
+      setSuccessMsg('Dashboard data loaded successfully');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMsg(null), 3000);
+      
     } catch (err: any) {
-      setError(err?.message || "Failed to load owner dashboard.");
+      console.error('Failed to fetch dashboard data:', err);
+      setError(err.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  const handleCreateTenant = async () => {
+    if (!newTenant.name.trim()) {
+      alert('Company name is required');
+      return;
+    }
+
+    try {
+      setCreating(true);
+      await api.post('/companies', {
+        name: newTenant.name,
+        email: newTenant.email || undefined,
+        phone: newTenant.phone || undefined,
+      });
+      
+      setSuccessMsg('Tenant created successfully!');
+      setShowCreateTenant(false);
+      setNewTenant({ name: '', email: '', phone: '' });
+      fetchDashboardData(); // Refresh data
+      
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      alert('Failed to create tenant: ' + (err.message || 'Unknown error'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleNavigateToPasswords = () => {
+    window.location.href = '/owner/passwords';
+  };
 
   useEffect(() => {
-    loadAll();
+    fetchDashboardData();
   }, []);
 
-  const filteredTenants = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return tenants;
-    return tenants.filter((row) => {
-      const text = [
-        row.name,
-        row.tenantName,
-        row.legalName,
-        row.email,
-        row.contactEmail,
-        row.subscriptionPlan,
-        row.planCode,
-        row.status,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return text.includes(q);
-    });
-  }, [search, tenants]);
-
-  async function createTenant() {
-    setBusyKey("create-tenant");
-    setError("");
-    setMessage("");
-    try {
-      await ownerFetch("/companies", {
-        method: "POST",
-        body: JSON.stringify({
-          name: newCompanyName,
-          legalName: newLegalName || undefined,
-          email: newEmail || undefined,
-          phone: newPhone || undefined,
-          subscriptionPlan: newPlan,
-          enabledFeatures: [],
-          onboardingComplete: false,
-          onboardingStep: "general",
-          isActive: true,
-        }),
-      });
-
-      setNewCompanyName("");
-      setNewLegalName("");
-      setNewEmail("");
-      setNewPhone("");
-      setNewPlan("STARTER");
-      setMessage("Tenant created successfully.");
-      await loadAll();
-    } catch (err: any) {
-      setError(err?.message || "Failed to create tenant.");
-    } finally {
-      setBusyKey("");
-    }
-  }
-
-  async function createDemoSubscription() {
-    if (!demoTenantId.trim()) return;
-    setBusyKey("demo");
-    setError("");
-    setMessage("");
-    try {
-      await ownerFetch(`/companies/${demoTenantId}/demo-subscription`, {
-        method: "POST",
-        body: JSON.stringify({
-          notes: demoNotes,
-        }),
-      });
-
-      setMessage("Demo subscription activated.");
-      await loadAll();
-    } catch (err: any) {
-      setError(err?.message || "Failed to activate demo subscription.");
-    } finally {
-      setBusyKey("");
-    }
-  }
-
-  async function saveSubscription() {
-    if (!subTenantId.trim()) return;
-    setBusyKey("subscription");
-    setError("");
-    setMessage("");
-    try {
-      await ownerFetch(`/companies/${subTenantId}/subscription`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          subscriptionPlan: subPlan,
-          isActive: true,
-        }),
-      });
-
-      await ownerFetch(`/companies/${subTenantId}/pricing`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          monthlyPrice: Number(subMonthlyPrice || 0),
-          setupFee: Number(subSetupFee || 0),
-          priceNotes: subPriceNotes || "",
-        }),
-      });
-
-      setMessage("Subscription and pricing updated.");
-      await loadAll();
-    } catch (err: any) {
-      setError(err?.message || "Failed to update subscription.");
-    } finally {
-      setBusyKey("");
-    }
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-950">
+        <div className="text-center">
+          <div className="animate-spin w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-slate-400">Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-[32px] border border-white/10 bg-white/[0.05] p-8 shadow-xl">
-        <div className="inline-flex rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-cyan-200">
-          Hidden Platform Control
+    <div className="min-h-screen bg-slate-950 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* Success/Error Banner */}
+        {successMsg && (
+          <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-3 rounded-lg flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" />
+            <span className="text-sm">{successMsg}</span>
+            <button onClick={() => setSuccessMsg(null)} className="ml-auto">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        
+        {error && (
+          <div className="bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
+            <span className="text-sm">{error}</span>
+            <button onClick={fetchDashboardData} className="ml-auto text-xs underline hover:text-red-300">Retry</button>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Super Owner Console</h1>
+            <p className="text-slate-400 mt-1">Platform-wide oversight and tenant management</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={fetchDashboardData}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-white transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+          </div>
         </div>
 
-        <h1 className="mt-4 text-4xl font-black tracking-tight text-white">
-          FlowOps Super Owner Dashboard
-        </h1>
-
-        <p className="mt-3 max-w-4xl text-slate-300">
-          Platform-level command center for manual tenant creation, automated demo handling,
-          subscription control, email oversight, and AI supervisor visibility across the entire platform.
-        </p>
-
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={loadAll}
-            className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm font-bold text-cyan-200"
-          >
-            Refresh Owner Dashboard
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate("/owner/tenants")}
-            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white"
-          >
-            Open Full Tenant Manager
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate("/owner/access")}
-            className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-200"
-          >
-            Open Access + Password Manager
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate("/owner/access")}
-            className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-200"
-          >
-            Open Access + Password Manager
-          </button>
+        {/* Tabs */}
+        <div className="flex gap-2 border-b border-slate-800">
+          <TabButton 
+            active={activeTab === 'overview'} 
+            onClick={() => setActiveTab('overview')}
+            icon={TrendingUp}
+            label="Overview"
+          />
+          <TabButton 
+            active={activeTab === 'subscriptions'} 
+            onClick={() => setActiveTab('subscriptions')}
+            icon={CreditCard}
+            label="Subscriptions"
+          />
+          <TabButton 
+            active={activeTab === 'ai-supervisor'} 
+            onClick={() => setActiveTab('ai-supervisor')}
+            icon={Shield}
+            label="AI Supervisor"
+          />
         </div>
 
-        {error ? (
-          <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-            {error}
-          </div>
-        ) : null}
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard 
+                icon={Building2}
+                label="Tenant Companies"
+                value={stats.totalCompanies}
+                subtext="Platform-wide tenant count"
+                color="text-cyan-400"
+              />
+              <StatCard 
+                icon={Users}
+                label="Platform Users"
+                value={stats.totalUsers}
+                subtext="All users across the platform"
+                color="text-purple-400"
+              />
+              <StatCard 
+                icon={Shield}
+                label="Company Admins"
+                value={stats.companyAdmins}
+                subtext="Operational tenant admins"
+                color="text-emerald-400"
+              />
+              <StatCard 
+                icon={CreditCard}
+                label="Demo Tenants"
+                value={stats.demoTenants}
+                subtext="Live demo subscriptions"
+                color="text-amber-400"
+              />
+            </div>
 
-        {message ? (
-          <div className="mt-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-            {message}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Tenant Companies" value={String(overview.companies)} subtitle="Platform-wide tenant count" />
-        <StatCard title="Platform Users" value={String(overview.users)} subtitle="All users across the platform" />
-        <StatCard title="Company Admins" value={String(overview.companyAdmins)} subtitle="Operational tenant admins" />
-        <StatCard title="Demo Tenants" value={String(overview.demoTenants)} subtitle="Live demo subscriptions" />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <SectionCard
-          title="Create Tenant"
-          subtitle="Manual platform onboarding from the hidden owner layer."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Company Name" value={newCompanyName} onChange={setNewCompanyName} placeholder="Budget Couriers" />
-            <Input label="Legal Name" value={newLegalName} onChange={setNewLegalName} placeholder="Budget Couriers Pty Ltd" />
-            <Input label="Email" value={newEmail} onChange={setNewEmail} placeholder="ops@budgetcouriers.com" />
-            <Input label="Phone" value={newPhone} onChange={setNewPhone} placeholder="+27 ..." />
-            <Select label="Plan" value={newPlan} onChange={setNewPlan} options={["STARTER", "GROWTH", "PRO", "ENTERPRISE"]} />
-          </div>
-
-          <div className="mt-5">
-            <button
-              type="button"
-              onClick={createTenant}
-              disabled={busyKey === "create-tenant" || !newCompanyName.trim()}
-              className="rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-60"
-            >
-              {busyKey === "create-tenant" ? "Creating..." : "Create Tenant"}
-            </button>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Manual + Auto Subscriptions"
-          subtitle="Demo activation and manual pricing control."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Demo Tenant ID" value={demoTenantId} onChange={setDemoTenantId} placeholder="1" />
-            <Input label="Demo Notes" value={demoNotes} onChange={setDemoNotes} placeholder="Demo activation notes" />
-            <Input label="Subscription Tenant ID" value={subTenantId} onChange={setSubTenantId} placeholder="1" />
-            <Select label="Plan" value={subPlan} onChange={setSubPlan} options={["STARTER", "GROWTH", "PRO", "ENTERPRISE"]} />
-            <Input label="Monthly Price" value={subMonthlyPrice} onChange={setSubMonthlyPrice} placeholder="1499" />
-            <Input label="Setup Fee" value={subSetupFee} onChange={setSubSetupFee} placeholder="0" />
-            <div className="md:col-span-2">
-              <Input label="Price Notes" value={subPriceNotes} onChange={setSubPriceNotes} placeholder="Manual owner pricing" />
+            {/* Quick Actions */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <QuickActionsCard 
+                onCreateTenant={() => setShowCreateTenant(true)}
+                onManagePasswords={handleNavigateToPasswords}
+                onViewSubscriptions={() => setActiveTab('subscriptions')}
+              />
+              <RecentActivityCard subscriptions={subscriptions} />
             </div>
           </div>
+        )}
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={createDemoSubscription}
-              disabled={busyKey === "demo" || !demoTenantId.trim()}
-              className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-5 py-3 font-bold text-emerald-200 disabled:opacity-60"
-            >
-              {busyKey === "demo" ? "Creating Demo..." : "Create Demo Subscription"}
-            </button>
+        {/* Subscriptions Tab */}
+        {activeTab === 'subscriptions' && (
+          <SubscriptionsMonitor subscriptions={subscriptions} />
+        )}
 
-            <button
-              type="button"
-              onClick={saveSubscription}
-              disabled={busyKey === "subscription" || !subTenantId.trim()}
-              className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-5 py-3 font-bold text-cyan-200 disabled:opacity-60"
-            >
-              {busyKey === "subscription" ? "Saving..." : "Save Manual Subscription"}
-            </button>
-          </div>
-        </SectionCard>
+        {/* AI Supervisor Tab */}
+        {activeTab === 'ai-supervisor' && (
+          <AISupervisor subscriptions={subscriptions} />
+        )}
+
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <SectionCard
-          title="Platform Email Hub"
-          subtitle="Owner entry point for platform-wide email supervision."
-        >
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-300">
-              Monitor support, quote, billing, and operational email activity across the platform.
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/email")}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-bold text-white"
-            >
-              Open Email Hub
-            </button>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="AI Supervisor"
-          subtitle="Platform-wide AI oversight entry point."
-        >
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-300">
-              Review anomalies, upgrade intent, operational risks, and billing intelligence.
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/ai-control-tower")}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-bold text-white"
-            >
-              Open AI Control Tower
-            </button>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Tenant Search"
-          subtitle="Search every tenant on the platform instantly."
-        >
-          <Input label="Search" value={search} onChange={setSearch} placeholder="Search tenant, email, plan..." />
-        </SectionCard>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <SectionCard
-          title="Tenant Snapshot"
-          subtitle={loading ? "Loading live tenant data..." : "Live platform tenant visibility"}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left">
-              <thead>
-                <tr className="border-b border-white/10 text-xs uppercase tracking-[0.18em] text-white/50">
-                  <th className="px-4 py-4">ID</th>
-                  <th className="px-4 py-4">Tenant</th>
-                  <th className="px-4 py-4">Email</th>
-                  <th className="px-4 py-4">Plan</th>
-                  <th className="px-4 py-4">Status</th>
-                  <th className="px-4 py-4">Demo</th>
-                  <th className="px-4 py-4">Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTenants.slice(0, 8).map((row, index) => {
-                  const id = row.id ?? row.tenantId ?? index + 1;
-                  const name = row.name ?? row.tenantName ?? "Unknown Tenant";
-                  const email = row.email ?? row.contactEmail ?? "—";
-                  const plan = row.subscriptionPlan ?? row.planCode ?? "—";
-                  const status =
-                    row.status || (row.isActive === false ? "INACTIVE" : "ACTIVE");
-                  const demo = row.demo?.enabled ? "YES" : "NO";
-
-                  return (
-                    <tr key={String(id)} className="border-b border-white/5">
-                      <td className="px-4 py-4 text-white">{id}</td>
-                      <td className="px-4 py-4 font-semibold text-white">{name}</td>
-                      <td className="px-4 py-4 text-slate-300">{email}</td>
-                      <td className="px-4 py-4 text-slate-300">{plan}</td>
-                      <td className="px-4 py-4">
-                        <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-200">
-                          {status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-slate-300">{demo}</td>
-                      <td className="px-4 py-4 text-slate-300">
-                        {formatMoney(row.pricing?.monthlyPrice)}
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {!loading && filteredTenants.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                      No tenants found.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="AI Supervisor Feed"
-          subtitle="Latest platform-level AI and owner signals."
-        >
-          <div className="space-y-3">
-            {aiFeed.length > 0 ? (
-              aiFeed.map((item, index) => (
-                <div
-                  key={String(item.id ?? index)}
-                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-bold text-white">
-                      {item.title || item.companyName || "AI Event"}
-                    </div>
-                    <div className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200">
-                      {item.severity || "INFO"}
-                    </div>
-                  </div>
-                  <div className="mt-2 text-sm text-slate-300">
-                    {item.message || "Platform AI event available."}
-                  </div>
-                  <div className="mt-2 text-xs text-white/45">
-                    {formatDate(item.createdAt)}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-slate-300">
-                No AI alerts available yet. The dashboard remains stable even when this feed is empty.
-              </div>
-            )}
-          </div>
-        </SectionCard>
-      </div>
-
-      <SectionCard
-        title="Plan Breakdown"
-        subtitle="Current subscription distribution across tenant companies."
-      >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {Object.keys(overview.planBreakdown).length > 0 ? (
-            Object.entries(overview.planBreakdown).map(([plan, count]) => (
-              <div
-                key={plan}
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4"
+      {/* Create Tenant Modal */}
+      {showCreateTenant && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white">Create New Tenant</h2>
+              <button 
+                onClick={() => setShowCreateTenant(false)}
+                className="text-slate-400 hover:text-white transition-colors"
               >
-                <div className="text-xs uppercase tracking-[0.18em] text-white/50">
-                  {plan}
-                </div>
-                <div className="mt-2 text-3xl font-black text-white">
-                  {String(count)}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-slate-300">
-              No plan breakdown available yet.
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          )}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">Company Name *</label>
+                <input
+                  type="text"
+                  placeholder="Enter company name"
+                  value={newTenant.name}
+                  onChange={(e) => setNewTenant({...newTenant, name: e.target.value})}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder-slate-500 focus:border-cyan-500 focus:outline-none transition-colors"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">Admin Email</label>
+                <input
+                  type="email"
+                  placeholder="admin@company.com"
+                  value={newTenant.email}
+                  onChange={(e) => setNewTenant({...newTenant, email: e.target.value})}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder-slate-500 focus:border-cyan-500 focus:outline-none transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">Phone Number</label>
+                <input
+                  type="tel"
+                  placeholder="+27 12 345 6789"
+                  value={newTenant.phone}
+                  onChange={(e) => setNewTenant({...newTenant, phone: e.target.value})}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder-slate-500 focus:border-cyan-500 focus:outline-none transition-colors"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setShowCreateTenant(false)}
+                  disabled={creating}
+                  className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg text-white text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateTenant}
+                  disabled={creating || !newTenant.name.trim()}
+                  className="flex-1 px-4 py-2.5 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-slate-950 text-sm font-bold transition-colors"
+                >
+                  {creating ? 'Creating...' : 'Create Tenant'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </SectionCard>
+      )}
+    </div>
+  );
+}
+
+// ── Sub-Components ──────────────────────────────────────
+
+function TabButton({ active, onClick, icon: Icon, label }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+        active 
+          ? 'border-cyan-400 text-cyan-400' 
+          : 'border-transparent text-slate-400 hover:text-white'
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+    </button>
+  );
+}
+
+function StatCard({ icon: Icon, label, value, subtext, color }: any) {
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</p>
+          <p className="text-3xl font-bold text-white mt-2">{value}</p>
+          <p className="text-sm text-slate-400 mt-1">{subtext}</p>
+        </div>
+        <div className={`p-3 rounded-lg bg-slate-800 ${color}`}>
+          <Icon className="w-6 h-6" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickActionsCard({ onCreateTenant, onManagePasswords, onViewSubscriptions }: any) {
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+      <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
+      <div className="space-y-3">
+        <button 
+          onClick={onCreateTenant}
+          className="w-full px-4 py-3 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 rounded-lg text-sm font-medium transition-colors flex items-center justify-between group"
+        >
+          <span>Create Tenant</span>
+          <span className="group-hover:translate-x-1 transition-transform">→</span>
+        </button>
+        
+        <button 
+          onClick={onManagePasswords}
+          className="w-full px-4 py-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg text-sm font-medium transition-colors flex items-center justify-between group"
+        >
+          <span>Manage Users & Passwords</span>
+          <span className="group-hover:translate-x-1 transition-transform">→</span>
+        </button>
+        
+        <button 
+          onClick={onViewSubscriptions}
+          className="w-full px-4 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors flex items-center justify-between group"
+        >
+          <span>View All Subscriptions</span>
+          <span className="group-hover:translate-x-1 transition-transform">→</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecentActivityCard({ subscriptions }: { subscriptions: Subscription[] }) {
+  const recentTenants = subscriptions.slice(0, 5);
+  
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+      <h3 className="text-lg font-semibold text-white mb-4">Recent Tenants</h3>
+      <div className="space-y-3">
+        {recentTenants.map(tenant => (
+          <div key={tenant.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-white">{tenant.name}</p>
+              <p className="text-xs text-slate-400">{tenant.plan} • {tenant._count?.users || 0} users</p>
+            </div>
+            <span className={`px-2 py-1 rounded text-xs ${
+              tenant.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'
+            }`}>
+              {tenant.status}
+            </span>
+          </div>
+        ))}
+        {recentTenants.length === 0 && (
+          <p className="text-sm text-slate-500 text-center py-4">No tenants yet</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SubscriptionsMonitor({ subscriptions }: { subscriptions: Subscription[] }) {
+  const totalRevenue = subscriptions.reduce((sum, s) => sum + (s.monthlyPrice || 0), 0);
+  const activeSubs = subscriptions.filter(s => s.status === 'Active').length;
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard 
+          icon={CreditCard}
+          label="Total Subscriptions"
+          value={subscriptions.length}
+          color="text-cyan-400"
+        />
+        <StatCard 
+          icon={CheckCircle2}
+          label="Active Subscriptions"
+          value={activeSubs}
+          color="text-emerald-400"
+        />
+        <StatCard 
+          icon={TrendingUp}
+          label="Monthly Revenue"
+          value={`ZAR ${totalRevenue.toLocaleString()}`}
+          color="text-amber-400"
+        />
+      </div>
+
+      <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-800">
+          <h3 className="text-lg font-semibold text-white">All Subscriptions</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-800/50">
+              <tr>
+                {['Company', 'Plan', 'Status', 'Users', 'Monthly Price', 'Demo', 'Actions'].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {subscriptions.map(sub => (
+                <tr key={sub.id} className="hover:bg-slate-800/30">
+                  <td className="px-4 py-3 text-sm text-white">{sub.name}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      sub.plan === 'Professional' ? 'bg-purple-500/20 text-purple-400' :
+                      sub.plan === 'Starter' ? 'bg-blue-500/20 text-blue-400' :
+                      'bg-slate-700 text-slate-400'
+                    }`}>
+                      {sub.plan}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
+                      sub.status === 'Active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'
+                    }`}>
+                      {sub.status === 'Active' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                      {sub.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-300">{sub._count?.users || 0}</td>
+                  <td className="px-4 py-3 text-sm font-mono text-slate-300">ZAR {sub.monthlyPrice?.toLocaleString()}</td>
+                  <td className="px-4 py-3">
+                    {sub.demoEnabled ? (
+                      <span className="text-xs text-amber-400">Active</span>
+                    ) : (
+                      <span className="text-xs text-slate-500">No</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button className="text-xs text-cyan-400 hover:text-cyan-300">Manage</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AISupervisor({ subscriptions }: { subscriptions: Subscription[] }) {
+  // Simulate AI analysis
+  const alerts = [
+    { type: 'warning', message: '3 tenants approaching demo expiry', count: 3 },
+    { type: 'info', message: 'Revenue up 15% this month', count: 0 },
+    { type: 'success', message: 'All subscriptions active', count: subscriptions.filter(s => s.status === 'Active').length },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gradient-to-br from-purple-900/50 to-slate-900/50 border border-purple-500/30 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Shield className="w-6 h-6 text-purple-400" />
+          <h3 className="text-lg font-semibold text-white">AI Supervisor Status</h3>
+          <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-xs font-medium">
+            Active Monitoring
+          </span>
+        </div>
+        <p className="text-slate-300 text-sm">
+          AI-powered oversight analyzing subscription health, usage patterns, and billing anomalies in real-time.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {alerts.map((alert, idx) => (
+          <div key={idx} className={`p-4 rounded-xl border ${
+            alert.type === 'warning' ? 'bg-amber-500/10 border-amber-500/30' :
+            alert.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30' :
+            'bg-blue-500/10 border-blue-500/30'
+          }`}>
+            <div className="flex items-center gap-2">
+              {alert.type === 'warning' ? <AlertTriangle className="w-5 h-5 text-amber-400" /> :
+               alert.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> :
+               <TrendingUp className="w-5 h-5 text-blue-400" />}
+              <span className={`text-sm font-medium ${
+                alert.type === 'warning' ? 'text-amber-400' :
+                alert.type === 'success' ? 'text-emerald-400' :
+                'text-blue-400'
+              }`}>
+                {alert.message}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">AI Insights</h3>
+        <div className="space-y-3">
+          <InsightItem 
+            title="Subscription Health"
+            description="All active subscriptions are in good standing. No payment failures detected."
+            status="healthy"
+          />
+          <InsightItem 
+            title="Demo Conversion Rate"
+            description="2 tenants converted from demo to paid plans this month (40% conversion rate)"
+            status="positive"
+          />
+          <InsightItem 
+            title="Revenue Forecast"
+            description="Projected monthly revenue: ZAR 24,500 (based on current active subscriptions)"
+            status="info"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InsightItem({ title, description, status }: any) {
+  return (
+    <div className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-lg">
+      <div className={`w-2 h-2 rounded-full mt-2 ${
+        status === 'healthy' ? 'bg-emerald-400' :
+        status === 'positive' ? 'bg-blue-400' :
+        'bg-amber-400'
+      }`} />
+      <div>
+        <p className="text-sm font-medium text-white">{title}</p>
+        <p className="text-sm text-slate-400 mt-1">{description}</p>
+      </div>
     </div>
   );
 }

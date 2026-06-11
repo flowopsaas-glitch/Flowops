@@ -1,0 +1,500 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =======================
+// ENUMS
+// =======================
+
+enum Role {
+  SUPER_ADMIN
+  SUPERADMIN
+  ADMIN
+  COMPANY_ADMIN
+  USER
+  DRIVER
+}
+
+enum BillingStatus {
+  UNBILLED
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum WaybillInboxSource {
+  WHATSAPP
+  EMAIL
+  UPLOAD
+  DRIVER_PHOTO
+  SCANNER
+  MANUAL
+}
+
+enum WaybillInboxStatus {
+  NEEDS_REVIEW
+  READY_FOR_BILLING
+  LINKED_TO_BILLING
+}
+
+enum WaybillStatus {
+  PENDING
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum DispatchStatus {
+  PENDING
+  ASSIGNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum AIEventStatus {
+  OPEN
+  IN_PROGRESS
+  TRIAGED
+  RESOLVED
+  DISMISSED
+}
+
+enum AIEventSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AIEventType {
+  DELAY_RISK
+  POD_MISSING
+  QUOTE_STALE
+  BILLING_ANOMALY
+  COLLECTION_RISK
+  CLIENT_CHURN
+  UPGRADE_INTENT
+  DEMO_REQUEST
+  SUPPORT_ESCALATION
+  ONBOARDING_INCOMPLETE
+  FRAUD_SIGNAL
+  ROUTE_ANOMALY
+  GENERAL
+  ISSUE
+  OTHER
+}
+
+enum CollectionStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum BookingRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum PortalAccessLinkStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+// ================================
+// Company
+// ================================
+model Company {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users         User[]             @relation("CompanyUsers")
+  clients       Client[]           @relation("CompanyClients")
+  couriers      Courier[]          @relation("CompanyCouriers")
+  rateCards     RateCard[]         @relation("CompanyRateCards")
+  aiEvents      AIEvent[]          @relation("CompanyAIEvents")
+  collections   Collection[]
+  invoicesSold  Invoice[]          @relation("InvoiceSellerCompany")
+  invoiceDrafts InvoiceDraft[]     @relation("CompanyInvoiceDrafts")
+  waybillInbox  WaybillInboxItem[] @relation("CompanyWaybillInboxItems")
+  waybillDrafts WaybillDraft[]     @relation("CompanyWaybillDrafts")
+  portalAccessLinks PortalAccessLink[] @relation("CompanyPortalAccessLinks")
+  bookingRequests   BookingRequest[]   @relation("CompanyBookingRequests")
+}
+
+// ================================
+// User
+// ================================
+model User {
+  id                   Int                @id @default(autoincrement())
+  email                String             @unique
+  password             String
+  firstName            String?
+  lastName             String?
+  role                 Role               @default(USER)
+  isActive             Boolean            @default(true)
+  lastLogin            DateTime?
+  waybillInboxCreated  WaybillInboxItem[] @relation("WaybillInboxCreatedBy")
+  waybillDraftsCreated WaybillDraft[]     @relation("UserWaybillDrafts")
+  companyId            Int?
+  company              Company?           @relation("CompanyUsers", fields: [companyId], references: [id], map: "FK_User_Company")
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt @default(now())
+  acks                 Ack[]              @relation("UserAcks")
+  assignedAIEvents     AIEvent[]          @relation("AIEventAssignedTo")
+}
+
+// ================================
+// Client
+// ================================
+model Client {
+  id          Int          @id @default(autoincrement())
+  name        String
+  companyId   Int
+  company     Company      @relation("CompanyClients", fields: [companyId], references: [id], map: "FK_Client_Company")
+  collections Collection[] @relation("ClientToCollections")
+  aiEvents    AIEvent[]    @relation("ClientToAIEvents")
+}
+
+// ================================
+// Courier
+// ================================
+model Courier {
+  id          Int          @id @default(autoincrement())
+  name        String
+  companyId   Int
+  company     Company      @relation("CompanyCouriers", fields: [companyId], references: [id], map: "FK_Courier_Company")
+  collections Collection[] @relation("CourierCollections")
+}
+
+// ================================
+// RateCard
+// ================================
+model RateCard {
+  id        Int     @id @default(autoincrement())
+  name      String
+  companyId Int
+  company   Company @relation("CompanyRateCards", fields: [companyId], references: [id], map: "FK_RateCard_Company")
+}
+
+// ================================
+// AIEvent
+// ================================
+model AIEvent {
+  id              Int             @id @default(autoincrement())
+  title           String
+  summary         String?
+  explanation     String?
+  suggestedAction String?
+  status          AIEventStatus   @default(OPEN)
+  severity        AIEventSeverity @default(LOW)
+  type            AIEventType     @default(GENERAL)
+  source          String?
+  detectedAt      DateTime        @default(now())
+  resolvedAt      DateTime?
+  
+  aiModel         String?
+  aiScore         Float?          @default(0)
+  aiConfidence    Float?          @default(0)
+  aiSignals       String[]        @default([])
+  
+  resolutionNote  String?
+  assignedToId    Int?
+  assignedTo      User?           @relation("AIEventAssignedTo", fields: [assignedToId], references: [id])
+
+  isAcknowledge   Boolean         @default(false)
+  acknowledgedAt  DateTime?
+  acknowledgedById Int?
+
+  companyId       Int?
+  company         Company?        @relation("CompanyAIEvents", fields: [companyId], references: [id], map: "FK_AIEvent_Company")
+  
+  clientId        Int?
+  client          Client?         @relation("ClientToAIEvents", fields: [clientId], references: [id], map: "FK_AIEvent_Client")
+  
+  collectionId    Int?
+  collection      Collection?     @relation("AIEventToCollection", fields: [collectionId], references: [id], map: "FK_AIEvent_Collection")
+  
+  quoteId         Int?
+  quote           Quote?          @relation("AIEventToQuote", fields: [quoteId], references: [id])
+  
+  emailHubItemId  String?
+  emailHubItem    EmailHubItem?   @relation("AIEventToEmailHubItem", fields: [emailHubItemId], references: [id])
+  
+  recommendations Recommendation[] @relation("AIEventToRecommendations")
+}
+
+// ================================
+// EmailHubItem
+// ================================
+model EmailHubItem {
+  id          String    @id @default(cuid())
+  subject     String?
+  senderEmail String?
+  aiEvents    AIEvent[] @relation("AIEventToEmailHubItem")
+}
+
+// ================================
+// Quote
+// ================================
+model Quote {
+  id          Int       @id @default(autoincrement())
+  title       String
+  aiEvents    AIEvent[] @relation("AIEventToQuote")
+  collections Collection[] @relation("QuoteToCollections")
+}
+
+// ================================
+// Recommendation
+// ================================
+model Recommendation {
+  id        Int      @id @default(autoincrement())
+  content   String
+  aiEventId Int
+  aiEvent   AIEvent  @relation("AIEventToRecommendations", fields: [aiEventId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// ================================
+// Collection
+// ================================
+model Collection {
+  id            Int                @id @default(autoincrement())
+  name          String
+  description   String?
+  status        CollectionStatus   @default(ACTIVE)
+  companyId     Int
+  company       Company            @relation(fields: [companyId], references: [id], map: "FK_Collection_Company")
+  clientId      Int?
+  client        Client?            @relation("ClientToCollections", fields: [clientId], references: [id], map: "FK_Collection_Client")
+  aiEvents      AIEvent[]          @relation("AIEventToCollection")
+  invoicesItems InvoiceItem[]      @relation("InvoiceItemToCollection")
+  courierId     Int?
+  courier       Courier?           @relation("CourierCollections", fields: [courierId], references: [id], map: "FK_Collection_Courier")
+  waybills      WaybillDraft[]     @relation("CollectionWaybills")
+  inboxItems    WaybillInboxItem[] @relation("InboxLinkedCollection")
+  acks          Ack[]              @relation("CollectionAcks")
+  quoteId       Int?
+  quote         Quote?             @relation("QuoteToCollections", fields: [quoteId], references: [id])
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt @default(now())
+}
+
+// ================================
+// Ack
+// ================================
+model Ack {
+  id             Int         @id @default(autoincrement())
+  message        String?
+  userId         Int?
+  user           User?       @relation("UserAcks", fields: [userId], references: [id])
+  collectionId   Int?
+  collection     Collection? @relation("CollectionAcks", fields: [collectionId], references: [id])
+  acknowledgedAt DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+}
+
+// ================================
+// BillingBatchState
+// ================================
+model BillingBatchState {
+  id                Int      @id @default(autoincrement())
+  batchId           String   @unique
+  companyId         Int?
+  periodKey         String?
+  contractCode      String?
+  payerSide         String?
+  clientName        String?
+  monthLabel        String?
+  status            String?
+  state             String
+  notes             String?
+  totalInvoices     Int?     @default(0)
+  processedInvoices Int?     @default(0)
+  failedInvoices    Int?     @default(0)
+  error             String?
+  lockedAt          DateTime?
+  lockedById        Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// ================================
+// WaybillInboxItem
+// ================================
+model WaybillInboxItem {
+  id        String  @id @default(cuid())
+  companyId Int
+  company   Company @relation("CompanyWaybillInboxItems", fields: [companyId], references: [id], map: "FK_WaybillInbox_Company")
+
+  collectionId Int?
+  collection   Collection? @relation("InboxLinkedCollection", fields: [collectionId], references: [id], map: "FK_WaybillInbox_Collection")
+
+  source      WaybillInboxSource @default(UPLOAD)
+  fileUrl     String?
+  fileName    String?
+  fileSize    Int?
+  mimeType    String?
+  metadata    Json?
+  status      WaybillInboxStatus
+  processedAt DateTime?
+  originalName  String?   // ✅ FIX
+  
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt @default(now())
+  createdById Int?
+  createdBy   User?              @relation("WaybillInboxCreatedBy", fields: [createdById], references: [id], map: "FK_WaybillInbox_CreatedBy")
+  
+  waybillDrafts WaybillDraft[]   @relation("WaybillInboxToDrafts")
+}
+
+model WaybillDraft {
+  id              String   @id @default(uuid())
+  waybillNo       String?
+  companyId      Int
+  company        Company       @relation("CompanyWaybillDrafts", fields: [companyId], references: [id], map: "FK_WaybillDraft_Company")
+  collectionId   Int?
+  collection     Collection?   @relation("CollectionWaybills", fields: [collectionId], references: [id])
+  paymentType     String?   // ✅ FIX
+  inboxItemId    String?
+  inboxItem      WaybillInboxItem? @relation("WaybillInboxToDrafts", fields: [inboxItemId], references: [id])
+  
+  invoiceDraftId String?
+  invoiceDraft    InvoiceDraft? @relation(fields: [invoiceDraftId], references: [id])
+
+  
+  status         WaybillStatus @default(PENDING)
+  data           Json?
+  parcels         Parcel[]
+  
+  createdAt      DateTime      @default(now())
+  updatedAt       DateTime @updatedAt
+  createdById    Int?
+  createdBy      User?         @relation("UserWaybillDrafts", fields: [createdById], references: [id], map: "FK_WaybillDraft_User")
+}
+
+model Parcel {
+  id             String       @id @default(cuid())
+  waybillDraftId String
+  waybillDraft   WaybillDraft @relation("WaybillDraftParcels", fields: [waybillDraftId], references: [id])
+  description    String?
+  weightKg        Float?   // ✅ FIX (was weight)
+}
+
+// ================================
+// InvoiceDraft
+// ================================
+model InvoiceDraft {
+  id             String         @id @default(cuid())
+  invoiceNumber  String?
+  companyId      Int
+  company        Company        @relation("CompanyInvoiceDrafts", fields: [companyId], references: [id])
+  waybills       WaybillDraft[] @relation("InvoiceDraftWaybills")
+  status         String
+  subtotal       Float?
+  vat            Float?
+  total          Float?
+  contractCode   String?
+  periodKey      String?
+  payerSide      String?
+  clientName     String?
+  notes          String?
+  dueDate        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  lines         InvoiceItem[]   // ✅ FIX (was InvoiceLine)
+
+  @@unique([companyId, periodKey, contractCode, payerSide], name: "companyId_periodKey_contractCode_payerSide")
+}
+
+// ================================
+// InvoiceDraftLine
+// ================================
+model InvoiceDraftLine {
+  id             String @id @default(uuid())
+  invoiceDraftId String
+  description    String
+  amount         Float
+
+  invoiceDraft InvoiceDraft @relation(fields: [invoiceDraftId], references: [id])
+}
+
+// ================================
+// Invoice
+// ================================
+model Invoice {
+  id            String   @id @default(uuid())
+  invoiceNumber String?
+  companyId     Int
+  company       Company       @relation("InvoiceSellerCompany", fields: [companyId], references: [id])
+  items         InvoiceItem[] @relation("InvoiceToItems")
+  status        String?
+  dueDate       DateTime?
+  notes         String?
+  subtotal      Float
+  vatAmount     Float
+  total         Float
+  reference     String?
+  createdAt     DateTime      @default(now())
+}
+
+// ================================
+// InvoiceItem
+// ================================
+model InvoiceItem {
+  id           Int         @id @default(autoincrement())
+  invoiceId    String
+  invoice      Invoice     @relation("InvoiceToItems", fields: [invoiceId], references: [id], map: "FK_InvoiceItem_Invoice")
+  collectionId Int?
+  collection   Collection? @relation("InvoiceItemToCollection", fields: [collectionId], references: [id])
+  description     String   // ✅ FIX
+  qty             Int
+  unitPrice       Float
+  amount          Float    // ✅ FIX
+
+  invoiceDraft    InvoiceDraft @relation(fields: [invoiceDraftId], references: [id])
+}
+}
+
+// ================================
+// PortalAccessLink
+// ================================
+model PortalAccessLink {
+  id        String                 @id @default(cuid())
+  token     String                 @unique
+  companyId Int
+  company   Company                @relation("CompanyPortalAccessLinks", fields: [companyId], references: [id])
+  status    PortalAccessLinkStatus @default(ACTIVE)
+  expiresAt DateTime?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+}
+
+// ================================
+// BookingRequest
+// ================================
+model BookingRequest {
+  id        String               @id @default(cuid())
+  companyId Int
+  company   Company              @relation("CompanyBookingRequests", fields: [companyId], references: [id])
+  status    BookingRequestStatus @default(PENDING)
+  details   Json?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}

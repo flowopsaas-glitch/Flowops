@@ -1,52 +1,91 @@
+// frontend/src/pages/WhatsAppHub.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Zap, MessageSquare, Loader2, Phone } from "lucide-react";
 import { api } from '../api/client';
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/ToastProvider";
 
+// Type definitions
+interface Thread {
+  phone: string;
+  lastMessage?: string;
+  updatedAt?: string;
+  messageCount?: number;
+}
+
+interface Message {
+  id: string | number;
+  message: string;
+  status: string;
+  sentAt: string;
+  createdAt: string;
+  direction?: 'inbound' | 'outbound';
+}
+
 export default function WhatsAppHub() {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [threads, setThreads] = useState<any[]>([]);
+  
+  const [threads, setThreads] = useState<Thread[]>([]);
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 1. Fetch Sidebar Threads
+  // ✅ Safe: Fetch Sidebar Threads - handles { data: [] } or []
   const fetchThreads = async () => {
     try {
       const res = await api.get("/whatsapp/threads");
-      setThreads(res.data);
-      if (res.data.length > 0 && !selectedThread) {
-        setSelectedThread(res.data[0].phone);
+      // ✅ Handle both { data: [] } and [] responses
+      const data = Array.isArray(res) ? res : (res?.data && Array.isArray(res.data) ? res.data : []);
+      setThreads(data);
+      
+      // Auto-select first thread if none selected
+      if (data.length > 0 && !selectedThread) {
+        setSelectedThread(data[0].phone);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Thread fetch failed", e);
+      setThreads([]);
+    } finally {
+      setInitialLoad(false);
     }
   };
 
-  // 2. Load Messages for selected driver
+  // ✅ Safe: Load Messages - handles { data: [] } or []
   const loadMessages = async (phone: string) => {
     try {
       const res = await api.get(`/whatsapp/messages/${phone}`);
-      setMessages(res.data);
+      // ✅ Handle both { data: [] } and [] responses
+      const data = Array.isArray(res) ? res : (res?.data && Array.isArray(res.data) ? res.data : []);
+      setMessages(data);
+      
       // Precision scroll to bottom
       if (scrollRef.current) {
-        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({ 
+            top: scrollRef.current?.scrollHeight || 0, 
+            behavior: 'smooth' 
+          });
+        });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Message load failed", err);
+      setMessages([]);
     }
   };
 
+  // Initial load
   useEffect(() => {
     fetchThreads();
     const tInterval = setInterval(fetchThreads, 10000);
     return () => clearInterval(tInterval);
   }, []);
 
+  // Load messages when thread selected
   useEffect(() => {
     if (selectedThread) {
       loadMessages(selectedThread);
@@ -55,8 +94,10 @@ export default function WhatsAppHub() {
     }
   }, [selectedThread]);
 
+  // ✅ Safe: Send message handler
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedThread) return;
+    
     setLoading(true);
     try {
       await api.post("/whatsapp/send", {
@@ -65,12 +106,26 @@ export default function WhatsAppHub() {
       });
       setNewMessage("");
       loadMessages(selectedThread);
-    } catch (err) {
-      showToast("Message failed to dispatch.", "error");
+      showToast("Message sent", "success");
+    } catch (err: any) {
+      console.error("Send failed", err);
+      showToast(err.message || "Message failed to dispatch.", "error");
     } finally {
       setLoading(false);
     }
   };
+
+  // Loading state
+  if (initialLoad) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#020817]">
+        <div className="text-center">
+          <div className="animate-spin w-12 h-12 border-4 border-sky-500 border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-slate-400 text-sm">Loading WhatsApp Hub...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-[#020817] text-slate-200 overflow-hidden font-sans">
@@ -82,25 +137,32 @@ export default function WhatsAppHub() {
           </h2>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-          {threads.map((t) => (
-            <button
-              key={t.phone}
-              onClick={() => setSelectedThread(t.phone)}
-              className={`w-full p-5 rounded-[24px] border text-left transition-all duration-300 ${
-                selectedThread === t.phone 
-                ? "bg-sky-600 border-sky-400 shadow-[0_0_20px_rgba(14,165,233,0.3)]" 
-                : "border-transparent hover:bg-white/5"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <Phone size={10} className={selectedThread === t.phone ? "text-white" : "text-sky-500"} />
-                <span className="text-sm font-black text-white">+{t.phone}</span>
-              </div>
-              <div className={`text-[10px] uppercase font-bold tracking-widest ${selectedThread === t.phone ? "text-sky-100" : "text-white/20"}`}>
-                Driver Active
-              </div>
-            </button>
-          ))}
+          {/* ✅ Safe: check if threads is array */}
+          {Array.isArray(threads) && threads.length > 0 ? (
+            threads.map((t) => (
+              <button
+                key={t?.phone || Math.random()}
+                onClick={() => t?.phone && setSelectedThread(t.phone)}
+                className={`w-full p-5 rounded-[24px] border text-left transition-all duration-300 ${
+                  selectedThread === t?.phone 
+                  ? "bg-sky-600 border-sky-400 shadow-[0_0_20px_rgba(14,165,233,0.3)]" 
+                  : "border-transparent hover:bg-white/5"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Phone size={10} className={selectedThread === t?.phone ? "text-white" : "text-sky-500"} />
+                  <span className="text-sm font-black text-white">+{t?.phone || 'Unknown'}</span>
+                </div>
+                <div className={`text-[10px] uppercase font-bold tracking-widest ${selectedThread === t?.phone ? "text-sky-100" : "text-white/20"}`}>
+                  Driver Active
+                </div>
+              </button>
+            ))
+          ) : (
+            <div className="text-center py-8 text-slate-500 text-sm">
+              {threads.length === 0 ? "No active threads" : "Loading..."}
+            </div>
+          )}
         </div>
       </div>
 
@@ -121,25 +183,32 @@ export default function WhatsAppHub() {
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-10 space-y-8 custom-scrollbar">
-              {messages.map((msg, i) => {
-                const isOutbound = msg.status === "SENT";
-                return (
-                  <div key={i} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[70%] flex flex-col ${isOutbound ? "items-end" : "items-start"}`}>
-                      <div className={`p-6 rounded-[28px] text-sm font-bold shadow-2xl leading-relaxed ${
-                        isOutbound 
-                        ? "bg-sky-600 text-white rounded-tr-none border border-sky-400/30" 
-                        : "bg-slate-900 border border-white/10 rounded-tl-none text-slate-100"
-                      }`}>
-                        {msg.message}
-                      </div>
-                      <div className="mt-2 text-[9px] text-white/20 font-black uppercase tracking-tighter">
-                        {new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {msg.status}
+              {/* ✅ Safe: check if messages is array */}
+              {Array.isArray(messages) && messages.length > 0 ? (
+                messages.map((msg, i) => {
+                  const isOutbound = msg?.status === "SENT" || msg?.direction === 'outbound';
+                  return (
+                    <div key={msg?.id || i} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[70%] flex flex-col ${isOutbound ? "items-end" : "items-start"}`}>
+                        <div className={`p-6 rounded-[28px] text-sm font-bold shadow-2xl leading-relaxed ${
+                          isOutbound 
+                          ? "bg-sky-600 text-white rounded-tr-none border border-sky-400/30" 
+                          : "bg-slate-900 border border-white/10 rounded-tl-none text-slate-100"
+                        }`}>
+                          {msg?.message || ''}
+                        </div>
+                        <div className="mt-2 text-[9px] text-white/20 font-black uppercase tracking-tighter">
+                          {msg?.sentAt || msg?.createdAt ? new Date(msg.sentAt || msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''} • {msg?.status || 'PENDING'}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="text-center py-12 text-slate-500">
+                  {Array.isArray(messages) && messages.length === 0 ? "No messages yet" : "Loading messages..."}
+                </div>
+              )}
             </div>
 
             <div className="p-8 bg-slate-950/90 border-t border-white/5 backdrop-blur-xl">

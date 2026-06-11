@@ -49,18 +49,15 @@ export async function getAIEvents(params?: {
   severity?: string;
   status?: string;
 }) {
-  const res = await api.get<AIEvent[]>("/ai-events", { params });
-  return res.data;
+  return await api.get<AIEvent[]>("/ai-events", { params }) as any;
 }
 
 export async function getAIEventStats() {
-  const res = await api.get<AIEventStats>("/ai-events/stats");
-  return res.data;
+  return await api.get<AIEventStats>("/ai-events/stats") as any;
 }
 
 export async function seedAIEventsDemo() {
-  const res = await api.post<{ created: number }>("/ai-events/seed-demo");
-  return res.data;
+  return await api.post<{ created: number }>("/ai-events/seed-demo") as any;
 }
 
 export async function resolveAIEvent(id: number, resolutionNote?: string) {

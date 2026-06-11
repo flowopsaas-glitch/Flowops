@@ -68,34 +68,28 @@ export type CreateCompanyAdminPayload = {
 };
 
 export async function getCompanies() {
-  const res = await api.get<CompanyRecord[]>("/companies");
-  return res.data;
+  return await api.get<CompanyRecord[]>("/companies") as any;
 }
 
 export async function getCompany(id: number) {
-  const res = await api.get<CompanyRecord>(`/companies/${id}`);
-  return res.data;
+  return await api.get<CompanyRecord>(`/companies/${id}`) as any;
 }
 
 export async function getPlatformOverview() {
-  const res = await api.get<PlatformOverview>("/companies/platform/overview");
-  return res.data;
+  return await api.get<PlatformOverview>("/companies/platform/overview") as any;
 }
 
 export async function createCompany(payload: CreateCompanyPayload) {
-  const res = await api.post<CompanyRecord>("/companies", payload);
-  return res.data;
+  return await api.post<CompanyRecord>("/companies", payload) as any;
 }
 
 export async function updateCompany(id: number, payload: Partial<CreateCompanyPayload>) {
-  const res = await api.patch<CompanyRecord>(`/companies/${id}`, payload);
-  return res.data;
+  return await api.patch<CompanyRecord>(`/companies/${id}`, payload) as any;
 }
 
 export async function createCompanyAdmin(
   companyId: number,
   payload: CreateCompanyAdminPayload
 ) {
-  const res = await api.post(`/companies/${companyId}/admins`, payload);
-  return res.data;
+  return await api.post(`/companies/${companyId}/admins`, payload) as any;
 }

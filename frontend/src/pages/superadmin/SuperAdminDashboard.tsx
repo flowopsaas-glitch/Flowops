@@ -63,13 +63,23 @@ export default function SuperAdminDashboard() {
     setPageError("");
 
     try {
-      const [platformData, aiData] = await Promise.all([
+      const [platformData, aiData] = await Promise.allSettled([
         getPlatformOverview(),
         getAIEventStats()
       ]);
 
-      setOverview(platformData);
-      setAIStats(aiData);
+      if (platformData.status === 'fulfilled') {
+        const d = platformData.value as any;
+        setOverview({
+          companies: d.companies ?? d.totalCompanies ?? 0,
+          users: d.users ?? d.totalUsers ?? 0,
+          superAdmins: d.superAdmins ?? 0,
+          companyAdmins: d.companyAdmins ?? 0,
+        });
+      }
+      if (aiData.status === 'fulfilled') {
+        setAIStats(aiData.value);
+      }
     } catch (error: any) {
       setPageError(
         error?.response?.data?.message ||

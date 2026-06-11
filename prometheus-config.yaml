@@ -1,31 +1,63 @@
+# /opt/Flowops/prometheus-config.yaml
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
     cluster: 'flowops'
-    environment: 'development'
+    environment: '${DEPLOYMENT_ENV:-development}'
+
+# Alerting (optional - add Alertmanager later)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# Recording rules (optional)
+# rule_files:
+#   - "rules/*.yml"
 
 scrape_configs:
-  # Scrape OpenTelemetry Collector metrics
+  # 1. OpenTelemetry Collector self-metrics
   - job_name: 'otel-collector'
     static_configs:
-      - targets: ['localhost:8888']
+      - targets: ['otel-collector:8889']  # ← Docker service name + exporter port
     scrape_interval: 10s
+    metrics_path: /metrics
+    scheme: http
 
-  # Scrape backend API metrics (if exposed)
+  # 2. Backend API metrics (if you expose /metrics endpoint)
   - job_name: 'flowops-backend'
     static_configs:
-      - targets: ['localhost:3000']
-    scrape_interval: 15s
-    metrics_path: '/metrics'
+      - targets: ['flowops-backend:4000']  # ← Docker service name + backend port
+    scrape_interval: 30s
+    metrics_path: /metrics  # ← Ensure your backend exposes this
+    scheme: http
+    # Optional: Add auth if /metrics is protected
+    # basic_auth:
+    #   username: '${PROMETHEUS_USER}'
+    #   password: '${PROMETHEUS_PASS}'
 
-  # Scrape Prometheus itself
+  # 3. Prometheus self-monitoring
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['prometheus:9090']  # ← Docker service name
+    scrape_interval: 15s
 
-  # Scrape Jaeger metrics
+  # 4. Jaeger metrics (correct port: 14269, not 16686)
   - job_name: 'jaeger'
     static_configs:
-      - targets: ['localhost:16686']
-    scrape_interval: 10s
+      - targets: ['jaeger:14269']  # ← Jaeger metrics port
+    scrape_interval: 30s
+
+  # 5. Node exporter (optional - for host metrics)
+  # - job_name: 'node-exporter'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:9100']  # For Docker Desktop
+  #   # For Linux host: use host network mode or socat proxy
+
+  # 6. Redis metrics (optional)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['flowops-redis:6379']
+  #   metrics_path: /metrics
+  #   # Requires redis_exporter sidecar or module

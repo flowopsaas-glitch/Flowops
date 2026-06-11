@@ -3,6 +3,25 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  define: {
+    'process.env': {},
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: `assets/[name]-[hash].js`,
+        chunkFileNames: `assets/[name]-[hash].js`,
+        assetFileNames: `assets/[name]-[hash].[ext]`,
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-axios': ['axios'],
+          'vendor-socket': ['socket.io-client'],
+          'vendor-lucide': ['lucide-react'],
+          'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-slot'],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
@@ -35,19 +54,6 @@ export default defineConfig({
       '@': '/src',
     },
   },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-axios': ['axios'],
-          'vendor-socket': ['socket.io-client'],
-          'vendor-lucide': ['lucide-react'],
-          'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-slot'],
-        },
-      },
-    },
-  },
   server: {
     port: 5173,
     strictPort: true,
@@ -58,7 +64,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:3005',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
       },

@@ -1,3 +1,4 @@
+// frontend/src/pages/WaybillInbox.tsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"; 
 import { api } from '../api/client';
 import { 
@@ -6,7 +7,6 @@ import {
   User, MapPin, Phone, Building2, Hash, ZoomIn, Package, Images, FileText
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { usePremiumWebSocket } from "../hooks/usePremiumWebSocket";
 import { useToast } from "../components/ToastProvider";
 import { FLOWOPS_HTTP_ORIGIN } from "../lib/env";
 
@@ -90,12 +90,17 @@ export default function WaybillInbox() {
   });
 
   const assetBase = (FLOWOPS_HTTP_ORIGIN || "http://localhost:3000").replace(/\/+$/, "");
-  const selectedItem = useMemo(() => Array.isArray(items) ? items.find(i => i.id === selectedId) : null, [items, selectedId]);
+  
+  // ✅ Safe: handle null/undefined items
+  const selectedItem = useMemo(() => {
+    if (!Array.isArray(items)) return null;
+    return items.find(i => i?.id === selectedId) || null;
+  }, [items, selectedId]);
 
   useEffect(() => {
     if (selectedItem) {
       const ai = selectedItem.extractedData || {};
-      const rawWeight = parseFloat(selectedItem.weight || ai.weight || 0.5);
+      const rawWeight = parseFloat(selectedItem.weight || ai.weight || "0.5");
       const rawAmount = parseFloat(selectedItem.totalAmount || ai.totalAmount || (rawWeight * RATE_PER_KG));
       
       setEditForm({
@@ -131,10 +136,15 @@ export default function WaybillInbox() {
   const fetchData = useCallback(async () => {
     try {
       const res = await api.get("/waybills/inbox");
-      setItems(Array.isArray(res.data) ? res.data : []);
-      if (res.data.length > 0 && selectedId === null) setSelectedId(res.data[0].id);
-    } catch (err) { console.error("Inbox Fetch Failed:", err); }
-  }, [selectedId, showToast]);
+      // ✅ Safe: ensure array
+      const data = Array.isArray(res) ? res : (res?.data && Array.isArray(res.data) ? res.data : []);
+      setItems(data);
+      if (data.length > 0 && selectedId === null) setSelectedId(data[0].id);
+    } catch (err: any) { 
+      console.error("Inbox Fetch Failed:", err); 
+      // Don't crash - just show empty state
+    }
+  }, [selectedId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -144,7 +154,22 @@ export default function WaybillInbox() {
       await api.post(`/waybills/inbox/${selectedItem.id}/commit`, editForm);
       setSelectedId(null);
       fetchData();
-    } catch (err) { showToast("Commit failed.", "error"); }
+      showToast("Waybill committed successfully", "success");
+    } catch (err: any) { 
+      showToast("Commit failed: " + (err.message || "Unknown error"), "error"); 
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedItem || !window.confirm("Reject this document?")) return;
+    try {
+      await api.delete(`/waybills/inbox/${selectedItem.id}`);
+      setSelectedId(null);
+      fetchData();
+      showToast("Document rejected", "success");
+    } catch (err: any) {
+      showToast("Failed to reject: " + (err.message || "Unknown error"), "error");
+    }
   };
 
   return (
@@ -158,16 +183,26 @@ export default function WaybillInbox() {
           <input type="file" ref={fileInputRef} className="hidden" onChange={async (e) => {
             const file = e.target.files?.[0]; if (!file) return;
             const fd = new FormData(); fd.append("file", file);
-            await api.post("/waybills/inbox/upload", fd); fetchData();
+            try {
+              await api.post("/waybills/inbox/upload", fd);
+              fetchData();
+              showToast("File uploaded", "success");
+            } catch (err: any) {
+              showToast("Upload failed: " + (err.message || "Unknown error"), "error");
+            }
           }} />
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-          {items.map((item) => (
-            <button key={item.id} onClick={() => { setSelectedId(item.id); setActiveTab('DOCUMENT'); }} className={`w-full p-5 rounded-[28px] border text-left transition-all ${selectedId === item.id ? 'bg-sky-600 border-sky-400 shadow-xl' : 'bg-slate-900/40 border-white/5'}`}>
-              <div className="text-[9px] font-black uppercase text-white/30 mb-1">Entry #{item.id}</div>
-              <div className="font-bold text-white truncate text-sm">{item.waybillNumber || "Unidentified Job"}</div>
+          {Array.isArray(items) && items.length > 0 ? items.map((item) => (
+            <button key={item?.id} onClick={() => { setSelectedId(item?.id); setActiveTab('DOCUMENT'); }} className={`w-full p-5 rounded-[28px] border text-left transition-all ${selectedId === item?.id ? 'bg-sky-600 border-sky-400 shadow-xl' : 'bg-slate-900/40 border-white/5'}`}>
+              <div className="text-[9px] font-black uppercase text-white/30 mb-1">Entry #{item?.id}</div>
+              <div className="font-bold text-white truncate text-sm">{item?.waybillNumber || "Unidentified Job"}</div>
             </button>
-          ))}
+          )) : (
+            <div className="text-center py-8 text-slate-500 text-sm">
+              {Array.isArray(items) ? "No waybills in inbox" : "Loading..."}
+            </div>
+          )}
         </div>
       </div>
 
@@ -185,7 +220,7 @@ export default function WaybillInbox() {
               </div>
 
               <div className="flex gap-3">
-                <button onClick={() => { if(window.confirm("Reject document?")) api.delete(`/waybills/inbox/${selectedItem.id}`).then(() => fetchData()) }} className="bg-red-500/10 text-red-500 p-4 rounded-2xl border border-red-500/20"><Trash2 size={18} /></button>
+                <button onClick={handleDelete} className="bg-red-500/10 text-red-500 p-4 rounded-2xl border border-red-500/20"><Trash2 size={18} /></button>
                 <button onClick={handleApprove} className="bg-sky-500 hover:bg-sky-400 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase shadow-2xl transition-all">Approve & Commit</button>
               </div>
             </div>
@@ -196,7 +231,7 @@ export default function WaybillInbox() {
                {activeTab === 'DOCUMENT' && (
                   <div className="h-full w-full p-8 flex items-center justify-center bg-slate-900/50">
                     <div className="w-full h-full relative">
-                      <ImageMagnifier src={`${assetBase}${selectedItem.fileUrl}`} />
+                      <ImageMagnifier src={`${assetBase}${selectedItem.fileUrl || ''}`} />
                       <div className="absolute top-4 left-4 bg-sky-500/20 text-sky-400 px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest backdrop-blur-md flex items-center gap-2">
                         <ZoomIn size={12} /> Hover image to zoom
                       </div>
@@ -207,10 +242,9 @@ export default function WaybillInbox() {
                {activeTab === 'PARCELS' && (
                   <div className="h-full w-full p-10 overflow-y-auto custom-scrollbar">
                      <div className="grid grid-cols-2 gap-8">
-                        {/* Evidence Photos */}
                         {[1, 2].map(idx => (
                           <div key={idx} className="aspect-video bg-white/5 rounded-[32px] border border-white/5 overflow-hidden group shadow-lg relative">
-                            <img src={`${assetBase}${selectedItem.fileUrl}`} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt="Parcel" />
+                            <img src={`${assetBase}${selectedItem.fileUrl || ''}`} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt="Parcel" />
                             <div className="absolute top-4 right-4 bg-black/40 px-3 py-1 rounded-full text-[10px] font-bold text-white uppercase">Item {idx} of {editForm.quantity}</div>
                           </div>
                         ))}

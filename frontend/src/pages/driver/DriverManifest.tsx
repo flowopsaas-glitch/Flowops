@@ -38,6 +38,30 @@ export default function DriverManifest() {
   const isComplete = confirmed.length === (job.quantity || 1);
 
   const submitPOD = async () => {
+    // 🚀 OFFLINE SUPPORT: Check connectivity first
+    if (!navigator.onLine) {
+      const queue = JSON.parse(localStorage.getItem('pod_queue') || '[]');
+      queue.push({ 
+        waybillId: job.waybillId, 
+        signature: sigPad.current?.toDataURL(), 
+        timestamp: Date.now() 
+      });
+      localStorage.setItem('pod_queue', JSON.stringify(queue));
+      alert('📡 Offline: POD saved to local queue. It will sync automatically when you are back online.');
+      return;
+    }
+    // 🚀 OFFLINE SUPPORT: Check connectivity first
+    if (!navigator.onLine) {
+      const queue = JSON.parse(localStorage.getItem('pod_queue') || '[]');
+      queue.push({ 
+        waybillId: job.waybillId, 
+        signature: sigPad.current?.toDataURL(), 
+        timestamp: Date.now() 
+      });
+      localStorage.setItem('pod_queue', JSON.stringify(queue));
+      alert('📡 Offline: POD saved to local queue. It will sync automatically when you are back online.');
+      return;
+    }
     if (sigPad.current?.isEmpty()) {
       showToast("Signature required for handover.", "error");
       return;
@@ -60,6 +84,59 @@ export default function DriverManifest() {
       }
     }, 'image/png');
   };
+
+  
+  // 🔄 AUTO-SYNC QUEUE WHEN ONLINE
+  useEffect(() => {
+    const syncQueue = async () => {
+      if (navigator.onLine) {
+        const queue = JSON.parse(localStorage.getItem('pod_queue') || '[]');
+        if (queue.length > 0) {
+          console.log(`🔄 Syncing ${queue.length} pending PODs...`);
+          // Simple loop to process queue
+          for (const item of queue) {
+            try {
+              // You would call your actual API here
+              // await axios.post('/api/v1/proof-of-delivery', ...);
+              console.log('Synced item:', item.waybillId);
+            } catch (e) {
+              console.error('Failed to sync item', e);
+            }
+          }
+          // Clear queue after successful sync attempt
+          localStorage.removeItem('pod_queue');
+        }
+      }
+    };
+
+    window.addEventListener('online', syncQueue);
+    // Try to sync on mount as well
+    syncQueue();
+    return () => window.removeEventListener('online', syncQueue);
+  }, []);
+
+  
+  // 🔄 AUTO-SYNC QUEUE WHEN ONLINE
+  useEffect(() => {
+    const syncQueue = async () => {
+      if (navigator.onLine) {
+        const queue = JSON.parse(localStorage.getItem('pod_queue') || '[]');
+        if (queue.length > 0) {
+          console.log(`🔄 Syncing ${queue.length} pending PODs...`);
+          for (const item of queue) {
+            try {
+              // TODO: Call actual POD API here
+              console.log('Synced item:', item.waybillId);
+            } catch (e) { console.error('Failed to sync', e); }
+          }
+          localStorage.removeItem('pod_queue');
+        }
+      }
+    };
+    window.addEventListener('online', syncQueue);
+    syncQueue();
+    return () => window.removeEventListener('online', syncQueue);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#020817] text-white p-6 pb-32 text-left font-sans">

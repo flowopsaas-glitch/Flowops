@@ -10,7 +10,7 @@ type OwnerLoginResponse = {
 
 const OWNER_API_URL =
   (import.meta as any)?.env?.VITE_API_URL?.replace(/\/$/, '') ||
-  'http://localhost:3000/api'
+  'http://localhost:3000/api/v1'
 
 export default function OwnerLogin() {
   const navigate = useNavigate()

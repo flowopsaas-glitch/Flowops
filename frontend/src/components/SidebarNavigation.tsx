@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import {
   LayoutDashboard,
+  BarChart3,
   Package,
   Truck,
   Route,
@@ -32,10 +33,11 @@ interface NavItem {
 // Sidebar items
 export const navigation: NavItem[] = [
   { name: "Dashboard", page: "Dashboard", icon: LayoutDashboard },
+  { name: "Analytics", page: "Analytics", icon: BarChart3 },
   { name: "AI Workflow", page: "AIWorkflow", icon: Sparkles, roles: ["OWNER", "ADMIN", "OPS", "SALES"], subscription: ["Ultimate", "Pro"] },
   { name: "ðŸ“¦ Book Shipment", page: "CustomerPortal", icon: Package, roles: ["USER", "SALES", "ADMIN"] },
   { name: "ðŸ” Track Shipment", page: "TrackShipment", icon: MapIcon },
-  { name: "Driver App", page: "DriverApp", icon: Truck, roles: ["OPS", "ADMIN"] },
+  { name: "Driver App", page: "DriverApp", icon: Truck, roles: ["OPS", "ADMIN", "DISPATCHER"] },
   { name: "WhatsApp Hub", page: "WhatsAppHub", icon: MessageCircle, roles: ["ADMIN", "OWNER"] },
   { name: "Production", page: "ProductionProcesses", icon: Settings, roles: ["OPS", "ADMIN"] },
   { name: "Capacity Planning", page: "CapacityPlanning", icon: Sparkles, roles: ["ADMIN", "OWNER"] },
@@ -47,10 +49,15 @@ export const navigation: NavItem[] = [
   { name: "Live Tracking", page: "LiveTracking", icon: MapIcon, roles: ["OPS", "ADMIN"] },
   { name: "Route Optimizer", page: "RouteOptimizer", icon: Sparkles, roles: ["OPS", "ADMIN"] },
   { name: "Stock", page: "Stock", icon: Package, roles: ["OPS", "ADMIN"] },
-  { name: "Drivers", page: "Drivers", icon: Users, roles: ["OPS", "ADMIN"] },
+  { name: "Drivers", page: "Drivers", icon: Users, roles: ["OPS", "ADMIN", "DISPATCHER"] },
   { name: "Routes", page: "Routes", icon: Route, roles: ["OPS", "ADMIN"] },
   { name: "Driver Requests", page: "DriverRequests", icon: Truck, roles: ["OPS", "ADMIN"] },
-  { name: "Deliveries", page: "Deliveries", icon: Truck, roles: ["OPS", "ADMIN"] },
+
+  { name: "🗺️ Live Fleet Map", page: "FleetMap", icon: MapIcon, roles: ["OPS", "ADMIN", "DISPATCHER"], permission: "fleetMap" },
+  { name: "📊 Driver Analytics", page: "DriverAnalytics", icon: TrendingUp, roles: ["OPS", "ADMIN", "DISPATCHER"], permission: "driverAnalytics" },
+  { name: "💬 Dispatch Chat", page: "DispatchChat", icon: MessageSquare, roles: ["OPS", "ADMIN", "DISPATCHER"], permission: "dispatchChat" },
+
+  { name: "Deliveries", page: "Deliveries", icon: Truck, roles: ["OPS", "ADMIN", "DISPATCHER"] },
   { name: "Quotes", page: "Quotes", icon: FileText, roles: ["SALES", "ADMIN"] },
   { name: "Invoices", page: "Invoices", icon: Receipt, roles: ["SALES", "ADMIN"] },
 ];

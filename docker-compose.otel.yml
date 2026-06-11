@@ -1,74 +1,66 @@
-version: '3.8'
+# ... in docker-compose.yml ...
 
 services:
-  # ✨ OpenTelemetry Collector - Receives traces from both backend and frontend
   otel-collector:
-    image: otel/opentelemetry-collector:latest
-    container_name: flowops-otel-collector
+    # ... existing config ...
+    environment:
+      - DEPLOYMENT_ENV=${NODE_ENV:-production}
+      - CLUSTER_NAME=flowops-prod
+      - OTEL_LOG_LEVEL=info
     ports:
-      # OTLP HTTP (gRPC and HTTP)
-      - "4318:4318"       # HTTP receiver (frontend uses this)
-      - "4317:4317"       # gRPC receiver (backend can use this)
-      # Prometheus metrics
-      - "8888:8888"       # Prometheus scrape endpoint
-      # Debugging UI
-      - "13133:13133"     # Health check endpoint
-      - "55679:55679"     # ZPages debugging UI
+      - "4318:4318"  # OTLP HTTP (frontend sends here)
+      - "4317:4317"  # OTLP gRPC (backend sends here)
+      - "8889:8889"  # Prometheus exporter (note: different from receiver 8888)
+      - "13133:13133"  # Health check
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
-    environment:
-      - GOGC=80
-      - GOMAXPROCS=2
-    command: ["--config=/etc/otel-collector-config.yaml"]
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
     networks:
       - flowops-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:13133"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133"]
       interval: 10s
       timeout: 5s
       retries: 3
 
-  # 🔍 Jaeger - UI for viewing traces
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: flowops-jaeger
-    ports:
-      - "16686:16686"     # Jaeger UI (http://localhost:16686)
-      - "14268:14268"     # Jaeger Collector HTTP
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    networks:
-      - flowops-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:16686/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  # 📊 Prometheus - Metrics scraping
   prometheus:
-    image: prom/prometheus:latest
-    container_name: flowops-prometheus
-    ports:
-      - "9090:9090"       # Prometheus UI (http://localhost:9090)
+    # ... existing config ...
     volumes:
-      - ./prometheus-config.yaml:/etc/prometheus/prometheus.yml
+      - ./prometheus-config.yaml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"  # Allow config reload via API
+    ports:
+      - "9090:9090"  # Prometheus UI
     networks:
       - flowops-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    depends_on:
+      otel-collector:
+        condition: service_healthy
 
-volumes:
-  prometheus-data:
-    driver: local
+  flowops-backend:
+    # ... existing config ...
+    environment:
+      # ... other vars ...
+      # OpenTelemetry config for backend
+      - OTEL_SERVICE_NAME=flowops-backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317  # ← gRPC endpoint
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_LOG_LEVEL=info
+      # Optional: Expose /metrics for Prometheus scraping
+      - PROMETHEUS_METRICS_ENABLED=true
+      - PROMETHEUS_METRICS_PORT=4000
+    # ... rest of config ...
 
-networks:
-  flowops-net:
-    driver: bridge
+  flowops-platform:
+    # ... existing config ...
+    build:
+      args:
+        # Pass OTel config to frontend at build time
+        - VITE_OTEL_SERVICE_NAME=flowops-frontend
+        - VITE_OTEL_ENDPOINT=https://api.flowop.work/v1/traces  # ← Relative path via Cloudflare
+    environment:
+      # Runtime env vars (if using runtime config)
+      - VITE_OTEL_SERVICE_NAME=flowops-frontend
+    # ... rest of config ...

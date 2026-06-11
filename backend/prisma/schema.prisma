@@ -1,0 +1,1634 @@
+// prisma/schema.prisma
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  COMPANY_ADMIN
+  USER
+  DRIVER
+  OPERATOR
+  DISPATCHER
+  WAREHOUSE_CLERK
+
+  @@map("user_role") // ← Maps to "user_role" in PostgreSQL (avoids conflict with system 'role')
+}
+
+enum PlanTier {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+
+  @@map("plan_tier")
+}
+
+enum WaybillStatus {
+  PENDING
+  PENDING_COLLECTION
+  IN_TRANSIT
+  ARRIVED_AT_HUB
+  DELIVERED
+  EXCEPTION
+  CANCELLED
+  FAILED
+  RECEIVED
+  IN_WAREHOUSE
+  READY_FOR_COLLECTION
+  COLLECTED
+
+  @@map("waybill_status")
+}
+
+enum WaybillInboxStatus {
+  NEEDS_REVIEW
+  READY_FOR_BILLING
+  LINKED_TO_BILLING
+  NEW
+  EXTRACTING
+  EXTRACTED
+  FAILED
+  COMMITTED
+
+  @@map("waybill_inbox_status")
+}
+
+enum WaybillReviewStatus {
+  PENDING_REVIEW
+  IN_REVIEW
+  APPROVED
+  REJECTED
+
+  @@map("waybill_review_status")
+}
+
+enum DispatchStatus {
+  PENDING
+  ASSIGNED
+  EN_ROUTE
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FAILED
+
+  @@map("dispatch_status")
+}
+
+enum PaymentType {
+  CASH
+  CREDIT
+  BANK_TRANSFER
+  MOBILE_MONEY
+  INVOICE
+  CONTRACT
+
+  @@map("payment_type")
+}
+
+enum CommSource {
+  WHATSAPP
+  EMAIL
+  SMS
+  CALL
+
+  @@map("comm_source")
+}
+
+enum OwnerTenantCommercialStatus {
+  ACTIVE
+  TRIAL
+  LOCKED
+  SUSPENDED
+  CHURNED
+
+  @@map("owner_tenant_commercial_status")
+}
+
+// ─────────────────────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────────────────────
+
+model Company {
+  id           Int      @id @default(autoincrement())
+  name         String
+  billingEmail String? // Email for invoice notifications
+  logoUrl      String?
+  status       String   @default("Active")
+  plan         PlanTier @default(STARTER)
+  isActive     Boolean  @default(true)
+
+  // --- Pricing & Billing ---
+  baseTierPrice    Float     @default(0)
+  perUserPrice     Float     @default(0)
+  pricePerWhatsapp Float     @default(0.80)
+  pricePerEmail    Float     @default(0.10)
+  trialEndsAt      DateTime?
+
+  // AI Feature Flags (by tier)
+  aiFraudDetectionEnabled     Boolean @default(false)
+  aiPredictiveDeliveryEnabled Boolean @default(false)
+  aiSmartRoutingEnabled       Boolean @default(false)
+  aiDynamicPricingEnabled     Boolean @default(false)
+  aiSentimentAnalysisEnabled  Boolean @default(false)
+
+  // --- Subscription Form Fields ---
+  monthlyPrice Float?  @default(0)
+  setupFee     Float?  @default(0)
+  priceNotes   String?
+
+  // --- Demo/Trial Fields ---
+  demoEnabled   Boolean?  @default(false)
+  demoExpiresAt DateTime?
+  demoNotes     String?
+
+  // --- Integrations ---
+  twilioSid   String?
+  twilioToken String?
+  twilioPhone String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── RELATIONSHIPS ──
+  users               User[]
+  clients             Client[]
+  couriers            Courier[]
+  rateCards           RateCard[]
+  collections         Collection[]
+  invoiceDrafts       InvoiceDraft[]
+  invoices            Invoice[]
+  inboxItems          WaybillInboxItem[]
+  waybillDrafts       WaybillDraft[]
+  aiEvents            AiEvent[]
+  branches            Branch[]
+  drivers             Driver[]
+  waybills            Waybill[]
+  dispatches          Dispatch[]
+  billingBatches      BillingBatch[]
+  emailHubItems       EmailHubItem[]
+  whatsAppLogs        WhatsAppLog[]
+  aiAuditLogs         AiAuditLog[]
+  communications      Communication[]
+  leads               Lead[]
+  hardware            Hardware[]
+  activityLogs        ActivityLog[]
+  aiSystemLogs        AiSystemLog[]
+  linehaulManifests   LinehaulManifest[]
+  inventory           Inventory[]
+  // Inventory relations
+  warehouses          Warehouse[]
+  inventoryCategories InventoryCategory[]
+  inventoryItems      InventoryItem[]
+  stockMovements      StockMovement[]
+  stockAlerts         StockAlert[]
+  // GPS Tracking relations
+  trips               Trip[]
+  geofences           Geofence[]
+  // AI Chat relations
+  securityCodes       SecurityCode[]
+  aiSessions          AISession[]
+
+  @@index([status])
+  @@index([plan])
+  @@index([isActive])
+  @@map("companies")
+  dashboardLayouts DashboardLayout[]
+}
+
+model User {
+  id         Int     @id @default(autoincrement())
+  email      String  @unique
+  password   String // bcrypt hash
+  name       String?
+  role       Role    @default(USER)
+  isVerified Boolean @default(false)
+
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── OPPOSITE RELATIONS (for ActivityLog, Lead, etc.) ──
+  activityLogs  ActivityLog[]
+  assignedLeads Lead[]
+  aiSessions    AISession[]
+
+  // Dispatch inbox relations
+  reviewedInboxItems WaybillInboxItem[] @relation("InboxReviewer")
+  assignedInboxItems WaybillInboxItem[] @relation("InboxAssignee")
+
+  @@index([companyId])
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Client {
+  id        Int     @id @default(autoincrement())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  companyId Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  collections Collection[]
+  branches    Branch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([name])
+  @@map("clients")
+}
+
+model Courier {
+  id        Int     @id @default(autoincrement())
+  name      String
+  email     String?
+  phone     String?
+  companyId Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  collections Collection[]
+  branches    Branch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([name])
+  @@map("couriers")
+}
+
+model Branch {
+  id         Int     @id @default(autoincrement())
+  name       String
+  address    String?
+  city       String?
+  postalCode String?
+  country    String? @default("ZA")
+  lat        Float?
+  lng        Float?
+  companyId  Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  courierId Int?
+  courier   Courier? @relation(fields: [courierId], references: [id], onDelete: SetNull)
+
+  collections          Collection[]
+  linehaulManifests    LinehaulManifest[]
+  manifestSources      LinehaulManifest[] @relation("ManifestSource")
+  manifestDestinations LinehaulManifest[] @relation("ManifestDestination")
+  inventory            Inventory[]
+
+  // ── OPPOSITE RELATIONS for Waybill origin/destination ──
+  waybillsAsOrigin      Waybill[] @relation("WaybillOrigin")
+  waybillsAsDestination Waybill[] @relation("WaybillDestination")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([city])
+  @@index([name])
+  @@map("branches")
+}
+
+model Driver {
+  id                 Int     @id @default(autoincrement())
+  name               String
+  phone              String  @unique
+  email              String?
+  status             String  @default("AVAILABLE")
+  pin                String?
+  whatsappOptIn      Boolean @default(false)
+  availabilityStatus String? @default("AVAILABLE")
+  vehicleReg         String?
+  vehicleType        String?
+  lat                Float?
+  lng                Float?
+  zone               String?
+  companyId          Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  dispatches Dispatch[]
+  waybills   Waybill[]
+
+  // ── OPPOSITE RELATION for LinehaulManifest ──
+  linehaulManifests LinehaulManifest[]
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  // GPS Tracking relations
+  locations        DriverLocation[]
+  geofenceAlerts   GeofenceAlert[]
+  proofsOfDelivery ProofOfDelivery[]
+  trips            Trip[]
+  messages         DispatchMessage[]
+
+  @@index([companyId])
+  @@index([phone])
+  @@index([status])
+  @@index([zone])
+  @@map("drivers")
+}
+
+model RateCard {
+  id                   Int     @id @default(autoincrement())
+  name                 String
+  baseFee              Float   @default(0)
+  perKm                Float   @default(0)
+  perKg                Float   @default(0)
+  fuelSurchargePercent Float   @default(0)
+  minCharge            Float?
+  maxCharge            Float?
+  isActive             Boolean @default(true)
+  companyId            Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([isActive])
+  @@index([name])
+  @@map("rate_cards")
+}
+
+model Collection {
+  id                Int       @id @default(autoincrement())
+  name              String
+  referenceNo       String?
+  status            String    @default("NEW")
+  collectionAddress String?
+  scheduledDate     DateTime?
+  completedAt       DateTime?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  courierId Int?
+  courier   Courier? @relation(fields: [courierId], references: [id], onDelete: SetNull)
+
+  branchId Int?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  waybills      WaybillDraft[]
+  inboxItems    WaybillInboxItem[]
+  dispatches    Dispatch[]
+  emailHubItems EmailHubItem[]
+  waybillsReal  Waybill[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, companyId])
+  @@index([companyId])
+  @@index([scheduledDate])
+  @@map("collections")
+}
+
+model Waybill {
+  id             Int            @id @default(autoincrement())
+  waybillManifests WaybillManifest[] @relation("WaybillManifestWaybill")
+  waybillNumber String        @unique
+  status        WaybillStatus @default(PENDING)
+
+  // Sender/Shipper
+  senderName    String?
+  senderPhone   String?
+  senderEmail   String?
+  senderAddress String?
+  shipperPhone  String?
+
+  // Receiver/Consignee
+  receiverName    String?
+  receiverPhone   String?
+  receiverEmail   String?
+  receiverAddress String?
+  consigneePhone  String?
+
+  // Aliases for flexibility
+  recipient String?
+  phone     String?
+  sender    String?
+
+  // Route & Logistics
+  origin              String?
+  originBranchId      Int?
+  destination         String?
+  destinationBranchId Int?
+  warehouseId         Int?
+  storageLocation     String?
+  weight              Float?
+  weightKg            Float?
+  dimensions          String?
+  distance            Float?
+  distanceKm          Float?
+
+  // Financial
+  amount        Float?
+  totalAmount   Float?
+  currency      String?      @default("ZAR")
+  paymentType   PaymentType?
+  paymentStatus String?      @default("UNPAID")
+
+  // Metadata
+  notes               String?
+  reference           String?
+  imageUrl            String?
+  podUrl              String?
+  signatureUrl        String?
+  signatureData       String?   @db.Text
+  signatureCapturedAt DateTime?
+  signatureCapturedBy String?
+  deliveredAt         DateTime?
+
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+
+  // Predictive Delivery Times
+  predictedEta    DateTime?
+  etaConfidence   Float? // 0-100 confidence score
+  etaFactors      Json? // Factors affecting the prediction
+  lastEtaUpdate   DateTime?
+  originalEta     DateTime? // First prediction for comparison
+  exceptionReason String?
+
+  // Relations
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  driverId Int?
+  driver   Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  dispatchId Int?
+  dispatch   Dispatch? @relation("DispatchWaybills", fields: [dispatchId], references: [id], onDelete: SetNull)
+
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  billingBatchId Int?
+  billingBatch   BillingBatch? @relation("BillingBatchWaybills", fields: [billingBatchId], references: [id], onDelete: SetNull)
+
+  linehaulManifestId Int?
+  linehaulManifest   LinehaulManifest? @relation("LinehaulManifestWaybills", fields: [linehaulManifestId], references: [id], onDelete: SetNull)
+
+
+  originBranch      Branch? @relation("WaybillOrigin", fields: [originBranchId], references: [id], onDelete: SetNull)
+  destinationBranch Branch? @relation("WaybillDestination", fields: [destinationBranchId], references: [id], onDelete: SetNull)
+
+  aiEvents         AiEvent[]
+  whatsAppLogs     WhatsAppLog[]
+  communications   Communication[]
+  proofsOfDelivery ProofOfDelivery[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Public tracking
+  trackingTokens TrackingToken[]
+  trackingEvents TrackingEvent[]
+
+  InventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItemId Int?
+
+  @@index([waybillNumber])
+  @@index([status, companyId])
+  @@index([companyId])
+  @@index([collectionId])
+  @@index([driverId])
+  @@index([createdAt])
+  @@index([deliveredAt])
+  @@map("waybills")
+}
+
+model Dispatch {
+  id             Int            @id @default(autoincrement())
+  status         DispatchStatus @default(PENDING)
+  waybills       Waybill[]      @relation("DispatchWaybills")
+  notes          String?
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  actualStart    DateTime?
+  actualEnd      DateTime?
+  routeNotes     String?
+  companyId      Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  driverId Int?
+  driver   Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, companyId])
+  @@index([companyId])
+  @@index([driverId])
+  @@index([scheduledStart])
+  @@map("dispatches")
+}
+
+model BillingBatch {
+  id            Int       @id @default(autoincrement())
+  batchNumber   String    @unique
+  status        String    @default("OPEN")
+  waybillCount  Int       @default(0)
+  whatsappCount Int       @default(0)
+  emailCount    Int       @default(0)
+  subtotal      Float     @default(0)
+  vatAmount     Float     @default(0)
+  total         Float     @default(0)
+  totalValue    Float?
+  closedAt      DateTime?
+  invoicedAt    DateTime?
+  paidAt        DateTime?
+  companyId     Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // ── FIX: Added opposite relation for one-to-many ──
+  invoices Invoice[] @relation("BillingBatchInvoices")
+  waybills Waybill[] @relation("BillingBatchWaybills")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([batchNumber])
+  @@map("billing_batches")
+}
+
+model Invoice {
+  id               String    @id @default(uuid())
+  invoiceNumber    String?   @unique
+  status           String    @default("UNPAID")
+  subtotal         Float?
+  vatAmount        Float?
+  total            Float     @default(0)
+  dueDate          DateTime?
+  paidAt           DateTime?
+  paymentReference String?
+  paymentMethod    String?
+  notes            String?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // ── FIX: billingBatchId is NOT unique → one-to-many relation ──
+  billingBatchId Int?
+  billingBatch   BillingBatch? @relation("BillingBatchInvoices", fields: [billingBatchId], references: [id], onDelete: SetNull)
+
+  items InvoiceItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([invoiceNumber])
+  @@index([dueDate])
+  @@index([billingBatchId]) // Add index for faster lookups
+  @@map("invoices")
+}
+
+model EmailHubItem {
+  id             Int       @id @default(autoincrement())
+  subject        String?
+  from           String?
+  to             String?
+  cc             String?
+  bcc            String?
+  body           String?
+  bodyHtml       String?
+  type           String?
+  status         String    @default("NEW")
+  isRead         Boolean   @default(false)
+  isBilled       Boolean   @default(false)
+  needsOpsAction Boolean?
+  version        Int       @default(0)
+  receivedAt     DateTime?
+  processedAt    DateTime?
+  companyId      Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  aiEvents AiEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, companyId])
+  @@index([companyId])
+  @@index([from])
+  @@index([receivedAt])
+  @@map("email_hub_items")
+}
+
+model WhatsAppLog {
+  id          Int       @id @default(autoincrement())
+  phoneNumber String
+  phone       String?
+  message     String?
+  messageType String?
+  direction   String    @default("OUTGOING")
+  status      String    @default("PENDING")
+  isBilled    Boolean   @default(false)
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  companyId   Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  waybillId Int?
+  waybill   Waybill? @relation(fields: [waybillId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([phoneNumber])
+  @@index([status])
+  @@index([sentAt])
+  @@map("whatsapp_logs")
+}
+
+model WaybillInboxItem {
+  id String @id @default(cuid())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  fileUrl       String?
+  storagePath   String?
+  originalName  String?
+  mimeType      String?
+  fileSize      Int?
+  status        WaybillInboxStatus @default(NEW)
+  extractedData Json?
+  reviewedBy    Int?
+  reviewer      User?              @relation("InboxReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt    DateTime?
+
+  // Dispatch assignment
+  assignedTo   Int?
+  assignedUser User?               @relation("InboxAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  reviewStatus WaybillReviewStatus @default(PENDING_REVIEW)
+  reviewNotes  String?
+
+  // POD/POC references
+  podUrl     String?
+  pocUrl     String?
+  aiAnalysis Json?
+
+  waybillDrafts WaybillDraft[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, companyId])
+  @@index([companyId])
+  @@index([collectionId])
+  @@index([createdAt])
+  @@map("waybill_inbox_items")
+}
+
+model WaybillDraft {
+  id String @id @default(uuid())
+
+  waybillNo     String?
+  senderName    String?
+  senderPhone   String?
+  receiverName  String?
+  receiverPhone String?
+  origin        String?
+  destination   String?
+  weight        Float?
+  amount        Float?
+  status        String  @default("DRAFT")
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  inboxItemId String?
+  inboxItem   WaybillInboxItem? @relation(fields: [inboxItemId], references: [id], onDelete: SetNull)
+
+  invoiceDraftId String?
+  invoiceDraft   InvoiceDraft? @relation(fields: [invoiceDraftId], references: [id], onDelete: SetNull)
+
+  parcels       Parcel[]
+  invoiceDrafts InvoiceDraftLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([collectionId])
+  @@map("waybill_drafts")
+}
+
+model Parcel {
+  id String @id @default(cuid())
+
+  waybillDraftId String
+  waybillDraft   WaybillDraft @relation(fields: [waybillDraftId], references: [id], onDelete: Cascade)
+
+  description   String?
+  weightKg      Float?
+  lengthCm      Float?
+  widthCm       Float?
+  heightCm      Float?
+  declaredValue Float?
+
+  @@index([waybillDraftId])
+  @@map("parcels")
+}
+
+model InvoiceDraft {
+  id String @id @default(cuid())
+
+  status  String  @default("DRAFT")
+  total   Float   @default(0)
+  vatRate Float   @default(0.15)
+  notes   String?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  waybills     WaybillDraft[]
+  lines        InvoiceDraftLine[]
+  invoiceItems InvoiceItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@map("invoice_drafts")
+}
+
+model InvoiceDraftLine {
+  id String @id @default(uuid())
+
+  invoiceDraftId String
+  invoiceDraft   InvoiceDraft @relation(fields: [invoiceDraftId], references: [id], onDelete: Cascade)
+
+  waybillDraftId String?
+  waybillDraft   WaybillDraft? @relation(fields: [waybillDraftId], references: [id], onDelete: SetNull)
+
+  description String
+  quantity    Int    @default(1)
+  unitPrice   Float
+  amount      Float
+  vatAmount   Float?
+
+  @@index([invoiceDraftId])
+  @@index([waybillDraftId])
+  @@map("invoice_draft_lines")
+}
+
+model InvoiceItem {
+  id Int @id @default(autoincrement())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description String
+  quantity    Int    @default(1)
+  unitPrice   Float
+  amount      Float
+  vatAmount   Float?
+
+  invoiceDraftId String?
+  invoiceDraft   InvoiceDraft? @relation(fields: [invoiceDraftId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model AiEvent {
+  id               Int     @id @default(autoincrement())
+  title            String
+  eventType        String?
+  summary          String?
+  payload          Json?
+  status           String  @default("PENDING")
+  result           Json?
+  errorMessage     String?
+  processingTimeMs Int?
+
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  waybillId Int?
+  waybill   Waybill? @relation(fields: [waybillId], references: [id], onDelete: SetNull)
+
+  emailHubItemId Int?
+  emailHubItem   EmailHubItem? @relation(fields: [emailHubItemId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("ai_events")
+}
+
+model AiAuditLog {
+  id         Int     @id @default(autoincrement())
+  action     String
+  actionType String?
+  entityType String?
+  entityId   String?
+  actor      String?
+  details    Json?
+  companyId  Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("ai_audit_logs")
+}
+
+model AiSystemLog {
+  id        Int     @id @default(autoincrement())
+  level     String  @default("INFO")
+  message   String
+  component String?
+  errorCode String?
+  context   Json?
+  companyId Int?
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([level])
+  @@index([component])
+  @@index([createdAt])
+  @@map("ai_system_logs")
+}
+
+model ActivityLog {
+  id          Int     @id @default(autoincrement())
+  action      String
+  description String?
+  type        String?
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  companyId   Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  userId Int?
+  // FIX: Added opposite relation on User model
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model LinehaulManifest {
+  id                  Int       @id @default(autoincrement())
+  manifestNumber      String    @unique
+  origin              String
+  destination         String
+  status              String    @default("OPEN")
+  sourceBranchId      Int?
+  destinationBranchId Int?
+  warehouseId         Int?
+  storageLocation     String?
+  scheduledDeparture  DateTime?
+  scheduledArrival    DateTime?
+  actualDeparture     DateTime?
+  actualArrival       DateTime?
+  driverId            Int?
+  vehicleReg          String?
+  companyId           Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  branchId Int?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  sourceBranch      Branch? @relation("ManifestSource", fields: [sourceBranchId], references: [id], onDelete: SetNull)
+  destinationBranch Branch? @relation("ManifestDestination", fields: [destinationBranchId], references: [id], onDelete: SetNull)
+  // FIX: Added opposite relation on Driver model
+  driver            Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  waybills Waybill[] @relation("LinehaulManifestWaybills")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([manifestNumber])
+  @@index([scheduledDeparture])
+  @@map("linehaul_manifests")
+}
+
+model Manifest {
+  id             Int            @id @default(autoincrement())
+  waybillManifests WaybillManifest[] @relation("WaybillManifestManifest")
+  manifestNumber String  @unique
+  destination    String?
+  status         String  @default("OPEN")
+  closedAt    DateTime? // Add this line
+  notes          String?
+
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([manifestNumber])
+  @@index([status])
+  @@map("manifests")
+}
+
+model WaybillManifest {
+  id         Int      @id @default(autoincrement())
+  waybillId  Int
+  manifestId Int
+  scannedAt  DateTime? // When was it scanned into the manifest?
+  status     String   @default("PENDING") // PENDING, SCANNED_IN, SHORT_SUPPLY, OVER_SUPPLY
+  
+  waybill    Waybill  @relation("WaybillManifestWaybill", fields: [waybillId], references: [id])
+  manifest   Manifest @relation("WaybillManifestManifest", fields: [manifestId], references: [id])
+
+  @@unique([waybillId, manifestId])
+  @@index([manifestId])
+}
+
+
+
+model Lead {
+  id              Int     @id @default(autoincrement())
+  name            String
+  email           String?
+  phone           String?
+  companyName     String?
+  origin          String?
+  destination     String?
+  estimatedVolume String?
+  status          String  @default("NEW")
+  source          String?
+  notes           String?
+  assignedTo      Int?
+  companyId       Int
+
+  company      Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // FIX: Added opposite relation on User model
+  assignedUser User?   @relation(fields: [assignedTo], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+model Hardware {
+  id              String    @id @default(cuid())
+  name            String
+  serialNumber    String?   @unique
+  type            String?
+  status          String    @default("ACTIVE")
+  lastSeenAt      DateTime?
+  firmwareVersion String?
+  companyId       Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([type])
+  @@index([status])
+  @@index([serialNumber])
+  @@map("hardware")
+}
+
+model Communication {
+  id                Int        @id @default(autoincrement())
+  source            CommSource
+  direction         String     @default("OUTGOING")
+  content           String?
+  phoneNumber       String?
+  email             String?
+  status            String     @default("PENDING")
+  cost              Float      @default(0)
+  billedAmount      Float?
+  messagePrice      Float?
+  provider          String?
+  providerMessageId String?
+  companyId         Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  waybillId Int?
+  waybill   Waybill? @relation(fields: [waybillId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([source])
+  @@index([status])
+  @@index([createdAt])
+  @@map("communications")
+}
+
+model Inventory {
+  id           Int     @id @default(autoincrement())
+  name         String
+  sku          String? @unique
+  description  String?
+  quantity     Int     @default(0)
+  unit         String? @default("unit")
+  minStock     Int?
+  maxStock     Int?
+  reorderPoint Int?
+  unitCost     Float?
+  companyId    Int
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  branchId Int?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([branchId])
+  @@index([sku])
+  @@index([quantity])
+  @@map("inventory")
+}
+
+// ============================================================================
+// 📦 INVENTORY MANAGEMENT SYSTEM
+// ============================================================================
+
+model Warehouse {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  name         String
+  code         String   @unique
+  address      String?
+  city         String?
+  province     String?
+  postalCode   String?
+  country      String   @default("South Africa")
+  managerName  String?
+  managerEmail String?
+  managerPhone String?
+  capacity     Int? // Total capacity in units
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company   Company           @relation(fields: [companyId], references: [id])
+  locations StorageLocation[]
+  stock     Stock[]
+  waybills  Waybill[]
+
+  @@index([companyId])
+  @@index([code])
+  @@index([isActive])
+}
+
+model StorageLocation {
+  id          Int      @id @default(autoincrement())
+  warehouseId Int
+  name        String
+  code        String
+  type        String   @default("SHELF") // SHELF, BIN, ZONE, COLD, FLOOR, RACK
+  aisle       String?
+  row         String?
+  position    String?
+  capacity    Int?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  warehouse    Warehouse       @relation(fields: [warehouseId], references: [id])
+  stock        Stock[]
+  movementsIn  StockMovement[] @relation("MovementTo")
+  movementsOut StockMovement[] @relation("MovementFrom")
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+  @@index([type])
+}
+
+model InventoryCategory {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  name        String
+  description String?
+  parentId    Int?
+  color       String? // Hex color for UI
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company  Company             @relation(fields: [companyId], references: [id])
+  parent   InventoryCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children InventoryCategory[] @relation("CategoryHierarchy")
+  items    InventoryItem[]
+
+  @@index([companyId])
+  @@index([parentId])
+}
+
+model InventoryItem {
+  id             Int      @id @default(autoincrement())
+  companyId      Int
+  categoryId     Int?
+  sku            String
+  name           String
+  description    String?
+  barcode        String?  @unique
+  qrCode         String?  @unique
+  unit           String   @default("UNIT") // UNIT, BOX, PALLET, KG, L
+  unitValue      Decimal  @default(0) @db.Decimal(12, 2)
+  costPrice      Decimal  @default(0) @db.Decimal(12, 2)
+  sellPrice      Decimal  @default(0) @db.Decimal(12, 2)
+  minStockLevel  Int      @default(0)
+  maxStockLevel  Int?
+  reorderPoint   Int      @default(0)
+  weight         Decimal? @db.Decimal(10, 3)
+  dimensions     Json? // {length, width, height}
+  imageUrl       String?
+  isSerialized   Boolean  @default(false)
+  isBatchTracked Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company   Company            @relation(fields: [companyId], references: [id])
+  category  InventoryCategory? @relation(fields: [categoryId], references: [id])
+  stock     Stock[]
+  waybills  Waybill[]
+  movements StockMovement[]
+  alerts    StockAlert[]
+
+  @@unique([companyId, sku])
+  @@index([companyId])
+  @@index([barcode])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model Stock {
+  id               Int       @id @default(autoincrement())
+  itemId           Int
+  locationId       Int
+  warehouseId      Int
+  quantity         Int       @default(0)
+  reservedQuantity Int       @default(0) // Reserved for orders
+  batchNumber      String?
+  expiryDate       DateTime?
+  lastCountedAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  item      InventoryItem   @relation(fields: [itemId], references: [id])
+  location  StorageLocation @relation(fields: [locationId], references: [id])
+  warehouse Warehouse       @relation(fields: [warehouseId], references: [id])
+
+  @@unique([itemId, locationId, batchNumber])
+  @@index([itemId])
+  @@index([locationId])
+  @@index([warehouseId])
+  @@index([expiryDate])
+}
+
+model StockMovement {
+  id             Int      @id @default(autoincrement())
+  companyId      Int
+  itemId         Int
+  fromLocationId Int?
+  toLocationId   Int?
+  quantity       Int
+  type           String // IN, OUT, TRANSFER, ADJUSTMENT, RETURN
+  reference      String? // Waybill number, PO number, etc.
+  referenceType  String? // WAYBILL, PURCHASE_ORDER, SALE_ORDER, MANUAL
+  notes          String?
+  userId         Int?
+  batchNumber    String?
+  createdAt      DateTime @default(now())
+
+  company      Company          @relation(fields: [companyId], references: [id])
+  item         InventoryItem    @relation(fields: [itemId], references: [id])
+  fromLocation StorageLocation? @relation("MovementFrom", fields: [fromLocationId], references: [id])
+  toLocation   StorageLocation? @relation("MovementTo", fields: [toLocationId], references: [id])
+
+  @@index([companyId])
+  @@index([itemId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([reference])
+}
+
+model StockAlert {
+  id         Int       @id @default(autoincrement())
+  companyId  Int
+  itemId     Int
+  type       String // LOW_STOCK, REORDER, EXPIRY, OVERSTOCK
+  threshold  Int
+  message    String
+  isRead     Boolean   @default(false)
+  isResolved Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  company Company       @relation(fields: [companyId], references: [id])
+  item    InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([companyId, isRead])
+  @@index([itemId])
+  @@index([type])
+}
+
+// ============================================================================
+// 🗺️ GPS TRACKING & DRIVER LOCATION SYSTEM
+// ============================================================================
+
+model DriverLocation {
+  id             Int      @id @default(autoincrement())
+  driverId       Int
+  latitude       Float
+  longitude      Float
+  altitude       Float?
+  speed          Float? // km/h
+  heading        Float? // degrees (0-360)
+  accuracy       Float? // meters
+  timestamp      DateTime @default(now())
+  address        String? // Reverse geocoded address
+  batteryLevel   Int? // 0-100
+  signalStrength Int? // 0-100
+
+  driver Driver @relation(fields: [driverId], references: [id])
+  tripId Int?
+  trip   Trip?  @relation(fields: [tripId], references: [id])
+
+  @@index([driverId, timestamp])
+  @@index([timestamp])
+}
+
+model Trip {
+  id              Int       @id @default(autoincrement())
+  companyId       Int
+  driverId        Int
+  vehicleId       Int?
+  manifestId      Int?
+  status          String    @default("PLANNED") // PLANNED, IN_PROGRESS, COMPLETED, CANCELLED
+  startLocation   String?
+  endLocation     String?
+  startLatitude   Float?
+  startLongitude  Float?
+  endLatitude     Float?
+  endLongitude    Float?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  plannedDistance Float? // km
+  actualDistance  Float? // km
+  plannedDuration Int? // minutes
+  actualDuration  Int? // minutes
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company        Company          @relation(fields: [companyId], references: [id])
+  driver         Driver           @relation(fields: [driverId], references: [id])
+  locations      DriverLocation[]
+  geofenceAlerts GeofenceAlert[]
+  stops          TripStop[]
+
+  @@index([companyId, status])
+  @@index([driverId, startedAt])
+  @@index([manifestId])
+}
+
+model TripStop {
+  id               Int       @id @default(autoincrement())
+  tripId           Int
+  sequence         Int // Order in route (1, 2, 3...)
+  location         String
+  latitude         Float
+  longitude        Float
+  plannedArrival   DateTime?
+  actualArrival    DateTime?
+  plannedDeparture DateTime?
+  actualDeparture  DateTime?
+  status           String    @default("PENDING") // PENDING, ARRIVED, DEPARTED, SKIPPED
+  notes            String?
+  createdAt        DateTime  @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id])
+
+  @@index([tripId, sequence])
+}
+
+model Geofence {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  name      String
+  type      String   @default("CIRCLE") // CIRCLE, POLYGON
+  latitude  Float
+  longitude Float
+  radius    Float? // meters (for CIRCLE)
+  polygon   Json? // Array of [lat, lng] points (for POLYGON)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company         @relation(fields: [companyId], references: [id])
+  alerts  GeofenceAlert[]
+
+  @@index([companyId, isActive])
+}
+
+model GeofenceAlert {
+  id         Int      @id @default(autoincrement())
+  geofenceId Int
+  driverId   Int
+  tripId     Int?
+  eventType  String // ENTER, EXIT
+  latitude   Float
+  longitude  Float
+  timestamp  DateTime @default(now())
+  isRead     Boolean  @default(false)
+
+  geofence Geofence @relation(fields: [geofenceId], references: [id])
+  driver   Driver   @relation(fields: [driverId], references: [id])
+  trip     Trip?    @relation(fields: [tripId], references: [id])
+
+  @@index([geofenceId, timestamp])
+  @@index([driverId, timestamp])
+}
+
+// ============================================================================
+// 🔐 SECURITY CODES FOR AI CHAT ACCESS
+// ============================================================================
+
+model SecurityCode {
+  id        Int       @id @default(autoincrement())
+  companyId Int
+  code      String    @unique
+  isActive  Boolean   @default(true)
+  maxUses   Int? // null = unlimited
+  usedCount Int       @default(0)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  company  Company     @relation(fields: [companyId], references: [id])
+  sessions AISession[]
+
+  @@index([code])
+  @@index([companyId, isActive])
+}
+
+// ============================================================================
+// 💬 AI CHAT SESSIONS & MESSAGES
+// ============================================================================
+
+model AISession {
+  id             Int      @id @default(autoincrement())
+  companyId      Int
+  securityCodeId Int?
+  userId         Int?
+  clientEmail    String?
+  status         String   @default("ACTIVE") // ACTIVE, EXPIRED, BLOCKED
+  messageCount   Int      @default(0)
+  totalCost      Float    @default(0)
+  startedAt      DateTime @default(now())
+  lastActivityAt DateTime @default(now())
+
+  company       Company         @relation(fields: [companyId], references: [id])
+  securityCode  SecurityCode?   @relation(fields: [securityCodeId], references: [id])
+  messages      AIMessage[]
+  User          User?           @relation(fields: [userId], references: [id])
+  AIMessageBill AIMessageBill[]
+
+  @@index([companyId, status])
+  @@index([securityCodeId])
+}
+
+model AIMessage {
+  id             Int      @id @default(autoincrement())
+  sessionId      Int
+  role           String // USER, ASSISTANT, SYSTEM
+  content        String
+  tokensUsed     Int      @default(0)
+  cost           Float    @default(0) // Cost in ZAR
+  billedToClient Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  session AISession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId, createdAt])
+}
+
+// ============================================================================
+// 💰 AI MESSAGE BILLING
+// ============================================================================
+
+model AIMessageBill {
+  id             Int       @id @default(autoincrement())
+  companyId      Int
+  sessionId      Int
+  messageId      Int       @unique
+  clientEmail    String
+  messageCount   Int
+  costPerMessage Float
+  totalCost      Float
+  currency       String    @default("ZAR")
+  status         String    @default("PENDING") // PENDING, PAID, FAILED
+  billedAt       DateTime  @default(now())
+  paidAt         DateTime?
+
+  session AISession @relation(fields: [sessionId], references: [id])
+
+  @@index([companyId, status])
+  @@index([clientEmail])
+}
+
+model ProofOfDelivery {
+  id            Int      @id @default(autoincrement())
+  waybillId     Int
+  driverId      Int
+  signatureData String? // Base64 or URL
+  photoData     String? // Base64 or URL
+  recipientName String?
+  notes         String?
+  source        String   @default("PWA") // PWA or WHATSAPP
+  createdAt     DateTime @default(now())
+
+  waybill Waybill @relation(fields: [waybillId], references: [id])
+  driver  Driver  @relation(fields: [driverId], references: [id])
+
+  @@index([waybillId])
+  @@index([driverId])
+}
+
+// Dispatch Chat Messages
+model DispatchMessage {
+  id         Int      @id @default(autoincrement())
+  driverId   Int      @map("driver_id")
+  senderType String   @map("sender_type") // "dispatch" or "driver"
+  senderId   Int      @map("sender_id")
+  message    String
+  type       String   @default("text") // "text", "alert", "instruction"
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  readAt         DateTime? @map("read_at")
+  attachmentUrl  String?   @map("attachment_url")
+  attachmentType String?   @map("attachment_type")
+
+  @@map("dispatch_messages")
+}
+
+// ═══════════════════════════════════════════════════════════
+// PUBLIC TRACKING LINKS (Customer-facing, no auth required)
+// ═══════════════════════════════════════════════════════════
+model TrackingToken {
+  id             String    @id @default(cuid())
+  waybillId      Int
+  token          String    @unique @db.VarChar(32)
+  isActive       Boolean   @default(true)
+  expiresAt      DateTime?
+  accessCount    Int       @default(0)
+  lastAccessedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  waybill Waybill @relation(fields: [waybillId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([waybillId])
+  @@map("tracking_tokens")
+}
+
+model TrackingEvent {
+  id          String   @id @default(cuid())
+  waybillId   Int
+  status      String // CREATED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, FAILED
+  location    String?
+  latitude    Float?
+  longitude   Float?
+  description String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  waybill Waybill @relation(fields: [waybillId], references: [id], onDelete: Cascade)
+
+  @@index([waybillId])
+  @@index([createdAt])
+  @@map("tracking_events")
+}
+
+// Junction table to link Waybills to Manifests
+
+// ═══════════════════════════════════════════════════════════
+// 🎨 DYNAMIC DASHBOARD ENGINE (50x Competitor Differentiator)
+// ═══════════════════════════════════════════════════════════
+
+model DashboardLayout {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  name        String   // e.g., "Retail Fulfillment View", "Courier Ops Command"
+  role        Role     // Which role sees this layout
+  isDefault   Boolean  @default(false)
+  config      Json     // Full layout definition (widgets, grid, filters)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, role])
+  @@map("dashboard_layouts")
+}
+
+model DashboardWidget {
+  id             Int      @id @default(autoincrement())
+  type           String   // KPI_CARD, LINE_CHART, BAR_CHART, MAP, TABLE, LIVE_METRIC
+  title          String
+  dataSource     String   // API endpoint or query key
+  refreshRateSec Int      @default(30)
+  config         Json     // Widget-specific settings (colors, thresholds, columns)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("dashboard_widgets")
+}

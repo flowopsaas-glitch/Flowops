@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { 
-  LayoutDashboard, Package, Truck, Inbox, 
+  LayoutDashboard, Package, Truck, Inbox, BarChart3, 
   Users, X, Menu, Search, CreditCard, Brain, Boxes, FileText 
 } from "lucide-react";
 

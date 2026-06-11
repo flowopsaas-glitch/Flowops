@@ -17,7 +17,7 @@ export type OwnerLoginResponse = {
 
 const OWNER_API_BASE =
   (import.meta as any)?.env?.VITE_API_BASE_URL?.trim?.() ||
-  'http://127.0.0.1:3000/api'
+  'http://localhost:3000/api/v1'
 
 export function getOwnerApiBase() {
   return OWNER_API_BASE.replace(/\/+$/, '')
