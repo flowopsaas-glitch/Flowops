@@ -56,6 +56,9 @@ import { SubscriptionMonitorModule } from './subscription-monitor/subscription-m
 // AI Platform Health Monitor
 import { PlatformHealthModule } from './platform-health/platform-health.module';
 
+// Tenant Onboarding (signup requests, auto-provisioning)
+import { OnboardingModule } from './onboarding/onboarding.module';
+
 // ✅ FIXED: Import ClientsModule (was missing!)
 import { ClientsModule } from './_clients/clients.module';
 import { FleetMapModule } from './fleet-map/fleet-map.module';
@@ -144,6 +147,9 @@ import { RatingService } from './rating/rating.service';
 
     // AI Platform Health Monitor (5-min cron checks system metrics)
     PlatformHealthModule,
+
+    // Tenant Onboarding (public signup + admin approval)
+    OnboardingModule,
   ],
   controllers: [
     LocationController,

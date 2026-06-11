@@ -111,4 +111,25 @@ export class MailService implements OnModuleInit {
       this.logger.error(`❌ Mail Error (${context}): ${e.message}`);
     }
   }
+
+  /**
+   * Internal send method for system emails (notifications, welcome emails, invite links)
+   * Falls back gracefully if SMTP isn't configured
+   */
+  async safeSendInternal(opts: { to?: string; subject: string; html: string }) {
+    const to = opts.to || process.env.MAIL_USER || 'admin@flowops.work';
+    try {
+      if (!this.transporter) this.initializeTransporter();
+      return await this.transporter.sendMail({
+        from: `"FlowOps Platform" <${process.env.MAIL_USER || 'noreply@flowops.work'}>`,
+        to,
+        subject: opts.subject,
+        html: opts.html,
+      });
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Email send failed (to: ${to}): ${e.message}`);
+      // Don't throw — email failures shouldn't block operations
+      return null;
+    }
+  }
 }

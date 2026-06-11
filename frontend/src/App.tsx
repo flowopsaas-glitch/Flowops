@@ -64,6 +64,8 @@ const SuperAdminBilling = lazy(() => import("./pages/superadmin/SuperAdminBillin
 const SuperAdminUsers = lazy(() => import("./pages/superadmin/SuperAdminUsers"));
 const SuperAdminDispatches = lazy(() => import("./pages/superadmin/SuperAdminDispatches"));
 const SuperAdminHealth = lazy(() => import("./pages/superadmin/SuperAdminHealth"));
+const SuperAdminSignups = lazy(() => import("./pages/superadmin/SuperAdminSignups"));
+const SignupPage = lazy(() => import("./pages/Signup"));
 const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
 const PasswordManager = lazy(() => import("./pages/owner/PasswordManager"));
@@ -152,6 +154,7 @@ export default function App() {
           {/* ================================================================== */}
           <Route path="/track/:token" element={<Suspense fallback={<PageLoader />}><TrackPublic /></Suspense>} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<Suspense fallback={<PageLoader />}><SignupPage /></Suspense>} />
           <Route path="/client-portal" element={<ClientPortal />} />
           <Route path="/legal/terms" element={<TermsPage />} />
           <Route path="/legal/privacy" element={<PrivacyPage />} />
@@ -287,6 +290,7 @@ export default function App() {
             <Route path="/superadmin/billing" element={<Suspense fallback={<PageLoader />}><SuperAdminBilling /></Suspense>} />
             <Route path="/superadmin/dispatches" element={<Suspense fallback={<PageLoader />}><SuperAdminDispatches /></Suspense>} />
             <Route path="/superadmin/health" element={<Suspense fallback={<PageLoader />}><SuperAdminHealth /></Suspense>} />
+            <Route path="/superadmin/signups" element={<Suspense fallback={<PageLoader />}><SuperAdminSignups /></Suspense>} />
             <Route path="/superadmin/settings" element={<Suspense fallback={<PageLoader />}><SuperAdminSettings /></Suspense>} />
           </Route>
 

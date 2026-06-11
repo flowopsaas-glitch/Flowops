@@ -1,209 +1,265 @@
-﻿import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Building2, Lock, Sparkles, ArrowRight } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
-import { persistTermsAcceptanceLocally } from "../legal/termsAcceptance";
+import { useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Building2, Mail, User, Phone, MessageSquare, CheckCircle, Loader2, ArrowRight } from 'lucide-react';
 
-export default function Signup() {
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+
+const planDetails: Record<string, { name: string; price: string; color: string; features: string[] }> = {
+  STARTER: {
+    name: 'Starter',
+    price: 'Free 14-day trial',
+    color: '#4ADE80',
+    features: ['Up to 5 users', 'Basic waybill management', 'Dashboard', 'Collections tracking'],
+  },
+  PROFESSIONAL: {
+    name: 'Professional',
+    price: 'R3,500/mo',
+    color: '#6C9EFF',
+    features: ['Up to 25 users', 'Advanced analytics', 'Email hub', 'Rate cards', 'Dispatch management'],
+  },
+  ENTERPRISE: {
+    name: 'Enterprise',
+    price: 'R7,500/mo',
+    color: '#A78BFA',
+    features: ['Unlimited users', 'AI-powered ops autopilot', 'WhatsApp integration', 'Priority support', 'Custom billing', 'SLA monitoring'],
+  },
+};
+
+export default function SignupPage() {
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  const invitePlan = searchParams.get('plan') || '';
+  const inviteEmail = searchParams.get('email') || '';
+  const inviteToken = searchParams.get('invite') || '';
+
   const [form, setForm] = useState({
-    fullName: "",
-    email: "",
-    phone: "",
-    company: "",
-    password: "",
+    companyName: '',
+    contactName: '',
+    contactEmail: inviteEmail,
+    contactPhone: '',
+    requestedPlan: (invitePlan || 'STARTER') as 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE',
+    message: '',
   });
-  const [agreed, setAgreed] = useState(false);
-  const { showToast } = useToast();
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!agreed) {
-      showToast("Please agree to the Terms of Service and Privacy Notice to continue.", "error");
+    if (!form.companyName.trim() || !form.contactEmail.trim() || !form.contactName.trim()) {
+      setError('Please fill in all required fields');
       return;
     }
+    setSubmitting(true);
+    setError('');
 
-    persistTermsAcceptanceLocally();
-
-    showToast("Signup submitted. Await admin approval.", "success");
-    navigate("/login");
+    try {
+      const res = await fetch(`${API_BASE}/onboarding/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Signup request failed');
+      }
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  const selectedPlan = planDetails[form.requestedPlan] || planDetails.STARTER;
+
+  // ── SUCCESS STATE ─────────────────────────────────────────────────────────
+  if (success) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0f1e', padding: '24px' }}>
+        <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(74,222,128,0.15)' }}>
+            <CheckCircle size={32} color="#4ADE80" />
+          </div>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'white', marginBottom: '12px' }}>Request Submitted!</h1>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.5)', lineHeight: '1.6', marginBottom: '24px' }}>
+            Your signup request for <strong style={{ color: 'white' }}>{form.companyName}</strong> on the <strong style={{ color: selectedPlan.color }}>{selectedPlan.name}</strong> plan has been received.
+            <br /><br />
+            Our team will review your request and you'll receive an email with your login credentials once approved.
+          </p>
+          <button onClick={() => navigate('/login')} style={{
+            padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: 600,
+            color: 'white', border: 'none', cursor: 'pointer',
+            background: 'linear-gradient(135deg, #6C9EFF, #A78BFA)',
+          }}>
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── SIGNUP FORM ───────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0d2a63_0%,_#07142d_45%,_#030816_100%)] px-4 py-12 text-white flex items-center justify-center">
-      <div className="w-full max-w-6xl grid grid-cols-1 gap-12 lg:grid-cols-2 lg:items-center lg:gap-16">
-        <div className="space-y-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200">
-            <Sparkles className="h-4 w-4 text-cyan-300" />
-            FlowOps onboarding
+    <div style={{ minHeight: '100vh', display: 'flex', background: '#0a0f1e' }}>
+      {/* Left: Form */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 24px' }}>
+        <div style={{ maxWidth: '480px', width: '100%' }}>
+          {/* Logo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #6C9EFF, #A78BFA)' }}>
+              <span style={{ color: 'white', fontWeight: 900, fontSize: '14px' }}>F</span>
+            </div>
+            <span style={{ fontSize: '18px', fontWeight: 800, color: 'white', letterSpacing: '0.5px' }}>FlowOps</span>
           </div>
 
-          <div className="space-y-4">
-            <h1 className="text-4xl font-black leading-tight tracking-tight sm:text-5xl">
-              Request workspace access
-            </h1>
-            <p className="max-w-xl text-lg text-slate-300">
-              Same premium shell as the tenant app: courier ops, billing, AI review, and comms
-              hubs — provisioned for your team after approval.
+          <h1 style={{ fontSize: '28px', fontWeight: 700, color: 'white', marginBottom: '8px' }}>
+            {inviteToken ? 'Complete Your Signup' : 'Get Started with FlowOps'}
+          </h1>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', marginBottom: '32px' }}>
+            {inviteToken ? 'You\'ve been invited. Fill in your details below.' : 'Request access to the FlowOps logistics platform.'}
+          </p>
+
+          {error && (
+            <div style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', background: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.25)' }}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            {/* Company Name */}
+            <FormField icon={Building2} label="Company Name *" value={form.companyName}
+              onChange={v => setForm({ ...form, companyName: v })} placeholder="e.g. Express Logistics" />
+
+            {/* Contact Name */}
+            <FormField icon={User} label="Your Name *" value={form.contactName}
+              onChange={v => setForm({ ...form, contactName: v })} placeholder="e.g. John Smith" />
+
+            {/* Email */}
+            <FormField icon={Mail} label="Email Address *" value={form.contactEmail}
+              onChange={v => setForm({ ...form, contactEmail: v })} placeholder="you@company.co.za" type="email" />
+
+            {/* Phone */}
+            <FormField icon={Phone} label="Phone (optional)" value={form.contactPhone}
+              onChange={v => setForm({ ...form, contactPhone: v })} placeholder="+27 XX XXX XXXX" />
+
+            {/* Plan Selection */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '8px', color: 'rgba(255,255,255,0.5)' }}>
+                Select Plan *
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {(['STARTER', 'PROFESSIONAL', 'ENTERPRISE'] as const).map(plan => {
+                  const active = form.requestedPlan === plan;
+                  const details = planDetails[plan];
+                  return (
+                    <button key={plan} type="button" onClick={() => setForm({ ...form, requestedPlan: plan })}
+                      style={{
+                        flex: 1, padding: '12px 8px', borderRadius: '10px', cursor: 'pointer', textAlign: 'center',
+                        border: `2px solid ${active ? details.color : 'rgba(255,255,255,0.08)'}`,
+                        background: active ? `${details.color}10` : 'rgba(255,255,255,0.03)',
+                        transition: 'all 0.2s',
+                      }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: active ? details.color : 'rgba(255,255,255,0.5)' }}>
+                        {details.name}
+                      </div>
+                      <div style={{ fontSize: '10px', marginTop: '4px', color: 'rgba(255,255,255,0.3)' }}>
+                        {details.price}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Message */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '6px', color: 'rgba(255,255,255,0.5)' }}>
+                <MessageSquare size={12} style={{ display: 'inline', marginRight: '6px' }} />
+                Message (optional)
+              </label>
+              <textarea value={form.message} onChange={e => setForm({ ...form, message: e.target.value })}
+                placeholder="Tell us about your logistics needs..."
+                rows={3}
+                style={{
+                  width: '100%', padding: '12px', borderRadius: '10px', fontSize: '14px', color: 'white', resize: 'none',
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none',
+                }} />
+            </div>
+
+            {/* Submit */}
+            <button type="submit" disabled={submitting} style={{
+              width: '100%', padding: '14px', borderRadius: '10px', fontSize: '14px', fontWeight: 600,
+              color: 'white', border: 'none', cursor: submitting ? 'not-allowed' : 'pointer',
+              background: submitting ? 'rgba(108,158,255,0.4)' : 'linear-gradient(135deg, #6C9EFF, #A78BFA)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            }}>
+              {submitting ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : <>Submit Request <ArrowRight size={16} /></>}
+            </button>
+
+            {/* Login link */}
+            <p style={{ marginTop: '16px', textAlign: 'center', fontSize: '13px', color: 'rgba(255,255,255,0.4)' }}>
+              Already have an account?{' '}
+              <a href="/login" style={{ color: '#6C9EFF', textDecoration: 'none', fontWeight: 500 }}>Login here</a>
             </p>
-          </div>
+          </form>
+        </div>
+      </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                <Building2 className="h-5 w-5" />
-              </div>
-              <h3 className="font-bold text-white">Tenant workspace</h3>
-              <p className="mt-1 text-sm text-slate-400">
-                Company-scoped users, inboxes, rate cards, and dispatch.
-              </p>
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                <Lock className="h-5 w-5" />
-              </div>
-              <h3 className="font-bold text-white">Secure by design</h3>
-              <p className="mt-1 text-sm text-slate-400">
-                Terms acceptance stored; access gated until admin activation.
-              </p>
-            </div>
+      {/* Right: Plan info panel */}
+      <div style={{
+        width: '380px', display: 'none', padding: '48px 32px',
+        background: 'rgba(15,22,45,0.6)', borderLeft: '1px solid rgba(255,255,255,0.06)',
+        flexDirection: 'column', justifyContent: 'center',
+      }} className="lg:!flex">
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: selectedPlan.color, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            {selectedPlan.name} Plan
           </div>
+          <div style={{ fontSize: '28px', fontWeight: 800, color: 'white' }}>{selectedPlan.price}</div>
+          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>14-day free trial included</div>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="w-full max-w-md justify-self-end rounded-[32px] border border-white/10 bg-[#09162f]/90 p-8 shadow-2xl backdrop-blur-xl space-y-5 lg:max-w-lg"
-        >
-          <div>
-            <h2 className="text-3xl font-black tracking-tight">Create request</h2>
-            <p className="mt-2 text-sm text-slate-300">
-              We&apos;ll route this to your FlowOps administrator.
-            </p>
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginBottom: '12px' }}>WHAT YOU GET</div>
+          {selectedPlan.features.map(feature => (
+            <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <CheckCircle size={14} color={selectedPlan.color} />
+              <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>{feature}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginBottom: '8px' }}>HOW IT WORKS</div>
+          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', lineHeight: '1.6' }}>
+            1. Submit your signup request<br />
+            2. Our AI reviews and triages your application<br />
+            3. Admin approves → credentials auto-generated<br />
+            4. You receive a welcome email with login details
           </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Full name
-            </label>
-            <input
-              name="fullName"
-              required
-              value={form.fullName}
-              onChange={handleChange}
-              className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/20"
-              placeholder="Jane Doe"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Work email
-            </label>
-            <input
-              name="email"
-              type="email"
-              required
-              value={form.email}
-              onChange={handleChange}
-              className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/20"
-              placeholder="you@company.com"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Phone
-            </label>
-            <input
-              name="phone"
-              required
-              value={form.phone}
-              onChange={handleChange}
-              className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/20"
-              placeholder="+27 …"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Company
-            </label>
-            <input
-              name="company"
-              required
-              value={form.company}
-              onChange={handleChange}
-              className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/20"
-              placeholder="Legal entity name"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Password
-            </label>
-            <input
-              name="password"
-              type="password"
-              required
-              value={form.password}
-              onChange={handleChange}
-              className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/20"
-              placeholder="Min 8 characters"
-            />
-          </div>
-
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 select-none">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-white/30 bg-[#071224] text-blue-400 focus:ring-blue-400/40"
-            />
-            <span>
-              I agree to the{" "}
-              <Link
-                to="/legal/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
-              >
-                Terms of Service
-              </Link>{" "}
-              and{" "}
-              <Link
-                to="/legal/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
-              >
-                Privacy Notice
-              </Link>
-              .
-            </span>
-          </label>
-
-          <button
-            type="submit"
-            className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-500 py-4 font-bold text-slate-950 shadow-lg transition hover:brightness-110 active:scale-[0.99]"
-          >
-            Submit for approval
-            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-          </button>
-
-          <p className="text-center text-sm text-slate-400">
-            Already invited?{" "}
-            <Link to="/login" className="font-semibold text-blue-300 hover:text-blue-200">
-              Sign in
-            </Link>
-          </p>
-        </form>
+        </div>
       </div>
+    </div>
+  );
+}
+
+// ── Form Field Component ────────────────────────────────────────────────────
+function FormField({ icon: Icon, label, value, onChange, placeholder, type = 'text' }: {
+  icon: any; label: string; value: string; onChange: (v: string) => void; placeholder: string; type?: string;
+}) {
+  return (
+    <div style={{ marginBottom: '16px' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 500, marginBottom: '6px', color: 'rgba(255,255,255,0.5)' }}>
+        <Icon size={12} /> {label}
+      </label>
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{
+          width: '100%', padding: '12px 14px', borderRadius: '10px', fontSize: '14px', color: 'white',
+          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none',
+        }} />
     </div>
   );
 }

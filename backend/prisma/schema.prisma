@@ -1632,3 +1632,31 @@ model DashboardWidget {
 
   @@map("dashboard_widgets")
 }
+
+
+// ─────────────────────────────────────────────────────────────
+// SIGNUP / ONBOARDING
+// ─────────────────────────────────────────────────────────────
+
+model SignupRequest {
+  id               Int       @id @default(autoincrement())
+  companyName      String
+  contactEmail     String
+  contactName      String
+  contactPhone     String?
+  requestedPlan    String    @default("STARTER")
+  message          String?
+  status           String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  aiTriage         String?   // AI-generated triage summary
+  aiPriority       String?   // LOW, MEDIUM, HIGH
+  inviteToken      String?   @unique // For invite-link based signups
+  approvedAt       DateTime?
+  generatedEmail   String?   // The email used when account was created
+  generatedCompanyId Int?    // The company ID created upon approval
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+  @@index([contactEmail])
+  @@map("signup_requests")
+}
