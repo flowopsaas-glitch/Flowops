@@ -1,127 +1,149 @@
-﻿import { useEffect, useState } from 'react'
-import {
-  getTenantNotifications,
-  markTenantNotificationRead,
-} from '../api/tenantAdminCoreOps'
+import { useEffect, useState } from 'react';
+import { Bell, Check, CheckCheck, Clock, AlertTriangle, Info, Trash2 } from 'lucide-react';
+import PageHeader from '@/components/ui/PageHeader';
+import PageSkeleton from '@/components/ui/PageSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+
+interface Notification {
+  id: number;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+const typeConfig: Record<string, { icon: any; color: string }> = {
+  INFO: { icon: Info, color: '#6C9EFF' },
+  WARNING: { icon: AlertTriangle, color: '#FBBF24' },
+  ALERT: { icon: AlertTriangle, color: '#F87171' },
+  SUCCESS: { icon: Check, color: '#4ADE80' },
+};
 
 export default function Notifications() {
-  const [items, setItems] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const [items, setItems] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  async function loadData() {
-    const data = await getTenantNotifications()
-    setItems(data)
-  }
-
-  useEffect(() => {
-    let active = true
-
-    async function run() {
-      setLoading(true)
-      setError('')
-
-      try {
-        const data = await getTenantNotifications()
-        if (active) {
-          setItems(data)
-        }
-      } catch (err: any) {
-        if (active) {
-          setError(err?.message || 'Failed to load notifications')
-        }
-      } finally {
-        if (active) {
-          setLoading(false)
-        }
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`${API_URL}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setItems(Array.isArray(data) ? data : []);
       }
-    }
+    } catch (e) { console.error('Failed to load notifications:', e); }
+    setLoading(false);
+  };
 
-    run()
+  const markRead = async (id: number) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      await fetch(`${API_URL}/notifications/${id}/read`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setItems(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    } catch (e) { /* ignore */ }
+  };
 
-    return () => {
-      active = false
-    }
-  }, [])
+  const markAllRead = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      await fetch(`${API_URL}/notifications/mark-all-read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setItems(prev => prev.map(n => ({ ...n, isRead: true })));
+    } catch (e) { /* ignore */ }
+  };
 
-  async function handleMarkRead(id: string | number) {
-    setMessage('')
-    setError('')
+  useEffect(() => { loadData(); }, []);
 
-    const result = await markTenantNotificationRead(id)
-
-    if (result?.ok === false) {
-      setError('Failed to mark notification as read')
-      return
-    }
-
-    await loadData()
-    setMessage('Notification updated')
-  }
+  const unreadCount = items.filter(n => !n.isRead).length;
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
-        <div className="text-xs uppercase tracking-[0.25em] text-sky-200">
-          Notifications
-        </div>
-        <h1 className="mt-2 text-2xl font-semibold text-white">
-          Notification center
-        </h1>
-      </div>
+    <div style={{ padding: '24px', minHeight: '100%' }}>
+      <PageHeader icon={Bell} title="Notifications" description={`${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`} color="#A78BFA">
+        {unreadCount > 0 && (
+          <button onClick={markAllRead} style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 500,
+            background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)',
+            border: 'none', cursor: 'pointer',
+          }}>
+            <CheckCheck size={13} /> Mark All Read
+          </button>
+        )}
+      </PageHeader>
 
-      {error ? (
-        <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-          {error}
-        </div>
-      ) : null}
-
-      {message ? (
-        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-          {message}
-        </div>
-      ) : null}
-
-      <div className="grid gap-4">
-        {loading ? (
-          <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 text-sm text-slate-400">
-            Loading notifications...
-          </div>
-        ) : null}
-
-        {!loading && items.length === 0 ? (
-          <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 text-sm text-slate-400">
-            No notifications available.
-          </div>
-        ) : null}
-
-        {items.map((item, index) => (
-          <div
-            key={item?.id ?? index}
-            className="rounded-[24px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl"
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-base font-medium text-white">
-                  {item?.title || item?.type || 'Notification'}
-                </div>
-                <div className="mt-2 text-sm text-slate-300">
-                  {item?.message || item?.body || 'No message'}
+      {loading ? (
+        <PageSkeleton type="list" rows={5} />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={Bell}
+          title="No notifications"
+          description="You're all caught up! Notifications will appear here when there's activity in your workspace."
+          color="#A78BFA"
+        />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {items.map(n => {
+            const config = typeConfig[n.type] || typeConfig.INFO;
+            const Icon = config.icon;
+            return (
+              <div key={n.id} onClick={() => !n.isRead && markRead(n.id)}
+                style={{
+                  borderRadius: '10px', padding: '14px 18px', cursor: !n.isRead ? 'pointer' : 'default',
+                  background: n.isRead ? 'rgba(15,22,45,0.5)' : 'rgba(15,22,45,0.85)',
+                  border: `1px solid ${n.isRead ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)'}`,
+                  opacity: n.isRead ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <div style={{
+                    width: '32px', height: '32px', borderRadius: '8px', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: `${config.color}12`,
+                  }}>
+                    <Icon size={15} color={config.color} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'white' }}>{n.title || 'Notification'}</span>
+                      {!n.isRead && (
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: config.color }} />
+                      )}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', lineHeight: '1.4' }}>
+                      {n.message}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
+                    {n.createdAt ? timeAgo(n.createdAt) : ''}
+                  </div>
                 </div>
               </div>
-
-              <button
-                type="button"
-                onClick={() => handleMarkRead(item?.id)}
-                className="rounded-2xl border border-sky-400/30 bg-sky-500/20 px-4 py-2 text-sm text-sky-100 transition hover:bg-sky-500/30"
-              >
-                Mark read
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
-  )
+  );
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }

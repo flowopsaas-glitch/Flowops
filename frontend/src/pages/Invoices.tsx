@@ -1,87 +1,148 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
+import { Receipt, Download, RefreshCw, Search, DollarSign, CheckCircle, Clock } from 'lucide-react';
 import { api } from '../api/client';
-import { FileText, ShieldAlert, Download, RefreshCw, CheckCircle2 } from "lucide-react";
+import PageHeader from '@/components/ui/PageHeader';
+import PageSkeleton from '@/components/ui/PageSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
+
+interface Invoice {
+  id: number;
+  invoiceNumber: string;
+  clientName?: string;
+  totalAmount: number;
+  status: string;
+  createdAt: string;
+  dueDate?: string;
+}
+
+const statusConfig: Record<string, { bg: string; color: string }> = {
+  PAID: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80' },
+  SENT: { bg: 'rgba(108,158,255,0.12)', color: '#6C9EFF' },
+  PENDING: { bg: 'rgba(251,191,36,0.12)', color: '#FBBF24' },
+  OVERDUE: { bg: 'rgba(248,113,113,0.12)', color: '#F87171' },
+  DRAFT: { bg: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' },
+};
 
 export default function Invoices() {
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   const fetchInvoices = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      // Cache buster added to the URL
       const res = await api.get(`/invoices/supervisor?t=${Date.now()}`);
-      
-      // 🕵️‍♂️ DEBUG: Open your browser console (F12) to see this!
-      console.log("RAW API RESPONSE:", res.data);
-
-      // 🚀 UNWRAPPER: Handle both flat arrays and { invoices: [] } objects
-      const dataArray = Array.isArray(res.data) 
-        ? res.data 
-        : (res.data?.invoices || []);
-      
-      setInvoices(dataArray);
+      const data = res as any;
+      setInvoices(Array.isArray(data) ? data : data?.invoices || []);
     } catch (err) {
-      console.error("Ledger sync error:", err);
-    } finally {
-      setLoading(false);
+      console.error('Failed to fetch invoices:', err);
+      setInvoices([]);
     }
+    setLoading(false);
   };
 
   useEffect(() => { fetchInvoices(); }, []);
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-screen bg-[#07111f]">
-      <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
-    </div>
+  const filtered = invoices.filter(inv =>
+    !search || inv.invoiceNumber?.toLowerCase().includes(search.toLowerCase()) ||
+    inv.clientName?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const totalRevenue = invoices.reduce((s, inv) => s + (inv.totalAmount || 0), 0);
+  const paidCount = invoices.filter(i => i.status === 'PAID').length;
+
   return (
-    <div className="p-8 space-y-8 bg-[#07111f] min-h-screen text-slate-200">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-black italic uppercase tracking-tighter text-white">Official Invoices</h1>
-        <button onClick={fetchInvoices} className="p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10">
-          <RefreshCw size={20} />
+    <div style={{ padding: '24px', minHeight: '100%' }}>
+      <PageHeader icon={Receipt} title="Invoices" description={`${invoices.length} invoices • R${totalRevenue.toLocaleString()} total revenue`} color="#FBBF24">
+        <button onClick={fetchInvoices} style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 500,
+          background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)',
+          border: 'none', cursor: 'pointer',
+        }}>
+          <RefreshCw size={13} /> Refresh
         </button>
+      </PageHeader>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3" style={{ marginBottom: '20px' }}>
+        <MiniStat label="Total Revenue" value={`R${totalRevenue.toLocaleString()}`} icon={DollarSign} color="#FBBF24" />
+        <MiniStat label="Paid" value={String(paidCount)} icon={CheckCircle} color="#4ADE80" />
+        <MiniStat label="Outstanding" value={String(invoices.length - paidCount)} icon={Clock} color="#6C9EFF" />
       </div>
 
-      {invoices.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-white/5 rounded-3xl bg-white/[0.02]">
-          <FileText className="h-12 w-12 mb-3 text-slate-700" />
-          <p className="text-lg font-bold text-slate-400 uppercase tracking-widest italic">No Finalized Invoices Found</p>
-        </div>
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: '20px', maxWidth: '350px' }}>
+        <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search invoices..."
+          style={{ width: '100%', paddingLeft: '36px', paddingRight: '12px', paddingTop: '10px', paddingBottom: '10px', borderRadius: '10px', fontSize: '13px', color: 'white', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }} />
+      </div>
+
+      {/* Content */}
+      {loading ? (
+        <PageSkeleton type="table" rows={5} />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={Receipt}
+          title={search ? "No matching invoices" : "No invoices yet"}
+          description={search ? "Try a different search." : "Invoices will appear here once billing batches are processed."}
+          actionLabel={!search ? "Go to Billing Batches" : undefined}
+          actionPath="/billing/batches"
+          color="#FBBF24"
+        />
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {invoices.map((inv) => (
-            <div key={inv.id} className="bg-slate-900 border border-white/10 rounded-[24px] p-6 shadow-2xl">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="px-2 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-black rounded-full uppercase tracking-widest">
-                    {inv.status}
-                  </span>
-                  <h3 className="text-xl font-black text-white mt-2">{inv.clientName}</h3>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{inv.invoiceNumber}</p>
-                </div>
-                <div className="text-right">
-                   <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Value</div>
-                   <div className="text-2xl font-black text-emerald-400 font-mono">R {Number(inv.total).toFixed(2)}</div>
-                </div>
-              </div>
-              
-              <div className="mt-6 p-4 bg-black/40 rounded-xl border border-white/5 grid grid-cols-2 gap-4">
-                 <div>
-                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Health Score</div>
-                    <div className="text-lg font-black text-white">{inv.healthScore}/100</div>
-                 </div>
-                 <div className="text-right">
-                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Risk Level</div>
-                    <div className="text-lg font-black text-blue-400">{inv.risk}</div>
-                 </div>
-              </div>
-            </div>
-          ))}
+        <div style={{ borderRadius: '12px', overflow: 'hidden', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {['Invoice #', 'Client', 'Amount', 'Status', 'Date', ''].map(h => (
+                  <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((inv, i) => {
+                const sc = statusConfig[inv.status] || statusConfig.PENDING;
+                return (
+                  <tr key={inv.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
+                    className="hover:bg-white/[0.02] transition-colors">
+                    <td style={{ padding: '12px 16px', fontWeight: 600, color: '#FBBF24' }}>{inv.invoiceNumber || `INV-${inv.id}`}</td>
+                    <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.7)' }}>{inv.clientName || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 600, color: 'white' }}>R{(inv.totalAmount || 0).toLocaleString()}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: sc.bg, color: sc.color }}>
+                        {inv.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 16px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
+                      {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : '—'}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <button style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#6C9EFF', background: 'none', border: 'none', cursor: 'pointer' }}>
+                        <Download size={12} /> PDF
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, icon: Icon, color }: { label: string; value: string; icon: any; color: string }) {
+  return (
+    <div style={{ borderRadius: '10px', padding: '14px 16px', background: 'rgba(15,22,45,0.85)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}12` }}>
+        <Icon size={15} color={color} />
+      </div>
+      <div>
+        <div style={{ fontSize: '16px', fontWeight: 700, color: 'white' }}>{value}</div>
+        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{label}</div>
+      </div>
     </div>
   );
 }
