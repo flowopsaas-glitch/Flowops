@@ -31,7 +31,8 @@ export default function EditTenantModal({ tenant, onClose, onSaved }: EditTenant
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           name: form.name,
-          subscriptionPlan: form.plan,
+          plan: form.plan,
+          status: form.status,
           isActive: form.status === 'Active',
         }),
       });

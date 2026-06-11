@@ -7,6 +7,16 @@ export type CreateTenantDto = {
   name: string;
   email?: string;
   phone?: string;
+  plan?: string;
+  status?: string;
+};
+
+export type UpdateCompanyDto = {
+  name?: string;
+  plan?: string;
+  status?: string;
+  isActive?: boolean;
+  monthlyPrice?: number;
 };
 
 export type UpdateTenantSettingsDto = {
@@ -186,9 +196,8 @@ export class CompaniesService {
       const company = await this.prisma.company.create({ 
         data: { 
           name: dto.name.trim(),
-          // Default values for new tenants
-          status: 'Active',
-          plan: 'STARTER',
+          status: dto.status || 'Active',
+          plan: (dto.plan || 'STARTER') as any,
           isActive: true,
           baseTierPrice: 0,
           perUserPrice: 0,
@@ -203,6 +212,31 @@ export class CompaniesService {
       if (error instanceof BadRequestException) throw error;
       this.logger.error(`Failed to create tenant: ${error?.message}`, error?.stack);
       throw new BadRequestException('Failed to create tenant company');
+    }
+  }
+
+  /**
+   * Update a company (general-purpose PATCH for SuperAdmin)
+   */
+  async updateCompany(companyId: number, dto: UpdateCompanyDto) {
+    try {
+      const existing = await this.prisma.company.findUnique({ where: { id: companyId } });
+      if (!existing) throw new NotFoundException(`Company with ID ${companyId} not found`);
+
+      const data: any = { updatedAt: new Date() };
+      if (dto.name !== undefined) data.name = dto.name.trim();
+      if (dto.plan !== undefined) data.plan = dto.plan;
+      if (dto.status !== undefined) data.status = dto.status;
+      if (dto.isActive !== undefined) data.isActive = dto.isActive;
+      if (dto.monthlyPrice !== undefined) data.monthlyPrice = dto.monthlyPrice;
+
+      const updated = await this.prisma.company.update({ where: { id: companyId }, data });
+      this.logger.log(`Updated company ${companyId}: ${JSON.stringify(dto)}`);
+      return updated;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) throw error;
+      this.logger.error(`Failed to update company ${companyId}: ${error?.message}`, error?.stack);
+      throw new BadRequestException('Failed to update company');
     }
   }
 

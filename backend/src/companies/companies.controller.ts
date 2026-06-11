@@ -24,7 +24,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
-import { CompaniesService, CreateTenantDto, UpdateTenantSettingsDto, UpdateSubscriptionDto } from './companies.service';
+import { CompaniesService, CreateTenantDto, UpdateTenantSettingsDto, UpdateSubscriptionDto, UpdateCompanyDto } from './companies.service';
 import { Roles } from '../auth/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -66,9 +66,23 @@ export class CompaniesController {
   @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.CREATED)
   async createTenant(@Body() dto: CreateTenantDto) {
-    this.logger.log(`Creating new tenant: ${dto.name}`);
+    this.logger.log(`Creating new tenant: ${dto.name} (plan: ${dto.plan || 'STARTER'})`);
     if (!dto.name?.trim()) throw new BadRequestException('Company name is required');
     return this.companiesService.createTenant(dto);
+  }
+
+  /**
+   * PATCH /api/v1/companies/:id
+   * Update a company (SUPER_ADMIN only) - name, plan, status, isActive
+   */
+  @Patch(':id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  async updateCompany(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateCompanyDto
+  ) {
+    this.logger.log(`Updating company ${id}: ${JSON.stringify(dto)}`);
+    return this.companiesService.updateCompany(id, dto);
   }
 
   /**
