@@ -333,8 +333,8 @@ export class OnboardingService {
 
   private getPlanPrice(plan: string): number {
     switch (plan) {
-      case 'ENTERPRISE': return 7500;
-      case 'PROFESSIONAL': return 3500;
+      case 'ENTERPRISE': return 29999;
+      case 'PROFESSIONAL': return 14999;
       default: return 0; // Starter is free trial
     }
   }

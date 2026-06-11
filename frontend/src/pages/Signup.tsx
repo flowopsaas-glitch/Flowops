@@ -13,13 +13,13 @@ const planDetails: Record<string, { name: string; price: string; color: string; 
   },
   PROFESSIONAL: {
     name: 'Professional',
-    price: 'R3,500/mo',
+    price: 'R14,999/mo',
     color: '#6C9EFF',
     features: ['Up to 25 users', 'Advanced analytics', 'Email hub', 'Rate cards', 'Dispatch management'],
   },
   ENTERPRISE: {
     name: 'Enterprise',
-    price: 'R7,500/mo',
+    price: 'R29,999/mo',
     color: '#A78BFA',
     features: ['Unlimited users', 'AI-powered ops autopilot', 'WhatsApp integration', 'Priority support', 'Custom billing', 'SLA monitoring'],
   },
