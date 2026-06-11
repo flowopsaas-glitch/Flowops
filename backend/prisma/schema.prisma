@@ -214,6 +214,10 @@ model User {
   role       Role    @default(USER)
   isVerified Boolean @default(false)
 
+  // ── Password reset ──
+  resetToken        String?   @unique
+  resetTokenExpires DateTime?
+
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 

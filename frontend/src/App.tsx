@@ -68,6 +68,8 @@ const SuperAdminHealth = lazy(() => import("./pages/superadmin/SuperAdminHealth"
 const SuperAdminSignups = lazy(() => import("./pages/superadmin/SuperAdminSignups"));
 const SuperAdminCredentials = lazy(() => import("./pages/superadmin/SuperAdminCredentials"));
 const SignupPage = lazy(() => import("./pages/Signup"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
 const PasswordManager = lazy(() => import("./pages/owner/PasswordManager"));
@@ -157,6 +159,8 @@ export default function App() {
           <Route path="/track/:token" element={<Suspense fallback={<PageLoader />}><TrackPublic /></Suspense>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<Suspense fallback={<PageLoader />}><SignupPage /></Suspense>} />
+          <Route path="/forgot-password" element={<Suspense fallback={<PageLoader />}><ForgotPassword /></Suspense>} />
+          <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>} />
           <Route path="/client-portal" element={<ClientPortal />} />
           <Route path="/legal/terms" element={<TermsPage />} />
           <Route path="/legal/privacy" element={<PrivacyPage />} />

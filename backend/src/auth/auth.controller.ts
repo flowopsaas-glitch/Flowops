@@ -66,6 +66,25 @@ export class AuthController {
     return { accessToken: result.accessToken };
   }
 
+  // ── PASSWORD RESET FLOW ──
+  @Public()
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email);
+  }
+
+  @Public()
+  @Post('verify-reset-token')
+  async verifyResetToken(@Body() body: { token: string }) {
+    return this.authService.verifyResetToken(body.token);
+  }
+
+  @Public()
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token: string; newPassword: string }) {
+    return this.authService.resetPassword(body.token, body.newPassword);
+  }
+
   @Get('me')
   async me(@Req() req: any) {
     // This now works because JwtAuthGuard populated req.user
