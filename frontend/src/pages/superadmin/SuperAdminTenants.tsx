@@ -51,7 +51,7 @@ export default function SuperAdminTenants() {
     <div className="min-h-screen" style={{ background: '#0a0f1e' }}>
       <Sidebar />
       <TopBar user={user} />
-      <main className="pl-[175px] pt-14">
+      <main style={{ paddingLeft: '175px', paddingTop: '56px' }}>
         <div className="p-6 space-y-6 max-w-[1400px]">
           {/* Header */}
           <div className="flex items-center justify-between">

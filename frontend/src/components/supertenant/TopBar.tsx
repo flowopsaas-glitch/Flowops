@@ -8,8 +8,8 @@ interface TopBarProps {
 
 export default function TopBar({ user, onRefresh, loading }: TopBarProps) {
   return (
-    <header className="fixed top-0 left-[175px] right-0 h-14 flex items-center justify-between px-6 z-30"
-      style={{ background: 'rgba(8,13,26,0.95)', borderBottom: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(12px)' }}>
+    <header className="fixed top-0 right-0 h-14 flex items-center justify-between px-6 z-30"
+      style={{ left: '175px', background: 'rgba(8,13,26,0.95)', borderBottom: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(12px)' }}>
       {/* Left: section info */}
       <div className="flex items-center gap-3">
         <span className="text-sm font-semibold text-white">Platform Control Center</span>

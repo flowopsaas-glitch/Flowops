@@ -52,7 +52,7 @@ export default function SuperTenantDashboard() {
       <Sidebar />
       <TopBar user={user} onRefresh={refresh} loading={loading} />
 
-      <main className="pl-[175px] pt-14">
+      <main style={{ paddingLeft: '175px', paddingTop: '56px' }}>
         <div className="p-6 space-y-6 max-w-[1400px]">
           {/* Loading state */}
           {loading && (

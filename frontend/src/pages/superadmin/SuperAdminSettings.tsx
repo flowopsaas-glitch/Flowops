@@ -82,7 +82,7 @@ export default function SuperAdminSettings() {
       <Sidebar />
       <TopBar user={user} />
 
-      <main className="pl-[175px] pt-14">
+      <main style={{ paddingLeft: '175px', paddingTop: '56px' }}>
         <div className="p-6 max-w-[900px]">
           {/* Page header */}
           <div className="flex items-center gap-3 mb-6">
