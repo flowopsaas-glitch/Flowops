@@ -57,6 +57,7 @@ export default function ClientQueries() {
 
   const filtered = items.filter(i =>
     !search || i.subject?.toLowerCase().includes(search.toLowerCase()) ||
+    (i as any).from?.toLowerCase().includes(search.toLowerCase()) ||
     i.senderEmail?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -127,7 +128,7 @@ export default function ClientQueries() {
                         <span style={{ fontSize: '9px', fontWeight: 600, padding: '2px 7px', borderRadius: '5px', background: sc.bg, color: sc.color }}>{item.status?.replace('_', ' ')}</span>
                       </div>
                       <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '6px' }}>
-                        {item.senderName ? `${item.senderName} • ` : ''}{item.senderEmail}
+                        {item.senderName ? `${item.senderName} • ` : ''}{item.senderEmail || (item as any).from || 'Unknown sender'}
                         {item.waybillNumber ? ` • Waybill: ${item.waybillNumber}` : ''}
                       </div>
                       <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
