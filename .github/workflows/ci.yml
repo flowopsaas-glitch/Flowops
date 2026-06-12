@@ -1,14 +1,27 @@
 name: FlowOps CI
 
+# Triggers:
+# - push to main / develop : run tests + smoke-test image + push image (sha + branch tag)
+# - push of v* tag         : run tests + smoke-test image + push image (semver tags + latest)
+# - pull_request to main   : run tests + smoke-test image (no push)
+# - workflow_dispatch      : manual rebuild for emergency cases
+
 on:
   push:
     branches: [main, develop]
+    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# Default permissions: read-only. Individual jobs (frontend-image) widen
+# what they need.
+permissions:
+  contents: read
 
 jobs:
   detect:
@@ -97,7 +110,11 @@ jobs:
       DATABASE_URL: postgresql://flowops_test:test_password@localhost:5432/flowops_test
       REDIS_HOST: localhost
       REDIS_PORT: 6379
-      JWT_SECRET: test-jwt-secret-for-ci
+      # JWT_SECRET now comes from a repo secret. If unset (e.g. on a forked
+      # PR where secrets aren't injected), the backend test bootstrap is
+      # expected to fail loudly with a clear "JWT_SECRET is empty" error
+      # rather than silently using a hardcoded fallback that leaks.
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
       NODE_ENV: test
 
     steps:
@@ -159,3 +176,191 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Frontend container image: build, smoke-test, push to GHCR.
+  #
+  # Image:    ghcr.io/<owner>/<repo>-frontend
+  # Tags:     - branch (e.g. main, develop) on branch pushes
+  #           - semver (v1.2.3, 1.2, 1) on tag pushes
+  #           - sha-<short> always
+  #           - latest only on default branch pushes
+  # Pushes:   only on `push` events. PRs and workflow_dispatch from a
+  #           fork build the image and run the smoke test but do NOT
+  #           publish (the registry login step is skipped for those).
+  # Multi-arch: linux/amd64 + linux/arm64 (Graviton-ready).
+  # ────────────────────────────────────────────────────────────────────────
+  frontend-image:
+    name: Frontend Image (build & push)
+    runs-on: ubuntu-latest
+    needs: frontend
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository }}-frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (for arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Skip registry login on PR builds and workflow_dispatch — those don't
+      # push, so they don't need credentials. (Forked PRs can't access
+      # GITHUB_TOKEN with packages:write anyway.)
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags & labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=FlowOps Frontend
+            org.opencontainers.image.description=FlowOps web SPA, served by nginx with envsubst-templated upstream
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # Step 1: single-arch (amd64) build, loaded into the local Docker so
+      # we can `docker run` it for the smoke test. Multi-arch + load-into-
+      # docker are mutually exclusive in buildx, so we do the smoke test
+      # on amd64 only and multi-arch the push.
+      - name: Build (amd64, for smoke test)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          target: production
+          platforms: linux/amd64
+          load: true
+          tags: flowops-frontend:smoke-test
+          build-args: |
+            VITE_API_URL=/api
+            VITE_APP_ENV=${{ github.ref_type == 'tag' && 'production' || 'staging' }}
+            VITE_APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
+            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_OTEL_EXPORTER_OTLP_ENDPOINT=${{ secrets.VITE_OTEL_EXPORTER_OTLP_ENDPOINT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the image
+        run: |
+          set -euo pipefail
+
+          # Run the container with a stub backend hostname — the smoke test
+          # exercises nginx itself, not the proxied backend. /healthz is
+          # served by nginx directly so it's reachable without a real API.
+          docker run --rm -d \
+            --name flowops-frontend-smoke \
+            -p 8080:80 \
+            -e BACKEND_HOST=stub.invalid \
+            -e BACKEND_PORT=3000 \
+            flowops-frontend:smoke-test
+
+          # Give nginx up to 30s to start.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "[$i] /healthz reachable"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "FAIL: container never became healthy"
+              docker logs flowops-frontend-smoke || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # /healthz returns the literal string "ok"
+          body=$(curl -fsS http://localhost:8080/healthz)
+          if [ "$body" != "ok" ]; then
+            echo "FAIL: /healthz returned '$body', expected 'ok'"
+            docker logs flowops-frontend-smoke
+            exit 1
+          fi
+          echo "PASS: /healthz returned 'ok'"
+
+          # Index page renders an HTML doctype.
+          if ! curl -fsS http://localhost:8080/ | head -c 200 | grep -qi "<!doctype html>"; then
+            echo "FAIL: / did not return an HTML index"
+            curl -fsS http://localhost:8080/ | head -c 500
+            docker logs flowops-frontend-smoke
+            exit 1
+          fi
+          echo "PASS: / served an HTML index"
+
+          # Hardened security headers are present.
+          headers=$(curl -fsSI http://localhost:8080/)
+          for header in "Strict-Transport-Security" "Content-Security-Policy" "X-Frame-Options" "X-Content-Type-Options" "Referrer-Policy"; do
+            if ! echo "$headers" | grep -qi "^$header:"; then
+              echo "FAIL: missing security header '$header'"
+              echo "--- response headers ---"
+              echo "$headers"
+              docker logs flowops-frontend-smoke
+              exit 1
+            fi
+          done
+          echo "PASS: all expected security headers present"
+
+          docker stop flowops-frontend-smoke
+
+      # Step 2: multi-arch build & push. Reuses the BuildKit cache from
+      # step 1, so the amd64 layers don't rebuild — only arm64 is added.
+      - name: Build & push (multi-arch)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_API_URL=/api
+            VITE_APP_ENV=${{ github.ref_type == 'tag' && 'production' || 'staging' }}
+            VITE_APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
+            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_OTEL_EXPORTER_OTLP_ENDPOINT=${{ secrets.VITE_OTEL_EXPORTER_OTLP_ENDPOINT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summarise pushed image
+        if: github.event_name == 'push'
+        run: |
+          {
+            echo "## Frontend image published"
+            echo ""
+            echo "Pushed tags:"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "Pull on AWS ECS Fargate / local with:"
+            echo ""
+            echo '```'
+            echo "docker pull ${{ env.IMAGE_NAME }}:sha-$(echo ${{ github.sha }} | cut -c1-7)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
