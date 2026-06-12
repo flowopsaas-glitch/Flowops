@@ -1,0 +1,24 @@
+# Terraform local state files. Should NEVER end up in git for `envs/*` (those
+# use remote S3 state). For `bootstrap/`, the team should agree on where the
+# bootstrap state goes.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Provider plugins, module caches. Re-downloadable via `terraform init`.
+.terraform/
+.terraform.tfstate.lock.info
+
+# Per-env tfvars are populated locally and never committed. Examples are
+# committed as `*.example`.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Saved plans — sensitive.
+*.tfplan
+tfplan

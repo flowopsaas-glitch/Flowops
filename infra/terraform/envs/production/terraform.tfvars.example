@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and fill in real values.
+# `terraform.tfvars` is gitignored — never commit it.
+
+aws_region = "us-east-1"
+
+# ── Frontend CDN (production REQUIRES a real domain) ─────────────────────
+
+frontend_domain_name         = "app.flowops.example"
+frontend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
+frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-..."
+
+frontend_price_class = "PriceClass_All"
