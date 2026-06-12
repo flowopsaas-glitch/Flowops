@@ -69,5 +69,6 @@ Thumbs.db
 *.dll
 *.pak
 *.bin
-package-lock.json
-pnpm-lock.yaml
+
+# Lockfiles ARE tracked — see frontend/package-lock.json. Removed from
+# ignore so `npm ci` is reproducible for every contributor.
