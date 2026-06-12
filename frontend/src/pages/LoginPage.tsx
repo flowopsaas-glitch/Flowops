@@ -7,16 +7,49 @@ import {
   persistTermsAcceptanceLocally,
   persistTermsAcceptanceRemotePayload,
 } from "../legal/termsAcceptance";
+import { FLOWOPS_API_URL } from "../lib/env";
 
-// Hardened fallback directly matching your environment
-const API_BASE = import.meta.env.VITE_FLOWOPS_API_URL || "http://localhost:3005/api";
+const API_BASE = FLOWOPS_API_URL;
 
 type LoginMode = "tenant" | "owner";
 
+/**
+ * Dev-only autofill credentials, sourced from Vite env vars.
+ *
+ * - In production builds (`import.meta.env.DEV === false`) this always returns
+ *   blanks regardless of what env vars are set, so no creds can leak into a
+ *   production bundle even if someone misconfigures `.env.production`.
+ * - In dev, leaving the env vars unset means the form starts blank — the
+ *   developer must opt in by setting them in `.env.local`.
+ *
+ * See `.env.example` for the full list of supported keys.
+ */
+function getDevDefaults(mode: LoginMode): { email: string; password: string } {
+  if (!import.meta.env.DEV) return { email: "", password: "" };
+  if (mode === "owner") {
+    return {
+      email: String(import.meta.env.VITE_DEV_OWNER_EMAIL ?? ""),
+      password: String(import.meta.env.VITE_DEV_OWNER_PASSWORD ?? ""),
+    };
+  }
+  return {
+    email: String(import.meta.env.VITE_DEV_TENANT_EMAIL ?? ""),
+    password: String(import.meta.env.VITE_DEV_TENANT_PASSWORD ?? ""),
+  };
+}
+
+const INITIAL_TENANT_DEFAULTS = getDevDefaults("tenant");
+const SHOW_DEV_HINT =
+  import.meta.env.DEV &&
+  Boolean(
+    import.meta.env.VITE_DEV_TENANT_EMAIL ||
+      import.meta.env.VITE_DEV_OWNER_EMAIL,
+  );
+
 export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>("tenant");
-  const [email, setEmail] = useState("admin@alpha.com");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState(INITIAL_TENANT_DEFAULTS.email);
+  const [password, setPassword] = useState(INITIAL_TENANT_DEFAULTS.password);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(() =>
@@ -179,10 +212,11 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
+                  const defaults = getDevDefaults("tenant");
                   setMode("tenant");
                   setError("");
-                  setEmail("admin@alpha.com");
-                  setPassword("password123");
+                  setEmail(defaults.email);
+                  setPassword(defaults.password);
                 }}
                 className={`rounded-2xl py-3 text-sm font-semibold transition ${
                   mode === "tenant"
@@ -196,10 +230,11 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
+                  const defaults = getDevDefaults("owner");
                   setMode("owner");
                   setError("");
-                  setEmail("flowopsaas@gmail.com");
-                  setPassword("2026FlowOps!");
+                  setEmail(defaults.email);
+                  setPassword(defaults.password);
                 }}
                 className={`rounded-2xl py-3 text-sm font-semibold transition ${
                   mode === "owner"
@@ -292,10 +327,17 @@ export default function LoginPage() {
               {busy ? "Signing in..." : submitLabel}
             </button>
 
-            {import.meta.env.DEV ? (
+            {SHOW_DEV_HINT ? (
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-xs text-slate-300">
-                <div className="font-medium text-white mb-1">Dev-only test hint:</div>
-                <div>Tenant: admin@alpha.com / password123</div>
+                <div className="font-medium text-white mb-1">
+                  Dev autofill active
+                </div>
+                <div>
+                  Credentials are loaded from{" "}
+                  <code className="text-blue-200">VITE_DEV_TENANT_*</code> /{" "}
+                  <code className="text-blue-200">VITE_DEV_OWNER_*</code>{" "}
+                  env vars (see <code>.env.example</code>).
+                </div>
               </div>
             ) : null}
 
