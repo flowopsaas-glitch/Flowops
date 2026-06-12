@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import api from "../services/api";
+import { rawApi as api } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "./ToastProvider";
 
