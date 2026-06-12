@@ -59,6 +59,13 @@ import { PlatformHealthModule } from './platform-health/platform-health.module';
 // Tenant Onboarding (signup requests, auto-provisioning)
 import { OnboardingModule } from './onboarding/onboarding.module';
 
+// Demo Data Seeder
+import { SeederModule } from './seeder/seeder.module';
+
+// Audit Log + CSV Export
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { ExportModule } from './export/export.module';
+
 // ✅ FIXED: Import ClientsModule (was missing!)
 import { ClientsModule } from './_clients/clients.module';
 import { FleetMapModule } from './fleet-map/fleet-map.module';
@@ -103,7 +110,11 @@ import { RatingService } from './rating/rating.service';
       }),
     }),
     
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60000, limit: 120 },
+      { name: 'ai', ttl: 60000, limit: 30 },
+      { name: 'auth', ttl: 60000, limit: 10 },
+    ]),
     PrismaModule,
     InfraModule,
     AuthModule,
@@ -150,6 +161,13 @@ import { RatingService } from './rating/rating.service';
 
     // Tenant Onboarding (public signup + admin approval)
     OnboardingModule,
+
+    // Demo Data Seeder
+    SeederModule,
+
+    // Audit Log + CSV Export
+    AuditLogModule,
+    ExportModule,
   ],
   controllers: [
     LocationController,

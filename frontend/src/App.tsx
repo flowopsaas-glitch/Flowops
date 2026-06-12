@@ -67,6 +67,7 @@ const SuperAdminBilling = lazy(() => import("./pages/superadmin/SuperAdminBillin
 const SuperAdminUsers = lazy(() => import("./pages/superadmin/SuperAdminUsers"));
 const SuperAdminDispatches = lazy(() => import("./pages/superadmin/SuperAdminDispatches"));
 const SuperAdminHealth = lazy(() => import("./pages/superadmin/SuperAdminHealth"));
+const SuperAdminAuditLog = lazy(() => import("./pages/superadmin/SuperAdminAuditLog"));
 const SuperAdminSignups = lazy(() => import("./pages/superadmin/SuperAdminSignups"));
 const SuperAdminCredentials = lazy(() => import("./pages/superadmin/SuperAdminCredentials"));
 const SignupPage = lazy(() => import("./pages/Signup"));
@@ -303,6 +304,7 @@ export default function App() {
             <Route path="/superadmin/billing" element={<Suspense fallback={<PageLoader />}><SuperAdminBilling /></Suspense>} />
             <Route path="/superadmin/dispatches" element={<Suspense fallback={<PageLoader />}><SuperAdminDispatches /></Suspense>} />
             <Route path="/superadmin/health" element={<Suspense fallback={<PageLoader />}><SuperAdminHealth /></Suspense>} />
+            <Route path="/superadmin/audit-log" element={<Suspense fallback={<PageLoader />}><SuperAdminAuditLog /></Suspense>} />
             <Route path="/superadmin/signups" element={<Suspense fallback={<PageLoader />}><SuperAdminSignups /></Suspense>} />
             <Route path="/superadmin/credentials" element={<Suspense fallback={<PageLoader />}><SuperAdminCredentials /></Suspense>} />
             <Route path="/superadmin/settings" element={<Suspense fallback={<PageLoader />}><SuperAdminSettings /></Suspense>} />
