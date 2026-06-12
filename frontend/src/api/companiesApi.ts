@@ -1,5 +1,27 @@
 import { api } from "./client";
 
+/**
+ * Branding fields applied per tenant. Every field is optional — when unset
+ * the UI falls back to platform defaults (FlowOps logo, default colour palette).
+ *
+ * Hex colours should be 7-char `#rrggbb`. We accept anything for now and the
+ * UI normalises on read.
+ */
+export type CompanyBranding = {
+  /** Display name shown in the sidebar and headers (defaults to the tenant `name`). */
+  brandName?: string | null;
+  /** Public-facing booking-portal subdomain (`{subdomain}.flowops.example`). */
+  portalSubdomain?: string | null;
+  /** Absolute or relative URL to the tenant logo. Relative paths are resolved against `FLOWOPS_HTTP_ORIGIN`. */
+  logoUrl?: string | null;
+  /** Primary brand colour. Used for accents, action buttons, and the booking portal hero. */
+  primaryColor?: string | null;
+  /** Secondary brand colour. Used for highlights and pill backgrounds. */
+  secondaryColor?: string | null;
+  /** Optional override for the invoice header strip. Defaults to `primaryColor`. */
+  invoiceHeaderColor?: string | null;
+};
+
 export type CompanyRecord = {
   id: number;
   name: string;
@@ -22,6 +44,14 @@ export type CompanyRecord = {
   podsEmail?: string | null;
   notificationsEmail?: string | null;
   whatsappNumber?: string | null;
+
+  // Branding (flat on the record so the backend can keep them as columns).
+  brandName?: string | null;
+  portalSubdomain?: string | null;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+  invoiceHeaderColor?: string | null;
 
   users?: Array<{
     id: number;
@@ -67,8 +97,36 @@ export type CreateCompanyAdminPayload = {
   role?: "ADMIN" | "COMPANY_ADMIN";
 };
 
+/**
+ * Fields a tenant admin is allowed to PATCH on their own company. Mirrors
+ * `CompanyBranding` so the editor can submit a single typed payload.
+ */
+export type UpdateMyCompanyBrandingPayload = CompanyBranding;
+
 export async function getCompanies() {
   const res = await api.get<CompanyRecord[]>("/companies");
+  return res.data;
+}
+
+/**
+ * Returns the company record for the currently authenticated tenant user.
+ * The backend resolves the tenant from the bearer token; the frontend never
+ * passes a company id here.
+ */
+export async function getMyCompany() {
+  const res = await api.get<CompanyRecord>("/companies/my-company");
+  return res.data;
+}
+
+/**
+ * Updates branding fields on the current tenant's company. The backend is
+ * expected to enforce that the caller is a company admin; the frontend
+ * doesn't pass a company id.
+ */
+export async function updateMyCompanyBranding(
+  payload: UpdateMyCompanyBrandingPayload,
+) {
+  const res = await api.patch<CompanyRecord>("/companies/my-company", payload);
   return res.data;
 }
 
