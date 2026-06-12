@@ -197,6 +197,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      security-events: write   # needed for SARIF upload to GitHub Security tab
     env:
       IMAGE_NAME: ghcr.io/${{ github.repository }}-frontend
 
@@ -324,6 +325,31 @@ jobs:
 
           docker stop flowops-frontend-smoke
 
+      # ── Trivy image scan ───────────────────────────────────────────────
+      # Scan the freshly built image for OS + app CVEs before we push it.
+      # CRITICAL findings → exit 1 (hard fail).
+      # HIGH findings → reported in SARIF only (visible in Security tab).
+      # The amd64 image is already loaded from the smoke-test step, so
+      # Trivy scans it from the local Docker daemon — no extra pull needed.
+      - name: Scan image for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: flowops-frontend:smoke-test
+          format: sarif
+          output: trivy-image-results.sarif
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+        continue-on-error: false
+
+      - name: Upload image SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image
+
       # Step 2: multi-arch build & push. Reuses the BuildKit cache from
       # step 1, so the amd64 layers don't rebuild — only arm64 is added.
       - name: Build & push (multi-arch)
@@ -409,3 +435,54 @@ jobs:
             cd - >/dev/null
             echo "::endgroup::"
           done
+
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Dependency / filesystem security scan (Trivy).
+  #
+  # Scans package-lock.json and the checked-out source tree for known CVEs
+  # in npm dependencies. Runs in parallel with the image jobs — no docker
+  # build needed.  CRITICAL findings fail the job; results always upload to
+  # the GitHub Security tab so HIGH findings are visible and trackable.
+  # ──────────────────────────────────────────────────────────────────────────
+  security-scan:
+    name: Dependency Security Scan (Trivy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan filesystem for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: ./frontend
+          format: sarif
+          output: trivy-fs-results.sarif
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          vuln-type: 'library'
+          ignore-unfixed: true
+
+      - name: Upload filesystem SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-fs
+
+      # Human-readable table for the workflow logs (informational, no fail).
+      - name: Print CVE summary table
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: ./frontend
+          format: table
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          vuln-type: 'library'
+          ignore-unfixed: true
