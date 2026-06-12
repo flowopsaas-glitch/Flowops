@@ -83,9 +83,14 @@ variable "ghcr_credentials_secret_arn" {
   default     = ""
 }
 
-variable "backend_secret_environment_variables" {
-  description = "Map of ENV_VAR_NAME → Secrets Manager ARN (or ARN:JsonKey::) injected into the ECS task."
-  type        = map(string)
-  default     = {}
-  sensitive   = true
+variable "db_instance_class" {
+  description = "RDS instance class. db.t4g.small is cost-effective for moderate production load; db.r8g.large for read-heavy workloads."
+  type        = string
+  default     = "db.t4g.small"
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache node type. cache.t4g.small for moderate load; cache.r7g.large for session-heavy workloads."
+  type        = string
+  default     = "cache.t4g.small"
 }

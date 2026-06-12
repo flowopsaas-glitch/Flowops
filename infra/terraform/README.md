@@ -1,7 +1,7 @@
 # FlowOps — Terraform infrastructure
 
-> Status: Phase C.2 complete (PR #14). **bootstrap**, **frontend-cdn**, **network**, and **backend-ecs** are fully implemented.
-> Phase C.3 (PR #15) fills in `database`, `cache`, and `secrets`.
+> Status: Phase C.3 complete (PR #15). All 6 modules fully implemented.
+> All environments wire all modules. Phase D is CI/CD deploy automation.
 
 ## Layout
 
@@ -14,12 +14,12 @@ infra/terraform/
 │   ├── frontend-cdn/          ✓ Complete. S3 + CloudFront for the SPA.
 │   ├── network/               ✓ Complete. VPC, subnets, SGs, NAT, VPC endpoints.
 │   ├── backend-ecs/           ✓ Complete. ECS Fargate + ALB + Auto Scaling.
-│   ├── database/              Skeleton — RDS Postgres (Phase C.3).
-│   ├── cache/                 Skeleton — ElastiCache Redis (Phase C.3).
-│   └── secrets/               Skeleton — Secrets Manager + IAM (Phase C.3).
+│   ├── database/              ✓ Complete. RDS Postgres 16 + credentials secret.
+│   ├── cache/                 ✓ Complete. ElastiCache Redis 7.
+│   └── secrets/               ✓ Complete. Secrets Manager app secret container.
 │
 └── envs/
-    ├── staging/               Wires frontend-cdn + network + backend-ecs.
+    ├── staging/               Wires all 6 modules with staging defaults.
     └── production/            Same, with stricter defaults.
 ```
 

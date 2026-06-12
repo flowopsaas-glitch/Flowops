@@ -61,10 +61,3 @@ variable "ghcr_credentials_secret_arn" {
   type        = string
   default     = ""
 }
-
-variable "backend_secret_environment_variables" {
-  description = "Map of ENV_VAR_NAME → Secrets Manager ARN (or ARN:JsonKey::) injected into the ECS task. Populated after the secrets module (Phase C.3) is applied."
-  type        = map(string)
-  default     = {}
-  sensitive   = true
-}

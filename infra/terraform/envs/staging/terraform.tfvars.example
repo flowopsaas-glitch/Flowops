@@ -13,7 +13,6 @@ aws_region = "us-east-1"
 frontend_price_class = "PriceClass_100"
 
 # ── Backend ECS ───────────────────────────────────────────────────────────
-# Pin to a specific sha tag in staging for reproducibility.
 
 backend_image = "ghcr.io/flowopsaas-glitch/flowops-backend:latest"
 
@@ -22,12 +21,22 @@ backend_image = "ghcr.io/flowopsaas-glitch/flowops-backend:latest"
 # backend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
 # backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd5678-..."
 
-# GHCR pull credentials (create with: aws secretsmanager create-secret --name flowops/staging/ghcr).
+# GHCR pull credentials secret (create with: aws secretsmanager create-secret
+# --name flowops/staging/ghcr --secret-string '{"username":"<user>","password":"<PAT>"}').
 # ghcr_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/ghcr-AbCdEf"
 
-# Secrets from the Secrets Manager secret (wired after Phase C.3 apply).
-# backend_secret_environment_variables = {
-#   DATABASE_URL = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/app-AbCdEf:DATABASE_URL::"
-#   JWT_SECRET   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/app-AbCdEf:JWT_SECRET::"
-#   REDIS_URL    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/app-AbCdEf:REDIS_URL::"
-# }
+# ── Database ──────────────────────────────────────────────────────────────
+# These are module defaults; override here if needed.
+# db_instance_class is set inside main.tf for staging (db.t4g.micro).
+
+# ── Post-apply: populate the app secrets secret ───────────────────────────
+# After `terraform apply`, run:
+#   aws secretsmanager put-secret-value \
+#     --secret-id flowops/staging/app \
+#     --secret-string '{
+#       "JWT_SECRET":           "<generate with: openssl rand -hex 64>",
+#       "SENDGRID_API_KEY":     "SG.xxxxx",
+#       "CLOUDFLARE_API_TOKEN": "xxxxx",
+#       "CLOUDFLARE_ACCOUNT_ID":"xxxxx",
+#       "CLOUDFLARE_R2_BUCKET_NAME": "flowops-staging-waybills"
+#     }'

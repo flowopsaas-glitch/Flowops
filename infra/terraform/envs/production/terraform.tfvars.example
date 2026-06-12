@@ -22,14 +22,24 @@ backend_domain_name         = "api.flowops.example"
 backend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
 backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd5678-..."
 
-# GHCR pull credentials.
 # ghcr_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/ghcr-AbCdEf"
 
-# Secrets from the Secrets Manager secret (wired after Phase C.3 apply).
-# backend_secret_environment_variables = {
-#   DATABASE_URL          = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:DATABASE_URL::"
-#   JWT_SECRET            = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:JWT_SECRET::"
-#   REDIS_URL             = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:REDIS_URL::"
-#   SENDGRID_API_KEY      = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:SENDGRID_API_KEY::"
-#   CLOUDFLARE_API_TOKEN  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:CLOUDFLARE_API_TOKEN::"
-# }
+# ── Database ──────────────────────────────────────────────────────────────
+
+db_instance_class = "db.t4g.small"    # upgrade to db.r8g.large under load
+
+# ── Cache ─────────────────────────────────────────────────────────────────
+
+redis_node_type = "cache.t4g.small"   # upgrade to cache.r7g.large under load
+
+# ── Post-apply: populate the app secrets secret ───────────────────────────
+# After `terraform apply`, run:
+#   aws secretsmanager put-secret-value \
+#     --secret-id flowops/production/app \
+#     --secret-string '{
+#       "JWT_SECRET":             "<generate with: openssl rand -hex 64>",
+#       "SENDGRID_API_KEY":       "SG.xxxxx",
+#       "CLOUDFLARE_API_TOKEN":   "xxxxx",
+#       "CLOUDFLARE_ACCOUNT_ID":  "xxxxx",
+#       "CLOUDFLARE_R2_BUCKET_NAME": "flowops-waybills"
+#     }'

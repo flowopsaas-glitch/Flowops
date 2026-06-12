@@ -52,3 +52,29 @@ output "backend_log_group" {
   description = "CloudWatch Log Group for backend container logs."
   value       = module.backend_ecs.log_group_name
 }
+
+
+output "database_endpoint" {
+  description = "RDS instance hostname."
+  value       = module.database.endpoint
+}
+
+output "database_credentials_secret_arn" {
+  description = "Secrets Manager ARN holding RDS credentials (including DATABASE_URL)."
+  value       = module.database.credentials_secret_arn
+}
+
+output "redis_url" {
+  description = "Redis connection URL for the backend."
+  value       = module.cache.redis_url
+}
+
+output "app_secret_arn" {
+  description = "Secrets Manager ARN for application credentials (JWT, SendGrid, Cloudflare, etc.)."
+  value       = module.secrets.secret_arn
+}
+
+output "app_secret_name" {
+  description = "Secret name: aws secretsmanager put-secret-value --secret-id <name>."
+  value       = module.secrets.secret_name
+}
