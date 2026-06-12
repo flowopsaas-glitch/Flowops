@@ -21,6 +21,8 @@ export default function DeliveryDetail({ waybill, driver, onBack, onComplete }: 
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [billingResult, setBillingResult] = useState<any>(null);
 
   const handleSubmit = async () => {
     if (!signature && !photo) {
@@ -46,12 +48,14 @@ export default function DeliveryDetail({ waybill, driver, onBack, onComplete }: 
       );
 
       if (result.queued) {
-        // Show offline success message
         setSuccess(true);
-        setTimeout(() => onComplete(), 2000);
+        setTimeout(() => onComplete(), 3000);
       } else {
+        // Show AI and billing results
+        if (result.data?.aiExtraction) setAiResult(result.data.aiExtraction);
+        if (result.data?.billing) setBillingResult(result.data.billing);
         setSuccess(true);
-        setTimeout(() => onComplete(), 2000);
+        setTimeout(() => onComplete(), 3000);
       }
     } catch (err: any) {
       alert('Failed to submit: ' + (err.response?.data?.message || err.message));
@@ -66,7 +70,29 @@ export default function DeliveryDetail({ waybill, driver, onBack, onComplete }: 
         <div className="text-center">
           <CheckCircle className="w-20 h-20 text-green-600 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Delivery Complete!</h2>
-          <p className="text-gray-600">Proof of delivery saved successfully</p>
+          <p className="text-gray-600 mb-4">Proof of delivery saved successfully</p>
+
+          {/* AI Extraction Result */}
+          {aiResult?.success && (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-3 text-left">
+              <p className="text-xs font-bold text-purple-700 uppercase mb-2">🤖 AI Extracted Data</p>
+              {aiResult.data?.hasDiscrepancy && (
+                <p className="text-red-600 text-sm font-semibold mb-1">⚠️ Discrepancy: {aiResult.data.discrepancyDetails}</p>
+              )}
+              {aiResult.data?.codAmountCollected > 0 && (
+                <p className="text-green-700 text-sm font-semibold">💰 COD Collected: R{aiResult.data.codAmountCollected}</p>
+              )}
+              <p className="text-xs text-purple-600 mt-1">Confidence: {Math.round((aiResult.data?.confidence || 0) * 100)}%</p>
+            </div>
+          )}
+
+          {/* Billing Result */}
+          {billingResult && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-left">
+              <p className="text-xs font-bold text-blue-700 uppercase mb-1">💰 Billing</p>
+              <p className="text-sm text-blue-800">{billingResult.message}</p>
+            </div>
+          )}
         </div>
       </div>
     );

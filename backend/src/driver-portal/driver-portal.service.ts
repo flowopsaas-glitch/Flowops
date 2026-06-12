@@ -1,9 +1,16 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 @Injectable()
 export class DriverPortalService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger('DriverPortalService');
+
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
 
   async generatePin(driverId: number): Promise<string> {
     const driver = await this.prisma.driver.findUnique({ where: { id: driverId } });
@@ -46,21 +53,286 @@ export class DriverPortalService {
     return { success: true };
   }
 
-  async uploadPod(driverId: number, waybillId: number, signatureData?: string, photoData?: string, recipientName?: string, notes?: string, source: string = 'PWA') {
-    const waybill = await this.prisma.waybill.findUnique({ where: { id: waybillId } });
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 📸 UPLOAD POD — Proof of Delivery
+  // 1. Saves POD record + marks waybill DELIVERED
+  // 2. 🤖 GROQ VISION: reads the POD photo → extracts waybill data → pushes to
+  //    WaybillInboxItem for dispatcher review
+  // 3. 💰 BILLING TRIGGER: creates InvoiceDraft based on client billing type
+  // ═══════════════════════════════════════════════════════════════════════════
+  async uploadPod(
+    driverId: number,
+    waybillId: number,
+    signatureData?: string,
+    photoData?: string,
+    recipientName?: string,
+    notes?: string,
+    source: string = 'PWA',
+  ) {
+    const waybill = await this.prisma.waybill.findUnique({
+      where: { id: waybillId },
+      include: { client: true, company: true },
+    });
     if (!waybill) throw new BadRequestException('Waybill not found');
+
+    // ── 1. Save POD ──────────────────────────────────────────────────────────
     const pod = await this.prisma.proofOfDelivery.create({
       data: { driverId, waybillId, signatureData, photoData, recipientName, notes, source },
     });
-    const newStatus = waybill.status === 'PENDING' ? 'IN_TRANSIT' : 'DELIVERED';
-    await this.prisma.waybill.update({ where: { id: waybillId }, data: { status: newStatus } });
-    return { success: true, podId: pod.id, newStatus };
+
+    await this.prisma.waybill.update({
+      where: { id: waybillId },
+      data: {
+        status: 'DELIVERED',
+        deliveredAt: new Date(),
+        signatureUrl: signatureData ? `pod_sig_${pod.id}` : null,
+        podUrl: photoData ? `pod_photo_${pod.id}` : null,
+      },
+    });
+
+    this.logger.log(`✅ POD saved for waybill ${waybill.waybillNumber} (driver ${driverId})`);
+
+    // ── 2. 🤖 GROQ VISION: Extract data from POD photo ─────────────────────
+    let aiExtraction: any = null;
+    if (photoData) {
+      try {
+        aiExtraction = await this.extractWaybillFromPhoto(photoData, waybill);
+        if (aiExtraction) {
+          // Push to Waybill Inbox for dispatcher to review
+          await this.pushToWaybillInbox(waybill, aiExtraction, photoData);
+          this.logger.log(`🤖 Groq Vision extracted data for ${waybill.waybillNumber} → pushed to inbox`);
+        }
+      } catch (e) {
+        this.logger.warn(`⚠️ Groq Vision extraction failed for waybill ${waybillId}: ${e.message}`);
+      }
+    }
+
+    // ── 3. 💰 BILLING TRIGGER ────────────────────────────────────────────────
+    let billingResult: any = null;
+    try {
+      billingResult = await this.triggerBilling(waybill);
+      this.logger.log(`💰 Billing triggered for ${waybill.waybillNumber}: ${billingResult.action}`);
+    } catch (e) {
+      this.logger.warn(`⚠️ Billing trigger failed for waybill ${waybillId}: ${e.message}`);
+    }
+
+    return {
+      success: true,
+      podId: pod.id,
+      waybillNumber: waybill.waybillNumber,
+      newStatus: 'DELIVERED',
+      aiExtraction: aiExtraction ? { success: true, data: aiExtraction } : null,
+      billing: billingResult,
+    };
   }
 
-  /**
-   * Get the driver's assigned collections (pickups).
-   * Collections are linked to drivers via Dispatch records.
-   */
+  // ─────────────────────────────────────────────────────────────────────────
+  // 🤖 GROQ VISION: Read POD photo and extract waybill data
+  // ─────────────────────────────────────────────────────────────────────────
+  private async extractWaybillFromPhoto(photoData: string, waybill: any): Promise<any> {
+    const groqKey = this.config.get<string>('GROQ_API_KEY');
+    if (!groqKey) {
+      this.logger.warn('GROQ_API_KEY not set — skipping AI extraction');
+      return null;
+    }
+
+    const prompt = `You are a logistics document scanner. Analyze this delivery proof image.
+
+Current waybill context:
+- Waybill Number: ${waybill.waybillNumber}
+- Recipient: ${waybill.receiverName || 'Unknown'}
+- Amount: R${waybill.totalAmount || 0}
+
+Extract from this image:
+1. Recipient name (who signed/received)
+2. Delivery address if visible
+3. Any waybill/reference number visible
+4. Delivery time if visible
+5. Any discrepancies (damaged goods, short supply, etc.)
+6. COD amount collected if visible (for cash on delivery)
+
+Respond in JSON format:
+{
+  "recipientName": "...",
+  "deliveryAddress": "...",
+  "waybillNumber": "...",
+  "deliveryTime": "...",
+  "hasDiscrepancy": false,
+  "discrepancyDetails": "",
+  "codAmountCollected": 0,
+  "confidence": 0.9,
+  "rawText": "..."
+}`;
+
+    try {
+      const response = await axios.post(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          model: 'llama-3.2-11b-vision-preview',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                { type: 'image_url', image_url: { url: photoData } },
+              ],
+            },
+          ],
+          max_tokens: 500,
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${groqKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000,
+        },
+      );
+
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (!content) return null;
+
+      const parsed = JSON.parse(content);
+      return parsed;
+    } catch (e: any) {
+      this.logger.error(`Groq Vision failed: ${e.response?.data?.error?.message || e.message}`);
+      return null;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Push extracted waybill data to WaybillInboxItem for dispatcher review
+  // ─────────────────────────────────────────────────────────────────────────
+  private async pushToWaybillInbox(waybill: any, extraction: any, photoData: string) {
+    await this.prisma.waybillInboxItem.create({
+      data: {
+        fileUrl: photoData.startsWith('data:') ? `pod_photo_${waybill.id}` : photoData,
+        originalName: `POD_${waybill.waybillNumber}_${Date.now()}.jpg`,
+        mimeType: 'image/jpeg',
+        storagePath: `pod_auto/${waybill.waybillNumber}`,
+        fileSize: Math.round(photoData.length * 0.75 / 1024),
+        status: 'EXTRACTED' as any,
+        companyId: waybill.companyId,
+        podUrl: `pod_photo_${waybill.id}`,
+        extractedData: {
+          waybillNumber: extraction.waybillNumber || waybill.waybillNumber,
+          recipientName: extraction.recipientName || waybill.receiverName,
+          deliveryAddress: extraction.deliveryAddress,
+          deliveryTime: extraction.deliveryTime,
+          hasDiscrepancy: extraction.hasDiscrepancy,
+          discrepancyDetails: extraction.discrepancyDetails,
+          codAmountCollected: extraction.codAmountCollected,
+          aiConfidence: extraction.confidence,
+          rawText: extraction.rawText,
+          source: 'DRIVER_POD',
+        },
+      },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 💰 BILLING TRIGGER: Create invoice draft based on client billing type
+  // ─────────────────────────────────────────────────────────────────────────
+  private async triggerBilling(waybill: any): Promise<{ action: string; invoiceDraftId?: string; message: string }> {
+    // Only bill once (skip if already billed)
+    const existingDraftLine = await this.prisma.invoiceDraftLine.findFirst({
+      where: { description: { contains: waybill.waybillNumber } },
+    });
+    if (existingDraftLine) {
+      return { action: 'SKIPPED', message: 'Already billed' };
+    }
+
+    const billingType = waybill.client?.billingType?.toUpperCase() || 'PREPAID';
+    const amount = waybill.totalAmount || 0;
+
+    // PREPAID — already paid, just log it
+    if (billingType === 'PREPAID') {
+      this.logger.log(`💰 PREPAID waybill ${waybill.waybillNumber} — no invoice draft needed`);
+      return {
+        action: 'PREPAID_LOGGED',
+        message: `Prepaid — R${amount} already collected at booking`,
+      };
+    }
+
+    // COD — cash collected on delivery, create a receipt record
+    if (billingType === 'COD') {
+      const draft = await this.prisma.invoiceDraft.create({
+        data: {
+          companyId: waybill.companyId,
+          status: 'PENDING_RECONCILIATION',
+          total: amount,
+          notes: `COD — Cash collected on delivery for ${waybill.waybillNumber}. Amount: R${amount}`,
+        },
+      });
+
+      await this.prisma.invoiceDraftLine.create({
+        data: {
+          invoiceDraftId: draft.id,
+          description: `COD Delivery: ${waybill.waybillNumber} — ${waybill.receiverName || 'Unknown'}`,
+          quantity: 1,
+          unitPrice: amount,
+        },
+      });
+
+      return {
+        action: 'COD_DRAFT_CREATED',
+        invoiceDraftId: draft.id,
+        message: `COD draft created — R${amount} to reconcile`,
+      };
+    }
+
+    // CONTRACT — add to pending invoice draft (batch billing)
+    if (billingType === 'CONTRACT') {
+      // Find or create an open draft for this company
+      let draft = await this.prisma.invoiceDraft.findFirst({
+        where: { companyId: waybill.companyId, status: 'DRAFT' },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!draft) {
+        draft = await this.prisma.invoiceDraft.create({
+          data: {
+            companyId: waybill.companyId,
+            status: 'DRAFT',
+            total: 0,
+            notes: `Contract batch invoice — ${new Date().toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })}`,
+          },
+        });
+      }
+
+      // Add this waybill as a line item
+      await this.prisma.invoiceDraftLine.create({
+        data: {
+          invoiceDraftId: draft.id,
+          description: `Delivery: ${waybill.waybillNumber} — ${waybill.receiverName || 'Unknown'} (${waybill.deliveryAddress || 'No address'})`,
+          quantity: 1,
+          unitPrice: amount,
+        },
+      });
+
+      // Update draft total
+      const lines = await this.prisma.invoiceDraftLine.findMany({ where: { invoiceDraftId: draft.id } });
+      const newTotal = lines.reduce((sum, l) => sum + (l.unitPrice * l.quantity), 0);
+      await this.prisma.invoiceDraft.update({
+        where: { id: draft.id },
+        data: { total: newTotal },
+      });
+
+      return {
+        action: 'CONTRACT_LINE_ADDED',
+        invoiceDraftId: draft.id,
+        message: `Added R${amount} to contract draft ${draft.id} (${lines.length} lines, total R${newTotal.toFixed(2)})`,
+      };
+    }
+
+    return { action: 'UNKNOWN_BILLING_TYPE', message: `Billing type "${billingType}" not recognized` };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Get the driver's assigned collections (pickups)
+  // ═══════════════════════════════════════════════════════════════════════════
   async getCollections(driverId: number) {
     const dispatches = await this.prisma.dispatch.findMany({
       where: {
@@ -87,10 +359,9 @@ export class DriverPortalService {
       }));
   }
 
-  /**
-   * Capture Proof of Collection (POC): signature + photo when the driver
-   * picks up the parcels. Marks the collection COLLECTED and dispatch complete.
-   */
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Upload POC — Proof of Collection
+  // ═══════════════════════════════════════════════════════════════════════════
   async uploadPoc(driverId: number, collectionId: number, signatureData?: string, photoData?: string, collectorName?: string, notes?: string) {
     const collection = await this.prisma.collection.findUnique({ where: { id: collectionId } });
     if (!collection) throw new BadRequestException('Collection not found');
@@ -108,11 +379,37 @@ export class DriverPortalService {
       },
     });
 
-    // Mark the related dispatch(es) as completed
     await this.prisma.dispatch.updateMany({
       where: { collectionId, driverId },
       data: { status: 'COMPLETED' as any },
     });
+
+    // If photo provided, also push to waybill inbox for dispatcher visibility
+    if (photoData) {
+      try {
+        await this.prisma.waybillInboxItem.create({
+          data: {
+            fileUrl: `poc_photo_${collectionId}`,
+            originalName: `POC_${collection.referenceNo || collectionId}_${Date.now()}.jpg`,
+            mimeType: 'image/jpeg',
+            storagePath: `poc_auto/${collectionId}`,
+            fileSize: Math.round(photoData.length * 0.75 / 1024),
+            status: 'NEW',
+            companyId: collection.companyId,
+            collectionId,
+            pocUrl: `poc_photo_${collectionId}`,
+            extractedData: {
+              source: 'DRIVER_POC',
+              referenceNo: collection.referenceNo || `COL-${collectionId}`,
+              collectorName,
+              notes,
+            },
+          },
+        });
+      } catch (e) {
+        this.logger.warn(`POC inbox push failed: ${e.message}`);
+      }
+    }
 
     return { success: true, collectionId, newStatus: 'COLLECTED' };
   }
