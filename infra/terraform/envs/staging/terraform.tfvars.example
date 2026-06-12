@@ -3,7 +3,7 @@
 
 aws_region = "us-east-1"
 
-# ── Frontend CDN ─────────────────────────────────────────────────────────
+# ── Frontend CDN ──────────────────────────────────────────────────────────
 # Leave these empty to use the default *.cloudfront.net hostname.
 
 # frontend_domain_name         = "app-staging.flowops.example"
@@ -11,3 +11,23 @@ aws_region = "us-east-1"
 # frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-..."
 
 frontend_price_class = "PriceClass_100"
+
+# ── Backend ECS ───────────────────────────────────────────────────────────
+# Pin to a specific sha tag in staging for reproducibility.
+
+backend_image = "ghcr.io/flowopsaas-glitch/flowops-backend:latest"
+
+# Optional: custom API domain.
+# backend_domain_name         = "api-staging.flowops.example"
+# backend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
+# backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd5678-..."
+
+# GHCR pull credentials (create with: aws secretsmanager create-secret --name flowops/staging/ghcr).
+# ghcr_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/ghcr-AbCdEf"
+
+# Secrets from the Secrets Manager secret (wired after Phase C.3 apply).
+# backend_secret_environment_variables = {
+#   DATABASE_URL = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/app-AbCdEf:DATABASE_URL::"
+#   JWT_SECRET   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/app-AbCdEf:JWT_SECRET::"
+#   REDIS_URL    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/app-AbCdEf:REDIS_URL::"
+# }

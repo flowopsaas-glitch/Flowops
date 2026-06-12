@@ -26,7 +26,7 @@ provider "aws" {
   }
 }
 
-# ── Frontend CDN ─────────────────────────────────────────────────────────
+# ── Frontend CDN ──────────────────────────────────────────────────────────
 
 module "frontend_cdn" {
   source = "../../modules/frontend-cdn"
@@ -42,35 +42,70 @@ module "frontend_cdn" {
   price_class         = var.frontend_price_class
 }
 
-# ── Network (TODO: filled in by a follow-up PR) ─────────────────────────
-# module "network" {
-#   source      = "../../modules/network"
-#   environment = "staging"
-# }
+# ── Network ───────────────────────────────────────────────────────────────
 
-# ── Backend ECS service (TODO) ──────────────────────────────────────────
-# module "backend_ecs" {
-#   source      = "../../modules/backend-ecs"
-#   environment = "staging"
-#   vpc_id      = module.network.vpc_id
-# }
+module "network" {
+  source = "../../modules/network"
 
-# ── Database (TODO) ─────────────────────────────────────────────────────
-# module "database" {
-#   source      = "../../modules/database"
-#   environment = "staging"
-#   vpc_id      = module.network.vpc_id
-# }
+  environment                    = "staging"
+  single_nat_gateway             = true # 1 NAT GW shared — saves ~$32/month for staging
+  az_count                       = 2
+  enable_secretsmanager_endpoint = false # NAT traffic is acceptable at staging scale
+}
 
-# ── Cache (TODO) ────────────────────────────────────────────────────────
-# module "cache" {
-#   source      = "../../modules/cache"
-#   environment = "staging"
-#   vpc_id      = module.network.vpc_id
-# }
+# ── Backend ECS ───────────────────────────────────────────────────────────
 
-# ── Secrets (TODO) ──────────────────────────────────────────────────────
-# module "secrets" {
-#   source      = "../../modules/secrets"
-#   environment = "staging"
-# }
+module "backend_ecs" {
+  source = "../../modules/backend-ecs"
+
+  environment = "staging"
+
+  # Network inputs from the network module.
+  vpc_id                = module.network.vpc_id
+  public_subnet_ids     = module.network.public_subnet_ids
+  private_subnet_ids    = module.network.private_subnet_ids
+  alb_security_group_id = module.network.alb_security_group_id
+  ecs_security_group_id = module.network.ecs_security_group_id
+
+  # Container image: built by CI and pushed to GHCR.
+  backend_image = var.backend_image
+
+  # Fargate sizing for staging.
+  cpu    = 256
+  memory = 512
+
+  # Keep costs down for staging — 1 task minimum, scale to 2.
+  desired_count = 1
+  min_count     = 1
+  max_count     = 2
+
+  # Optional custom domain (comment out to use the ALB hostname).
+  domain_name         = var.backend_domain_name
+  hosted_zone_id      = var.backend_hosted_zone_id
+  acm_certificate_arn = var.backend_acm_certificate_arn
+
+  # GHCR credentials — required to pull the private backend image.
+  registry_credentials_secret_arn = var.ghcr_credentials_secret_arn
+
+  # Non-secret env vars injected into every task.
+  plain_environment_variables = {
+    NODE_ENV = "staging"
+    PORT     = "3000"
+  }
+
+  # Secret env vars injected via ECS secrets integration.
+  # Values must be Secrets Manager ARN or ARN:JsonKey:: references.
+  # Wired to the secrets module in a follow-up PR (Phase C.3).
+  secret_environment_variables = var.backend_secret_environment_variables
+
+  log_retention_days = 7
+}
+
+# ── Database (Phase C.3) ──────────────────────────────────────────────────
+# module "database" { ... }
+
+# ── Cache (Phase C.3) ─────────────────────────────────────────────────────
+# module "cache" { ... }
+
+# ── Secrets (Phase C.3) ───────────────────────────────────────────────────
+# module "secrets" { ... }

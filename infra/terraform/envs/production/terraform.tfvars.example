@@ -1,12 +1,35 @@
 # Copy to terraform.tfvars and fill in real values.
 # `terraform.tfvars` is gitignored — never commit it.
+# Production variables with no default will fail `terraform validate`
+# if not supplied — this is intentional.
 
 aws_region = "us-east-1"
 
-# ── Frontend CDN (production REQUIRES a real domain) ─────────────────────
+# ── Frontend CDN (all required in production) ─────────────────────────────
 
 frontend_domain_name         = "app.flowops.example"
 frontend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
 frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-..."
 
 frontend_price_class = "PriceClass_All"
+
+# ── Backend ECS (all required in production) ──────────────────────────────
+# Pin to a specific sha tag — never use 'latest' in production.
+
+backend_image = "ghcr.io/flowopsaas-glitch/flowops-backend:sha-abc1234"
+
+backend_domain_name         = "api.flowops.example"
+backend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
+backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd5678-..."
+
+# GHCR pull credentials.
+# ghcr_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/ghcr-AbCdEf"
+
+# Secrets from the Secrets Manager secret (wired after Phase C.3 apply).
+# backend_secret_environment_variables = {
+#   DATABASE_URL          = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:DATABASE_URL::"
+#   JWT_SECRET            = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:JWT_SECRET::"
+#   REDIS_URL             = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:REDIS_URL::"
+#   SENDGRID_API_KEY      = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:SENDGRID_API_KEY::"
+#   CLOUDFLARE_API_TOKEN  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/app-AbCdEf:CLOUDFLARE_API_TOKEN::"
+# }

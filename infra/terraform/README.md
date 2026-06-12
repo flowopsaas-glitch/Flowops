@@ -1,28 +1,26 @@
 # FlowOps — Terraform infrastructure
 
-> Status: scaffolding (PR #12). Only the **bootstrap** stack and the **frontend-cdn** module are wired today.
-> Subsequent PRs fill in `network`, `backend-ecs`, `database`, `cache`, and `secrets`.
+> Status: Phase C.2 complete (PR #14). **bootstrap**, **frontend-cdn**, **network**, and **backend-ecs** are fully implemented.
+> Phase C.3 (PR #15) fills in `database`, `cache`, and `secrets`.
 
 ## Layout
 
 ```
 infra/terraform/
 ├── bootstrap/                 Run once per AWS account/region. Provisions
-│                              the S3 state bucket + DynamoDB lock table
-│                              that every other stack uses for remote state.
-│                              Uses LOCAL state (chicken-and-egg).
+│                              the S3 state bucket + DynamoDB lock table.
 │
 ├── modules/
-│   ├── frontend-cdn/          Complete. S3 + CloudFront for the SPA.
-│   ├── network/               Skeleton — VPC, subnets, security groups.
-│   ├── backend-ecs/           Skeleton — ECS Fargate service + ALB.
-│   ├── database/              Skeleton — RDS Postgres.
-│   ├── cache/                 Skeleton — ElastiCache Redis.
-│   └── secrets/               Skeleton — Secrets Manager + IAM.
+│   ├── frontend-cdn/          ✓ Complete. S3 + CloudFront for the SPA.
+│   ├── network/               ✓ Complete. VPC, subnets, SGs, NAT, VPC endpoints.
+│   ├── backend-ecs/           ✓ Complete. ECS Fargate + ALB + Auto Scaling.
+│   ├── database/              Skeleton — RDS Postgres (Phase C.3).
+│   ├── cache/                 Skeleton — ElastiCache Redis (Phase C.3).
+│   └── secrets/               Skeleton — Secrets Manager + IAM (Phase C.3).
 │
 └── envs/
-    ├── staging/               Per-environment composition.
-    └── production/
+    ├── staging/               Wires frontend-cdn + network + backend-ecs.
+    └── production/            Same, with stricter defaults.
 ```
 
 ## Prerequisites
