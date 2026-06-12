@@ -33,4 +33,11 @@ export class DriverChatController {
   async getTyping(@Param('driverId') driverId: string) {
     return { isTyping: this.driverChatService.getTypingStatus(Number(driverId)) };
   }
+
+  // ── Manually trigger Groq Vision on a chat message image ─────────────────
+  // POST /api/v1/driver-portal/chat/process-image/:messageId
+  @Post('process-image/:messageId')
+  async processImage(@Param('messageId') messageId: string) {
+    return this.driverChatService.manuallyProcessMessage(Number(messageId));
+  }
 }
