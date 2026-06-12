@@ -116,16 +116,41 @@ docker pull ghcr.io/flowopsaas-glitch/flowops-frontend:v1.2.3
 
 For ECS Fargate / Kubernetes: pull through GHCR is fine, or set up a one-line ECR mirror via [the AWS pull-through cache](https://docs.aws.amazon.com/AmazonECR/latest/userguide/pull-through-cache.html) when you go fully AWS-native.
 
-### Phase C — AWS infrastructure (PR #11+)
+### Phase C — AWS infrastructure (Terraform; in progress)
 
-- [ ] Decide: S3+CloudFront for frontend OR ECS for nginx container
-- [ ] If S3+CF: CI step to `aws s3 sync dist/ s3://flowops-frontend/$(git rev-parse --short HEAD)` and CloudFront invalidation
-- [ ] ECS task definition for backend (Terraform or CDK module — TBD)
-- [ ] RDS module + database creation
-- [ ] ElastiCache module
-- [ ] Secrets Manager bindings
-- [ ] ALB + Route 53 + ACM cert
-- [ ] CloudFront distribution
+Phase C is split across multiple PRs. **PR #12 (this one) is Phase C.1**: scaffolding + bootstrap + frontend-cdn module.
+
+#### C.1 — Scaffolding + bootstrap + frontend CDN ✅ (PR #12)
+
+- [x] Decision: **S3 + CloudFront** for the SPA (cheaper than nginx-in-ECS by ~10× for typical SaaS traffic; edge-cached globally; no autoscaling concerns).
+- [x] Decision: **Terraform** (more portable than CDK; readable for ops engineers without Node).
+- [x] Decision: **us-east-1** as default region (CloudFront ACM certs must live there anyway).
+- [x] `infra/terraform/` directory layout with READMEs at every level.
+- [x] `bootstrap/` stack: S3 state bucket (versioned, encrypted, public-access-blocked, 90-day non-current expiry) + DynamoDB lock table (PITR + SSE).
+- [x] `modules/frontend-cdn/`: private S3 bucket + CloudFront with OAC, SPA fallback (403/404 → /index.html), security-header response policy matching the nginx config, optional custom domain via Route 53 + ACM.
+- [x] `envs/staging/` and `envs/production/` composing the modules with sensible per-env defaults.
+- [x] CI: `terraform-validate` job runs `fmt -check` + `init -backend=false` + `validate` on every push and PR.
+- [x] Skeletons for `network`, `backend-ecs`, `database`, `cache`, `secrets` so each can be filled in independently.
+
+#### C.2 — Network + backend ECS + ALB (next PR)
+
+- [ ] `modules/network/`: VPC, public/private subnets across 2-3 AZs, IGW + NAT, security groups per service, optional VPC endpoints.
+- [ ] `modules/backend-ecs/`: ECS cluster, Fargate task definition, ECS service with autoscaling, ALB + HTTPS listener + target group, CloudWatch logs.
+- [ ] Blocked on: backend repo URL (so we know which image tag the task definition consumes).
+
+#### C.3 — Data layer (subsequent PR)
+
+- [ ] `modules/database/`: RDS Postgres 16, subnet group, parameter group, automated backups, Performance Insights, master credential via Secrets Manager.
+- [ ] `modules/cache/`: ElastiCache Redis 7, encryption at rest + in transit, auth token via Secrets Manager.
+- [ ] `modules/secrets/`: Secrets Manager entries + IAM policy for the ECS task role.
+
+#### C.4 — Cross-cutting (subsequent PR)
+
+- [ ] CloudWatch alarms (RDS CPU, ECS task crashes, ALB 5xx).
+- [ ] CI step to `aws s3 sync dist/ ...` after image build (deploy SPA to staging).
+- [ ] Tag-based gated production deploy (manual `workflow_dispatch` only).
+- [ ] Image scanning (Trivy / Snyk) in `frontend-image` job.
+- [ ] Cloudflare R2 wiring for waybill assets (separate from AWS — backend issues presigned URLs).
 
 ### Phase D — Cloudflare R2 wiring (PR #12+)
 
