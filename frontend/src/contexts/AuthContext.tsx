@@ -1,11 +1,98 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
-import api, { clearClientSession, getLoginMode, getToken, setLoginMode, setToken } from '../api/client';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import api, {
+  clearClientSession,
+  getToken,
+  setLoginMode,
+  setToken,
+} from "../api/client";
 
-const AuthContext = createContext<any>(undefined);
+/** Login modes the backend distinguishes between. */
+export type LoginMode = "tenant" | "owner";
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+/**
+ * Subset of company fields embedded on the `/auth/me` response. The backend
+ * returns this nested under `user.company` so pages can render banners and
+ * billing summaries without a separate fetch.
+ *
+ * Kept loose intentionally — billing fields are still maturing on the
+ * backend side. Mark unknown fields as optional rather than `any`.
+ */
+export type UserCompanySummary = {
+  id?: number | string;
+  name?: string | null;
+  /** ISO 4217 code, e.g. "ZAR". */
+  currency?: string | null;
+  /** Display plan label (e.g. "Starter", "Pro"). */
+  plan?: string | null;
+  /** "active" | "trialing" | "past_due" | "canceled" — backend-defined. */
+  status?: string | null;
+  trialEndsAt?: string | null;
+  baseTierPrice?: number | null;
+  perUserPrice?: number | null;
+  defaultVatRate?: number | null;
+  autoInvoiceEnabled?: boolean | null;
+};
+
+/**
+ * Shape of `/auth/me`. Conservative on documented fields; tolerant of
+ * undocumented ones via `unknown` rather than `any`.
+ */
+export type User = {
+  id: number | string;
+  email: string;
+  role?: string;
+  /** Tenant id (for tenant users) or null for platform owners. */
+  companyId?: number | string | null;
+  /** Embedded company summary (see `UserCompanySummary`). */
+  company?: UserCompanySummary | null;
+  /** Display name if the backend supplies one. */
+  name?: string | null;
+  /** Platform-level super-admin flag (read by RBAC consumers). */
+  isSuperAdmin?: boolean;
+  /** "Ultimate owner" flag — the original platform-creator account. */
+  isUltimateOwner?: boolean;
+};
+
+export type LoginArgs = {
+  email: string;
+  password: string;
+  /** Defaults to `"tenant"` when omitted. */
+  mode?: LoginMode;
+};
+
+export type AuthContextValue = {
+  /** True while we're checking the bootstrap token against `/auth/me`. */
+  booting: boolean;
+  /** Authenticated user, or `null` when not signed in. */
+  user: User | null;
+  /** Convenience: `Boolean(user)`. */
+  isAuthenticated: boolean;
+  /** Posts to `/auth/login` (or `/auth/owner-login`) and stores the session. */
+  login: (args: LoginArgs) => Promise<void>;
+  /** Clears the session locally and notifies the backend. */
+  logout: () => void;
+  /** Re-fetches `/auth/me`. Call after profile updates. */
+  refreshMe: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+type LoginResponse = {
+  accessToken?: string;
+  token?: string;
+  user?: User;
+} & Partial<User>;
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [booting, setBooting] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   const refreshMe = useCallback(async () => {
     if (!getToken()) {
@@ -13,46 +100,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
-      const res = await api.get("/auth/me");
+      const res = await api.get<User>("/auth/me");
       setUser(res.data);
     } catch {
       clearClientSession();
       setUser(null);
-    } finally { setBooting(false); }
+    } finally {
+      setBooting(false);
+    }
   }, []);
 
-  useEffect(() => { refreshMe(); }, [refreshMe]);
+  useEffect(() => {
+    void refreshMe();
+  }, [refreshMe]);
 
-  const login = async (args: any) => {
-    // Separate endpoints for platform Owners vs Tenants/Clients
-    const endpoint = args.mode === "owner" ? "/auth/owner-login" : "/auth/login";
-    const { data } = await api.post(endpoint, { 
-      email: args.email, 
+  const login = useCallback(async (args: LoginArgs) => {
+    const mode: LoginMode = args.mode ?? "tenant";
+    const endpoint = mode === "owner" ? "/auth/owner-login" : "/auth/login";
+    const { data } = await api.post<LoginResponse>(endpoint, {
+      email: args.email,
       password: args.password,
-      mode: args.mode // Tells backend if this is a Client vs Tenant login
+      mode,
     });
-    
-    setToken(data.accessToken || data.token);
-    setLoginMode(args.mode || "tenant");
-    setUser(data.user || data);
-  };
 
-  const logout = () => {
-    api.post("/auth/logout").finally(() => {
+    const token = data.accessToken ?? data.token;
+    if (!token) {
+      throw new Error("Login response did not contain an access token");
+    }
+    setToken(token);
+    setLoginMode(mode);
+
+    // The backend sometimes returns `{ user }`, sometimes the user fields are
+    // flattened on the response root. Accept both.
+    const nextUser: User | null = data.user
+      ? data.user
+      : data.email
+        ? {
+            id: data.id ?? "",
+            email: data.email,
+            role: data.role,
+            companyId: data.companyId ?? null,
+            name: data.name ?? null,
+          }
+        : null;
+    setUser(nextUser);
+  }, []);
+
+  const logout = useCallback(() => {
+    void api.post("/auth/logout").finally(() => {
       clearClientSession();
       setUser(null);
     });
+  }, []);
+
+  const value: AuthContextValue = {
+    booting,
+    user,
+    isAuthenticated: !!user,
+    login,
+    logout,
+    refreshMe,
   };
 
   return (
-    <AuthContext.Provider value={{ booting, user, isAuthenticated: !!user, login, logout, refreshMe }}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
   );
 }
 
-export const useAuth = () => {
+export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  if (!ctx) {
+    throw new Error("useAuth must be used inside <AuthProvider>");
+  }
   return ctx;
-};
+}
