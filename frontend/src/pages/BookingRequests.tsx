@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { FLOWOPS_API_URL } from "../lib/env";
 
 type BookingRequest = {
   id: string;
@@ -25,9 +26,7 @@ type BookingRequest = {
   } | null;
 };
 
-const API_BASE =
-  (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:3000/api";
+const API_BASE = FLOWOPS_API_URL;
 
 export default function BookingRequests() {
   const [rows, setRows] = useState<BookingRequest[]>([]);

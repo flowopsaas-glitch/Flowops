@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { FLOWOPS_WS_ORIGIN } from '../lib/env';
 
-// 🚀 THE FIX: Shift target port from 3000 to 3005, and align with the tracking-dashboard namespace
-const SOCKET_URL = "http://localhost:3005/tracking-dashboard";
+// Tracking gateway lives under the `/tracking-dashboard` namespace.
+const SOCKET_URL = `${FLOWOPS_WS_ORIGIN}/tracking-dashboard`;
 
 export const useSocket = (companyId: number | string) => {
   const socketRef = useRef<Socket | null>(null);

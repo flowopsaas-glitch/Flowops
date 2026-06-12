@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import DeliveryAction from './DeliveryAction';
 import { LayoutGrid, ClipboardList, Image as ImageIcon, ScanLine, ShieldCheck, ChevronRight } from 'lucide-react';
+import { FLOWOPS_API_URL } from '../../lib/env';
 
 const PODDeliveries = () => {
   // 🕹️ View State: 'landing' | 'queue'
@@ -11,7 +12,7 @@ const PODDeliveries = () => {
 
   const fetchQueue = async () => {
     try {
-      const { data } = await axios.get('http://localhost:3000/api/waybills');
+      const { data } = await axios.get(`${FLOWOPS_API_URL}/waybills`);
       setWaybills(data.filter((w: any) => w.status !== 'DELIVERED'));
     } catch (err) {
       console.error("Failed to load queue", err);

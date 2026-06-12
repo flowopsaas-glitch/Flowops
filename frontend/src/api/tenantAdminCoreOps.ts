@@ -1,4 +1,5 @@
 ﻿import axios from './client'
+import { FLOWOPS_API_URL } from '../lib/env'
 
 export type TenantDashboardMetrics = {
   companies: number
@@ -148,7 +149,7 @@ export async function getTenantMyCompany() {
 }
 
 export async function createTenantClient(data: any) {
-  const response = await fetch('http://localhost:3000/api/companies', {
+  const response = await fetch(`${FLOWOPS_API_URL}/companies`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

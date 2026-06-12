@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useState } from 'react';
 import { useToast } from './ToastProvider';
+import { FLOWOPS_API_URL } from '../lib/env';
 
 export const EarlyAccessForm = () => {
   const [email, setEmail] = useState('');
@@ -11,7 +12,7 @@ export const EarlyAccessForm = () => {
     e.preventDefault();
     setStatus('loading');
     try {
-      await axios.post('http://localhost:3000/api/leads/quote', { email });
+      await axios.post(`${FLOWOPS_API_URL}/leads/quote`, { email });
       setStatus('success');
       showToast("Welcome to the future of logistics! Check your inbox.", "success");
     } catch (err) {

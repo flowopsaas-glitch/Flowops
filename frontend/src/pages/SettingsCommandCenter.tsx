@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { FLOWOPS_API_URL } from "../lib/env";
 import {
   Users,
   ShieldCheck,
@@ -63,10 +64,7 @@ type QuickCard = {
   statusResolver: (company: CompanyPayload | null) => StatusMeta;
 };
 
-const API_BASE =
-  (typeof import.meta !== "undefined" &&
-    (import.meta as any)?.env?.VITE_API_BASE_URL) ||
-  "http://localhost:3000/api";
+const API_BASE = FLOWOPS_API_URL;
 
 function readToken(): string {
   return (

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import axios from 'axios';
 import { Button, Table } from '@/components/ui';
+import { FLOWOPS_WS_ORIGIN } from '../../lib/env';
 
 interface Parcel { refNumber: string; description: string; weight?: number }
 interface Collection { 
@@ -27,7 +28,7 @@ export default function CollectionsDashboard() {
   useEffect(() => {
     fetchCollections();
     // Connect WebSocket
-    socket = io('http://localhost:3000'); // your NestJS server URL
+    socket = io(FLOWOPS_WS_ORIGIN); // NestJS Socket.IO origin (configurable via VITE_API_URL / VITE_WS_ORIGIN)
     socket.on('collectionUpdated', (updated: Collection) => {
       setCollections((prev) => {
         if (updated.deleted) return prev.filter(c => c.id !== updated.id);

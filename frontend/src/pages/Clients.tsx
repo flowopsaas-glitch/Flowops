@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/ToastProvider';
+import { FLOWOPS_API_URL } from '../lib/env';
 
 export default function Clients() {
   const [items, setItems] = useState<any[]>([])
@@ -13,7 +14,7 @@ export default function Clients() {
     setLoading(true)
     try {
       // CHANGED: Removed /v2/ to match your backend's verified RoutesResolver logs
-      const res = await fetch('http://localhost:3000/api/companies')
+      const res = await fetch(`${FLOWOPS_API_URL}/companies`)
       const rawData = await res.json()
       setItems(Array.isArray(rawData) ? rawData : (rawData?.data || []))
     } catch (err) {
@@ -30,8 +31,8 @@ export default function Clients() {
     setLoading(true)
     try {
       const url = editingId 
-        ? `http://localhost:3000/api/companies/${editingId}` 
-        : 'http://localhost:3000/api/companies';
+        ? `${FLOWOPS_API_URL}/companies/${editingId}` 
+        : `${FLOWOPS_API_URL}/companies`;
       const method = editingId ? 'PATCH' : 'POST';
 
       await fetch(url, {
@@ -53,7 +54,7 @@ export default function Clients() {
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this client?")) return;
     try {
-      await fetch(`http://localhost:3000/api/companies/${id}`, { method: 'DELETE' });
+      await fetch(`${FLOWOPS_API_URL}/companies/${id}`, { method: 'DELETE' });
       fetchItems();
       showToast('Client deleted successfully.', 'success');
     } catch (err) {

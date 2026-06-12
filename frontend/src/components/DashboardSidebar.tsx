@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button';
+import { FLOWOPS_HTTP_ORIGIN } from '@/lib/env';
 
 const menuItems = [
     { icon: FaStream, label: 'Dashboard', path: '/workflows', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
@@ -79,7 +80,7 @@ export default function DashboardSidebar() {
         try {
             const token = localStorage.getItem('token');
             if (token) {
-                await fetch('http://localhost:3000/auth/logout', {
+                await fetch(`${FLOWOPS_HTTP_ORIGIN}/auth/logout`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,

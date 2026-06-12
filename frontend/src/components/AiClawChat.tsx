@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Terminal, X, ChevronRight, Cpu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { FLOWOPS_API_URL } from '../lib/env';
 
 interface Message {
   role: 'user' | 'claw' | 'system' | 'system_thought';
@@ -75,7 +76,7 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
         }
       };
 
-      const response = await fetch('http://localhost:3000/api/ai/claw-chat/query', {
+      const response = await fetch(`${FLOWOPS_API_URL}/ai/claw-chat/query`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

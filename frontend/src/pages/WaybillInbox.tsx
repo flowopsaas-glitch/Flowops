@@ -89,7 +89,7 @@ export default function WaybillInbox() {
     senderName: "", senderAddress: "", recipientName: "", recipientAddress: "",
   });
 
-  const assetBase = (FLOWOPS_HTTP_ORIGIN || "http://localhost:3000").replace(/\/+$/, "");
+  const assetBase = FLOWOPS_HTTP_ORIGIN;
   const selectedItem = useMemo(() => Array.isArray(items) ? items.find(i => i.id === selectedId) : null, [items, selectedId]);
 
   useEffect(() => {

@@ -17,8 +17,9 @@ type CopilotResponse = {
   actions: { label: string; action: CopilotAction }[];
 };
 
-const API_BASE =
-  (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3000/api";
+import { FLOWOPS_API_URL } from "../lib/env";
+
+const API_BASE = FLOWOPS_API_URL;
 
 function getToken(): string {
   return localStorage.getItem("access_token") || "";

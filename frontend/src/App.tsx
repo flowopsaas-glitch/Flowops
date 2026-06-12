@@ -1,6 +1,7 @@
 import { useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { io } from "socket.io-client";
+import { FLOWOPS_WS_ORIGIN } from "./lib/env";
 
 // Eager imports (initial shell)
 import AppLayout from "./components/layout/AppLayout";
@@ -61,10 +62,7 @@ function ProtectedRoute() {
 
 export default function App() {
   useEffect(() => {
-    const envApiUrl = import.meta.env.VITE_FLOWOPS_API_URL || "http://localhost:3005/api";
-    const backendUrl = envApiUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
-
-    const socket = io(`${backendUrl}/broadcast`, {
+    const socket = io(`${FLOWOPS_WS_ORIGIN}/broadcast`, {
       transports: ["websocket"],
       autoConnect: true,
       reconnectionAttempts: 10,
@@ -75,7 +73,7 @@ export default function App() {
     });
 
     socket.on("connect_error", (err) => {
-      console.warn(`WebSocket connection failed. Is the FlowOps backend running at ${backendUrl}?`, err.message);
+      console.warn(`WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`, err.message);
     });
 
     socket.on("system-ui-heal", (payload: { action: string; reason: string }) => {

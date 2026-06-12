@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
 import axios from "axios";
+import { FLOWOPS_API_URL } from "../lib/env";
 
-const API_BASE =
-  (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3000/api";
+const API_BASE = FLOWOPS_API_URL;
 
 function getToken(): string {
   return (
