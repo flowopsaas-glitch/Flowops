@@ -71,9 +71,15 @@ export class DriverPortalService {
   ) {
     const waybill = await this.prisma.waybill.findUnique({
       where: { id: waybillId },
-      include: { client: true, company: true },
     });
     if (!waybill) throw new BadRequestException('Waybill not found');
+
+    // Load client separately (no direct include on Waybill→Client in this schema)
+    const client = waybill.clientId
+      ? await this.prisma.client.findUnique({ where: { id: waybill.clientId } })
+      : null;
+    // Attach client to waybill object for billing
+    (waybill as any).client = client;
 
     // ── 1. Save POD ──────────────────────────────────────────────────────────
     const pod = await this.prisma.proofOfDelivery.create({
@@ -261,7 +267,7 @@ Respond in JSON format:
       const draft = await this.prisma.invoiceDraft.create({
         data: {
           companyId: waybill.companyId,
-          status: 'PENDING_RECONCILIATION',
+          status: 'DRAFT',
           total: amount,
           notes: `COD — Cash collected on delivery for ${waybill.waybillNumber}. Amount: R${amount}`,
         },
@@ -273,6 +279,7 @@ Respond in JSON format:
           description: `COD Delivery: ${waybill.waybillNumber} — ${waybill.receiverName || 'Unknown'}`,
           quantity: 1,
           unitPrice: amount,
+          amount,
         },
       });
 
@@ -306,9 +313,10 @@ Respond in JSON format:
       await this.prisma.invoiceDraftLine.create({
         data: {
           invoiceDraftId: draft.id,
-          description: `Delivery: ${waybill.waybillNumber} — ${waybill.receiverName || 'Unknown'} (${waybill.deliveryAddress || 'No address'})`,
+          description: `Delivery: ${waybill.waybillNumber} — ${waybill.receiverName || 'Unknown'} (${(waybill as any).deliveryAddress || 'No address'})`,
           quantity: 1,
           unitPrice: amount,
+          amount,
         },
       });
 
