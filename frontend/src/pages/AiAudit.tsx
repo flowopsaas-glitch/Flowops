@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../api/client';
 import { ShieldCheck, Activity, AlertCircle, Clock } from 'lucide-react';
 
 interface AuditLog {
@@ -18,8 +18,8 @@ export default function AiAudit() {
 
   const fetchLogs = async () => {
     try {
-      const res = await axios.get('/api/ai-audit/logs?companyId=1'); // Replace with actual companyId
-      setLogs(res.data);
+      const res = await api.get<any, any>(`/ai-audit/logs`, { params: { companyId: 1 } }); // Replace with actual companyId
+      setLogs(res);
     } catch (err) {
       console.error("Failed to fetch logs", err);
     } finally {

@@ -1,92 +1,28 @@
-import { FLOWOPS_API_URL } from "../lib/env";
-import { getAccessToken } from "../lib/session";
-
-const API_BASE = FLOWOPS_API_URL;
-
-function getAuthHeaders() {
-  const token = getAccessToken();
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
-
-async function readJson(response: Response) {
-  const text = await response.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
-}
+/**
+ * collectionsStateSync.ts — Collections state synchronisation API helpers.
+ *
+ * Previously used raw fetch() with manually constructed Authorization headers.
+ * Now delegates to the canonical `api` client (api/client.ts) which injects
+ * the bearer token via its request interceptor and throws on 4xx/5xx.
+ */
+import { api } from '../api/client';
 
 export async function fetchCollectionsSyncDashboard() {
-  const response = await fetch(`${API_BASE}/collections-state-sync/dashboard`, {
-    method: "GET",
-    headers: getAuthHeaders(),
-  });
-
-  const data = await readJson(response);
-  if (!response.ok) {
-    throw new Error(data?.message || "Failed to load collections sync dashboard.");
-  }
-  return data;
+  return api.get<any, any>('/collections-state-sync/dashboard');
 }
 
 export async function fetchCollectionsSyncRecords() {
-  const response = await fetch(`${API_BASE}/collections-state-sync/records`, {
-    method: "GET",
-    headers: getAuthHeaders(),
-  });
-
-  const data = await readJson(response);
-  if (!response.ok) {
-    throw new Error(data?.message || "Failed to load collections sync records.");
-  }
-  return data;
+  return api.get<any, any>('/collections-state-sync/records');
 }
 
-export async function runCollectionsBulkSync(actor = "frontend-user") {
-  const response = await fetch(`${API_BASE}/collections-state-sync/bulk-sync`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ actor }),
-  });
-
-  const data = await readJson(response);
-  if (!response.ok) {
-    throw new Error(data?.message || "Failed to run bulk sync.");
-  }
-  return data;
+export async function runCollectionsBulkSync(actor = 'frontend-user') {
+  return api.post<any, any>('/collections-state-sync/bulk-sync', { actor });
 }
 
-export async function syncSingleCollection(collectionId: string, actor = "frontend-user") {
-  const response = await fetch(`${API_BASE}/collections-state-sync/sync/${collectionId}`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ actor }),
-  });
-
-  const data = await readJson(response);
-  if (!response.ok) {
-    throw new Error(data?.message || `Failed to sync collection ${collectionId}.`);
-  }
-  return data;
+export async function syncSingleCollection(collectionId: string, actor = 'frontend-user') {
+  return api.post<any, any>(`/collections-state-sync/sync/${collectionId}`, { actor });
 }
 
 export async function fetchSuggestedDriver(collectionId: string) {
-  const response = await fetch(`${API_BASE}/collections-state-sync/suggest-driver/${collectionId}`, {
-    method: "GET",
-    headers: getAuthHeaders(),
-  });
-
-  const data = await readJson(response);
-  if (!response.ok) {
-    throw new Error(data?.message || `Failed to load suggested driver for ${collectionId}.`);
-  }
-  return data;
+  return api.get<any, any>(`/collections-state-sync/suggest-driver/${collectionId}`);
 }

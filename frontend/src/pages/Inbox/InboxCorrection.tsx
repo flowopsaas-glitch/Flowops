@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import { api } from '../../api/client';
 import { CheckCircle, AlertCircle, Save, FileSearch } from 'lucide-react';
-import { FLOWOPS_API_URL, FLOWOPS_HTTP_ORIGIN } from '../../lib/env';
+import { FLOWOPS_HTTP_ORIGIN } from '../../lib/env';
 
 interface InboxItem {
   id: number;
@@ -28,7 +28,7 @@ const InboxCorrection: React.FC<Props> = ({ item, onCommitted }) => {
     setIsSaving(true);
     try {
       // 📡 Hitting your existing commit endpoint verified in the logs
-      await axios.post(`${FLOWOPS_API_URL}/waybills/inbox/${item.id}/commit`, formData);
+      await api.post<any, any>(`/waybills/inbox/${item.id}/commit`, formData);
       onCommitted();
     } catch (err) {
       console.error("Commit failed:", err);

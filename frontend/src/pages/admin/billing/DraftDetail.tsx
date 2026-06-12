@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../../api/client';
 import { ShieldCheck, AlertTriangle, Send, FileText, ArrowLeft } from 'lucide-react';
 
 const DraftDetail = () => {
@@ -12,18 +12,18 @@ const DraftDetail = () => {
 
   useEffect(() => {
     Promise.all([
-      axios.get(`/api/invoice-drafts/${id}`),
-      axios.get(`/api/invoice-drafts/${id}/assist`)
+      api.get<any, any>(`/invoice-drafts/${id}`),
+      api.get<any, any>(`/invoice-drafts/${id}/assist`)
     ]).then(([d, a]) => {
-      setDraft(d.data);
-      setAnalysis(a.data);
+      setDraft(d);
+      setAnalysis(a);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [id]);
 
   const handleFinalize = async () => {
     if (!window.confirm("Finalize and email client?")) return;
-    await axios.post(`/api/invoice-drafts/${id}/finalize`);
+    await api.post<any, any>(`/invoice-drafts/${id}/finalize`);
     navigate('/invoice-drafts');
   };
 

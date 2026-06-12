@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api } from '../../api/client';
 import { CheckCircle, FileSearch, Trash2, Loader2, X, RefreshCw } from 'lucide-react';
-import { FLOWOPS_API_URL, FLOWOPS_HTTP_ORIGIN } from '../../lib/env';
+import { FLOWOPS_HTTP_ORIGIN } from '../../lib/env';
 
 interface Props {
   item: any;
@@ -31,7 +31,7 @@ const InboxCorrection: React.FC<Props> = ({ item, onClose, onCommitted }) => {
   const commitToSystem = async () => {
     setIsSaving(true);
     try {
-      await axios.post(`${FLOWOPS_API_URL}/waybills/inbox/${item.id}/commit`, formData);
+      await api.post<any, any>(`/waybills/inbox/${item.id}/commit`, formData);
       onCommitted();
     } catch (err) {
       console.error(err);
@@ -44,7 +44,7 @@ const InboxCorrection: React.FC<Props> = ({ item, onClose, onCommitted }) => {
     if (!window.confirm("Discard this asset?")) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`${FLOWOPS_API_URL}/waybills/inbox/${item.id}`);
+      await api.delete<any, any>(`/waybills/inbox/${item.id}`);
       onCommitted();
     } catch (err) {
       console.error(err);

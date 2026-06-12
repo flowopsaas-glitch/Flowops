@@ -1,7 +1,7 @@
 // frontend/src/pages/admin/CollectionsDashboard.tsx
 import React, { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import axios from 'axios';
+import { api } from '../../api/client';
 import { Button, Table } from '@/components/ui';
 import { FLOWOPS_WS_ORIGIN } from '../../lib/env';
 
@@ -21,8 +21,9 @@ export default function CollectionsDashboard() {
   const [loading, setLoading] = useState(true);
 
   const fetchCollections = async () => {
-    const res = await axios.get('/api/collections');
-    setCollections(res.data);
+    const res = await api.get<any, any>(`/collections`);
+    setCollections(res);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -44,7 +45,7 @@ export default function CollectionsDashboard() {
   }, []);
 
   const updateStatus = async (id: string, status: Collection['status'], driverId?: string) => {
-    await axios.patch(`/collections/${id}`, { status, driverId });
+    await api.patch<any, any>(`/collections/${id}`, { status, driverId });
     // no need to refresh, WebSocket will update
   };
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/ToastProvider';
-import { FLOWOPS_API_URL } from '../lib/env';
+import { api } from '../api/client';
 
 export default function Clients() {
   const [items, setItems] = useState<any[]>([])
@@ -14,9 +14,8 @@ export default function Clients() {
     setLoading(true)
     try {
       // CHANGED: Removed /v2/ to match your backend's verified RoutesResolver logs
-      const res = await fetch(`${FLOWOPS_API_URL}/companies`)
-      const rawData = await res.json()
-      setItems(Array.isArray(rawData) ? rawData : (rawData?.data || []))
+      const rawData = await api.get<any, any>(`/companies`);
+      setItems(Array.isArray(rawData) ? rawData : (rawData?.data || []));
     } catch (err) {
       console.error("Fetch error:", err)
     } finally {
@@ -30,16 +29,11 @@ export default function Clients() {
     e.preventDefault()
     setLoading(true)
     try {
-      const url = editingId 
-        ? `${FLOWOPS_API_URL}/companies/${editingId}` 
-        : `${FLOWOPS_API_URL}/companies`;
-      const method = editingId ? 'PATCH' : 'POST';
-
-      await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+      if (editingId) {
+        await api.patch<any, any>(`/companies/${editingId}`, formData);
+      } else {
+        await api.post<any, any>('/companies', formData);
+      }
       closeForm();
       fetchItems();
     } catch (err) {
@@ -54,7 +48,7 @@ export default function Clients() {
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this client?")) return;
     try {
-      await fetch(`${FLOWOPS_API_URL}/companies/${id}`, { method: 'DELETE' });
+      await api.delete<any, any>(`/companies/${id}`);
       fetchItems();
       showToast('Client deleted successfully.', 'success');
     } catch (err) {
