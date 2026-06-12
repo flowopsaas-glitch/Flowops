@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import SignatureCanvas from 'react-signature-canvas';
 import { api } from '../../api/client';
-import { Package, Map, PenTool, RefreshCcw, MessageSquare, LogOut, Loader2, Truck, X, Camera, Check, Inbox } from 'lucide-react';
+import {
+  Package, Map, PenTool, RefreshCcw, MessageSquare, Boxes, LogOut, Loader2,
+  Truck, X, Camera, Check
+} from 'lucide-react';
 import { useDriverAuth } from '../../contexts/DriverAuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -77,201 +80,174 @@ export default function DriverPortal() {
     setSavingPoc(false);
   };
 
-  if (authLoading) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#020817', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-        <Loader2 style={{ color: '#38bdf8', width: 40, height: 40, animation: 'spin 1s linear infinite' }} />
-        <p style={{ color: '#38bdf8', fontWeight: 900, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '4px' }}>Authenticating...</p>
-      </div>
-    );
-  }
+  if (authLoading) return (
+    <div className="min-h-screen bg-[#020817] flex flex-col items-center justify-center gap-4">
+      <Loader2 className="animate-spin text-sky-500" size={40} />
+      <p className="text-sky-500 font-black italic uppercase tracking-widest text-xs">Authenticating...</p>
+    </div>
+  );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#020817', color: 'white', padding: '24px', fontFamily: 'sans-serif', position: 'relative' }}>
-      {/* Header */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', paddingTop: '16px' }}>
+    <div className="min-h-screen bg-[#020817] text-white p-6 font-sans text-left relative">
+      <header className="flex justify-between items-center mb-8 pt-4">
         <div>
-          <h1 style={{ fontSize: '28px', fontWeight: 900, fontStyle: 'italic', letterSpacing: '-1px', textTransform: 'uppercase', lineHeight: 1, margin: 0 }}>Route</h1>
-          <p style={{ color: '#38bdf8', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '3px', marginTop: '4px' }}>
-            {driver?.name || 'Unit Active'}
-          </p>
+          <h1 className="text-2xl font-black italic tracking-tighter uppercase leading-none">Route</h1>
+          <p className="text-sky-500 text-[10px] font-black uppercase mt-1">{driver?.name || 'Unit Active'}</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={fetchManifest} style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: 'none', cursor: 'pointer', color: '#38bdf8' }}>
-            <RefreshCcw size={20} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} />
+        <div className="flex gap-2">
+          <button onClick={fetchManifest} className="p-3 bg-white/5 rounded-2xl text-sky-500">
+            <RefreshCcw size={20} className={syncing ? 'animate-spin' : ''} />
           </button>
-          <button onClick={logout} style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+          <button onClick={logout} className="p-3 bg-white/5 rounded-2xl text-slate-500">
             <LogOut size={20} />
           </button>
         </div>
       </header>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', background: 'rgba(15,23,42,0.7)', padding: '4px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '24px' }}>
-        <button onClick={() => setTab('deliveries')} style={{
-          flex: 1, padding: '12px', borderRadius: '16px', fontWeight: 900, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', border: 'none', cursor: 'pointer', transition: 'all 0.2s',
-          background: tab === 'deliveries' ? '#0ea5e9' : 'transparent',
-          color: tab === 'deliveries' ? 'white' : '#475569',
-          boxShadow: tab === 'deliveries' ? '0 4px 20px rgba(14,165,233,0.3)' : 'none',
-        }}>
+      <div className="flex bg-slate-900/50 p-1 rounded-2xl border border-white/5 mb-6">
+        <button onClick={() => setTab('deliveries')}
+          className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${tab === 'deliveries' ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-600'}`}>
           Deliveries ({jobs.length})
         </button>
-        <button onClick={() => setTab('collections')} style={{
-          flex: 1, padding: '12px', borderRadius: '16px', fontWeight: 900, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', border: 'none', cursor: 'pointer', transition: 'all 0.2s',
-          background: tab === 'collections' ? '#10b981' : 'transparent',
-          color: tab === 'collections' ? 'white' : '#475569',
-          boxShadow: tab === 'collections' ? '0 4px 20px rgba(16,185,129,0.3)' : 'none',
-        }}>
+        <button onClick={() => setTab('collections')}
+          className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${tab === 'collections' ? 'bg-emerald-500 text-white shadow-lg' : 'text-slate-600'}`}>
           Collections ({collections.length})
         </button>
       </div>
 
       {/* DELIVERIES */}
       {tab === 'deliveries' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '80px' }}>
+        <div className="space-y-4 pb-20">
           {jobs.length === 0 && !syncing ? (
-            <EmptyCard label="Manifest Clear" icon={Inbox} />
-          ) : (
-            jobs.map(job => (
-              <div key={job.id} style={{
-                background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(255,255,255,0.05)',
-                borderRadius: '36px', padding: '24px', boxShadow: '0 18px 60px rgba(0,0,0,0.28)',
-              }}>
-                {/* Job header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ width: '48px', height: '48px', background: 'rgba(14,165,233,0.1)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Package size={20} style={{ color: '#38bdf8' }} />
-                    </div>
-                    <div>
-                      <h4 style={{ fontWeight: 900, color: 'white', margin: 0, fontSize: '15px' }}>{job.waybillNumber}</h4>
-                      <p style={{ fontSize: '10px', fontWeight: 900, color: '#475569', textTransform: 'uppercase', margin: '2px 0 0', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.recipient}</p>
-                    </div>
+            <EmptyManifest label="Manifest Clear" />
+          ) : jobs.map(job => (
+            <div key={job.id} className="bg-slate-900/40 border border-white/5 p-6 rounded-[36px] shadow-2xl space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 bg-sky-500/10 rounded-xl flex items-center justify-center text-sky-400">
+                    <Package size={20} />
                   </div>
-                  {job.recipientPhone && (
-                    <button onClick={() => window.open(`https://wa.me/${job.recipientPhone.replace(/\D/g, '')}`, '_blank')}
-                      style={{ padding: '12px', background: 'rgba(16,185,129,0.1)', borderRadius: '14px', border: '1px solid rgba(16,185,129,0.1)', cursor: 'pointer' }}>
-                      <MessageSquare size={18} style={{ color: '#10b981' }} />
-                    </button>
-                  )}
+                  <div className="text-left flex-1 overflow-hidden">
+                    <h4 className="font-black text-white leading-none mb-1">{job.waybillNumber}</h4>
+                    <p className="text-[10px] font-black text-slate-500 uppercase truncate max-w-[150px]">{job.recipient}</p>
+                  </div>
                 </div>
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.deliveryAddress || '')}`, '_blank')}
-                    style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '16px', color: '#94a3b8', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer' }}>
-                    <Map size={14} /> Map
+                {job.recipientPhone && (
+                  <button onClick={() => window.open(`https://wa.me/${job.recipientPhone.replace(/\D/g, '')}`, '_blank')}
+                    className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl border border-emerald-500/10">
+                    <MessageSquare size={18} />
                   </button>
-                  <button onClick={() => navigate(`/driver/manifest/${job.id}`)}
-                    style={{ flex: 1, background: '#0284c7', border: 'none', borderRadius: '20px', padding: '16px', color: 'white', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer', boxShadow: '0 4px 20px rgba(2,132,199,0.4)' }}>
-                    <PenTool size={14} /> POD
-                  </button>
-                </div>
+                )}
               </div>
-            ))
-          )}
+              <div className="flex gap-2">
+                <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.deliveryAddress || '')}`, '_blank')}
+                  className="flex-1 bg-white/5 py-4 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-slate-400 flex items-center justify-center gap-2">
+                  <Map size={14} /> Map
+                </button>
+                <button onClick={() => navigate(`/driver/manifest/${job.id}`)}
+                  className="flex-1 bg-sky-600 py-4 rounded-2xl text-[10px] font-black uppercase text-white shadow-lg flex items-center justify-center gap-2">
+                  <PenTool size={14} /> POD
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* COLLECTIONS */}
       {tab === 'collections' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '80px' }}>
+        <div className="space-y-4 pb-20">
           {collections.length === 0 && !syncing ? (
-            <EmptyCard label="No Collections" icon={Truck} />
-          ) : (
-            collections.map(col => {
-              const collected = col.status === 'COLLECTED';
-              return (
-                <div key={col.id} style={{
-                  background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '36px', padding: '24px', boxShadow: '0 18px 60px rgba(0,0,0,0.28)',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                      <div style={{ width: '48px', height: '48px', background: 'rgba(16,185,129,0.1)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Truck size={20} style={{ color: '#10b981' }} />
-                      </div>
-                      <div>
-                        <h4 style={{ fontWeight: 900, color: 'white', margin: 0, fontSize: '15px' }}>{col.referenceNo || col.name}</h4>
-                        <p style={{ fontSize: '10px', fontWeight: 900, color: '#475569', textTransform: 'uppercase', margin: '2px 0 0' }}>{col.clientName || 'Client'}</p>
-                      </div>
+            <EmptyManifest label="No Collections Assigned" />
+          ) : collections.map(col => {
+            const collected = col.status === 'COLLECTED';
+            return (
+              <div key={col.id} className="bg-slate-900/40 border border-white/5 p-6 rounded-[36px] shadow-2xl space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-400">
+                      <Truck size={20} />
                     </div>
-                    {collected && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981', borderRadius: '999px', padding: '4px 12px', fontSize: '9px', fontWeight: 900, textTransform: 'uppercase' }}>
-                        <Check size={11} /> Collected
-                      </span>
-                    )}
+                    <div>
+                      <h4 className="font-black text-white leading-none mb-1">{col.referenceNo || col.name}</h4>
+                      <p className="text-[10px] font-black text-slate-500 uppercase">{col.clientName || 'Client'}</p>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(col.collectionAddress || '')}`, '_blank')}
-                      style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '16px', color: '#94a3b8', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer' }}>
-                      <Map size={14} /> Map
-                    </button>
-                    <button onClick={() => !collected && (setPocCollection(col), setCollectorName(''), setPocNotes(''), setPocPhoto(null))}
-                      disabled={collected}
-                      style={{ flex: 1, background: collected ? 'rgba(255,255,255,0.05)' : '#059669', border: 'none', borderRadius: '20px', padding: '16px', color: collected ? '#475569' : 'white', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: collected ? 'not-allowed' : 'pointer', boxShadow: collected ? 'none' : '0 4px 20px rgba(5,150,105,0.4)' }}>
-                      <PenTool size={14} /> {collected ? 'Done' : 'Capture POC'}
-                    </button>
-                  </div>
+                  {collected && (
+                    <span className="flex items-center gap-1 px-3 py-1 bg-emerald-500/15 text-emerald-400 rounded-full text-[9px] font-black uppercase">
+                      <Check size={10} /> Collected
+                    </span>
+                  )}
                 </div>
-              );
-            })
-          )}
+                <div className="flex gap-2">
+                  <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(col.collectionAddress || '')}`, '_blank')}
+                    className="flex-1 bg-white/5 py-4 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-slate-400 flex items-center justify-center gap-2">
+                    <Map size={14} /> Map
+                  </button>
+                  <button
+                    onClick={() => !collected && (setPocCollection(col), setCollectorName(''), setPocNotes(''), setPocPhoto(null))}
+                    disabled={collected}
+                    className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase shadow-lg flex items-center justify-center gap-2 ${collected ? 'bg-white/5 text-slate-600' : 'bg-emerald-600 text-white'}`}>
+                    <PenTool size={14} /> {collected ? 'Done' : 'Capture POC'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* POC Modal */}
       {pocCollection && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '16px', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}>
-          <div style={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '32px', padding: '24px', width: '100%', maxWidth: '460px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#0f1629] border border-white/10 rounded-[32px] p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
               <div>
-                <h3 style={{ fontSize: '18px', fontWeight: 900, color: 'white', margin: 0 }}>Proof of Collection</h3>
-                <p style={{ fontSize: '10px', color: '#10b981', fontWeight: 900, textTransform: 'uppercase', margin: '2px 0 0' }}>{pocCollection.referenceNo || pocCollection.name}</p>
+                <h3 className="text-lg font-black text-white">Proof of Collection</h3>
+                <p className="text-[10px] text-emerald-400 font-black uppercase">{pocCollection.referenceNo || pocCollection.name}</p>
               </div>
-              <button onClick={() => setPocCollection(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)' }}><X size={20} /></button>
+              <button onClick={() => setPocCollection(null)} className="text-white/40"><X size={20} /></button>
             </div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', color: '#64748b', marginBottom: '6px' }}>Collected From</label>
-            <input value={collectorName} onChange={e => setCollectorName(e.target.value)} placeholder="Person handing over"
-              style={{ width: '100%', padding: '12px 16px', borderRadius: '16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '16px', boxSizing: 'border-box' }} />
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', color: '#64748b', marginBottom: '6px' }}>Signature</label>
-            <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', background: 'white', marginBottom: '8px' }}>
-              <SignatureCanvas ref={sigPad} penColor="black" canvasProps={{ height: 150, style: { width: '100%', height: 150 } }} />
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Collected From</label>
+            <input value={collectorName} onChange={e => setCollectorName(e.target.value)} placeholder="Person who handed over"
+              className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm outline-none mb-4" />
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Signature</label>
+            <div className="rounded-2xl overflow-hidden border border-white/10 bg-white mb-2">
+              <SignatureCanvas ref={sigPad} penColor="black"
+                canvasProps={{ className: 'w-full', height: 150, style: { width: '100%', height: 150 } }} />
             </div>
-            <button onClick={() => sigPad.current?.clear()} style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', marginBottom: '16px' }}>Clear</button>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', color: '#64748b', marginBottom: '6px' }}>Photo (Optional)</label>
+            <button onClick={() => sigPad.current?.clear()} className="text-[10px] font-black uppercase text-slate-500 mb-4">Clear Signature</button>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Photo (optional)</label>
             {pocPhoto ? (
-              <div style={{ position: 'relative', marginBottom: '16px' }}>
-                <img src={pocPhoto} alt="POC" style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '16px' }} />
-                <button onClick={() => setPocPhoto(null)} style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', color: 'white' }}><X size={14} /></button>
+              <div className="relative mb-4">
+                <img src={pocPhoto} alt="POC" className="w-full h-40 object-cover rounded-2xl" />
+                <button onClick={() => setPocPhoto(null)} className="absolute top-2 right-2 bg-black/60 p-2 rounded-full text-white"><X size={14} /></button>
               </div>
             ) : (
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(255,255,255,0.1)', color: '#64748b', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer', marginBottom: '16px', boxSizing: 'border-box' }}>
+              <label className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl bg-white/5 border border-dashed border-white/10 text-slate-400 text-[10px] font-black uppercase mb-4 cursor-pointer">
                 <Camera size={16} /> Take Photo
-                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoCapture} style={{ display: 'none' }} />
+                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoCapture} className="hidden" />
               </label>
             )}
             <textarea value={pocNotes} onChange={e => setPocNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
-              style={{ width: '100%', padding: '12px 16px', borderRadius: '16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontSize: '14px', outline: 'none', resize: 'none', marginBottom: '20px', boxSizing: 'border-box' }} />
-            <button onClick={submitPoc} disabled={savingPoc} style={{
-              width: '100%', padding: '16px', borderRadius: '20px', background: '#059669', border: 'none', color: 'white', fontWeight: 900, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 20px rgba(5,150,105,0.4)',
-            }}>
-              {savingPoc ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</> : <><Check size={16} /> Confirm Collection</>}
+              className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm outline-none mb-5 resize-none" />
+            <button onClick={submitPoc} disabled={savingPoc}
+              className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-black text-xs uppercase shadow-lg flex items-center justify-center gap-2">
+              {savingPoc ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Check size={16} /> Confirm Collection</>}
             </button>
           </div>
         </div>
       )}
-
-      {/* Inline keyframes */}
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
-function EmptyCard({ label, icon: Icon }: { label: string; icon: any }) {
+function EmptyManifest({ label }: { label: string }) {
   return (
-    <div style={{ padding: '80px 24px', textAlign: 'center', opacity: 0.2, border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '40px' }}>
-      <Icon size={48} style={{ margin: '0 auto 16px', color: 'white', display: 'block' }} />
-      <p style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px' }}>{label}</p>
+    <div className="p-20 text-center opacity-20 border-2 border-dashed border-white/10 rounded-[40px]">
+      <Boxes size={48} className="mx-auto mb-4" />
+      <p className="text-xs font-black uppercase">{label}</p>
     </div>
   );
 }
