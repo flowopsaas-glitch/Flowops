@@ -10,6 +10,7 @@ import {
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
 import { cn } from "../../lib/utils"; 
 import logo from "../../assets/logo.png";
+import { useTenant } from "../../contexts/TenantContext";
 
 type NavItem = {
   label: string;
@@ -82,6 +83,8 @@ function SidebarContent(props: {
   canInstall: boolean;
   onInstall: () => void;
   onLogout: () => void;
+  brandName: string;
+  brandLogoUrl: string | null;
 }) {
   const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
     ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
@@ -91,14 +94,18 @@ function SidebarContent(props: {
       <div className="shrink-0 border-b border-white/10 px-5 py-5">
         <div className="flex items-center gap-3">
           <img 
-            src={logo} 
-            alt="FlowOps" 
+            src={props.brandLogoUrl ?? logo} 
+            alt={`${props.brandName} logo`} 
             className="h-12 w-12 rounded-2xl border border-white/10 bg-white/5 object-cover" 
-            onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/48?text=FO'; }}
+            onError={(e) => { (e.target as HTMLImageElement).src = logo; }}
           />
           <div className="min-w-0">
-            <div className="text-lg font-black tracking-tight text-white uppercase italic">FlowOps</div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/50">Tactical OS v1.8.2</div>
+            <div className="text-lg font-black tracking-tight text-white uppercase italic">
+              {props.brandName}
+            </div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/50">
+              Tactical OS v1.8.2
+            </div>
           </div>
         </div>
       </div>
@@ -148,6 +155,7 @@ export default function AppLayout() {
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
+  const { branding } = useTenant();
 
   useEffect(() => {
     const handler = (e: Event) => { 
@@ -222,7 +230,9 @@ export default function AppLayout() {
           onNavigate={() => setMobileOpen(false)} 
           canInstall={!!installPrompt} 
           onInstall={handleInstall} 
-          onLogout={handleLogout} 
+          onLogout={handleLogout}
+          brandName={branding.brandName}
+          brandLogoUrl={branding.logoUrl}
         />
       </aside>
 
@@ -266,7 +276,9 @@ export default function AppLayout() {
               onNavigate={() => setMobileOpen(false)} 
               canInstall={!!installPrompt} 
               onInstall={handleInstall} 
-              onLogout={handleLogout} 
+              onLogout={handleLogout}
+              brandName={branding.brandName}
+              brandLogoUrl={branding.logoUrl}
             />
           </aside>
         </div>

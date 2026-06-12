@@ -7,6 +7,7 @@ import App from './App';
 import './index.css';
 import { ToastProvider } from './components/ToastProvider';
 import { AuthProvider } from './contexts/AuthContext';
+import { TenantProvider } from './contexts/TenantContext';
 import { registerSW } from 'virtual:pwa-register';
 
 const updateSW = registerSW({
@@ -26,9 +27,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
+        <TenantProvider>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </TenantProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
