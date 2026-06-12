@@ -7,11 +7,18 @@ interface LoginProps {
 }
 
 export default function Login({ onLogin }: LoginProps) {
-  const [phone, setPhone] = useState('+27821234567');
+  const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(false);
+
+  // Normalize phone: strip +27 prefix so both 0821234567 and +27821234567 work
+  const normalizePhone = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('27') && digits.length === 11) return '0' + digits.slice(2);
+    return raw.trim();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +26,8 @@ export default function Login({ onLogin }: LoginProps) {
     setLoading(true);
 
     try {
-      const response = await driverApi.login(phone, pin);
+      const normalizedPhone = normalizePhone(phone);
+      const response = await driverApi.login(normalizedPhone, pin);
       localStorage.setItem('driver', JSON.stringify(response.data));
       onLogin(response.data);
     } catch (err: any) {

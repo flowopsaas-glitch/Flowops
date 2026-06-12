@@ -24,8 +24,10 @@ export class DriverPortalService {
   }
 
   async login(phone: string, pin: string) {
+    // Normalize phone: handle both 0821234567 and +27821234567
+    const normalizedPhone = phone.replace(/^\+27/, '0').trim();
     const driver = await this.prisma.driver.findFirst({
-      where: { phone, pin },
+      where: { phone: normalizedPhone, pin },
       include: { company: true },
     });
     if (!driver) throw new UnauthorizedException('Invalid phone number or PIN');
