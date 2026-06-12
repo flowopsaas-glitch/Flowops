@@ -2,6 +2,7 @@ import React, { useMemo, useState, useRef, useEffect } from "react";
 import { X, Send, Bot, Sparkles } from "lucide-react";
 import type { ShipmentLike, AiInsight } from "../utils/aiHeuristics";
 import { insightsFromShipments } from "../utils/aiHeuristics";
+import { FLOWOPS_OLLAMA_URL } from "../lib/env";
 
 type Props = {
   open: boolean;
@@ -12,8 +13,12 @@ type Props = {
 type ChatMsg = { role: "user" | "assistant"; text: string };
 
 async function tryOllama(prompt: string): Promise<string | null> {
+  // Feature is opt-in via VITE_OLLAMA_URL. When unset, the panel falls back
+  // to deterministic heuristics rather than calling localhost from a
+  // production bundle.
+  if (!FLOWOPS_OLLAMA_URL) return null;
   try {
-    const res = await fetch("http://localhost:11434/api/generate", {
+    const res = await fetch(`${FLOWOPS_OLLAMA_URL}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

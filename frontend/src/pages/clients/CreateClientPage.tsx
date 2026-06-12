@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useToast } from '../../components/ToastProvider';
+import { FLOWOPS_API_URL } from '../../lib/env';
 
 const CreateClientPage = () => {
   const [formData, setFormData] = useState({
@@ -17,7 +18,7 @@ const CreateClientPage = () => {
     e.preventDefault();
     try {
       // 1. Create the Company record
-      const response = await axios.post('http://localhost:3000/api/companies', formData);
+      const response = await axios.post(`${FLOWOPS_API_URL}/companies`, formData);
       const newCompanyId = response.data.id;
 
       // 2. Optional: Prompt to create an admin user for this client

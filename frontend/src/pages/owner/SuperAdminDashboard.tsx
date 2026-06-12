@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FLOWOPS_API_URL } from "../../lib/env";
 
 type PlanBreakdown = Record<string, number>;
 
@@ -49,11 +50,7 @@ type AIFeedItem = {
 };
 
 function getApiBase() {
-  const raw =
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_URL ||
-    "http://127.0.0.1:3000/api";
-  return String(raw).replace(/\/+$/, "");
+  return FLOWOPS_API_URL;
 }
 
 function getOwnerToken() {

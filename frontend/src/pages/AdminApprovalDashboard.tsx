@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, CheckCircle, XCircle, Clock, Shield } from 'lucide-react';
+import { FLOWOPS_HTTP_ORIGIN } from '@/lib/env';
 
 interface ApprovalRequest {
   id: string;
@@ -37,7 +38,7 @@ export default function AdminApprovalDashboard() {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:3000/admin/approval-requests', {
+      const response = await fetch(`${FLOWOPS_HTTP_ORIGIN}/admin/approval-requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -62,7 +63,7 @@ export default function AdminApprovalDashboard() {
     try {
       setActionLoading(true);
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:3000/admin/approval-requests/${requestId}/approve`, {
+      const response = await fetch(`${FLOWOPS_HTTP_ORIGIN}/admin/approval-requests/${requestId}/approve`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -99,7 +100,7 @@ export default function AdminApprovalDashboard() {
     try {
       setActionLoading(true);
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:3000/admin/approval-requests/${requestId}/reject`, {
+      const response = await fetch(`${FLOWOPS_HTTP_ORIGIN}/admin/approval-requests/${requestId}/reject`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,

@@ -13,8 +13,8 @@ export default function PublicPODView() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // 🛰️ Ensure your backend serves assets correctly
-  const assetBase = (FLOWOPS_HTTP_ORIGIN || "http://localhost:3000").replace(/\/+$/, "");
+  // Origin without `/api`, used to build absolute asset URLs.
+  const assetBase = FLOWOPS_HTTP_ORIGIN;
 
   useEffect(() => {
     // Hits the public endpoint (No Authentication Guard on backend for this route)

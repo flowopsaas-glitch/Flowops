@@ -2,6 +2,7 @@
 import { isTenantAdminFullAccess, canTenantAdminSeeNavItem, canTenantAdminAccessRoute, isHiddenOwnerPath } from '../lib/tenantAdminFullAccess';
 import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
+import { FLOWOPS_HTTP_ORIGIN } from '@/lib/env';
 
 export default function LogoutButton() {
   const navigate = useNavigate();
@@ -12,7 +13,7 @@ export default function LogoutButton() {
       
       // Notify backend of logout
       if (token) {
-        await fetch('http://localhost:3000/auth/logout', {
+        await fetch(`${FLOWOPS_HTTP_ORIGIN}/auth/logout`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
