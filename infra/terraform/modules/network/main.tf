@@ -1,122 +1,119 @@
+data "aws_region" "current" {}
+
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
-data "aws_region" "current" {}
-
 locals {
-  azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
-
-  # Auto-compute CIDR blocks unless the caller provides explicit overrides.
-  # Public:  10.0.0.0/24, 10.0.1.0/24, ...
-  # Private: 10.0.100.0/24, 10.0.101.0/24, ...
-  public_subnet_cidrs = (
-    length(var.public_subnet_cidrs) == var.az_count
-    ? var.public_subnet_cidrs
-    : [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, i)]
+  # Use the first N AZs sorted alphabetically (deterministic, avoids
+  # depending on the data source's implicit ordering).
+  az_names = slice(
+    sort(data.aws_availability_zones.available.names),
+    0,
+    min(var.az_count, length(data.aws_availability_zones.available.names)),
   )
-  private_subnet_cidrs = (
-    length(var.private_subnet_cidrs) == var.az_count
-    ? var.private_subnet_cidrs
-    : [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, i + 100)]
-  )
+  az_count = length(local.az_names)
 
   common_tags = merge(
     {
       Project     = "FlowOps"
       Environment = var.environment
+      Component   = "network"
       ManagedBy   = "terraform"
-      Module      = "network"
     },
     var.tags,
   )
 }
 
-# ── VPC ───────────────────────────────────────────────────────────────────
+# ── VPC ──────────────────────────────────────────────────────────────────
 
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}"
-  })
+  tags = merge({ Name = "flowops-${var.environment}" }, local.common_tags)
 }
 
-# ── Public subnets (ALB, NAT GW elastic IPs) ─────────────────────────────
-
-resource "aws_subnet" "public" {
-  count = var.az_count
-
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = local.public_subnet_cidrs[count.index]
-  availability_zone       = local.azs[count.index]
-  map_public_ip_on_launch = false # ALB nodes get IPs via ENI, not subnet default
-
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-public-${local.azs[count.index]}"
-    Tier = "public"
-  })
-}
-
-# ── Private subnets (ECS tasks, RDS, Redis) ───────────────────────────────
-
-resource "aws_subnet" "private" {
-  count = var.az_count
-
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = local.private_subnet_cidrs[count.index]
-  availability_zone = local.azs[count.index]
-
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-private-${local.azs[count.index]}"
-    Tier = "private"
-  })
-}
-
-# ── Internet Gateway ──────────────────────────────────────────────────────
+# ── Internet Gateway ─────────────────────────────────────────────────────
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-igw"
-  })
+  tags = merge({ Name = "flowops-${var.environment}-igw" }, local.common_tags)
 }
 
-# ── Elastic IPs for NAT Gateway(s) ───────────────────────────────────────
+# ── Subnets ───────────────────────────────────────────────────────────────
+# Public:  10.0.{0..2}.0/24  - ALB, NAT GW EIPs live here.
+# Private: 10.0.{10..12}.0/24 - ECS tasks, RDS, Redis live here.
+
+resource "aws_subnet" "public" {
+  count = local.az_count
+
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
+  availability_zone       = local.az_names[count.index]
+  map_public_ip_on_launch = true
+
+  tags = merge(
+    {
+      Name = "flowops-${var.environment}-public-${local.az_names[count.index]}"
+      Tier = "public"
+    },
+    local.common_tags,
+  )
+}
+
+resource "aws_subnet" "private" {
+  count = local.az_count
+
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index + 10)
+  availability_zone = local.az_names[count.index]
+
+  tags = merge(
+    {
+      Name = "flowops-${var.environment}-private-${local.az_names[count.index]}"
+      Tier = "private"
+    },
+    local.common_tags,
+  )
+}
+
+# ── NAT Gateways ─────────────────────────────────────────────────────────
+# single_nat_gateway=true (staging): 1 EIP + 1 NAT in az[0], all private
+# route tables point to it.
+# single_nat_gateway=false (production): 1 EIP + 1 NAT per AZ, each private
+# route table points to its own NAT.
 
 resource "aws_eip" "nat" {
-  # single_nat_gateway = true → 1 EIP; false → 1 per AZ
-  count  = var.single_nat_gateway ? 1 : var.az_count
+  count  = var.single_nat_gateway ? 1 : local.az_count
   domain = "vpc"
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-nat-${count.index}"
-  })
+  tags = merge(
+    { Name = "flowops-${var.environment}-nat-eip-${count.index}" },
+    local.common_tags,
+  )
 
   depends_on = [aws_internet_gateway.main]
 }
 
-# ── NAT Gateway(s) ────────────────────────────────────────────────────────
-
 resource "aws_nat_gateway" "main" {
-  count = var.single_nat_gateway ? 1 : var.az_count
+  count = var.single_nat_gateway ? 1 : local.az_count
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-nat-${count.index}"
-  })
+  tags = merge(
+    { Name = "flowops-${var.environment}-nat-${count.index}" },
+    local.common_tags,
+  )
 
   depends_on = [aws_internet_gateway.main]
 }
 
-# ── Route tables ──────────────────────────────────────────────────────────
+# ── Route tables ─────────────────────────────────────────────────────────
 
-# Public: route to IGW.
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -125,20 +122,18 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.main.id
   }
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-public-rt"
-  })
+  tags = merge({ Name = "flowops-${var.environment}-public" }, local.common_tags)
 }
 
 resource "aws_route_table_association" "public" {
-  count          = var.az_count
+  count          = local.az_count
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
-# Private: one route table per NAT GW (or one shared).
+# One private route table per NAT gateway.
 resource "aws_route_table" "private" {
-  count  = var.single_nat_gateway ? 1 : var.az_count
+  count  = var.single_nat_gateway ? 1 : local.az_count
   vpc_id = aws_vpc.main.id
 
   route {
@@ -146,173 +141,198 @@ resource "aws_route_table" "private" {
     nat_gateway_id = aws_nat_gateway.main[var.single_nat_gateway ? 0 : count.index].id
   }
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-private-rt-${count.index}"
-  })
+  tags = merge(
+    { Name = "flowops-${var.environment}-private-${count.index}" },
+    local.common_tags,
+  )
 }
 
 resource "aws_route_table_association" "private" {
-  count          = var.az_count
+  count          = local.az_count
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[var.single_nat_gateway ? 0 : count.index].id
 }
 
-# ── Security groups ───────────────────────────────────────────────────────
+# ── Security Groups ───────────────────────────────────────────────────────
+# All SGs are created blank (no inline rules) to avoid the circular
+# dependency that arises when ALB SG egresses to ECS SG and ECS SG ingresses
+# from ALB SG. Rules are added as separate aws_security_group_rule resources.
 
-# ALB: internet-facing, accepts 80 + 443.
 resource "aws_security_group" "alb" {
   name        = "flowops-${var.environment}-alb"
-  description = "ALB — inbound HTTP/HTTPS from internet; outbound to ECS tasks only."
+  description = "FlowOps ${var.environment} ALB - public HTTP/HTTPS ingress"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description      = "HTTPS from internet"
-    from_port        = 443
-    to_port          = 443
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
-  }
+  tags = merge({ Name = "flowops-${var.environment}-alb" }, local.common_tags)
 
-  ingress {
-    description      = "HTTP from internet (redirect to HTTPS)"
-    from_port        = 80
-    to_port          = 80
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
+  lifecycle {
+    create_before_destroy = true
   }
-
-  egress {
-    description = "All outbound (restricted to ECS SG by the ECS inbound rule)"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-alb-sg"
-  })
 }
 
-# ECS tasks: only accept traffic from the ALB SG on the container port.
 resource "aws_security_group" "ecs" {
   name        = "flowops-${var.environment}-ecs"
-  description = "ECS tasks — inbound on container port from ALB only; outbound to internet (for secrets, npm, etc.)."
+  description = "FlowOps ${var.environment} ECS tasks - inbound from ALB SG only"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "From ALB on container port"
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
+  tags = merge({ Name = "flowops-${var.environment}-ecs" }, local.common_tags)
 
-  egress {
-    description = "All outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  lifecycle {
+    create_before_destroy = true
   }
-
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-ecs-sg"
-  })
 }
 
-# RDS: only accept Postgres from ECS tasks.
 resource "aws_security_group" "rds" {
   name        = "flowops-${var.environment}-rds"
-  description = "RDS Postgres — inbound 5432 from ECS tasks only."
+  description = "FlowOps ${var.environment} RDS - inbound Postgres from ECS SG only"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "Postgres from ECS"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs.id]
-  }
+  tags = merge({ Name = "flowops-${var.environment}-rds" }, local.common_tags)
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-rds-sg"
-  })
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# Redis: only accept from ECS tasks.
 resource "aws_security_group" "redis" {
   name        = "flowops-${var.environment}-redis"
-  description = "ElastiCache Redis — inbound 6379 from ECS tasks only."
+  description = "FlowOps ${var.environment} Redis - inbound from ECS SG only"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "Redis from ECS"
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs.id]
-  }
+  tags = merge({ Name = "flowops-${var.environment}-redis" }, local.common_tags)
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-redis-sg"
-  })
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# ── Optional VPC endpoints ────────────────────────────────────────────────
+# ── ALB rules ─────────────────────────────────────────────────────────────
 
-# Gateway endpoint for S3 — free, avoids NAT for S3 egress.
+resource "aws_security_group_rule" "alb_ingress_http" {
+  security_group_id = aws_security_group.alb.id
+  type              = "ingress"
+  description       = "HTTP from anywhere (redirected to HTTPS)"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+resource "aws_security_group_rule" "alb_ingress_https" {
+  security_group_id = aws_security_group.alb.id
+  type              = "ingress"
+  description       = "HTTPS from anywhere"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+resource "aws_security_group_rule" "alb_egress_ecs" {
+  security_group_id        = aws_security_group.alb.id
+  type                     = "egress"
+  description              = "Forward traffic to backend ECS tasks"
+  from_port                = var.backend_container_port
+  to_port                  = var.backend_container_port
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.ecs.id
+}
+
+# ── ECS task rules ────────────────────────────────────────────────────────
+
+resource "aws_security_group_rule" "ecs_ingress_alb" {
+  security_group_id        = aws_security_group.ecs.id
+  type                     = "ingress"
+  description              = "Backend port from ALB"
+  from_port                = var.backend_container_port
+  to_port                  = var.backend_container_port
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb.id
+}
+
+resource "aws_security_group_rule" "ecs_egress_rds" {
+  security_group_id        = aws_security_group.ecs.id
+  type                     = "egress"
+  description              = "Postgres to RDS"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.rds.id
+}
+
+resource "aws_security_group_rule" "ecs_egress_redis" {
+  security_group_id        = aws_security_group.ecs.id
+  type                     = "egress"
+  description              = "Redis to ElastiCache"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.redis.id
+}
+
+resource "aws_security_group_rule" "ecs_egress_https" {
+  security_group_id = aws_security_group.ecs.id
+  type              = "egress"
+  description       = "HTTPS to internet - AWS APIs, Cloudflare R2, external services"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+# ── RDS rules ─────────────────────────────────────────────────────────────
+
+resource "aws_security_group_rule" "rds_ingress_ecs" {
+  security_group_id        = aws_security_group.rds.id
+  type                     = "ingress"
+  description              = "Postgres from ECS tasks"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.ecs.id
+}
+
+# ── Redis rules ───────────────────────────────────────────────────────────
+
+resource "aws_security_group_rule" "redis_ingress_ecs" {
+  security_group_id        = aws_security_group.redis.id
+  type                     = "ingress"
+  description              = "Redis from ECS tasks"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.ecs.id
+}
+
+# ── VPC Endpoints ─────────────────────────────────────────────────────────
+
+# S3 Gateway endpoint - free, reduces NAT traffic for S3 calls.
 resource "aws_vpc_endpoint" "s3" {
-  count = var.enable_s3_vpc_endpoint ? 1 : 0
+  count = var.enable_s3_endpoint ? 1 : 0
 
-  vpc_id       = aws_vpc.main.id
-  service_name = "com.amazonaws.${data.aws_region.current.name}.s3"
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
 
   route_table_ids = concat(
     [aws_route_table.public.id],
     aws_route_table.private[*].id,
   )
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-s3-endpoint"
-  })
+  tags = merge({ Name = "flowops-${var.environment}-s3-ep" }, local.common_tags)
 }
 
-# Interface endpoint security group — needed for Secrets Manager Interface endpoint.
-resource "aws_security_group" "vpc_endpoints" {
-  count = var.enable_secretsmanager_vpc_endpoint ? 1 : 0
-
-  name        = "flowops-${var.environment}-vpc-endpoints"
-  description = "Interface VPC endpoints — allow HTTPS from within the VPC."
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "HTTPS from VPC"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-vpc-endpoints-sg"
-  })
-}
-
-# Interface endpoint for Secrets Manager — avoids NAT at task startup.
+# Secrets Manager Interface endpoint - $0.01/hr per AZ, eliminates NAT
+# traffic on task start when ECS pulls secrets. Worth it in production.
 resource "aws_vpc_endpoint" "secretsmanager" {
-  count = var.enable_secretsmanager_vpc_endpoint ? 1 : 0
+  count = var.enable_secretsmanager_endpoint ? 1 : 0
 
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${data.aws_region.current.name}.secretsmanager"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
+  security_group_ids  = [aws_security_group.ecs.id]
   private_dns_enabled = true
 
-  tags = merge(local.common_tags, {
-    Name = "flowops-${var.environment}-secretsmanager-endpoint"
-  })
+  tags = merge({ Name = "flowops-${var.environment}-sm-ep" }, local.common_tags)
 }

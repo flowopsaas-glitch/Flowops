@@ -34,7 +34,6 @@ interface TriggerConfig {
 const sdkStubs = {
   ai: {
     extract: async (args: any) => {
-      console.log('[SDK] AI Extract called with:', args);
       return {
         'full_name': 'John Doe',
         'phone': '+1 (555) 123-4567',
@@ -43,19 +42,15 @@ const sdkStubs = {
       };
     },
     call: async (phone: string, options: any) => {
-      console.log('[SDK] AI Call initiated to:', phone, 'with options:', options);
       return "Mock conversation data";
     },
     summarize: async (text: string) => {
-      console.log('[SDK] AI Summarize called with text length:', text?.length || 0);
       return "Candidate has relevant experience and skills for the position.";
     },
     classify: async (text: string, categories: string[]) => {
-      console.log('[SDK] AI Classify called with:', { text, categories });
       return categories[0]; // Return first category for testing
     },
     predict_score: async (data: any, options: any) => {
-      console.log('[SDK] AI Predict Score called with:', { data, options });
       return 0.85; // High score for testing
     }
   },
@@ -63,7 +58,6 @@ const sdkStubs = {
   // Database operations (similar to the blob in the example)
   db: {
     get: async (key: string) => {
-      console.log('[SDK] DB Get:', key);
       // Mock database with some predefined values
       const mockData: Record<string, any> = {
         'visit_counter': 42,
@@ -73,15 +67,12 @@ const sdkStubs = {
       return mockData[key] || null;
     },
     set: async (key: string, value: any) => {
-      console.log('[SDK] DB Set:', key, 'to value:', value);
       return true;
     },
     delete: async (key: string) => {
-      console.log('[SDK] DB Delete:', key);
       return true;
     },
     list: async (prefix: string) => {
-      console.log('[SDK] DB List with prefix:', prefix);
       return ['visit_counter', 'user_preferences', 'recent_items'].filter(key => 
         key.startsWith(prefix || '')
       );
@@ -90,43 +81,36 @@ const sdkStubs = {
   
   email: {
     send: async (to: string, body: string) => {
-      console.log('[SDK] Email sent to:', to, 'with body:', body);
       return { success: true, messageId: 'mock-message-id-123' };
     },
     send_template: async (template: string, options: any) => {
-      console.log('[SDK] Email template sent:', template, 'with options:', options);
       return { success: true, messageId: 'mock-template-id-123' };
     }
   },
 
   slack: {
     reply: async (channel: string, message: string) => {
-      console.log('[SDK] Slack reply to channel:', channel, 'with message:', message);
       return { ts: 'timestamp-123', channel };
     },
     send_message: async (channel: string, message: string) => {
-      console.log('[SDK] Slack message sent to channel:', channel, 'with message:', message);
       return { ts: 'timestamp-123', channel };
     }
   },
 
   zendesk: {
     create_ticket: async (options: any) => {
-      console.log('[SDK] Zendesk ticket created with options:', options);
       return { id: 'ticket-123', status: 'new' };
     }
   },
 
   knowledge_base: {
     query: async (query: string) => {
-      console.log('[SDK] Knowledge base queried with:', query);
       return "Here is the information you requested from the knowledge base.";
     }
   },
 
   clearbit: {
     enrich_company: async (company: string) => {
-      console.log('[SDK] Clearbit company enrichment for:', company);
       return {
         name: company,
         domain: `${company.toLowerCase().replace(/\s+/g, '')}.com`,
@@ -419,17 +403,20 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
     
     // Create a sandbox to execute the script
     const originalConsoleLog = console.log;
-    
-    // Override console.log to capture logs
+
+    // Override console.log to capture workflow execution logs into the
+    // `logs` array (shown in the UI). The override does NOT forward to the
+    // real console — workflow sandbox noise belongs in the UI panel, not
+    // in the browser DevTools of every production user.
     console.log = (...args) => {
       logs.push({
         type: 'info',
-        message: args.map(arg => 
+        message: args.map(arg =>
           typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
         ).join(' '),
         timestamp: Date.now()
       });
-      originalConsoleLog(...args);
+      // originalConsoleLog intentionally not called — see comment above.
     };
     
     // Execute the script in a controlled environment
@@ -445,7 +432,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
             this.status = options.status || 200;
             this.statusText = options.statusText || '';
             this.headers = options.headers || {};
-            console.log('[SDK] Created Response:', { status: this.status, headers: this.headers });
           }
           
           async text() {
@@ -458,7 +444,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         }
         
         const fetch = async (url, options = {}) => {
-          console.log('[SDK] Fetch request to:', url, 'with options:', options);
           // Mock response based on URL
           if (url.includes('example.com')) {
             return new Response(JSON.stringify({ success: true, data: { id: '123', name: 'Example' }}));
@@ -471,7 +456,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Mock renderToString for JSX
         const renderToString = (jsxElement) => {
           // This is a very basic mock - in reality this would render JSX to HTML
-          console.log('[SDK] Rendering JSX element');
           if (typeof jsxElement === 'object') {
             return '<div>Mocked JSX rendering</div>';
           }
@@ -482,12 +466,10 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         const triggerIntegration = ${JSON.stringify(triggerConfig?.integration || 'default')};
         const triggerEvent = ${JSON.stringify(triggerConfig?.event || 'default')};
         
-        console.log(\`[SDK] Loading integration: \${triggerIntegration}/\${triggerEvent}\`);
         
         // AI functions are always available
         const ai = {
           extract: async (args) => {
-            console.log('[SDK] AI Extract called with:', args);
             return {
               'full_name': 'John Doe',
               'phone': '+1 (555) 123-4567',
@@ -496,19 +478,15 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
             };
           },
           call: async (phone, options) => {
-            console.log('[SDK] AI Call initiated to:', phone, 'with options:', options);
             return "Mock conversation data";
           },
           summarize: async (text) => {
-            console.log('[SDK] AI Summarize called with text length:', text?.length || 0);
             return "Candidate has relevant experience and skills for the position.";
           },
           classify: async (text, categories) => {
-            console.log('[SDK] AI Classify called with:', { text, categories });
             return categories[0]; // Return first category for testing
           },
           predict_score: async (data, options) => {
-            console.log('[SDK] AI Predict Score called with:', { data, options });
             return 0.85; // High score for testing
           }
         };
@@ -516,7 +494,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Database operations - always available
         const db = {
           get: async (key) => {
-            console.log('[SDK] DB Get:', key);
             // Mock database with some predefined values
             const mockData = {
               'visit_counter': 42,
@@ -526,15 +503,12 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
             return mockData[key] || null;
           },
           set: async (key, value) => {
-            console.log('[SDK] DB Set:', key, 'to value:', value);
             return true;
           },
           delete: async (key) => {
-            console.log('[SDK] DB Delete:', key);
             return true;
           },
           list: async (prefix) => {
-            console.log('[SDK] DB List with prefix:', prefix);
             return ['visit_counter', 'user_preferences', 'recent_items'].filter(key => 
               key.startsWith(prefix || '')
             );
@@ -544,11 +518,9 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Email functions
         const email = {
           send: async (to, body) => {
-            console.log('[SDK] Email sent to:', to, 'with body:', body);
             return { success: true, messageId: 'mock-message-id-123' };
           },
           send_template: async (template, options) => {
-            console.log('[SDK] Email template sent:', template, 'with options:', options);
             return { success: true, messageId: 'mock-template-id-123' };
           }
         };
@@ -556,11 +528,9 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Slack functions, especially relevant for slack integration
         const slack = {
           reply: async (channel, message) => {
-            console.log('[SDK] Slack reply to channel:', channel, 'with message:', message);
             return { ts: 'timestamp-123', channel };
           },
           send_message: async (channel, message) => {
-            console.log('[SDK] Slack message sent to channel:', channel, 'with message:', message);
             return { ts: 'timestamp-123', channel };
           }
         };
@@ -568,7 +538,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Zendesk functions
         const zendesk = {
           create_ticket: async (options) => {
-            console.log('[SDK] Zendesk ticket created with options:', options);
             return { id: 'ticket-123', status: 'new' };
           }
         };
@@ -576,7 +545,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Knowledge base functions
         const knowledge_base = {
           query: async (query) => {
-            console.log('[SDK] Knowledge base queried with:', query);
             return "Here is the information you requested from the knowledge base.";
           }
         };
@@ -584,7 +552,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Clearbit functions
         const clearbit = {
           enrich_company: async (company) => {
-            console.log('[SDK] Clearbit company enrichment for:', company);
             return {
               name: company,
               domain: company.toLowerCase().replace(/\\s+/g, '') + '.com',
@@ -597,11 +564,9 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // GitHub specific functions
         const github = triggerIntegration === 'github' ? {
           create_pr: async (options) => {
-            console.log('[SDK] GitHub PR created:', options);
             return { id: 'pr-123', url: 'https://github.com/user/repo/pull/123' };
           },
           comment: async (issue, comment) => {
-            console.log('[SDK] GitHub comment added to issue/PR:', { issue, comment });
             return { id: 'comment-123' };
           }
         } : null;
@@ -609,7 +574,6 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // LinkedIn specific functions
         const linkedin = triggerIntegration === 'linkedin' ? {
           analyze_profile: async (profile) => {
-            console.log('[SDK] LinkedIn profile analyzed:', profile);
             return { skills: ['JavaScript', 'React', 'Node.js'], experience: '5 years' };
           }
         } : null;
@@ -617,11 +581,9 @@ async function executeWorkflow(script: string, triggerConfig?: TriggerConfig): P
         // Salesforce specific functions
         const salesforce = triggerIntegration === 'salesforce' ? {
           update_lead: async (lead, data) => {
-            console.log('[SDK] Salesforce lead updated:', { lead, data });
             return { success: true, id: 'lead-123' };
           },
           create_opportunity: async (data) => {
-            console.log('[SDK] Salesforce opportunity created:', data);
             return { success: true, id: 'opp-123' };
           }
         } : null;

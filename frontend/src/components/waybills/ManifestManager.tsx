@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import { api } from '../../api/client';
 
 interface Props {
   selectedIds: number[];
@@ -17,7 +17,7 @@ export const ManifestManager: React.FC<Props> = ({ selectedIds, companyId, onSuc
 
     setLoading(true);
     try {
-      await axios.post('/api/manifests/create', {
+      await api.post<any, any>('/manifests/create', {
         waybillIds: selectedIds,
         destination,
         companyId

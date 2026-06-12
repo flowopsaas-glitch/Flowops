@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api } from '../api/client';
 import { WhatsAppThread, WhatsAppMessage } from '../types/whatsapp';
 
 export const WhatsAppChat: React.FC = () => {
@@ -11,8 +11,8 @@ export const WhatsAppChat: React.FC = () => {
   // 1. Fetch all active conversations
   useEffect(() => {
     const fetchThreads = async () => {
-      const res = await axios.get('/api/whatsapp/threads');
-      setThreads(res.data);
+      const res = await api.get<any, any>(`/whatsapp/threads`);
+      setThreads(res);
     };
     fetchThreads();
   }, []);
@@ -21,8 +21,8 @@ export const WhatsAppChat: React.FC = () => {
   useEffect(() => {
     if (selectedPhone) {
       const fetchMessages = async () => {
-        const res = await axios.get(`/api/whatsapp/messages/${selectedPhone}`);
-        setMessages(res.data);
+        const res = await api.get<any, any>(`/whatsapp/messages/${selectedPhone}`);
+        setMessages(res);
       };
       fetchMessages();
       const interval = setInterval(fetchMessages, 3000); // Auto-refresh every 3s
@@ -32,7 +32,7 @@ export const WhatsAppChat: React.FC = () => {
 
   const handleSendMessage = async () => {
     if (!inputValue || !selectedPhone) return;
-    await axios.post('/api/whatsapp/send', {
+    await api.post<any, any>('/whatsapp/send', {
       to: selectedPhone,
       message: inputValue,
     });

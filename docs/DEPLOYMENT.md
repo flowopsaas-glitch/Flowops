@@ -132,12 +132,11 @@ Phase C is split across multiple PRs. **PR #12 (this one) is Phase C.1**: scaffo
 - [x] CI: `terraform-validate` job runs `fmt -check` + `init -backend=false` + `validate` on every push and PR.
 - [x] Skeletons for `network`, `backend-ecs`, `database`, `cache`, `secrets` so each can be filled in independently.
 
-#### C.2 — Network + backend ECS + ALB ✅ (PR #13)
+#### C.2 — Network + backend ECS + ALB (next PR)
 
-- [x] `modules/network/`: VPC with auto-computed or explicit /24 subnets, IGW, NAT Gateway (1 for staging, per-AZ for production), route tables, security groups for ALB / ECS / RDS / Redis, optional S3 + Secrets Manager VPC endpoints.
-- [x] `modules/backend-ecs/`: ECS cluster (Container Insights), Fargate task definition with secrets injection (Secrets Manager ARNs), IAM execution + task roles, ALB + HTTPS listener (or plain HTTP when no cert), CPU autoscaling (target tracking), CloudWatch Log Group, optional Route 53 alias.
-- [x] `envs/staging/` and `envs/production/` updated: network + backend_ecs module calls wired in with env-appropriate defaults (single NAT + 2 AZs for staging; per-AZ NAT + 3 AZs + required custom domain for production).
-- [x] Note on backend image: defaults to `ghcr.io/flowopsaas-glitch/flowops-backend:latest` (the GHCR registry set up in PR #11). Override with a pinned tag in `terraform.tfvars`.
+- [ ] `modules/network/`: VPC, public/private subnets across 2-3 AZs, IGW + NAT, security groups per service, optional VPC endpoints.
+- [ ] `modules/backend-ecs/`: ECS cluster, Fargate task definition, ECS service with autoscaling, ALB + HTTPS listener + target group, CloudWatch logs.
+- [ ] Blocked on: backend repo URL (so we know which image tag the task definition consumes).
 
 #### C.3 — Data layer (subsequent PR)
 

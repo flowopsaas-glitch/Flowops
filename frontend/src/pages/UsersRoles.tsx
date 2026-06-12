@@ -3,7 +3,7 @@ import {
   Users, Shield, Mail, Lock, Save, X, ChevronRight, 
   Eye, EyeOff, Settings, Activity, Search, Command, Filter
 } from 'lucide-react';
-import { rawApi as api } from '../api/client';
+import api from '../api/api';
 
 export default function UsersRoles() {
   const [users, setUsers] = useState([]);

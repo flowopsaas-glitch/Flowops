@@ -8,8 +8,7 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { useSocket } from '../hooks/useSocket';
-import { FLOWOPS_API_URL } from '../lib/env';
-import { getAccessToken } from '../lib/session';
+import { api } from '../api/client';
 
 // Component Imports
 import AiClawChat from "../components/AiClawChat";
@@ -105,11 +104,7 @@ export default function Dashboard() {
 
     const fetchMetrics = async () => {
       try {
-        const token = getAccessToken();
-        const res = await fetch(`${FLOWOPS_API_URL}/dashboard/metrics`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await res.json();
+        const data = await api.get<any, any>(`/dashboard/metrics`);
         setLiveMetrics({
           collections: String(data.collections || 0),
           activeDrivers: String(data.activeDrivers || 0),

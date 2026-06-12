@@ -21,14 +21,13 @@ export const useSocket = (companyId: number | string) => {
 
     socket.on("connect", () => {
       setIsConnected(true);
-      console.log("📡 Tactical OS Signal established via Port 3005");
-      
-      // Map straight to the room allocation handler registered inside your NestJS backend gateway
       socket.emit("joinCompanyDashboard", { companyId: Number(companyId) });
     });
 
     socket.on("connect_error", (err) => {
-      console.error("📡 Signal Interrupted:", err.message);
+      if (import.meta.env.DEV) {
+        console.warn("Socket connection failed:", err.message);
+      }
       setIsConnected(false);
     });
 

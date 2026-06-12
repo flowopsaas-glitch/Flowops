@@ -1,0 +1,232 @@
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createHmac, timingSafeEqual } from 'crypto';
+import axios from 'axios';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class WhatsAppService {
+  private readonly logger = new Logger(WhatsAppService.name);
+  private readonly apiBase: string;
+  private readonly phoneNumberId: string;
+  private readonly accessToken: string;
+  private readonly webhookVerifyToken: string;
+  private readonly appSecret: string;
+
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {
+    const version = config.get<string>('WHATSAPP_API_VERSION', 'v19.0');
+    this.phoneNumberId = config.get<string>('WHATSAPP_PHONE_NUMBER_ID', '');
+    this.accessToken = config.get<string>('WHATSAPP_ACCESS_TOKEN', '');
+    this.webhookVerifyToken = config.get<string>('WHATSAPP_WEBHOOK_VERIFY_TOKEN', '');
+    this.appSecret = config.get<string>('WHATSAPP_APP_SECRET', '');
+    this.apiBase = `https://graph.facebook.com/${version}`;
+  }
+
+  // ── Threads & messages ───────────────────────────────────────────────
+
+  async getThreads(companyId: string) {
+    return this.prisma.whatsAppThread.findMany({
+      where: { companyId },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  async getMessages(phone: string, companyId: string) {
+    const thread = await this.prisma.whatsAppThread.findFirst({
+      where: { phone, companyId },
+      include: {
+        messages: { orderBy: { sentAt: 'asc' }, take: 100 },
+      },
+    });
+    return thread?.messages ?? [];
+  }
+
+  // ── Send message ─────────────────────────────────────────────────────
+
+  async sendMessage(companyId: string, to: string, message: string) {
+    if (!this.phoneNumberId || !this.accessToken) {
+      this.logger.warn('WhatsApp not configured — message not sent');
+      return {
+        sent: false,
+        configured: false,
+        message:
+          'WhatsApp is not configured. Add WHATSAPP_PHONE_NUMBER_ID and ' +
+          'WHATSAPP_ACCESS_TOKEN to your .env to enable sending.',
+      };
+    }
+
+    // Normalize phone number (remove + prefix, keep digits)
+    const phone = to.replace(/^\+/, '').replace(/\s/g, '');
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'text',
+      text: { preview_url: false, body: message },
+    };
+
+    let wabaMessageId: string | undefined;
+
+    try {
+      const response = await axios.post(
+        `${this.apiBase}/${this.phoneNumberId}/messages`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      wabaMessageId = response.data?.messages?.[0]?.id;
+      this.logger.log(`WhatsApp sent to ${phone}, waba_id: ${wabaMessageId}`);
+    } catch (err: any) {
+      const detail = err?.response?.data?.error?.message ?? err.message;
+      this.logger.error(`WhatsApp send failed: ${detail}`);
+      throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    // Persist outbound message
+    const thread = await this.upsertThread(companyId, phone);
+    const msg = await this.prisma.whatsAppMessage.create({
+      data: {
+        content: message,
+        direction: 'OUTBOUND',
+        status: 'sent',
+        wabaMessageId,
+        threadId: thread.id,
+      },
+    });
+
+    // Update thread last message
+    await this.prisma.whatsAppThread.update({
+      where: { id: thread.id },
+      data: { lastMessage: message, lastMessageAt: new Date() },
+    });
+
+    return msg;
+  }
+
+  // ── Webhook: Meta verification challenge ─────────────────────────────
+
+  verifyWebhook(mode: string, token: string, challenge: string): string {
+    if (mode === 'subscribe' && token === this.webhookVerifyToken) {
+      this.logger.log('WhatsApp webhook verified');
+      return challenge;
+    }
+    throw new UnauthorizedException('Webhook verification failed — check WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+  }
+
+  // ── Webhook: incoming message events ─────────────────────────────────
+
+  async handleWebhookEvent(payload: any, rawBody: Buffer, signature: string) {
+    // Verify Meta's HMAC-SHA256 signature
+    if (this.appSecret) {
+      const expected = `sha256=${createHmac('sha256', this.appSecret)
+        .update(rawBody)
+        .digest('hex')}`;
+      try {
+        if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature ?? ''))) {
+          throw new UnauthorizedException('Invalid webhook signature');
+        }
+      } catch {
+        throw new UnauthorizedException('Invalid webhook signature');
+      }
+    }
+
+    const entries = payload?.entry ?? [];
+    for (const entry of entries) {
+      for (const change of entry.changes ?? []) {
+        const value = change.value;
+        if (!value) continue;
+
+        // Delivery/read status updates
+        for (const status of value.statuses ?? []) {
+          await this.handleStatusUpdate(status);
+        }
+
+        // Incoming messages
+        for (const msg of value.messages ?? []) {
+          await this.handleInboundMessage(msg, value.metadata?.phone_number_id);
+        }
+      }
+    }
+
+    return { received: true };
+  }
+
+  // ── Phone number registration (for multi-tenant SaaS) ────────────────
+
+  async registerNumber(companyId: string, phoneNumber: string) {
+    // In production: use Meta's phone number registration API to register
+    // a phone number on behalf of a tenant's WABA (Embedded Signup flow).
+    // For now, store the phone association and return instructions.
+    return {
+      companyId,
+      phoneNumber,
+      status: 'pending_registration',
+      message:
+        'Register this number in Meta Business Manager → WhatsApp → Phone Numbers. ' +
+        'Then update WHATSAPP_PHONE_NUMBER_ID in your environment.',
+    };
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+
+  private async upsertThread(companyId: string, phone: string, name?: string) {
+    return this.prisma.whatsAppThread.upsert({
+      where: { phone_companyId: { phone, companyId } },
+      update: name ? { name } : {},
+      create: { phone, companyId, name },
+    });
+  }
+
+  private async handleInboundMessage(msg: any, _phoneId?: string) {
+    // Find which company this phone number belongs to
+    // (simplified: find first company — multi-WABA would need phone→company mapping)
+    const phone = msg.from;
+    const body = msg.text?.body ?? msg.caption ?? '[media]';
+
+    // For now, associate with first active company (in production, use phone_number_id → company mapping)
+    const company = await this.prisma.company.findFirst({ where: { isActive: true } });
+    if (!company) return;
+
+    const thread = await this.upsertThread(company.id, phone, msg.profile?.name);
+
+    await this.prisma.whatsAppMessage.create({
+      data: {
+        content: body,
+        direction: 'INBOUND',
+        wabaMessageId: msg.id,
+        status: 'delivered',
+        mediaType: msg.type !== 'text' ? msg.type : undefined,
+        threadId: thread.id,
+      },
+    });
+
+    await this.prisma.whatsAppThread.update({
+      where: { id: thread.id },
+      data: {
+        lastMessage: body,
+        lastMessageAt: new Date(),
+        unreadCount: { increment: 1 },
+      },
+    });
+
+    this.logger.log(`Inbound WhatsApp from ${phone}: ${body.slice(0, 50)}`);
+  }
+
+  private async handleStatusUpdate(status: any) {
+    if (status.id && status.status) {
+      await this.prisma.whatsAppMessage.updateMany({
+        where: { wabaMessageId: status.id },
+        data: { status: status.status },
+      });
+    }
+  }
+}

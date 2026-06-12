@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../../../api/client';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { AlertCircle, CheckCircle, Clock, TrendingUp } from 'lucide-react';
 
@@ -8,10 +8,9 @@ const RevenueDashboard = () => {
   const [highRisk, setHighRisk] = useState([]);
 
   useEffect(() => {
-    // Fetch metrics from the mapped endpoint
-    axios.get('/api/invoices/metrics').then(res => setMetrics(res.data));
+    api.get<any, any>(`/invoices/metrics`).then(res => setMetrics(res));
     // Fetch overdue invoices (filtering UNPAID + past due date)
-    axios.get('/api/invoices?status=UNPAID&overdue=true').then(res => setHighRisk(res.data));
+    api.get<any, any>('/invoices', { params: { status: 'UNPAID', overdue: true } }).then(res => setHighRisk(res));
   }, []);
 
   return (

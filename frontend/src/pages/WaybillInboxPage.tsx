@@ -1,11 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-import axios from 'axios';
+import { api } from '../api/client';
 import { 
   ArrowRight, UploadCloud, Loader2, FileText, 
   Cpu, CheckCircle2, Zap, DollarSign 
 } from 'lucide-react';
 import InboxCorrection from '../components/Inbox/InboxCorrection';
-import { FLOWOPS_API_URL } from '../lib/env';
 
 interface InboxItem {
   id: string;
@@ -39,14 +38,14 @@ export default function WaybillInboxPage() {
 
   const fetchData = async () => {
     try {
-      const [inboxRes, recentRes, statsRes] = await Promise.all([
-        axios.get(`${FLOWOPS_API_URL}/waybills/inbox`),
-        axios.get(`${FLOWOPS_API_URL}/waybills/recent`), // Endpoint assumes you have this
-        axios.get(`${FLOWOPS_API_URL}/waybills/inbox/stats`)
+      const [inboxData, recentData, statsData] = await Promise.all([
+        api.get<any, any>(`/waybills/inbox`),
+        api.get<any, any>(`/waybills/recent`), // Endpoint assumes you have this
+        api.get<any, any>(`/waybills/inbox/stats`)
       ]);
-      setItems(inboxRes.data);
-      setRecentCommits(recentRes.data);
-      setStats(statsRes.data);
+      setItems(inboxData);
+      setRecentCommits(recentData);
+      setStats(statsData);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
@@ -63,7 +62,7 @@ export default function WaybillInboxPage() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      await axios.post(`${FLOWOPS_API_URL}/waybills/inbox/upload`, formData);
+      await api.post<any, any>('/waybills/inbox/upload', formData);
       fetchData();
     } catch (err) { console.error(err); } finally {
       setUploading(false);

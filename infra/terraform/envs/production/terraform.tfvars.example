@@ -1,42 +1,45 @@
 # Copy to terraform.tfvars and fill in real values.
 # `terraform.tfvars` is gitignored — never commit it.
+# Production variables with no default will fail `terraform validate`
+# if not supplied — this is intentional.
 
 aws_region = "us-east-1"
 
-# ── Frontend CDN ──────────────────────────────────────────────────────────
-# All three are REQUIRED for production.
+# ── Frontend CDN (all required in production) ─────────────────────────────
 
 frontend_domain_name         = "app.flowops.example"
 frontend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
-frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-..."
 
 frontend_price_class = "PriceClass_All"
 
-# ── Network ────────────────────────────────────────────────────────────────
+# ── Backend ECS (all required in production) ──────────────────────────────
+# Pin to a specific sha tag — never use 'latest' in production.
 
-vpc_cidr  = "10.0.0.0/16"
-az_count  = 3
-
-# ── Backend container ─────────────────────────────────────────────────────
-# Pin to a versioned tag — never use `latest` in production.
-
-backend_image          = "ghcr.io/flowopsaas-glitch/flowops-backend:v1.0.0"
-backend_container_port = 3000
-backend_cpu            = 1024
-backend_memory         = 2048
-backend_desired_count  = 2
-
-# backend_image_credentials_secret_arn = "arn:aws:secretsmanager:..."
-
-# ── Backend secrets ────────────────────────────────────────────────────────
-# backend_secret_arns = {
-#   DATABASE_URL = "arn:aws:secretsmanager:us-east-1:123456789012:secret:production/database-url-..."
-#   REDIS_URL    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:production/redis-url-..."
-#   JWT_SECRET   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:production/jwt-secret-..."
-# }
-
-# ── Backend custom domain — REQUIRED ─────────────────────────────────────
+backend_image = "ghcr.io/flowopsaas-glitch/flowops-backend:sha-abc1234"
 
 backend_domain_name         = "api.flowops.example"
 backend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
-backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd5678-..."
+
+# ghcr_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/production/ghcr-AbCdEf"
+
+# ── Database ──────────────────────────────────────────────────────────────
+
+db_instance_class = "db.t4g.small"    # upgrade to db.r8g.large under load
+
+# ── Cache ─────────────────────────────────────────────────────────────────
+
+redis_node_type = "cache.t4g.small"   # upgrade to cache.r7g.large under load
+
+# ── Post-apply: populate the app secrets secret ───────────────────────────
+# After `terraform apply`, run:
+#   aws secretsmanager put-secret-value \
+#     --secret-id flowops/production/app \
+#     --secret-string '{
+#       "JWT_SECRET":             "<generate with: openssl rand -hex 64>",
+#       "SENDGRID_API_KEY":       "SG.xxxxx",
+#       "CLOUDFLARE_API_TOKEN":   "xxxxx",
+#       "CLOUDFLARE_ACCOUNT_ID":  "xxxxx",
+#       "CLOUDFLARE_R2_BUCKET_NAME": "flowops-waybills"
+#     }'

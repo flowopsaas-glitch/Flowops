@@ -6,7 +6,9 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.60"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
-
-# Skeleton module — no resources yet. Filled in by a subsequent PR.

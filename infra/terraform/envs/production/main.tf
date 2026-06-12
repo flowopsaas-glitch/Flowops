@@ -23,7 +23,16 @@ provider "aws" {
   }
 }
 
-# ── Frontend CDN ─────────────────────────────────────────────────────────
+# ── Secrets ────────────────────────────────────────────────────────────────
+
+module "secrets" {
+  source = "../../modules/secrets"
+
+  environment          = "production"
+  recovery_window_days = 30
+}
+
+# ── Frontend CDN ──────────────────────────────────────────────────────────
 
 module "frontend_cdn" {
   source = "../../modules/frontend-cdn"
@@ -44,84 +53,93 @@ module "frontend_cdn" {
 module "network" {
   source = "../../modules/network"
 
-  environment        = "production"
-  vpc_cidr           = var.vpc_cidr
-  az_count           = var.az_count
-  single_nat_gateway = false # per-AZ NAT for production resilience
-  container_port     = var.backend_container_port
+  environment                    = "production"
+  single_nat_gateway             = false
+  az_count                       = 3
+  enable_secretsmanager_endpoint = true
+}
 
-  # Recommended for production: VPC endpoints reduce NAT cost and improve
-  # startup reliability.
-  enable_s3_vpc_endpoint             = true
-  enable_secretsmanager_vpc_endpoint = true
+# ── Database ──────────────────────────────────────────────────────────────
+
+module "database" {
+  source = "../../modules/database"
+
+  environment           = "production"
+  vpc_id                = module.network.vpc_id
+  private_subnet_ids    = module.network.private_subnet_ids
+  rds_security_group_id = module.network.rds_security_group_id
+  instance_class        = var.db_instance_class
+  multi_az              = true
+  deletion_protection   = true
+  skip_final_snapshot   = false
+  backup_retention_days = 14
+
+  credentials_secret_recovery_window_days = 30
+}
+
+# ── Cache ─────────────────────────────────────────────────────────────────
+
+module "cache" {
+  source = "../../modules/cache"
+
+  environment                = "production"
+  private_subnet_ids         = module.network.private_subnet_ids
+  redis_security_group_id    = module.network.redis_security_group_id
+  node_type                  = var.redis_node_type
+  num_cache_clusters         = 2
+  multi_az_enabled           = true
+  automatic_failover_enabled = true
+  transit_encryption_enabled = true
+  snapshot_retention_limit   = 7
 }
 
 # ── Backend ECS ───────────────────────────────────────────────────────────
+
+locals {
+  backend_secret_env = {
+    DATABASE_URL         = "${module.database.credentials_secret_arn}:DATABASE_URL::"
+    JWT_SECRET           = "${module.secrets.secret_arn}:JWT_SECRET::"
+    SENDGRID_API_KEY     = "${module.secrets.secret_arn}:SENDGRID_API_KEY::"
+    CLOUDFLARE_API_TOKEN = "${module.secrets.secret_arn}:CLOUDFLARE_API_TOKEN::"
+  }
+}
 
 module "backend_ecs" {
   source = "../../modules/backend-ecs"
 
   environment = "production"
 
-  # Networking
   vpc_id                = module.network.vpc_id
   public_subnet_ids     = module.network.public_subnet_ids
   private_subnet_ids    = module.network.private_subnet_ids
   alb_security_group_id = module.network.alb_security_group_id
   ecs_security_group_id = module.network.ecs_security_group_id
 
-  # Container image — pin to a versioned tag in production, never `latest`
-  backend_image                = var.backend_image
-  image_credentials_secret_arn = var.backend_image_credentials_secret_arn
-  container_port               = var.backend_container_port
+  backend_image = var.backend_image
 
-  # Production sizing — override in tfvars if needed
-  cpu           = var.backend_cpu
-  memory        = var.backend_memory
-  desired_count = var.backend_desired_count
-  min_count     = 2 # minimum 2 for production HA
-  max_count     = 10
+  cpu    = 512
+  memory = 1024
 
-  # Autoscaling
-  enable_autoscaling     = true
-  autoscaling_cpu_target = 65 # slightly more aggressive in production
+  desired_count = 2
+  min_count     = 2
+  max_count     = 8
 
-  # Health check — longer grace period allows DB migrations to complete
-  health_check_path                 = "/health"
-  health_check_grace_period_seconds = 120
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
 
-  # Secrets
-  secret_arns = var.backend_secret_arns
-
-  # Custom domain — required for production
   domain_name         = var.backend_domain_name
   hosted_zone_id      = var.backend_hosted_zone_id
   acm_certificate_arn = var.backend_acm_certificate_arn
+
+  registry_credentials_secret_arn = var.ghcr_credentials_secret_arn
+
+  plain_environment_variables = {
+    NODE_ENV  = "production"
+    PORT      = "3000"
+    REDIS_URL = module.cache.redis_url
+  }
+
+  secret_environment_variables = local.backend_secret_env
+
+  log_retention_days = 90
 }
-
-# ── Database (Phase C.3 — skeleton) ──────────────────────────────────────
-# module "database" {
-#   source = "../../modules/database"
-#   environment          = "production"
-#   vpc_id               = module.network.vpc_id
-#   private_subnet_ids   = module.network.private_subnet_ids
-#   db_security_group_id = module.network.rds_security_group_id
-#   multi_az             = true
-#   instance_class       = "db.m5.large"
-# }
-
-# ── Cache (Phase C.3 — skeleton) ─────────────────────────────────────────
-# module "cache" {
-#   source = "../../modules/cache"
-#   environment             = "production"
-#   vpc_id                  = module.network.vpc_id
-#   private_subnet_ids      = module.network.private_subnet_ids
-#   cache_security_group_id = module.network.redis_security_group_id
-#   num_cache_nodes         = 2
-# }
-
-# ── Secrets (Phase C.3 — skeleton) ───────────────────────────────────────
-# module "secrets" {
-#   source      = "../../modules/secrets"
-#   environment = "production"
-# }

@@ -1,13 +1,13 @@
 import { useEffect, lazy, Suspense } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { io } from "socket.io-client";
 import { FLOWOPS_WS_ORIGIN } from "./lib/env";
-import { getAccessToken } from "./lib/session";
 
 // Eager imports (initial shell)
 import AppLayout from "./components/layout/AppLayout";
 import OwnerLayout from "./components/layout/OwnerLayout";
 import OwnerRoute from "./components/owner/OwnerRoute";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import PageLoader from "./components/PageLoader";
 
@@ -50,19 +50,10 @@ const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 const StatusPage = lazy(() => import('./pages/Status'));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
-
-// Page components now lazy-loaded from their own files
-
-
-
-
-function ProtectedRoute() {
-  const token = getAccessToken();
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
-  return <Outlet />;
-}
+const SignupPage = lazy(() => import("./pages/Signup"));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPassword'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
 
 export default function App() {
   useEffect(() => {
@@ -73,11 +64,13 @@ export default function App() {
     });
 
     socket.on("connect", () => {
-      console.log("FlowOps UI Connected to Live Guardian Bridge.");
+      // Connected — no console output needed in production.
     });
 
     socket.on("connect_error", (err) => {
-      console.warn(`WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`, err.message);
+      if (import.meta.env.DEV) {
+        console.warn(`WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`, err.message);
+      }
     });
 
     socket.on("system-ui-heal", (payload: { action: string; reason: string }) => {
@@ -97,6 +90,10 @@ export default function App() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/legal/terms" element={<TermsPage />} />
           <Route path="/legal/privacy" element={<PrivacyPage />} />
           <Route path="/status" element={<StatusPage />} />

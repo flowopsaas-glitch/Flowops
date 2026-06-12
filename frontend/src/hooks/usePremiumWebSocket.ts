@@ -88,11 +88,11 @@ export function usePremiumWebSocket({
 
       // --- Error Handling & Logging ---
       socketRef.current.on('disconnect', (reason) => {
-        console.warn('🔌 Socket.IO disconnected:', reason);
+        if (import.meta.env.DEV) console.warn('Socket.IO disconnected:', reason);
       });
 
       socketRef.current.on('connect_error', (error) => {
-        console.warn('⚠️ Socket.IO connection error:', error?.message);
+        if (import.meta.env.DEV) console.warn('Socket.IO connection error:', error?.message);
       });
 
       socketRef.current.on('upgrade', () => {
@@ -157,7 +157,7 @@ export function usePremiumWebSocket({
     if (socketRef.current?.connected) {
       socketRef.current.emit(event, data);
     } else {
-      console.warn(`Cannot emit "${event}": Socket not connected.`);
+      if (import.meta.env.DEV) console.warn(`Cannot emit "${event}": Socket not connected.`);
     }
   }, []);
 

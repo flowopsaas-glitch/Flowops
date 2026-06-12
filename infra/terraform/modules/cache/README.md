@@ -1,23 +1,41 @@
-# `modules/cache` — ElastiCache Redis (skeleton)
+# `modules/cache` — ElastiCache Redis
 
-Status: **placeholder**, filled in by a subsequent PR.
+Status: **complete** (Phase C.3).
 
-Will provision:
+## What this module provisions
 
-- ElastiCache Redis (single node for staging, replication group for production).
-- Subnet group across the network module's private subnets.
-- At-rest + in-transit encryption.
-- Auth token via Secrets Manager.
-- CloudWatch alarms on memory and CPU.
+| Resource | Details |
+|---|---|
+| `aws_elasticache_subnet_group` | Spans all provided private subnets |
+| `aws_elasticache_replication_group` | Redis 7.1, single shard (no cluster mode), configurable node count |
 
-Inputs (planned):
+## Connection URL
 
-- `vpc_id`, `private_subnet_ids`
-- `cache_node_type` (cache.t4g.micro for staging)
-- `engine_version` (default `7.1`)
-- `num_cache_nodes`
-- `cache_security_group_id`
+The `redis_url` output is ready to pass directly as the `REDIS_URL` environment variable:
 
-Outputs (planned):
+```hcl
+plain_environment_variables = {
+  REDIS_URL = module.cache.redis_url   # redis://host:6379
+}
+```
 
-- `primary_endpoint`, `port`, `auth_token_secret_arn`.
+When `transit_encryption_enabled = true`, the URL uses the `rediss://` scheme automatically.
+The backend's Redis client (ioredis / Bull) detects the scheme and enables TLS accordingly.
+
+## Staging vs production settings
+
+| Variable | Staging | Production |
+|---|---|---|
+| `node_type` | `cache.t4g.micro` | `cache.t4g.small` or `cache.r7g.large` |
+| `num_cache_clusters` | `1` | `2` (primary + replica) |
+| `multi_az_enabled` | `false` | `true` |
+| `automatic_failover_enabled` | `false` | `true` |
+| `transit_encryption_enabled` | `false` | `true` |
+| `snapshot_retention_limit` | `1` | `7` |
+| `apply_immediately` | `true` | `false` (deferred to maintenance window) |
+
+## Scaling
+
+ElastiCache replication groups can be scaled up by modifying `node_type` in-place
+(no replace, brief ~1-2 min failover during modification). Adding replicas is a
+non-destructive change.

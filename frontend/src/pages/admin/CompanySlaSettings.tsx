@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../../api/client';
 import { useToast } from '../../components/ToastProvider';
 
 export default function CompanySlaSettings({
@@ -14,16 +14,16 @@ export default function CompanySlaSettings({
   const { showToast } = useToast();
 
   useEffect(() => {
-    axios.get(`/api/companies/${companyId}`).then(res => {
-      setWarning(res.data.slaWarningMinutes);
-      setBreach(res.data.slaBreachMinutes);
-      setEscalate(res.data.slaEscalateMinutes);
+    api.get<any, any>(`/companies/${companyId}`).then(res => {
+      setWarning(res.slaWarningMinutes);
+      setBreach(res.slaBreachMinutes);
+      setEscalate(res.slaEscalateMinutes);
     });
   }, [companyId]);
 
   const save = async () => {
     setSaving(true);
-    await axios.patch(`/companies/${companyId}/sla`, {
+    await api.patch<any, any>(`/companies/${companyId}/sla`, {
       slaWarningMinutes: warning,
       slaBreachMinutes: breach,
       slaEscalateMinutes: escalate,

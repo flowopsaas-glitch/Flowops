@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../../api/client';
 
 type Entry = {
   driverId: string;
@@ -19,9 +19,8 @@ export default function SlaLeaderboard({
   const [data, setData] = useState<Entry[]>([]);
 
   useEffect(() => {
-    axios
-      .get(`/api/leaderboard/sla?companyId=${companyId}`)
-      .then(res => setData(res.data));
+    api.get<any, any>(`/leaderboard/sla`, { params: { companyId } })
+      .then(res => setData(res));
   }, [companyId]);
 
   return (

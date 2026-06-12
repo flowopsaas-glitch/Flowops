@@ -44,7 +44,6 @@ export default function RiskQueue() {
     try {
       // Assuming '1' is the ID for your seeded test driver
       const targetDriverId = 1; 
-      console.log(`🤖 Executing Auto-Assign: Event ${eventId} -> Driver ${targetDriverId}`);
       
       // 1. Hit the new backend route we just built!
       await api.post(`/drivers-dispatch/${targetDriverId}/assign-bulk`, { eventId });

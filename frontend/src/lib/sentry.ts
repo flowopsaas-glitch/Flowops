@@ -5,7 +5,9 @@ const ENV = import.meta.env.MODE || 'development';
 
 export function initSentry() {
   if (!SENTRY_DSN) {
-    console.info('[Sentry] No VITE_SENTRY_DSN set — error tracking disabled');
+    if (import.meta.env.DEV) {
+      console.info('[Sentry] No VITE_SENTRY_DSN set — error tracking disabled');
+    }
     return;
   }
 
