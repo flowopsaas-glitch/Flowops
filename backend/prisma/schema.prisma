@@ -1,0 +1,855 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  AGENT
+  VIEWER
+}
+
+enum WaybillStatus {
+  PENDING
+  COLLECTED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED_DELIVERY
+  RETURNED
+  CANCELLED
+}
+
+enum CollectionStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COLLECTED
+  FAILED
+  CANCELLED
+}
+
+enum ShipmentStatus {
+  PENDING
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum DriverStatus {
+  AVAILABLE
+  ON_ROUTE
+  OFFLINE
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  ABANDONED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum DigestFrequency {
+  INSTANT
+  DAILY
+  WEEKLY
+}
+
+// ─── Platform Owner (super-admin, separate from tenant users) ─────────────
+
+model OwnerUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens OwnerRefreshToken[]
+
+  @@map("owner_users")
+}
+
+model OwnerRefreshToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  ownerId   String
+  owner     OwnerUser @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@map("owner_refresh_tokens")
+}
+
+// ─── Tenant Company ────────────────────────────────────────────────────────
+
+model Company {
+  id          String  @id @default(cuid())
+  name        String
+  tradingName String?
+  email       String? @unique
+  phone       String?
+  address     String?
+  city        String?
+  country     String  @default("ZA")
+  vatNumber   String?
+
+  // Branding
+  logoUrl            String?
+  brandName          String?
+  primaryColor       String?
+  secondaryColor     String?
+  invoiceHeaderColor String?
+
+  // Customer-facing booking portal
+  portalBrandName    String?
+  portalSubdomain    String? @unique
+  portalPrimaryColor String?
+  portalLogoUrl      String?
+
+  // SLA thresholds (minutes)
+  slaWarningMinutes  Int @default(30)
+  slaBreachMinutes   Int @default(60)
+  slaEscalateMinutes Int @default(120)
+
+  // Billing plan
+  plan     String  @default("starter")
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users              User[]
+  waybills           Waybill[]
+  waybillInboxItems  WaybillInboxItem[]
+  collections        Collection[]
+  shipments          Shipment[]
+  drivers            Driver[]
+  branches           Branch[]
+  manifests          Manifest[]
+  invoices           Invoice[]
+  invoiceDrafts      InvoiceDraft[]
+  rateCards          RateCard[]
+  quotes             Quote[]
+  notifications      Notification[]
+  whatsappThreads    WhatsAppThread[]
+  payments           Payment[]
+  leads              Lead[]
+  bookingPortalLinks BookingPortalLink[]
+  aiEvents           AiEvent[]
+  emailHubItems      EmailHubItem[]
+  workflows          Workflow[]
+  approvalRequest    ApprovalRequest?
+
+  @@map("companies")
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String
+  passwordHash String
+  name         String
+  phone        String?
+  role         UserRole @default(AGENT)
+  isActive     Boolean  @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Email verification
+  emailVerified     Boolean   @default(false)
+  verifyToken       String?
+  verifyTokenExpiry DateTime?
+
+  // Password reset
+  resetToken       String?
+  resetTokenExpiry DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens          RefreshToken[]
+  notificationPreference NotificationPreference?
+  assignedCollections    Collection[]            @relation("AssignedAgent")
+  assignedShipments      Shipment[]
+
+  @@unique([email, companyId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model ApprovalRequest {
+  id       String         @id @default(cuid())
+  status   ApprovalStatus @default(PENDING)
+  fullName String
+  email    String
+  phone    String
+  company  String
+  notes    String?
+
+  // Linked once approved
+  companyId     String?  @unique
+  tenantCompany Company? @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("approval_requests")
+}
+
+model NotificationPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Master channel toggles
+  emailEnabled Boolean @default(true)
+  smsEnabled   Boolean @default(false)
+  pushEnabled  Boolean @default(true)
+
+  // Per-category × channel
+  operationsEmail Boolean @default(true)
+  operationsSms   Boolean @default(false)
+  operationsPush  Boolean @default(true)
+  billingEmail    Boolean @default(true)
+  billingPush     Boolean @default(false)
+  securityEmail   Boolean @default(true)
+  securityPush    Boolean @default(true)
+  systemEmail     Boolean @default(false)
+  systemPush      Boolean @default(false)
+
+  // Digest
+  digestFrequency DigestFrequency @default(INSTANT)
+
+  // Quiet hours
+  quietHoursEnabled Boolean @default(false)
+  quietHoursStart   String  @default("22:00")
+  quietHoursEnd     String  @default("07:00")
+  timezone          String  @default("Africa/Johannesburg")
+
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+// ─── Drivers ──────────────────────────────────────────────────────────────
+
+model Driver {
+  id          String       @id @default(cuid())
+  name        String
+  phone       String
+  email       String?
+  vehicleType String       @default("motorbike")
+  vehicleReg  String?
+  status      DriverStatus @default(OFFLINE)
+  isActive    Boolean      @default(true)
+
+  // Last known GPS position
+  lastLat  Float?
+  lastLng  Float?
+  lastSeen DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  collections Collection[]
+  shipments   Shipment[]
+  manifests   Manifest[]
+
+  @@map("drivers")
+}
+
+// ─── Branches ─────────────────────────────────────────────────────────────
+
+model Branch {
+  id      String  @id @default(cuid())
+  name    String
+  address String?
+  city    String?
+  lat     Float?
+  lng     Float?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  drivers   Driver[]
+  manifests Manifest[]
+  waybills  Waybill[]  @relation("OriginBranch")
+
+  @@map("branches")
+}
+
+// ─── Waybills ─────────────────────────────────────────────────────────────
+
+model Waybill {
+  id             String        @id @default(cuid())
+  trackingNumber String
+  status         WaybillStatus @default(PENDING)
+
+  // Parties
+  senderName       String
+  senderPhone      String
+  senderAddress    String
+  recipientName    String
+  recipientPhone   String
+  recipientAddress String
+
+  // Parcel
+  weight      Float?
+  dimensions  String?
+  description String?
+  totalAmount Float?
+  codAmount   Float?
+
+  // Risk assessment
+  riskLevel RiskLevel @default(LOW)
+  riskScore Float?
+  riskNotes String?
+
+  // Proof of delivery
+  podSignatureUrl String?
+  podImageUrl     String?
+  podRecipient    String?
+  podDeliveredAt  DateTime?
+
+  // Uploaded scan file (Cloudflare R2 key)
+  fileUrl String?
+  fileKey String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  originBranchId String?
+  originBranch   Branch? @relation("OriginBranch", fields: [originBranchId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments        Shipment[]
+  manifestWaybills ManifestWaybill[]
+  invoiceItems     InvoiceItem[]
+  inboxItem        WaybillInboxItem?
+
+  @@unique([trackingNumber, companyId])
+  @@map("waybills")
+}
+
+model WaybillInboxItem {
+  id     String @id @default(cuid())
+  // PENDING | EXTRACTING | READY | COMMITTED | FAILED
+  status String @default("PENDING")
+
+  fileUrl  String?
+  fileKey  String?
+  mimeType String?
+
+  // AI-extracted fields + confidence scores
+  extractedData Json?
+  aiConfidence  Float?
+  aiError       String?
+
+  waybillId String?  @unique
+  waybill   Waybill? @relation(fields: [waybillId], references: [id])
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("waybill_inbox_items")
+}
+
+// ─── Collections ──────────────────────────────────────────────────────────
+
+model Collection {
+  id     String           @id @default(cuid())
+  status CollectionStatus @default(PENDING)
+
+  clientName    String
+  clientPhone   String
+  clientEmail   String?
+  pickupAddress String
+  notes         String?
+
+  scheduledAt DateTime?
+  pickedUpAt  DateTime?
+
+  driverId String?
+  driver   Driver? @relation(fields: [driverId], references: [id])
+
+  agentId String?
+  agent   User?   @relation("AssignedAgent", fields: [agentId], references: [id])
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("collections")
+}
+
+// ─── Shipments ────────────────────────────────────────────────────────────
+
+model Shipment {
+  id     String         @id @default(cuid())
+  status ShipmentStatus @default(PENDING)
+
+  waybillId String
+  waybill   Waybill @relation(fields: [waybillId], references: [id])
+
+  driverId String?
+  driver   Driver? @relation(fields: [driverId], references: [id])
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  currentLat Float?
+  currentLng Float?
+
+  estimatedDelivery DateTime?
+  deliveredAt       DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("shipments")
+}
+
+// ─── Manifests ────────────────────────────────────────────────────────────
+
+model Manifest {
+  id   String @id @default(cuid())
+  code String
+
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  driverId String?
+  driver   Driver? @relation(fields: [driverId], references: [id])
+
+  dispatched   Boolean   @default(false)
+  dispatchedAt DateTime?
+  pdfKey       String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  waybills ManifestWaybill[]
+
+  @@map("manifests")
+}
+
+model ManifestWaybill {
+  manifestId String
+  manifest   Manifest @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+
+  waybillId String
+  waybill   Waybill  @relation(fields: [waybillId], references: [id], onDelete: Cascade)
+
+  sortOrder Int @default(0)
+
+  @@id([manifestId, waybillId])
+  @@map("manifest_waybills")
+}
+
+// ─── Invoices ─────────────────────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String
+  status        InvoiceStatus @default(DRAFT)
+
+  clientName  String
+  clientEmail String?
+
+  subtotal Float @default(0)
+  tax      Float @default(0)
+  total    Float @default(0)
+
+  dueDate DateTime?
+  paidAt  DateTime?
+  sentAt  DateTime?
+
+  notes String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items    InvoiceItem[]
+  payments Payment[]
+
+  @@unique([invoiceNumber, companyId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Float
+  total       Float
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  waybillId String?
+  waybill   Waybill? @relation(fields: [waybillId], references: [id])
+
+  @@map("invoice_items")
+}
+
+model InvoiceDraft {
+  id    String  @id @default(cuid())
+  title String?
+
+  // Flexible JSON for AI-assisted drafting
+  draftData  Json?
+  aiAnalysis Json?
+
+  finalized   Boolean   @default(false)
+  finalizedAt DateTime?
+  invoiceId   String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("invoice_drafts")
+}
+
+// ─── Rate Cards & Quotes ──────────────────────────────────────────────────
+
+model RateCard {
+  id         String  @id @default(cuid())
+  name       String
+  fromZone   String?
+  toZone     String?
+  minWeight  Float?
+  maxWeight  Float?
+  basePrice  Float
+  pricePerKg Float   @default(0)
+  isActive   Boolean @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rate_cards")
+}
+
+model Quote {
+  id          String  @id @default(cuid())
+  fromAddress String
+  toAddress   String
+  weight      Float
+  price       Float
+  breakdown   Json?
+  accepted    Boolean   @default(false)
+  expiresAt   DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("quotes")
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────
+
+model Notification {
+  id    String  @id @default(cuid())
+  title String
+  body  String
+  type  String  @default("info")
+  read  Boolean @default(false)
+  readAt DateTime?
+  link  String?
+
+  // null = broadcast to whole company
+  userId String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// ─── WhatsApp ─────────────────────────────────────────────────────────────
+
+model WhatsAppThread {
+  id            String    @id @default(cuid())
+  phone         String
+  name          String?
+  lastMessage   String?
+  lastMessageAt DateTime?
+  unreadCount   Int       @default(0)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages WhatsAppMessage[]
+
+  @@unique([phone, companyId])
+  @@map("whatsapp_threads")
+}
+
+model WhatsAppMessage {
+  id        String           @id @default(cuid())
+  content   String
+  direction MessageDirection
+
+  // Meta WABA tracking
+  wabaMessageId String?
+  // sent | delivered | read | failed
+  status        String  @default("sent")
+
+  mediaUrl  String?
+  mediaType String?
+
+  threadId String
+  thread   WhatsAppThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  sentAt DateTime @default(now())
+
+  @@map("whatsapp_messages")
+}
+
+// ─── Payments (Paystack) ──────────────────────────────────────────────────
+
+model Payment {
+  id        String        @id @default(cuid())
+  reference String        @unique
+  status    PaymentStatus @default(PENDING)
+  amount    Float
+  currency  String        @default("ZAR")
+  description String?
+
+  paystackReference String?
+  paystackChannel   String?
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  customerEmail String?
+  customerName  String?
+
+  paidAt DateTime?
+
+  // Full webhook payload kept for audit trail
+  webhookPayload Json?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payments")
+}
+
+// ─── Booking Portal ───────────────────────────────────────────────────────
+
+model BookingPortalLink {
+  id        String    @id @default(cuid())
+  token     String    @unique @default(cuid())
+  label     String?
+  isActive  Boolean   @default(true)
+  expiresAt DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  requests BookingRequest[]
+
+  @@map("booking_portal_links")
+}
+
+model BookingRequest {
+  id     String @id @default(cuid())
+  status String @default("pending")
+
+  senderName       String
+  senderPhone      String
+  senderAddress    String
+  recipientName    String
+  recipientPhone   String
+  recipientAddress String
+  notes            String?
+
+  linkId String
+  link   BookingPortalLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("booking_requests")
+}
+
+// ─── AI & Email Hub ───────────────────────────────────────────────────────
+
+model AiEvent {
+  id       String @id @default(cuid())
+  type     String
+  title    String
+  body     String
+  severity String @default("info")
+
+  resolved   Boolean   @default(false)
+  dismissed  Boolean   @default(false)
+  resolvedAt DateTime?
+
+  sourceType String?
+  sourceId   String?
+  metadata   Json?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("ai_events")
+}
+
+model EmailHubItem {
+  id       String  @id @default(cuid())
+  subject  String
+  from     String
+  to       String
+  body     String? @db.Text
+  read     Boolean @default(false)
+  resolved Boolean @default(false)
+  category String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("email_hub_items")
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────
+
+model Lead {
+  id    String  @id @default(cuid())
+  email String
+  notes String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("leads")
+}
+
+// ─── Workflows ────────────────────────────────────────────────────────────
+
+model Workflow {
+  id       String  @id @default(cuid())
+  name     String
+  script   String  @db.Text
+  isActive Boolean @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  databases WorkflowDatabase[]
+
+  @@map("workflows")
+}
+
+model WorkflowDatabase {
+  id         String   @id @default(cuid())
+  name       String
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  columns    Json
+  rows       Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("workflow_databases")
+}

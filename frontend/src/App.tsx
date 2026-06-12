@@ -51,6 +51,9 @@ const StatusPage = lazy(() => import('./pages/Status'));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
 const SignupPage = lazy(() => import("./pages/Signup"));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPassword'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
 
 export default function App() {
   useEffect(() => {
@@ -88,6 +91,9 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/legal/terms" element={<TermsPage />} />
           <Route path="/legal/privacy" element={<PrivacyPage />} />
           <Route path="/status" element={<StatusPage />} />

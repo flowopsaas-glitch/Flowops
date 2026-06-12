@@ -1,35 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
 import { Shield, Lock, Building2 } from "lucide-react";
 import {
   hasAcceptedCurrentTerms,
   persistTermsAcceptanceLocally,
   persistTermsAcceptanceRemotePayload,
 } from "../legal/termsAcceptance";
-import { FLOWOPS_API_URL } from "../lib/env";
 import {
-  setAccessToken,
+  login,
+  ownerLogin,
+  type LoginResponse,
+} from "../api/authApi";
+import {
   setLoginMode as setSessionLoginMode,
   setStoredUser,
 } from "../lib/session";
 
-const API_BASE = FLOWOPS_API_URL;
+// ── Dev-only autofill ─────────────────────────────────────────────────────
+// Reads from VITE_DEV_TENANT_EMAIL / VITE_DEV_OWNER_EMAIL (set in .env.local).
+// In production builds import.meta.env.DEV is false so these always return "".
 
 type LoginMode = "tenant" | "owner";
 
-/**
- * Dev-only autofill credentials, sourced from Vite env vars.
- *
- * - In production builds (`import.meta.env.DEV === false`) this always returns
- *   blanks regardless of what env vars are set, so no creds can leak into a
- *   production bundle even if someone misconfigures `.env.production`.
- * - In dev, leaving the env vars unset means the form starts blank — the
- *   developer must opt in by setting them in `.env.local`.
- *
- * See `.env.example` for the full list of supported keys.
- */
-function getDevDefaults(mode: LoginMode): { email: string; password: string } {
+function getDevDefaults(mode: LoginMode) {
   if (!import.meta.env.DEV) return { email: "", password: "" };
   if (mode === "owner") {
     return {
@@ -51,6 +44,8 @@ const SHOW_DEV_HINT =
       import.meta.env.VITE_DEV_OWNER_EMAIL,
   );
 
+// ── Component ─────────────────────────────────────────────────────────────
+
 export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>("tenant");
   const [email, setEmail] = useState(INITIAL_TENANT_DEFAULTS.email);
@@ -61,75 +56,77 @@ export default function LoginPage() {
     hasAcceptedCurrentTerms(),
   );
 
-  useEffect(() => {
-    setTermsAccepted(hasAcceptedCurrentTerms());
-  }, [mode]);
+  const submitLabel = useMemo(
+    () => (mode === "owner" ? "Sign in as Owner" : "Sign in as Tenant"),
+    [mode],
+  );
 
-  const endpoint = useMemo(() => {
-    return mode === "owner" ? "/auth/owner-login" : "/auth/login";
-  }, [mode]);
-
-  const submitLabel = useMemo(() => {
-    return mode === "owner" ? "Sign in as Owner" : "Sign in as Tenant";
-  }, [mode]);
-
-  const helperText = useMemo(() => {
-    return mode === "owner"
-      ? "Hidden FlowOps platform owner access."
-      : "Tenant company workspace access.";
-  }, [mode]);
+  const helperText = useMemo(
+    () =>
+      mode === "owner"
+        ? "Hidden FlowOps platform owner access."
+        : "Tenant company workspace access.",
+    [mode],
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError("");
-
     if (!termsAccepted) {
       setError(
         "Please confirm that you agree to the Terms of Service and Privacy Notice.",
       );
-      setBusy(false);
       return;
     }
 
+    setBusy(true);
+    setError("");
+
     try {
       const termsPayload = persistTermsAcceptanceRemotePayload();
-      const response = await axios.post(`${API_BASE}${endpoint}`, {
-        email,
-        password,
-        ...termsPayload,
-      });
 
-      const data = response.data || {};
+      // authApi.login / ownerLogin:
+      //  1. Calls the backend via the canonical `api` client (auth interceptors,
+      //     401 refresh, ApiError on failure).
+      //  2. Reads res.data (inner payload from TransformInterceptor envelope).
+      //  3. Calls setToken(access_token) from lib/session.ts internally.
+      const result: LoginResponse =
+        mode === "owner"
+          ? await ownerLogin(email, password)
+          : await login(email, password);
 
-      const token =
-        data.accessToken || data.access_token || data.token || "";
-
-      // Persist via the canonical lib/session.ts helpers. Replaces the old
-      // 11-key localStorage shotgun (one key per legacy reader) — the session
-      // module clears the legacy keys for us so logout reaches them all.
-      if (token) setAccessToken(token);
-      if (data.user) setStoredUser(data.user);
+      // Persist user + login mode so ProtectedRoute and guards can read them.
+      if (result.user) setStoredUser(result.user);
       setSessionLoginMode(mode);
 
       persistTermsAcceptanceLocally();
 
+      // Full-page navigation so AuthContext re-initialises with the new token
+      // and calls /auth/me to hydrate the user object.
       window.location.href =
         mode === "owner" ? "/owner/dashboard" : "/dashboard";
     } catch (err: any) {
+      // api/client.ts wraps 4xx/5xx as ApiError with a .message field.
       const message =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Login failed";
+        err?.message || err?.response?.data?.message || "Login failed";
       setError(String(message));
     } finally {
       setBusy(false);
     }
   }
 
+  function switchMode(next: LoginMode) {
+    const defaults = getDevDefaults(next);
+    setMode(next);
+    setEmail(defaults.email);
+    setPassword(defaults.password);
+    setError("");
+  }
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0d2a63_0%,_#07142d_45%,_#030816_100%)] text-white flex items-center justify-center px-6">
       <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+
+        {/* ── Left: marketing copy ── */}
         <div className="space-y-8">
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200">
@@ -146,44 +143,45 @@ export default function LoginPage() {
               The operations workspace modern courier teams run on.
             </h1>
             <p className="text-slate-300 text-lg max-w-2xl leading-relaxed">
-              Tenant sign-in for day-to-day ops, or owner sign-in for platform control. Same premium
-              shell as dispatch, inbox, and billing — not a bolt-on portal.
+              Tenant sign-in for day-to-day ops, or owner sign-in for platform
+              control. Same premium shell as dispatch, inbox, and billing — not a
+              bolt-on portal.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-              <div className="mb-4 h-10 w-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-                <Building2 className="h-5 w-5" />
+            {[
+              {
+                icon: <Building2 className="h-5 w-5" />,
+                title: "Tenant Control",
+                body: "Company users, inboxes, branding, and settings.",
+              },
+              {
+                icon: <Shield className="h-5 w-5" />,
+                title: "Secure Access",
+                body: "Protected routes and stored session handling.",
+              },
+              {
+                icon: <Lock className="h-5 w-5" />,
+                title: "Owner Layer",
+                body: "Separate hidden owner login for platform control.",
+              },
+            ].map(({ icon, title, body }) => (
+              <div
+                key={title}
+                className="rounded-3xl border border-white/10 bg-white/5 p-5"
+              >
+                <div className="mb-4 h-10 w-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                  {icon}
+                </div>
+                <h3 className="font-semibold mb-2">{title}</h3>
+                <p className="text-sm text-slate-300">{body}</p>
               </div>
-              <h3 className="font-semibold mb-2">Tenant Control</h3>
-              <p className="text-sm text-slate-300">
-                Company users, inboxes, branding, and settings.
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-              <div className="mb-4 h-10 w-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-                <Shield className="h-5 w-5" />
-              </div>
-              <h3 className="font-semibold mb-2">Secure Access</h3>
-              <p className="text-sm text-slate-300">
-                Protected routes and stored session handling.
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-              <div className="mb-4 h-10 w-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-                <Lock className="h-5 w-5" />
-              </div>
-              <h3 className="font-semibold mb-2">Owner Layer</h3>
-              <p className="text-sm text-slate-300">
-                Separate hidden owner login for FlowOps platform control.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
 
+        {/* ── Right: form ── */}
         <div className="flex justify-center lg:justify-end">
           <form
             onSubmit={handleSubmit}
@@ -196,16 +194,11 @@ export default function LoginPage() {
               </p>
             </div>
 
+            {/* Mode toggle */}
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  const defaults = getDevDefaults("tenant");
-                  setMode("tenant");
-                  setError("");
-                  setEmail(defaults.email);
-                  setPassword(defaults.password);
-                }}
+                onClick={() => switchMode("tenant")}
                 className={`rounded-2xl py-3 text-sm font-semibold transition ${
                   mode === "tenant"
                     ? "bg-blue-400 text-slate-950"
@@ -214,16 +207,9 @@ export default function LoginPage() {
               >
                 Tenant Login
               </button>
-
               <button
                 type="button"
-                onClick={() => {
-                  const defaults = getDevDefaults("owner");
-                  setMode("owner");
-                  setError("");
-                  setEmail(defaults.email);
-                  setPassword(defaults.password);
-                }}
+                onClick={() => switchMode("owner")}
                 className={`rounded-2xl py-3 text-sm font-semibold transition ${
                   mode === "owner"
                     ? "bg-blue-400 text-slate-950"
@@ -238,8 +224,12 @@ export default function LoginPage() {
               {helperText}
             </div>
 
+            {/* Email */}
             <div className="space-y-2">
-              <label htmlFor="email" className="text-xs uppercase tracking-[0.25em] text-slate-300">
+              <label
+                htmlFor="email"
+                className="text-xs uppercase tracking-[0.25em] text-slate-300"
+              >
                 Email
               </label>
               <input
@@ -247,6 +237,7 @@ export default function LoginPage() {
                 name="email"
                 type="email"
                 autoComplete="username"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400"
@@ -254,8 +245,12 @@ export default function LoginPage() {
               />
             </div>
 
+            {/* Password */}
             <div className="space-y-2">
-              <label htmlFor="password" className="text-xs uppercase tracking-[0.25em] text-slate-300">
+              <label
+                htmlFor="password"
+                className="text-xs uppercase tracking-[0.25em] text-slate-300"
+              >
                 Password
               </label>
               <input
@@ -263,6 +258,7 @@ export default function LoginPage() {
                 name="password"
                 type="password"
                 autoComplete="current-password"
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400"
@@ -270,12 +266,14 @@ export default function LoginPage() {
               />
             </div>
 
-            {error ? (
+            {/* Error */}
+            {error && (
               <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                 {error}
               </div>
-            ) : null}
+            )}
 
+            {/* Terms */}
             <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -307,27 +305,29 @@ export default function LoginPage() {
               </span>
             </label>
 
+            {/* Submit */}
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 py-4 font-semibold text-slate-950 shadow-lg disabled:opacity-60"
+              className="w-full rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 py-4 font-semibold text-slate-950 shadow-lg disabled:opacity-60 transition hover:brightness-110 active:scale-[0.99]"
             >
-              {busy ? "Signing in..." : submitLabel}
+              {busy ? "Signing in…" : submitLabel}
             </button>
 
-            {SHOW_DEV_HINT ? (
+            {/* Dev autofill hint */}
+            {SHOW_DEV_HINT && (
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-xs text-slate-300">
                 <div className="font-medium text-white mb-1">
                   Dev autofill active
                 </div>
                 <div>
-                  Credentials are loaded from{" "}
+                  Credentials loaded from{" "}
                   <code className="text-blue-200">VITE_DEV_TENANT_*</code> /{" "}
-                  <code className="text-blue-200">VITE_DEV_OWNER_*</code>{" "}
-                  env vars (see <code>.env.example</code>).
+                  <code className="text-blue-200">VITE_DEV_OWNER_*</code> in{" "}
+                  <code>.env.local</code>.
                 </div>
               </div>
-            ) : null}
+            )}
 
             <p className="text-center text-sm text-slate-400">
               Need an account?{" "}
@@ -336,6 +336,13 @@ export default function LoginPage() {
                 className="font-semibold text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
               >
                 Request access
+              </Link>
+              {" · "}
+              <Link
+                to="/forgot-password"
+                className="font-semibold text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
+              >
+                Forgot password?
               </Link>
             </p>
           </form>

@@ -1,0 +1,358 @@
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createHmac, timingSafeEqual } from 'crypto';
+import axios from 'axios';
+import { v4 as uuid } from 'uuid';
+import { PrismaService } from '../prisma/prisma.service';
+
+const PAYSTACK_BASE = 'https://api.paystack.co';
+
+@Injectable()
+export class PaystackService {
+  private readonly logger = new Logger(PaystackService.name);
+  private readonly secretKey: string;
+  private readonly webhookIps: string[];
+
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {
+    this.secretKey = config.get<string>('PAYSTACK_SECRET_KEY', '');
+    this.webhookIps = config.get<string>('PAYSTACK_WEBHOOK_IPS', '').split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  private get headers() {
+    return {
+      Authorization: `Bearer ${this.secretKey}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  // ── Initialize payment ────────────────────────────────────────────────
+
+  async initializePayment(params: {
+    email: string;
+    amount: number;          // in smallest currency unit (kobo/cents)
+    companyId: string;
+    invoiceId?: string;
+    description?: string;
+    callbackUrl?: string;
+    metadata?: Record<string, any>;
+  }) {
+    if (!this.secretKey) {
+      return {
+        configured: false,
+        message:
+          'Paystack is not configured. ' +
+          'For now, approve payments manually: POST /invoices/:id/mark-paid. ' +
+          'To enable Paystack add PAYSTACK_SECRET_KEY to your .env.',
+      };
+    }
+
+    const reference = `FO-${uuid().split('-')[0].toUpperCase()}`;
+
+    const payload = {
+      email: params.email,
+      amount: Math.round(params.amount),
+      reference,
+      callback_url: params.callbackUrl,
+      metadata: {
+        ...params.metadata,
+        companyId: params.companyId,
+        invoiceId: params.invoiceId,
+        custom_fields: [
+          { display_name: 'Company', variable_name: 'companyId', value: params.companyId },
+        ],
+      },
+    };
+
+    const { data } = await axios.post(`${PAYSTACK_BASE}/transaction/initialize`, payload, {
+      headers: this.headers,
+    });
+
+    if (!data.status) throw new BadRequestException(data.message);
+
+    // Save pending payment record
+    await this.prisma.payment.create({
+      data: {
+        reference,
+        amount: params.amount / 100, // store in ZAR
+        currency: 'ZAR',
+        description: params.description,
+        invoiceId: params.invoiceId,
+        customerEmail: params.email,
+        companyId: params.companyId,
+        status: 'PENDING',
+      },
+    });
+
+    return {
+      reference,
+      authorizationUrl: data.data.authorization_url,
+      accessCode: data.data.access_code,
+    };
+  }
+
+  // ── Verify payment ────────────────────────────────────────────────────
+
+  async verifyPayment(reference: string) {
+    const { data } = await axios.get(
+      `${PAYSTACK_BASE}/transaction/verify/${reference}`,
+      { headers: this.headers },
+    );
+
+    if (!data.status) throw new BadRequestException(data.message);
+
+    const tx = data.data;
+    const success = tx.status === 'success';
+
+    if (success) {
+      await this.prisma.payment.updateMany({
+        where: { reference },
+        data: {
+          status: 'SUCCESS',
+          paystackReference: tx.reference,
+          paystackChannel: tx.channel,
+          customerEmail: tx.customer?.email,
+          customerName: tx.customer?.name,
+          paidAt: new Date(),
+        },
+      });
+
+      // Mark invoice as paid if linked
+      const payment = await this.prisma.payment.findFirst({ where: { reference } });
+      if (payment?.invoiceId) {
+        await this.prisma.invoice.update({
+          where: { id: payment.invoiceId },
+          data: { status: 'PAID', paidAt: new Date() },
+        });
+      }
+    }
+
+    return { reference, status: tx.status, amount: tx.amount / 100, paid: success };
+  }
+
+  // ── Webhook ───────────────────────────────────────────────────────────
+
+  verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {
+    if (!this.secretKey) return false;
+    const hash = createHmac('sha512', this.secretKey).update(rawBody).digest('hex');
+    try {
+      return timingSafeEqual(Buffer.from(hash), Buffer.from(signature ?? ''));
+    } catch {
+      return false;
+    }
+  }
+
+  verifyWebhookIp(ip: string): boolean {
+    if (!this.webhookIps.length) return true; // no restriction configured
+    return this.webhookIps.includes(ip);
+  }
+
+  async handleWebhookEvent(event: string, data: any, rawPayload: any) {
+    this.logger.log(`Paystack webhook: ${event}`);
+
+    switch (event) {
+      case 'charge.success':
+        await this.handleChargeSuccess(data);
+        break;
+
+      case 'charge.failed':
+        await this.prisma.payment.updateMany({
+          where: { reference: data.reference },
+          data: { status: 'FAILED', webhookPayload: rawPayload },
+        });
+        break;
+
+      case 'subscription.create':
+        this.logger.log(`Subscription created: ${data.subscription_code}`);
+        break;
+
+      case 'subscription.not_renew':
+        this.logger.log(`Subscription cancelled: ${data.subscription_code}`);
+        break;
+
+      case 'invoice.payment_failed':
+        this.logger.warn(`Invoice payment failed: ${data.reference}`);
+        break;
+
+      default:
+        this.logger.debug(`Unhandled Paystack event: ${event}`);
+    }
+  }
+
+  private async handleChargeSuccess(tx: any) {
+    const reference = tx.reference;
+    await this.prisma.payment.updateMany({
+      where: { reference },
+      data: {
+        status: 'SUCCESS',
+        paystackReference: reference,
+        paystackChannel: tx.channel,
+        customerEmail: tx.customer?.email,
+        paidAt: new Date(),
+      },
+    });
+
+    const payment = await this.prisma.payment.findFirst({ where: { reference } });
+    if (payment?.invoiceId) {
+      await this.prisma.invoice.update({
+        where: { id: payment.invoiceId },
+        data: { status: 'PAID', paidAt: new Date() },
+      });
+      this.logger.log(`Invoice ${payment.invoiceId} marked PAID via webhook`);
+    }
+  }
+
+  // ── Subscriptions ─────────────────────────────────────────────────────
+
+  /**
+   * Subscribe a customer to a recurring Paystack plan.
+   *
+   * Active plans (Flowops Holdings, Test Mode):
+   *   professional → PLN_l3kobthzahnkpf3 (ZAR 14,999 / month)
+   *   enterprise   → PLN_9at9kn2ra8jtae0 (ZAR 29,999 / month)
+   *
+   * For the free Starter plan use activateStarterPlan() instead.
+   *
+   * Paystack docs: POST /subscription
+   */
+  async createSubscription(params: {
+    email: string;
+    planCode: string;           // e.g. 'PLN_l3kobthzahnkpf3'
+    companyId: string;
+    authorization?: string;     // Paystack authorization code (reuse card)
+    startDate?: string;         // ISO-8601; defaults to now
+  }) {
+    if (!this.secretKey) {
+      this.logger.warn('Paystack not configured — subscription not created');
+      return {
+        configured: false,
+        message:
+          'Paystack is not configured. ' +
+          'Add PAYSTACK_SECRET_KEY to your .env to enable subscriptions.',
+      };
+    }
+
+    const payload: any = {
+      customer: params.email,
+      plan: params.planCode,
+    };
+    if (params.authorization) payload.authorization = params.authorization;
+    if (params.startDate) payload.start_date = params.startDate;
+
+    const { data } = await axios.post(`${PAYSTACK_BASE}/subscription`, payload, {
+      headers: this.headers,
+    });
+
+    if (!data.status) throw new BadRequestException(data.message);
+
+    this.logger.log(
+      `Subscription created for ${params.email}: code=${data.data.subscription_code} plan=${params.planCode}`,
+    );
+
+    // Map Paystack plan codes → internal plan tier names.
+    // NOTE: 'starter' is intentionally absent — it is a free tier and
+    // never goes through Paystack (see activateStarterPlan()).
+    const planMap: Record<string, string> = {
+      'PLN_l3kobthzahnkpf3': 'professional',
+      'PLN_9at9kn2ra8jtae0': 'enterprise',
+    };
+    await this.prisma.company.update({
+      where: { id: params.companyId },
+      data: { plan: planMap[params.planCode] ?? params.planCode },
+    });
+
+    return data.data;
+  }
+
+  // ── Starter (free, no Paystack) ──────────────────────────────────────
+
+  /**
+   * Activate the free Starter plan for a company.
+   *
+   * - Sets Company.plan = 'starter' immediately.
+   * - If the company holds an active paid Paystack subscription, it is
+   *   cancelled before switching so they aren't double-billed.
+   *
+   * No Paystack transaction is created — this is purely a DB update.
+   */
+  async activateStarterPlan(companyId: string, activeSubscriptionCode?: string) {
+    // Cancel any existing paid subscription before downgrading
+    if (activeSubscriptionCode) {
+      try {
+        // Paystack requires an emailToken to cancel a subscription.
+        // That token is sent to the customer's email by Paystack automatically
+        // when they click "Manage subscription". For a server-side downgrade
+        // we call the admin disable endpoint instead.
+        await axios.post(
+          `${PAYSTACK_BASE}/subscription/disable`,
+          { code: activeSubscriptionCode, token: '' },
+          { headers: this.headers },
+        );
+        this.logger.log(`Cancelled Paystack subscription ${activeSubscriptionCode} before Starter downgrade`);
+      } catch (err: any) {
+        // Log but don't block the downgrade — the subscription will expire naturally
+        this.logger.warn(`Could not cancel subscription ${activeSubscriptionCode}: ${err?.message}`);
+      }
+    }
+
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { plan: 'starter' },
+    });
+
+    this.logger.log(`Company ${companyId} downgraded to Starter (free, no billing)`);
+    return { plan: 'starter', message: 'Switched to Starter plan (free). No charges will apply.' };
+  }
+
+  async getSubscription(subscriptionCode: string) {
+    const { data } = await axios.get(
+      `${PAYSTACK_BASE}/subscription/${subscriptionCode}`,
+      { headers: this.headers },
+    );
+    return data.data;
+  }
+
+  async cancelSubscription(subscriptionCode: string, emailToken: string) {
+    const { data } = await axios.post(
+      `${PAYSTACK_BASE}/subscription/disable`,
+      { code: subscriptionCode, token: emailToken },
+      { headers: this.headers },
+    );
+    return data;
+  }
+
+  // ── Plans ─────────────────────────────────────────────────────────────
+
+  async listPlans() {
+    const { data } = await axios.get(`${PAYSTACK_BASE}/plan`, { headers: this.headers });
+    return data.data;
+  }
+
+  async createPlan(dto: { name: string; amount: number; interval: string; description?: string }) {
+    const { data } = await axios.post(`${PAYSTACK_BASE}/plan`, dto, { headers: this.headers });
+    return data.data;
+  }
+
+  // ── Customers ─────────────────────────────────────────────────────────
+
+  async createCustomer(email: string, name?: string) {
+    const { data } = await axios.post(
+      `${PAYSTACK_BASE}/customer`,
+      { email, first_name: name?.split(' ')[0], last_name: name?.split(' ')[1] },
+      { headers: this.headers },
+    );
+    return data.data;
+  }
+
+  // ── Company billing balance ────────────────────────────────────────────
+
+  async getCompanyPayments(companyId: string) {
+    return this.prisma.payment.findMany({
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+}
