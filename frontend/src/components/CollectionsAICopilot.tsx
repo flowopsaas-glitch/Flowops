@@ -18,11 +18,12 @@ type CopilotResponse = {
 };
 
 import { FLOWOPS_API_URL } from "../lib/env";
+import { getAccessToken } from "../lib/session";
 
 const API_BASE = FLOWOPS_API_URL;
 
 function getToken(): string {
-  return localStorage.getItem("access_token") || "";
+  return getAccessToken() ?? "";
 }
 
 export default function CollectionsAICopilot(props: {

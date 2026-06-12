@@ -2,6 +2,7 @@ import { useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { io } from "socket.io-client";
 import { FLOWOPS_WS_ORIGIN } from "./lib/env";
+import { getAccessToken } from "./lib/session";
 
 // Eager imports (initial shell)
 import AppLayout from "./components/layout/AppLayout";
@@ -56,7 +57,7 @@ const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
 
 
 function ProtectedRoute() {
-  const token = localStorage.getItem("access_token");
+  const token = getAccessToken();
   if (!token) {
     return <Navigate to="/login" replace />;
   }

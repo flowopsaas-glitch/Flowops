@@ -25,10 +25,13 @@ describe('Token Management', () => {
     expect(getToken()).toBeNull();
   });
 
-  it('stores token in localStorage', () => {
+  it('stores token in localStorage under the canonical key', () => {
     setToken('test-jwt');
     expect(getToken()).toBe('test-jwt');
-    expect(localStorage.getItem('access_token')).toBe('test-jwt');
+    // Canonical key from lib/session.ts. The legacy `access_token` key is
+    // removed on write so it must NOT be set.
+    expect(localStorage.getItem('flowops.access_token')).toBe('test-jwt');
+    expect(localStorage.getItem('access_token')).toBeNull();
   });
 
   it('removes token on null', () => {

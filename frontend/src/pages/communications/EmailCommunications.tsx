@@ -5,6 +5,7 @@ import {
   RefreshCw, Clock, ArrowLeft, Paperclip, Smile, Trash2, Package, MapPin
 } from "lucide-react";
 import { FLOWOPS_API_URL } from "../../lib/env";
+import { getAccessToken } from "../../lib/session";
 
 // Mock data kept as a fallback to prevent the "Blank Screen" if fetch fails
 const MOCK_EMAILS = [
@@ -37,7 +38,7 @@ export default function EmailCommunications() {
   const fetchEmails = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem('token');
+      const token = getAccessToken();
       // Updated endpoint to match the corrected NestJS Controller
       const response = await fetch(`${FLOWOPS_API_URL}/communications`, {
         headers: { 
@@ -81,7 +82,7 @@ export default function EmailCommunications() {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAccessToken();
       // Triggers the sync-ai-events logic on the backend
       const response = await fetch(`${FLOWOPS_API_URL}/communications/sync`, { 
         method: 'POST',

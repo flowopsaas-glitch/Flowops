@@ -4,13 +4,10 @@ import { FLOWOPS_API_URL } from "../lib/env";
 
 const API_BASE = FLOWOPS_API_URL;
 
+import { getAccessToken } from "../lib/session";
+
 function getToken(): string {
-  return (
-    localStorage.getItem("access_token") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("accessToken") ||
-    ""
-  );
+  return getAccessToken() ?? "";
 }
 
 type Props = {

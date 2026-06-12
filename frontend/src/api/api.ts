@@ -1,41 +1,37 @@
 import axios from "axios";
 import { FLOWOPS_API_URL } from "../lib/env";
+import {
+  clearSession,
+  getAccessToken,
+  setAccessToken,
+  setMemoryToken as sessionSetMemoryToken,
+} from "../lib/session";
 
-const ACCESS_TOKEN_KEY = "access_token";
-const LOGIN_MODE_KEY = "login_mode";
-
-let memoryToken: string | null = null;
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
 
-// --- 🔓 EXPORTS ---
+// --- 🔓 EXPORTS (preserved from the previous api/api.ts surface, now delegating
+// --- to lib/session.ts so the two axios clients agree on token storage) ---
 
 export function setMemoryToken(token: string | null) {
-  memoryToken = token;
+  sessionSetMemoryToken(token);
 }
 
 export function getToken(): string | null {
-  if (memoryToken) return memoryToken;
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return getAccessToken();
 }
 
 /** 🛡️ Syncs token to storage and memory to prevent stale state */
 export function setToken(token: string | null | undefined) {
-  const value = token?.trim();
-  if (!value) { clearToken(); return; }
-  localStorage.setItem(ACCESS_TOKEN_KEY, value);
-  memoryToken = value;
+  setAccessToken(token);
 }
 
 export function clearToken() {
-  memoryToken = null;
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  setAccessToken(null);
 }
 
 export function clearClientSession() {
-  clearToken();
-  localStorage.removeItem(LOGIN_MODE_KEY);
-  localStorage.removeItem("user");
+  clearSession();
 }
 
 /** 🛠️ Queue helper to resume failed requests after refresh */
@@ -84,7 +80,7 @@ api.interceptors.response.use(
       try {
         const { data } = await axios.post(`${FLOWOPS_API_URL}/auth/refresh`, {}, { withCredentials: true });
         const newToken = data.accessToken;
-        
+
         setToken(newToken);
         isRefreshing = false;
         onRefreshed(newToken); // 🚀 Resume all queued requests

@@ -8,6 +8,11 @@ import {
   persistTermsAcceptanceRemotePayload,
 } from "../legal/termsAcceptance";
 import { FLOWOPS_API_URL } from "../lib/env";
+import {
+  setAccessToken,
+  setLoginMode as setSessionLoginMode,
+  setStoredUser,
+} from "../lib/session";
 
 const API_BASE = FLOWOPS_API_URL;
 
@@ -100,34 +105,17 @@ export default function LoginPage() {
       const token =
         data.accessToken || data.access_token || data.token || "";
 
-      if (token) {
-        localStorage.setItem("access_token", token);
-        localStorage.setItem("accessToken", token);
-        localStorage.setItem("token", token);
-      }
-
-      if (data.user) {
-        localStorage.setItem("user", JSON.stringify(data.user));
-      }
+      // Persist via the canonical lib/session.ts helpers. Replaces the old
+      // 11-key localStorage shotgun (one key per legacy reader) — the session
+      // module clears the legacy keys for us so logout reaches them all.
+      if (token) setAccessToken(token);
+      if (data.user) setStoredUser(data.user);
+      setSessionLoginMode(mode);
 
       persistTermsAcceptanceLocally();
 
-      if (mode === "owner") {
-        localStorage.setItem("login_mode", "owner");
-        localStorage.setItem("flowops_login_mode", "owner");
-        localStorage.setItem("flowops_owner_token", token);
-        localStorage.setItem("flowops_owner_profile", JSON.stringify(data.user || {}));
-        localStorage.setItem("flowops_owner_access_token", token);
-        localStorage.setItem("flowops.owner.accessToken", token);
-        if (data.user) {
-          localStorage.setItem("flowops.owner.user", JSON.stringify(data.user));
-        }
-        window.location.href = "/owner/dashboard";
-      } else {
-        localStorage.setItem("login_mode", "tenant");
-        localStorage.setItem("flowops_login_mode", "tenant");
-        window.location.href = "/dashboard";
-      }
+      window.location.href =
+        mode === "owner" ? "/owner/dashboard" : "/dashboard";
     } catch (err: any) {
       const message =
         err?.response?.data?.message ||

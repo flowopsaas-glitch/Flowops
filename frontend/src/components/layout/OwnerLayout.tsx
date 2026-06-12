@@ -1,4 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { clearSession } from "../../lib/session";
 
 function navButtonClass(active: boolean) {
   return active
@@ -12,14 +13,13 @@ export default function OwnerLayout() {
 
   function handleLogout() {
     try {
-      localStorage.removeItem("flowops_owner_token");
-      localStorage.removeItem("flowops_owner_profile");
-      localStorage.removeItem("flowops_owner_access_token");
-      localStorage.removeItem("flowops.owner.accessToken");
-      localStorage.removeItem("flowops.owner.user");
-      localStorage.removeItem("ownerAccessToken");
-      localStorage.removeItem("flowops_login_mode");
-    } catch {}
+      // Atomic logout via lib/session.ts — clears the canonical token AND
+      // the seven legacy owner-token keys this component used to remove
+      // individually (flowops_owner_token, flowops.owner.accessToken, ...).
+      clearSession();
+    } catch {
+      /* ignore */
+    }
 
     navigate("/login", { replace: true });
   }

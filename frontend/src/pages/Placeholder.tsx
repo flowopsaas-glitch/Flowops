@@ -1,7 +1,7 @@
 ﻿import { useLocation } from 'react-router-dom';
-import { isTenantAdminFullAccess, canTenantAdminSeeNavItem, canTenantAdminAccessRoute, isHiddenOwnerPath } from '../lib/tenantAdminFullAccess';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle, Zap, Database, Users } from 'lucide-react';
+import { getStoredUser } from '@/lib/session';
 
 interface PlaceholderProps {
   title?: string;
@@ -10,8 +10,7 @@ interface PlaceholderProps {
 export default function Placeholder({ title }: PlaceholderProps) {
     const location = useLocation();
     const pageName = title || location.pathname.split('/').pop()?.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Page';
-    const userStr = localStorage.getItem('user');
-    const user = userStr ? JSON.parse(userStr) : null;
+    const user = getStoredUser<{ isUltimateOwner?: boolean; role?: string }>();
     const isUltimateOwner = user?.isUltimateOwner || user?.role === 'ULTIMATE_OWNER';
 
     return (

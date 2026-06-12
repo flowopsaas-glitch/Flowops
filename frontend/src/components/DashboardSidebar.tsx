@@ -21,6 +21,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button';
 import { FLOWOPS_HTTP_ORIGIN } from '@/lib/env';
+import { clearSession, getAccessToken, getStoredUser } from '@/lib/session';
 
 const menuItems = [
     { icon: FaStream, label: 'Dashboard', path: '/workflows', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
@@ -57,8 +58,8 @@ const menuItems = [
 export default function DashboardSidebar() {
     const location = useRouterLocation();
     const navigate = useNavigate();
-    const userStr = localStorage.getItem('user');
-    const user = userStr ? JSON.parse(userStr) : { role: 'ADMIN', plan: 'Starter', name: 'User' };
+    const userStr = JSON.stringify(getStoredUser() ?? null);
+    const user = userStr !== 'null' ? JSON.parse(userStr) : { role: 'ADMIN', plan: 'Starter', name: 'User' };
 
     const isUltimateOwner = user.isUltimateOwner || user.role === 'ULTIMATE_OWNER';
     const isApproved = user.approvalStatus === 'APPROVED' || isUltimateOwner;
@@ -78,7 +79,7 @@ export default function DashboardSidebar() {
 
     const handleLogout = async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = getAccessToken();
             if (token) {
                 await fetch(`${FLOWOPS_HTTP_ORIGIN}/auth/logout`, {
                     method: 'POST',
@@ -91,10 +92,8 @@ export default function DashboardSidebar() {
         } catch (err) {
             console.error('Logout error:', err);
         } finally {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            localStorage.removeItem('session');
-            localStorage.removeItem('isLoggedIn');
+            // Atomic logout via lib/session.ts.
+            clearSession();
             navigate('/login', { replace: true });
         }
     };

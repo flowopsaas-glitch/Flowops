@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FLOWOPS_API_URL } from "../../lib/env";
+import { getAccessToken } from "../../lib/session";
 
 type TenantRow = {
   id?: number;
@@ -29,13 +30,7 @@ function getApiBase() {
 }
 
 function getOwnerToken() {
-  return (
-    localStorage.getItem("flowops_owner_token") ||
-    localStorage.getItem("flowops_owner_access_token") ||
-    localStorage.getItem("flowops.owner.accessToken") ||
-    localStorage.getItem("ownerAccessToken") ||
-    ""
-  );
+  return getAccessToken() ?? "";
 }
 
 async function readJsonSafe(response: Response) {

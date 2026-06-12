@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FLOWOPS_API_URL } from "../../lib/env";
+import { getAccessToken, getStoredUser } from "../../lib/session";
 
 type UserRow = {
   id: number;
@@ -247,21 +248,12 @@ const badge = (active?: boolean): React.CSSProperties => ({
 });
 
 function getToken() {
-  return (
-    localStorage.getItem("flowops_token") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("accessToken") ||
-    ""
-  );
+  return getAccessToken() ?? "";
 }
 
 function getUser() {
   try {
-    const raw =
-      localStorage.getItem("flowops_user") ||
-      localStorage.getItem("user") ||
-      "";
-    return raw ? JSON.parse(raw) : null;
+    return getStoredUser<Record<string, unknown>>() ?? null;
   } catch {
     return null;
   }

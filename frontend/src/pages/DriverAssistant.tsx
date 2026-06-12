@@ -1,15 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from '../api/client';
+import { getAccessToken } from "../lib/session";
 
 function getToken(): string {
-  // Support both keys to avoid mismatch
-  return (
-    localStorage.getItem("access_token") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("accessToken") ||
-    ""
-  );
+  return getAccessToken() ?? "";
 }
 
 export default function DriverAssistant() {
