@@ -150,6 +150,50 @@ export async function updateMyCompanyBranding(
   return res.data;
 }
 
+/**
+ * Returns the company record for the currently authenticated tenant user.
+ * The backend resolves the tenant from the bearer token; the frontend never
+ * passes a company id here.
+ */
+export async function getMyCompany() {
+  const res = await api.get<CompanyRecord>("/companies/my-company");
+  return res.data;
+}
+
+/**
+ * Updates branding fields on the current tenant's company. The backend is
+ * expected to enforce that the caller is a company admin; the frontend
+ * doesn't pass a company id.
+ */
+export async function updateMyCompanyBranding(
+  payload: UpdateMyCompanyBrandingPayload,
+) {
+  const res = await api.patch<CompanyRecord>("/companies/my-company", payload);
+  return res.data;
+}
+
+/**
+ * Returns the company record for the currently authenticated tenant user.
+ * The backend resolves the tenant from the bearer token; the frontend never
+ * passes a company id here.
+ */
+export async function getMyCompany() {
+  const res = await api.get<CompanyRecord>("/companies/my-company");
+  return res.data;
+}
+
+/**
+ * Updates branding fields on the current tenant's company. The backend is
+ * expected to enforce that the caller is a company admin; the frontend
+ * doesn't pass a company id.
+ */
+export async function updateMyCompanyBranding(
+  payload: UpdateMyCompanyBrandingPayload,
+) {
+  const res = await api.patch<CompanyRecord>("/companies/my-company", payload);
+  return res.data;
+}
+
 export async function getCompany(id: number) {
   const res = await api.get<CompanyRecord>(`/companies/${id}`);
   return res.data;
