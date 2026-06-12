@@ -1,4 +1,13 @@
-﻿import { api } from './client';
+import { api } from './client';
+import {
+  clearSession,
+  getAccessToken,
+  getStoredUser,
+  isOwnerMode,
+  setAccessToken,
+  setLoginMode,
+  setStoredUser,
+} from '../lib/session';
 
 export type OwnerPlan = {
   code: string;
@@ -27,31 +36,32 @@ export type OwnerTenant = {
   telemetry?: Record<string, any>;
 };
 
-const OWNER_TOKEN_KEY = 'flowops_owner_token';
-const OWNER_PROFILE_KEY = 'flowops_owner_profile';
+// Owner-session helpers now delegate to lib/session.ts. Previously this file
+// stored its own `flowops_owner_token` / `flowops_owner_profile` keys in
+// parallel to the canonical access token, which meant logout-from-tenant
+// could leave a dangling owner session in localStorage. Centralising on
+// lib/session.ts removes that drift.
 
-export function getOwnerToken() {
-  return localStorage.getItem(OWNER_TOKEN_KEY) || '';
+export function getOwnerToken(): string {
+  // Only return a token when the current session IS the owner session —
+  // prevents accidentally sending a tenant JWT to the owner endpoints.
+  return isOwnerMode() ? (getAccessToken() ?? '') : '';
 }
 
 export function setOwnerSession(token: string, owner: Record<string, any>) {
-  localStorage.setItem(OWNER_TOKEN_KEY, token);
-  localStorage.setItem(OWNER_PROFILE_KEY, JSON.stringify(owner || {}));
+  setAccessToken(token);
+  setLoginMode('owner');
+  setStoredUser(owner ?? {});
 }
 
 export function clearOwnerSession() {
-  localStorage.removeItem(OWNER_TOKEN_KEY);
-  localStorage.removeItem(OWNER_PROFILE_KEY);
+  // Logout always wipes the whole session — there is only one active session
+  // slot post-migration, so there's nothing tenant-side worth preserving.
+  clearSession();
 }
 
 export function getOwnerProfile() {
-  const raw = localStorage.getItem(OWNER_PROFILE_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  return isOwnerMode() ? getStoredUser<Record<string, any>>() : null;
 }
 
 function ownerHeaders() {
@@ -123,4 +133,3 @@ export async function getOwnerViewMode(tenantId: number) {
   });
   return data;
 }
-

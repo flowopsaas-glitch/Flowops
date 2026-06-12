@@ -1,12 +1,10 @@
 import { FLOWOPS_API_URL } from "../lib/env";
+import { getAccessToken } from "../lib/session";
 
 const API_BASE = FLOWOPS_API_URL;
 
 function getAuthHeaders() {
-  const token =
-    localStorage.getItem("token") ||
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("authToken");
+  const token = getAccessToken();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

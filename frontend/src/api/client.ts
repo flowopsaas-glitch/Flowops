@@ -1,32 +1,44 @@
 import axios from 'axios';
+import {
+  clearSession,
+  getAccessToken,
+  getLoginMode as sessionGetLoginMode,
+  isDriverMode as sessionIsDriverMode,
+  isOwnerMode as sessionIsOwnerMode,
+  isTenantMode as sessionIsTenantMode,
+  setAccessToken,
+  setLoginMode as sessionSetLoginMode,
+  setMemoryToken as sessionSetMemoryToken,
+  type LoginMode,
+} from '../lib/session';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 
-// ── Token storage ───────────────────────────────────────────
-const TOKEN_KEY = 'access_token';
-const MODE_KEY = 'flowops_login_mode';
-let memoryToken: string | null = null;
+// ── Token storage (delegates to lib/session.ts; aliases preserved for callers) ─
+export const getToken = (): string | null => getAccessToken();
+export const setToken = (token: string | null) => setAccessToken(token);
+export const setMemoryToken = (token: string | null) => sessionSetMemoryToken(token);
 
-export const getToken = () => memoryToken || localStorage.getItem(TOKEN_KEY);
-export const setToken = (token: string | null) => {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+export const getLoginMode = (): string => sessionGetLoginMode();
+export const setLoginMode = (mode: string) => {
+  // Only persist known modes; ignore anything else so storage stays in sync
+  // with the LoginMode type. Unknown values are dropped silently.
+  if (mode === 'tenant' || mode === 'owner' || mode === 'driver') {
+    sessionSetLoginMode(mode as LoginMode);
+  }
 };
-export const setMemoryToken = (token: string | null) => { memoryToken = token; };
-export const getLoginMode = () => localStorage.getItem(MODE_KEY) || 'tenant';
-export const setLoginMode = (mode: string) => localStorage.setItem(MODE_KEY, mode);
-export const clearAuth = () => {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(MODE_KEY);
-  memoryToken = null;
+
+export const clearAuth = (): void => {
+  // `clearAuth` is the atomic logout the rest of the codebase already calls;
+  // route it through the canonical cleanup so legacy keys also disappear.
+  clearSession();
 };
 export const clearToken = clearAuth;
 export const clearClientSession = clearAuth;
 
-// Login mode helpers
-export const isOwnerMode = () => getLoginMode() === 'owner';
-export const isTenantMode = () => getLoginMode() === 'tenant';
-export const isDriverMode = () => getLoginMode() === 'driver';
+export const isOwnerMode = (): boolean => sessionIsOwnerMode();
+export const isTenantMode = (): boolean => sessionIsTenantMode();
+export const isDriverMode = (): boolean => sessionIsDriverMode();
 
 // ── Error class (matches old api/axios.ts signature) ──────────
 export class ApiError extends Error {

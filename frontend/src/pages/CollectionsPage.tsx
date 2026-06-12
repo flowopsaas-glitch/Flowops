@@ -2,6 +2,7 @@ import { useToast } from '../components/ToastProvider';
 // src/pages/CollectionsPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from '../api/client';
+import { getAccessToken, getStoredUser } from '../lib/session';
 
 type Company = {
   id: number;
@@ -75,27 +76,23 @@ function decodeJwtPayload(token: string): any | null {
 }
 
 function getCurrentRole(): string | null {
-  const user = safeJsonParse<any>(localStorage.getItem("user"));
+  const user = getStoredUser<{ role?: unknown }>();
   if (user?.role) return String(user.role);
 
-  const auth = safeJsonParse<any>(localStorage.getItem("auth"));
-  if (auth?.user?.role) return String(auth.user.role);
-  if (auth?.role) return String(auth.role);
+  const token = getAccessToken();
+  if (!token) return null;
 
-  const token =
-    localStorage.getItem("access_token") ||
-    localStorage.getItem("token") ||
-    safeJsonParse<any>(localStorage.getItem("auth"))?.accessToken ||
-    safeJsonParse<any>(localStorage.getItem("auth"))?.token ||
-    null;
-
-  if (token) {
-    const payload = decodeJwtPayload(token);
-    if (payload?.role) return String(payload.role);
-    if (payload?.user?.role) return String(payload.user.role);
+  // Best-effort role read from the JWT payload. If the token isn't a JWT or
+  // the payload doesn't carry a role, we just return null and the caller
+  // falls back to a sane default.
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return decoded?.role ? String(decoded.role) : null;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 // ---------- formatting ----------

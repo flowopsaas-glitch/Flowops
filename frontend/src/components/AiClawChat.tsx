@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Terminal, X, ChevronRight, Cpu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { FLOWOPS_API_URL } from '../lib/env';
+import { getAccessToken } from '../lib/session';
 
 interface Message {
   role: 'user' | 'claw' | 'system' | 'system_thought';
@@ -80,7 +81,7 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${getAccessToken() ?? ''}`
         },
         body: JSON.stringify(requestBody)
       });

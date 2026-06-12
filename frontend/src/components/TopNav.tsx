@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
+import { clearSession } from "../lib/session";
 
 function active(path: string, current: string) {
   return current.startsWith(path)
@@ -52,9 +53,7 @@ export default function TopNav() {
           <button
             style={pill()}
             onClick={() => {
-              localStorage.removeItem("access_token");
-              localStorage.removeItem("token");
-              localStorage.removeItem("accessToken");
+              clearSession();
               window.location.href = "/login";
             }}
           >

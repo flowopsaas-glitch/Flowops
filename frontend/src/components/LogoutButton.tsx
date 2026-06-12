@@ -1,16 +1,16 @@
-﻿import { useNavigate } from 'react-router-dom';
-import { isTenantAdminFullAccess, canTenantAdminSeeNavItem, canTenantAdminAccessRoute, isHiddenOwnerPath } from '../lib/tenantAdminFullAccess';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
 import { FLOWOPS_HTTP_ORIGIN } from '@/lib/env';
+import { clearSession, getAccessToken } from '@/lib/session';
 
 export default function LogoutButton() {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     try {
-      const token = localStorage.getItem('token');
-      
+      const token = getAccessToken();
+
       // Notify backend of logout
       if (token) {
         await fetch(`${FLOWOPS_HTTP_ORIGIN}/auth/logout`, {
@@ -24,11 +24,9 @@ export default function LogoutButton() {
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
-      // Clear all session data
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      localStorage.removeItem('session');
-      localStorage.removeItem('isLoggedIn');
+      // Atomic logout via the session module — clears the canonical key AND
+      // every legacy key (`token`, `user`, `session`, `isLoggedIn`, ...).
+      clearSession();
 
       // Redirect to login
       navigate('/login', { replace: true });
@@ -47,4 +45,3 @@ export default function LogoutButton() {
     </Button>
   );
 }
-

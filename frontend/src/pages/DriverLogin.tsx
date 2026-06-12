@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Truck, Lock, Phone, ArrowRight, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client'; // Adjust path if needed
+import { setAccessToken, setLoginMode, setStoredUser } from '../lib/session';
 
 export default function DriverLogin() {
   const [phone, setPhone] = useState('');
@@ -19,9 +20,11 @@ export default function DriverLogin() {
       // Hit the new backend route
       const res = await api.post('/auth/driver-login', { phone, pin });
       
-      // Store the secure token
-      localStorage.setItem('driverToken', res.data.access_token);
-      localStorage.setItem('driverInfo', JSON.stringify(res.data.driver));
+      // Store the secure token via the canonical session module — replaces
+      // the legacy `driverToken` / `driverInfo` pair.
+      setAccessToken(res.data.access_token);
+      setLoginMode("driver");
+      setStoredUser(res.data.driver);
       
       // Push them to their active manifest
       navigate('/manifest');

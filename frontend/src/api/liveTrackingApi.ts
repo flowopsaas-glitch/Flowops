@@ -1,6 +1,7 @@
 // src/api/liveTrackingApi.ts
 
 import { FLOWOPS_API_URL } from "../lib/env";
+import { getAccessToken } from "../lib/session";
 
 export type LiveTrackingQuery = {
   stuckMins?: number;
@@ -66,13 +67,7 @@ function getApiBase(): string {
 }
 
 function getToken(): string | null {
-  // common keys people use
-  return (
-    localStorage.getItem("access_token") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("jwt") ||
-    null
-  );
+  return getAccessToken();
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {

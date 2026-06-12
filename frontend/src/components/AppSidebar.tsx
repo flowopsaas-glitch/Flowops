@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { base44 } from "@/api/base44Client";
+import { clearSession } from "@/lib/session";
 
 const navigation = [
   { name: "Dashboard", page: "Dashboard", icon: LayoutDashboard },
@@ -75,10 +76,9 @@ export default function AppSidebar({ currentPage, onNavigate, brand = "FlowOps" 
     }
 
     try {
-      localStorage.removeItem("token");
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("auth");
-      localStorage.removeItem("user");
+      // Atomic logout via the session module — clears the canonical key
+      // AND every legacy key in one call.
+      clearSession();
     } catch {
       // ignore
     }
