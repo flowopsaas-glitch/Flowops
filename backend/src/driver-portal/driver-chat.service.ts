@@ -168,7 +168,6 @@ Respond ONLY in JSON:
             aiConfidence: extracted.confidence,
             rawText: extracted.rawText,
           },
-          waybillNumber: extracted.waybillNumber || null,
         },
       });
 
