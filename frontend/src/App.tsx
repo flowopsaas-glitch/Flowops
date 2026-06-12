@@ -28,6 +28,7 @@ const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks")
 const QuotesPage = lazy(() => import("./pages/QuotesPage"));
 const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
+const BrandingSettings = lazy(() => import("./pages/settings/BrandingSettings"));
 const WhatsAppHub = lazy(() => import("./pages/automation/WhatsAppHub"));
 const EmailHub = lazy(() => import("./pages/automation/EmailHub"));
 const ClientQueries = lazy(() => import("./pages/communications/ClientQueries"));
@@ -145,6 +146,7 @@ export default function App() {
               <Route path="/ai-control-tower" element={<AIControlTower />} />
               <Route path="/ai/control-tower" element={<AIControlTower />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/settings/branding" element={<BrandingSettings />} />
             </Route>
           </Route>
 

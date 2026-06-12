@@ -164,8 +164,8 @@ const cards: Array<{ section: string; items: QuickCard[] }> = [
         title: "Branding & Identity",
         subtitle: "Branding, contact details, and portal styling.",
         description:
-          "Open the full tenant company settings page for branding, logos, colors, invoice styling, and portal identity.",
-        to: "/settings/company-profile#branding",
+          "Update your brand name, logo, colours, and portal subdomain. Changes apply across the app and the customer-facing booking portal.",
+        to: "/settings/branding",
         icon: <Building2 size={18} />,
         accent: "rgba(82, 196, 255, 0.22)",
         statusResolver: (company) =>
