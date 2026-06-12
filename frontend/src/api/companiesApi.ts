@@ -53,6 +53,26 @@ export type CompanyRecord = {
   secondaryColor?: string | null;
   invoiceHeaderColor?: string | null;
 
+  /** Optional secondary display name. Some tenants prefer this over `name` / `legalName` for headers. */
+  tradingName?: string | null;
+
+  /**
+   * Registered hardware devices (scanners, printers, workstations). Loose
+   * shape because the backend representation is still in flux and the
+   * frontend currently only reads `.length` for status counts.
+   */
+  hardwareDevices?: Array<Record<string, unknown>> | null;
+
+  /**
+   * Permission / module enablement. Any of these may be present depending on
+   * backend version — settings UIs typically read whichever is non-empty.
+   * Stored as either an array of permission keys or a key→boolean map.
+   */
+  permissions?: string[] | Record<string, boolean> | null;
+  enabledPermissions?: string[] | Record<string, boolean> | null;
+  navPermissions?: string[] | Record<string, boolean> | null;
+  modules?: string[] | Record<string, boolean> | null;
+
   users?: Array<{
     id: number;
     email: string;

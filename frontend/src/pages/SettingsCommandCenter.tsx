@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { FLOWOPS_API_URL } from "../lib/env";
 import {
@@ -21,34 +21,8 @@ import {
   Database,
   Bell,
 } from "lucide-react";
-
-type CompanyPayload = {
-  id?: number;
-  name?: string | null;
-  legalName?: string | null;
-  tradingName?: string | null;
-  subscriptionPlan?: string | null;
-  portalBrandName?: string | null;
-  portalSubdomain?: string | null;
-  portalPrimaryColor?: string | null;
-  portalLogoUrl?: string | null;
-  logoUrl?: string | null;
-  logoFileName?: string | null;
-  brandPrimaryColor?: string | null;
-  brandSecondaryColor?: string | null;
-  invoiceHeaderColor?: string | null;
-  whatsappNumber?: string | null;
-  supportEmail?: string | null;
-  opsEmail?: string | null;
-  quotesEmail?: string | null;
-  podsEmail?: string | null;
-  notificationsEmail?: string | null;
-  hardwareDevices?: Array<any> | null;
-  permissions?: string[] | Record<string, boolean> | null;
-  enabledPermissions?: string[] | Record<string, boolean> | null;
-  navPermissions?: string[] | Record<string, boolean> | null;
-  modules?: string[] | Record<string, boolean> | null;
-};
+import type { CompanyRecord } from "../api/companiesApi";
+import { useTenant } from "../contexts/TenantContext";
 
 type StatusMeta = {
   label: string;
@@ -62,27 +36,8 @@ type QuickCard = {
   to: string;
   icon: React.ReactNode;
   accent: string;
-  statusResolver: (company: CompanyPayload | null) => StatusMeta;
+  statusResolver: (company: CompanyRecord | null) => StatusMeta;
 };
-
-const API_BASE = FLOWOPS_API_URL;
-
-function readToken(): string {
-  return (
-    localStorage.getItem("access_token") ||
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("token") ||
-    ""
-  );
-}
-
-async function readJsonSafe(res: Response) {
-  try {
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
 
 function countEnabled(value: unknown): number {
   if (Array.isArray(value)) return value.length;
@@ -92,22 +47,20 @@ function countEnabled(value: unknown): number {
   return 0;
 }
 
-function hasBranding(company: CompanyPayload | null): boolean {
+function hasBranding(company: CompanyRecord | null): boolean {
   if (!company) return false;
 
   return Boolean(
     company.logoUrl ||
-      company.logoFileName ||
-      company.brandPrimaryColor ||
-      company.brandSecondaryColor ||
+      company.brandName ||
+      company.primaryColor ||
+      company.secondaryColor ||
       company.invoiceHeaderColor ||
-      company.portalBrandName ||
-      company.portalPrimaryColor ||
-      company.portalLogoUrl
+      company.portalSubdomain,
   );
 }
 
-function hasCommunications(company: CompanyPayload | null): boolean {
+function hasCommunications(company: CompanyRecord | null): boolean {
   if (!company) return false;
 
   return Boolean(
@@ -116,11 +69,11 @@ function hasCommunications(company: CompanyPayload | null): boolean {
       company.opsEmail ||
       company.quotesEmail ||
       company.podsEmail ||
-      company.notificationsEmail
+      company.notificationsEmail,
   );
 }
 
-function getPermissionCount(company: CompanyPayload | null): number {
+function getPermissionCount(company: CompanyRecord | null): number {
   return (
     countEnabled(company?.enabledPermissions) ||
     countEnabled(company?.permissions) ||
@@ -503,7 +456,7 @@ function StatusPill({ label, tone }: StatusMeta) {
   );
 }
 
-function QuickCard({ item, company }: { item: QuickCard; company: CompanyPayload | null }) {
+function QuickCard({ item, company }: { item: QuickCard; company: CompanyRecord | null }) {
   const status = item.statusResolver(company);
 
   return (
@@ -585,45 +538,11 @@ function QuickCard({ item, company }: { item: QuickCard; company: CompanyPayload
 }
 
 export default function SettingsCommandCenter() {
-  const [company, setCompany] = useState<CompanyPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadCompany() {
-      setLoading(true);
-      setLoadError("");
-
-      try {
-        const token = readToken();
-        const response = await fetch(`${API_BASE}/companies/my-company`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-
-        const data = await readJsonSafe(response);
-
-        if (!response.ok) {
-          throw new Error(data?.message || "Unable to load tenant company.");
-        }
-
-        if (!mounted) return;
-        setCompany(data || {});
-      } catch (error: any) {
-        if (!mounted) return;
-        setLoadError(error?.message || "Unable to load tenant company.");
-        setCompany(null);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    loadCompany();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  // Migrated from a per-page fetch+state to the shared TenantContext (PR
+  // following PR #6). One source of truth for the tenant record across the
+  // app — when BrandingSettings saves, this page sees the new branding on
+  // its next render without an extra fetch.
+  const { tenant: company, isLoading: loading, error: loadError } = useTenant();
 
   const stats = useMemo(() => {
     const tenantName =
@@ -633,7 +552,7 @@ export default function SettingsCommandCenter() {
       "—";
 
     const portalBrand =
-      company?.portalBrandName ||
+      company?.brandName ||
       company?.portalSubdomain ||
       "—";
 
