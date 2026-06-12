@@ -1,68 +1,63 @@
-output "cluster_arn" {
-  description = "ARN of the ECS cluster."
+output "ecs_cluster_arn" {
+  description = "ECS cluster ARN."
   value       = aws_ecs_cluster.main.arn
 }
 
-output "cluster_name" {
-  description = "Name of the ECS cluster."
+output "ecs_cluster_name" {
+  description = "ECS cluster name."
   value       = aws_ecs_cluster.main.name
 }
 
-output "service_arn" {
-  description = "ARN of the ECS service."
-  value       = aws_ecs_service.backend.id
-}
-
-output "service_name" {
-  description = "Name of the ECS service."
+output "ecs_service_name" {
+  description = "ECS service name. Used by the CI deploy pipeline: aws ecs update-service --cluster ... --service ... --force-new-deployment"
   value       = aws_ecs_service.backend.name
 }
 
 output "task_definition_arn" {
-  description = "ARN of the latest active task definition revision."
+  description = "Latest active task definition ARN."
   value       = aws_ecs_task_definition.backend.arn
 }
 
-output "task_execution_role_arn" {
-  description = "ARN of the ECS task execution role. The CI/CD pipeline needs iam:PassRole on this when registering new task definitions."
-  value       = aws_iam_role.execution.arn
-}
-
 output "task_role_arn" {
-  description = "ARN of the application task role. Attach additional policies here for S3, SES, etc."
+  description = "ARN of the task IAM role (application permissions). Attach extra policies here for S3 upload, SQS, etc."
   value       = aws_iam_role.task.arn
 }
 
+output "task_execution_role_arn" {
+  description = "ARN of the task execution IAM role (used by ECS to pull images and read secrets)."
+  value       = aws_iam_role.task_execution.arn
+}
+
 output "alb_arn" {
-  description = "ARN of the Application Load Balancer."
-  value       = aws_lb.backend.arn
+  description = "ALB ARN."
+  value       = aws_lb.main.arn
 }
 
 output "alb_dns_name" {
-  description = "DNS name of the ALB. Use this as the CNAME target if Route 53 is managed outside Terraform."
-  value       = aws_lb.backend.dns_name
+  description = "ALB DNS name. Use this as the API base URL when no custom domain is configured."
+  value       = aws_lb.main.dns_name
+}
+
+output "alb_zone_id" {
+  description = "Canonical hosted zone ID of the ALB (for Route 53 alias records)."
+  value       = aws_lb.main.zone_id
 }
 
 output "target_group_arn" {
-  description = "ARN of the ALB target group. Used by the CI/CD pipeline to register new task sets."
+  description = "ALB target group ARN."
   value       = aws_lb_target_group.backend.arn
 }
 
 output "log_group_name" {
-  description = "CloudWatch Log Group name for the backend container. Use with `aws logs tail` for live debugging."
+  description = "CloudWatch Log Group name: /ecs/flowops/<environment>/backend"
   value       = aws_cloudwatch_log_group.backend.name
 }
 
-output "log_group_arn" {
-  description = "CloudWatch Log Group ARN."
-  value       = aws_cloudwatch_log_group.backend.arn
-}
-
-output "backend_url" {
-  description = "Base URL for the backend API. Uses the custom domain if set; falls back to the ALB DNS name."
+output "api_url" {
+  description = "Public API URL — custom domain if configured, otherwise the ALB DNS name."
   value = (
     var.domain_name != ""
     ? "https://${var.domain_name}"
-    : "http://${aws_lb.backend.dns_name}"
+    : "http://${aws_lb.main.dns_name}"
   )
 }

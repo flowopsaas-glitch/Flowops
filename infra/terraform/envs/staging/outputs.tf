@@ -1,10 +1,12 @@
+# ── Frontend ──────────────────────────────────────────────────────────────
+
 output "frontend_url" {
   description = "Public URL of the SPA."
   value       = module.frontend_cdn.url
 }
 
 output "frontend_bucket_name" {
-  description = "S3 bucket the CI deploy step uploads dist/ to."
+  description = "S3 bucket to upload the SPA bundle to: aws s3 sync dist/ s3://<bucket_name>/"
   value       = module.frontend_cdn.bucket_name
 }
 
@@ -13,37 +15,46 @@ output "frontend_distribution_id" {
   value       = module.frontend_cdn.distribution_id
 }
 
+# ── Network ───────────────────────────────────────────────────────────────
+
 output "vpc_id" {
   description = "VPC ID."
   value       = module.network.vpc_id
 }
 
-output "nat_gateway_public_ips" {
-  description = "NAT Gateway public IPs — whitelist these in external services (SendGrid, Cloudflare R2 IP rules, etc.)."
-  value       = module.network.nat_gateway_public_ips
+output "nat_public_ips" {
+  description = "Elastic IPs of the NAT Gateway(s). Allowlist these on any external services the backend calls."
+  value       = module.network.nat_public_ips
 }
 
-output "backend_url" {
-  description = "Base URL for the backend API."
-  value       = module.backend_ecs.backend_url
+# ── Backend ───────────────────────────────────────────────────────────────
+
+output "api_url" {
+  description = "Public API URL (custom domain if configured, else the ALB DNS name)."
+  value       = module.backend_ecs.api_url
 }
 
-output "backend_alb_dns_name" {
-  description = "Raw ALB DNS name. Useful as a fallback if the custom domain is not yet configured."
+output "alb_dns_name" {
+  description = "Raw ALB DNS name. Use when no custom domain is set."
   value       = module.backend_ecs.alb_dns_name
 }
 
 output "ecs_cluster_name" {
-  description = "ECS cluster name — used by CI to deploy new task revisions."
-  value       = module.backend_ecs.cluster_name
+  description = "ECS cluster name. Pass to the CD deploy command."
+  value       = module.backend_ecs.ecs_cluster_name
 }
 
 output "ecs_service_name" {
-  description = "ECS service name — used by CI to update the service."
-  value       = module.backend_ecs.service_name
+  description = "ECS service name. Pass to the CD deploy command."
+  value       = module.backend_ecs.ecs_service_name
 }
 
-output "backend_log_group" {
-  description = "CloudWatch Log Group for backend container logs."
+output "log_group_name" {
+  description = "CloudWatch Log Group name for backend logs."
   value       = module.backend_ecs.log_group_name
+}
+
+output "task_role_arn" {
+  description = "Task IAM role ARN. Attach additional policies here as needed."
+  value       = module.backend_ecs.task_role_arn
 }

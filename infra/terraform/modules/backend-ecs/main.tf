@@ -1,18 +1,10 @@
 data "aws_region" "current" {}
+
 data "aws_caller_identity" "current" {}
 
 locals {
-  name_prefix = "flowops-${var.environment}"
-
-  use_custom_domain  = var.domain_name != ""
-  use_registry_creds = var.registry_credentials_secret_arn != ""
-
-  # Collect the unique set of Secrets Manager ARNs (base ARN without the
-  # :Key:: suffix) so we can grant GetSecretValue on each one.
-  secret_arns = distinct([
-    for _, v in var.secret_environment_variables :
-    split(":", v)[0] == "arn" ? join(":", slice(split(":", v), 0, 7)) : v
-  ])
+  use_https         = var.acm_certificate_arn != ""
+  use_custom_domain = var.domain_name != ""
 
   common_tags = merge(
     {
@@ -25,7 +17,8 @@ locals {
   )
 }
 
-# Cross-cutting validation.
+# ── Cross-cutting validation ──────────────────────────────────────────────
+
 resource "terraform_data" "domain_validation" {
   lifecycle {
     precondition {
@@ -42,16 +35,15 @@ resource "terraform_data" "domain_validation" {
 # ── CloudWatch Log Group ──────────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "backend" {
-  name              = "/ecs/${local.name_prefix}/backend"
+  name              = "/ecs/flowops/${var.environment}/backend"
   retention_in_days = var.log_retention_days
-
-  tags = local.common_tags
+  tags              = local.common_tags
 }
 
-# ── IAM: Task Execution Role ──────────────────────────────────────────────
-# Used by the ECS agent to pull the image and inject secrets into the task.
+# ── IAM: Task Execution Role ─────────────────────────────────────────────
+# Used by ECS to pull the image, write logs, and read Secrets Manager.
 
-data "aws_iam_policy_document" "ecs_assume" {
+data "aws_iam_policy_document" "execution_trust" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
@@ -61,92 +53,55 @@ data "aws_iam_policy_document" "ecs_assume" {
   }
 }
 
-resource "aws_iam_role" "execution" {
-  name               = "${local.name_prefix}-ecs-execution"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+resource "aws_iam_role" "task_execution" {
+  name               = "flowops-${var.environment}-backend-execution"
+  assume_role_policy = data.aws_iam_policy_document.execution_trust.json
   tags               = local.common_tags
 }
 
-resource "aws_iam_role_policy_attachment" "execution_base" {
-  role       = aws_iam_role.execution.name
+resource "aws_iam_role_policy_attachment" "task_execution_base" {
+  role       = aws_iam_role.task_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Grant GetSecretValue for all secrets referenced by secret_environment_variables.
+# Grant access to Secrets Manager for secret injection and image credentials.
 data "aws_iam_policy_document" "execution_secrets" {
-  count = length(local.secret_arns) > 0 ? 1 : 0
+  count = (length(var.secret_arns) > 0 || var.image_credentials_secret_arn != "") ? 1 : 0
 
   statement {
-    sid       = "ECSSecretsAccess"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = local.secret_arns
+    sid    = "GetSecrets"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+    ]
+    resources = compact(concat(
+      values(var.secret_arns),
+      [var.image_credentials_secret_arn],
+    ))
   }
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
-  count  = length(local.secret_arns) > 0 ? 1 : 0
-  name   = "secrets-access"
-  role   = aws_iam_role.execution.id
+  count  = (length(var.secret_arns) > 0 || var.image_credentials_secret_arn != "") ? 1 : 0
+  name   = "flowops-${var.environment}-backend-execution-secrets"
+  role   = aws_iam_role.task_execution.id
   policy = data.aws_iam_policy_document.execution_secrets[0].json
 }
 
-# Allow ECS to pull from private registries (GHCR, etc.).
-data "aws_iam_policy_document" "execution_registry" {
-  count = local.use_registry_creds ? 1 : 0
-
-  statement {
-    sid       = "RegistryCredentials"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.registry_credentials_secret_arn]
-  }
-}
-
-resource "aws_iam_role_policy" "execution_registry" {
-  count  = local.use_registry_creds ? 1 : 0
-  name   = "registry-credentials"
-  role   = aws_iam_role.execution.id
-  policy = data.aws_iam_policy_document.execution_registry[0].json
-}
-
 # ── IAM: Task Role ────────────────────────────────────────────────────────
-# Assumed by the running application. Add policies here for S3, SES, X-Ray,
-# etc. as the backend grows.
+# Permissions the backend *application* uses at runtime. Start empty; attach
+# extra policies (e.g. S3 upload, SQS) in the calling env as needed.
 
 resource "aws_iam_role" "task" {
-  name               = "${local.name_prefix}-ecs-task"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+  name               = "flowops-${var.environment}-backend-task"
+  assume_role_policy = data.aws_iam_policy_document.execution_trust.json
   tags               = local.common_tags
-}
-
-# X-Ray write permissions for OTel tracing (the backend has OTel wired).
-resource "aws_iam_role_policy_attachment" "task_xray" {
-  role       = aws_iam_role.task.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
-}
-
-# CloudWatch Logs write so the application can ship structured logs.
-data "aws_iam_policy_document" "task_logs" {
-  statement {
-    sid = "CloudWatchLogs"
-    actions = [
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "logs:DescribeLogStreams",
-    ]
-    resources = ["${aws_cloudwatch_log_group.backend.arn}:*"]
-  }
-}
-
-resource "aws_iam_role_policy" "task_logs" {
-  name   = "cloudwatch-logs"
-  role   = aws_iam_role.task.id
-  policy = data.aws_iam_policy_document.task_logs.json
 }
 
 # ── ECS Cluster ───────────────────────────────────────────────────────────
 
 resource "aws_ecs_cluster" "main" {
-  name = local.name_prefix
+  name = "flowops-${var.environment}"
 
   setting {
     name  = "containerInsights"
@@ -163,18 +118,19 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   default_capacity_provider_strategy {
     capacity_provider = "FARGATE"
     weight            = 1
+    base              = 1
   }
 }
 
 # ── ECS Task Definition ───────────────────────────────────────────────────
 
 resource "aws_ecs_task_definition" "backend" {
-  family                   = "${local.name_prefix}-backend"
+  family                   = "flowops-${var.environment}-backend"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = var.cpu
   memory                   = var.memory
-  execution_role_arn       = aws_iam_role.execution.arn
+  execution_role_arn       = aws_iam_role.task_execution.arn
   task_role_arn            = aws_iam_role.task.arn
 
   container_definitions = jsonencode([
@@ -184,79 +140,99 @@ resource "aws_ecs_task_definition" "backend" {
         image     = var.backend_image
         essential = true
 
-        portMappings = [{
-          containerPort = var.container_port
-          protocol      = "tcp"
-          appProtocol   = "http"
-        }]
+        portMappings = [
+          {
+            containerPort = var.container_port
+            protocol      = "tcp"
+          }
+        ]
 
         environment = [
-          for k, v in var.plain_environment_variables : { name = k, value = v }
+          for k, v in merge(
+            {
+              NODE_ENV = "production"
+              PORT     = tostring(var.container_port)
+            },
+            var.environment_variables,
+          ) : { name = k, value = v }
         ]
 
         secrets = [
-          for k, v in var.secret_environment_variables : { name = k, valueFrom = v }
+          for name, arn in var.secret_arns : {
+            name      = name
+            valueFrom = arn
+          }
         ]
 
         logConfiguration = {
           logDriver = "awslogs"
           options = {
-            awslogs-group         = aws_cloudwatch_log_group.backend.name
-            awslogs-region        = data.aws_region.current.name
-            awslogs-stream-prefix = "ecs"
+            "awslogs-group"         = aws_cloudwatch_log_group.backend.name
+            "awslogs-region"        = data.aws_region.current.name
+            "awslogs-stream-prefix" = "ecs"
           }
         }
 
         healthCheck = {
-          command     = ["CMD-SHELL", "curl -f http://localhost:${var.container_port}${var.health_check_path} || exit 1"]
+          command = [
+            "CMD-SHELL",
+            "wget --quiet --tries=1 --spider http://localhost:${var.container_port}${var.health_check_path} || exit 1",
+          ]
           interval    = 30
           timeout     = 5
           retries     = 3
-          startPeriod = 60
+          startPeriod = var.health_check_grace_period_seconds
         }
+
+        readonlyRootFilesystem = false
+        stopTimeout            = 30
       },
-      # Only set repositoryCredentials when pulling from a private registry.
-      local.use_registry_creds ? {
+      # Registry credentials — omit entirely when not set (jsonencode drops null).
+      var.image_credentials_secret_arn != "" ? {
         repositoryCredentials = {
-          credentialsParameter = var.registry_credentials_secret_arn
+          credentialsParameter = var.image_credentials_secret_arn
         }
       } : {},
     )
   ])
 
   tags = local.common_tags
+
+  lifecycle {
+    # Allow the CD pipeline to roll out new image tags without Terraform conflicts.
+    ignore_changes = [container_definitions]
+  }
 }
 
 # ── Application Load Balancer ─────────────────────────────────────────────
 
-resource "aws_lb" "backend" {
-  name               = "${local.name_prefix}-alb"
+resource "aws_lb" "main" {
+  name               = "flowops-${var.environment}-backend"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.alb_security_group_id]
   subnets            = var.public_subnet_ids
 
-  enable_deletion_protection = var.environment == "production"
-  drop_invalid_header_fields = true
+  enable_deletion_protection = var.environment == "production" ? true : false
 
   tags = local.common_tags
 }
 
 resource "aws_lb_target_group" "backend" {
-  name        = "${local.name_prefix}-tg"
+  name        = "flowops-${var.environment}-backend"
   port        = var.container_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
-  target_type = "ip" # required for awsvpc network mode
+  target_type = "ip" # Fargate uses awsvpc networking — targets are IPs
 
   health_check {
     enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200-299"
     path                = var.health_check_path
     protocol            = "HTTP"
-    matcher             = "200-299"
-    interval            = 30
     timeout             = 5
-    healthy_threshold   = 2
     unhealthy_threshold = 3
   }
 
@@ -269,41 +245,11 @@ resource "aws_lb_target_group" "backend" {
   }
 }
 
-# HTTP listener — always present. Redirects to HTTPS when a cert is set;
-# forwards directly otherwise (useful for internal / dev targets).
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.backend.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  dynamic "default_action" {
-    for_each = var.acm_certificate_arn != "" ? [1] : []
-    content {
-      type = "redirect"
-      redirect {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
-    }
-  }
-
-  dynamic "default_action" {
-    for_each = var.acm_certificate_arn == "" ? [1] : []
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.backend.arn
-    }
-  }
-
-  tags = local.common_tags
-}
-
-# HTTPS listener — only created when an ACM cert is supplied.
+# HTTPS listener — enabled when an ACM cert is provided.
 resource "aws_lb_listener" "https" {
-  count = var.acm_certificate_arn != "" ? 1 : 0
+  count = local.use_https ? 1 : 0
 
-  load_balancer_arn = aws_lb.backend.arn
+  load_balancer_arn = aws_lb.main.arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
@@ -317,52 +263,53 @@ resource "aws_lb_listener" "https" {
   tags = local.common_tags
 }
 
-# ── Route 53 record for the custom API domain ─────────────────────────────
+# HTTP → HTTPS redirect (when HTTPS is configured).
+resource "aws_lb_listener" "http_redirect" {
+  count = local.use_https ? 1 : 0
 
-resource "aws_route53_record" "backend_a" {
-  count   = local.use_custom_domain ? 1 : 0
-  zone_id = var.hosted_zone_id
-  name    = var.domain_name
-  type    = "A"
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
 
-  alias {
-    name                   = aws_lb.backend.dns_name
-    zone_id                = aws_lb.backend.zone_id
-    evaluate_target_health = true
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
   }
+
+  tags = local.common_tags
 }
 
-resource "aws_route53_record" "backend_aaaa" {
-  count   = local.use_custom_domain ? 1 : 0
-  zone_id = var.hosted_zone_id
-  name    = var.domain_name
-  type    = "AAAA"
+# Plain HTTP listener — used when no ACM cert is configured (e.g. staging without a domain).
+resource "aws_lb_listener" "http_direct" {
+  count = local.use_https ? 0 : 1
 
-  alias {
-    name                   = aws_lb.backend.dns_name
-    zone_id                = aws_lb.backend.zone_id
-    evaluate_target_health = true
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
   }
+
+  tags = local.common_tags
 }
 
 # ── ECS Service ───────────────────────────────────────────────────────────
 
 resource "aws_ecs_service" "backend" {
-  name            = "${local.name_prefix}-backend"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.backend.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
-
-  deployment_minimum_healthy_percent = var.deployment_minimum_healthy_percent
-  deployment_maximum_percent         = var.deployment_maximum_percent
-
-  # Rolling update with circuit breaker — auto-rollback if the new task
-  # can't become healthy.
-  deployment_circuit_breaker {
-    enable   = true
-    rollback = true
-  }
+  name                              = "flowops-${var.environment}-backend"
+  cluster                           = aws_ecs_cluster.main.id
+  task_definition                   = aws_ecs_task_definition.backend.arn
+  desired_count                     = var.desired_count
+  launch_type                       = "FARGATE"
+  platform_version                  = "LATEST"
+  health_check_grace_period_seconds = var.health_check_grace_period_seconds
+  force_new_deployment              = false # CI rolls deployments with new image tags
 
   network_configuration {
     subnets          = var.private_subnet_ids
@@ -376,45 +323,65 @@ resource "aws_ecs_service" "backend" {
     container_port   = var.container_port
   }
 
-  # Ignore desired_count so Auto Scaling can adjust it without Terraform
-  # fighting to reset it to the initial value on every plan.
-  lifecycle {
-    ignore_changes = [desired_count]
-  }
-
   depends_on = [
-    aws_lb_listener.http,
-    aws_iam_role_policy_attachment.execution_base,
+    aws_lb_listener.https,
+    aws_lb_listener.http_redirect,
+    aws_lb_listener.http_direct,
+    aws_iam_role_policy_attachment.task_execution_base,
   ]
 
   tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [desired_count, task_definition]
+  }
 }
 
-# ── Auto Scaling ──────────────────────────────────────────────────────────
+# ── Autoscaling ───────────────────────────────────────────────────────────
 
-resource "aws_appautoscaling_target" "ecs" {
+resource "aws_appautoscaling_target" "backend" {
+  count = var.enable_autoscaling ? 1 : 0
+
   max_capacity       = var.max_count
   min_capacity       = var.min_count
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.backend.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  depends_on = [aws_ecs_service.backend]
 }
 
-# Target-tracking on CPU — handles both scale-out and scale-in automatically.
 resource "aws_appautoscaling_policy" "cpu" {
-  name               = "${local.name_prefix}-cpu-tracking"
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "flowops-${var.environment}-backend-cpu"
   policy_type        = "TargetTrackingScaling"
-  resource_id        = aws_appautoscaling_target.ecs.resource_id
-  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+  resource_id        = aws_appautoscaling_target.backend[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.backend[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.backend[0].service_namespace
 
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
+    target_value       = var.autoscaling_cpu_target
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
 
-    target_value       = var.cpu_scale_out_threshold
-    scale_in_cooldown  = 300 # 5 min — don't scale in too aggressively
-    scale_out_cooldown = 60  # 1 min — react quickly to traffic spikes
+# ── Optional Route 53 alias for the API domain ────────────────────────────
+
+resource "aws_route53_record" "api" {
+  count = local.use_custom_domain ? 1 : 0
+
+  zone_id = var.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
   }
 }

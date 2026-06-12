@@ -23,7 +23,7 @@ provider "aws" {
   }
 }
 
-# ── Frontend CDN ──────────────────────────────────────────────────────────
+# ── Frontend CDN ─────────────────────────────────────────────────────────
 
 module "frontend_cdn" {
   source = "../../modules/frontend-cdn"
@@ -44,10 +44,16 @@ module "frontend_cdn" {
 module "network" {
   source = "../../modules/network"
 
-  environment                    = "production"
-  single_nat_gateway             = false # 1 NAT GW per AZ for HA
-  az_count                       = 3
-  enable_secretsmanager_endpoint = true # reduce NAT traffic on task start
+  environment        = "production"
+  vpc_cidr           = var.vpc_cidr
+  az_count           = var.az_count
+  single_nat_gateway = false # per-AZ NAT for production resilience
+  container_port     = var.backend_container_port
+
+  # Recommended for production: VPC endpoints reduce NAT cost and improve
+  # startup reliability.
+  enable_s3_vpc_endpoint             = true
+  enable_secretsmanager_vpc_endpoint = true
 }
 
 # ── Backend ECS ───────────────────────────────────────────────────────────
@@ -57,54 +63,65 @@ module "backend_ecs" {
 
   environment = "production"
 
-  # Network inputs from the network module.
+  # Networking
   vpc_id                = module.network.vpc_id
   public_subnet_ids     = module.network.public_subnet_ids
   private_subnet_ids    = module.network.private_subnet_ids
   alb_security_group_id = module.network.alb_security_group_id
   ecs_security_group_id = module.network.ecs_security_group_id
 
-  # Container image.
-  backend_image = var.backend_image
+  # Container image — pin to a versioned tag in production, never `latest`
+  backend_image                = var.backend_image
+  image_credentials_secret_arn = var.backend_image_credentials_secret_arn
+  container_port               = var.backend_container_port
 
-  # Fargate sizing for production — size up as load warrants.
-  cpu    = 512
-  memory = 1024
+  # Production sizing — override in tfvars if needed
+  cpu           = var.backend_cpu
+  memory        = var.backend_memory
+  desired_count = var.backend_desired_count
+  min_count     = 2 # minimum 2 for production HA
+  max_count     = 10
 
-  # 2 tasks minimum for HA across AZs; scale to 8 under load.
-  desired_count = 2
-  min_count     = 2
-  max_count     = 8
+  # Autoscaling
+  enable_autoscaling     = true
+  autoscaling_cpu_target = 65 # slightly more aggressive in production
 
-  # Ensure at least 100% of tasks are healthy during a rolling deploy.
-  deployment_minimum_healthy_percent = 100
-  deployment_maximum_percent         = 200
+  # Health check — longer grace period allows DB migrations to complete
+  health_check_path                 = "/health"
+  health_check_grace_period_seconds = 120
 
-  # Custom API domain (required in production).
+  # Secrets
+  secret_arns = var.backend_secret_arns
+
+  # Custom domain — required for production
   domain_name         = var.backend_domain_name
   hosted_zone_id      = var.backend_hosted_zone_id
   acm_certificate_arn = var.backend_acm_certificate_arn
-
-  # GHCR credentials.
-  registry_credentials_secret_arn = var.ghcr_credentials_secret_arn
-
-  # Non-secret env vars.
-  plain_environment_variables = {
-    NODE_ENV = "production"
-    PORT     = "3000"
-  }
-
-  # Secret env vars via ECS secrets integration.
-  secret_environment_variables = var.backend_secret_environment_variables
-
-  log_retention_days = 90
 }
 
-# ── Database (Phase C.3) ──────────────────────────────────────────────────
-# module "database" { ... }
+# ── Database (Phase C.3 — skeleton) ──────────────────────────────────────
+# module "database" {
+#   source = "../../modules/database"
+#   environment          = "production"
+#   vpc_id               = module.network.vpc_id
+#   private_subnet_ids   = module.network.private_subnet_ids
+#   db_security_group_id = module.network.rds_security_group_id
+#   multi_az             = true
+#   instance_class       = "db.m5.large"
+# }
 
-# ── Cache (Phase C.3) ─────────────────────────────────────────────────────
-# module "cache" { ... }
+# ── Cache (Phase C.3 — skeleton) ─────────────────────────────────────────
+# module "cache" {
+#   source = "../../modules/cache"
+#   environment             = "production"
+#   vpc_id                  = module.network.vpc_id
+#   private_subnet_ids      = module.network.private_subnet_ids
+#   cache_security_group_id = module.network.redis_security_group_id
+#   num_cache_nodes         = 2
+# }
 
-# ── Secrets (Phase C.3) ───────────────────────────────────────────────────
-# module "secrets" { ... }
+# ── Secrets (Phase C.3 — skeleton) ───────────────────────────────────────
+# module "secrets" {
+#   source      = "../../modules/secrets"
+#   environment = "production"
+# }
