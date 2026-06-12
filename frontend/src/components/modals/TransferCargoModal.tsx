@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { X, ArrowRightLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useToast } from '../ToastProvider';
+import { FLOWOPS_API_URL } from '../../lib/env';
 
 interface TransferCargoModalProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      axios.get('http://localhost:3000/api/branches/snapshot')
+      axios.get(`${FLOWOPS_API_URL}/branches/snapshot`)
         .then(res => setBranches(res.data))
         .catch(err => console.error("Failed to fetch branches", err));
     }
@@ -41,13 +42,13 @@ export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({
     try {
       const waybillIds = selectedWaybills.map(w => w.id);
       
-      const response = await axios.post('http://localhost:3000/api/branches/linehaul', {
+      const response = await axios.post(`${FLOWOPS_API_URL}/branches/linehaul`, {
         waybillIds,
         destinationBranchId: destinationId
       });
 
       const manifestId = response.data.id;
-      window.open(`http://localhost:3000/api/branches/manifest/${manifestId}/pdf`, '_blank');
+      window.open(`${FLOWOPS_API_URL}/branches/manifest/${manifestId}/pdf`, '_blank');
 
       onSuccess();
       onClose();

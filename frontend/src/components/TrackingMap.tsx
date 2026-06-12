@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { io, Socket } from 'socket.io-client';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { FLOWOPS_WS_ORIGIN } from '../lib/env';
 
 interface DriverTelemetry {
   driverId: number;
@@ -33,7 +34,7 @@ export const TrackingMap: React.FC<{ companyId: number }> = ({ companyId }) => {
     mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
 
     // Connect securely to your real-time WebSocket infrastructure port
-    socketRef.current = io('http://localhost:3000/tracking-dashboard');
+    socketRef.current = io(`${FLOWOPS_WS_ORIGIN}/tracking-dashboard`);
 
     socketRef.current.on('connect', () => {
       setConnectionStatus('📡 Live Telemetry Stream Connected');

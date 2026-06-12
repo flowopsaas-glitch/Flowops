@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { CheckCircle, FileSearch, Trash2, Loader2, X, RefreshCw } from 'lucide-react';
+import { FLOWOPS_API_URL, FLOWOPS_HTTP_ORIGIN } from '../../lib/env';
 
 interface Props {
   item: any;
@@ -10,7 +11,7 @@ interface Props {
 
 const InboxCorrection: React.FC<Props> = ({ item, onClose, onCommitted }) => {
   // Use fileUrl (matching your Prisma schema)
-  const assetUrl = `http://localhost:3000${item.fileUrl}`;
+  const assetUrl = `${FLOWOPS_HTTP_ORIGIN}${item.fileUrl}`;
   
   const [formData, setFormData] = useState({
     waybillNumber: item.waybillNumber || '',
@@ -30,7 +31,7 @@ const InboxCorrection: React.FC<Props> = ({ item, onClose, onCommitted }) => {
   const commitToSystem = async () => {
     setIsSaving(true);
     try {
-      await axios.post(`http://localhost:3000/api/waybills/inbox/${item.id}/commit`, formData);
+      await axios.post(`${FLOWOPS_API_URL}/waybills/inbox/${item.id}/commit`, formData);
       onCommitted();
     } catch (err) {
       console.error(err);
@@ -43,7 +44,7 @@ const InboxCorrection: React.FC<Props> = ({ item, onClose, onCommitted }) => {
     if (!window.confirm("Discard this asset?")) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`http://localhost:3000/api/waybills/inbox/${item.id}`);
+      await axios.delete(`${FLOWOPS_API_URL}/waybills/inbox/${item.id}`);
       onCommitted();
     } catch (err) {
       console.error(err);

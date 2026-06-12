@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { FLOWOPS_API_URL } from '../../lib/env';
 
 const ClientManager = () => {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -7,7 +8,7 @@ const ClientManager = () => {
   const [formData, setFormData] = useState({ name: '', subscriptionPlan: 'CONTRACT', email: '', phone: '' });
 
   const fetchClients = async () => {
-    const res = await axios.get('http://localhost:3000/api/companies');
+    const res = await axios.get(`${FLOWOPS_API_URL}/companies`);
     setClients(res.data);
   };
 
@@ -15,7 +16,7 @@ const ClientManager = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    await axios.post('http://localhost:3000/api/companies', formData);
+    await axios.post(`${FLOWOPS_API_URL}/companies`, formData);
     setIsFlipped(false);
     fetchClients();
   };

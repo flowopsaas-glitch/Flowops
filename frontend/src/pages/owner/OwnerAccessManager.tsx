@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { FLOWOPS_API_URL } from "../../lib/env";
 
 type CompanyRow = {
   id: number;
@@ -84,12 +85,7 @@ type RecommendPlanPayload = {
   reason?: string;
 };
 
-const API_BASE =
-  (typeof import.meta !== "undefined" &&
-    (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE_URL) ||
-  (typeof import.meta !== "undefined" &&
-    (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL) ||
-  "http://127.0.0.1:3000/api";
+const API_BASE = FLOWOPS_API_URL;
 
 const shellStyle: React.CSSProperties = {
   minHeight: "100vh",

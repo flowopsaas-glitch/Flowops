@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { FLOWOPS_API_URL } from "../lib/env";
 
 type PortalCompany = {
   id: number;
@@ -25,9 +26,7 @@ type PortalResponse = {
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
-const API_BASE =
-  (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:3000/api";
+const API_BASE = FLOWOPS_API_URL;
 
 function getTokenFromUrl() {
   const params = new URLSearchParams(window.location.search);

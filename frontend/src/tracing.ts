@@ -6,9 +6,9 @@ import { FetchInstrumentation } from '@opentelemetry/instrumentation-fetch';
 import { XMLHttpRequestInstrumentation } from '@opentelemetry/instrumentation-xml-http-request';
 import { defaultResource, resourceFromAttributes } from '@opentelemetry/resources';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+import { FLOWOPS_OTEL_TRACES_URL } from './lib/env';
 
-const otelEndpoint = import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces';
-const exporter = new OTLPTraceExporter({ url: otelEndpoint });
+const exporter = new OTLPTraceExporter({ url: FLOWOPS_OTEL_TRACES_URL });
 
 const provider = new WebTracerProvider({
   resource: defaultResource().merge(
@@ -34,4 +34,4 @@ registerInstrumentations({
   tracerProvider: provider,
 });
 
-console.log(`✅ OpenTelemetry Web tracing initialized: ${otelEndpoint}`);
+console.log(`✅ OpenTelemetry Web tracing initialized: ${FLOWOPS_OTEL_TRACES_URL}`);

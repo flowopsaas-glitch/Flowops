@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { FLOWOPS_WS_ORIGIN } from '../lib/env';
 
 interface SystemMetric {
   status: string;
@@ -13,7 +14,7 @@ export const WaybillDashboard: React.FC = () => {
 
   useEffect(() => {
     // 1. Initialize secure client connection targeting the active BroadcastGateway port
-    const socket: Socket = io(window.location.origin || 'http://localhost:5173', {
+    const socket: Socket = io(FLOWOPS_WS_ORIGIN, {
       transports: ['websocket'],
       autoConnect: true,
     });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, ExternalLink, FileDown, Scan, PenTool } from 'lucide-react';
+import { FLOWOPS_HTTP_ORIGIN } from '../../lib/env';
 
 interface EvidenceModalProps {
   isOpen: boolean;
@@ -20,8 +21,8 @@ const EvidenceModal: React.FC<EvidenceModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // Use a constant for the base URL to make switching between dev/prod easier
-  const BASE_URL = "http://localhost:3000";
+  // Origin without `/api`, used for asset/PDF download URLs.
+  const BASE_URL = FLOWOPS_HTTP_ORIGIN;
 
   const downloadReceipt = () => {
     window.open(`${BASE_URL}/api/waybills/${waybillId}/receipt`, '_blank');

@@ -1,5 +1,7 @@
 // src/api/liveTrackingApi.ts
 
+import { FLOWOPS_API_URL } from "../lib/env";
+
 export type LiveTrackingQuery = {
   stuckMins?: number;
   onlyStuck?: boolean;
@@ -60,10 +62,7 @@ export type LiveTrackingResponse = {
 };
 
 function getApiBase(): string {
-  // Prefer env if you want:
-  // VITE_API_URL=http://localhost:3000/api
-  const env = (import.meta as any)?.env?.VITE_API_URL;
-  return String(env || "http://localhost:3000/api").replace(/\/$/, "");
+  return FLOWOPS_API_URL;
 }
 
 function getToken(): string | null {

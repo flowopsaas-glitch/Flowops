@@ -5,6 +5,7 @@ import {
   Cpu, CheckCircle2, Zap, DollarSign 
 } from 'lucide-react';
 import InboxCorrection from '../components/Inbox/InboxCorrection';
+import { FLOWOPS_API_URL } from '../lib/env';
 
 interface InboxItem {
   id: string;
@@ -39,9 +40,9 @@ export default function WaybillInboxPage() {
   const fetchData = async () => {
     try {
       const [inboxRes, recentRes, statsRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/waybills/inbox'),
-        axios.get('http://localhost:3000/api/waybills/recent'), // Endpoint assumes you have this
-        axios.get('http://localhost:3000/api/waybills/inbox/stats')
+        axios.get(`${FLOWOPS_API_URL}/waybills/inbox`),
+        axios.get(`${FLOWOPS_API_URL}/waybills/recent`), // Endpoint assumes you have this
+        axios.get(`${FLOWOPS_API_URL}/waybills/inbox/stats`)
       ]);
       setItems(inboxRes.data);
       setRecentCommits(recentRes.data);
@@ -62,7 +63,7 @@ export default function WaybillInboxPage() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      await axios.post('http://localhost:3000/api/waybills/inbox/upload', formData);
+      await axios.post(`${FLOWOPS_API_URL}/waybills/inbox/upload`, formData);
       fetchData();
     } catch (err) { console.error(err); } finally {
       setUploading(false);

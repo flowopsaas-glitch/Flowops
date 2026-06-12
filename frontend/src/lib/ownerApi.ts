@@ -15,12 +15,12 @@ export type OwnerLoginResponse = {
   user: OwnerUser
 }
 
-const OWNER_API_BASE =
-  (import.meta as any)?.env?.VITE_API_BASE_URL?.trim?.() ||
-  'http://127.0.0.1:3000/api'
+import { FLOWOPS_API_URL } from './env'
+
+const OWNER_API_BASE = FLOWOPS_API_URL
 
 export function getOwnerApiBase() {
-  return OWNER_API_BASE.replace(/\/+$/, '')
+  return OWNER_API_BASE
 }
 
 async function parseJsonSafe(response: Response) {

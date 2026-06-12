@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { CheckCircle, AlertCircle, Save, FileSearch } from 'lucide-react';
+import { FLOWOPS_API_URL, FLOWOPS_HTTP_ORIGIN } from '../../lib/env';
 
 interface InboxItem {
   id: number;
@@ -27,7 +28,7 @@ const InboxCorrection: React.FC<Props> = ({ item, onCommitted }) => {
     setIsSaving(true);
     try {
       // 📡 Hitting your existing commit endpoint verified in the logs
-      await axios.post(`http://localhost:3000/api/waybills/inbox/${item.id}/commit`, formData);
+      await axios.post(`${FLOWOPS_API_URL}/waybills/inbox/${item.id}/commit`, formData);
       onCommitted();
     } catch (err) {
       console.error("Commit failed:", err);
@@ -45,7 +46,7 @@ const InboxCorrection: React.FC<Props> = ({ item, onCommitted }) => {
           <span className="text-[10px] font-black text-white uppercase tracking-widest">Source Document</span>
         </div>
         <iframe 
-          src={`http://localhost:3000${item.originalFileUrl}`} 
+          src={`${FLOWOPS_HTTP_ORIGIN}${item.originalFileUrl}`} 
           className="w-full h-full border-none"
           title="Waybill Source"
         />

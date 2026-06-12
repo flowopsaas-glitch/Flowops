@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Activity, ArrowRightLeft, PackageCheck } from 'lucide-react';
+import { FLOWOPS_API_URL } from '../lib/env';
 
 export const ActivityFeed: React.FC = () => {
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    const fetchLogs = () => axios.get('http://localhost:3000/api/dashboard/activities').then(res => setLogs(res.data));
+    const fetchLogs = () => axios.get(`${FLOWOPS_API_URL}/dashboard/activities`).then(res => setLogs(res.data));
     fetchLogs();
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
