@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import SignaturePad from '../../components/Delivery/SignaturePad';
 import { useToast } from '../../components/ToastProvider';
-import axios from 'axios';
-import { FLOWOPS_API_URL } from '../../lib/env';
+import { api } from '../../api/client';
 
 // 🚀 FIX: Defining the "Interface" removes the 3 red errors in your editor
 interface DeliveryActionProps {
@@ -25,7 +24,7 @@ const DeliveryAction: React.FC<DeliveryActionProps> = ({ waybillId, waybillNumbe
     setLoading(true);
     try {
       // 📡 Using the ID from props for the API call
-      await axios.post(`${FLOWOPS_API_URL}/waybills/${waybillId}/deliver`, {
+      await api.post<any, any>(`/waybills/${waybillId}/deliver`, {
         recipient,
         signatureBase64
       });

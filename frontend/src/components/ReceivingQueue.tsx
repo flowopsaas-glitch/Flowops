@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../api/client';
 import { Truck, CheckCircle, Package } from 'lucide-react';
 import { useToast } from './ToastProvider';
-import { FLOWOPS_API_URL } from '../lib/env';
 
 export const ReceivingQueue: React.FC = () => {
   const [manifests, setManifests] = useState([]);
 
   const fetchIncoming = async () => {
-    const res = await axios.get(`${FLOWOPS_API_URL}/branches/manifests/incoming`);
-    setManifests(res.data);
+    const res = await api.get<any, any>(`/branches/manifests/incoming`);
+    setManifests(res);
   };
 
   useEffect(() => {
@@ -22,7 +21,7 @@ export const ReceivingQueue: React.FC = () => {
 
   const handleReceive = async (id: string) => {
     try {
-      await axios.post(`${FLOWOPS_API_URL}/branches/manifest/${id}/receive`);
+      await api.post<any, any>(`/branches/manifest/${id}/receive`);
       fetchIncoming();
       showToast("Manifest received successfully! Inventory updated.", "success");
     } catch (err) {

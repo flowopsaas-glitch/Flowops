@@ -1,0 +1,97 @@
+import { Controller, Get, Post, Patch, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { InvoicesService } from './invoices.service';
+import { CurrentUser } from '../common/decorators/user.decorator';
+
+@ApiTags('Invoices')
+@ApiBearerAuth()
+@Controller()
+export class InvoicesController {
+  constructor(private readonly svc: InvoicesService) {}
+
+  @Get('invoices')
+  findAll(@CurrentUser() u: any, @Query() q: any) {
+    return this.svc.findAll(u.companyId, q);
+  }
+
+  @Get('invoices/supervisor')
+  getSupervisorView(@CurrentUser() u: any) {
+    return this.svc.getSupervisorView(u.companyId);
+  }
+
+  @Get('invoices/metrics')
+  getMetrics(@CurrentUser() u: any) {
+    return this.svc.getMetrics(u.companyId);
+  }
+
+  @Post('invoices')
+  create(@CurrentUser() u: any, @Body() body: any) {
+    return this.svc.create(u.companyId, body);
+  }
+
+  @Get('invoices/:id')
+  findOne(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.findOne(id, u.companyId);
+  }
+
+  @Patch('invoices/:id')
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+    return this.svc.update(id, u.companyId, body);
+  }
+
+  @Post('invoices/:id/pay')
+  initiatePay(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.initiatePay(id, u.companyId);
+  }
+
+  /**
+   * POST /api/v1/invoices/:id/mark-paid
+   *
+   * Manual payment approval — no Paystack required.
+   * Click this "Approve" button when you've confirmed payment outside
+   * the system (cash, EFT, bank transfer, etc.).
+   *
+   * Body (all optional):
+   *   { "note": "EFT received 12 Jun", "paidBy": "John Smith", "amount": 14999 }
+   */
+  @Post('invoices/:id/mark-paid')
+  @HttpCode(HttpStatus.OK)
+  markPaid(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+    return this.svc.markPaid(id, u.companyId, {
+      note: body?.note,
+      paidBy: body?.paidBy,
+      amount: body?.amount,
+    });
+  }
+
+  /**
+   * GET /api/v1/invoices/pending-payment
+   *
+   * Returns all SENT and OVERDUE invoices — the approval queue.
+   * Drive the "Approve payment" button list from this endpoint.
+   */
+  @Get('invoices/pending-payment')
+  getPendingPayment(@CurrentUser() u: any) {
+    return this.svc.getPendingPayment(u.companyId);
+  }
+
+  @Get('invoice-drafts')
+  findDrafts(@CurrentUser() u: any) {
+    return this.svc.findDrafts(u.companyId);
+  }
+
+  @Get('invoice-drafts/:id')
+  findDraft(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.findDraft(id, u.companyId);
+  }
+
+  @Get('invoice-drafts/:id/assist')
+  getDraftAssist(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.getDraftAssist(id, u.companyId);
+  }
+
+  @Post('invoice-drafts/:id/finalize')
+  finalizeDraft(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.finalizeDraft(id, u.companyId);
+  }
+}

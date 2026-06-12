@@ -94,7 +94,7 @@ export const SidebarNavigation = ({ role, subscription }: { role: string; subscr
               key={item.page}
               variant="ghost"
               className="w-full justify-between items-center"
-              onClick={() => console.log("Navigate to:", item.page)}
+              onClick={() => {}}
             >
               <div className="flex items-center space-x-2">
                 <item.icon className="w-5 h-5" />

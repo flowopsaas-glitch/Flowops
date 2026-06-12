@@ -33,6 +33,8 @@ services:
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
         VITE_OLLAMA_URL: ${VITE_OLLAMA_URL:-}
         VITE_OTEL_EXPORTER_OTLP_ENDPOINT: ${VITE_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+        # Paystack public key — safe to include in the frontend bundle
+        VITE_PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-pk_test_fa7d0085df63bad80b49faefefb}
     image: ${FRONTEND_IMAGE:-flowops/frontend:${IMAGE_TAG:-latest}}
     environment:
       # Runtime env vars — substituted into the nginx config template by the
@@ -57,18 +59,61 @@ services:
       start_period: 10s
 
   api:
-    # Provide the backend image tag via the BACKEND_IMAGE env var (e.g.
-    # `BACKEND_IMAGE=ghcr.io/flowopsaas-glitch/flowops-backend:latest`).
-    # The placeholder default of `flowops/backend:latest` will fail with a
-    # clear "image not found" error if you haven't set it — better than
-    # silently using something stale.
-    image: ${BACKEND_IMAGE:-flowops/backend:latest}
+    # Build locally with:  docker compose build api
+    # Pull pre-built with: BACKEND_IMAGE=ghcr.io/flowopsaas-glitch/flowops-backend:latest docker compose up
+    build:
+      context: ./backend
+      target: production
+    image: ${BACKEND_IMAGE:-flowops/backend:${IMAGE_TAG:-latest}}
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-flowops}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-flowops}
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (real secret in prod, please)}
+      # ── Core ────────────────────────────────────────────────────────
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${API_PORT:-3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      # Public URL used in email links (e.g. verify-email, password reset)
+      APP_URL: ${APP_URL:-http://localhost:8080}
+
+      # ── Database + Cache ─────────────────────────────────────────────
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flowops}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-flowops}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # ── Auth ──────────────────────────────────────────────────────────
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-${JWT_SECRET}}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+
+      # ── Owner seed account ────────────────────────────────────────────
+      OWNER_SEED_EMAIL: ${OWNER_SEED_EMAIL:-owner@flowops.local}
+      OWNER_SEED_PASSWORD: ${OWNER_SEED_PASSWORD:?set OWNER_SEED_PASSWORD in .env}
+
+      # ── Cloudflare R2 ─────────────────────────────────────────────────
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_R2_ACCESS_KEY_ID: ${CLOUDFLARE_R2_ACCESS_KEY_ID:-}
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${CLOUDFLARE_R2_SECRET_ACCESS_KEY:-}
+      CLOUDFLARE_R2_BUCKET_NAME: ${CLOUDFLARE_R2_BUCKET_NAME:-flowops-waybills}
+      CLOUDFLARE_R2_PUBLIC_URL: ${CLOUDFLARE_R2_PUBLIC_URL:-}
+
+      # ── WhatsApp (Meta Cloud API) ─────────────────────────────────────
+      # After running `docker compose up`, configure these with your real values.
+      # See backend/.env.example for instructions on where to find each value.
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-flowops-webhook-verify}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v19.0}
+
+      # ── Paystack ──────────────────────────────────────────────────────
+      # After running `docker compose up`, configure these with your real values.
+      # See backend/.env.example for instructions on where to find each value.
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-}
+      PAYSTACK_WEBHOOK_IPS: ${PAYSTACK_WEBHOOK_IPS:-52.31.139.75,52.49.173.169,52.214.14.220}
+
+      # ── Email (SendGrid) ──────────────────────────────────────────────
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-noreply@flowops.local}
     depends_on:
       postgres:
         condition: service_healthy

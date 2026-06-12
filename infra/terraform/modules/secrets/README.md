@@ -1,23 +1,54 @@
-# `modules/secrets` — Secrets Manager + IAM (skeleton)
+# `modules/secrets` — AWS Secrets Manager application secret
 
-Status: **placeholder**, filled in by a subsequent PR.
+Status: **complete** (Phase C.3).
 
-Will provision:
+## What this module provisions
 
-- Secrets Manager entries for: `JWT_SECRET`, third-party API keys (Sentry DSN), Cloudflare R2 credentials.
-- IAM policy allowing the ECS task role to read these specific secret ARNs.
-- (Database master credential and Redis auth token live in their own modules, not here.)
+| Resource | Details |
+|---|---|
+| `aws_secretsmanager_secret` | Secret container at `flowops/<environment>/app` |
+| `aws_secretsmanager_secret_version` | Initial placeholder version (written once; `ignore_changes` prevents drift) |
 
-Inputs (planned):
+## Design: Terraform manages the container, operator manages the content
 
-- `environment`
-- `secret_payload` (map of name → JSON string; Terraform never sees the raw values once written)
+Terraform only creates the secret *container* and writes a one-time placeholder version.
+After `terraform apply`, the operator fills in real values:
 
-Outputs (planned):
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id flowops/staging/app \
+  --secret-string '{
+    "JWT_SECRET":            "...",
+    "SENDGRID_API_KEY":      "...",
+    "CLOUDFLARE_API_TOKEN":  "...",
+    "CLOUDFLARE_ACCOUNT_ID": "...",
+    "CLOUDFLARE_R2_BUCKET_NAME": "..."
+  }'
+```
 
-- Map of secret name → ARN, for the backend-ecs module to wire into task definition `secrets`.
-- IAM policy ARN to attach to the task role.
+Subsequent `terraform plan` runs see no drift — `ignore_changes = [secret_string]` is set.
 
-Notes:
+## ECS secrets injection
 
-- We do NOT store secret values in Terraform state. Use a one-shot `aws secretsmanager put-secret-value` after `terraform apply` to populate them, OR use `aws_secretsmanager_secret_version` with `lifecycle { ignore_changes = [secret_string] }` so Terraform creates the slot but doesn't manage the value.
+The `backend-ecs` module's `secret_environment_variables` accepts ARN:Key:: references:
+
+```hcl
+secret_environment_variables = {
+  JWT_SECRET       = "${module.secrets.secret_arn}:JWT_SECRET::"
+  SENDGRID_API_KEY = "${module.secrets.secret_arn}:SENDGRID_API_KEY::"
+}
+```
+
+The task execution role is automatically granted `GetSecretValue` on this ARN by the `backend-ecs` module.
+
+## Adding new keys
+
+1. Add the key to the secret via `aws secretsmanager put-secret-value` (merge with existing JSON).
+2. Add a new entry to `secret_environment_variables` in the env `main.tf`.
+3. `terraform apply` — updates the ECS task definition.
+4. ECS rolling deploy picks up the new env var.
+
+## Secret rotation
+
+For automated rotation (e.g. JWT key cycling), add an `aws_secretsmanager_secret_rotation`
+resource pointing to a Lambda function. Out of scope for this module.

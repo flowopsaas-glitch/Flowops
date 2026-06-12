@@ -1,28 +1,26 @@
 # FlowOps — Terraform infrastructure
 
-> Status: scaffolding (PR #12). Only the **bootstrap** stack and the **frontend-cdn** module are wired today.
-> Subsequent PRs fill in `network`, `backend-ecs`, `database`, `cache`, and `secrets`.
+> Status: Phase C.3 complete (PR #15). All 6 modules fully implemented.
+> All environments wire all modules. Phase D is CI/CD deploy automation.
 
 ## Layout
 
 ```
 infra/terraform/
 ├── bootstrap/                 Run once per AWS account/region. Provisions
-│                              the S3 state bucket + DynamoDB lock table
-│                              that every other stack uses for remote state.
-│                              Uses LOCAL state (chicken-and-egg).
+│                              the S3 state bucket + DynamoDB lock table.
 │
 ├── modules/
-│   ├── frontend-cdn/          Complete. S3 + CloudFront for the SPA.
-│   ├── network/               Skeleton — VPC, subnets, security groups.
-│   ├── backend-ecs/           Skeleton — ECS Fargate service + ALB.
-│   ├── database/              Skeleton — RDS Postgres.
-│   ├── cache/                 Skeleton — ElastiCache Redis.
-│   └── secrets/               Skeleton — Secrets Manager + IAM.
+│   ├── frontend-cdn/          ✓ Complete. S3 + CloudFront for the SPA.
+│   ├── network/               ✓ Complete. VPC, subnets, SGs, NAT, VPC endpoints.
+│   ├── backend-ecs/           ✓ Complete. ECS Fargate + ALB + Auto Scaling.
+│   ├── database/              ✓ Complete. RDS Postgres 16 + credentials secret.
+│   ├── cache/                 ✓ Complete. ElastiCache Redis 7.
+│   └── secrets/               ✓ Complete. Secrets Manager app secret container.
 │
 └── envs/
-    ├── staging/               Per-environment composition.
-    └── production/
+    ├── staging/               Wires all 6 modules with staging defaults.
+    └── production/            Same, with stricter defaults.
 ```
 
 ## Prerequisites

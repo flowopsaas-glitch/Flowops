@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { FLOWOPS_API_URL } from '../../lib/env';
+import { api } from '../../api/client';
 
 const ClientManager = () => {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -8,15 +7,15 @@ const ClientManager = () => {
   const [formData, setFormData] = useState({ name: '', subscriptionPlan: 'CONTRACT', email: '', phone: '' });
 
   const fetchClients = async () => {
-    const res = await axios.get(`${FLOWOPS_API_URL}/companies`);
-    setClients(res.data);
+    const res = await api.get<any, any>(`/companies`);
+    setClients(res);
   };
 
   useEffect(() => { fetchClients(); }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    await axios.post(`${FLOWOPS_API_URL}/companies`, formData);
+    await api.post<any, any>('/companies', formData);
     setIsFlipped(false);
     fetchClients();
   };

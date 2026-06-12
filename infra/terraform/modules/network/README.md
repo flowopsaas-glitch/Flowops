@@ -1,86 +1,49 @@
 # `modules/network` — VPC + subnets + security groups
 
-Provisions the shared networking layer every other FlowOps module depends on.
+Status: **complete** (Phase C.2).
 
-## What it creates
+## What this module provisions
 
-| Resource | Count | Notes |
-|---|---|---|
-| VPC | 1 | DNS support + hostnames enabled |
-| Public subnets | `az_count` (2–3) | For the ALB. CIDRs auto-computed from `vpc_cidr` unless overridden. |
-| Private subnets | `az_count` (2–3) | For ECS tasks, RDS, Redis. No public IPs. |
-| Internet Gateway | 1 | Public internet access for the ALB |
-| Elastic IPs | 1 or `az_count` | One per NAT Gateway |
-| NAT Gateway | 1 (staging) or `az_count` (production) | Outbound internet for private subnets |
-| Route tables | 1 public + 1 or `az_count` private | Public → IGW; private → NAT |
-| Security group: ALB | 1 | Ingress 80+443 from `0.0.0.0/0`; egress unrestricted |
-| Security group: ECS | 1 | Ingress `container_port` from ALB SG only; egress unrestricted |
-| Security group: RDS | 1 | Ingress 5432 from ECS SG only |
-| Security group: Redis | 1 | Ingress 6379 from ECS SG only |
-| Gateway VPC endpoint: S3 | 0 or 1 | Free. Reduces NAT cost for S3 traffic. |
-| Interface VPC endpoint: Secrets Manager | 0 or 1 | ~$7/month. Speeds up task startup by avoiding NAT. |
+| Resource | Details |
+|---|---|
+| VPC | Configurable CIDR (default `10.0.0.0/16`), DNS support + hostnames enabled |
+| Public subnets | `/24` per AZ starting at `.0` — ALB and NAT GW EIPs live here |
+| Private subnets | `/24` per AZ starting at `.10` — ECS tasks, RDS, Redis live here |
+| Internet Gateway | One per VPC |
+| NAT Gateways | `single_nat_gateway=true` (1 shared, good for staging); `false` = 1 per AZ (HA, good for production) |
+| Route tables | 1 public + 1 (or N) private, with associations |
+| Security groups | ALB, ECS, RDS, Redis — rules as separate resources to avoid circular dependencies |
+| S3 VPC endpoint | Gateway type, free, reduces NAT traffic |
+| Secrets Manager endpoint | Interface type, optional, ~$0.01/hr/AZ — recommended for production |
 
-## Usage
+## Security group design
 
-```hcl
-module "network" {
-  source = "../../modules/network"
+Rules are declared as separate `aws_security_group_rule` resources (not inline) to break the
+circular reference between ALB SG ↔ ECS SG.
 
-  environment        = "staging"
-  single_nat_gateway = true   # false for production (per-AZ resilience)
-  az_count           = 2
-  container_port     = 3000
-}
+```
+Internet ──443/80──> ALB SG ──3000──> ECS SG ──5432──> RDS SG
+                                            └──6379──> Redis SG
+                                            └──443───> 0.0.0.0/0 (AWS APIs, Cloudflare R2, etc.)
 ```
 
-Pass the outputs to downstream modules:
+## Key outputs
 
-```hcl
-module "backend_ecs" {
-  source = "../../modules/backend-ecs"
+| Output | Used by |
+|---|---|
+| `vpc_id` | database, cache, secrets, backend-ecs |
+| `public_subnet_ids` | backend-ecs (ALB) |
+| `private_subnet_ids` | backend-ecs (tasks), database, cache |
+| `alb_security_group_id` | backend-ecs |
+| `ecs_security_group_id` | backend-ecs |
+| `rds_security_group_id` | database |
+| `redis_security_group_id` | cache |
+| `nat_gateway_public_ips` | whitelist in SendGrid, Cloudflare |
 
-  vpc_id                = module.network.vpc_id
-  public_subnet_ids     = module.network.public_subnet_ids
-  private_subnet_ids    = module.network.private_subnet_ids
-  alb_security_group_id = module.network.alb_security_group_id
-  ecs_security_group_id = module.network.ecs_security_group_id
-}
+## Staging vs production recommendations
 
-module "database" {
-  source = "../../modules/database"
-
-  vpc_id                 = module.network.vpc_id
-  private_subnet_ids     = module.network.private_subnet_ids
-  db_security_group_id   = module.network.rds_security_group_id
-}
-
-module "cache" {
-  source = "../../modules/cache"
-
-  vpc_id                    = module.network.vpc_id
-  private_subnet_ids        = module.network.private_subnet_ids
-  cache_security_group_id   = module.network.redis_security_group_id
-}
-```
-
-## Staging vs production defaults
-
-| Setting | Staging | Production |
+| Variable | Staging | Production |
 |---|---|---|
-| `single_nat_gateway` | `true` | `false` |
+| `single_nat_gateway` | `true` (saves ~$32/month) | `false` (HA) |
+| `enable_secretsmanager_endpoint` | `false` (NAT is fine at low scale) | `true` (saves NAT traffic on every task start) |
 | `az_count` | `2` | `3` |
-| `enable_s3_vpc_endpoint` | `false` | `true` (recommended) |
-| `enable_secretsmanager_vpc_endpoint` | `false` | `true` (recommended) |
-
-## CIDR layout (defaults for `10.0.0.0/16`)
-
-| Subnet | CIDR | Purpose |
-|---|---|---|
-| public-us-east-1a | `10.0.0.0/24` | ALB node, NAT EIP |
-| public-us-east-1b | `10.0.1.0/24` | ALB node |
-| public-us-east-1c | `10.0.2.0/24` | ALB node (when az_count = 3) |
-| private-us-east-1a | `10.0.100.0/24` | ECS, RDS, Redis |
-| private-us-east-1b | `10.0.101.0/24` | ECS, RDS, Redis |
-| private-us-east-1c | `10.0.102.0/24` | ECS, RDS, Redis (when az_count = 3) |
-
-Override via `public_subnet_cidrs` / `private_subnet_cidrs` if you need different allocation.

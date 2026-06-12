@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../../../api/client';
 import { FileText, Zap, ChevronRight, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -8,8 +8,8 @@ const InvoiceDrafts = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get('/api/invoice-drafts')
-      .then(res => setDrafts(res.data))
+    api.get<any, any>(`/invoice-drafts`)
+      .then(res => setDrafts(res))
       .catch(err => console.error("Failed to load drafts", err))
       .finally(() => setLoading(false));
   }, []);

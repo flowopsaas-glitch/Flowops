@@ -1,5 +1,5 @@
 variable "environment" {
-  description = "Environment name (staging | production)."
+  description = "Environment name (staging | production). Used in resource names and tags."
   type        = string
   validation {
     condition     = contains(["staging", "production"], var.environment)
@@ -8,59 +8,47 @@ variable "environment" {
 }
 
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC."
+  description = "CIDR block for the VPC. Public subnets are /24 starting at .0; private subnets start at .10."
   type        = string
   default     = "10.0.0.0/16"
 }
 
 variable "az_count" {
-  description = "Number of Availability Zones to span. 2 is sufficient for staging; 3 recommended for production."
+  description = "Number of Availability Zones to spread across. At most min(3, available AZs in the region)."
   type        = number
-  default     = 2
+  default     = 3
   validation {
-    condition     = contains([2, 3], var.az_count)
+    condition     = var.az_count >= 2 && var.az_count <= 3
     error_message = "az_count must be 2 or 3."
   }
 }
 
-variable "public_subnet_cidrs" {
-  description = "CIDR blocks for the public subnets (one per AZ). Leave empty to auto-compute from vpc_cidr using /24 slices."
-  type        = list(string)
-  default     = []
-}
-
-variable "private_subnet_cidrs" {
-  description = "CIDR blocks for the private subnets (one per AZ). Leave empty to auto-compute from vpc_cidr using /24 slices offset by 100."
-  type        = list(string)
-  default     = []
-}
-
 variable "single_nat_gateway" {
-  description = "Create one shared NAT Gateway instead of one per AZ. Cheaper (true for staging), but a single-AZ failure disrupts private outbound traffic (false for production)."
+  description = "If true, one NAT Gateway is shared across all private subnets (cheaper; fine for staging). If false, one NAT Gateway per AZ (high-availability; recommended for production)."
   type        = bool
   default     = true
 }
 
-variable "enable_s3_vpc_endpoint" {
-  description = "Create a Gateway VPC endpoint for S3. Reduces NAT costs for large S3 traffic (e.g. waybill uploads). Free to create."
+variable "enable_s3_endpoint" {
+  description = "Create a VPC Gateway endpoint for S3. Free of charge and reduces NAT traffic for S3 calls from ECS tasks."
+  type        = bool
+  default     = true
+}
+
+variable "enable_secretsmanager_endpoint" {
+  description = "Create a VPC Interface endpoint for Secrets Manager. Costs ~$0.01/hr per AZ but eliminates NAT traffic for secret-fetching on task start. Recommended for production."
   type        = bool
   default     = false
 }
 
-variable "enable_secretsmanager_vpc_endpoint" {
-  description = "Create an Interface VPC endpoint for Secrets Manager. ECS tasks read secrets at startup — the endpoint avoids the NAT hop and slightly speeds startup. ~$7/month."
-  type        = bool
-  default     = false
-}
-
-variable "container_port" {
-  description = "Port the backend container listens on. Used to scope the ECS security group inbound rule to only accept traffic from the ALB."
+variable "backend_container_port" {
+  description = "TCP port the backend container listens on. Used to scope the ALB → ECS security group egress rule."
   type        = number
   default     = 3000
 }
 
 variable "tags" {
-  description = "Additional tags merged onto every resource."
+  description = "Additional tags applied to every resource in this module."
   type        = map(string)
   default     = {}
 }

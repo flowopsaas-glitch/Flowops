@@ -4,41 +4,39 @@
 aws_region = "us-east-1"
 
 # ── Frontend CDN ──────────────────────────────────────────────────────────
-# Leave empty to use the auto-generated *.cloudfront.net hostname.
+# Leave these empty to use the default *.cloudfront.net hostname.
 
 # frontend_domain_name         = "app-staging.flowops.example"
 # frontend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
-# frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+# frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-..."
 
 frontend_price_class = "PriceClass_100"
 
-# ── Network ────────────────────────────────────────────────────────────────
+# ── Backend ECS ───────────────────────────────────────────────────────────
 
-vpc_cidr  = "10.0.0.0/16"
-az_count  = 2
+backend_image = "ghcr.io/flowopsaas-glitch/flowops-backend:latest"
 
-# ── Backend container ─────────────────────────────────────────────────────
-
-backend_image          = "ghcr.io/flowopsaas-glitch/flowops-backend:latest"
-backend_container_port = 3000
-backend_cpu            = 512
-backend_memory         = 1024
-backend_desired_count  = 1
-
-# Set this to the Secrets Manager ARN of a secret containing {"username":"...", "password":"GITHUB_PAT"}
-# if the image is in a private GHCR repo.
-# backend_image_credentials_secret_arn = "arn:aws:secretsmanager:..."
-
-# ── Backend secrets (populate after Phase C.3 secrets module is wired) ───
-# backend_secret_arns = {
-#   DATABASE_URL = "arn:aws:secretsmanager:us-east-1:123456789012:secret:staging/database-url-..."
-#   REDIS_URL    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:staging/redis-url-..."
-#   JWT_SECRET   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:staging/jwt-secret-..."
-# }
-
-# ── Backend custom domain (optional for staging) ──────────────────────────
-# Leave empty to use the plain-HTTP ALB endpoint for now.
-
+# Optional: custom API domain.
 # backend_domain_name         = "api-staging.flowops.example"
 # backend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
-# backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+# backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd5678-..."
+
+# GHCR pull credentials secret (create with: aws secretsmanager create-secret
+# --name flowops/staging/ghcr --secret-string '{"username":"<user>","password":"<PAT>"}').
+# ghcr_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:flowops/staging/ghcr-AbCdEf"
+
+# ── Database ──────────────────────────────────────────────────────────────
+# These are module defaults; override here if needed.
+# db_instance_class is set inside main.tf for staging (db.t4g.micro).
+
+# ── Post-apply: populate the app secrets secret ───────────────────────────
+# After `terraform apply`, run:
+#   aws secretsmanager put-secret-value \
+#     --secret-id flowops/staging/app \
+#     --secret-string '{
+#       "JWT_SECRET":           "<generate with: openssl rand -hex 64>",
+#       "SENDGRID_API_KEY":     "SG.xxxxx",
+#       "CLOUDFLARE_API_TOKEN": "xxxxx",
+#       "CLOUDFLARE_ACCOUNT_ID":"xxxxx",
+#       "CLOUDFLARE_R2_BUCKET_NAME": "flowops-staging-waybills"
+#     }'

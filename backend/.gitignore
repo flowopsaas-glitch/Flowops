@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files (NEVER commit real credentials)
+.env
+.env.*
+!.env.example
+
+# Prisma generated client
+# (kept in gitignore to force regeneration; CI runs `prisma generate`)
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Test coverage
+coverage/
+
+# Uploads (local dev only — production uses Cloudflare R2)
+uploads/

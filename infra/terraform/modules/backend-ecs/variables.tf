@@ -1,5 +1,5 @@
 variable "environment" {
-  description = "Environment name (staging | production)."
+  description = "Environment name (staging | production). Used in resource names and tags."
   type        = string
   validation {
     condition     = contains(["staging", "production"], var.environment)
@@ -7,48 +7,39 @@ variable "environment" {
   }
 }
 
-# ── Networking (from the network module) ─────────────────────────────────
+# ── Network ───────────────────────────────────────────────────────────────
 
 variable "vpc_id" {
-  description = "VPC ID the ECS service and ALB live in."
+  description = "VPC ID from the network module."
   type        = string
 }
 
 variable "public_subnet_ids" {
-  description = "Public subnet IDs for the ALB (must span at least 2 AZs)."
+  description = "Public subnet IDs for the ALB (one per AZ)."
   type        = list(string)
 }
 
 variable "private_subnet_ids" {
-  description = "Private subnet IDs for ECS tasks. Tasks run here without a public IP."
+  description = "Private subnet IDs for ECS tasks (one per AZ)."
   type        = list(string)
 }
 
 variable "alb_security_group_id" {
-  description = "Security group ID for the Application Load Balancer."
+  description = "ALB security group ID from the network module."
   type        = string
 }
 
 variable "ecs_security_group_id" {
-  description = "Security group ID for ECS tasks (scoped to allow inbound only from the ALB SG)."
+  description = "ECS tasks security group ID from the network module."
   type        = string
 }
 
-# ── Container image ───────────────────────────────────────────────────────
+# ── Container ─────────────────────────────────────────────────────────────
 
 variable "backend_image" {
-  description = "Docker image for the backend. e.g. ghcr.io/flowopsaas-glitch/flowops-backend:v1.0.0. Defaults to the GHCR image established in PR #11. Override with a pinned tag in production."
+  description = "Full container image reference, e.g. ghcr.io/flowopsaas-glitch/flowops-backend:sha-abc1234. Tag required — avoid using 'latest' in production."
   type        = string
-  default     = "ghcr.io/flowopsaas-glitch/flowops-backend:latest"
 }
-
-variable "image_credentials_secret_arn" {
-  description = "Secrets Manager ARN containing registry credentials as JSON {\"username\":\"...\",\"password\":\"...\"} for pulling private images (e.g. GHCR). Leave empty if the image is public."
-  type        = string
-  default     = ""
-}
-
-# ── Container sizing ──────────────────────────────────────────────────────
 
 variable "container_port" {
   description = "Port the backend container listens on."
@@ -57,67 +48,88 @@ variable "container_port" {
 }
 
 variable "cpu" {
-  description = "Fargate task CPU units (256 | 512 | 1024 | 2048 | 4096). Must be compatible with the chosen memory."
+  description = "Fargate task CPU units. Valid values: 256, 512, 1024, 2048, 4096."
   type        = number
   default     = 512
 }
 
 variable "memory" {
-  description = "Fargate task memory in MiB. Must be a valid value for the chosen CPU. See https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#task_size"
+  description = "Fargate task memory (MiB). Must be compatible with the chosen cpu value."
   type        = number
   default     = 1024
 }
 
-# ── Service sizing + autoscaling ─────────────────────────────────────────
+variable "health_check_path" {
+  description = "HTTP path the ALB and the container health check probe."
+  type        = string
+  default     = "/health"
+}
+
+# ── ECS service sizing ────────────────────────────────────────────────────
 
 variable "desired_count" {
-  description = "Desired number of running tasks. Autoscaling adjusts within [min_count, max_count] when enabled."
+  description = "Initial number of running tasks. Auto Scaling adjusts from this baseline."
   type        = number
   default     = 1
 }
 
 variable "min_count" {
-  description = "Minimum number of tasks (autoscaling lower bound)."
+  description = "Minimum number of tasks Auto Scaling will scale in to."
   type        = number
   default     = 1
 }
 
 variable "max_count" {
-  description = "Maximum number of tasks (autoscaling upper bound)."
+  description = "Maximum number of tasks Auto Scaling will scale out to."
   type        = number
   default     = 4
 }
 
-variable "enable_autoscaling" {
-  description = "Enable CPU-based target-tracking autoscaling. Target: 70% average CPU. Set false for staging if you'd rather control desired_count manually."
-  type        = bool
-  default     = true
-}
-
-variable "autoscaling_cpu_target" {
-  description = "CPU utilisation percentage that autoscaling targets."
+variable "cpu_scale_out_threshold" {
+  description = "Target CPU utilisation % for the Auto Scaling target-tracking policy."
   type        = number
   default     = 70
 }
 
-variable "health_check_grace_period_seconds" {
-  description = "Seconds ECS waits before starting ALB health checks. Give the backend time to migrate the DB before receiving traffic."
+variable "deployment_minimum_healthy_percent" {
+  description = "Minimum % of tasks that must stay healthy during a rolling deploy."
   type        = number
-  default     = 60
+  default     = 50
 }
 
-# ── Health check ─────────────────────────────────────────────────────────
+variable "deployment_maximum_percent" {
+  description = "Maximum % of tasks that can be running during a rolling deploy."
+  type        = number
+  default     = 200
+}
 
-variable "health_check_path" {
-  description = "ALB target-group health-check path. The backend must return 2xx on this path."
+# ── Environment variables ─────────────────────────────────────────────────
+
+variable "plain_environment_variables" {
+  description = "Non-secret environment variables injected into the container. These are visible in plain text in the task definition — use secret_environment_variables for anything sensitive."
+  type        = map(string)
+  default     = {}
+}
+
+variable "secret_environment_variables" {
+  description = "Secret environment variables injected via ECS secrets integration. Map of ENV_VAR_NAME → Secrets Manager ARN (or ARN:JsonKey:: for a specific JSON key). The task execution role is granted GetSecretValue on all referenced ARNs."
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+}
+
+# ── Image pull credentials (GHCR or other private registries) ─────────────
+
+variable "registry_credentials_secret_arn" {
+  description = "ARN of a Secrets Manager secret containing Docker registry credentials ({\"username\": \"...\", \"password\": \"...\"}). Required if pulling from a private registry like GHCR. Leave empty for public images or ECR (IAM-native)."
   type        = string
-  default     = "/health"
+  default     = ""
 }
 
-# ── Custom domain for the API ─────────────────────────────────────────────
+# ── Custom domain + TLS ───────────────────────────────────────────────────
 
 variable "domain_name" {
-  description = "Custom hostname for the ALB (e.g. 'api-staging.flowops.example'). Empty uses the raw ALB DNS name."
+  description = "Custom domain for the API, e.g. 'api-staging.flowops.example'. Empty = use the ALB's default *.elb.amazonaws.com hostname."
   type        = string
   default     = ""
 }
@@ -129,26 +141,12 @@ variable "hosted_zone_id" {
 }
 
 variable "acm_certificate_arn" {
-  description = "ACM certificate ARN (same region as the ALB) covering domain_name. If set, enables HTTPS and redirects HTTP. If empty, the ALB serves plain HTTP on port 80."
+  description = "ARN of an ACM certificate in the deployment region covering domain_name. Required if domain_name is set."
   type        = string
   default     = ""
 }
 
-# ── Runtime configuration ─────────────────────────────────────────────────
-
-variable "environment_variables" {
-  description = "Plain-text environment variables injected into the container. For secrets, use secret_arns instead."
-  type        = map(string)
-  default     = {}
-}
-
-variable "secret_arns" {
-  description = "Map of container environment-variable name → Secrets Manager secret ARN. The execution role is automatically granted GetSecretValue on these ARNs. Example: { DATABASE_URL = \"arn:aws:secretsmanager:...\" }"
-  type        = map(string)
-  default     = {}
-}
-
-# ── Logs ─────────────────────────────────────────────────────────────────
+# ── Observability ─────────────────────────────────────────────────────────
 
 variable "log_retention_days" {
   description = "CloudWatch Log Group retention in days."
@@ -156,8 +154,10 @@ variable "log_retention_days" {
   default     = 30
 }
 
+# ── Tags ──────────────────────────────────────────────────────────────────
+
 variable "tags" {
-  description = "Additional tags merged onto every resource."
+  description = "Additional tags applied to every resource in this module."
   type        = map(string)
   default     = {}
 }

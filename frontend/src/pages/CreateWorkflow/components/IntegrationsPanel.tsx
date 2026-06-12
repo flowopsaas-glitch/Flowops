@@ -84,7 +84,7 @@ export function IntegrationsPanel() {
                         name={integration.name}
                         icon={integration.icon}
                         connected={integration.connected}
-                        onConnect={() => console.log(`Connect ${integration.name}`)}
+                        onConnect={() => {}}
                     />
                 ))}
             </div>

@@ -34,4 +34,6 @@ registerInstrumentations({
   tracerProvider: provider,
 });
 
-console.log(`✅ OpenTelemetry Web tracing initialized: ${FLOWOPS_OTEL_TRACES_URL}`);
+if (import.meta.env.DEV) {
+  console.log(`✅ OpenTelemetry Web tracing initialized: ${FLOWOPS_OTEL_TRACES_URL}`);
+}

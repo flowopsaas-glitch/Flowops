@@ -13,9 +13,8 @@ import {
   ChevronRight,
   Bot
 } from "lucide-react";
-import axios from 'axios';
+import { api } from '../api/client';
 import DeliveryAction from './Deliveries/DeliveryAction'; // 🚀 Importing our signature logic
-import { FLOWOPS_API_URL } from '../lib/env';
 
 // 🏗️ Tile Component: Added onClick and hover states
 function Tile(props: {
@@ -56,7 +55,7 @@ export default function PodDeliveries() {
   // 📡 Fetch pending waybills from the backend
   const fetchQueue = async () => {
     try {
-      const { data } = await axios.get(`${FLOWOPS_API_URL}/waybills`);
+      const data = await api.get<any, any>(`/waybills`);
       // Filter for those not yet delivered
       setWaybills(data.filter((w: any) => w.status !== 'DELIVERED'));
     } catch (err) {
@@ -96,7 +95,7 @@ export default function PodDeliveries() {
     async function loadAssist() {
       try {
         setReviewLoading(true);
-        const { data } = await axios.get(`${FLOWOPS_API_URL}/waybills/${selectedWaybill.id}/assist`);
+        const data = await api.get<any, any>(`/waybills/${selectedWaybill.id}/assist`);
         if (active) setAiReview(data);
       } catch {
         if (active) setAiReview(null);

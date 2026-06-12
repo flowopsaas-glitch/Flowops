@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../api/client';
 import { TransferCargoModal } from './modals/TransferCargoModal';
-import { FLOWOPS_API_URL } from '../lib/env';
 
 interface BranchSnapshot {
   id: string;
@@ -18,8 +17,8 @@ export const NetworkMap: React.FC = () => {
 
   const fetchNetwork = async () => {
     try {
-      const res = await axios.get(`${FLOWOPS_API_URL}/branches/snapshot`);
-      setHubs(res.data);
+      const res = await api.get<any, any>(`/branches/snapshot`);
+      setHubs(res);
     } catch (err) {
       console.error("Failed to fetch network snapshot", err);
     }
