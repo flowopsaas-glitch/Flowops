@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Activity,
   Database,
+  Bell,
 } from "lucide-react";
 
 type CompanyPayload = {
@@ -243,6 +244,16 @@ const cards: Array<{ section: string; items: QuickCard[] }> = [
             ? { label: `Plan: ${plan}`, tone: "good" }
             : { label: "Live", tone: "live" };
         },
+      },
+      {
+        title: "Notifications",
+        subtitle: "Choose channels, categories, and quiet hours.",
+        description:
+          "Personal notification preferences for the signed-in user. Toggle email, SMS, and push delivery per category, set a daily quiet-hours window, and pick an email-digest cadence.",
+        to: "/settings/notifications",
+        icon: <Bell size={18} />,
+        accent: "rgba(176, 132, 255, 0.22)",
+        statusResolver: () => ({ label: "Personal", tone: "live" }),
       },
     ],
   },
