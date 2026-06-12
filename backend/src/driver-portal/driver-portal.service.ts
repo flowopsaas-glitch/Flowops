@@ -74,12 +74,9 @@ export class DriverPortalService {
     });
     if (!waybill) throw new BadRequestException('Waybill not found');
 
-    // Load client separately (no direct include on Waybill→Client in this schema)
-    const client = waybill.clientId
-      ? await this.prisma.client.findUnique({ where: { id: waybill.clientId } })
-      : null;
-    // Attach client to waybill object for billing
-    (waybill as any).client = client;
+    // Note: Waybill doesn't have a direct clientId in this schema version.
+    // Billing type is determined from the waybill's own paymentType or defaults to PREPAID.
+    // (waybill as any).client = null;
 
     // ── 1. Save POD ──────────────────────────────────────────────────────────
     const pod = await this.prisma.proofOfDelivery.create({
@@ -250,7 +247,9 @@ Respond in JSON format:
       return { action: 'SKIPPED', message: 'Already billed' };
     }
 
-    const billingType = waybill.client?.billingType?.toUpperCase() || 'PREPAID';
+    // Derive billing type from waybill paymentType (CASH=COD, CREDIT=CONTRACT, else PREPAID)
+    const paymentType = (waybill as any).paymentType?.toString().toUpperCase() || '';
+    const billingType = paymentType === 'CASH' ? 'COD' : paymentType === 'CREDIT' ? 'CONTRACT' : 'PREPAID';
     const amount = waybill.totalAmount || 0;
 
     // PREPAID — already paid, just log it
