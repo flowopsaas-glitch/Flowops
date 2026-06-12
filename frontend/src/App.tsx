@@ -61,11 +61,13 @@ export default function App() {
     });
 
     socket.on("connect", () => {
-      console.log("FlowOps UI Connected to Live Guardian Bridge.");
+      // Connected — no console output needed in production.
     });
 
     socket.on("connect_error", (err) => {
-      console.warn(`WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`, err.message);
+      if (import.meta.env.DEV) {
+        console.warn(`WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`, err.message);
+      }
     });
 
     socket.on("system-ui-heal", (payload: { action: string; reason: string }) => {

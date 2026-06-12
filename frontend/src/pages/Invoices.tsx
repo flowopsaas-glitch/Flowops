@@ -12,8 +12,6 @@ export default function Invoices() {
       // Cache buster added to the URL
       const res = await api.get(`/invoices/supervisor?t=${Date.now()}`);
       
-      // 🕵️‍♂️ DEBUG: Open your browser console (F12) to see this!
-      console.log("RAW API RESPONSE:", res.data);
 
       // 🚀 UNWRAPPER: Handle both flat arrays and { invoices: [] } objects
       const dataArray = Array.isArray(res.data) 

@@ -17,7 +17,7 @@ const updateSW = registerSW({
     }
   },
   onOfflineReady() {
-    console.log("FlowOps is ready for offline use.");
+    // PWA is ready for offline use — no console output needed in production.
   },
 });
 
