@@ -3,11 +3,42 @@
 
 aws_region = "us-east-1"
 
-# ── Frontend CDN ─────────────────────────────────────────────────────────
-# Leave these empty to use the default *.cloudfront.net hostname.
+# ── Frontend CDN ──────────────────────────────────────────────────────────
+# Leave empty to use the auto-generated *.cloudfront.net hostname.
 
 # frontend_domain_name         = "app-staging.flowops.example"
 # frontend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
-# frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-..."
+# frontend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
 
 frontend_price_class = "PriceClass_100"
+
+# ── Network ────────────────────────────────────────────────────────────────
+
+vpc_cidr  = "10.0.0.0/16"
+az_count  = 2
+
+# ── Backend container ─────────────────────────────────────────────────────
+
+backend_image          = "ghcr.io/flowopsaas-glitch/flowops-backend:latest"
+backend_container_port = 3000
+backend_cpu            = 512
+backend_memory         = 1024
+backend_desired_count  = 1
+
+# Set this to the Secrets Manager ARN of a secret containing {"username":"...", "password":"GITHUB_PAT"}
+# if the image is in a private GHCR repo.
+# backend_image_credentials_secret_arn = "arn:aws:secretsmanager:..."
+
+# ── Backend secrets (populate after Phase C.3 secrets module is wired) ───
+# backend_secret_arns = {
+#   DATABASE_URL = "arn:aws:secretsmanager:us-east-1:123456789012:secret:staging/database-url-..."
+#   REDIS_URL    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:staging/redis-url-..."
+#   JWT_SECRET   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:staging/jwt-secret-..."
+# }
+
+# ── Backend custom domain (optional for staging) ──────────────────────────
+# Leave empty to use the plain-HTTP ALB endpoint for now.
+
+# backend_domain_name         = "api-staging.flowops.example"
+# backend_hosted_zone_id      = "Z01234567890ABCDEFGHI"
+# backend_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
