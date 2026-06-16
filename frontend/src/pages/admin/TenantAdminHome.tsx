@@ -28,7 +28,7 @@ export default function TenantAdminHome() {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/tenant-admin/login" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   const role = String(user?.role || "").toUpperCase();
@@ -117,7 +117,7 @@ export default function TenantAdminHome() {
             <ActionCard
               title="Tenant Settings"
               desc="Manage branding, inboxes, permissions, and hardware settings."
-              to="/admin/tenant-settings"
+              to="/settings"
             />
           </div>
 

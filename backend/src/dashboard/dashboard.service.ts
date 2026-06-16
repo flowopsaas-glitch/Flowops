@@ -7,7 +7,7 @@ export class DashboardService {
 
   async getMetrics(companyId: string) {
     const [
-      collections, activeDrivers, transit, stock, delivered, risks, waybillsToday,
+      collections, activeDrivers, transit, stock, delivered, risks, waybillsToday, locatedDrivers,
     ] = await Promise.all([
       this.prisma.collection.count({ where: { companyId, status: { notIn: ['CANCELLED', 'COLLECTED'] } } }),
       this.prisma.driver.count({ where: { companyId, status: { in: ['AVAILABLE', 'ON_ROUTE'] } } }),
@@ -21,9 +21,29 @@ export class DashboardService {
           createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
         },
       }),
+      // Drivers with a known last GPS position — feeds the live dashboard map
+      // so it renders markers on first load (not only after a socket event).
+      this.prisma.driver.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          lastLat: { not: null },
+          lastLng: { not: null },
+        },
+        select: { id: true, name: true, vehicleReg: true, lastLat: true, lastLng: true },
+        take: 500,
+      }),
     ]);
 
-    return { collections, activeDrivers, transit, stock, delivered, risks, waybillsToday };
+    const drivers = locatedDrivers.map((d) => ({
+      id: d.id,
+      name: d.name,
+      vehicleReg: d.vehicleReg ?? '—',
+      lat: d.lastLat,
+      lng: d.lastLng,
+    }));
+
+    return { collections, activeDrivers, transit, stock, delivered, risks, waybillsToday, drivers };
   }
 
   async getActivities(companyId: string, limit = 20) {
