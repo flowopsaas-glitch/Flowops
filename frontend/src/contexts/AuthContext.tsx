@@ -58,6 +58,11 @@ export type User = {
   isSuperAdmin?: boolean;
   /** "Ultimate owner" flag — the original platform-creator account. */
   isUltimateOwner?: boolean;
+  /** Optional per-user nav-permission overrides set by a tenant admin. When
+   *  present, these take precedence over the role defaults. Accepts either the
+   *  `permissions` or `navPermissions` key the backend may use. */
+  permissions?: Record<string, boolean> | string[] | null;
+  navPermissions?: Record<string, boolean> | string[] | null;
 };
 
 export type LoginArgs = {

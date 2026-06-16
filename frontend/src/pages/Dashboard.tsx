@@ -104,15 +104,19 @@ export default function Dashboard() {
 
     const fetchMetrics = async () => {
       try {
-        const data = await api.get<any, any>(`/dashboard/metrics`);
+        const res = await api.get<any, any>(`/dashboard/metrics`);
+        // The backend wraps every response via a global TransformInterceptor as
+        // { data, statusCode, message }. Unwrap defensively so the metric cards
+        // and live map read the real payload rather than the envelope.
+        const data = res && typeof res === "object" && "data" in res ? (res as any).data : res;
         setLiveMetrics({
-          collections: String(data.collections || 0),
-          activeDrivers: String(data.activeDrivers || 0),
-          transit: String(data.transit || 0),
-          stock: String(data.stock || 0),
-          risks: String(data.risks || 0)
+          collections: String(data?.collections || 0),
+          activeDrivers: String(data?.activeDrivers || 0),
+          transit: String(data?.transit || 0),
+          stock: String(data?.stock || 0),
+          risks: String(data?.risks || 0)
         });
-        if (data.drivers) setActiveDrivers(data.drivers);
+        if (Array.isArray(data?.drivers)) setActiveDrivers(data.drivers);
       } catch (err) {
         console.error("Dashboard metrics synchronization dropped:", err);
       }
@@ -158,10 +162,10 @@ export default function Dashboard() {
       {/* Metrics Row mapping directly to React UI cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <MetricCard title="Pending Collection" value={liveMetrics.collections} subtitle="Waybills awaiting courier dropoff assignment." icon={Package} gradient="bg-gradient-to-br from-amber-500 to-orange-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="Active Resources" value={liveMetrics.activeDrivers} subtitle="Live registered logistics drivers checked-in." icon={Users} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" to="/drivers" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/transit" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="At Local Hubs" value={liveMetrics.stock} subtitle="Waybills scanned inside processing nodes safely." icon={FileText} gradient="bg-gradient-to-br from-purple-500 to-pink-600" to="/branches" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="Anomalies Flagged" value={liveMetrics.risks} subtitle="Operational exceptions under AI review queues." icon={AlertTriangle} gradient="bg-gradient-to-br from-rose-500 to-red-600" to="/ai-ops" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard title="Active Resources" value={liveMetrics.activeDrivers} subtitle="Live registered logistics drivers checked-in." icon={Users} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" to="/driver-dispatch" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/shipments" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard title="At Local Hubs" value={liveMetrics.stock} subtitle="Waybills scanned inside processing nodes safely." icon={FileText} gradient="bg-gradient-to-br from-purple-500 to-pink-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard title="Anomalies Flagged" value={liveMetrics.risks} subtitle="Operational exceptions under AI review queues." icon={AlertTriangle} gradient="bg-gradient-to-br from-rose-500 to-red-600" to="/high-risk-queue" onAiClick={() => setIsAiOpen(true)} />
       </div>
 
       {/* Leaflet Real-time Transit Grid Block Container */}
@@ -179,7 +183,7 @@ export default function Dashboard() {
                   <div className="text-slate-900 p-1 font-sans">
                     <h4 className="font-black text-sm">{driver.name}</h4>
                     <p className="text-xs text-slate-500 font-bold">Reg: {driver.vehicleReg}</p>
-                    <p className="text-[10px] text-emerald-600 font-bold mt-1">坐标: {driver.lat.toFixed(4)}, {driver.lng.toFixed(4)}</p>
+                    <p className="text-[10px] text-emerald-600 font-bold mt-1">Coords: {driver.lat.toFixed(4)}, {driver.lng.toFixed(4)}</p>
                   </div>
                 </Popup>
               </Marker>

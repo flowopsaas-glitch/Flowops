@@ -448,14 +448,6 @@ export default function SuperAdminDashboard() {
           >
             Open Access + Password Manager
           </button>
-
-          <button
-            type="button"
-            onClick={() => navigate("/owner/access")}
-            className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-200"
-          >
-            Open Access + Password Manager
-          </button>
         </div>
 
         {error ? (

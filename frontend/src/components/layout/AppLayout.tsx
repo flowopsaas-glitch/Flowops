@@ -11,6 +11,11 @@ import {
 import { cn } from "../../lib/utils"; 
 import logo from "../../assets/logo.png";
 import { useTenant } from "../../contexts/TenantContext";
+import { useAuth } from "../../contexts/AuthContext";
+import {
+  normalizeTenantNavPermissions,
+  type TenantNavPermissionKey,
+} from "../../lib/tenantUserPermissions";
 
 type NavItem = {
   label: string;
@@ -18,6 +23,12 @@ type NavItem = {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN";
+  /** Gate visibility/access against the tenant nav-permission matrix. Items
+   *  without a key are always visible (e.g. operational pages without a
+   *  dedicated permission flag). */
+  perm?: TenantNavPermissionKey;
+  /** Restrict to tenant-admin roles only (admin landing surfaces). */
+  adminOnly?: boolean;
 };
 
 type DeferredInstallPrompt = Event & {
@@ -156,6 +167,7 @@ export default function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { branding } = useTenant();
+  const { user, isAuthenticated } = useAuth();
 
   useEffect(() => {
     const handler = (e: Event) => { 
@@ -167,41 +179,73 @@ export default function AppLayout() {
   }, []);
 
   const nav: NavItem[] = useMemo(() => [
-    { section: "CORE", label: "Dashboard", desc: "Executive command", to: "/dashboard", icon: LayoutDashboard },
-    { section: "CORE", label: "Shipments", desc: "Operations console", to: "/shipments", icon: Package },
-    { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search },
-    { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList },
-    { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users },
+    { section: "CORE", label: "Dashboard", desc: "Executive command", to: "/dashboard", icon: LayoutDashboard, perm: "dashboard" },
+    { section: "CORE", label: "Shipments", desc: "Operations console", to: "/shipments", icon: Package, perm: "shipments" },
+    { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search, perm: "waybillInbox" },
+    { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList, perm: "waybills" },
+    { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
     
-    { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck },
-    { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck },
-    { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route },
+    { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
+    { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
+    { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers },
     
-    { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle },
-    { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail },
+    { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp" },
+    { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email" },
     
-    { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard },
-    { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText },
-    { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt },
-    { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText },
-    { section: "BILLING", label: "Credit Control", desc: "Arrears management", to: "/credit-control", icon: ShieldAlert },
+    { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
+    { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText, perm: "billingBatches" },
+    { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt, perm: "invoices" },
+    { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText, perm: "quotes" },
+    { section: "BILLING", label: "Credit Control", desc: "Arrears management", to: "/credit-control", icon: ShieldAlert, perm: "creditControl" },
     
-    { section: "AI", label: "AI Control Tower", desc: "6-Claw Mesh Status", to: "/ai-control-tower", icon: Sparkles },
-    { section: "AI", label: "High Risk Queue", desc: "Exception management", to: "/high-risk-queue", icon: ShieldAlert },
+    { section: "AI", label: "AI Control Tower", desc: "6-Claw Mesh Status", to: "/ai-control-tower", icon: Sparkles, perm: "aiControlTower" },
+    { section: "AI", label: "High Risk Queue", desc: "Exception management", to: "/high-risk-queue", icon: ShieldAlert, perm: "risksExceptions" },
     
-    { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/users-roles", icon: Users },
-    { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings },
+    { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
+    { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
+    { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings, perm: "settings" },
   ], []);
 
+  // Enforce the tenant nav-permission matrix (role defaults, overridable by any
+  // explicit per-user permissions the backend attaches to /auth/me). This is the
+  // single source of truth shared with RequirePermission at the route layer.
+  const perms = useMemo(
+    () =>
+      normalizeTenantNavPermissions(
+        (user as any)?.permissions ?? (user as any)?.navPermissions,
+        user?.role,
+      ),
+    [user],
+  );
+
+  const isTenantAdmin = useMemo(() => {
+    const role = String(user?.role || "").toUpperCase();
+    return (
+      ["ADMIN", "COMPANY_ADMIN", "TENANT_ADMIN", "SUPER_ADMIN", "ULTIMATE_OWNER"].includes(role) ||
+      Boolean((user as any)?.isSuperAdmin) ||
+      Boolean((user as any)?.isUltimateOwner)
+    );
+  }, [user]);
+
+  const visibleNav = useMemo(
+    () =>
+      nav.filter((item) => {
+        if (item.adminOnly && !isTenantAdmin) return false;
+        if (item.perm && isAuthenticated && !perms[item.perm]) return false;
+        return true;
+      }),
+    [nav, perms, isTenantAdmin, isAuthenticated],
+  );
+
   const grouped = useMemo(() => ({
-    CORE: nav.filter(i => i.section === "CORE"),
-    OPS: nav.filter(i => i.section === "OPS"),
-    COMMUNICATIONS: nav.filter(i => i.section === "COMMUNICATIONS"),
-    BILLING: nav.filter(i => i.section === "BILLING"),
-    AI: nav.filter(i => i.section === "AI"),
-    ADMIN: nav.filter(i => i.section === "ADMIN"),
-  }), [nav]);
+    CORE: visibleNav.filter(i => i.section === "CORE"),
+    OPS: visibleNav.filter(i => i.section === "OPS"),
+    COMMUNICATIONS: visibleNav.filter(i => i.section === "COMMUNICATIONS"),
+    BILLING: visibleNav.filter(i => i.section === "BILLING"),
+    AI: visibleNav.filter(i => i.section === "AI"),
+    ADMIN: visibleNav.filter(i => i.section === "ADMIN"),
+  }), [visibleNav]);
 
   const currentLabel = useMemo(() => {
     const found = [...nav].sort((a,b) => b.to.length - a.to.length).find(i => location.pathname.startsWith(i.to));

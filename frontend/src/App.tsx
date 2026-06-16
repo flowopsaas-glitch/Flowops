@@ -8,6 +8,7 @@ import AppLayout from "./components/layout/AppLayout";
 import OwnerLayout from "./components/layout/OwnerLayout";
 import OwnerRoute from "./components/owner/OwnerRoute";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+import RequirePermission from "./components/auth/RequirePermission";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import PageLoader from "./components/PageLoader";
 
@@ -42,6 +43,7 @@ const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
 const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
+const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
 const ManifestsPage = lazy(() => import("./pages/ManifestsPage"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
 const UserRolesPage = lazy(() => import("./pages/UserRolesPage"));
@@ -115,40 +117,41 @@ export default function App() {
             <Route element={<AppLayout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/shipments" element={<Shipments />} />
-              <Route path="/waybills/inbox" element={<WaybillInbox />} />
-              <Route path="/waybills" element={<Waybills />} />
-              <Route path="/clients" element={<Clients />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/collections" element={<Collections />} />
-              <Route path="/pod-deliveries" element={<PodDeliveries />} />
-              <Route path="/driver-dispatch" element={<DriverDispatch />} />
-              <Route path="/dispatch" element={<DriverDispatch />} />
+              <Route path="/admin" element={<RequirePermission adminOnly><TenantAdminHome /></RequirePermission>} />
+              <Route path="/shipments" element={<RequirePermission perm="shipments"><Shipments /></RequirePermission>} />
+              <Route path="/waybills/inbox" element={<RequirePermission perm="waybillInbox"><WaybillInbox /></RequirePermission>} />
+              <Route path="/waybills" element={<RequirePermission perm="waybills"><Waybills /></RequirePermission>} />
+              <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
+              <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />
+              <Route path="/collections" element={<RequirePermission perm="collections"><Collections /></RequirePermission>} />
+              <Route path="/pod-deliveries" element={<RequirePermission perm="podDeliveries"><PodDeliveries /></RequirePermission>} />
+              <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
+              <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/manifests" element={<ManifestsPage />} />
-              <Route path="/high-risk-queue" element={<HighRiskQueuePage />} />
-              <Route path="/security/high-risk" element={<HighRiskQueuePage />} />
-              <Route path="/user-roles" element={<UserRolesPage />} />
-              <Route path="/settings/roles" element={<TenantUsersRolesPage />} />
-              <Route path="/whatsapp" element={<WhatsAppHub />} />
-              <Route path="/communications/whatsapp" element={<WhatsAppHub />} />
-              <Route path="/email" element={<EmailHub />} />
-              <Route path="/communications/email" element={<EmailHub />} />
-              <Route path="/communications/client-queries" element={<ClientQueries />} />
-              <Route path="/rate-cards" element={<RateCards />} />
-              <Route path="/billing-batches" element={<BillingBatches />} />
-              <Route path="/billing/batches" element={<BillingBatches />} />
-              <Route path="/invoice-drafts" element={<InvoiceDraftsPage />} />
-              <Route path="/invoices" element={<Invoices />} />
-              <Route path="/billing/client-portal-links" element={<ClientPortalLinks />} />
-              <Route path="/credit-control" element={<ClientPortalLinks />} />
-              <Route path="/quotes" element={<QuotesPage />} />
-              <Route path="/ai-control-tower" element={<AIControlTower />} />
-              <Route path="/ai/control-tower" element={<AIControlTower />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/settings/branding" element={<BrandingSettings />} />
+              <Route path="/high-risk-queue" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
+              <Route path="/security/high-risk" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
+              <Route path="/user-roles" element={<RequirePermission perm="usersRoles"><UserRolesPage /></RequirePermission>} />
+              <Route path="/settings/roles" element={<RequirePermission perm="usersRoles"><TenantUsersRolesPage /></RequirePermission>} />
+              <Route path="/whatsapp" element={<RequirePermission perm="whatsapp"><WhatsAppHub /></RequirePermission>} />
+              <Route path="/communications/whatsapp" element={<RequirePermission perm="whatsapp"><WhatsAppHub /></RequirePermission>} />
+              <Route path="/email" element={<RequirePermission perm="email"><EmailHub /></RequirePermission>} />
+              <Route path="/communications/email" element={<RequirePermission perm="email"><EmailHub /></RequirePermission>} />
+              <Route path="/communications/client-queries" element={<RequirePermission perm="clientQueries"><ClientQueries /></RequirePermission>} />
+              <Route path="/rate-cards" element={<RequirePermission perm="rateCards"><RateCards /></RequirePermission>} />
+              <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
+              <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
+              <Route path="/invoice-drafts" element={<RequirePermission perm="invoiceDrafts"><InvoiceDraftsPage /></RequirePermission>} />
+              <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
+              <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
+              <Route path="/credit-control" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
+              <Route path="/quotes" element={<RequirePermission perm="quotes"><QuotesPage /></RequirePermission>} />
+              <Route path="/ai-control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
+              <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
+              <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />
+              <Route path="/settings/branding" element={<RequirePermission perm="settings"><BrandingSettings /></RequirePermission>} />
               <Route
                 path="/settings/notifications"
-                element={<NotificationPreferences />}
+                element={<RequirePermission perm="settings"><NotificationPreferences /></RequirePermission>}
               />
             </Route>
           </Route>
