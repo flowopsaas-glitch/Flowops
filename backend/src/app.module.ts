@@ -32,6 +32,8 @@ import { EmailModule } from './email/email.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
 import { RoutingModule } from './routing/routing.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { ApiModule } from './api/api.module';
 
 @Module({
   imports: [
@@ -58,6 +60,10 @@ import { TrackingModule } from './tracking/tracking.module';
 
     // Public parcel tracking (no auth) + predictive ETA
     TrackingModule,
+
+    // Tenant integration platform: outbound webhooks + public API (Shopify etc.)
+    WebhooksModule,
+    ApiModule,
 
     // Domain modules
     AuthModule,
