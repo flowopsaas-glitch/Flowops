@@ -29,6 +29,11 @@ import { OwnerModule } from './owner/owner.module';
 import { StorageModule } from './storage/storage.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { EmailModule } from './email/email.module';
+import { GeocodingModule } from './geocoding/geocoding.module';
+import { RoutingModule } from './routing/routing.module';
+import { TrackingModule } from './tracking/tracking.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { ApiModule } from './api/api.module';
 
 @Module({
   imports: [
@@ -46,6 +51,19 @@ import { EmailModule } from './email/email.module';
 
     // Email (SendGrid — global, gracefully no-ops when key not set)
     EmailModule,
+
+    // Geocoding (address -> coordinates; global, powers routing/map/ETA/tracking)
+    GeocodingModule,
+
+    // Route optimization (nearest-neighbour + 2-opt over geocoded stops)
+    RoutingModule,
+
+    // Public parcel tracking (no auth) + predictive ETA
+    TrackingModule,
+
+    // Tenant integration platform: outbound webhooks + public API (Shopify etc.)
+    WebhooksModule,
+    ApiModule,
 
     // Domain modules
     AuthModule,

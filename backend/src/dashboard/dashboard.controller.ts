@@ -14,6 +14,11 @@ export class DashboardController {
     return this.svc.getMetrics(u.companyId);
   }
 
+  @Get('dashboard/kpis')
+  getKpis(@CurrentUser() u: any) {
+    return this.svc.getKpis(u.companyId);
+  }
+
   @Get('dashboard/activities')
   getActivities(@CurrentUser() u: any, @Query('limit') limit?: string) {
     return this.svc.getActivities(u.companyId, limit ? parseInt(limit) : 20);

@@ -4,6 +4,7 @@ import { api } from '../../api/client'; // Double-up to reach src/api from src/p
 import { ChevronLeft, Package, CheckCircle, Square, PenTool, X } from 'lucide-react';
 import { useToast } from "../../components/ToastProvider"; 
 import SignatureCanvas from 'react-signature-canvas';
+import { queuePod, syncPodQueue, getPodQueue, registerPodAutoSync } from '../../lib/offlinePod';
 
 export default function DriverManifest() {
   const { id } = useParams();
@@ -13,6 +14,11 @@ export default function DriverManifest() {
   const [showSig, setShowSig] = useState(false);
   const sigPad = useRef<any>(null);
   const { showToast } = useToast();
+
+  // Flush any deliveries captured offline as soon as we're back online.
+  useEffect(() => {
+    return registerPodAutoSync((n) => showToast(`${n} offline delivery${n > 1 ? "ies" : "y"} synced.`, "success"));
+  }, [showToast]);
 
   // 🔄 Sync with FlowOps Backend Engine
   useEffect(() => {
@@ -44,6 +50,17 @@ export default function DriverManifest() {
     }
 
     const canvas = sigPad.current.getTrimmedCanvas();
+    const signatureDataUrl: string = canvas.toDataURL("image/png");
+
+    // Offline-first: if there's no connectivity, queue the POD locally and let
+    // it sync automatically when the driver is back online — never lose a POD.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      queuePod({ waybillId: String(id), waybillNumber: job.waybillNumber, signatureDataUrl });
+      showToast("No signal — delivery saved offline, will sync automatically.", "success");
+      navigate("/driver/portal");
+      return;
+    }
+
     canvas.toBlob(async (blob: Blob | null) => {
       if (!blob) return;
 
@@ -55,8 +72,11 @@ export default function DriverManifest() {
         await api.post(`/waybills/${id}/complete`, formData);
         showToast("Delivery confirmed successfully!", "success");
         navigate('/driver/portal');
-      } catch (err) { 
-        showToast("Handover Sync Error. Check Backend Connection.", "error"); 
+      } catch (err) {
+        // Network/other failure → queue offline instead of losing the POD.
+        queuePod({ waybillId: String(id), waybillNumber: job.waybillNumber, signatureDataUrl });
+        showToast("Saved offline — will sync when connection returns.", "success");
+        navigate('/driver/portal');
       }
     }, 'image/png');
   };

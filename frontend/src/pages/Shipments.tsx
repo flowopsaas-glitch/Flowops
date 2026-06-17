@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client'; 
 import { 
   FileText, 
@@ -25,6 +26,8 @@ export default function ShipmentsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedWaybill, setSelectedWaybill] = useState<Waybill | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusFilter = (searchParams.get('status') || '').toUpperCase();
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -56,6 +59,12 @@ export default function ShipmentsPage() {
     ? waybills.filter(w => w.status === 'IN_TRANSIT').length 
     : 0;
 
+  // Deep-link filter: when the dashboard navigates here with ?status=, narrow
+  // the table to that status so the drill-down lands on a focused view.
+  const visibleWaybills = Array.isArray(waybills)
+    ? (statusFilter ? waybills.filter(w => String(w.status).toUpperCase() === statusFilter) : waybills)
+    : [];
+
   return (
     <div className="min-h-full bg-[#07111f] p-8">
       {/* Header Area */}
@@ -67,6 +76,15 @@ export default function ShipmentsPage() {
           <h1 className="text-4xl font-black text-white tracking-tighter">
             Shipments & Logistics
           </h1>
+          {statusFilter && (
+            <button
+              onClick={() => setSearchParams({})}
+              className="mt-3 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-300 hover:bg-blue-500/20"
+            >
+              Filter: {statusFilter}
+              <span className="text-blue-400">✕ clear</span>
+            </button>
+          )}
         </div>
         <button className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-2xl flex items-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-95">
           <Truck size={18} /> Initiate Linehaul ({activeLinehauls})
@@ -95,8 +113,8 @@ export default function ShipmentsPage() {
                   </div>
                 </td>
               </tr>
-            ) : Array.isArray(waybills) && waybills.length > 0 ? (
-              waybills.map((wb) => (
+            ) : Array.isArray(visibleWaybills) && visibleWaybills.length > 0 ? (
+              visibleWaybills.map((wb) => (
                 <tr key={wb.id} className="hover:bg-white/[0.02] transition-colors group">
                   <td className="p-5">
                     <div className="flex items-center gap-3">

@@ -35,6 +35,7 @@ const BrandingSettings = lazy(() => import("./pages/settings/BrandingSettings"))
 const NotificationPreferences = lazy(
   () => import("./pages/settings/NotificationPreferences"),
 );
+const Integrations = lazy(() => import("./pages/settings/Integrations"));
 const WhatsAppHub = lazy(() => import("./pages/automation/WhatsAppHub"));
 const EmailHub = lazy(() => import("./pages/automation/EmailHub"));
 const ClientQueries = lazy(() => import("./pages/communications/ClientQueries"));
@@ -45,11 +46,13 @@ const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
 const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
 const ManifestsPage = lazy(() => import("./pages/ManifestsPage"));
+const RouteOptimizer = lazy(() => import("./pages/RouteOptimizer"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
 const UserRolesPage = lazy(() => import("./pages/UserRolesPage"));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 const StatusPage = lazy(() => import('./pages/Status'));
+const TrackingPage = lazy(() => import('./pages/TrackingPage'));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
 const SignupPage = lazy(() => import("./pages/Signup"));
@@ -99,6 +102,8 @@ export default function App() {
           <Route path="/legal/terms" element={<TermsPage />} />
           <Route path="/legal/privacy" element={<PrivacyPage />} />
           <Route path="/status" element={<StatusPage />} />
+          <Route path="/track" element={<TrackingPage />} />
+          <Route path="/track/:trackingNumber" element={<TrackingPage />} />
           <Route path="/setup" element={<CompanySetupPage />} />
 
           <Route path="/driver/portal" element={<DriverPortalPage />} />
@@ -128,6 +133,8 @@ export default function App() {
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/manifests" element={<ManifestsPage />} />
+              <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
+              <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
               <Route path="/high-risk-queue" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/security/high-risk" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/user-roles" element={<RequirePermission perm="usersRoles"><UserRolesPage /></RequirePermission>} />
@@ -152,6 +159,10 @@ export default function App() {
               <Route
                 path="/settings/notifications"
                 element={<RequirePermission perm="settings"><NotificationPreferences /></RequirePermission>}
+              />
+              <Route
+                path="/settings/integrations"
+                element={<RequirePermission perm="settings"><Integrations /></RequirePermission>}
               />
             </Route>
           </Route>

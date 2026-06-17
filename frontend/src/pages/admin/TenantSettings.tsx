@@ -10,8 +10,27 @@ import BranchHardware from './components/BranchHardware';
 
 type SettingsView = 'PROFILE' | 'HARDWARE' | 'FEATURES';
 
-const BASE_FEE = 7500;
-const PER_SEAT_FEE = 500;
+/** Resolve the tenant's display currency from settings, falling back to the
+ *  registered country (ZA -> ZAR) and finally a neutral default. */
+function resolveCurrency(settings: any): string {
+  if (settings?.currency) return String(settings.currency);
+  const country = String(settings?.country || '').toUpperCase();
+  if (country === 'ZA') return 'ZAR';
+  return 'ZAR';
+}
+
+function formatMoney(value: unknown, currency: string): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  try {
+    return new Intl.NumberFormat('en-ZA', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `${currency} ${Math.round(value).toLocaleString()}`;
+  }
+}
 
 export default function TenantSettings() {
   const [view, setView] = useState<SettingsView>('PROFILE');
@@ -91,7 +110,7 @@ export default function TenantSettings() {
           <div className="animate-in slide-in-from-left-4 fade-in duration-300 space-y-6">
              <div className="grid gap-4 md:grid-cols-3">
                 <BillingCard settings={settings} />
-                <StatusCard />
+                <StatusCard settings={settings} />
              </div>
              <div className="grid gap-6 lg:grid-cols-2">
                 <BrandingSection settings={settings} setSettings={setSettings} onUpload={loadSettings} isUploading={isUploading} setIsUploading={setIsUploading} showToast={showToast} />
@@ -144,36 +163,55 @@ function NavButton({ active, onClick, icon, label }: any) {
 }
 
 function BillingCard({ settings }: any) {
-  const userCount = settings.userCount || 1;
-  const mrr = BASE_FEE + (Math.max(0, userCount - 1) * PER_SEAT_FEE);
+  const currency = resolveCurrency(settings);
+  // Real subscription figures come from the loaded company settings. When the
+  // backend hasn't supplied a price we show a neutral placeholder rather than
+  // fabricating a monthly amount.
+  const seats = settings.userCount ?? settings.seats;
+  const monthly =
+    typeof settings.monthlyPrice === 'number' ? settings.monthlyPrice : undefined;
+  const plan = settings.plan || settings.subscriptionPlan || 'Standard';
+
   return (
     <div className="md:col-span-2 rounded-[32px] border border-blue-500/20 bg-blue-500/5 p-6 backdrop-blur-xl">
       <div className="flex items-center gap-2 text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4">
-        <CreditCard size={14} /> Subscription Strategy
+        <CreditCard size={14} /> Subscription
       </div>
       <div className="flex justify-between items-end">
         <div>
-          <div className="text-4xl font-black text-white">R {mrr.toLocaleString()}</div>
-          <div className="text-sm text-white/50 mt-1 font-bold">Projected Monthly Revenue</div>
+          <div className="text-4xl font-black text-white">{formatMoney(monthly, currency)}</div>
+          <div className="text-sm text-white/50 mt-1 font-bold">
+            {monthly === undefined ? 'Monthly price set by billing' : 'Monthly subscription'}
+          </div>
         </div>
         <div className="text-right">
-          <div className="text-xl font-bold text-white">{userCount} Active Seats</div>
-          <div className="text-[10px] text-white/40 uppercase font-black">Enterprise Grade</div>
+          <div className="text-xl font-bold text-white capitalize">{plan}</div>
+          <div className="text-[10px] text-white/40 uppercase font-black">
+            {typeof seats === 'number' ? `${seats} Active Seat${seats === 1 ? '' : 's'}` : 'Active Plan'}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function StatusCard() {
+function StatusCard({ settings }: any) {
+  // Drive the SLA card from the tenant's real configured breach threshold
+  // (Company.slaBreachMinutes) instead of a fabricated uptime percentage.
+  const breach = settings?.slaBreachMinutes;
+  const hasBreach = typeof breach === 'number' && Number.isFinite(breach);
   return (
     <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 flex flex-col justify-between">
       <div className="flex items-center gap-2 text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em]">
-        <ShieldCheck size={14} /> Global SLA
+        <ShieldCheck size={14} /> Delivery SLA
       </div>
       <div>
-        <div className="text-2xl font-black text-white">99.99%</div>
-        <div className="text-[10px] text-white/40 uppercase font-bold tracking-tighter">Enterprise Uptime</div>
+        <div className="text-2xl font-black text-white">
+          {hasBreach ? `${breach} min` : '—'}
+        </div>
+        <div className="text-[10px] text-white/40 uppercase font-bold tracking-tighter">
+          {hasBreach ? 'Breach Threshold' : 'Not Configured'}
+        </div>
       </div>
     </div>
   );
