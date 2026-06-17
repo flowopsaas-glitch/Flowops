@@ -11,8 +11,13 @@ datasource db {
 
 enum UserRole {
   ADMIN
+  COMPANY_ADMIN
   MANAGER
+  DISPATCH
+  WAREHOUSE
   AGENT
+  USER
+  DRIVER
   VIEWER
 }
 
@@ -187,6 +192,10 @@ model User {
   phone        String?
   role         UserRole @default(AGENT)
   isActive     Boolean  @default(true)
+
+  // Per-user nav/feature permission overrides (key -> boolean). When set,
+  // these take precedence over the role defaults for sidebar + route access.
+  permissions  Json?
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)

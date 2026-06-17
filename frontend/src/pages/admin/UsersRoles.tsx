@@ -10,7 +10,7 @@ import {
 } from "../../lib/tenantUserPermissions";
 
 type UserRow = {
-  id: number;
+  id: string;
   email: string;
   role: string;
   companyId?: number | null;
@@ -34,7 +34,7 @@ function clonePermissions(input: TenantNavPermissions): TenantNavPermissions {
 export default function UsersRoles() {
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingUserId, setSavingUserId] = useState<number | null>(null);
+  const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -55,7 +55,7 @@ export default function UsersRoles() {
       const list = Array.isArray(res?.data) ? res.data : [];
       setRows(
         list.map((item: any) => ({
-          id: Number(item.id),
+          id: String(item.id),
           email: String(item.email || ""),
           role: String(item.role || "USER"),
           companyId: item.companyId ?? null,
@@ -140,7 +140,7 @@ export default function UsersRoles() {
     }
   }
 
-  function setRowRole(userId: number, nextRole: string) {
+  function setRowRole(userId: string, nextRole: string) {
     setRows((prev) =>
       prev.map((row) =>
         row.id === userId
@@ -154,7 +154,7 @@ export default function UsersRoles() {
     );
   }
 
-  function toggleRowPermission(userId: number, key: TenantNavPermissionKey) {
+  function toggleRowPermission(userId: string, key: TenantNavPermissionKey) {
     setRows((prev) =>
       prev.map((row) =>
         row.id === userId
@@ -220,6 +220,9 @@ export default function UsersRoles() {
             >
               <option value="USER">USER</option>
               <option value="DISPATCH">DISPATCH</option>
+              <option value="WAREHOUSE">WAREHOUSE</option>
+              <option value="DRIVER">DRIVER</option>
+              <option value="MANAGER">MANAGER</option>
               <option value="ADMIN">ADMIN</option>
               <option value="COMPANY_ADMIN">COMPANY_ADMIN</option>
             </select>
