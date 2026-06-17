@@ -1,0 +1,43 @@
+{
+  "portal": {
+    "title": "Bestuurder Portaal",
+    "subtitle": "FlowOps veld-toep",
+    "status": {
+      "online": "Aanlyn",
+      "offline": "Vanlyn"
+    },
+    "offlineDeliveries": {
+      "heading": "Vanlyn Aflewerings",
+      "readyToSync": "vanlyn vasgelê, gereed om te sinkroniseer",
+      "savedOffline": "gestoor — sal sinkroniseer wanneer jy weer aanlyn is",
+      "syncNow": "Sinkroniseer nou",
+      "allSynced": "Alle aflewerings gesinkroniseer"
+    },
+    "info": "Maak 'n aflewering oop via jou versendingskakel om bewys van aflewering vas te lê. AFLs wat sonder sein vasgelê is, word op hierdie toestel gestoor en laai outomaties op wanneer jy weer verbinding het — jy verloor nooit 'n aflewering nie.",
+    "footer": "Installeerbaar · Werk vanlyn"
+  },
+  "manifest": {
+    "syncing": "Besig om te sinkroniseer...",
+    "returnToPortal": "Terug na Portaal",
+    "auditList": "Ouditiys: {{count}} Eenhede vir Aflewering",
+    "itemId": "Item ID: {{id}}",
+    "signForHandover": "Teken vir Oorgawe",
+    "completeAuditFirst": "Voltooi Oudit Eers",
+    "proofOfDelivery": "Bewys van Aflewering",
+    "confirmAndComplete": "Bevestig & Voltooi",
+    "signatureRequired": "Handtekening benodig vir oorgawe.",
+    "savedOffline": "Geen sein — aflewering vanlyn gestoor, sal outomaties sinkroniseer.",
+    "deliveryConfirmed": "Aflewering suksesvol bevestig!",
+    "savedOfflineFallback": "Vanlyn gestoor — sal sinkroniseer wanneer verbinding herstel word.",
+    "waybillNotFound": "Rybrief nie in stelsel gevind nie",
+    "offlineSyncToast_one": "{{count}} vanlyn aflewering gesinkroniseer.",
+    "offlineSyncToast_other": "{{count}} vanlyn aflewerings gesinkroniseer."
+  },
+  "language": {
+    "select": "Taal",
+    "en": "Engels",
+    "af": "Afrikaans",
+    "zu": "isiZulu",
+    "xh": "isiXhosa"
+  }
+}

@@ -184,6 +184,8 @@ model Company {
   approvalRequest    ApprovalRequest?
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
+  webhookDeliveries  WebhookDelivery[]
+  carrierConfigs     CarrierConfig[]
 
   @@map("companies")
 }
@@ -269,8 +271,13 @@ model WebhookEndpoint {
 
   createdAt DateTime @default(now())
 
+  deliveries WebhookDelivery[]
+
   @@map("webhook_endpoints")
 }
+
+// Add back-relation for delivery log
+// (deliveries relation added to WebhookEndpoint below via explicit field)
 
 model ApprovalRequest {
   id       String         @id @default(cuid())
@@ -984,4 +991,59 @@ model PlatformAlert {
   @@index([resolved])
   @@index([createdAt])
   @@map("platform_alerts")
+}
+
+
+// ── Multi-carrier rate shopping ────────────────────────────────────────────
+// Tenants configure which carriers they use and any markup percentage.
+// Rate calculations are done in-service against SA market rate tables.
+
+model CarrierConfig {
+  id         String  @id @default(cuid())
+  carrier    String  // aramex | dhl | postnet | courier_it | ram
+  isEnabled  Boolean @default(true)
+  markupPct  Float   @default(0) // % markup applied on top of carrier base rate
+  apiKey     String? // reserved for future live-rate API integration
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, carrier])
+  @@map("carrier_configs")
+}
+
+// ── Webhook delivery log + retries ─────────────────────────────────────────
+// Every dispatch attempt is persisted. Failed deliveries are retried with
+// exponential back-off (1 min → 5 min → 30 min → 2 h → 8 h, max 5 attempts).
+
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  event          String
+  payload        Json
+  status         String   @default("PENDING") // PENDING | DELIVERED | FAILED | RETRYING | EXHAUSTED
+  attempts       Int      @default(0)
+  maxAttempts    Int      @default(5)
+  nextRetryAt    DateTime?
+  lastAttemptAt  DateTime?
+  responseStatus Int?
+  responseBody   String?  @db.Text
+  errorMessage   String?
+
+  endpointId String
+  endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([nextRetryAt])
+  @@index([companyId])
+  @@index([endpointId])
+  @@map("webhook_deliveries")
 }

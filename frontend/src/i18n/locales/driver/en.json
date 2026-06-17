@@ -1,0 +1,43 @@
+{
+  "portal": {
+    "title": "Driver Portal",
+    "subtitle": "FlowOps field app",
+    "status": {
+      "online": "Online",
+      "offline": "Offline"
+    },
+    "offlineDeliveries": {
+      "heading": "Offline Deliveries",
+      "readyToSync": "captured offline, ready to sync",
+      "savedOffline": "saved — will sync when you're back online",
+      "syncNow": "Sync now",
+      "allSynced": "All deliveries synced"
+    },
+    "info": "Open a delivery from your dispatch link to capture proof of delivery. PODs captured without signal are stored on this device and upload automatically once you reconnect — you never lose a delivery.",
+    "footer": "Installable · Works offline"
+  },
+  "manifest": {
+    "syncing": "Syncing...",
+    "returnToPortal": "Return to Portal",
+    "auditList": "Audit List: {{count}} Units for Delivery",
+    "itemId": "Item ID: {{id}}",
+    "signForHandover": "Sign for Handover",
+    "completeAuditFirst": "Complete Audit First",
+    "proofOfDelivery": "Proof of Delivery",
+    "confirmAndComplete": "Confirm & Complete",
+    "signatureRequired": "Signature required for handover.",
+    "savedOffline": "No signal — delivery saved offline, will sync automatically.",
+    "deliveryConfirmed": "Delivery confirmed successfully!",
+    "savedOfflineFallback": "Saved offline — will sync when connection returns.",
+    "waybillNotFound": "Waybill not found in system",
+    "offlineSyncToast_one": "{{count}} offline delivery synced.",
+    "offlineSyncToast_other": "{{count}} offline deliveries synced."
+  },
+  "language": {
+    "select": "Language",
+    "en": "English",
+    "af": "Afrikaans",
+    "zu": "isiZulu",
+    "xh": "isiXhosa"
+  }
+}

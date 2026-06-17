@@ -1,0 +1,43 @@
+{
+  "portal": {
+    "title": "Ikhasi Lomshayeli",
+    "subtitle": "Uhlelo lwamasimu lweFLowOps",
+    "status": {
+      "online": "Ku-Inthanethi",
+      "offline": "Akukho-Inthanethi"
+    },
+    "offlineDeliveries": {
+      "heading": "Ukuhambiswa Ngaphandle Kwe-Inthanethi",
+      "readyToSync": "kuqoshiwe ngaphandle kwe-inthanethi, kulungele ukuvumelaniswa",
+      "savedOffline": "kulondolozwe — kuzovumelaniswa uma ubuyele ku-inthanethi",
+      "syncNow": "Vumelanisa manje",
+      "allSynced": "Ukuhambiswa konke kuvumelanisiwe"
+    },
+    "info": "Vula ukuhambiswa usebenzisa isixhumanisi sakho ukuze uqophe ubufakazi bokuhambiswa. Ubufakazi obungenwa ngaphandle kwesiginali bulondolozwa kulesi sivangeli futhi bulayishwa ngokuzenzakalelayo uma ubuyela ekuxhumekeni — awusoze walahlekelwa ukuhambiswa.",
+    "footer": "Ifakwayo · Isebenza ngaphandle kwe-inthanethi"
+  },
+  "manifest": {
+    "syncing": "Kuyavumelaniswa...",
+    "returnToPortal": "Buyela Esikhumbuzweni",
+    "auditList": "Uhlu Lokuhlola: Izinto ezingu-{{count}} Zokukhaniselwa",
+    "itemId": "Inombolo Yento: {{id}}",
+    "signForHandover": "Sayina Ukuhandover",
+    "completeAuditFirst": "Qedela Ukuhlola Kuqala",
+    "proofOfDelivery": "Ubufakazi Bokuhambiswa",
+    "confirmAndComplete": "Qinisekisa & Qeda",
+    "signatureRequired": "Isignesha iyadingeka ukuze i-handover yenziwe.",
+    "savedOffline": "Asikho isiginali — ukuhambiswa kulondolozwe ngaphandle kwe-inthanethi, kuzovumelaniswa ngokuzenzakalelayo.",
+    "deliveryConfirmed": "Ukuhambiswa kuqinisekisiwe ngempumelelo!",
+    "savedOfflineFallback": "Kulondolozwe ngaphandle kwe-inthanethi — kuzovumelaniswa uma uxhumeko lubuyile.",
+    "waybillNotFound": "I-waybill ayitholwanga ohlelweni",
+    "offlineSyncToast_one": "Ukuhambiswa okungu-{{count}} ngaphandle kwe-inthanethi kuvumelanisiwe.",
+    "offlineSyncToast_other": "Ukuhambiswa okungu-{{count}} ngaphandle kwe-inthanethi kuvumelanisiwe."
+  },
+  "language": {
+    "select": "Ulimi",
+    "en": "IsiNgisi",
+    "af": "IsiBhunu",
+    "zu": "isiZulu",
+    "xh": "isiXhosa"
+  }
+}

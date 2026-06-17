@@ -25,6 +25,7 @@ const PodDeliveries = lazy(() => import("./pages/PodDeliveries"));
 const DriverDispatch = lazy(() => import("./pages/DriverDispatch"));
 const RateCards = lazy(() => import("./pages/RateCards"));
 const BillingBatches = lazy(() => import("./pages/BillingBatches"));
+const RateShopping = lazy(() => import("./pages/RateShopping"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
@@ -151,6 +152,7 @@ export default function App() {
               <Route path="/communications/email" element={<RequirePermission perm="email"><EmailHub /></RequirePermission>} />
               <Route path="/communications/client-queries" element={<RequirePermission perm="clientQueries"><ClientQueries /></RequirePermission>} />
               <Route path="/rate-cards" element={<RequirePermission perm="rateCards"><RateCards /></RequirePermission>} />
+              <Route path="/rate-shopping" element={<RequirePermission perm="rateCards"><RateShopping /></RequirePermission>} />
               <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/invoice-drafts" element={<RequirePermission perm="invoiceDrafts"><InvoiceDraftsPage /></RequirePermission>} />

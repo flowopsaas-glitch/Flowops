@@ -196,6 +196,7 @@ export default function AppLayout() {
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email" },
     
     { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
+    { section: "BILLING", label: "Rate Shopping", desc: "Compare carrier rates", to: "/rate-shopping", icon: Truck, perm: "rateCards" },
     { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText, perm: "billingBatches" },
     { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt, perm: "invoices" },
     { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText, perm: "quotes" },

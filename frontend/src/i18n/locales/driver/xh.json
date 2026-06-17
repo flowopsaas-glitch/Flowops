@@ -1,0 +1,43 @@
+{
+  "portal": {
+    "title": "Ikhasi Lomqhubi",
+    "subtitle": "Uhlelo lwamasimi lweFlowOps",
+    "status": {
+      "online": "Kwi-Intanethi",
+      "offline": "Akukho Kwi-Intanethi"
+    },
+    "offlineDeliveries": {
+      "heading": "Ukudilivariwa Ngaphandle Kwi-Intanethi",
+      "readyToSync": "kugcinwe ngaphandle kwi-intanethi, ilungele ukuhambelana",
+      "savedOffline": "igcinwe — iya kuhambelana xa ubuyela kwi-intanethi",
+      "syncNow": "Hambelana ngoku",
+      "allSynced": "Ukudilivariwa konke kuhambelene"
+    },
+    "info": "Vula ukudilivariwa ngosixhobo sakho senguqulelo ukufumana ubungqina bokubonelela. Ubungqina obuthintelwe ngaphandle kwesignali bugcinwa kwesi sixhobo kwaye buyanyushwa ngokuzenzekelayo xa ubuyela ekuxhumaniseni — awusoze ulahle ukudilivariwa.",
+    "footer": "Ifakelwayo · Isebenza ngaphandle kwi-intanethi"
+  },
+  "manifest": {
+    "syncing": "Iyahambelana...",
+    "returnToPortal": "Buyela kwiKhasi",
+    "auditList": "Uluhlu Lokuhlola: Izinto ezi-{{count}} Zokudilivarwa",
+    "itemId": "Inombolo Yento: {{id}}",
+    "signForHandover": "Sayina Ukunikezela",
+    "completeAuditFirst": "Gqiba Ukuhlola Kuqala",
+    "proofOfDelivery": "Ubungqina Bokubonelela",
+    "confirmAndComplete": "Qinisekisa & Gqiba",
+    "signatureRequired": "Isayino iyadingeka ukuze kunikezelwe.",
+    "savedOffline": "Akukho signali — ukudilivariwa kugcinwe ngaphandle kwi-intanethi, kuya kuhambelana ngokuzenzekelayo.",
+    "deliveryConfirmed": "Ukudilivariwa kuqinisekisiwe ngempumelelo!",
+    "savedOfflineFallback": "Kugcinwe ngaphandle kwi-intanethi — kuya kuhambelana xa uxhobiso lubuyile.",
+    "waybillNotFound": "I-waybill ayifumaneki kwiSistim",
+    "offlineSyncToast_one": "Ukudilivariwa oku-{{count}} ngaphandle kwi-intanethi kuhambelene.",
+    "offlineSyncToast_other": "Ukudilivariwa oku-{{count}} ngaphandle kwi-intanethi kuhambelene."
+  },
+  "language": {
+    "select": "Ulwimi",
+    "en": "IsiNgesi",
+    "af": "IsiBhunu",
+    "zu": "isiZulu",
+    "xh": "isiXhosa"
+  }
+}
