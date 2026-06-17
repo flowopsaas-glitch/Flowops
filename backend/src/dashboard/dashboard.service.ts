@@ -46,6 +46,113 @@ export class DashboardService {
     return { collections, activeDrivers, transit, stock, delivered, risks, waybillsToday, drivers };
   }
 
+  /**
+   * Real, computed business KPIs for the tenant dashboard — each compared
+   * against the prior 30-day window so the UI can show an honest trend delta.
+   * Every value is derived from live data (no hardcoded targets).
+   */
+  async getKpis(companyId: string) {
+    const now = new Date();
+    const d30 = new Date(now);
+    d30.setDate(now.getDate() - 30);
+    const d60 = new Date(now);
+    d60.setDate(now.getDate() - 60);
+
+    const [current, previous, overdue] = await Promise.all([
+      this.windowMetrics(companyId, d30, now),
+      this.windowMetrics(companyId, d60, d30),
+      this.prisma.invoice.aggregate({
+        _sum: { total: true },
+        where: { companyId, status: 'OVERDUE' },
+      }),
+    ]);
+
+    const round = (n: number) => Math.round(n * 10) / 10;
+    const delta = (value: number, prev: number) =>
+      prev > 0 ? round(((value - prev) / prev) * 100) : null;
+
+    const kpi = (
+      value: number,
+      prev: number,
+      unit: 'percent' | 'hours' | 'currency',
+      goodDirection: 'up' | 'down',
+    ) => ({
+      value: round(value),
+      previous: round(prev),
+      delta: delta(value, prev),
+      unit,
+      goodDirection,
+    });
+
+    return {
+      period: '30d',
+      onTimeDeliveryRate: kpi(current.onTimeRate, previous.onTimeRate, 'percent', 'up'),
+      deliverySuccessRate: kpi(current.deliverySuccessRate, previous.deliverySuccessRate, 'percent', 'up'),
+      avgDeliveryHours: kpi(current.avgDeliveryHours, previous.avgDeliveryHours, 'hours', 'down'),
+      revenuePerWaybill: kpi(current.revenuePerWaybill, previous.revenuePerWaybill, 'currency', 'up'),
+      exceptionRate: kpi(current.exceptionRate, previous.exceptionRate, 'percent', 'down'),
+      outstandingRevenue: {
+        value: round(overdue._sum.total || 0),
+        previous: null,
+        delta: null,
+        unit: 'currency' as const,
+        goodDirection: 'down' as const,
+      },
+    };
+  }
+
+  /** Computes the KPI inputs for a single [start, end) window. */
+  private async windowMetrics(companyId: string, start: Date, end: Date) {
+    const [shipments, delivered, failed, returned, invoiceAgg, waybillCount] =
+      await Promise.all([
+        this.prisma.shipment.findMany({
+          where: { companyId, deliveredAt: { gte: start, lt: end } },
+          select: { createdAt: true, deliveredAt: true, estimatedDelivery: true },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, status: 'DELIVERED', updatedAt: { gte: start, lt: end } },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, status: 'FAILED_DELIVERY', updatedAt: { gte: start, lt: end } },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, status: 'RETURNED', updatedAt: { gte: start, lt: end } },
+        }),
+        this.prisma.invoice.aggregate({
+          _sum: { total: true },
+          where: { companyId, createdAt: { gte: start, lt: end } },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, createdAt: { gte: start, lt: end } },
+        }),
+      ]);
+
+    let onTimeNum = 0;
+    let onTimeDen = 0;
+    let totalHours = 0;
+    let deliveredWithDates = 0;
+    for (const s of shipments) {
+      if (!s.deliveredAt) continue;
+      if (s.estimatedDelivery) {
+        onTimeDen++;
+        if (s.deliveredAt <= s.estimatedDelivery) onTimeNum++;
+      }
+      totalHours += (s.deliveredAt.getTime() - s.createdAt.getTime()) / 3_600_000;
+      deliveredWithDates++;
+    }
+
+    const outcomeTotal = delivered + failed + returned;
+    const revenue = invoiceAgg._sum.total || 0;
+
+    return {
+      onTimeRate: onTimeDen ? (onTimeNum / onTimeDen) * 100 : 0,
+      deliverySuccessRate: outcomeTotal ? (delivered / outcomeTotal) * 100 : 0,
+      exceptionRate: outcomeTotal ? ((failed + returned) / outcomeTotal) * 100 : 0,
+      avgDeliveryHours: deliveredWithDates ? totalHours / deliveredWithDates : 0,
+      revenuePerWaybill: waybillCount ? revenue / waybillCount : 0,
+    };
+  }
+
   async getActivities(companyId: string, limit = 20) {
     // Recent waybill events + collections as activity feed
     const [waybills, collections, notifications] = await Promise.all([
