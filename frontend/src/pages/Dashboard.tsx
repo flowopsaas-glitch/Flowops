@@ -7,6 +7,7 @@ import {
   TrendingUp, TrendingDown, Minus, Clock, CheckCircle2, Wallet
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { normalizeTenantNavPermissions } from "../lib/tenantUserPermissions";
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../api/client';
@@ -183,6 +184,29 @@ export default function Dashboard() {
 
   const currency = (user?.company?.currency as string) || "ZAR";
 
+  // Persona-aware dashboard: render the KPI/widget mix that matches what this
+  // role is allowed to see (same permission matrix the sidebar + routes use).
+  const perms = useMemo(
+    () =>
+      normalizeTenantNavPermissions(
+        (user as any)?.permissions ?? (user as any)?.navPermissions,
+        user?.role,
+      ),
+    [user],
+  );
+  const canSeeFinance = perms.invoices || perms.creditControl;
+  const canSeeOps =
+    perms.shipments || perms.podDeliveries || perms.driverDispatch || perms.collections;
+  const canSeeMap = perms.driverDispatch || perms.collections;
+  const persona =
+    canSeeOps && canSeeFinance
+      ? "Command View"
+      : canSeeFinance
+        ? "Finance View"
+        : canSeeMap
+          ? "Operations View"
+          : "Workspace View";
+
   const { socket } = useSocket(user?.companyId || 1);
   const mapCenterPoint: [number, number] = useMemo(() => [-28.4793, 24.6727], []); // Global center coordinates for South Africa
 
@@ -255,20 +279,42 @@ export default function Dashboard() {
     );
   }
 
+  const kpiCards = kpis
+    ? [
+        ...(canSeeOps
+          ? [
+              { title: "On-Time Delivery", kpi: kpis.onTimeDeliveryRate, icon: Target, to: "/shipments?status=DELIVERED" },
+              { title: "Delivery Success", kpi: kpis.deliverySuccessRate, icon: CheckCircle2, to: "/pod-deliveries" },
+              { title: "Avg Delivery Time", kpi: kpis.avgDeliveryHours, icon: Clock, to: "/shipments?status=DELIVERED" },
+              { title: "Exception Rate", kpi: kpis.exceptionRate, icon: AlertTriangle, to: "/high-risk-queue" },
+            ]
+          : []),
+        ...(canSeeFinance
+          ? [
+              { title: "Revenue / Waybill", kpi: kpis.revenuePerWaybill, icon: Zap, to: "/invoices" },
+              { title: "Outstanding", kpi: kpis.outstandingRevenue, icon: Wallet, to: "/invoices?status=OVERDUE" },
+            ]
+          : []),
+      ]
+    : [];
+
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100 p-8 space-y-8 font-sans">
-      <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`National Tracking Grid Overview | Tenant Workspace ID: ${user?.companyId || 1}`} />
+      <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`${persona} · Tenant Workspace ID: ${user?.companyId || 1}`} />
 
-      {/* Metrics Row mapping directly to React UI cards */}
+      {/* Operational metrics — shown to operations / dispatch / command personas */}
+      {canSeeOps && (
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <MetricCard title="Pending Collection" value={liveMetrics.collections} subtitle="Waybills awaiting courier dropoff assignment." icon={Package} gradient="bg-gradient-to-br from-amber-500 to-orange-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
         <MetricCard title="Active Resources" value={liveMetrics.activeDrivers} subtitle="Live registered logistics drivers checked-in." icon={Users} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" to="/driver-dispatch" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/shipments" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/shipments?status=IN_TRANSIT" onAiClick={() => setIsAiOpen(true)} />
         <MetricCard title="At Local Hubs" value={liveMetrics.stock} subtitle="Waybills scanned inside processing nodes safely." icon={FileText} gradient="bg-gradient-to-br from-purple-500 to-pink-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
         <MetricCard title="Anomalies Flagged" value={liveMetrics.risks} subtitle="Operational exceptions under AI review queues." icon={AlertTriangle} gradient="bg-gradient-to-br from-rose-500 to-red-600" to="/high-risk-queue" onAiClick={() => setIsAiOpen(true)} />
       </div>
+      )}
 
       {/* Performance Intelligence — real computed KPIs vs the prior 30-day window */}
+      {(canSeeOps || canSeeFinance) && (
       <div>
         <div className="mb-3 flex items-center gap-2 px-1">
           <Activity size={14} className="text-sky-400" />
@@ -278,12 +324,9 @@ export default function Dashboard() {
         </div>
         {kpis ? (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            <KpiCard title="On-Time Delivery" kpi={kpis.onTimeDeliveryRate} icon={Target} currency={currency} to="/shipments" />
-            <KpiCard title="Delivery Success" kpi={kpis.deliverySuccessRate} icon={CheckCircle2} currency={currency} to="/pod-deliveries" />
-            <KpiCard title="Avg Delivery Time" kpi={kpis.avgDeliveryHours} icon={Clock} currency={currency} to="/shipments" />
-            <KpiCard title="Revenue / Waybill" kpi={kpis.revenuePerWaybill} icon={Zap} currency={currency} to="/invoices" />
-            <KpiCard title="Exception Rate" kpi={kpis.exceptionRate} icon={AlertTriangle} currency={currency} to="/high-risk-queue" />
-            <KpiCard title="Outstanding" kpi={kpis.outstandingRevenue} icon={Wallet} currency={currency} to="/credit-control" />
+            {kpiCards.map((c) => (
+              <KpiCard key={c.title} title={c.title} kpi={c.kpi} icon={c.icon} currency={currency} to={c.to} />
+            ))}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -293,8 +336,10 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Leaflet Real-time Transit Grid Block Container */}
+      {/* Leaflet Real-time Transit Grid Block Container — operations personas only */}
+      {canSeeMap && (
       <div className="relative bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-[32px] p-6 h-[600px] overflow-hidden shadow-2xl">
         <div className="absolute top-6 left-6 z-[1000] bg-black/70 border border-white/10 px-4 py-2 rounded-full text-xs font-black tracking-widest uppercase text-emerald-400 animate-pulse">
           📡 Live Telemetry Feed Connected
@@ -318,6 +363,7 @@ export default function Dashboard() {
           <MapController center={mapCenterPoint} />
         </MapContainer>
       </div>
+      )}
 
       {/* AI Intelligence Chat Component Sheet Insertion */}
       {isAiOpen && (

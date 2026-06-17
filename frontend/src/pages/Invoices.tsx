@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from '../api/client';
 import { FileText, ShieldAlert, Download, RefreshCw, CheckCircle2 } from "lucide-react";
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusFilter = (searchParams.get("status") || "").toUpperCase();
 
   const fetchInvoices = async () => {
     try {
@@ -34,23 +37,42 @@ export default function Invoices() {
     </div>
   );
 
+  // Deep-link filter: dashboard "Outstanding" KPI navigates here with
+  // ?status=OVERDUE to land on a focused arrears view.
+  const visibleInvoices = statusFilter
+    ? invoices.filter((inv) => String(inv.status).toUpperCase() === statusFilter)
+    : invoices;
+
   return (
     <div className="p-8 space-y-8 bg-[#07111f] min-h-screen text-slate-200">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-black italic uppercase tracking-tighter text-white">Official Invoices</h1>
+        <div>
+          <h1 className="text-3xl font-black italic uppercase tracking-tighter text-white">Official Invoices</h1>
+          {statusFilter && (
+            <button
+              onClick={() => setSearchParams({})}
+              className="mt-2 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-300 hover:bg-blue-500/20"
+            >
+              Filter: {statusFilter}
+              <span className="text-blue-400">✕ clear</span>
+            </button>
+          )}
+        </div>
         <button onClick={fetchInvoices} className="p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10">
           <RefreshCw size={20} />
         </button>
       </div>
 
-      {invoices.length === 0 ? (
+      {visibleInvoices.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-white/5 rounded-3xl bg-white/[0.02]">
           <FileText className="h-12 w-12 mb-3 text-slate-700" />
-          <p className="text-lg font-bold text-slate-400 uppercase tracking-widest italic">No Finalized Invoices Found</p>
+          <p className="text-lg font-bold text-slate-400 uppercase tracking-widest italic">
+            {statusFilter ? `No ${statusFilter} Invoices` : "No Finalized Invoices Found"}
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {invoices.map((inv) => (
+          {visibleInvoices.map((inv) => (
             <div key={inv.id} className="bg-slate-900 border border-white/10 rounded-[24px] p-6 shadow-2xl">
               <div className="flex justify-between items-start">
                 <div>
