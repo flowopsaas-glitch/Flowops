@@ -18,6 +18,17 @@ export class WhatsAppController {
     return this.svc.getThreads(u.companyId);
   }
 
+  @Get('settings')
+  getSettings(@CurrentUser() u: any) {
+    return this.svc.getSettings(u.companyId);
+  }
+
+  @Post('compose')
+  @HttpCode(200)
+  compose(@CurrentUser() u: any, @Body() body: { to: string; message: string }) {
+    return this.svc.compose(u.companyId, body.to, body.message);
+  }
+
   @Get('messages/:phone')
   getMessages(@Param('phone') phone: string, @CurrentUser() u: any) {
     return this.svc.getMessages(phone, u.companyId);

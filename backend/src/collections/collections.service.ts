@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { GeocodingService } from '../geocoding/geocoding.service';
 
 @Injectable()
 export class CollectionsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private geo: GeocodingService,
+  ) {}
 
   async findAll(companyId: string, query?: any) {
     const where: any = { companyId };
@@ -29,12 +33,39 @@ export class CollectionsService {
   }
 
   async create(companyId: string, dto: any) {
-    return this.prisma.collection.create({ data: { ...dto, companyId } });
+    const data: any = { ...dto, companyId };
+    // Geocode the pickup address so the collection lands on the map and can be
+    // routed/assigned by proximity. Best-effort: never blocks creation.
+    if (data.pickupAddress && (data.pickupLat == null || data.pickupLng == null)) {
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { country: true },
+      });
+      const point = await this.geo.geocode(data.pickupAddress, company?.country ?? undefined);
+      if (point) {
+        data.pickupLat = point.lat;
+        data.pickupLng = point.lng;
+      }
+    }
+    return this.prisma.collection.create({ data });
   }
 
   async update(id: string, companyId: string, dto: any) {
     await this.findOne(id, companyId);
-    return this.prisma.collection.update({ where: { id }, data: dto });
+    const data: any = { ...dto };
+    // Re-geocode when the pickup address changes (and caller didn't pass coords).
+    if (data.pickupAddress && data.pickupLat == null && data.pickupLng == null) {
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { country: true },
+      });
+      const point = await this.geo.geocode(data.pickupAddress, company?.country ?? undefined);
+      if (point) {
+        data.pickupLat = point.lat;
+        data.pickupLng = point.lng;
+      }
+    }
+    return this.prisma.collection.update({ where: { id }, data });
   }
 
   async cancel(id: string, companyId: string) {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { GeocodingService } from '../geocoding/geocoding.service';
 
 @Injectable()
 export class DashboardService {
@@ -44,6 +45,113 @@ export class DashboardService {
     }));
 
     return { collections, activeDrivers, transit, stock, delivered, risks, waybillsToday, drivers };
+  }
+
+  /**
+   * Real, computed business KPIs for the tenant dashboard — each compared
+   * against the prior 30-day window so the UI can show an honest trend delta.
+   * Every value is derived from live data (no hardcoded targets).
+   */
+  async getKpis(companyId: string) {
+    const now = new Date();
+    const d30 = new Date(now);
+    d30.setDate(now.getDate() - 30);
+    const d60 = new Date(now);
+    d60.setDate(now.getDate() - 60);
+
+    const [current, previous, overdue] = await Promise.all([
+      this.windowMetrics(companyId, d30, now),
+      this.windowMetrics(companyId, d60, d30),
+      this.prisma.invoice.aggregate({
+        _sum: { total: true },
+        where: { companyId, status: 'OVERDUE' },
+      }),
+    ]);
+
+    const round = (n: number) => Math.round(n * 10) / 10;
+    const delta = (value: number, prev: number) =>
+      prev > 0 ? round(((value - prev) / prev) * 100) : null;
+
+    const kpi = (
+      value: number,
+      prev: number,
+      unit: 'percent' | 'hours' | 'currency',
+      goodDirection: 'up' | 'down',
+    ) => ({
+      value: round(value),
+      previous: round(prev),
+      delta: delta(value, prev),
+      unit,
+      goodDirection,
+    });
+
+    return {
+      period: '30d',
+      onTimeDeliveryRate: kpi(current.onTimeRate, previous.onTimeRate, 'percent', 'up'),
+      deliverySuccessRate: kpi(current.deliverySuccessRate, previous.deliverySuccessRate, 'percent', 'up'),
+      avgDeliveryHours: kpi(current.avgDeliveryHours, previous.avgDeliveryHours, 'hours', 'down'),
+      revenuePerWaybill: kpi(current.revenuePerWaybill, previous.revenuePerWaybill, 'currency', 'up'),
+      exceptionRate: kpi(current.exceptionRate, previous.exceptionRate, 'percent', 'down'),
+      outstandingRevenue: {
+        value: round(overdue._sum.total || 0),
+        previous: null,
+        delta: null,
+        unit: 'currency' as const,
+        goodDirection: 'down' as const,
+      },
+    };
+  }
+
+  /** Computes the KPI inputs for a single [start, end) window. */
+  private async windowMetrics(companyId: string, start: Date, end: Date) {
+    const [shipments, delivered, failed, returned, invoiceAgg, waybillCount] =
+      await Promise.all([
+        this.prisma.shipment.findMany({
+          where: { companyId, deliveredAt: { gte: start, lt: end } },
+          select: { createdAt: true, deliveredAt: true, estimatedDelivery: true },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, status: 'DELIVERED', updatedAt: { gte: start, lt: end } },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, status: 'FAILED_DELIVERY', updatedAt: { gte: start, lt: end } },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, status: 'RETURNED', updatedAt: { gte: start, lt: end } },
+        }),
+        this.prisma.invoice.aggregate({
+          _sum: { total: true },
+          where: { companyId, createdAt: { gte: start, lt: end } },
+        }),
+        this.prisma.waybill.count({
+          where: { companyId, createdAt: { gte: start, lt: end } },
+        }),
+      ]);
+
+    let onTimeNum = 0;
+    let onTimeDen = 0;
+    let totalHours = 0;
+    let deliveredWithDates = 0;
+    for (const s of shipments) {
+      if (!s.deliveredAt) continue;
+      if (s.estimatedDelivery) {
+        onTimeDen++;
+        if (s.deliveredAt <= s.estimatedDelivery) onTimeNum++;
+      }
+      totalHours += (s.deliveredAt.getTime() - s.createdAt.getTime()) / 3_600_000;
+      deliveredWithDates++;
+    }
+
+    const outcomeTotal = delivered + failed + returned;
+    const revenue = invoiceAgg._sum.total || 0;
+
+    return {
+      onTimeRate: onTimeDen ? (onTimeNum / onTimeDen) * 100 : 0,
+      deliverySuccessRate: outcomeTotal ? (delivered / outcomeTotal) * 100 : 0,
+      exceptionRate: outcomeTotal ? ((failed + returned) / outcomeTotal) * 100 : 0,
+      avgDeliveryHours: deliveredWithDates ? totalHours / deliveredWithDates : 0,
+      revenuePerWaybill: waybillCount ? revenue / waybillCount : 0,
+    };
   }
 
   async getActivities(companyId: string, limit = 20) {
@@ -110,19 +218,91 @@ export class DashboardService {
 
   // GET /collections-state-sync/suggest-driver/:collectionId
   async suggestDriver(companyId: string, collectionId: string) {
-    const drivers = await this.prisma.driver.findMany({
-      where: { companyId, status: 'AVAILABLE', isActive: true },
-      take: 1,
+    // Confirm the collection belongs to this tenant. This also anchors future
+    // geo-proximity scoring once pickup coordinates/geocoding are available
+    // (Collection currently stores only a free-text pickupAddress).
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, companyId },
+      select: { id: true, pickupLat: true, pickupLng: true },
     });
-    if (!drivers.length) return { suggestion: null };
-    const d = drivers[0];
-    return {
-      suggestion: {
-        id: d.id,
-        name: d.name,
-        vehicleType: d.vehicleType,
-        score: 0.85,
+    if (!collection) return { suggestion: null, candidates: [] };
+
+    const drivers = await this.prisma.driver.findMany({
+      where: { companyId, isActive: true, status: { in: ['AVAILABLE', 'ON_ROUTE'] } },
+      select: { id: true, name: true, vehicleType: true, status: true, lastSeen: true, lastLat: true, lastLng: true },
+    });
+    if (!drivers.length) return { suggestion: null, candidates: [] };
+
+    // Current open workload per driver — fewer open jobs ranks higher.
+    const loads = await this.prisma.collection.groupBy({
+      by: ['driverId'],
+      where: {
+        companyId,
+        driverId: { in: drivers.map((d) => d.id) },
+        status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
       },
-    };
+      _count: { _all: true },
+    });
+    const loadByDriver = new Map<string, number>(
+      loads.map((l) => [l.driverId as string, l._count._all]),
+    );
+
+    const now = Date.now();
+    const hasPickup = collection.pickupLat != null && collection.pickupLng != null;
+    const scored = drivers
+      .map((d) => {
+        // Availability: idle drivers preferred over those already mid-route.
+        const availability = d.status === 'AVAILABLE' ? 1 : 0.4;
+        // Load: open jobs, saturating at 5 (0 jobs = 1.0, 5+ jobs = 0).
+        const load = loadByDriver.get(d.id) ?? 0;
+        const loadScore = Math.max(0, 1 - load / 5);
+        // Recency: a fresh GPS/heartbeat (<60 min) implies a truly active driver.
+        const minsSinceSeen = d.lastSeen
+          ? (now - d.lastSeen.getTime()) / 60_000
+          : Number.POSITIVE_INFINITY;
+        const recency = Number.isFinite(minsSinceSeen)
+          ? Math.max(0, 1 - minsSinceSeen / 60)
+          : 0.2;
+
+        // Proximity: distance from driver's last GPS to the pickup (within 50km).
+        let distanceKm: number | null = null;
+        let proximity = 0;
+        const hasDriverPos = d.lastLat != null && d.lastLng != null;
+        if (hasPickup && hasDriverPos) {
+          distanceKm = GeocodingService.haversineKm(
+            collection.pickupLat as number,
+            collection.pickupLng as number,
+            d.lastLat as number,
+            d.lastLng as number,
+          );
+          proximity = Math.max(0, 1 - distanceKm / 50);
+        }
+
+        const round = (n: number) => Math.round(n * 100) / 100;
+        // When we can measure proximity, give it real weight; otherwise fall
+        // back to the availability/load/recency blend.
+        const useProx = hasPickup && hasDriverPos;
+        const score = useProx
+          ? round(0.4 * availability + 0.25 * loadScore + 0.15 * recency + 0.2 * proximity)
+          : round(0.5 * availability + 0.3 * loadScore + 0.2 * recency);
+
+        return {
+          id: d.id,
+          name: d.name,
+          vehicleType: d.vehicleType,
+          score,
+          factors: {
+            availability: round(availability),
+            openJobs: load,
+            loadScore: round(loadScore),
+            recency: round(recency),
+            distanceKm: distanceKm == null ? null : Math.round(distanceKm * 10) / 10,
+            proximity: useProx ? round(proximity) : null,
+          },
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    return { suggestion: scored[0], candidates: scored.slice(0, 5) };
   }
 }

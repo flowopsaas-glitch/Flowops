@@ -112,6 +112,62 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     return buildFullTenantNavPermissions();
   }
 
+  if (value === "MANAGER") {
+    // Operational oversight + billing visibility, but no user admin / settings.
+    return {
+      dashboard: true,
+      shipments: true,
+      waybillInbox: true,
+      waybills: true,
+      clients: true,
+      notifications: true,
+      collections: true,
+      podDeliveries: true,
+      driverDispatch: true,
+      whatsapp: true,
+      email: true,
+      clientQueries: true,
+      rateCards: true,
+      billingBatches: true,
+      invoiceDrafts: true,
+      invoices: true,
+      creditControl: true,
+      quotes: true,
+      aiControlTower: true,
+      risksExceptions: true,
+      usersRoles: false,
+      settings: false,
+    };
+  }
+
+  if (value === "WAREHOUSE") {
+    // Hub clerk: inbound/outbound goods handling, POD capture, exception flags.
+    return {
+      dashboard: true,
+      shipments: true,
+      waybillInbox: true,
+      waybills: true,
+      clients: false,
+      notifications: true,
+      collections: false,
+      podDeliveries: true,
+      driverDispatch: false,
+      whatsapp: true,
+      email: false,
+      clientQueries: false,
+      rateCards: false,
+      billingBatches: false,
+      invoiceDrafts: false,
+      invoices: false,
+      creditControl: false,
+      quotes: false,
+      aiControlTower: false,
+      risksExceptions: true,
+      usersRoles: false,
+      settings: false,
+    };
+  }
+
   if (value === "DRIVER") {
     return {
       dashboard: true,

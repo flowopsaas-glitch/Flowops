@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { v4 as uuid } from 'uuid';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class WaybillsService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private notifications: NotificationsService,
   ) {}
 
   // ── CRUD ──────────────────────────────────────────────────────────────
@@ -67,8 +69,13 @@ export class WaybillsService {
   }
 
   async update(id: string, companyId: string, dto: any) {
-    await this.findOne(id, companyId);
-    return this.prisma.waybill.update({ where: { id }, data: dto });
+    const existing = await this.findOne(id, companyId);
+    const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
+    // Event-driven customer notification when the status changes.
+    if (dto.status && dto.status !== existing.status) {
+      void this.notifications.notifyWaybillStatus(updated);
+    }
+    return updated;
   }
 
   // ── POD delivery recording ─────────────────────────────────────────
@@ -97,7 +104,7 @@ export class WaybillsService {
       podImageUrl = this.storage.publicFileUrl(key);
     }
 
-    return this.prisma.waybill.update({
+    const delivered = await this.prisma.waybill.update({
       where: { id },
       data: {
         status: 'DELIVERED',
@@ -107,6 +114,9 @@ export class WaybillsService {
         ...(podImageUrl && { podImageUrl }),
       },
     });
+    // Notify the customer their parcel was delivered.
+    void this.notifications.notifyWaybillStatus(delivered);
+    return delivered;
   }
 
   async getPublicView(id: string) {
