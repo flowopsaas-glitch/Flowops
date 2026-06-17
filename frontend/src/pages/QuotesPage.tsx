@@ -1,154 +1,328 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { apiGet } from "../api/client";
-import { Search, FileText, Filter, MoreHorizontal, ArrowUpRight } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Package,
+  Plus,
+  RefreshCw,
+  Scale,
+  Search,
+  XCircle,
+} from "lucide-react";
+import { api } from "../api/client";
 
-interface Quote {
-  id: string | number;
-  title: string;
-  clientName: string;
-  total: number;
-  verdict: string;
-  createdAt?: string;
+// ── Types (match actual Quote schema) ──────────────────────────────────────
+// Quote: id, fromAddress, toAddress, weight, price, breakdown(Json),
+//        accepted(bool), expiresAt, companyId, createdAt
+
+type Quote = {
+  id: string;
+  fromAddress: string;
+  toAddress: string;
+  weight: number;
+  price: number;
+  breakdown?: { base?: number; perKg?: number; total?: number } | null;
+  accepted: boolean;
+  expiresAt?: string | null;
+  createdAt: string;
+};
+
+function money(v?: number | null) {
+  return `ZAR ${(v ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// 🦴 INTERNAL COMPONENT: Skeleton Loader for "Instant" feel
-const SkeletonRow = () => (
-  <tr className="animate-pulse border-b border-slate-800/50">
-    <td className="p-4"><div className="h-4 w-32 bg-slate-800 rounded"></div></td>
-    <td className="p-4"><div className="h-4 w-24 bg-slate-800 rounded"></div></td>
-    <td className="p-4"><div className="h-4 w-20 bg-slate-800 rounded"></div></td>
-    <td className="p-4"><div className="h-6 w-16 bg-slate-800 rounded-full"></div></td>
-  </tr>
-);
+function isExpired(ts?: string | null) {
+  return ts ? new Date(ts) < new Date() : false;
+}
 
-export default function QuotesPage() {
-  const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [loading, setLoading] = useState(true);
+// ── Create Quote modal ─────────────────────────────────────────────────────
+
+function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ fromAddress: "", toAddress: "", weight: "" });
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
 
-  const fetchQuotes = async () => {
-    setLoading(true);
+  // Live price preview: base R80 + R15/kg
+  const previewPrice = 80 + 15 * (parseFloat(form.weight) || 0);
+
+  const save = async () => {
+    if (!form.fromAddress.trim() || !form.toAddress.trim() || !form.weight) {
+      setError("All fields are required.");
+      return;
+    }
+    setSaving(true);
     setError("");
     try {
-      const data = await apiGet<any>("/quotes");
-      const list = Array.isArray(data) ? data : (data?.items || data?.data || []);
-      setQuotes(list.map((item: any) => ({
-        id: item?.id ?? crypto.randomUUID(),
-        title: String(item?.title ?? "Untitled").trim(),
-        clientName: String(item?.clientName ?? "Unknown Client").trim(),
-        total: Number(item?.total ?? 0),
-        verdict: String(item?.verdict ?? "DRAFT").toUpperCase(),
-      })));
+      await api.post("/quotes", {
+        fromAddress: form.fromAddress,
+        toAddress:   form.toAddress,
+        weight:      parseFloat(form.weight),
+      });
+      onSaved();
+      onClose();
     } catch (err: any) {
-      setError("Connectivity issue: Unable to reach Quotes service.");
+      setError(err?.message || "Failed to create quote.");
     } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchQuotes(); }, []);
-
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return quotes.filter(i => 
-      i.title.toLowerCase().includes(q) || 
-      i.clientName.toLowerCase().includes(q)
-    );
-  }, [quotes, query]);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'APPROVED': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'REJECTED': return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-      case 'EXPIRED': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-      default: return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+      setSaving(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] p-8 text-slate-200">
-      {/* Header Section */}
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-blue-500 font-bold text-xs uppercase tracking-widest mb-1">
-            <FileText size={14} /> Revenue Management
-          </div>
-          <h1 className="text-3xl font-black tracking-tight text-white">Quotes & Estimates</h1>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#0b1628] shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
+          <div className="text-lg font-black text-white">New Quote</div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50">
+            <XCircle className="h-5 w-5" />
+          </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-            <input 
-              className="w-72 rounded-xl border border-slate-800 bg-slate-900/50 py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              placeholder="Filter by client or reference..."
-              onChange={e => setQuery(e.target.value)}
+        <div className="px-6 py-5 space-y-4">
+          {error && (
+            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>
+          )}
+          {(["fromAddress", "toAddress"] as const).map((field) => (
+            <div key={field}>
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">
+                {field === "fromAddress" ? "From Address *" : "To Address *"}
+              </label>
+              <input
+                value={form[field]}
+                onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
+                placeholder={field === "fromAddress" ? "123 Pickup St, Johannesburg" : "456 Delivery Rd, Cape Town"}
+                className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400"
+              />
+            </div>
+          ))}
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Weight (kg) *</label>
+            <input
+              value={form.weight}
+              onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}
+              type="number" min="0.1" step="0.1" placeholder="2.5"
+              className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400"
             />
           </div>
-          <button className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-slate-100 transition-colors flex items-center gap-2">
-            Create Quote <ArrowUpRight size={16} />
+
+          {/* Price preview */}
+          {parseFloat(form.weight) > 0 && (
+            <div className="rounded-2xl border border-blue-400/20 bg-blue-500/5 px-4 py-3 flex items-center justify-between">
+              <div className="text-sm text-slate-300">Estimated price</div>
+              <div className="text-xl font-black text-blue-300">{money(previewPrice)}</div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-white/10 px-6 py-4">
+          <button onClick={onClose} className="rounded-2xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-bold text-white hover:bg-white/10">Cancel</button>
+          <button disabled={saving} onClick={save}
+            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 px-5 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-60">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {saving ? "Generating…" : "Generate Quote"}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Main Content Card */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 backdrop-blur-xl overflow-hidden shadow-2xl">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-800 bg-slate-800/30">
-              <th className="p-4 font-semibold text-slate-400">REFERENCE</th>
-              <th className="p-4 font-semibold text-slate-400">CLIENT</th>
-              <th className="p-4 font-semibold text-slate-400">TOTAL VALUE</th>
-              <th className="p-4 font-semibold text-slate-400">STATUS</th>
-              <th className="p-4 text-right font-semibold text-slate-400 italic">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {loading ? (
-              <>
-                <SkeletonRow /><SkeletonRow /><SkeletonRow />
-              </>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-20 text-center text-slate-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <Filter size={32} className="opacity-20" />
-                    <p>No quotes found in current ledger.</p>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              filtered.map(q => (
-                <tr key={q.id} className="hover:bg-slate-800/30 transition-colors group">
-                  <td className="p-4 font-bold text-white uppercase tracking-tight">{q.title}</td>
-                  <td className="p-4 text-slate-400">{q.clientName}</td>
-                  <td className="p-4 font-mono font-bold text-blue-400">
-                    R {q.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td className="p-4">
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black ${getStatusColor(q.verdict)}`}>
-                      {q.verdict}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="p-2 text-slate-600 hover:text-white transition-colors">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+// ── Main page ──────────────────────────────────────────────────────────────
+
+export default function QuotesPage() {
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [filter, setFilter] = useState<"all" | "pending" | "accepted" | "expired">("all");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res: any = await api.get("/quotes");
+      const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+      setQuotes(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const accept = async (id: string) => {
+    setBusy(id);
+    try {
+      await api.patch(`/quotes/${id}/accept`, {});
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const stats = useMemo(() => ({
+    total:    quotes.length,
+    pending:  quotes.filter((q) => !q.accepted && !isExpired(q.expiresAt)).length,
+    accepted: quotes.filter((q) => q.accepted).length,
+    expired:  quotes.filter((q) => !q.accepted && isExpired(q.expiresAt)).length,
+    totalValue: quotes.filter((q) => q.accepted).reduce((s, q) => s + q.price, 0),
+  }), [quotes]);
+
+  const visible = useMemo(() => {
+    let list = quotes;
+    if (filter === "pending")  list = list.filter((q) => !q.accepted && !isExpired(q.expiresAt));
+    if (filter === "accepted") list = list.filter((q) => q.accepted);
+    if (filter === "expired")  list = list.filter((q) => !q.accepted && isExpired(q.expiresAt));
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((x) => x.fromAddress.toLowerCase().includes(q) || x.toAddress.toLowerCase().includes(q));
+    }
+    return list;
+  }, [quotes, filter, search]);
+
+  return (
+    <div className="space-y-6">
+      {showCreate && <CreateModal onClose={() => setShowCreate(false)} onSaved={load} />}
+
+      {/* Header */}
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-white">Quotes</h1>
+            <p className="mt-1 text-sm text-slate-400">Generate instant freight quotes based on weight and route. Valid 48 hours.</p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <button onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 px-5 py-2.5 text-sm font-bold text-slate-950">
+              <Plus className="h-4 w-4" /> Generate Quote
+            </button>
+          </div>
+        </div>
       </div>
 
-      {error && (
-        <div className="mt-4 flex items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-400">
-          <div className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-          {error}
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        {[
+          { k: "all",      label: "Total Quotes",   val: stats.total,    tone: "text-white" },
+          { k: "pending",  label: "Pending",         val: stats.pending,  tone: "text-amber-300" },
+          { k: "accepted", label: "Accepted",        val: stats.accepted, tone: "text-emerald-300" },
+          { k: "expired",  label: "Expired",         val: stats.expired,  tone: "text-slate-400" },
+        ].map(({ k, label, val, tone }) => (
+          <button key={k} onClick={() => setFilter(k as any)}
+            className={`rounded-[24px] border p-5 text-left transition-colors ${filter === k ? "border-blue-400/30 bg-blue-500/10" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.08]"}`}>
+            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">{label}</div>
+            <div className={`mt-2 text-3xl font-black ${tone}`}>{val}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Accepted value banner */}
+      {stats.totalValue > 0 && (
+        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 px-5 py-3 flex items-center gap-3">
+          <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+          <span className="text-sm text-slate-300">
+            Accepted quote value: <span className="font-black text-emerald-300">{money(stats.totalValue)}</span>
+          </span>
         </div>
       )}
+
+      {/* Table */}
+      <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl">
+        <div className="border-b border-white/10 p-4 flex items-center gap-3">
+          <Search className="h-4 w-4 text-white/30 shrink-0" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by address…"
+            className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30" />
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-white/40">
+                <th className="px-5 py-3">From → To</th>
+                <th className="px-5 py-3">Weight</th>
+                <th className="px-5 py-3">Price</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Expires</th>
+                <th className="px-5 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <tr key={i} className="border-b border-white/5">
+                    {Array.from({ length: 6 }).map((_, j) => (
+                      <td key={j} className="px-5 py-4"><div className="h-3 animate-pulse rounded-full bg-white/5" /></td>
+                    ))}
+                  </tr>
+                ))
+              ) : visible.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-16 text-center">
+                    <Scale className="mx-auto h-10 w-10 text-white/10 mb-3" />
+                    <div className="text-white/40 font-bold">
+                      {quotes.length === 0 ? "No quotes yet — generate your first quote above." : "No quotes match your filter."}
+                    </div>
+                  </td>
+                </tr>
+              ) : visible.map((q) => {
+                const expired = isExpired(q.expiresAt);
+                return (
+                  <tr key={q.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                    <td className="px-5 py-4">
+                      <div className="font-semibold text-white text-xs leading-relaxed">
+                        <span className="text-slate-400">FROM </span>{q.fromAddress}<br />
+                        <span className="text-slate-400">TO&nbsp;&nbsp;&nbsp;&nbsp;</span>{q.toAddress}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-1.5">
+                        <Package className="h-3.5 w-3.5 text-white/30" />
+                        <span className="font-bold text-white">{q.weight} kg</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 font-black text-white">{money(q.price)}</td>
+                    <td className="px-5 py-4">
+                      {q.accepted ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-200">
+                          <CheckCircle2 className="h-3 w-3" /> Accepted
+                        </span>
+                      ) : expired ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-400/20 bg-slate-500/10 px-2.5 py-0.5 text-[11px] font-bold text-slate-400">
+                          <XCircle className="h-3 w-3" /> Expired
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-bold text-amber-200">
+                          <Clock className="h-3 w-3" /> Pending
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-xs text-slate-400">
+                      {q.expiresAt ? (
+                        <span className={expired ? "text-rose-400" : ""}>
+                          {new Date(q.expiresAt).toLocaleDateString("en-ZA")}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      {!q.accepted && !expired && (
+                        <button disabled={busy === q.id} onClick={() => accept(q.id)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60">
+                          {busy === q.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                          Accept
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

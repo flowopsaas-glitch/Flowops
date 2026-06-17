@@ -131,8 +131,9 @@ export default function Collections() {
         api.get("/drivers"),
       ]);
 
-      const collectionsData = pickArray<CollectionRow>(collectionsRes.data);
-      const driversData = pickArray<DriverRow>(driversRes.data);
+      // api client auto-unwraps the HTTP body; don't access .data on top
+      const collectionsData = pickArray<CollectionRow>(collectionsRes);
+      const driversData = pickArray<DriverRow>(driversRes);
 
       setRows(collectionsData);
       setDrivers(driversData);
@@ -204,9 +205,10 @@ export default function Collections() {
     setSuggestion(null);
     setError("");
     try {
-      const res = await api.get(`/collections/${id}/auto-suggest`);
-      if (res.data && res.data.id) {
-        setSuggestion(res.data);
+      const res: any = await api.get(`/collections/${id}/auto-suggest`);
+      const suggestion = res?.data ?? res;
+      if (suggestion && suggestion.id) {
+        setSuggestion(suggestion);
       } else {
         setError("AI: No suitable drivers found in zone.");
       }
@@ -221,9 +223,9 @@ export default function Collections() {
     setSaving(true);
     try {
       const col = rows.find(r => r.id === collectionId);
-      await api.post(`/collections/${collectionId}/assign-driver`, { 
-        driverId: nextDriverId, 
-        companyId: col?.companyId || '741d1c6d-592e-438e-800e-872b58523b31' 
+      await api.patch(`/collections/${collectionId}`, { 
+        driverId: String(nextDriverId),
+        status: "IN_PROGRESS",
       });
       setSuccess("Dispatch confirmed. WhatsApp sent.");
       setSuggestion(null);
@@ -284,7 +286,32 @@ export default function Collections() {
                  <Field label="Company Name"><input value={companyName} onChange={e=>setCompanyName(e.target.value)} placeholder="GoGet Couriers" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
               </div>
               <Field label="Collection Address"><textarea value={collectionAddress} onChange={e=>setCollectionAddress(e.target.value)} className="min-h-[90px] w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
-              <button className="bg-blue-600 p-4 rounded-2xl font-bold flex justify-center gap-2 hover:bg-blue-500 transition-colors"><Save className="h-5 w-5"/> Create Collection</button>
+              <button
+                disabled={saving}
+                onClick={async () => {
+                  if (!name.trim() || !collectionAddress.trim()) {
+                    setError("Client name and pickup address are required.");
+                    return;
+                  }
+                  setSaving(true); setError(""); setSuccess("");
+                  try {
+                    await api.post("/collections", {
+                      clientName:    name,
+                      clientPhone:   driverPhone || "N/A",
+                      pickupAddress: collectionAddress,
+                      notes:         referenceNo || undefined,
+                    });
+                    setSuccess("Collection created.");
+                    setName(""); setCollectionAddress(""); setReferenceNo(""); setCompanyName("");
+                    loadAll("refresh");
+                  } catch (err: any) {
+                    setError(err?.message || "Failed to create collection.");
+                  } finally { setSaving(false); }
+                }}
+                className="bg-blue-600 p-4 rounded-2xl font-bold flex justify-center gap-2 hover:bg-blue-500 transition-colors disabled:opacity-60"
+              >
+                <Save className="h-5 w-5"/> {saving ? "Creating…" : "Create Collection"}
+              </button>
             </div>
           </div>
 
