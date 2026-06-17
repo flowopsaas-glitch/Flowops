@@ -361,6 +361,13 @@ model Waybill {
   recipientPhone   String
   recipientAddress String
 
+  // Geocoded coordinates (populated by the geocoding pipeline) — power routing,
+  // the live map, ETA, and the public tracking page.
+  senderLat    Float?
+  senderLng    Float?
+  recipientLat Float?
+  recipientLng Float?
+
   // Parcel
   weight      Float?
   dimensions  String?
@@ -438,6 +445,10 @@ model Collection {
   clientEmail   String?
   pickupAddress String
   notes         String?
+
+  // Geocoded pickup coordinates (populated by the geocoding pipeline).
+  pickupLat Float?
+  pickupLng Float?
 
   scheduledAt DateTime?
   pickedUpAt  DateTime?
