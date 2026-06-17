@@ -360,6 +360,7 @@ model Waybill {
   recipientName    String
   recipientPhone   String
   recipientAddress String
+  recipientEmail   String?
 
   // Geocoded coordinates (populated by the geocoding pipeline) — power routing,
   // the live map, ETA, and the public tracking page.
