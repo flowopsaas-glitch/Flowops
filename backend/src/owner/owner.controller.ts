@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OwnerService } from './owner.service';
+import { AlertingService } from '../alerting/alerting.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -12,7 +13,10 @@ import { Public } from '../common/decorators/public.decorator';
 @UseGuards(OwnerAuthGuard)
 @Public() // Skip global JwtAuthGuard; OwnerAuthGuard handles auth here
 export class OwnerController {
-  constructor(private readonly svc: OwnerService) {}
+  constructor(
+    private readonly svc: OwnerService,
+    private readonly alerting: AlertingService,
+  ) {}
 
   @Get('tenants')
   listTenants(@Query() q: any) {
@@ -24,14 +28,28 @@ export class OwnerController {
     return this.svc.getTenant(id);
   }
 
+  @Get('tenants/:id/analytics')
+  tenantAnalytics(@Param('id') id: string) {
+    return this.svc.tenantAnalytics(id);
+  }
+
   @Post('tenants/draft')
   draftTenant(@Body() body: any) {
     return this.svc.draftTenant(body);
   }
 
   @Patch('tenants/:id/action')
-  tenantAction(@Param('id') id: string, @Body() body: { action: 'approve' | 'reject' | 'suspend'; reason?: string }) {
-    return this.svc.tenantAction(id, body.action, { reason: body.reason });
+  tenantAction(
+    @Param('id') id: string,
+    @Body() body: { action: 'approve' | 'reject' | 'suspend'; reason?: string },
+    @CurrentUser() owner: any,
+  ) {
+    return this.svc.tenantAction(id, body.action, { reason: body.reason }, owner);
+  }
+
+  @Post('impersonate/:tenantId')
+  impersonate(@Param('tenantId') tenantId: string, @CurrentUser() owner: any) {
+    return this.svc.impersonate(tenantId, owner);
   }
 
   @Get('view-mode/:id')
@@ -44,9 +62,44 @@ export class OwnerController {
     return this.svc.platformMetrics();
   }
 
+  @Get('analytics')
+  platformAnalytics() {
+    return this.svc.platformAnalytics();
+  }
+
+  @Get('mrr-movement')
+  mrrMovement() {
+    return this.svc.mrrMovement();
+  }
+
+  @Get('ops/live')
+  liveOps() {
+    return this.svc.liveOps();
+  }
+
+  @Post('mrr-snapshot')
+  captureMrrSnapshot() {
+    return this.svc.captureMrrSnapshot();
+  }
+
   @Get('ai-alerts')
   getAlerts() {
     return this.svc.getPlatformAlerts();
+  }
+
+  @Get('alerts')
+  listAlerts(@Query() q: any) {
+    return this.alerting.list(q?.includeResolved === 'true' || q?.includeResolved === true);
+  }
+
+  @Post('alerts/run')
+  runAlerts() {
+    return this.alerting.evaluate();
+  }
+
+  @Post('alerts/:id/resolve')
+  resolveAlert(@Param('id') id: string) {
+    return this.alerting.resolve(id);
   }
 
   @Get('audit')
@@ -60,8 +113,8 @@ export class OwnerController {
   }
 
   @Patch('plans')
-  updatePlan(@Body() body: { tenantId: string; plan: string }) {
-    return this.svc.updateTenantPlan(body.tenantId, body.plan);
+  updatePlan(@Body() body: { tenantId: string; plan: string }, @CurrentUser() owner: any) {
+    return this.svc.updateTenantPlan(body.tenantId, body.plan, owner);
   }
 
   @Get('approval-requests')
@@ -70,13 +123,13 @@ export class OwnerController {
   }
 
   @Post('approval-requests/:id/approve')
-  approveRequest(@Param('id') id: string) {
-    return this.svc.approveRequest(id);
+  approveRequest(@Param('id') id: string, @CurrentUser() owner: any) {
+    return this.svc.approveRequest(id, owner);
   }
 
   @Post('approval-requests/:id/reject')
-  rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.svc.rejectRequest(id, body?.reason);
+  rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }, @CurrentUser() owner: any) {
+    return this.svc.rejectRequest(id, body?.reason, owner);
   }
 }
 

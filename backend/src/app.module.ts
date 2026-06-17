@@ -34,6 +34,8 @@ import { RoutingModule } from './routing/routing.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
+import { AuditModule } from './audit/audit.module';
+import { AlertingModule } from './alerting/alerting.module';
 
 @Module({
   imports: [
@@ -64,6 +66,12 @@ import { ApiModule } from './api/api.module';
     // Tenant integration platform: outbound webhooks + public API (Shopify etc.)
     WebhooksModule,
     ApiModule,
+
+    // Platform audit trail (global)
+    AuditModule,
+
+    // Owner alerting engine (global)
+    AlertingModule,
 
     // Domain modules
     AuthModule,
