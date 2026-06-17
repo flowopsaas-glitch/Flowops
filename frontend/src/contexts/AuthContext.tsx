@@ -9,6 +9,7 @@ import {
 import api, {
   clearClientSession,
   getToken,
+  isOwnerMode,
   setLoginMode,
   setToken,
 } from "../api/client";
@@ -101,6 +102,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshMe = useCallback(async () => {
     if (!getToken()) {
+      setBooting(false);
+      return;
+    }
+    // Platform-owner sessions are NOT tenant users — they're validated
+    // separately via OwnerRoute + the owner endpoints. Calling the tenant
+    // `/auth/me` with an owner token 401s, and the catch below would wipe a
+    // perfectly valid owner session, bouncing the owner back to /login. So
+    // skip tenant hydration entirely when in owner mode.
+    if (isOwnerMode()) {
       setBooting(false);
       return;
     }
