@@ -217,19 +217,69 @@ export class DashboardService {
 
   // GET /collections-state-sync/suggest-driver/:collectionId
   async suggestDriver(companyId: string, collectionId: string) {
-    const drivers = await this.prisma.driver.findMany({
-      where: { companyId, status: 'AVAILABLE', isActive: true },
-      take: 1,
+    // Confirm the collection belongs to this tenant. This also anchors future
+    // geo-proximity scoring once pickup coordinates/geocoding are available
+    // (Collection currently stores only a free-text pickupAddress).
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, companyId },
+      select: { id: true },
     });
-    if (!drivers.length) return { suggestion: null };
-    const d = drivers[0];
-    return {
-      suggestion: {
-        id: d.id,
-        name: d.name,
-        vehicleType: d.vehicleType,
-        score: 0.85,
+    if (!collection) return { suggestion: null, candidates: [] };
+
+    const drivers = await this.prisma.driver.findMany({
+      where: { companyId, isActive: true, status: { in: ['AVAILABLE', 'ON_ROUTE'] } },
+      select: { id: true, name: true, vehicleType: true, status: true, lastSeen: true },
+    });
+    if (!drivers.length) return { suggestion: null, candidates: [] };
+
+    // Current open workload per driver — fewer open jobs ranks higher.
+    const loads = await this.prisma.collection.groupBy({
+      by: ['driverId'],
+      where: {
+        companyId,
+        driverId: { in: drivers.map((d) => d.id) },
+        status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
       },
-    };
+      _count: { _all: true },
+    });
+    const loadByDriver = new Map<string, number>(
+      loads.map((l) => [l.driverId as string, l._count._all]),
+    );
+
+    const now = Date.now();
+    const scored = drivers
+      .map((d) => {
+        // Availability: idle drivers preferred over those already mid-route.
+        const availability = d.status === 'AVAILABLE' ? 1 : 0.4;
+        // Load: open jobs, saturating at 5 (0 jobs = 1.0, 5+ jobs = 0).
+        const load = loadByDriver.get(d.id) ?? 0;
+        const loadScore = Math.max(0, 1 - load / 5);
+        // Recency: a fresh GPS/heartbeat (<60 min) implies a truly active driver.
+        const minsSinceSeen = d.lastSeen
+          ? (now - d.lastSeen.getTime()) / 60_000
+          : Number.POSITIVE_INFINITY;
+        const recency = Number.isFinite(minsSinceSeen)
+          ? Math.max(0, 1 - minsSinceSeen / 60)
+          : 0.2;
+
+        const round = (n: number) => Math.round(n * 100) / 100;
+        const score = round(0.5 * availability + 0.3 * loadScore + 0.2 * recency);
+
+        return {
+          id: d.id,
+          name: d.name,
+          vehicleType: d.vehicleType,
+          score,
+          factors: {
+            availability: round(availability),
+            openJobs: load,
+            loadScore: round(loadScore),
+            recency: round(recency),
+          },
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    return { suggestion: scored[0], candidates: scored.slice(0, 5) };
   }
 }
