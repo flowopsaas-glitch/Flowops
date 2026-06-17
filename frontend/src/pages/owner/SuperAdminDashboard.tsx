@@ -73,13 +73,15 @@ type Analytics = {
   topByVolume: Analytics["health"];
 };
 
-type AIFeedItem = {
-  id?: string | number;
-  title?: string;
-  message?: string;
-  severity?: string;
-  company?: { name?: string };
-  createdAt?: string;
+type PlatformAlert = {
+  id: string;
+  type: string;
+  severity: string;
+  title: string;
+  message: string;
+  tenantName?: string | null;
+  createdAt: string;
+  resolved?: boolean;
 };
 
 type MrrMovement = {
@@ -193,8 +195,9 @@ export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [a, setA] = useState<Analytics | null>(null);
-  const [alerts, setAlerts] = useState<AIFeedItem[]>([]);
+  const [alerts, setAlerts] = useState<PlatformAlert[]>([]);
   const [mrr, setMrr] = useState<MrrMovement | null>(null);
+  const [runningChecks, setRunningChecks] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -206,9 +209,9 @@ export default function SuperAdminDashboard() {
       setA((res?.data ?? res) as Analytics);
 
       try {
-        const alertsRes: any = await api.get("/owner/ai-alerts");
+        const alertsRes: any = await api.get("/owner/alerts");
         const items = alertsRes?.data ?? alertsRes;
-        setAlerts(Array.isArray(items) ? items.slice(0, 6) : []);
+        setAlerts(Array.isArray(items) ? items.slice(0, 8) : []);
       } catch {
         setAlerts([]);
       }
@@ -223,6 +226,30 @@ export default function SuperAdminDashboard() {
       setError(err?.message || "Failed to load platform analytics.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runChecks() {
+    setRunningChecks(true);
+    try {
+      await api.post("/owner/alerts/run", {});
+      const alertsRes: any = await api.get("/owner/alerts");
+      const items = alertsRes?.data ?? alertsRes;
+      setAlerts(Array.isArray(items) ? items.slice(0, 8) : []);
+    } catch (err: any) {
+      setError(err?.message || "Failed to run alert checks.");
+    } finally {
+      setRunningChecks(false);
+    }
+  }
+
+  async function resolveAlert(id: string) {
+    setAlerts((prev) => prev.filter((x) => x.id !== id));
+    try {
+      await api.post(`/owner/alerts/${id}/resolve`, {});
+    } catch {
+      // re-sync on failure
+      void load();
     }
   }
 
@@ -510,30 +537,50 @@ export default function SuperAdminDashboard() {
               </div>
             </Section>
 
-            <Section title="Critical Alerts" subtitle="Unresolved platform-wide AI events">
+            <Section title="Critical Alerts" subtitle="Churn, SLA spikes & payment failures — auto-detected">
+              <div className="mb-4 flex justify-end">
+                <button
+                  onClick={runChecks}
+                  disabled={runningChecks}
+                  className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-1.5 text-xs font-bold text-cyan-200 disabled:opacity-60"
+                >
+                  {runningChecks ? "Running…" : "Run checks now"}
+                </button>
+              </div>
               <div className="space-y-3">
                 {alerts.length ? (
-                  alerts.map((item, i) => (
-                    <div key={String(item.id ?? i)} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                  alerts.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-bold text-white">
-                          {item.title || item.company?.name || "AI Event"}
-                        </div>
-                        <span className="rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-rose-200">
+                        <div className="text-sm font-bold text-white">{item.title}</div>
+                        <span
+                          className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] ${
+                            item.severity === "critical"
+                              ? "border-rose-400/20 bg-rose-500/10 text-rose-200"
+                              : "border-amber-400/20 bg-amber-500/10 text-amber-200"
+                          }`}
+                        >
                           {item.severity || "info"}
                         </span>
                       </div>
                       {item.message ? <div className="mt-1.5 text-sm text-slate-300">{item.message}</div> : null}
-                      {item.createdAt ? (
-                        <div className="mt-1.5 text-xs text-white/40">
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-xs text-white/40">
+                          {item.tenantName ? `${item.tenantName} · ` : ""}
                           {new Date(item.createdAt).toLocaleString("en-ZA")}
-                        </div>
-                      ) : null}
+                        </span>
+                        <button
+                          onClick={() => resolveAlert(item.id)}
+                          className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/80 hover:bg-white/10"
+                        >
+                          Resolve
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-6 text-sm text-slate-400">
-                    No critical alerts. All clear across the platform.
+                    No active alerts. All clear across the platform.
                   </div>
                 )}
               </div>

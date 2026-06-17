@@ -35,6 +35,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
 import { AuditModule } from './audit/audit.module';
+import { AlertingModule } from './alerting/alerting.module';
 
 @Module({
   imports: [
@@ -68,6 +69,9 @@ import { AuditModule } from './audit/audit.module';
 
     // Platform audit trail (global)
     AuditModule,
+
+    // Owner alerting engine (global)
+    AlertingModule,
 
     // Domain modules
     AuthModule,

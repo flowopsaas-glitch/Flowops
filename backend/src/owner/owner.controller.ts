@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OwnerService } from './owner.service';
+import { AlertingService } from '../alerting/alerting.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -12,7 +13,10 @@ import { Public } from '../common/decorators/public.decorator';
 @UseGuards(OwnerAuthGuard)
 @Public() // Skip global JwtAuthGuard; OwnerAuthGuard handles auth here
 export class OwnerController {
-  constructor(private readonly svc: OwnerService) {}
+  constructor(
+    private readonly svc: OwnerService,
+    private readonly alerting: AlertingService,
+  ) {}
 
   @Get('tenants')
   listTenants(@Query() q: any) {
@@ -81,6 +85,21 @@ export class OwnerController {
   @Get('ai-alerts')
   getAlerts() {
     return this.svc.getPlatformAlerts();
+  }
+
+  @Get('alerts')
+  listAlerts(@Query() q: any) {
+    return this.alerting.list(q?.includeResolved === 'true' || q?.includeResolved === true);
+  }
+
+  @Post('alerts/run')
+  runAlerts() {
+    return this.alerting.evaluate();
+  }
+
+  @Post('alerts/:id/resolve')
+  resolveAlert(@Param('id') id: string) {
+    return this.alerting.resolve(id);
   }
 
   @Get('audit')
