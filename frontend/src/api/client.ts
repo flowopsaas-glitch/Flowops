@@ -68,9 +68,21 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config || {};
+    const url: string = originalRequest.url || '';
+    const isAuthRoute = url.includes('/auth/');
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Only attempt a silent refresh (and only clear the session on failure)
+    // for TENANT sessions hitting a non-auth endpoint. Owner/driver sessions
+    // use different tokens/refresh endpoints — refreshing/clearing them here
+    // would wipe a valid owner session and bounce them to /login. We also skip
+    // the auth routes themselves to avoid a 401->refresh->400 loop on login.
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthRoute &&
+      sessionIsTenantMode()
+    ) {
       originalRequest._retry = true;
       try {
         const { data } = await axios.post(
