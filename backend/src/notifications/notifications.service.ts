@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 
 @Injectable()
 export class NotificationsService {
@@ -11,6 +12,7 @@ export class NotificationsService {
     private prisma: PrismaService,
     private email: EmailService,
     private config: ConfigService,
+    private webhooks: WebhooksService,
   ) {}
 
   async findAll(userId: string, companyId: string, query?: any) {
@@ -130,6 +132,13 @@ export class NotificationsService {
     if (!copy) return; // not a customer-facing status
 
     const trackUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/track/${waybill.trackingNumber}`;
+
+    // 0) Emit a webhook event for tenant integrations (Shopify, etc.).
+    void this.webhooks.dispatch(waybill.companyId, 'waybill.status_changed', {
+      trackingNumber: waybill.trackingNumber,
+      status: waybill.status,
+      trackUrl,
+    });
 
     // 1) Internal notification for the tenant operations feed.
     try {

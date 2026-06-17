@@ -182,6 +182,8 @@ model Company {
   emailHubItems      EmailHubItem[]
   workflows          Workflow[]
   approvalRequest    ApprovalRequest?
+  apiKeys            ApiKey[]
+  webhookEndpoints   WebhookEndpoint[]
 
   @@map("companies")
 }
@@ -234,6 +236,40 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   @@map("refresh_tokens")
+}
+
+// ─── Public API & Webhooks (tenant integrations: Shopify, etc.) ───────────
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  name       String
+  // Only the SHA-256 hash is stored; the plaintext key is shown once at creation.
+  keyHash    String    @unique
+  prefix     String // first chars, for display ("fok_live_ab12…")
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("api_keys")
+}
+
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  url       String
+  secret    String // used to HMAC-sign deliveries so receivers can verify
+  events    String[] // e.g. ["waybill.status_changed", "waybill.delivered"]
+  active    Boolean  @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("webhook_endpoints")
 }
 
 model ApprovalRequest {

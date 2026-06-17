@@ -205,6 +205,7 @@ export default function AppLayout() {
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
     { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
+    { section: "ADMIN", label: "Integrations", desc: "API keys & webhooks", to: "/settings/integrations", icon: Settings, perm: "settings" },
     { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings, perm: "settings" },
   ], []);
 

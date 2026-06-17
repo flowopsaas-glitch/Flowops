@@ -35,6 +35,7 @@ const BrandingSettings = lazy(() => import("./pages/settings/BrandingSettings"))
 const NotificationPreferences = lazy(
   () => import("./pages/settings/NotificationPreferences"),
 );
+const Integrations = lazy(() => import("./pages/settings/Integrations"));
 const WhatsAppHub = lazy(() => import("./pages/automation/WhatsAppHub"));
 const EmailHub = lazy(() => import("./pages/automation/EmailHub"));
 const ClientQueries = lazy(() => import("./pages/communications/ClientQueries"));
@@ -158,6 +159,10 @@ export default function App() {
               <Route
                 path="/settings/notifications"
                 element={<RequirePermission perm="settings"><NotificationPreferences /></RequirePermission>}
+              />
+              <Route
+                path="/settings/integrations"
+                element={<RequirePermission perm="settings"><Integrations /></RequirePermission>}
               />
             </Route>
           </Route>
