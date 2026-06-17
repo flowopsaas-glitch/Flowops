@@ -26,6 +26,7 @@ export default function OwnerLayout() {
 
   const onDashboard = location.pathname.startsWith("/owner/dashboard");
   const onTenants = location.pathname.startsWith("/owner/tenants");
+  const onOps = location.pathname.startsWith("/owner/ops");
   const onAudit = location.pathname.startsWith("/owner/audit");
 
   return (
@@ -56,6 +57,14 @@ export default function OwnerLayout() {
               className={navButtonClass(onTenants)}
             >
               Tenants
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/owner/ops")}
+              className={navButtonClass(onOps)}
+            >
+              Ops Map
             </button>
 
             <button

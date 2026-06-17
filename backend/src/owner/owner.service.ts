@@ -366,6 +366,79 @@ export class OwnerService {
     };
   }
 
+  // ── Platform live operations (cross-tenant map) ───────────────────────
+  //
+  // A single operational picture across every tenant: live courier positions
+  // (from shipment telemetry) and recent delivery exceptions, both with
+  // coordinates, for the owner ops map + exception heatmap.
+  async liveOps() {
+    const activeStatuses = ['PENDING', 'COLLECTED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'];
+
+    const shipments = await this.prisma.shipment.findMany({
+      where: {
+        status: { in: activeStatuses as any },
+        currentLat: { not: null },
+        currentLng: { not: null },
+      },
+      select: {
+        id: true, status: true, currentLat: true, currentLng: true,
+        company: { select: { id: true, name: true } },
+        driver: { select: { name: true, vehicleReg: true } },
+        waybill: { select: { trackingNumber: true, recipientLat: true, recipientLng: true } },
+      },
+      take: 2000,
+    });
+
+    const couriers = shipments.map((s) => ({
+      id: s.id,
+      status: s.status,
+      lat: s.currentLat,
+      lng: s.currentLng,
+      tenantId: s.company?.id ?? null,
+      tenant: s.company?.name ?? null,
+      driver: s.driver?.name ?? null,
+      vehicleReg: s.driver?.vehicleReg ?? null,
+      trackingNumber: s.waybill?.trackingNumber ?? null,
+      destLat: s.waybill?.recipientLat ?? null,
+      destLng: s.waybill?.recipientLng ?? null,
+    }));
+
+    const exceptionWaybills = await this.prisma.waybill.findMany({
+      where: {
+        status: { in: ['FAILED_DELIVERY', 'RETURNED'] as any },
+        recipientLat: { not: null },
+        recipientLng: { not: null },
+      },
+      select: {
+        id: true, trackingNumber: true, status: true,
+        recipientLat: true, recipientLng: true,
+        company: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+
+    const exceptions = exceptionWaybills.map((w) => ({
+      id: w.id,
+      lat: w.recipientLat,
+      lng: w.recipientLng,
+      status: w.status,
+      tenant: w.company?.name ?? null,
+      trackingNumber: w.trackingNumber,
+    }));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      summary: {
+        activeCouriers: couriers.length,
+        exceptions: exceptions.length,
+        tenantsActive: new Set(couriers.map((c) => c.tenantId).filter(Boolean)).size,
+      },
+      couriers,
+      exceptions,
+    };
+  }
+
   // ── Per-tenant deep-dive ──────────────────────────────────────────────
   //
   // Everything an owner needs to assess a single tenant: profile, usage,

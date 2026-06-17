@@ -68,6 +68,11 @@ export class OwnerController {
     return this.svc.mrrMovement();
   }
 
+  @Get('ops/live')
+  liveOps() {
+    return this.svc.liveOps();
+  }
+
   @Post('mrr-snapshot')
   captureMrrSnapshot() {
     return this.svc.captureMrrSnapshot();
