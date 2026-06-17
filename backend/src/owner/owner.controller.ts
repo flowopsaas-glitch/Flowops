@@ -44,6 +44,11 @@ export class OwnerController {
     return this.svc.platformMetrics();
   }
 
+  @Get('analytics')
+  platformAnalytics() {
+    return this.svc.platformAnalytics();
+  }
+
   @Get('ai-alerts')
   getAlerts() {
     return this.svc.getPlatformAlerts();

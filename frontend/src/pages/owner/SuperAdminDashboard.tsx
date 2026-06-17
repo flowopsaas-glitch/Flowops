@@ -1,44 +1,73 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FLOWOPS_API_URL } from "../../lib/env";
-import { getAccessToken } from "../../lib/session";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Banknote,
+  Building2,
+  Gauge,
+  PackageCheck,
+  TrendingUp,
+  Users,
+} from "lucide-react";
+import { api } from "../../api/client";
 
-type PlanBreakdown = Record<string, number>;
-
-type PlatformOverview = {
-  companies: number;
-  users: number;
-  superAdmins: number;
-  companyAdmins: number;
-  activeCompanies: number;
-  inactiveCompanies: number;
-  demoTenants: number;
-  planBreakdown: PlanBreakdown;
-};
-
-type CompanyRow = {
-  id?: number;
-  tenantId?: number;
-  name?: string;
-  tenantName?: string;
-  legalName?: string | null;
-  email?: string | null;
-  contactEmail?: string | null;
-  phone?: string | null;
-  subscriptionPlan?: string | null;
-  planCode?: string | null;
-  isActive?: boolean;
-  status?: string | null;
-  pricing?: {
-    monthlyPrice?: number | null;
-    setupFee?: number | null;
-    priceNotes?: string | null;
+// ── Types matching GET /owner/analytics ──────────────────────────────────
+type Analytics = {
+  generatedAt: string;
+  currency: string;
+  revenue: {
+    mrr: number;
+    arr: number;
+    arpa: number;
+    mrrDelta: number;
+    collectedTotal: number;
+    collected30: number;
+    collectedDelta: number;
   };
-  demo?: {
-    enabled?: boolean;
-    expiresAt?: string | null;
-    notes?: string | null;
+  tenants: {
+    total: number;
+    active: number;
+    paying: number;
+    newThisPeriod: number;
+    newDelta: number;
+    churnedThisPeriod: number;
+    churnRate: number;
   };
+  planDistribution: Array<{ plan: string; count: number; mrr: number }>;
+  growth: Array<{ month: string; newTenants: number; cumulative: number }>;
+  operations: {
+    totalWaybills: number;
+    deliveries30: number;
+    deliverySuccess: number;
+    exceptionRate: number;
+    onTimeRate: number;
+  };
+  health: Array<{
+    id: string;
+    name: string;
+    plan: string;
+    users: number;
+    waybillsTotal: number;
+    waybills30: number;
+    score: number;
+    risk: "healthy" | "watch" | "at_risk";
+  }>;
+  topByVolume: Analytics["health"];
 };
 
 type AIFeedItem = {
@@ -46,659 +75,369 @@ type AIFeedItem = {
   title?: string;
   message?: string;
   severity?: string;
-  companyName?: string;
+  company?: { name?: string };
   createdAt?: string;
 };
 
-function getApiBase() {
-  return FLOWOPS_API_URL;
-}
-
-function getOwnerToken() {
-  return getAccessToken() ?? "";
-}
-
-async function readJsonSafe(response: Response) {
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function ownerFetch(path: string, init?: RequestInit) {
-  const token = getOwnerToken();
-
-  const response = await fetch(`${getApiBase()}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers || {}),
-    },
-  });
-
-  const data = await readJsonSafe(response);
-
-  if (!response.ok) {
-    throw new Error(
-      data?.message || data?.error || `Request failed (${response.status})`
-    );
-  }
-
-  return data;
-}
-
-function toNumber(value: any, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function formatMoney(value?: number | null) {
+// ── Formatting helpers ────────────────────────────────────────────────────
+function money(value: number | null | undefined, currency = "ZAR") {
   if (value == null || !Number.isFinite(Number(value))) return "—";
-  return `ZAR ${Number(value).toLocaleString("en-ZA")}`;
+  const n = Number(value);
+  const compact = Math.abs(n) >= 1_000_000;
+  return `${currency} ${n.toLocaleString("en-ZA", {
+    maximumFractionDigits: compact ? 1 : 0,
+    notation: compact ? "compact" : "standard",
+  })}`;
+}
+function pctText(n: number | undefined) {
+  if (n == null || !Number.isFinite(n)) return "0%";
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+function num(n: number | undefined, digits = 0) {
+  if (n == null || !Number.isFinite(n)) return "0";
+  return Number(n).toLocaleString("en-ZA", { maximumFractionDigits: digits });
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString("en-ZA", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
-}
+const PLAN_COLORS: Record<string, string> = {
+  starter: "#64748b",
+  professional: "#3b82f6",
+  enterprise: "#a855f7",
+};
 
-function StatCard(props: {
-  title: string;
+// ── KPI card with direction-aware delta ────────────────────────────────────
+function Kpi(props: {
+  icon: React.ReactNode;
+  label: string;
   value: string;
-  subtitle: string;
+  sub?: string;
+  delta?: number;
+  goodWhenUp?: boolean;
 }) {
+  const { delta, goodWhenUp = true } = props;
+  const hasDelta = delta != null && Number.isFinite(delta) && delta !== 0;
+  const up = (delta ?? 0) >= 0;
+  const good = hasDelta ? (goodWhenUp ? up : !up) : true;
   return (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl">
-      <div className="text-xs font-extrabold uppercase tracking-[0.18em] text-white/50">
-        {props.title}
+    <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 shadow-xl">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/50">
+          {props.label}
+        </div>
+        <div className="text-white/40">{props.icon}</div>
       </div>
-      <div className="mt-3 text-4xl font-black text-white">{props.value}</div>
-      <div className="mt-2 text-sm text-slate-300">{props.subtitle}</div>
+      <div className="mt-3 text-3xl font-black text-white">{props.value}</div>
+      <div className="mt-2 flex items-center gap-2">
+        {hasDelta ? (
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${
+              good
+                ? "bg-emerald-500/15 text-emerald-300"
+                : "bg-rose-500/15 text-rose-300"
+            }`}
+          >
+            {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+            {pctText(delta)}
+          </span>
+        ) : null}
+        {props.sub ? <span className="text-sm text-slate-400">{props.sub}</span> : null}
+      </div>
     </div>
   );
 }
 
-function SectionCard(props: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+function Section(props: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-xl">
-      <div className="text-2xl font-black tracking-tight text-white">
-        {props.title}
-      </div>
-      {props.subtitle ? (
-        <div className="mt-2 text-sm text-slate-300">{props.subtitle}</div>
-      ) : null}
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl">
+      <div className="text-xl font-black tracking-tight text-white">{props.title}</div>
+      {props.subtitle ? <div className="mt-1 text-sm text-slate-400">{props.subtitle}</div> : null}
       <div className="mt-5">{props.children}</div>
     </div>
   );
 }
 
-function Input(props: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
+function riskBadge(risk: string) {
+  const map: Record<string, string> = {
+    healthy: "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
+    watch: "border-amber-400/20 bg-amber-500/10 text-amber-200",
+    at_risk: "border-rose-400/20 bg-rose-500/10 text-rose-200",
+  };
+  const label = risk === "at_risk" ? "At risk" : risk === "watch" ? "Watch" : "Healthy";
   return (
-    <div className="space-y-2">
-      <label className="text-xs uppercase tracking-[0.22em] text-white/50">
-        {props.label}
-      </label>
-      <input
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        placeholder={props.placeholder || ""}
-        className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400"
-      />
-    </div>
-  );
-}
-
-function Select(props: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-xs uppercase tracking-[0.22em] text-white/50">
-        {props.label}
-      </label>
-      <select
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 text-white outline-none focus:border-blue-400"
-      >
-        {props.options.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </select>
-    </div>
+    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${map[risk] ?? map.watch}`}>
+      {label}
+    </span>
   );
 }
 
 export default function SuperAdminDashboard() {
   const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
-  const [busyKey, setBusyKey] = useState("");
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [a, setA] = useState<Analytics | null>(null);
+  const [alerts, setAlerts] = useState<AIFeedItem[]>([]);
 
-  const [overview, setOverview] = useState<PlatformOverview>({
-    companies: 0,
-    users: 0,
-    superAdmins: 0,
-    companyAdmins: 0,
-    activeCompanies: 0,
-    inactiveCompanies: 0,
-    demoTenants: 0,
-    planBreakdown: {},
-  });
-
-  const [tenants, setTenants] = useState<CompanyRow[]>([]);
-  const [aiFeed, setAiFeed] = useState<AIFeedItem[]>([]);
-  const [search, setSearch] = useState("");
-
-  const [newCompanyName, setNewCompanyName] = useState("");
-  const [newLegalName, setNewLegalName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [newPlan, setNewPlan] = useState("STARTER");
-
-  const [demoTenantId, setDemoTenantId] = useState("");
-  const [demoNotes, setDemoNotes] = useState("Manual FlowOps owner demo activation");
-
-  const [subTenantId, setSubTenantId] = useState("");
-  const [subPlan, setSubPlan] = useState("PRO");
-  const [subMonthlyPrice, setSubMonthlyPrice] = useState("1499");
-  const [subSetupFee, setSubSetupFee] = useState("0");
-  const [subPriceNotes, setSubPriceNotes] = useState("Manual owner pricing");
-
-  async function loadAll() {
+  async function load() {
     setLoading(true);
     setError("");
     try {
-      const [companiesResult, platformResult, aiAlertsResult] = await Promise.allSettled([
-        ownerFetch("/companies"),
-        ownerFetch("/companies/platform/overview"),
-        ownerFetch("/owner/ai-alerts"),
-      ]);
+      // The `api` client returns the response body; the backend wraps payloads
+      // as { data, statusCode, message } via the TransformInterceptor.
+      const res: any = await api.get("/owner/analytics");
+      setA((res?.data ?? res) as Analytics);
 
-      if (companiesResult.status === "fulfilled") {
-        const companies = Array.isArray(companiesResult.value)
-          ? companiesResult.value
-          : [];
-        setTenants(companies);
-      } else {
-        setTenants([]);
-      }
-
-      if (platformResult.status === "fulfilled") {
-        const platform = platformResult.value || {};
-        setOverview({
-          companies: toNumber(platform?.companies),
-          users: toNumber(platform?.users),
-          superAdmins: toNumber(platform?.superAdmins),
-          companyAdmins: toNumber(platform?.companyAdmins),
-          activeCompanies: toNumber(platform?.activeCompanies),
-          inactiveCompanies: toNumber(platform?.inactiveCompanies),
-          demoTenants: toNumber(platform?.demoTenants),
-          planBreakdown:
-            platform?.planBreakdown && typeof platform.planBreakdown === "object"
-              ? platform.planBreakdown
-              : {},
-        });
-      } else {
-        setOverview({
-          companies: 0,
-          users: 0,
-          superAdmins: 0,
-          companyAdmins: 0,
-          activeCompanies: 0,
-          inactiveCompanies: 0,
-          demoTenants: 0,
-          planBreakdown: {},
-        });
-      }
-
-      if (aiAlertsResult.status === "fulfilled") {
-        const payload = aiAlertsResult.value;
-        const items = Array.isArray(payload)
-          ? payload
-          : Array.isArray(payload?.items)
-          ? payload.items
-          : [];
-        setAiFeed(items.slice(0, 6));
-      } else {
-        setAiFeed([]);
+      try {
+        const alertsRes: any = await api.get("/owner/ai-alerts");
+        const items = alertsRes?.data ?? alertsRes;
+        setAlerts(Array.isArray(items) ? items.slice(0, 6) : []);
+      } catch {
+        setAlerts([]);
       }
     } catch (err: any) {
-      setError(err?.message || "Failed to load owner dashboard.");
+      setError(err?.message || "Failed to load platform analytics.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadAll();
+    void load();
   }, []);
 
-  const filteredTenants = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return tenants;
-    return tenants.filter((row) => {
-      const text = [
-        row.name,
-        row.tenantName,
-        row.legalName,
-        row.email,
-        row.contactEmail,
-        row.subscriptionPlan,
-        row.planCode,
-        row.status,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return text.includes(q);
-    });
-  }, [search, tenants]);
-
-  async function createTenant() {
-    setBusyKey("create-tenant");
-    setError("");
-    setMessage("");
-    try {
-      await ownerFetch("/companies", {
-        method: "POST",
-        body: JSON.stringify({
-          name: newCompanyName,
-          legalName: newLegalName || undefined,
-          email: newEmail || undefined,
-          phone: newPhone || undefined,
-          subscriptionPlan: newPlan,
-          enabledFeatures: [],
-          onboardingComplete: false,
-          onboardingStep: "general",
-          isActive: true,
-        }),
-      });
-
-      setNewCompanyName("");
-      setNewLegalName("");
-      setNewEmail("");
-      setNewPhone("");
-      setNewPlan("STARTER");
-      setMessage("Tenant created successfully.");
-      await loadAll();
-    } catch (err: any) {
-      setError(err?.message || "Failed to create tenant.");
-    } finally {
-      setBusyKey("");
-    }
-  }
-
-  async function createDemoSubscription() {
-    if (!demoTenantId.trim()) return;
-    setBusyKey("demo");
-    setError("");
-    setMessage("");
-    try {
-      await ownerFetch(`/companies/${demoTenantId}/demo-subscription`, {
-        method: "POST",
-        body: JSON.stringify({
-          notes: demoNotes,
-        }),
-      });
-
-      setMessage("Demo subscription activated.");
-      await loadAll();
-    } catch (err: any) {
-      setError(err?.message || "Failed to activate demo subscription.");
-    } finally {
-      setBusyKey("");
-    }
-  }
-
-  async function saveSubscription() {
-    if (!subTenantId.trim()) return;
-    setBusyKey("subscription");
-    setError("");
-    setMessage("");
-    try {
-      await ownerFetch(`/companies/${subTenantId}/subscription`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          subscriptionPlan: subPlan,
-          isActive: true,
-        }),
-      });
-
-      await ownerFetch(`/companies/${subTenantId}/pricing`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          monthlyPrice: Number(subMonthlyPrice || 0),
-          setupFee: Number(subSetupFee || 0),
-          priceNotes: subPriceNotes || "",
-        }),
-      });
-
-      setMessage("Subscription and pricing updated.");
-      await loadAll();
-    } catch (err: any) {
-      setError(err?.message || "Failed to update subscription.");
-    } finally {
-      setBusyKey("");
-    }
-  }
+  const cur = a?.currency || "ZAR";
+  const planData = useMemo(
+    () => (a?.planDistribution ?? []).filter((p) => p.count > 0),
+    [a],
+  );
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[32px] border border-white/10 bg-white/[0.05] p-8 shadow-xl">
+      {/* Header */}
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
         <div className="inline-flex rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-cyan-200">
-          Hidden Platform Control
+          Platform Intelligence
         </div>
-
-        <h1 className="mt-4 text-4xl font-black tracking-tight text-white">
-          FlowOps Super Owner Dashboard
-        </h1>
-
-        <p className="mt-3 max-w-4xl text-slate-300">
-          Platform-level command center for manual tenant creation, automated demo handling,
-          subscription control, email oversight, and AI supervisor visibility across the entire platform.
-        </p>
-
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={loadAll}
-            className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm font-bold text-cyan-200"
-          >
-            Refresh Owner Dashboard
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate("/owner/tenants")}
-            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white"
-          >
-            Open Full Tenant Manager
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate("/owner/access")}
-            className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-200"
-          >
-            Open Access + Password Manager
-          </button>
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-white">
+              FlowOps Super Owner Console
+            </h1>
+            <p className="mt-2 max-w-3xl text-slate-300">
+              Real-time SaaS &amp; operational intelligence across every tenant — revenue,
+              growth, churn risk, and cross-platform delivery performance.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={load}
+              className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-200"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={() => navigate("/owner/tenants")}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white"
+            >
+              Tenant Manager
+            </button>
+            <button
+              onClick={() => navigate("/owner/access")}
+              className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-sm font-bold text-amber-200"
+            >
+              Access &amp; Passwords
+            </button>
+          </div>
         </div>
-
+        {a?.generatedAt ? (
+          <div className="mt-3 text-xs text-white/40">
+            Updated {new Date(a.generatedAt).toLocaleString("en-ZA")}
+          </div>
+        ) : null}
         {error ? (
           <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {error}
           </div>
         ) : null}
-
-        {message ? (
-          <div className="mt-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-            {message}
-          </div>
-        ) : null}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Tenant Companies" value={String(overview.companies)} subtitle="Platform-wide tenant count" />
-        <StatCard title="Platform Users" value={String(overview.users)} subtitle="All users across the platform" />
-        <StatCard title="Company Admins" value={String(overview.companyAdmins)} subtitle="Operational tenant admins" />
-        <StatCard title="Demo Tenants" value={String(overview.demoTenants)} subtitle="Live demo subscriptions" />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <SectionCard
-          title="Create Tenant"
-          subtitle="Manual platform onboarding from the hidden owner layer."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Company Name" value={newCompanyName} onChange={setNewCompanyName} placeholder="Budget Couriers" />
-            <Input label="Legal Name" value={newLegalName} onChange={setNewLegalName} placeholder="Budget Couriers Pty Ltd" />
-            <Input label="Email" value={newEmail} onChange={setNewEmail} placeholder="ops@budgetcouriers.com" />
-            <Input label="Phone" value={newPhone} onChange={setNewPhone} placeholder="+27 ..." />
-            <Select label="Plan" value={newPlan} onChange={setNewPlan} options={["STARTER", "GROWTH", "PRO", "ENTERPRISE"]} />
-          </div>
-
-          <div className="mt-5">
-            <button
-              type="button"
-              onClick={createTenant}
-              disabled={busyKey === "create-tenant" || !newCompanyName.trim()}
-              className="rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-60"
-            >
-              {busyKey === "create-tenant" ? "Creating..." : "Create Tenant"}
-            </button>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Manual + Auto Subscriptions"
-          subtitle="Demo activation and manual pricing control."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Demo Tenant ID" value={demoTenantId} onChange={setDemoTenantId} placeholder="1" />
-            <Input label="Demo Notes" value={demoNotes} onChange={setDemoNotes} placeholder="Demo activation notes" />
-            <Input label="Subscription Tenant ID" value={subTenantId} onChange={setSubTenantId} placeholder="1" />
-            <Select label="Plan" value={subPlan} onChange={setSubPlan} options={["STARTER", "GROWTH", "PRO", "ENTERPRISE"]} />
-            <Input label="Monthly Price" value={subMonthlyPrice} onChange={setSubMonthlyPrice} placeholder="1499" />
-            <Input label="Setup Fee" value={subSetupFee} onChange={setSubSetupFee} placeholder="0" />
-            <div className="md:col-span-2">
-              <Input label="Price Notes" value={subPriceNotes} onChange={setSubPriceNotes} placeholder="Manual owner pricing" />
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={createDemoSubscription}
-              disabled={busyKey === "demo" || !demoTenantId.trim()}
-              className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-5 py-3 font-bold text-emerald-200 disabled:opacity-60"
-            >
-              {busyKey === "demo" ? "Creating Demo..." : "Create Demo Subscription"}
-            </button>
-
-            <button
-              type="button"
-              onClick={saveSubscription}
-              disabled={busyKey === "subscription" || !subTenantId.trim()}
-              className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-5 py-3 font-bold text-cyan-200 disabled:opacity-60"
-            >
-              {busyKey === "subscription" ? "Saving..." : "Save Manual Subscription"}
-            </button>
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-3">
-        <SectionCard
-          title="Platform Email Hub"
-          subtitle="Owner entry point for platform-wide email supervision."
-        >
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-300">
-              Monitor support, quote, billing, and operational email activity across the platform.
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/email")}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-bold text-white"
-            >
-              Open Email Hub
-            </button>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="AI Supervisor"
-          subtitle="Platform-wide AI oversight entry point."
-        >
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-300">
-              Review anomalies, upgrade intent, operational risks, and billing intelligence.
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/ai-control-tower")}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-bold text-white"
-            >
-              Open AI Control Tower
-            </button>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Tenant Search"
-          subtitle="Search every tenant on the platform instantly."
-        >
-          <Input label="Search" value={search} onChange={setSearch} placeholder="Search tenant, email, plan..." />
-        </SectionCard>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <SectionCard
-          title="Tenant Snapshot"
-          subtitle={loading ? "Loading live tenant data..." : "Live platform tenant visibility"}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left">
-              <thead>
-                <tr className="border-b border-white/10 text-xs uppercase tracking-[0.18em] text-white/50">
-                  <th className="px-4 py-4">ID</th>
-                  <th className="px-4 py-4">Tenant</th>
-                  <th className="px-4 py-4">Email</th>
-                  <th className="px-4 py-4">Plan</th>
-                  <th className="px-4 py-4">Status</th>
-                  <th className="px-4 py-4">Demo</th>
-                  <th className="px-4 py-4">Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTenants.slice(0, 8).map((row, index) => {
-                  const id = row.id ?? row.tenantId ?? index + 1;
-                  const name = row.name ?? row.tenantName ?? "Unknown Tenant";
-                  const email = row.email ?? row.contactEmail ?? "—";
-                  const plan = row.subscriptionPlan ?? row.planCode ?? "—";
-                  const status =
-                    row.status || (row.isActive === false ? "INACTIVE" : "ACTIVE");
-                  const demo = row.demo?.enabled ? "YES" : "NO";
-
-                  return (
-                    <tr key={String(id)} className="border-b border-white/5">
-                      <td className="px-4 py-4 text-white">{id}</td>
-                      <td className="px-4 py-4 font-semibold text-white">{name}</td>
-                      <td className="px-4 py-4 text-slate-300">{email}</td>
-                      <td className="px-4 py-4 text-slate-300">{plan}</td>
-                      <td className="px-4 py-4">
-                        <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-200">
-                          {status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-slate-300">{demo}</td>
-                      <td className="px-4 py-4 text-slate-300">
-                        {formatMoney(row.pricing?.monthlyPrice)}
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {!loading && filteredTenants.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                      No tenants found.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="AI Supervisor Feed"
-          subtitle="Latest platform-level AI and owner signals."
-        >
-          <div className="space-y-3">
-            {aiFeed.length > 0 ? (
-              aiFeed.map((item, index) => (
-                <div
-                  key={String(item.id ?? index)}
-                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-bold text-white">
-                      {item.title || item.companyName || "AI Event"}
-                    </div>
-                    <div className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200">
-                      {item.severity || "INFO"}
-                    </div>
-                  </div>
-                  <div className="mt-2 text-sm text-slate-300">
-                    {item.message || "Platform AI event available."}
-                  </div>
-                  <div className="mt-2 text-xs text-white/45">
-                    {formatDate(item.createdAt)}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-slate-300">
-                No AI alerts available yet. The dashboard remains stable even when this feed is empty.
-              </div>
-            )}
-          </div>
-        </SectionCard>
-      </div>
-
-      <SectionCard
-        title="Plan Breakdown"
-        subtitle="Current subscription distribution across tenant companies."
-      >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {Object.keys(overview.planBreakdown).length > 0 ? (
-            Object.entries(overview.planBreakdown).map(([plan, count]) => (
-              <div
-                key={plan}
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4"
-              >
-                <div className="text-xs uppercase tracking-[0.18em] text-white/50">
-                  {plan}
-                </div>
-                <div className="mt-2 text-3xl font-black text-white">
-                  {String(count)}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-slate-300">
-              No plan breakdown available yet.
-            </div>
-          )}
+      {loading && !a ? (
+        <div className="grid place-items-center rounded-[28px] border border-white/10 bg-white/[0.04] py-16 text-white/60">
+          Loading platform analytics…
         </div>
-      </SectionCard>
+      ) : null}
+
+      {a ? (
+        <>
+          {/* Revenue KPIs */}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Kpi icon={<Banknote className="h-5 w-5" />} label="MRR" value={money(a.revenue.mrr, cur)} delta={a.revenue.mrrDelta} sub="vs 30d ago" />
+            <Kpi icon={<TrendingUp className="h-5 w-5" />} label="ARR" value={money(a.revenue.arr, cur)} sub="annual run-rate" />
+            <Kpi icon={<Gauge className="h-5 w-5" />} label="ARPA" value={money(a.revenue.arpa, cur)} sub={`${num(a.tenants.paying)} paying tenants`} />
+            <Kpi icon={<Banknote className="h-5 w-5" />} label="Collected (30d)" value={money(a.revenue.collected30, cur)} delta={a.revenue.collectedDelta} sub="vs prior 30d" />
+          </div>
+
+          {/* Tenant + ops KPIs */}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Kpi icon={<Building2 className="h-5 w-5" />} label="Active Tenants" value={num(a.tenants.active)} sub={`${num(a.tenants.total)} total`} />
+            <Kpi icon={<Users className="h-5 w-5" />} label="New Tenants (30d)" value={num(a.tenants.newThisPeriod)} delta={a.tenants.newDelta} sub="vs prior 30d" />
+            <Kpi icon={<AlertTriangle className="h-5 w-5" />} label="Churn Rate" value={`${num(a.tenants.churnRate, 1)}%`} goodWhenUp={false} sub={`${num(a.tenants.churnedThisPeriod)} suspended`} />
+            <Kpi icon={<PackageCheck className="h-5 w-5" />} label="On-Time Delivery" value={`${num(a.operations.onTimeRate, 1)}%`} sub="platform-wide" />
+          </div>
+
+          {/* Charts */}
+          <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+            <Section title="Tenant Growth" subtitle="New + cumulative tenants over the last 6 months">
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={a.growth}>
+                    <defs>
+                      <linearGradient id="cum" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.5} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <XAxis dataKey="month" stroke="rgba(255,255,255,0.4)" fontSize={12} />
+                    <YAxis stroke="rgba(255,255,255,0.4)" fontSize={12} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{ background: "#0b1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff" }}
+                    />
+                    <Area type="monotone" dataKey="cumulative" name="Total tenants" stroke="#3b82f6" fill="url(#cum)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="newTenants" name="New" stroke="#22d3ee" fillOpacity={0} strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </Section>
+
+            <Section title="Plan Mix" subtitle="Active tenants & MRR by plan">
+              {planData.length ? (
+                <div className="space-y-5">
+                  <div className="h-44 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={planData} layout="vertical" margin={{ left: 16 }}>
+                        <XAxis type="number" hide allowDecimals={false} />
+                        <YAxis type="category" dataKey="plan" stroke="rgba(255,255,255,0.5)" fontSize={12} width={90}
+                          tickFormatter={(v: string) => v.charAt(0).toUpperCase() + v.slice(1)} />
+                        <Tooltip
+                          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                          contentStyle={{ background: "#0b1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff" }}
+                        />
+                        <Bar dataKey="count" name="Tenants" radius={[0, 6, 6, 0]}>
+                          {planData.map((p) => (
+                            <Cell key={p.plan} fill={PLAN_COLORS[p.plan.toLowerCase()] ?? "#3b82f6"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {planData.map((p) => (
+                      <div key={p.plan} className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">{p.plan}</div>
+                        <div className="mt-1 text-2xl font-black text-white">{p.count}</div>
+                        <div className="mt-1 text-xs text-slate-400">{money(p.mrr, cur)}/mo</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-6 text-sm text-slate-400">
+                  No active paid tenants yet.
+                </div>
+              )}
+            </Section>
+          </div>
+
+          {/* Ops strip */}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Kpi icon={<PackageCheck className="h-5 w-5" />} label="Total Waybills" value={num(a.operations.totalWaybills)} sub={`${num(a.operations.deliveries30)} in last 30d`} />
+            <Kpi icon={<Activity className="h-5 w-5" />} label="Delivery Success" value={`${num(a.operations.deliverySuccess, 1)}%`} sub="platform-wide" />
+            <Kpi icon={<AlertTriangle className="h-5 w-5" />} label="Exception Rate" value={`${num(a.operations.exceptionRate, 1)}%`} goodWhenUp={false} sub="failed + returned" />
+            <Kpi icon={<Banknote className="h-5 w-5" />} label="Collected (all-time)" value={money(a.revenue.collectedTotal, cur)} sub="successful payments" />
+          </div>
+
+          {/* Health + alerts */}
+          <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+            <Section title="Tenant Health" subtitle="Composite score from activity, volume & plan — highest first">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-white/50">
+                      <th className="px-3 py-3">Tenant</th>
+                      <th className="px-3 py-3">Plan</th>
+                      <th className="px-3 py-3">Users</th>
+                      <th className="px-3 py-3">Waybills (30d)</th>
+                      <th className="px-3 py-3">Score</th>
+                      <th className="px-3 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {a.health.slice(0, 10).map((h) => (
+                      <tr
+                        key={h.id}
+                        className="cursor-pointer border-b border-white/5 hover:bg-white/[0.03]"
+                        onClick={() => navigate(`/owner/tenants`)}
+                      >
+                        <td className="px-3 py-3 font-semibold text-white">{h.name}</td>
+                        <td className="px-3 py-3 capitalize text-slate-300">{h.plan}</td>
+                        <td className="px-3 py-3 text-slate-300">{h.users}</td>
+                        <td className="px-3 py-3 text-slate-300">{h.waybills30}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-white/10">
+                              <div
+                                className={`h-full ${h.score >= 70 ? "bg-emerald-400" : h.score >= 40 ? "bg-amber-400" : "bg-rose-400"}`}
+                                style={{ width: `${h.score}%` }}
+                              />
+                            </div>
+                            <span className="text-white">{h.score}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">{riskBadge(h.risk)}</td>
+                      </tr>
+                    ))}
+                    {a.health.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-8 text-center text-slate-400">
+                          No active tenants yet.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+
+            <Section title="Critical Alerts" subtitle="Unresolved platform-wide AI events">
+              <div className="space-y-3">
+                {alerts.length ? (
+                  alerts.map((item, i) => (
+                    <div key={String(item.id ?? i)} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-bold text-white">
+                          {item.title || item.company?.name || "AI Event"}
+                        </div>
+                        <span className="rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-rose-200">
+                          {item.severity || "info"}
+                        </span>
+                      </div>
+                      {item.message ? <div className="mt-1.5 text-sm text-slate-300">{item.message}</div> : null}
+                      {item.createdAt ? (
+                        <div className="mt-1.5 text-xs text-white/40">
+                          {new Date(item.createdAt).toLocaleString("en-ZA")}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-6 text-sm text-slate-400">
+                    No critical alerts. All clear across the platform.
+                  </div>
+                )}
+              </div>
+            </Section>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
