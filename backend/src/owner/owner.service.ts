@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { ShipmentStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
@@ -372,11 +373,13 @@ export class OwnerService {
   // (from shipment telemetry) and recent delivery exceptions, both with
   // coordinates, for the owner ops map + exception heatmap.
   async liveOps() {
-    const activeStatuses = ['PENDING', 'COLLECTED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'];
+    // Only PENDING and IN_TRANSIT shipments are actively in-motion.
+    // ShipmentStatus enum: PENDING | IN_TRANSIT | DELIVERED | FAILED
+    const activeStatuses: ShipmentStatus[] = [ShipmentStatus.PENDING, ShipmentStatus.IN_TRANSIT];
 
     const shipments = await this.prisma.shipment.findMany({
       where: {
-        status: { in: activeStatuses as any },
+        status: { in: activeStatuses },
         currentLat: { not: null },
         currentLng: { not: null },
       },
