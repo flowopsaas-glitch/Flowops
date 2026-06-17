@@ -184,6 +184,8 @@ model Company {
   approvalRequest    ApprovalRequest?
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
+  driverWallets      DriverWallet[]
+  codTransactions    CodTransaction[]
 
   @@map("companies")
 }
@@ -356,6 +358,9 @@ model Driver {
   shipments   Shipment[]
   manifests   Manifest[]
 
+  wallet          DriverWallet?
+  codTransactions CodTransaction[]
+
   @@map("drivers")
 }
 
@@ -410,7 +415,9 @@ model Waybill {
   dimensions  String?
   description String?
   totalAmount Float?
-  codAmount   Float?
+  codAmount        Float?    // Expected COD amount set at booking
+  codCollected     Boolean   @default(false) // Driver confirmed cash in hand
+  codCollectedAt   DateTime? // When driver marked as collected
 
   // Risk assessment
   riskLevel RiskLevel @default(LOW)
@@ -440,6 +447,7 @@ model Waybill {
   manifestWaybills ManifestWaybill[]
   invoiceItems     InvoiceItem[]
   inboxItem        WaybillInboxItem?
+  codTransactions  CodTransaction[]
 
   @@unique([trackingNumber, companyId])
   @@map("waybills")
@@ -984,4 +992,72 @@ model PlatformAlert {
   @@index([resolved])
   @@index([createdAt])
   @@map("platform_alerts")
+}
+
+
+// ── COD (Cash on Delivery) reconciliation ─────────────────────────────────
+//
+// Each driver has one wallet that tracks their running COD cash balance.
+// Every collection (driver receives cash from recipient) and every settlement
+// (driver remits cash to the company) is recorded as a CodTransaction.
+//
+// Workflow:
+//   1. Waybill created with codAmount set by dispatch.
+//   2. Driver marks delivery complete → POST /cod/collect records a
+//      COD_COLLECTED transaction and increments the driver wallet balance.
+//   3. Dispatch reconciles: POST /cod/settle/:driverId records a SETTLEMENT
+//      transaction and decrements the wallet balance.
+
+model DriverWallet {
+  id           String   @id @default(cuid())
+  balance      Float    @default(0)   // Current outstanding cash held by driver
+  totalCollected Float  @default(0)   // All-time COD collected
+  totalSettled   Float  @default(0)   // All-time settled with company
+  lastSettledAt DateTime?
+
+  driverId String  @unique
+  driver   Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  transactions CodTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("driver_wallets")
+}
+
+model CodTransaction {
+  id       String             @id @default(cuid())
+  type     CodTransactionType
+  amount   Float
+  currency String             @default("ZAR")
+  notes    String?
+
+  waybillId String?
+  waybill   Waybill? @relation(fields: [waybillId], references: [id])
+
+  driverId String
+  driver   Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  walletId String
+  wallet   DriverWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([driverId])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("cod_transactions")
+}
+
+enum CodTransactionType {
+  COD_COLLECTED  // Driver received cash from recipient
+  SETTLEMENT     // Driver remitted cash to company
+  ADJUSTMENT     // Manual correction by dispatch
 }

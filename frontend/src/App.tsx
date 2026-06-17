@@ -25,6 +25,8 @@ const PodDeliveries = lazy(() => import("./pages/PodDeliveries"));
 const DriverDispatch = lazy(() => import("./pages/DriverDispatch"));
 const RateCards = lazy(() => import("./pages/RateCards"));
 const BillingBatches = lazy(() => import("./pages/BillingBatches"));
+const CodReconciliation = lazy(() => import("./pages/CodReconciliation"));
+const CodDriverWallet = lazy(() => import("./pages/CodDriverWallet"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
@@ -155,6 +157,8 @@ export default function App() {
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/invoice-drafts" element={<RequirePermission perm="invoiceDrafts"><InvoiceDraftsPage /></RequirePermission>} />
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
+              <Route path="/cod" element={<RequirePermission perm="creditControl"><CodReconciliation /></RequirePermission>} />
+              <Route path="/cod/wallets/:driverId" element={<RequirePermission perm="creditControl"><CodDriverWallet /></RequirePermission>} />
               <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
               <Route path="/credit-control" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
               <Route path="/quotes" element={<RequirePermission perm="quotes"><QuotesPage /></RequirePermission>} />

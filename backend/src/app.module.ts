@@ -34,6 +34,7 @@ import { RoutingModule } from './routing/routing.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
+import { CodModule } from './cod/cod.module';
 import { AuditModule } from './audit/audit.module';
 import { AlertingModule } from './alerting/alerting.module';
 
@@ -66,6 +67,9 @@ import { AlertingModule } from './alerting/alerting.module';
     // Tenant integration platform: outbound webhooks + public API (Shopify etc.)
     WebhooksModule,
     ApiModule,
+
+    // COD reconciliation + driver wallet
+    CodModule,
 
     // Platform audit trail (global)
     AuditModule,
