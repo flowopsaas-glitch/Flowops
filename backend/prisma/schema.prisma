@@ -132,6 +132,10 @@ model Company {
   country     String  @default("ZA")
   vatNumber   String?
 
+  // WhatsApp — tenant's own mobile number used for click-to-chat (wa.me) links.
+  // No Business API token needed; agents send from this number via WhatsApp Web/app.
+  whatsappNumber String?
+
   // Branding
   logoUrl            String?
   brandName          String?

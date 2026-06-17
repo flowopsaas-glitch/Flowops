@@ -45,6 +45,66 @@ export class WhatsAppService {
     return thread?.messages ?? [];
   }
 
+  // ── Click-to-chat (no Business API — uses the tenant's mobile number) ──
+
+  /**
+   * Returns the tenant's WhatsApp configuration. In click-to-chat mode the
+   * tenant uses their own mobile number (no Meta token required) — agents
+   * send messages from WhatsApp Web/app via generated wa.me links.
+   */
+  async getSettings(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { whatsappNumber: true },
+    });
+    return {
+      mode: 'click_to_chat' as const,
+      whatsappNumber: company?.whatsappNumber ?? null,
+      apiConfigured: Boolean(this.phoneNumberId && this.accessToken),
+    };
+  }
+
+  /** Normalises a phone number to digits-only international form for wa.me. */
+  private normalizePhone(input: string) {
+    return (input || '').replace(/[^\d]/g, '');
+  }
+
+  /**
+   * Builds a WhatsApp click-to-chat link and logs the outbound message to the
+   * thread so history is preserved. The agent's browser opens this URL and
+   * sends from the tenant's own WhatsApp — no Business API call is made.
+   * Format: https://wa.me/<international-number>?text=<url-encoded-message>
+   */
+  async compose(companyId: string, to: string, message: string) {
+    const phone = this.normalizePhone(to);
+    if (!phone) {
+      throw new Error('A valid recipient phone number is required.');
+    }
+
+    const url = `https://wa.me/${phone}${
+      message ? `?text=${encodeURIComponent(message)}` : ''
+    }`;
+
+    // Preserve conversation history even though sending happens client-side.
+    const thread = await this.upsertThread(companyId, phone);
+    if (message) {
+      await this.prisma.whatsAppMessage.create({
+        data: {
+          content: message,
+          direction: 'OUTBOUND',
+          status: 'click_to_chat',
+          threadId: thread.id,
+        },
+      });
+      await this.prisma.whatsAppThread.update({
+        where: { id: thread.id },
+        data: { lastMessage: message, lastMessageAt: new Date() },
+      });
+    }
+
+    return { url, to: phone, message };
+  }
+
   // ── Send message ─────────────────────────────────────────────────────
 
   async sendMessage(companyId: string, to: string, message: string) {
