@@ -30,8 +30,17 @@ export class OwnerController {
   }
 
   @Patch('tenants/:id/action')
-  tenantAction(@Param('id') id: string, @Body() body: { action: 'approve' | 'reject' | 'suspend'; reason?: string }) {
-    return this.svc.tenantAction(id, body.action, { reason: body.reason });
+  tenantAction(
+    @Param('id') id: string,
+    @Body() body: { action: 'approve' | 'reject' | 'suspend'; reason?: string },
+    @CurrentUser() owner: any,
+  ) {
+    return this.svc.tenantAction(id, body.action, { reason: body.reason }, owner);
+  }
+
+  @Post('impersonate/:tenantId')
+  impersonate(@Param('tenantId') tenantId: string, @CurrentUser() owner: any) {
+    return this.svc.impersonate(tenantId, owner);
   }
 
   @Get('view-mode/:id')
@@ -65,8 +74,8 @@ export class OwnerController {
   }
 
   @Patch('plans')
-  updatePlan(@Body() body: { tenantId: string; plan: string }) {
-    return this.svc.updateTenantPlan(body.tenantId, body.plan);
+  updatePlan(@Body() body: { tenantId: string; plan: string }, @CurrentUser() owner: any) {
+    return this.svc.updateTenantPlan(body.tenantId, body.plan, owner);
   }
 
   @Get('approval-requests')
@@ -75,13 +84,13 @@ export class OwnerController {
   }
 
   @Post('approval-requests/:id/approve')
-  approveRequest(@Param('id') id: string) {
-    return this.svc.approveRequest(id);
+  approveRequest(@Param('id') id: string, @CurrentUser() owner: any) {
+    return this.svc.approveRequest(id, owner);
   }
 
   @Post('approval-requests/:id/reject')
-  rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.svc.rejectRequest(id, body?.reason);
+  rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }, @CurrentUser() owner: any) {
+    return this.svc.rejectRequest(id, body?.reason, owner);
   }
 }
 

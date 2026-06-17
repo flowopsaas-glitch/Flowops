@@ -914,3 +914,29 @@ model WorkflowDatabase {
 
   @@map("workflow_databases")
 }
+
+
+
+// ── Platform audit trail ───────────────────────────────────────────────────
+// Immutable record of privileged owner/platform actions: tenant approve/reject/
+// suspend, plan changes, and "view-as-tenant" impersonation. Surfaced in the
+// owner console for compliance + accountability.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorType  String   @default("owner") // owner | tenant | system
+  actorId    String?
+  actorEmail String?
+  action     String // e.g. tenant.approve, tenant.suspend, tenant.plan_change, tenant.impersonate
+  targetType String? // company | user | request
+  targetId   String?
+  targetName String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([targetId])
+  @@index([action])
+  @@map("audit_logs")
+}

@@ -1,13 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { AuditService } from '../audit/audit.service';
+
+type OwnerActor = { id?: string; email?: string } | null | undefined;
 
 @Injectable()
 export class OwnerService {
   constructor(
     private prisma: PrismaService,
     private email: EmailService,
+    private jwt: JwtService,
+    private config: ConfigService,
+    private audit: AuditService,
   ) {}
 
   // ── Tenants ───────────────────────────────────────────────────────────
@@ -42,7 +50,28 @@ export class OwnerService {
   }
 
   /** Approve/reject/suspend a tenant. */
-  async tenantAction(tenantId: string, action: 'approve' | 'reject' | 'suspend', opts?: any) {
+  async tenantAction(
+    tenantId: string,
+    action: 'approve' | 'reject' | 'suspend',
+    opts?: { reason?: string },
+    actor?: OwnerActor,
+  ) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true },
+    });
+
+    const audit = (a: string, meta?: Record<string, any>) =>
+      this.audit.record({
+        action: a,
+        actorId: actor?.id ?? null,
+        actorEmail: actor?.email ?? null,
+        targetType: 'company',
+        targetId: tenantId,
+        targetName: company?.name ?? null,
+        metadata: meta,
+      });
+
     if (action === 'approve') {
       // Find the ApprovalRequest, create the admin user
       const req = await this.prisma.approvalRequest.findFirst({ where: { companyId: tenantId } });
@@ -72,7 +101,9 @@ export class OwnerService {
         // Send welcome email to the newly approved admin user
         await this.email.sendWelcomeEmail(req.email, req.fullName, req.company);
       }
-      return this.prisma.company.update({ where: { id: tenantId }, data: { isActive: true } });
+      const updated = await this.prisma.company.update({ where: { id: tenantId }, data: { isActive: true } });
+      await audit('tenant.approve');
+      return updated;
     }
 
     if (action === 'reject') {
@@ -80,14 +111,81 @@ export class OwnerService {
         where: { companyId: tenantId },
         data: { status: 'REJECTED', notes: opts?.reason },
       });
-      return this.prisma.company.update({ where: { id: tenantId }, data: { isActive: false } });
+      const updated = await this.prisma.company.update({ where: { id: tenantId }, data: { isActive: false } });
+      await audit('tenant.reject', { reason: opts?.reason ?? null });
+      return updated;
     }
 
     if (action === 'suspend') {
-      return this.prisma.company.update({ where: { id: tenantId }, data: { isActive: false } });
+      const updated = await this.prisma.company.update({ where: { id: tenantId }, data: { isActive: false } });
+      await audit('tenant.suspend', { reason: opts?.reason ?? null });
+      return updated;
     }
 
     throw new Error('Unknown action');
+  }
+
+  // ── Secure impersonation ("view as tenant") ───────────────────────────
+  //
+  // Mints a short-lived, tenant-scoped access token impersonating an ADMIN
+  // user of the target tenant, so the owner can debug a tenant exactly as
+  // they see it. The token carries an `impersonatedBy` claim and a 30-minute
+  // expiry, and every issuance is written to the audit trail.
+  async impersonate(tenantId: string, actor?: OwnerActor) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isActive: true },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    // Prefer an active admin; fall back to any active user of the tenant.
+    const target =
+      (await this.prisma.user.findFirst({
+        where: { companyId: tenantId, role: 'ADMIN', isActive: true },
+        select: { id: true, email: true, role: true },
+      })) ??
+      (await this.prisma.user.findFirst({
+        where: { companyId: tenantId, isActive: true },
+        select: { id: true, email: true, role: true },
+      }));
+
+    if (!target) {
+      throw new BadRequestException(
+        'Tenant has no active user to impersonate. Approve/onboard a user first.',
+      );
+    }
+
+    const accessToken = this.jwt.sign(
+      {
+        sub: target.id,
+        email: target.email,
+        companyId: tenantId,
+        role: target.role,
+        type: 'tenant',
+        impersonatedBy: actor?.id ?? null,
+      },
+      {
+        secret: this.config.get<string>('JWT_SECRET'),
+        expiresIn: '30m',
+      },
+    );
+
+    await this.audit.record({
+      action: 'tenant.impersonate',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: { impersonatedUserId: target.id, impersonatedEmail: target.email },
+    });
+
+    return {
+      access_token: accessToken,
+      expiresInMinutes: 30,
+      tenant: { id: company.id, name: company.name },
+      impersonatedUser: { id: target.id, email: target.email, role: target.role },
+    };
   }
 
   /** Generate a temporary view-as-tenant context. */
@@ -281,10 +379,11 @@ export class OwnerService {
   // ── Audit log ─────────────────────────────────────────────────────────
 
   async getAuditLog(query?: any) {
-    return this.prisma.aiEvent.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-      include: { company: { select: { name: true } } },
+    return this.audit.list({
+      action: query?.action,
+      actorId: query?.actorId,
+      targetId: query?.targetId,
+      limit: query?.limit,
     });
   }
 
@@ -338,8 +437,22 @@ export class OwnerService {
     ];
   }
 
-  async updateTenantPlan(tenantId: string, plan: string) {
-    return this.prisma.company.update({ where: { id: tenantId }, data: { plan } });
+  async updateTenantPlan(tenantId: string, plan: string, actor?: OwnerActor) {
+    const before = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { name: true, plan: true },
+    });
+    const updated = await this.prisma.company.update({ where: { id: tenantId }, data: { plan } });
+    await this.audit.record({
+      action: 'tenant.plan_change',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: before?.name ?? null,
+      metadata: { from: before?.plan ?? null, to: plan },
+    });
+    return updated;
   }
 
   // ── Approval requests ─────────────────────────────────────────────────
@@ -351,7 +464,7 @@ export class OwnerService {
     });
   }
 
-  async approveRequest(requestId: string) {
+  async approveRequest(requestId: string, actor?: OwnerActor) {
     const req = await this.prisma.approvalRequest.findUniqueOrThrow({ where: { id: requestId } });
     // Create company + user
     let passwordHash: string;
@@ -367,13 +480,32 @@ export class OwnerService {
       where: { id: requestId },
       data: { status: 'APPROVED', companyId: company.id },
     });
+    await this.audit.record({
+      action: 'request.approve',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: company.id,
+      targetName: company.name,
+      metadata: { requestId, email: req.email },
+    });
     return { company, message: 'Approved and onboarded' };
   }
 
-  async rejectRequest(requestId: string, reason?: string) {
-    return this.prisma.approvalRequest.update({
+  async rejectRequest(requestId: string, reason?: string, actor?: OwnerActor) {
+    const updated = await this.prisma.approvalRequest.update({
       where: { id: requestId },
       data: { status: 'REJECTED', notes: reason },
     });
+    await this.audit.record({
+      action: 'request.reject',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'request',
+      targetId: requestId,
+      targetName: updated.company ?? null,
+      metadata: { reason: reason ?? null },
+    });
+    return updated;
   }
 }

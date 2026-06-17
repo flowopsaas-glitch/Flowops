@@ -12,6 +12,7 @@ import { cn } from "../../lib/utils";
 import logo from "../../assets/logo.png";
 import { useTenant } from "../../contexts/TenantContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { isImpersonating, impersonatedTenantName, exitImpersonation } from "../../lib/impersonation";
 import {
   normalizeTenantNavPermissions,
   type TenantNavPermissionKey,
@@ -284,6 +285,22 @@ export default function AppLayout() {
 
       {/* Main UI Area */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {isImpersonating() ? (
+          <div className="flex items-center justify-between gap-3 bg-amber-500/15 px-6 py-2 text-sm text-amber-100 border-b border-amber-400/20">
+            <div className="font-bold">
+              Viewing as <span className="underline">{impersonatedTenantName() || "tenant"}</span> — actions affect this tenant's data.
+            </div>
+            <button
+              onClick={() => {
+                exitImpersonation();
+                window.location.href = "/owner/dashboard";
+              }}
+              className="rounded-xl border border-amber-400/30 bg-amber-500/20 px-3 py-1 text-xs font-bold text-amber-50 hover:bg-amber-500/30"
+            >
+              Exit to Owner Console
+            </button>
+          </div>
+        ) : null}
         <header className="z-30 border-b border-white/5 bg-[#081120]/80 backdrop-blur-md px-6 py-4 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => setMobileOpen(true)} className="xl:hidden p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400">

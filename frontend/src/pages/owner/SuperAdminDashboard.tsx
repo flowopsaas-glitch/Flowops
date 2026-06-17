@@ -25,6 +25,7 @@ import {
   Users,
 } from "lucide-react";
 import { api } from "../../api/client";
+import { startImpersonation } from "../../lib/impersonation";
 
 // ── Types matching GET /owner/analytics ──────────────────────────────────
 type Analytics = {
@@ -203,6 +204,20 @@ export default function SuperAdminDashboard() {
     void load();
   }, []);
 
+  async function viewAsTenant(tenantId: string, tenantName: string) {
+    try {
+      const res: any = await api.post(`/owner/impersonate/${tenantId}`, {});
+      const payload = res?.data ?? res;
+      const token = payload?.access_token;
+      if (!token) throw new Error("No impersonation token returned");
+      startImpersonation(token, tenantName);
+      // Full navigation so the whole app re-initialises as the tenant.
+      window.location.href = "/dashboard";
+    } catch (err: any) {
+      setError(err?.message || "Could not start impersonation for this tenant.");
+    }
+  }
+
   const cur = a?.currency || "ZAR";
   const planData = useMemo(
     () => (a?.planDistribution ?? []).filter((p) => p.count > 0),
@@ -368,6 +383,7 @@ export default function SuperAdminDashboard() {
                       <th className="px-3 py-3">Waybills (30d)</th>
                       <th className="px-3 py-3">Score</th>
                       <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -393,11 +409,22 @@ export default function SuperAdminDashboard() {
                           </div>
                         </td>
                         <td className="px-3 py-3">{riskBadge(h.risk)}</td>
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void viewAsTenant(h.id, h.name);
+                            }}
+                            className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-500/20"
+                          >
+                            View as
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {a.health.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-slate-400">
+                        <td colSpan={7} className="px-3 py-8 text-center text-slate-400">
                           No active tenants yet.
                         </td>
                       </tr>
