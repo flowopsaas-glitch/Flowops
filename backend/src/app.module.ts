@@ -31,6 +31,7 @@ import { GatewayModule } from './gateway/gateway.module';
 import { EmailModule } from './email/email.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
 import { RoutingModule } from './routing/routing.module';
+import { TrackingModule } from './tracking/tracking.module';
 
 @Module({
   imports: [
@@ -54,6 +55,9 @@ import { RoutingModule } from './routing/routing.module';
 
     // Route optimization (nearest-neighbour + 2-opt over geocoded stops)
     RoutingModule,
+
+    // Public parcel tracking (no auth) + predictive ETA
+    TrackingModule,
 
     // Domain modules
     AuthModule,
