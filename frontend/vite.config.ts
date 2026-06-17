@@ -57,10 +57,19 @@ export default defineConfig({
       port: 5173,
     },
     proxy: {
+      // Backend (NestJS) listens on PORT=3000 by default (see backend/.env.example).
+      // Override for local dev with VITE_DEV_API_PROXY if your backend runs elsewhere.
       '/api': {
-        target: 'http://localhost:3005',
+        target: process.env.VITE_DEV_API_PROXY || 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
+      },
+      // Proxy Socket.IO too, so the live map / dashboards work through the dev server.
+      '/socket.io': {
+        target: process.env.VITE_DEV_API_PROXY || 'http://localhost:3000',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
       },
     },
   },
