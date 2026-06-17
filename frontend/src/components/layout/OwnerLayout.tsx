@@ -5,8 +5,8 @@ import { api } from "../../api/client";
 
 function navButtonClass(active: boolean) {
   return active
-    ? "rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 px-4 py-2.5 text-sm font-bold text-slate-950 shadow-lg"
-    : "rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10";
+    ? "inline-flex items-center gap-1.5 rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 px-4 py-2.5 text-sm font-bold text-slate-950 shadow-lg"
+    : "inline-flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10";
 }
 
 /** Small badge showing count of unresolved platform alerts. Fades if 0. */
