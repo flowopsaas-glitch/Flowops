@@ -29,6 +29,7 @@ import { OwnerModule } from './owner/owner.module';
 import { StorageModule } from './storage/storage.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { EmailModule } from './email/email.module';
+import { GeocodingModule } from './geocoding/geocoding.module';
 
 @Module({
   imports: [
@@ -46,6 +47,9 @@ import { EmailModule } from './email/email.module';
 
     // Email (SendGrid — global, gracefully no-ops when key not set)
     EmailModule,
+
+    // Geocoding (address -> coordinates; global, powers routing/map/ETA/tracking)
+    GeocodingModule,
 
     // Domain modules
     AuthModule,

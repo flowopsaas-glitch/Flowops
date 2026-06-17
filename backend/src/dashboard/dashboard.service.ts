@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { GeocodingService } from '../geocoding/geocoding.service';
 
 @Injectable()
 export class DashboardService {
@@ -222,13 +223,13 @@ export class DashboardService {
     // (Collection currently stores only a free-text pickupAddress).
     const collection = await this.prisma.collection.findFirst({
       where: { id: collectionId, companyId },
-      select: { id: true },
+      select: { id: true, pickupLat: true, pickupLng: true },
     });
     if (!collection) return { suggestion: null, candidates: [] };
 
     const drivers = await this.prisma.driver.findMany({
       where: { companyId, isActive: true, status: { in: ['AVAILABLE', 'ON_ROUTE'] } },
-      select: { id: true, name: true, vehicleType: true, status: true, lastSeen: true },
+      select: { id: true, name: true, vehicleType: true, status: true, lastSeen: true, lastLat: true, lastLng: true },
     });
     if (!drivers.length) return { suggestion: null, candidates: [] };
 
@@ -247,6 +248,7 @@ export class DashboardService {
     );
 
     const now = Date.now();
+    const hasPickup = collection.pickupLat != null && collection.pickupLng != null;
     const scored = drivers
       .map((d) => {
         // Availability: idle drivers preferred over those already mid-route.
@@ -262,8 +264,27 @@ export class DashboardService {
           ? Math.max(0, 1 - minsSinceSeen / 60)
           : 0.2;
 
+        // Proximity: distance from driver's last GPS to the pickup (within 50km).
+        let distanceKm: number | null = null;
+        let proximity = 0;
+        const hasDriverPos = d.lastLat != null && d.lastLng != null;
+        if (hasPickup && hasDriverPos) {
+          distanceKm = GeocodingService.haversineKm(
+            collection.pickupLat as number,
+            collection.pickupLng as number,
+            d.lastLat as number,
+            d.lastLng as number,
+          );
+          proximity = Math.max(0, 1 - distanceKm / 50);
+        }
+
         const round = (n: number) => Math.round(n * 100) / 100;
-        const score = round(0.5 * availability + 0.3 * loadScore + 0.2 * recency);
+        // When we can measure proximity, give it real weight; otherwise fall
+        // back to the availability/load/recency blend.
+        const useProx = hasPickup && hasDriverPos;
+        const score = useProx
+          ? round(0.4 * availability + 0.25 * loadScore + 0.15 * recency + 0.2 * proximity)
+          : round(0.5 * availability + 0.3 * loadScore + 0.2 * recency);
 
         return {
           id: d.id,
@@ -275,6 +296,8 @@ export class DashboardService {
             openJobs: load,
             loadScore: round(loadScore),
             recency: round(recency),
+            distanceKm: distanceKm == null ? null : Math.round(distanceKm * 10) / 10,
+            proximity: useProx ? round(proximity) : null,
           },
         };
       })
