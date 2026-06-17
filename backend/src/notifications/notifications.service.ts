@@ -1,9 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(NotificationsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private email: EmailService,
+    private config: ConfigService,
+  ) {}
 
   async findAll(userId: string, companyId: string, query?: any) {
     const take = Number(query?.limit) || 50;
@@ -89,5 +97,69 @@ export class NotificationsService {
     return this.prisma.notification.create({
       data: { title, body, type, companyId },
     });
+  }
+
+  // ── Event-driven customer status notifications ───────────────────────
+
+  private static readonly CUSTOMER_STATUS_COPY: Record<
+    string,
+    { title: string; line: string }
+  > = {
+    COLLECTED: { title: 'Parcel collected', line: 'has been collected and is entering our network' },
+    IN_TRANSIT: { title: 'On its way', line: 'is now in transit' },
+    OUT_FOR_DELIVERY: { title: 'Out for delivery', line: 'is out for delivery today' },
+    DELIVERED: { title: 'Delivered', line: 'has been delivered' },
+    FAILED_DELIVERY: { title: 'Delivery attempt failed', line: 'could not be delivered — we will retry' },
+    RETURNED: { title: 'Returned to sender', line: 'is being returned to the sender' },
+  };
+
+  /**
+   * Fired when a waybill's status changes. Logs an internal notification for
+   * the tenant and (when the recipient email + SendGrid are available) emails
+   * the customer a branded update with a live tracking link. Best-effort:
+   * failures are logged and never block the status change.
+   */
+  async notifyWaybillStatus(waybill: {
+    companyId: string;
+    trackingNumber: string;
+    recipientName?: string | null;
+    recipientEmail?: string | null;
+    status: string;
+  }) {
+    const copy = NotificationsService.CUSTOMER_STATUS_COPY[waybill.status];
+    if (!copy) return; // not a customer-facing status
+
+    const trackUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/track/${waybill.trackingNumber}`;
+
+    // 1) Internal notification for the tenant operations feed.
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId: waybill.companyId,
+          title: `${copy.title} · ${waybill.trackingNumber}`,
+          body: `Parcel ${waybill.trackingNumber} ${copy.line}.`,
+          type: 'STATUS_UPDATE',
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to log status notification: ${err?.message ?? err}`);
+    }
+
+    // 2) Customer email (only if we have an address + a configured sender).
+    if (waybill.recipientEmail) {
+      const name = (waybill.recipientName || 'there').split(/\s+/)[0];
+      await this.email
+        .send({
+          to: waybill.recipientEmail,
+          subject: `${copy.title} — ${waybill.trackingNumber}`,
+          text: `Hi ${name}, your parcel ${waybill.trackingNumber} ${copy.line}. Track it live: ${trackUrl}`,
+          html: `
+            <h2 style="margin-top:0;color:#1e3a5f;">${copy.title}</h2>
+            <p>Hi ${name}, your parcel <strong>${waybill.trackingNumber}</strong> ${copy.line}.</p>
+            <a href="${trackUrl}" class="btn">Track your delivery</a>
+          `,
+        })
+        .catch((err) => this.logger.warn(`Status email failed: ${err?.message ?? err}`));
+    }
   }
 }
