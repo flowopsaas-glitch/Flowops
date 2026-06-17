@@ -7,6 +7,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -25,6 +27,7 @@ import {
   Users,
 } from "lucide-react";
 import { api } from "../../api/client";
+import { startImpersonation } from "../../lib/impersonation";
 
 // ── Types matching GET /owner/analytics ──────────────────────────────────
 type Analytics = {
@@ -70,13 +73,31 @@ type Analytics = {
   topByVolume: Analytics["health"];
 };
 
-type AIFeedItem = {
-  id?: string | number;
-  title?: string;
-  message?: string;
-  severity?: string;
-  company?: { name?: string };
-  createdAt?: string;
+type PlatformAlert = {
+  id: string;
+  type: string;
+  severity: string;
+  title: string;
+  message: string;
+  tenantName?: string | null;
+  createdAt: string;
+  resolved?: boolean;
+};
+
+type MrrMovement = {
+  currency: string;
+  series: Array<{ date: string; mrr: number }>;
+  movement: {
+    newBusiness: number;
+    expansion: number;
+    contraction: number;
+    churn: number;
+    net: number;
+    current: number;
+    previous: number;
+    hasComparison: boolean;
+  };
+  snapshotCount: number;
 };
 
 // ── Formatting helpers ────────────────────────────────────────────────────
@@ -174,7 +195,9 @@ export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [a, setA] = useState<Analytics | null>(null);
-  const [alerts, setAlerts] = useState<AIFeedItem[]>([]);
+  const [alerts, setAlerts] = useState<PlatformAlert[]>([]);
+  const [mrr, setMrr] = useState<MrrMovement | null>(null);
+  const [runningChecks, setRunningChecks] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -186,11 +209,18 @@ export default function SuperAdminDashboard() {
       setA((res?.data ?? res) as Analytics);
 
       try {
-        const alertsRes: any = await api.get("/owner/ai-alerts");
+        const alertsRes: any = await api.get("/owner/alerts");
         const items = alertsRes?.data ?? alertsRes;
-        setAlerts(Array.isArray(items) ? items.slice(0, 6) : []);
+        setAlerts(Array.isArray(items) ? items.slice(0, 8) : []);
       } catch {
         setAlerts([]);
+      }
+
+      try {
+        const mrrRes: any = await api.get("/owner/mrr-movement");
+        setMrr((mrrRes?.data ?? mrrRes) as MrrMovement);
+      } catch {
+        setMrr(null);
       }
     } catch (err: any) {
       setError(err?.message || "Failed to load platform analytics.");
@@ -199,9 +229,47 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  async function runChecks() {
+    setRunningChecks(true);
+    try {
+      await api.post("/owner/alerts/run", {});
+      const alertsRes: any = await api.get("/owner/alerts");
+      const items = alertsRes?.data ?? alertsRes;
+      setAlerts(Array.isArray(items) ? items.slice(0, 8) : []);
+    } catch (err: any) {
+      setError(err?.message || "Failed to run alert checks.");
+    } finally {
+      setRunningChecks(false);
+    }
+  }
+
+  async function resolveAlert(id: string) {
+    setAlerts((prev) => prev.filter((x) => x.id !== id));
+    try {
+      await api.post(`/owner/alerts/${id}/resolve`, {});
+    } catch {
+      // re-sync on failure
+      void load();
+    }
+  }
+
   useEffect(() => {
     void load();
   }, []);
+
+  async function viewAsTenant(tenantId: string, tenantName: string) {
+    try {
+      const res: any = await api.post(`/owner/impersonate/${tenantId}`, {});
+      const payload = res?.data ?? res;
+      const token = payload?.access_token;
+      if (!token) throw new Error("No impersonation token returned");
+      startImpersonation(token, tenantName);
+      // Full navigation so the whole app re-initialises as the tenant.
+      window.location.href = "/dashboard";
+    } catch (err: any) {
+      setError(err?.message || "Could not start impersonation for this tenant.");
+    }
+  }
 
   const cur = a?.currency || "ZAR";
   const planData = useMemo(
@@ -347,6 +415,56 @@ export default function SuperAdminDashboard() {
             </Section>
           </div>
 
+          {/* MRR movement */}
+          {mrr ? (
+            <Section
+              title="MRR Movement"
+              subtitle={
+                mrr.movement.hasComparison
+                  ? "Real new / expansion / contraction / churn from daily snapshots"
+                  : "Trend builds daily — capture more snapshots to see movement breakdown"
+              }
+            >
+              <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={mrr.series}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                      <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                      <Tooltip
+                        contentStyle={{ background: "#0b1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff" }}
+                        formatter={(v: any) => money(Number(v), mrr.currency)}
+                      />
+                      <Line type="monotone" dataKey="mrr" name="MRR" stroke="#22d3ee" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="grid grid-cols-2 gap-3 self-center">
+                  {[
+                    { label: "New business", val: mrr.movement.newBusiness, tone: "text-emerald-300" },
+                    { label: "Expansion", val: mrr.movement.expansion, tone: "text-emerald-300" },
+                    { label: "Contraction", val: -mrr.movement.contraction, tone: "text-rose-300" },
+                    { label: "Churn", val: -mrr.movement.churn, tone: "text-rose-300" },
+                  ].map((m) => (
+                    <div key={m.label} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">{m.label}</div>
+                      <div className={`mt-1 text-xl font-black ${m.tone}`}>
+                        {m.val >= 0 ? "+" : "−"}{money(Math.abs(m.val), mrr.currency)}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="col-span-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-cyan-200/70">Net MRR change</div>
+                    <div className="mt-1 text-2xl font-black text-white">
+                      {mrr.movement.net >= 0 ? "+" : "−"}{money(Math.abs(mrr.movement.net), mrr.currency)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Section>
+          ) : null}
+
           {/* Ops strip */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Kpi icon={<PackageCheck className="h-5 w-5" />} label="Total Waybills" value={num(a.operations.totalWaybills)} sub={`${num(a.operations.deliveries30)} in last 30d`} />
@@ -368,6 +486,7 @@ export default function SuperAdminDashboard() {
                       <th className="px-3 py-3">Waybills (30d)</th>
                       <th className="px-3 py-3">Score</th>
                       <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -375,7 +494,7 @@ export default function SuperAdminDashboard() {
                       <tr
                         key={h.id}
                         className="cursor-pointer border-b border-white/5 hover:bg-white/[0.03]"
-                        onClick={() => navigate(`/owner/tenants`)}
+                        onClick={() => navigate(`/owner/tenants/${h.id}`)}
                       >
                         <td className="px-3 py-3 font-semibold text-white">{h.name}</td>
                         <td className="px-3 py-3 capitalize text-slate-300">{h.plan}</td>
@@ -393,11 +512,22 @@ export default function SuperAdminDashboard() {
                           </div>
                         </td>
                         <td className="px-3 py-3">{riskBadge(h.risk)}</td>
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void viewAsTenant(h.id, h.name);
+                            }}
+                            className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-500/20"
+                          >
+                            View as
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {a.health.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-slate-400">
+                        <td colSpan={7} className="px-3 py-8 text-center text-slate-400">
                           No active tenants yet.
                         </td>
                       </tr>
@@ -407,30 +537,50 @@ export default function SuperAdminDashboard() {
               </div>
             </Section>
 
-            <Section title="Critical Alerts" subtitle="Unresolved platform-wide AI events">
+            <Section title="Critical Alerts" subtitle="Churn, SLA spikes & payment failures — auto-detected">
+              <div className="mb-4 flex justify-end">
+                <button
+                  onClick={runChecks}
+                  disabled={runningChecks}
+                  className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-1.5 text-xs font-bold text-cyan-200 disabled:opacity-60"
+                >
+                  {runningChecks ? "Running…" : "Run checks now"}
+                </button>
+              </div>
               <div className="space-y-3">
                 {alerts.length ? (
-                  alerts.map((item, i) => (
-                    <div key={String(item.id ?? i)} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                  alerts.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-bold text-white">
-                          {item.title || item.company?.name || "AI Event"}
-                        </div>
-                        <span className="rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-rose-200">
+                        <div className="text-sm font-bold text-white">{item.title}</div>
+                        <span
+                          className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] ${
+                            item.severity === "critical"
+                              ? "border-rose-400/20 bg-rose-500/10 text-rose-200"
+                              : "border-amber-400/20 bg-amber-500/10 text-amber-200"
+                          }`}
+                        >
                           {item.severity || "info"}
                         </span>
                       </div>
                       {item.message ? <div className="mt-1.5 text-sm text-slate-300">{item.message}</div> : null}
-                      {item.createdAt ? (
-                        <div className="mt-1.5 text-xs text-white/40">
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-xs text-white/40">
+                          {item.tenantName ? `${item.tenantName} · ` : ""}
                           {new Date(item.createdAt).toLocaleString("en-ZA")}
-                        </div>
-                      ) : null}
+                        </span>
+                        <button
+                          onClick={() => resolveAlert(item.id)}
+                          className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/80 hover:bg-white/10"
+                        >
+                          Resolve
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-6 text-sm text-slate-400">
-                    No critical alerts. All clear across the platform.
+                    No active alerts. All clear across the platform.
                   </div>
                 )}
               </div>

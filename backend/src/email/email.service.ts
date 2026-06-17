@@ -178,4 +178,24 @@ export class EmailService {
       `),
     });
   }
+
+  /** Generic platform-owner alert (churn, SLA spike, payment failure, etc.). */
+  async sendOwnerAlert(
+    ownerEmail: string,
+    alert: { title: string; message: string; severity?: string; tenantName?: string | null },
+  ): Promise<boolean> {
+    const dashboardUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/owner/dashboard`;
+    const sev = (alert.severity || 'warning').toUpperCase();
+    return this.send({
+      to: ownerEmail,
+      subject: `[FlowOps ${sev}] ${alert.title}`,
+      text: `${alert.title}\n\n${alert.message}\n\nReview: ${dashboardUrl}`,
+      html: this.wrap(`
+        <h2 style="margin-top:0;color:#1e3a5f;">${alert.title}</h2>
+        ${alert.tenantName ? `<p style="color:#6b7280;margin:0 0 8px;">Tenant: <strong>${alert.tenantName}</strong></p>` : ''}
+        <p>${alert.message}</p>
+        <a href="${dashboardUrl}" class="btn">Open Owner Console</a>
+      `),
+    });
+  }
 }

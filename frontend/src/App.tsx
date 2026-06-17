@@ -42,6 +42,9 @@ const ClientQueries = lazy(() => import("./pages/communications/ClientQueries"))
 const SuperAdminDashboard = lazy(() => import("./pages/owner/SuperAdminDashboard"));
 const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
+const OwnerAudit = lazy(() => import("./pages/owner/OwnerAudit"));
+const OwnerTenantDetail = lazy(() => import("./pages/owner/OwnerTenantDetail"));
+const OwnerOpsMap = lazy(() => import("./pages/owner/OwnerOpsMap"));
 const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
 const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
@@ -114,7 +117,10 @@ export default function App() {
               <Route path="/owner" element={<Navigate to="/owner/dashboard" replace />} />
               <Route path="/owner/dashboard" element={<SuperAdminDashboard />} />
               <Route path="/owner/tenants" element={<OwnerTenants />} />
+              <Route path="/owner/tenants/:id" element={<OwnerTenantDetail />} />
               <Route path="/owner/access" element={<OwnerAccessManager />} />
+              <Route path="/owner/ops" element={<OwnerOpsMap />} />
+              <Route path="/owner/audit" element={<OwnerAudit />} />
             </Route>
           </Route>
 
