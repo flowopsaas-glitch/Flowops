@@ -58,6 +58,16 @@ export class OwnerController {
     return this.svc.platformAnalytics();
   }
 
+  @Get('mrr-movement')
+  mrrMovement() {
+    return this.svc.mrrMovement();
+  }
+
+  @Post('mrr-snapshot')
+  captureMrrSnapshot() {
+    return this.svc.captureMrrSnapshot();
+  }
+
   @Get('ai-alerts')
   getAlerts() {
     return this.svc.getPlatformAlerts();

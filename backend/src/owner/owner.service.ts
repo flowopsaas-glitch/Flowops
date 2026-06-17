@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -365,8 +366,112 @@ export class OwnerService {
     };
   }
 
-  // ── AI alerts (critical events across all tenants) ────────────────────
+  // ── True MRR movement (daily snapshots) ───────────────────────────────
+  //
+  // A daily snapshot stores the platform MRR plus a per-tenant price map.
+  // Diffing the two most recent snapshots yields real movement: new /
+  // expansion / contraction / churn — the breakdown SaaS operators rely on.
 
+  /** Capture today's MRR snapshot (idempotent: one row per calendar day). */
+  async captureMrrSnapshot() {
+    const companies = await this.prisma.company.findMany({
+      where: { isActive: true },
+      select: { id: true, plan: true },
+    });
+    const perTenant: Record<string, number> = {};
+    let mrr = 0;
+    let paying = 0;
+    for (const c of companies) {
+      const price = this.planPrice(c.plan);
+      perTenant[c.id] = price;
+      mrr += price;
+      if (price > 0) paying += 1;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return this.prisma.mrrSnapshot.upsert({
+      where: { date: today },
+      create: {
+        date: today,
+        mrr,
+        activeTenants: companies.length,
+        payingTenants: paying,
+        perTenant,
+      },
+      update: { mrr, activeTenants: companies.length, payingTenants: paying, perTenant },
+    });
+  }
+
+  /** Daily at 00:05 — build the MRR history series. */
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  async dailyMrrSnapshot() {
+    try {
+      await this.captureMrrSnapshot();
+    } catch {
+      /* best-effort; never crash the scheduler */
+    }
+  }
+
+  /** Real MRR movement between the two most recent snapshots + a trend series. */
+  async mrrMovement() {
+    // Ensure there is at least a snapshot for today so the console isn't empty
+    // before the first cron run.
+    const todayCount = await this.prisma.mrrSnapshot.count();
+    if (todayCount === 0) {
+      await this.captureMrrSnapshot();
+    }
+
+    const snapshots = await this.prisma.mrrSnapshot.findMany({
+      orderBy: { date: 'desc' },
+      take: 30,
+    });
+
+    const series = [...snapshots]
+      .reverse()
+      .map((s) => ({
+        date: s.date.toISOString().slice(0, 10),
+        mrr: s.mrr,
+      }));
+
+    const movement = {
+      newBusiness: 0,
+      expansion: 0,
+      contraction: 0,
+      churn: 0,
+      net: 0,
+      current: snapshots[0]?.mrr ?? 0,
+      previous: snapshots[1]?.mrr ?? 0,
+      hasComparison: snapshots.length >= 2,
+    };
+
+    if (snapshots.length >= 2) {
+      const cur = (snapshots[0].perTenant ?? {}) as Record<string, number>;
+      const prev = (snapshots[1].perTenant ?? {}) as Record<string, number>;
+      const ids = new Set([...Object.keys(cur), ...Object.keys(prev)]);
+      for (const id of ids) {
+        const a = prev[id] ?? 0;
+        const b = cur[id] ?? 0;
+        if (a === 0 && b > 0) movement.newBusiness += b;
+        else if (a > 0 && b === 0) movement.churn += a;
+        else if (b > a) movement.expansion += b - a;
+        else if (b < a) movement.contraction += a - b;
+      }
+      movement.net =
+        movement.newBusiness + movement.expansion - movement.contraction - movement.churn;
+    }
+
+    return {
+      currency: 'ZAR',
+      generatedAt: new Date().toISOString(),
+      series,
+      movement,
+      snapshotCount: snapshots.length,
+    };
+  }
+
+  // ── AI alerts (critical events across all tenants) ────────────────────
   async getPlatformAlerts() {
     return this.prisma.aiEvent.findMany({
       where: { severity: 'critical', resolved: false },

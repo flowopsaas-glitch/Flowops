@@ -7,6 +7,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -78,6 +80,22 @@ type AIFeedItem = {
   severity?: string;
   company?: { name?: string };
   createdAt?: string;
+};
+
+type MrrMovement = {
+  currency: string;
+  series: Array<{ date: string; mrr: number }>;
+  movement: {
+    newBusiness: number;
+    expansion: number;
+    contraction: number;
+    churn: number;
+    net: number;
+    current: number;
+    previous: number;
+    hasComparison: boolean;
+  };
+  snapshotCount: number;
 };
 
 // ── Formatting helpers ────────────────────────────────────────────────────
@@ -176,6 +194,7 @@ export default function SuperAdminDashboard() {
   const [error, setError] = useState("");
   const [a, setA] = useState<Analytics | null>(null);
   const [alerts, setAlerts] = useState<AIFeedItem[]>([]);
+  const [mrr, setMrr] = useState<MrrMovement | null>(null);
 
   async function load() {
     setLoading(true);
@@ -192,6 +211,13 @@ export default function SuperAdminDashboard() {
         setAlerts(Array.isArray(items) ? items.slice(0, 6) : []);
       } catch {
         setAlerts([]);
+      }
+
+      try {
+        const mrrRes: any = await api.get("/owner/mrr-movement");
+        setMrr((mrrRes?.data ?? mrrRes) as MrrMovement);
+      } catch {
+        setMrr(null);
       }
     } catch (err: any) {
       setError(err?.message || "Failed to load platform analytics.");
@@ -361,6 +387,56 @@ export default function SuperAdminDashboard() {
               )}
             </Section>
           </div>
+
+          {/* MRR movement */}
+          {mrr ? (
+            <Section
+              title="MRR Movement"
+              subtitle={
+                mrr.movement.hasComparison
+                  ? "Real new / expansion / contraction / churn from daily snapshots"
+                  : "Trend builds daily — capture more snapshots to see movement breakdown"
+              }
+            >
+              <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={mrr.series}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                      <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                      <Tooltip
+                        contentStyle={{ background: "#0b1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff" }}
+                        formatter={(v: any) => money(Number(v), mrr.currency)}
+                      />
+                      <Line type="monotone" dataKey="mrr" name="MRR" stroke="#22d3ee" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="grid grid-cols-2 gap-3 self-center">
+                  {[
+                    { label: "New business", val: mrr.movement.newBusiness, tone: "text-emerald-300" },
+                    { label: "Expansion", val: mrr.movement.expansion, tone: "text-emerald-300" },
+                    { label: "Contraction", val: -mrr.movement.contraction, tone: "text-rose-300" },
+                    { label: "Churn", val: -mrr.movement.churn, tone: "text-rose-300" },
+                  ].map((m) => (
+                    <div key={m.label} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">{m.label}</div>
+                      <div className={`mt-1 text-xl font-black ${m.tone}`}>
+                        {m.val >= 0 ? "+" : "−"}{money(Math.abs(m.val), mrr.currency)}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="col-span-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-cyan-200/70">Net MRR change</div>
+                    <div className="mt-1 text-2xl font-black text-white">
+                      {mrr.movement.net >= 0 ? "+" : "−"}{money(Math.abs(mrr.movement.net), mrr.currency)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Section>
+          ) : null}
 
           {/* Ops strip */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

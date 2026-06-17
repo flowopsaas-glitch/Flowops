@@ -940,3 +940,23 @@ model AuditLog {
   @@index([action])
   @@map("audit_logs")
 }
+
+
+
+// ── MRR history (true revenue movement) ────────────────────────────────────
+// A daily point-in-time snapshot of platform MRR plus a per-tenant price map,
+// so the owner console can compute real MRR movement (new / expansion /
+// contraction / churn) by diffing consecutive snapshots — instead of the
+// window approximation used before.
+model MrrSnapshot {
+  id            String   @id @default(cuid())
+  date          DateTime @unique // midnight of the snapshot day
+  mrr           Float
+  activeTenants Int
+  payingTenants Int
+  perTenant     Json // { [companyId]: monthlyPrice }
+  createdAt     DateTime @default(now())
+
+  @@index([date])
+  @@map("mrr_snapshots")
+}
