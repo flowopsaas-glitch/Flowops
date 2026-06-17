@@ -467,7 +467,7 @@ export default function SuperAdminDashboard() {
                       <tr
                         key={h.id}
                         className="cursor-pointer border-b border-white/5 hover:bg-white/[0.03]"
-                        onClick={() => navigate(`/owner/tenants`)}
+                        onClick={() => navigate(`/owner/tenants/${h.id}`)}
                       >
                         <td className="px-3 py-3 font-semibold text-white">{h.name}</td>
                         <td className="px-3 py-3 capitalize text-slate-300">{h.plan}</td>

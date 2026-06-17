@@ -24,6 +24,11 @@ export class OwnerController {
     return this.svc.getTenant(id);
   }
 
+  @Get('tenants/:id/analytics')
+  tenantAnalytics(@Param('id') id: string) {
+    return this.svc.tenantAnalytics(id);
+  }
+
   @Post('tenants/draft')
   draftTenant(@Body() body: any) {
     return this.svc.draftTenant(body);

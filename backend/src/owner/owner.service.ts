@@ -366,6 +366,109 @@ export class OwnerService {
     };
   }
 
+  // ── Per-tenant deep-dive ──────────────────────────────────────────────
+  //
+  // Everything an owner needs to assess a single tenant: profile, usage,
+  // revenue, delivery KPIs, a 6-month volume trend, recent activity, and the
+  // audit trail scoped to this tenant.
+  async tenantAnalytics(tenantId: string) {
+    const now = new Date();
+    const d30 = new Date(now); d30.setDate(d30.getDate() - 30);
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true, name: true, tradingName: true, email: true, phone: true,
+        plan: true, isActive: true, createdAt: true, country: true, city: true,
+        slaBreachMinutes: true, slaWarningMinutes: true,
+        _count: { select: { users: true, waybills: true, collections: true, drivers: true, invoices: true } },
+      },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    const [delivered, failed, returned, waybills30, shipments] = await Promise.all([
+      this.prisma.waybill.count({ where: { companyId: tenantId, status: 'DELIVERED' } }),
+      this.prisma.waybill.count({ where: { companyId: tenantId, status: 'FAILED_DELIVERY' } }),
+      this.prisma.waybill.count({ where: { companyId: tenantId, status: 'RETURNED' } }),
+      this.prisma.waybill.count({ where: { companyId: tenantId, createdAt: { gt: d30 } } }),
+      this.prisma.shipment.findMany({
+        where: { companyId: tenantId, status: 'DELIVERED', deliveredAt: { not: null }, estimatedDelivery: { not: null } },
+        select: { deliveredAt: true, estimatedDelivery: true },
+        take: 5000,
+      }),
+    ]);
+    const outcomes = delivered + failed + returned;
+    const deliverySuccess = outcomes ? (delivered / outcomes) * 100 : 0;
+    const exceptionRate = outcomes ? ((failed + returned) / outcomes) * 100 : 0;
+    const onTime = shipments.filter((s) => s.deliveredAt! <= s.estimatedDelivery!).length;
+    const onTimeRate = shipments.length ? (onTime / shipments.length) * 100 : 0;
+
+    const [revAll, rev30] = await Promise.all([
+      this.prisma.payment.aggregate({ where: { companyId: tenantId, status: 'SUCCESS' }, _sum: { amount: true } }),
+      this.prisma.payment.aggregate({ where: { companyId: tenantId, status: 'SUCCESS', createdAt: { gt: d30 } }, _sum: { amount: true } }),
+    ]);
+
+    // 6-month waybill volume trend for this tenant
+    const allWaybills = await this.prisma.waybill.findMany({
+      where: { companyId: tenantId },
+      select: { createdAt: true },
+    });
+    const trend: Array<{ month: string; waybills: number }> = [];
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      trend.push({
+        month: start.toLocaleString('en', { month: 'short', year: '2-digit' }),
+        waybills: allWaybills.filter((w) => w.createdAt >= start && w.createdAt < end).length,
+      });
+    }
+
+    const recentWaybills = await this.prisma.waybill.findMany({
+      where: { companyId: tenantId },
+      select: { id: true, trackingNumber: true, status: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    const auditTrail = await this.audit.list({ targetId: tenantId, limit: 20 });
+
+    // Health score (same composite as the platform leaderboard)
+    const usersScore = (Math.min(company._count.users, 10) / 10) * 25;
+    const volumeScore = (Math.min(waybills30, 100) / 100) * 45;
+    const planScore = this.planPrice(company.plan) > 0 ? 30 : 8;
+    const score = Math.round(usersScore + volumeScore + planScore);
+
+    return {
+      generatedAt: now.toISOString(),
+      currency: 'ZAR',
+      tenant: {
+        id: company.id, name: company.name, tradingName: company.tradingName,
+        email: company.email, phone: company.phone, plan: company.plan ?? 'starter',
+        isActive: company.isActive, createdAt: company.createdAt,
+        country: company.country, city: company.city,
+        slaBreachMinutes: company.slaBreachMinutes, slaWarningMinutes: company.slaWarningMinutes,
+      },
+      usage: {
+        users: company._count.users,
+        waybillsTotal: company._count.waybills,
+        waybills30,
+        collections: company._count.collections,
+        drivers: company._count.drivers,
+        invoices: company._count.invoices,
+      },
+      revenue: {
+        mrr: this.planPrice(company.plan),
+        collectedTotal: revAll._sum.amount ?? 0,
+        collected30: rev30._sum.amount ?? 0,
+      },
+      operations: { delivered, failed, returned, deliverySuccess, exceptionRate, onTimeRate },
+      trend,
+      recentWaybills,
+      auditTrail,
+      health: { score, risk: score >= 70 ? 'healthy' : score >= 40 ? 'watch' : 'at_risk' },
+    };
+  }
+
   // ── True MRR movement (daily snapshots) ───────────────────────────────
   //
   // A daily snapshot stores the platform MRR plus a per-tenant price map.
