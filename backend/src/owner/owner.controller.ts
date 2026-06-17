@@ -52,6 +52,26 @@ export class OwnerController {
     return this.svc.impersonate(tenantId, owner);
   }
 
+  @Get('tenants/:id/users')
+  listTenantUsers(@Param('id') id: string) {
+    return this.svc.listTenantUsers(id);
+  }
+
+  @Post('tenants/:id/users')
+  createTenantUser(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+    return this.svc.createTenantAdmin(id, body, owner);
+  }
+
+  @Post('tenants/:id/activate')
+  activateTenant(@Param('id') id: string, @CurrentUser() owner: any) {
+    return this.svc.activateTenant(id, owner);
+  }
+
+  @Patch('users/:userId/password')
+  resetUserPassword(@Param('userId') userId: string, @Body() body: { password: string }, @CurrentUser() owner: any) {
+    return this.svc.resetTenantUserPassword(userId, body.password, owner);
+  }
+
   @Get('view-mode/:id')
   viewMode(@Param('id') id: string) {
     return this.svc.viewModeContext(id);

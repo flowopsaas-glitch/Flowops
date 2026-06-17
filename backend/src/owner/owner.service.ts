@@ -647,6 +647,72 @@ export class OwnerService {
     };
   }
 
+  // ── Tenant user management (owner-level) ─────────────────────────────
+
+  async listTenantUsers(tenantId: string) {
+    return this.prisma.user.findMany({
+      where: { companyId: tenantId },
+      select: { id: true, email: true, name: true, role: true, isActive: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async resetTenantUserPassword(userId: string, newPassword: string, actor?: OwnerActor) {
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+      select: { id: true, email: true, companyId: true },
+    });
+    await this.audit.record({
+      action: 'user.password_reset',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'user',
+      targetId: userId,
+      targetName: user.email,
+    });
+    return { message: 'Password updated', userId: user.id };
+  }
+
+  async createTenantAdmin(tenantId: string, dto: { name: string; email: string; password: string }, actor?: OwnerActor) {
+    const company = await this.prisma.company.findUnique({ where: { id: tenantId }, select: { name: true } });
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email.toLowerCase(),
+        name: dto.name,
+        passwordHash,
+        role: 'ADMIN',
+        companyId: tenantId,
+      },
+      select: { id: true, email: true, name: true },
+    });
+    await this.audit.record({
+      action: 'user.create',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'user',
+      targetId: user.id,
+      targetName: user.email,
+      metadata: { tenantId, tenantName: company?.name ?? null },
+    });
+    return user;
+  }
+
+  async activateTenant(tenantId: string, actor?: OwnerActor) {
+    const updated = await this.prisma.company.update({ where: { id: tenantId }, data: { isActive: true } });
+    await this.audit.record({
+      action: 'tenant.activate',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: updated.name,
+    });
+    return updated;
+  }
+
   // ── AI alerts (critical events across all tenants) ────────────────────
   async getPlatformAlerts() {
     return this.prisma.aiEvent.findMany({
