@@ -30,6 +30,7 @@ import { StorageModule } from './storage/storage.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { EmailModule } from './email/email.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
+import { RoutingModule } from './routing/routing.module';
 
 @Module({
   imports: [
@@ -50,6 +51,9 @@ import { GeocodingModule } from './geocoding/geocoding.module';
 
     // Geocoding (address -> coordinates; global, powers routing/map/ETA/tracking)
     GeocodingModule,
+
+    // Route optimization (nearest-neighbour + 2-opt over geocoded stops)
+    RoutingModule,
 
     // Domain modules
     AuthModule,
