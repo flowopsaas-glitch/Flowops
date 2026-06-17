@@ -21,10 +21,14 @@ import {
   ArrowUpRight,
   Banknote,
   Building2,
+  CheckCircle,
   Gauge,
   PackageCheck,
+  Plus,
   TrendingUp,
   Users,
+  XCircle,
+  Zap,
 } from "lucide-react";
 import { api } from "../../api/client";
 import { startImpersonation } from "../../lib/impersonation";
@@ -98,6 +102,16 @@ type MrrMovement = {
     hasComparison: boolean;
   };
   snapshotCount: number;
+};
+
+type ApprovalRequest = {
+  id: string;
+  fullName: string;
+  email: string;
+  company: string;
+  phone?: string | null;
+  status: string;
+  createdAt: string;
 };
 
 // ── Formatting helpers ────────────────────────────────────────────────────
@@ -197,14 +211,13 @@ export default function SuperAdminDashboard() {
   const [a, setA] = useState<Analytics | null>(null);
   const [alerts, setAlerts] = useState<PlatformAlert[]>([]);
   const [mrr, setMrr] = useState<MrrMovement | null>(null);
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [runningChecks, setRunningChecks] = useState(false);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      // The `api` client returns the response body; the backend wraps payloads
-      // as { data, statusCode, message } via the TransformInterceptor.
       const res: any = await api.get("/owner/analytics");
       setA((res?.data ?? res) as Analytics);
 
@@ -212,16 +225,19 @@ export default function SuperAdminDashboard() {
         const alertsRes: any = await api.get("/owner/alerts");
         const items = alertsRes?.data ?? alertsRes;
         setAlerts(Array.isArray(items) ? items.slice(0, 8) : []);
-      } catch {
-        setAlerts([]);
-      }
+      } catch { setAlerts([]); }
 
       try {
         const mrrRes: any = await api.get("/owner/mrr-movement");
         setMrr((mrrRes?.data ?? mrrRes) as MrrMovement);
-      } catch {
-        setMrr(null);
-      }
+      } catch { setMrr(null); }
+
+      try {
+        const apRes: any = await api.get("/owner/approval-requests");
+        const items = apRes?.data ?? apRes;
+        const arr = Array.isArray(items) ? items : Array.isArray(items?.data) ? items.data : [];
+        setApprovals(arr.filter((r: ApprovalRequest) => r.status === "PENDING"));
+      } catch { setApprovals([]); }
     } catch (err: any) {
       setError(err?.message || "Failed to load platform analytics.");
     } finally {
@@ -276,6 +292,29 @@ export default function SuperAdminDashboard() {
     () => (a?.planDistribution ?? []).filter((p) => p.count > 0),
     [a],
   );
+
+  // Net Revenue Retention — computed from MRR movement snapshot diff.
+  // NRR = (beginning MRR + expansion - contraction - churn) / beginning MRR * 100
+  const nrr = useMemo(() => {
+    if (!mrr?.movement.hasComparison || !mrr.movement.previous) return null;
+    const { previous, expansion, contraction, churn } = mrr.movement;
+    return Math.round(((previous + expansion - contraction - churn) / previous) * 100);
+  }, [mrr]);
+
+  async function approveRequest(id: string, company: string) {
+    try {
+      await api.post(`/owner/approval-requests/${id}/approve`, {});
+      setApprovals((prev) => prev.filter((r) => r.id !== id));
+      setError("");
+    } catch (err: any) { setError(err?.message || "Failed to approve."); }
+  }
+
+  async function rejectRequest(id: string, company: string) {
+    try {
+      await api.post(`/owner/approval-requests/${id}/reject`, { reason: "Rejected by owner" });
+      setApprovals((prev) => prev.filter((r) => r.id !== id));
+    } catch (err: any) { setError(err?.message || "Failed to reject."); }
+  }
 
   return (
     <div className="space-y-6">
@@ -333,6 +372,77 @@ export default function SuperAdminDashboard() {
         </div>
       ) : null}
 
+      {/* ── Quick Actions ── */}
+      <div className="rounded-[24px] border border-white/10 bg-white/[0.04] px-6 py-4 shadow-xl">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
+            <Zap className="h-3.5 w-3.5" /> Quick Actions
+          </div>
+          <button onClick={() => navigate("/owner/tenants")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20">
+            <Plus className="h-3.5 w-3.5" /> Create Tenant
+          </button>
+          <button onClick={() => navigate("/owner/tenants")}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold ${approvals.length > 0 ? "border-amber-400/20 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20" : "border-white/10 bg-white/5 text-white/60"}`}>
+            <CheckCircle className="h-3.5 w-3.5" />
+            {approvals.length > 0 ? `${approvals.length} Pending Approval${approvals.length > 1 ? "s" : ""}` : "Approval Requests"}
+          </button>
+          <button onClick={runChecks} disabled={runningChecks}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10 disabled:opacity-60">
+            <AlertTriangle className="h-3.5 w-3.5" /> {runningChecks ? "Running…" : "Run Alert Checks"}
+          </button>
+          <button onClick={async () => { await api.post("/owner/mrr-snapshot", {}); void load(); }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10">
+            <TrendingUp className="h-3.5 w-3.5" /> Capture MRR
+          </button>
+          <button onClick={() => navigate("/owner/ops")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10">
+            <Activity className="h-3.5 w-3.5" /> Live Ops Map
+          </button>
+          <button onClick={() => navigate("/owner/audit")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10">
+            <Gauge className="h-3.5 w-3.5" /> Audit Trail
+          </button>
+        </div>
+      </div>
+
+      {/* ── Pending Approvals ── */}
+      {approvals.length > 0 ? (
+        <div className="rounded-[28px] border border-amber-400/20 bg-amber-500/5 p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-lg font-black text-amber-200">⏳ {approvals.length} Pending Approval Request{approvals.length > 1 ? "s" : ""}</div>
+              <div className="text-sm text-slate-400 mt-0.5">Review and onboard new companies requesting platform access.</div>
+            </div>
+            <button onClick={() => navigate("/owner/tenants")}
+              className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200">
+              Manage all →
+            </button>
+          </div>
+          <div className="space-y-3">
+            {approvals.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div>
+                  <div className="font-bold text-white">{r.company}</div>
+                  <div className="text-sm text-slate-400">{r.fullName} · {r.email}</div>
+                  <div className="text-xs text-white/40">{new Date(r.createdAt).toLocaleString("en-ZA")}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => approveRequest(r.id, r.company)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20">
+                    <CheckCircle className="h-3.5 w-3.5" /> Approve
+                  </button>
+                  <button onClick={() => rejectRequest(r.id, r.company)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-500/20">
+                    <XCircle className="h-3.5 w-3.5" /> Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {a ? (
         <>
           {/* Revenue KPIs */}
@@ -343,12 +453,17 @@ export default function SuperAdminDashboard() {
             <Kpi icon={<Banknote className="h-5 w-5" />} label="Collected (30d)" value={money(a.revenue.collected30, cur)} delta={a.revenue.collectedDelta} sub="vs prior 30d" />
           </div>
 
-          {/* Tenant + ops KPIs */}
+          {/* Tenant + ops KPIs — now includes NRR */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Kpi icon={<Building2 className="h-5 w-5" />} label="Active Tenants" value={num(a.tenants.active)} sub={`${num(a.tenants.total)} total`} />
             <Kpi icon={<Users className="h-5 w-5" />} label="New Tenants (30d)" value={num(a.tenants.newThisPeriod)} delta={a.tenants.newDelta} sub="vs prior 30d" />
             <Kpi icon={<AlertTriangle className="h-5 w-5" />} label="Churn Rate" value={`${num(a.tenants.churnRate, 1)}%`} goodWhenUp={false} sub={`${num(a.tenants.churnedThisPeriod)} suspended`} />
-            <Kpi icon={<PackageCheck className="h-5 w-5" />} label="On-Time Delivery" value={`${num(a.operations.onTimeRate, 1)}%`} sub="platform-wide" />
+            {nrr !== null ? (
+              <Kpi icon={<TrendingUp className="h-5 w-5" />} label="NRR" value={`${nrr}%`}
+                goodWhenUp sub="Net Revenue Retention" />
+            ) : (
+              <Kpi icon={<PackageCheck className="h-5 w-5" />} label="On-Time Delivery" value={`${num(a.operations.onTimeRate, 1)}%`} sub="platform-wide" />
+            )}
           </div>
 
           {/* Charts */}

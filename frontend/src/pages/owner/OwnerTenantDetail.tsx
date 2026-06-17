@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowLeft, Eye } from "lucide-react";
+import { ArrowLeft, Eye, Plus, CheckCircle, UserX, TrendingUp } from "lucide-react";
 import { api } from "../../api/client";
 import { startImpersonation } from "../../lib/impersonation";
 
@@ -54,6 +54,12 @@ export default function OwnerTenantDetail() {
   const [d, setD] = useState<TenantAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [busy, setBusy] = useState("");
+  const [showPlan, setShowPlan] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newPlan, setNewPlan] = useState("professional");
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "" });
 
   async function load() {
     if (!id) return;
@@ -73,17 +79,49 @@ export default function OwnerTenantDetail() {
     void load();
   }, [id]);
 
+  async function doAction(key: string, fn: () => Promise<void>, msg: string) {
+    setBusy(key); setError(""); setSuccess("");
+    try { await fn(); setSuccess(msg); void load(); }
+    catch (err: any) { setError(err?.message || "Action failed."); }
+    finally { setBusy(""); }
+  }
+
   async function viewAs() {
     if (!d) return;
-    try {
+    doAction("view", async () => {
       const res: any = await api.post(`/owner/impersonate/${d.tenant.id}`, {});
       const token = (res?.data ?? res)?.access_token;
       if (!token) throw new Error("No impersonation token");
       startImpersonation(token, d.tenant.name);
       window.location.href = "/dashboard";
-    } catch (err: any) {
-      setError(err?.message || "Could not start impersonation.");
-    }
+    }, "");
+  }
+
+  function activateTenant() {
+    if (!d) return;
+    doAction("activate", () => api.post(`/owner/tenants/${d.tenant.id}/activate`, {}) as any, `${d.tenant.name} activated.`);
+  }
+
+  function suspendTenant() {
+    if (!d) return;
+    doAction("suspend", () => api.patch(`/owner/tenants/${d.tenant.id}/action`, { action: "suspend" }) as any, `${d.tenant.name} suspended.`);
+  }
+
+  function changePlan() {
+    if (!d) return;
+    doAction("plan", async () => {
+      await api.patch("/owner/plans", { tenantId: d.tenant.id, plan: newPlan });
+      setShowPlan(false);
+    }, `Plan updated to ${newPlan}.`);
+  }
+
+  function createUser() {
+    if (!d || !newUser.email || !newUser.password) { setError("Email and password required."); return; }
+    doAction("user", async () => {
+      await api.post(`/owner/tenants/${d.tenant.id}/users`, newUser);
+      setNewUser({ name: "", email: "", password: "" });
+      setShowCreateUser(false);
+    }, "Admin user created.");
   }
 
   const cur = d?.currency || "ZAR";
@@ -100,6 +138,9 @@ export default function OwnerTenantDetail() {
       {error ? (
         <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>
       ) : null}
+      {success ? (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{success}</div>
+      ) : null}
 
       {loading && !d ? (
         <div className="grid place-items-center rounded-[28px] border border-white/10 bg-white/[0.04] py-16 text-white/60">
@@ -111,6 +152,7 @@ export default function OwnerTenantDetail() {
         <>
           {/* Header */}
           <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+            {/* top row: info + actions */}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-3">
@@ -122,25 +164,89 @@ export default function OwnerTenantDetail() {
                 </div>
                 <div className="mt-2 text-sm text-slate-400">
                   {[d.tenant.email, d.tenant.phone, [d.tenant.city, d.tenant.country].filter(Boolean).join(", ")]
-                    .filter(Boolean)
-                    .join("  ·  ")}
+                    .filter(Boolean).join("  ·  ")}
                 </div>
                 <div className="mt-1 text-xs text-white/40">
                   Customer since {new Date(d.tenant.createdAt).toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" })}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-start gap-3">
                 <div className="text-right">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">Health</div>
                   <div className={`text-3xl font-black ${d.health.score >= 70 ? "text-emerald-300" : d.health.score >= 40 ? "text-amber-300" : "text-rose-300"}`}>
                     {d.health.score}
                   </div>
                 </div>
-                <button onClick={viewAs} className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-sm font-bold text-amber-200 hover:bg-amber-500/20">
-                  <Eye className="h-4 w-4" /> View as tenant
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={viewAs} disabled={busy === "view"}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-sm font-bold text-amber-200 hover:bg-amber-500/20 disabled:opacity-60">
+                    <Eye className="h-4 w-4" /> View as
+                  </button>
+                  {d.tenant.isActive ? (
+                    <button onClick={suspendTenant} disabled={busy === "suspend"}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-2.5 text-sm font-bold text-rose-200 hover:bg-rose-500/20 disabled:opacity-60">
+                      <UserX className="h-4 w-4" /> {busy === "suspend" ? "Suspending…" : "Suspend"}
+                    </button>
+                  ) : (
+                    <button onClick={activateTenant} disabled={busy === "activate"}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60">
+                      <CheckCircle className="h-4 w-4" /> {busy === "activate" ? "Activating…" : "Activate"}
+                    </button>
+                  )}
+                  <button onClick={() => setShowPlan((v) => !v)}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-2.5 text-sm font-bold text-blue-200 hover:bg-blue-500/20">
+                    <TrendingUp className="h-4 w-4" /> Plan
+                  </button>
+                  <button onClick={() => setShowCreateUser((v) => !v)}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20">
+                    <Plus className="h-4 w-4" /> Add Admin
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* Inline: plan change */}
+            {showPlan ? (
+              <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-400/10 bg-blue-500/5 px-4 py-3">
+                <select value={newPlan} onChange={(e) => setNewPlan(e.target.value)}
+                  className="rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400">
+                  <option value="starter">Starter (Free)</option>
+                  <option value="professional">Professional</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+                <button disabled={busy === "plan"} onClick={changePlan}
+                  className="rounded-xl bg-gradient-to-r from-blue-400 to-indigo-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">
+                  {busy === "plan" ? "Saving…" : "Save Plan"}
+                </button>
+                <button onClick={() => setShowPlan(false)}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white">Cancel</button>
+              </div>
+            ) : null}
+
+            {/* Inline: create admin */}
+            {showCreateUser ? (
+              <div className="mt-5 rounded-2xl border border-cyan-400/10 bg-cyan-500/5 p-4 space-y-3">
+                <div className="text-sm font-bold text-cyan-200">Create Admin User</div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[{ key: "name", label: "Name", ph: "Jane Smith" }, { key: "email", label: "Email *", ph: "jane@tenant.com" }, { key: "password", label: "Password *", ph: "••••••••" }].map(({ key, label, ph }) => (
+                    <div key={key}>
+                      <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">{label}</label>
+                      <input type={key === "password" ? "password" : "text"} value={(newUser as any)[key]}
+                        onChange={(e) => setNewUser((u) => ({ ...u, [key]: e.target.value }))}
+                        placeholder={ph} className="mt-1 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400" />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button disabled={busy === "user"} onClick={createUser}
+                    className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">
+                    {busy === "user" ? "Creating…" : "Create"}
+                  </button>
+                  <button onClick={() => setShowCreateUser(false)}
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white">Cancel</button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Usage + revenue */}
