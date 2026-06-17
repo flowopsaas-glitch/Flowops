@@ -9,6 +9,7 @@ import {
 import api, {
   clearClientSession,
   getToken,
+  isTenantMode,
   setLoginMode,
   setToken,
 } from "../api/client";
@@ -101,6 +102,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshMe = useCallback(async () => {
     if (!getToken()) {
+      setBooting(false);
+      return;
+    }
+    // Only tenant users have a `/auth/me`. Owner and driver sessions are
+    // validated by their own guards/endpoints — calling the tenant `/auth/me`
+    // with their token 401s, and the catch below would wipe a perfectly valid
+    // session (bouncing owners back to /login). Skip tenant hydration unless
+    // we're actually in tenant mode.
+    if (!isTenantMode()) {
       setBooting(false);
       return;
     }
