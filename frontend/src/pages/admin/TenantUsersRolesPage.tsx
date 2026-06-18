@@ -347,8 +347,10 @@ export default function TenantUsersRolesPage() {
 
   async function loadCompanies() {
     try {
-      const data = await api("/owner/access/companies");
-      const rows = Array.isArray(data) ? data : Array.isArray(data?.companies) ? data.companies : [];
+      const data = await api("/owner/tenants");
+      // listTenants returns { data: companies[], total, page, limit }
+      const inner = data?.data ?? data;
+      const rows = Array.isArray(inner) ? inner : Array.isArray(data?.companies) ? data.companies : [];
       const mapped = rows.map((item: any) => ({
         id: Number(item?.id || 0),
         name: text(item?.name || item?.companyName || `Company ${item?.id}`),
@@ -370,7 +372,7 @@ export default function TenantUsersRolesPage() {
 
       if (isOwner) {
         const safeCompanyId = Number(companyId || selectedCompanyId || 1);
-        data = await api(`/owner/access/company/${safeCompanyId}/users`);
+        data = await api(`/owner/tenants/${safeCompanyId}/users`);
       } else {
         data = await api("/users/my-company");
       }
@@ -440,7 +442,7 @@ export default function TenantUsersRolesPage() {
       }
 
       const payload = {
-        fullName,
+        name: fullName,          // backend expects 'name', not 'fullName'
         email,
         password,
         role,
@@ -448,12 +450,12 @@ export default function TenantUsersRolesPage() {
       };
 
       if (isOwner) {
-        await api(`/owner/access/company/${selectedCompanyId}/admins`, {
+        await api(`/owner/tenants/${selectedCompanyId}/users`, {
           method: "POST",
           body: JSON.stringify(payload),
         });
       } else {
-        await api("/users/my-company", {
+        await api("/users", {          // was /users/my-company — endpoint is POST /users
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -482,10 +484,19 @@ export default function TenantUsersRolesPage() {
         throw new Error("New password must be at least 6 characters.");
       }
 
-      await api(`/owner/access/users/${selectedUserId}/password`, {
-        method: "PATCH",
-        body: JSON.stringify({ password: resetPassword }),
-      });
+      if (isOwner) {
+        // Owner-specific endpoint: PATCH /owner/users/:userId/password
+        await api(`/owner/users/${selectedUserId}/password`, {
+          method: "PATCH",
+          body: JSON.stringify({ password: resetPassword }),
+        });
+      } else {
+        // Tenant admin resets via standard user update
+        await api(`/users/${selectedUserId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ password: resetPassword }),
+        });
+      }
 
       setStatus("Password reset completed.");
       setResetPassword("");
@@ -503,8 +514,10 @@ export default function TenantUsersRolesPage() {
     try {
       if (!selectedUserId) throw new Error("Select a user first.");
 
-      await api(`/owner/access/users/${selectedUserId}/toggle`, {
+      const currentIsActive = selectedUser?.isActive ?? true;
+      await api(`/users/${selectedUserId}`, {
         method: "PATCH",
+        body: JSON.stringify({ isActive: !currentIsActive }),
       });
 
       setStatus("User status updated.");
@@ -522,8 +535,8 @@ export default function TenantUsersRolesPage() {
     try {
       if (!selectedUserId) throw new Error("Select a user first.");
 
-      await api(`/owner/access/users/${selectedUserId}/delete`, {
-        method: "POST",
+      await api(`/users/${selectedUserId}`, {
+        method: "DELETE",
       });
 
       setStatus("Tenant user deleted.");

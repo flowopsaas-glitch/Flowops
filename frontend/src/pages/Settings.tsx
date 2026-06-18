@@ -1,110 +1,335 @@
-import React, { useState, useEffect } from 'react';
-// ✅ FIXED: Adjusted relative paths to correctly reach src/api and src/components
-import { api } from '../api/client'; 
-import { Cpu, RefreshCw, Printer, ScanLine, CheckCircle2, Search } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../api/client';
+import { useToast } from '../components/ToastProvider';
+import {
+  Building2, Palette, Bell, Users, CreditCard, Plug, Shield,
+  ChevronRight, RefreshCw, CheckCircle2, AlertTriangle, Clock,
+  Globe, Phone, Mail, MapPin, Gauge, Save, Pencil, X
+} from 'lucide-react';
 
-export default function BranchHardware() {
-  const [devices, setDevices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
+type Company = {
+  id: string;
+  name: string;
+  tradingName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  plan?: string | null;
+  isActive?: boolean;
+  primaryColor?: string | null;
+  brandName?: string | null;
+  slaBreachMinutes?: number | null;
+  slaWarningMinutes?: number | null;
+  currency?: string | null;
+  whatsappNumber?: string | null;
+  vatNumber?: string | null;
+};
+
+function unwrap(raw: any): any {
+  return raw?.data ?? raw;
+}
+
+const PLAN_BADGE: Record<string, string> = {
+  starter:      'bg-slate-500/20 text-slate-300 border-slate-500/30',
+  professional: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+  enterprise:   'bg-violet-500/20 text-violet-300 border-violet-500/30',
+};
+
+type SettingTile = {
+  title: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+  href: string;
+  badge?: string;
+};
+
+const TILES: SettingTile[] = [
+  { title: 'Branding',        desc: 'Colours, logo, white-label portal',   icon: Palette,   href: '/settings/branding' },
+  { title: 'Users & Roles',   desc: 'Manage team members and permissions', icon: Users,     href: '/user-roles' },
+  { title: 'Notifications',   desc: 'Alert preferences and channels',      icon: Bell,      href: '/notifications' },
+  { title: 'Integrations',    desc: 'API keys, webhooks, third-party',     icon: Plug,      href: '/settings/integrations' },
+  { title: 'Billing & Plans', desc: 'Subscription and invoice history',    icon: CreditCard,href: '/billing-batches' },
+  { title: 'Rate Cards',      desc: 'Pricing rules per zone and weight',   icon: Gauge,     href: '/rate-cards' },
+];
+
+export default function Settings() {
+  const navigate = useNavigate();
   const { showToast } = useToast();
 
-  const fetchHardware = async () => {
+  const [company, setCompany]     = useState<Company | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [editing, setEditing]     = useState(false);
+  const [saving,  setSaving]      = useState(false);
+  const [draft,   setDraft]       = useState<Partial<Company>>({});
+
+  async function loadCompany() {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await api.get('/v2/hardware');
-      setDevices(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Hardware fetch failed", err);
-      // Fallback to empty to prevent blank page crashes
-      setDevices([]);
+      const raw: any = await api.get('/companies/my-company');
+      const data = unwrap(raw);
+      setCompany(data);
+      setDraft(data ?? {});
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to load company settings', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  useEffect(() => { fetchHardware(); }, []);
+  useEffect(() => { void loadCompany(); }, []);
 
-  const scanForNewHardware = async () => {
-    if (!('usb' in navigator)) {
-      showToast("WebUSB not supported in this browser.", "error");
-      return;
-    }
-
-    setScanning(true);
+  async function handleSave() {
+    setSaving(true);
     try {
-      // @ts-ignore
-      const device = await navigator.usb.requestDevice({ filters: [] });
-      
-      const payload = {
-        name: device.productName || 'Unknown Device',
-        deviceType: device.productName?.toLowerCase().includes('printer') ? 'PRINTER' : 'SCANNER',
-        vendorId: device.vendorId.toString(),
-        productId: device.productId.toString(),
-        serialNumber: device.serialNumber || 'N/A'
+      const payload: Partial<Company> = {
+        name:             draft.name,
+        tradingName:      draft.tradingName,
+        email:            draft.email,
+        phone:            draft.phone,
+        address:          draft.address,
+        city:             draft.city,
+        country:          draft.country,
+        vatNumber:        draft.vatNumber,
+        whatsappNumber:   draft.whatsappNumber,
+        brandName:        draft.brandName,
       };
-
-      await api.post('/v2/hardware/auto-register', payload);
-      fetchHardware();
-      showToast(`Device Linked: ${payload.name}`, "success");
-    } catch (err) {
-      console.warn("Scan cancelled or failed.");
+      const raw: any = await api.patch('/companies/my-company', payload);
+      const updated = unwrap(raw);
+      setCompany(updated ?? { ...company, ...payload });
+      setEditing(false);
+      showToast('Settings saved successfully', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save settings', 'error');
     } finally {
-      setScanning(false);
+      setSaving(false);
     }
-  };
+  }
 
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center p-20 space-y-4">
-      <RefreshCw className="animate-spin text-cyan-500" size={32} />
-      <span className="text-[10px] font-black text-cyan-500 uppercase tracking-[0.2em]">Synchronizing Hardware Mesh...</span>
-    </div>
-  );
+  function cancelEdit() {
+    setDraft(company ?? {});
+    setEditing(false);
+  }
+
+  const planKey = String(company?.plan || 'starter').toLowerCase();
+  const planBadgeClass = PLAN_BADGE[planKey] || PLAN_BADGE.starter;
 
   return (
-    <div className="animate-in slide-in-from-right-4 fade-in duration-300 space-y-6">
-      <div className="flex justify-between items-end mb-4">
-        <div>
-          <h3 className="text-xl font-black text-white italic uppercase tracking-tighter">Hardware Registry</h3>
-          <p className="text-white/40 text-[10px] uppercase font-bold tracking-widest">Station Peripheral Management</p>
-        </div>
-        <button 
-          onClick={scanForNewHardware}
-          disabled={scanning}
-          className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg shadow-cyan-500/20"
-        >
-          {scanning ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
-          Scan Local Mesh
-        </button>
-      </div>
+    <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(30,80,140,0.14),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 overflow-y-auto">
+      <div className="mx-auto max-w-[1100px] space-y-6">
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {devices.length === 0 ? (
-          <div className="col-span-2 p-12 rounded-[32px] border-2 border-dashed border-white/5 bg-white/[0.02] text-center">
-            <Cpu size={48} className="mx-auto text-white/10 mb-4" />
-            <p className="text-white/30 text-sm font-medium italic">No peripheral nodes detected.</p>
-            <p className="text-white/20 text-[10px] uppercase tracking-wighter mt-1 font-bold">Connect a USB printer or scanner to authorize</p>
-          </div>
-        ) : (
-          devices.map((d: any) => (
-            <div key={d.id} className="p-5 rounded-3xl border border-white/10 bg-black/40 flex items-center justify-between group hover:border-cyan-500/50 transition-all shadow-xl">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-2xl bg-white/5 text-cyan-400 group-hover:bg-cyan-500/10 transition-colors shadow-inner">
-                  {d.deviceType === 'PRINTER' ? <Printer size={20} /> : <ScanLine size={20} />}
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-white tracking-tight">{d.name}</div>
-                  <div className="text-[10px] text-white/40 font-mono">ID: {d.vendorId}:{d.productId}</div>
-                </div>
+        {/* ── Header ── */}
+        <div className="rounded-[30px] border border-white/10 bg-white/6 p-6 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/85 ring-1 ring-white/15">
+                <Building2 className="h-3.5 w-3.5" />
+                Account Settings
               </div>
-              <div className="flex items-center gap-2 text-emerald-400 text-[9px] font-black uppercase bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                <CheckCircle2 size={12} /> {d.status || 'Verified'}
+              <h1 className="mt-3 text-3xl font-black tracking-tight text-white">Settings</h1>
+              <p className="mt-1 text-sm text-white/55">
+                Manage your company profile, integrations, and account preferences.
+              </p>
+            </div>
+            <button
+              onClick={() => void loadCompany()}
+              disabled={loading}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/60 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* ── Company Profile Card ── */}
+        <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.3)]">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500/15 ring-1 ring-sky-500/25">
+                <Building2 className="h-5 w-5 text-sky-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">Company Profile</h2>
+                <p className="text-xs text-white/45">Core identity and contact details</p>
               </div>
             </div>
-          ))
-        )}
+            <div className="flex items-center gap-2">
+              {company?.plan && (
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wider ${planBadgeClass}`}>
+                  {company.plan}
+                </span>
+              )}
+              {company?.isActive !== undefined && (
+                <span className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${
+                  company.isActive
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                }`}>
+                  {company.isActive ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                  {company.isActive ? 'Active' : 'Inactive'}
+                </span>
+              )}
+              {!editing ? (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/70 hover:bg-white/10 hover:text-white transition"
+                >
+                  <Pencil className="h-4 w-4" /> Edit
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={cancelEdit}
+                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white/60 hover:bg-white/10 hover:text-white transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => void handleSave()}
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/15 px-4 py-2 text-sm font-bold text-sky-300 hover:bg-sky-500/25 transition disabled:opacity-40"
+                  >
+                    {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="animate-pulse h-14 rounded-2xl border border-white/5 bg-white/5" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ProfileField
+                icon={Building2} label="Company Name"
+                value={draft.name} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, name: v }))}
+              />
+              <ProfileField
+                icon={Building2} label="Trading Name"
+                value={draft.tradingName} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, tradingName: v }))}
+              />
+              <ProfileField
+                icon={Mail} label="Email"
+                value={draft.email} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, email: v }))}
+              />
+              <ProfileField
+                icon={Phone} label="Phone"
+                value={draft.phone} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, phone: v }))}
+              />
+              <ProfileField
+                icon={MapPin} label="Address"
+                value={draft.address} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, address: v }))}
+              />
+              <ProfileField
+                icon={Globe} label="City / Country"
+                value={[draft.city, draft.country].filter(Boolean).join(', ')}
+                editing={false}
+                onChange={() => {}}
+              />
+              <ProfileField
+                icon={Shield} label="VAT Number"
+                value={draft.vatNumber} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, vatNumber: v }))}
+              />
+              <ProfileField
+                icon={Phone} label="WhatsApp Number"
+                value={draft.whatsappNumber} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, whatsappNumber: v }))}
+              />
+            </div>
+          )}
+
+          {/* SLA row */}
+          {!loading && company && (company.slaBreachMinutes || company.slaWarningMinutes) && (
+            <div className="mt-4 flex items-center gap-4 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3">
+              <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" />
+              <div className="text-sm text-amber-200/80">
+                <span className="font-bold">SLA: </span>
+                {company.slaWarningMinutes && (
+                  <span>Warning at {company.slaWarningMinutes} min · </span>
+                )}
+                {company.slaBreachMinutes && (
+                  <span>Breach at {company.slaBreachMinutes} min</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Quick-Navigate Settings Tiles ── */}
+        <div>
+          <h2 className="mb-3 px-1 text-xs font-black uppercase tracking-[0.18em] text-white/40">
+            Settings Areas
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {TILES.map(tile => {
+              const Icon = tile.icon;
+              return (
+                <button
+                  key={tile.href}
+                  onClick={() => navigate(tile.href)}
+                  className="group flex items-center gap-4 rounded-[22px] border border-white/10 bg-white/5 p-5 text-left transition hover:bg-white/10 hover:border-white/20 shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
+                >
+                  <div className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-xl bg-white/8 ring-1 ring-white/10 group-hover:ring-sky-500/30 transition">
+                    <Icon className="h-5 w-5 text-white/70 group-hover:text-sky-400 transition" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-white text-sm">{tile.title}</p>
+                    <p className="mt-0.5 text-xs text-white/45 leading-relaxed truncate">{tile.desc}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 flex-shrink-0 text-white/20 group-hover:text-white/60 group-hover:translate-x-0.5 transition" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
       </div>
+    </div>
+  );
+}
+
+// ── Reusable profile field ────────────────────────────────────────────────────
+function ProfileField({
+  icon: Icon, label, value, editing, onChange,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value?: string | null;
+  editing: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className="h-3.5 w-3.5 text-white/40" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">{label}</span>
+      </div>
+      {editing ? (
+        <input
+          type="text"
+          value={value ?? ''}
+          onChange={e => onChange(e.target.value)}
+          className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-sky-400/30"
+        />
+      ) : (
+        <p className="text-sm font-semibold text-white/85 truncate">
+          {value || <span className="text-white/25 font-normal italic">Not set</span>}
+        </p>
+      )}
     </div>
   );
 }

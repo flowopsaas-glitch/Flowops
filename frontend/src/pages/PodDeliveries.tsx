@@ -135,7 +135,7 @@ export default function PodDeliveries() {
           <div className="mx-auto grid max-w-[1200px] gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <DeliveryAction 
               waybillId={selectedWaybill.id} 
-              waybillNumber={selectedWaybill.waybillNumber} 
+              waybillNumber={selectedWaybill.trackingNumber} 
               onSuccess={() => { setSelectedWaybill(null); fetchQueue(); }} 
             />
 
@@ -173,7 +173,7 @@ export default function PodDeliveries() {
                     onClick={() =>
                       navigate(
                         `/invoice-drafts?sourceWaybill=${encodeURIComponent(
-                          selectedWaybill.waybillNumber || ""
+                          selectedWaybill.trackingNumber || ""
                         )}&waybillId=${encodeURIComponent(String(selectedWaybill.id))}`
                       )
                     }
@@ -205,8 +205,8 @@ export default function PodDeliveries() {
                 >
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Waybill</span>
-                    <h4 className="text-xl font-mono text-white">{wb.waybillNumber}</h4>
-                    <p className="text-sm text-white/50">Destination: {wb.recipient || 'Unknown'}</p>
+                    <h4 className="text-xl font-mono text-white">{wb.trackingNumber}</h4>
+                    <p className="text-sm text-white/50">Destination: {wb.recipientName || wb.recipientAddress || 'Unknown'}</p>
                   </div>
                   <ChevronRight className="text-white/20 group-hover:text-white group-hover:translate-x-1 transition-all" />
                 </div>
