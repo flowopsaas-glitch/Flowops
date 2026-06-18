@@ -53,6 +53,33 @@ export class InvoicesService {
     return inv;
   }
 
+  async getUnbilledWaybills(companyId: string) {
+    /**
+     * Returns DELIVERED waybills that have a totalAmount AND do not yet appear
+     * on any invoice item.  The GenerateModal uses this list so dispatchers
+     * never accidentally double-bill a delivery.
+     */
+    return this.prisma.waybill.findMany({
+      where: {
+        companyId,
+        status: 'DELIVERED',
+        totalAmount: { gt: 0 },
+        invoiceItems: { none: {} },   // Waybill ← InvoiceItem back-relation
+      },
+      select: {
+        id: true,
+        trackingNumber: true,
+        recipientName: true,
+        recipientAddress: true,
+        totalAmount: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+  }
+
+
   async create(companyId: string, dto: any) {
     const count = await this.prisma.invoice.count({ where: { companyId } });
     const year = new Date().getFullYear();

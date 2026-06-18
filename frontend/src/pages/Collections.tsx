@@ -194,10 +194,14 @@ export default function Collections() {
   const selected = useMemo(() => rows.find((r) => r.id === selectedId) ?? null, [rows, selectedId]);
   
   const stats = useMemo(() => ({
-    total: rows.length,
-    pending: rows.filter(r => r.status === 'PENDING').length,
+    total:      rows.length,
+    pending:    rows.filter(r => r.status === 'PENDING').length,
     inProgress: rows.filter(r => r.status === 'IN_PROGRESS').length,
-    drivers: drivers.length
+    failed:     rows.filter(r => r.status === 'FAILED').length,
+    rescheduled:rows.filter(r => r.status === 'RESCHEDULED').length,
+    approved:   rows.filter(r => r.approvalStatus === 'APPROVED').length,
+    unassigned: rows.filter(r => !r.dispatches?.length && r.status === 'PENDING').length,
+    drivers:    drivers.length,
   }), [rows, drivers]);
 
   async function handleAutoSuggest(id: number) {
@@ -258,12 +262,12 @@ export default function Collections() {
              <StatCard label="Active" value={stats.total} />
              <StatCard label="Pending" value={stats.pending} />
              <StatCard label="In Progress" value={stats.inProgress} />
-             <StatCard label="Failed" value="0" />
-             <StatCard label="Rescheduled" value="0" />
-             <StatCard label="Approved" value="0" />
-             <StatCard label="Unassigned" value="0" />
+             <StatCard label="Failed" value={stats.failed} />
+             <StatCard label="Rescheduled" value={stats.rescheduled} />
+             <StatCard label="Approved" value={stats.approved} />
+             <StatCard label="Unassigned" value={stats.unassigned} />
              <StatCard label="Drivers" value={stats.drivers} />
-             <StatCard label="Tracking On" value="0" />
+             <StatCard label="Tracking On" value={drivers.filter(d => d.availabilityStatus === 'AVAILABLE' || d.availabilityStatus === 'BUSY').length} />
           </div>
         </div>
 
@@ -322,7 +326,31 @@ export default function Collections() {
                  <Field label="Driver Name"><input value={driverName} onChange={e=>setDriverName(e.target.value)} placeholder="Sipho Dlamini" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none focus:border-emerald-400/40" /></Field>
                  <Field label="Phone"><input value={driverPhone} onChange={e=>setDriverPhone(e.target.value)} placeholder="0821234567" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
               </div>
-              <button className="bg-emerald-600 p-4 rounded-2xl font-bold flex justify-center gap-2 mt-4 hover:bg-emerald-500 transition-colors"><Save className="h-5 w-5"/> Add Driver</button>
+              <button
+                disabled={saving || !driverName.trim()}
+                onClick={async () => {
+                  if (!driverName.trim()) {
+                    setError("Driver name is required.");
+                    return;
+                  }
+                  setSaving(true); setError(""); setSuccess("");
+                  try {
+                    await api.post("/drivers", {
+                      name:  driverName.trim(),
+                      phone: driverPhone.trim() || undefined,
+                      status: "AVAILABLE",
+                    });
+                    setSuccess("Driver added to fleet.");
+                    setDriverName(""); setDriverPhone("");
+                    loadAll("refresh");
+                  } catch (err: any) {
+                    setError(err?.message || "Failed to add driver.");
+                  } finally { setSaving(false); }
+                }}
+                className="bg-emerald-600 p-4 rounded-2xl font-bold flex justify-center gap-2 mt-4 hover:bg-emerald-500 transition-colors disabled:opacity-60"
+              >
+                <Save className="h-5 w-5"/> {saving ? "Adding…" : "Add Driver"}
+              </button>
             </div>
           </div>
         </div>

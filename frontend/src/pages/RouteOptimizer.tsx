@@ -48,8 +48,10 @@ export default function RouteOptimizer() {
   useEffect(() => {
     api
       .get("/collections")
-      .then((res) => {
-        const list: Collection[] = (res.data ?? []).filter(
+      .then((raw: any) => {
+        // api client returns HTTP body; TransformInterceptor wraps as {data, statusCode, message}
+        const data = raw?.data ?? raw;
+        const list: Collection[] = (Array.isArray(data) ? data : []).filter(
           (c: Collection) => c.pickupLat != null && c.pickupLng != null,
         );
         setCollections(list);
@@ -73,14 +75,18 @@ export default function RouteOptimizer() {
   const optimize = async () => {
     setOptimizing(true);
     try {
-      const res = await api.post("/routing/optimize/collections", {
+      const raw: any = await api.post("/routing/optimize/collections", {
         collectionIds: Array.from(selected),
       });
-      setRoute(res.data);
+      // TransformInterceptor wraps as {data, statusCode, message}
+      setRoute(raw?.data ?? raw);
     } finally {
       setOptimizing(false);
     }
   };
+
+  const selectAll  = () => setSelected(new Set(collections.map((c) => c.id)));
+  const clearAll   = () => setSelected(new Set());
 
   const center: [number, number] = useMemo(() => {
     const pts = collections.filter((c) => selected.has(c.id));
@@ -113,24 +119,38 @@ export default function RouteOptimizer() {
         <div className="rounded-[24px] border border-white/10 bg-slate-900/50 p-5 flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/60">
-              Stops ({selected.size})
+              Stops ({selected.size}/{collections.length})
             </h2>
-            <button
-              onClick={optimize}
-              disabled={optimizing || selected.size < 2}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 text-slate-950 px-4 py-2 text-sm font-black disabled:opacity-40"
-            >
-              {optimizing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-              Optimize
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={selectAll} disabled={selected.size === collections.length}
+                className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 disabled:opacity-30 transition">
+                All
+              </button>
+              <span className="text-white/20">|</span>
+              <button onClick={clearAll} disabled={selected.size === 0}
+                className="text-[10px] font-bold text-white/40 hover:text-white/60 disabled:opacity-30 transition">
+                Clear
+              </button>
+              <button
+                onClick={optimize}
+                disabled={optimizing || selected.size < 2}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 text-slate-950 px-4 py-2 text-sm font-black disabled:opacity-40"
+              >
+                {optimizing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                Optimize
+              </button>
+            </div>
           </div>
 
           {loading ? (
             <div className="text-white/40 text-sm py-10 text-center">Loading collections…</div>
           ) : collections.length === 0 ? (
-            <div className="text-white/40 text-sm py-10 text-center">
-              No geocoded collections yet. Create collections with a pickup address,
-              or run the geocoding backfill.
+            <div className="text-white/40 text-sm py-10 text-center space-y-2">
+              <div className="font-bold">No geocoded collections found.</div>
+              <div className="text-xs text-white/25 leading-relaxed">
+                Collections need coordinates to appear here. Create collections with a pickup address,
+                then run <span className="font-mono text-emerald-400/60">POST /geocode/backfill/collections</span> to geocode existing ones.
+              </div>
             </div>
           ) : (
             <div className="space-y-2 overflow-y-auto max-h-[520px] custom-scrollbar pr-1">

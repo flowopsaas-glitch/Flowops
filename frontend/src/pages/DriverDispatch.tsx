@@ -72,23 +72,37 @@ export default function DriverDispatch() {
       const rawDriversTable: any[] = driversTableRes.status === 'fulfilled'
         ? (Array.isArray(driversTableRes.value) ? driversTableRes.value : (driversTableRes.value as any)?.data ?? []) : [];
 
+      // Bug fix: use correct field names from the Waybill / Collection / Driver schema
       const deliveries = waybillsData.filter((w: any) => !w.driverId).map((w: any) => ({
-          id: `DEL-${w.id}`, reference: w.waybillNumber || `WB-${w.id}`,
-          customer: w.recipient || "Standard Delivery", area: (w.area || "GENERAL ZONE").toUpperCase(),
-          type: 'DELIVERY', lat: w.lat || -26.15, lng: w.lng || 28.00, raw: w
+          id: `DEL-${w.id}`,
+          reference: w.trackingNumber || `WB-${w.id}`,          // was: w.waybillNumber
+          customer: w.recipientName || "Standard Delivery",      // was: w.recipient
+          area: (w.area || "GENERAL ZONE").toUpperCase(),
+          type: 'DELIVERY',
+          lat: w.recipientLat ?? -26.15,                         // was: w.lat
+          lng: w.recipientLng ?? 28.00,                          // was: w.lng
+          raw: w,
       }));
 
       const collections = collectionsData.filter((c: any) => !c.driverId).map((c: any) => ({
-          id: `COL-${c.id}`, reference: c.reference || `COL-${c.id}`,
-          customer: c.customerName || "Pickup Request", area: (c.area || "GENERAL ZONE").toUpperCase(),
-          type: 'COLLECTION', lat: c.lat || -26.25, lng: c.lng || 28.10, raw: c
+          id: `COL-${c.id}`,
+          reference: c.referenceNo || c.clientName || `COL-${c.id}`,  // was: c.reference
+          customer: c.clientName || c.customerName || "Pickup Request", // was: c.customerName
+          area: (c.area || "GENERAL ZONE").toUpperCase(),
+          type: 'COLLECTION',
+          lat: c.pickupLat ?? -26.25,   // was: c.lat
+          lng: c.pickupLng ?? 28.10,    // was: c.lng
+          raw: c,
       }));
 
-      const fleetSource = rawDriversTable;
-      const fleet = fleetSource.map((d: any) => ({
-        id: d.id, name: d.name || "Driver", status: (d.availabilityStatus || "AVAILABLE").toUpperCase(),
-        vehicle: d.vehicleReg || d.vehicle || "Van", zone: (d.zone || "GENERAL ZONE").toUpperCase(),
-        lat: d.lat || -26.20, lng: d.lng || 28.05
+      const fleet = rawDriversTable.map((d: any) => ({
+        id: d.id,
+        name: d.name || "Driver",
+        status: (d.availabilityStatus || d.status || "AVAILABLE").toUpperCase(),
+        vehicle: d.vehicleReg || d.vehicle || "Van",
+        zone: (d.zone || "GENERAL ZONE").toUpperCase(),
+        lat: d.lastLat ?? -26.20,   // was: d.lat
+        lng: d.lastLng ?? 28.05,    // was: d.lng
       }));
 
       setJobs([...deliveries, ...collections]);
@@ -102,6 +116,12 @@ export default function DriverDispatch() {
   };
 
   useEffect(() => { loadData(); }, [refreshTick]);
+
+  // 30-second auto-refresh for live dispatch view
+  useEffect(() => {
+    const timer = setInterval(() => setRefreshTick(v => v + 1), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const stats = useMemo(() => ({
     total: jobs.length,
@@ -125,8 +145,18 @@ export default function DriverDispatch() {
     try {
       setAssigning(true);
       const originalId = selectedJob.raw.id;
-      if (selectedJob.type === 'DELIVERY') await api.patch(`/waybills/${originalId}/assign-driver`, { driverId });
-      else await api.post(`/collections/${originalId}/assign`, { driverId });
+      if (selectedJob.type === 'DELIVERY') {
+        // Bug fix: endpoint was /waybills/:id/assign-driver (doesn't exist)
+        // Correct endpoint: PATCH /waybills/:id with { driverId }
+        await api.patch(`/waybills/${originalId}`, { driverId: String(driverId) });
+      } else {
+        // Bug fix: endpoint was /collections/:id/assign (doesn't exist)
+        // Correct endpoint: PATCH /collections/:id with { driverId, status }
+        await api.patch(`/collections/${originalId}`, {
+          driverId: String(driverId),
+          status: 'IN_PROGRESS',
+        });
+      }
       showToast(`Assigned ${selectedJob.reference}`, "success");
       setRefreshTick(v => v + 1);
     } catch (err) {
