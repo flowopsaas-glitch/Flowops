@@ -55,7 +55,8 @@ export default function PodDeliveries() {
   // 📡 Fetch pending waybills from the backend
   const fetchQueue = async () => {
     try {
-      const data = await api.get<any, any>(`/waybills`);
+      const res: any = await api.get<any, any>(`/waybills`);
+      const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       // Filter for those not yet delivered
       setWaybills(data.filter((w: any) => w.status !== 'DELIVERED'));
     } catch (err) {

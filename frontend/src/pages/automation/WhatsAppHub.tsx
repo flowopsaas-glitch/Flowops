@@ -46,8 +46,8 @@ export default function WhatsAppHub() {
 
   const fetchSidebar = async () => {
     try {
-      const res = await api.get("/whatsapp/threads");
-      const list: Thread[] = res.data ?? [];
+      const res: any = await api.get("/whatsapp/threads");
+      const list: Thread[] = Array.isArray(res) ? res : (res?.data ?? []);
       setThreads(list);
       if (list.length > 0 && !selectedPhone) setSelectedPhone(list[0].phone);
     } catch (e) {
@@ -57,8 +57,8 @@ export default function WhatsAppHub() {
 
   const fetchSettings = async () => {
     try {
-      const res = await api.get("/whatsapp/settings");
-      const num = res.data?.whatsappNumber ?? "";
+      const res: any = await api.get("/whatsapp/settings");
+      const num = res?.whatsappNumber ?? res?.data?.whatsappNumber ?? "";
       setCompanyNumber(num);
       setNumberDraft(num);
     } catch (e) {
@@ -72,8 +72,8 @@ export default function WhatsAppHub() {
   }, []);
 
   const loadMessages = (phone: string) => {
-    api.get(`/whatsapp/messages/${phone}`).then((res) => {
-      setMessages(res.data ?? []);
+    api.get(`/whatsapp/messages/${phone}`).then((res: any) => {
+      setMessages(Array.isArray(res) ? res : (res?.data ?? []));
       setTimeout(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }, 100);
@@ -102,11 +102,11 @@ export default function WhatsAppHub() {
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedPhone) return;
     try {
-      const res = await api.post("/whatsapp/compose", {
+      const res: any = await api.post("/whatsapp/compose", {
         to: selectedPhone,
         message: newMessage,
       });
-      const url = res.data?.url;
+      const url = res?.url ?? res?.data?.url;
       if (url) window.open(url, "_blank", "noopener,noreferrer");
       setNewMessage("");
       loadMessages(selectedPhone);

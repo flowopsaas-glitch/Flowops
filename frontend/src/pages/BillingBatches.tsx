@@ -1,265 +1,336 @@
-import React, { useEffect, useState } from "react";
-import { 
-  Layers, RefreshCw, FileText, Wand2, ArrowLeft, 
-  Package, Lock, Calculator 
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Calculator,
+  CheckCircle2,
+  FileText,
+  Layers,
+  Loader2,
+  Plus,
+  RefreshCw,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
-import { api } from '../api/client';
-import { useToast } from "../components/ToastProvider";
+import { api } from "../api/client";
 
-export default function BillingBatches() {
-  const { showToast } = useToast();
-  const [batches, setBatches] = useState<any[]>([]);
-  const [selectedBatch, setSelectedBatch] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSweeping, setIsSweeping] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  
-  // AI States
-  const [isAuditing, setIsAuditing] = useState(false);
-  const [auditFeedback, setAuditFeedback] = useState<string | null>(null);
+// ── Types matching the real Invoice schema ──────────────────────────────────
+type Invoice = {
+  id: string;
+  invoiceNumber: string;
+  status: "DRAFT" | "SENT" | "PAID" | "OVERDUE" | "CANCELLED";
+  clientName: string;
+  clientEmail?: string | null;
+  subtotal: number;
+  tax: number;
+  total: number;
+  dueDate?: string | null;
+  paidAt?: string | null;
+  sentAt?: string | null;
+  createdAt: string;
+  items?: any[];
+};
 
-  const loadBatches = async () => {
+type Metrics = {
+  outstanding: number;
+  collected: number;
+  total: number;
+  collectionRate: number;
+};
+
+// ── Status config ──────────────────────────────────────────────────────────
+const STATUS: Record<string, { cls: string; label: string }> = {
+  DRAFT:     { cls: "border-slate-400/20 bg-slate-500/10 text-slate-300", label: "Draft" },
+  SENT:      { cls: "border-blue-400/20 bg-blue-500/10 text-blue-200",    label: "Sent" },
+  PAID:      { cls: "border-emerald-400/20 bg-emerald-500/10 text-emerald-200", label: "Paid" },
+  OVERDUE:   { cls: "border-rose-400/20 bg-rose-500/10 text-rose-200",    label: "Overdue" },
+  CANCELLED: { cls: "border-white/10 bg-white/5 text-white/40",           label: "Cancelled" },
+};
+
+function money(v?: number | null) {
+  return `ZAR ${(v ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// ── Generate Invoice Modal ─────────────────────────────────────────────────
+function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [waybills, setWaybills] = useState<any[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [clientName, setClientName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const res: any = await api.get("/waybills");
+      const data = Array.isArray(res) ? res : (res?.data ?? []);
+      setWaybills(data.filter((w: any) => w.status === "DELIVERED" && w.totalAmount));
+    })();
+  }, []);
+
+  const toggle = (id: string) =>
+    setSelected((p) => {
+      const n = new Set(p);
+      if (n.has(id)) { n.delete(id); } else { n.add(id); }
+      return n;
+    });
+
+  const selectedWbs = waybills.filter((w) => selected.has(w.id));
+  const subtotal = selectedWbs.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
+  const tax = subtotal * 0.15;
+  const total = subtotal + tax;
+
+  const save = async () => {
+    if (!clientName.trim()) { setError("Enter a client name."); return; }
+    if (selected.size === 0) { setError("Select at least one waybill."); return; }
+    setSaving(true); setError("");
     try {
-      setIsLoading(true);
-      const res = await api.get('/billing-batches');
-      setBatches(res.data);
-    } catch (err) {
-      showToast("Failed to sync financial ledger.", "error");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSweep = async () => {
-    try {
-      setIsSweeping(true);
-      const res = await api.post('/billing-batches/sweep');
-      
-      if (res.data.jobsSwept === 0) {
-        showToast("No unbilled deliveries found.", "error");
-      } else {
-        showToast(`Sweep successful! ${res.data.jobsSwept} jobs batched.`, "success");
-      }
-      
-      await loadBatches(); 
-    } catch (err) {
-      showToast("Sweep failed. Ensure waybills are marked as DELIVERED.", "error");
-    } finally {
-      setIsSweeping(false);
-    }
-  };
-
-  const handleAiAudit = async () => {
-    if (!selectedBatch) return;
-    try {
-      setIsAuditing(true);
-      setAuditFeedback(null);
-      
-      // FIX: Include the database ID for tool calls
-      const waybillContext = selectedBatch.waybills.map((w: any) => ({
-        id: w.id, 
-        no: w.waybillNumber, 
-        amt: w.totalAmount,
-        to: w.recipient
-      }));
-
-      const res = await api.post('/ai/instruct', {
-        command: `Audit billing batch #${selectedBatch.id}. 
-                  Waybills: ${JSON.stringify(waybillContext)}. 
-                  The batch total is R${selectedBatch.totalValue}. 
-                  Analyze these for any pricing errors and summarize your findings.`
+      await api.post("/invoices", {
+        clientName, subtotal, tax, total,
+        items: selectedWbs.map((w) => ({
+          description: `Delivery ${w.trackingNumber} to ${w.recipientName}`,
+          quantity: 1, unitPrice: w.totalAmount, total: w.totalAmount,
+        })),
       });
-      
-      // FIX: Robust error and response handling
-      let feedback = "";
-      if (res.data.error || res.status === 400) {
-        feedback = `Audit Warning: The AI model encountered a schema validation error while trying to process this batch.`;
-      } else if (res.data.type === 'BATCH_SUCCESS' || res.data.type === 'ACTION_SUCCESS') {
-        feedback = "Audit complete: Adjustments or verifications have been successfully processed.";
-      } else {
-        feedback = res.data.response || res.data.payload?.response || "Analysis complete. No pricing anomalies were detected in this specific batch.";
-      }
-
-      setAuditFeedback(feedback);
-      showToast("AI Audit Complete", "success");
-    } catch (err) {
-      console.error(err);
-      showToast("AI Auditor encountered a processing error.", "error");
+      onSaved(); onClose();
+    } catch (err: any) {
+      setError(err?.message || "Failed to generate invoice.");
     } finally {
-      setIsAuditing(false);
+      setSaving(false);
     }
   };
-
-  const handleGenerateInvoice = async () => {
-    if (!selectedBatch) return;
-    try {
-      setIsGenerating(true);
-      const res = await api.post(`/billing-batches/${selectedBatch.id}/generate-invoices`);
-      showToast(`Invoice ${res.data.invoiceNumber || 'Draft'} generated!`, "success");
-      setSelectedBatch(null);
-      await loadBatches();
-    } catch (err) {
-      showToast("Invoice generation failed.", "error");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  useEffect(() => { loadBatches(); }, []);
-
-  if (selectedBatch) {
-    const isLocked = selectedBatch.status === 'LOCKED';
-    return (
-      <div style={pageStyle} className="animate-in fade-in slide-in-from-right-4 duration-500">
-        <header style={headerStyle}>
-          <button onClick={() => { setSelectedBatch(null); setAuditFeedback(null); }} style={syncBtn}>
-            <ArrowLeft size={16} /> BACK TO OVERVIEW
-          </button>
-          
-          {!isLocked && (
-            <div className="flex gap-3">
-              <button 
-                onClick={handleAiAudit} 
-                disabled={isAuditing} 
-                style={{...syncBtn, borderColor: 'rgba(168, 85, 247, 0.4)', color: '#a855f7'}}
-              >
-                {isAuditing ? <RefreshCw size={14} className="animate-spin" /> : <Calculator size={16} />}
-                AI PRICE AUDIT
-              </button>
-
-              <button onClick={handleGenerateInvoice} disabled={isGenerating} style={generateBtn}>
-                {isGenerating ? <RefreshCw size={14} className="animate-spin" /> : <FileText size={16} />}
-                GENERATE FINAL INVOICE
-              </button>
-            </div>
-          )}
-        </header>
-
-        <div style={tableContainer}>
-          <div className="flex justify-between items-end mb-8">
-            <div>
-              <div style={eyebrowStyle}>CLIENT: {selectedBatch.company?.name || "RECONCILIATION"}</div>
-              <h1 style={titleStyle}>Batch #{String(selectedBatch.id).padStart(4, '0')}</h1>
-              {isLocked && (
-                <div className="mt-2 text-slate-500 text-[10px] font-black uppercase flex items-center gap-2">
-                  <Lock size={12}/> LOCKED & INVOICED
-                </div>
-              )}
-            </div>
-            <div className="text-right">
-              <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest">Calculated Revenue</div>
-              <div className="text-4xl font-black text-emerald-400">R {Number(selectedBatch.totalValue || 0).toLocaleString()}</div>
-            </div>
-          </div>
-
-          {auditFeedback && (
-            <div className="mb-8 p-6 rounded-3xl border border-purple-500/30 bg-purple-500/5 text-purple-100 text-[13px] font-medium leading-relaxed animate-in zoom-in-95 duration-300 shadow-2xl shadow-purple-500/10">
-              <div className="flex items-center gap-2 mb-3 text-purple-400 font-black text-[10px] tracking-widest uppercase">
-                <Wand2 size={14} /> AI Auditor Analysis
-              </div>
-              {auditFeedback}
-            </div>
-          )}
-
-          <div className="grid gap-3">
-            {selectedBatch.waybills?.map((wb: any, idx: number) => (
-              <div key={wb.id || `wb-${idx}`} style={itemCardStyle}>
-                <div className="flex items-center gap-4">
-                  <div style={iconBoxStyle}><Package size={20} /></div>
-                  <div>
-                    <div className="font-black text-white">{wb.waybillNumber}</div>
-                    <div className="text-[10px] text-slate-500 font-bold uppercase">To: {wb.recipient}</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-black text-white">R {Number(wb.totalAmount || 0).toFixed(2)}</div>
-                  <div className="text-[9px] text-emerald-500 font-black uppercase tracking-tighter">Verified Logic</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div style={pageStyle}>
-      <header style={headerStyle}>
-        <div>
-          <div style={eyebrowStyle}>FINANCE · TENANT ADMIN</div>
-          <h1 style={titleStyle}>Billing Batches</h1>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0b1628] shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5 shrink-0">
+          <div className="text-lg font-black text-white">Generate Batch Invoice</div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 text-xl">✕</button>
         </div>
-        <div className="flex gap-3">
-          <button onClick={loadBatches} style={syncBtn}>
-            <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} /> REFRESH
-          </button>
-          <button onClick={handleSweep} disabled={isSweeping} style={sweepBtn}>
-            <Wand2 size={14} /> SWEEP DELIVERIES
-          </button>
-        </div>
-      </header>
-
-      <div style={tableContainer}>
-        {batches.length > 0 ? (
-          <table style={tableStyle}>
-            <thead>
-              <tr style={headerRowStyle}>
-                <th style={thStyle}>BATCH ID</th>
-                <th style={thStyle}>STATUS</th>
-                <th style={thStyle}>REVENUE</th>
-                <th style={thStyle}>ACTION</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((batch) => (
-                <tr key={batch.id} style={rowStyle}>
-                  <td style={tdStyle} className="font-black text-white">#{String(batch.id).padStart(4, '0')}</td>
-                  <td style={tdStyle}><span style={statusBadge(batch.status)}>{batch.status}</span></td>
-                  <td style={tdStyle} className="text-emerald-400 font-black">R {Number(batch.totalValue || 0).toLocaleString()}</td>
-                  <td style={tdStyle}>
-                    <button onClick={() => setSelectedBatch(batch)} style={actionBtn}>REVIEW DRAFT</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div style={statusMessage}>
-            <Layers size={48} className="text-slate-700 mb-4" />
-            <div className="text-white font-black">Ledger is empty</div>
-            <p className="text-slate-500 text-xs mt-2 uppercase font-bold tracking-widest">Sweep the floor to group delivered waybills.</p>
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Client Name *</label>
+            <input value={clientName} onChange={(e) => setClientName(e.target.value)}
+              placeholder="e.g. Acme Logistics" className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400" />
           </div>
-        )}
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50 block mb-2">
+              Delivered Waybills ({selected.size} selected)
+            </label>
+            <div className="rounded-xl border border-white/10 bg-black/20 max-h-48 overflow-y-auto">
+              {waybills.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm">No delivered waybills available for billing.</div>
+              ) : waybills.map((w) => (
+                <button key={w.id} onClick={() => toggle(w.id)}
+                  className={`w-full flex items-center justify-between px-4 py-3 border-b border-white/5 last:border-0 text-left transition-colors ${selected.has(w.id) ? "bg-blue-500/10" : "hover:bg-white/5"}`}>
+                  <div>
+                    <div className="font-bold text-sm text-white">{w.trackingNumber}</div>
+                    <div className="text-[11px] text-slate-400">{w.recipientName}</div>
+                  </div>
+                  <div className="text-sm font-bold text-emerald-300">{money(w.totalAmount)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          {selected.size > 0 && (
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 space-y-1 text-sm">
+              <div className="flex justify-between text-slate-400"><span>Subtotal</span><span>{money(subtotal)}</span></div>
+              <div className="flex justify-between text-slate-400"><span>VAT 15%</span><span>{money(tax)}</span></div>
+              <div className="flex justify-between font-black text-white"><span>Total</span><span>{money(total)}</span></div>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-3 border-t border-white/10 px-6 py-4 shrink-0">
+          <button onClick={onClose} className="rounded-2xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-bold text-white hover:bg-white/10">Cancel</button>
+          <button disabled={saving} onClick={save}
+            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-60">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {saving ? "Generating…" : `Generate Invoice (${selected.size})`}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// Styles remain identical to your original provided file...
-const pageStyle: React.CSSProperties = { padding: "40px", color: "#fff", minHeight: "100%" };
-const headerStyle: React.CSSProperties = { marginBottom: "40px", display: 'flex', justifyContent: 'space-between', alignItems: 'center' };
-const eyebrowStyle: React.CSSProperties = { fontSize: "10px", fontWeight: 900, color: "#38bdf8", letterSpacing: "0.25em", fontStyle: 'italic' };
-const titleStyle: React.CSSProperties = { fontSize: "42px", fontWeight: 900, margin: 0, letterSpacing: '-0.05em' };
-const syncBtn: React.CSSProperties = { background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '12px 24px', borderRadius: '16px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '10px', textTransform: 'uppercase', transition: 'all 0.2s' };
-const sweepBtn: React.CSSProperties = { background: '#38bdf8', border: 'none', color: '#07111f', padding: '12px 24px', borderRadius: '16px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '10px', textTransform: 'uppercase' };
-const generateBtn: React.CSSProperties = { background: '#10b981', border: 'none', color: '#fff', padding: '12px 24px', borderRadius: '16px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '10px' };
-const tableContainer: React.CSSProperties = { background: "rgba(13,25,48,0.5)", borderRadius: "32px", padding: "40px", border: "1px solid rgba(255,255,255,0.05)", backdropFilter: "blur(20px)" };
-const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse" };
-const headerRowStyle: React.CSSProperties = { borderBottom: "1px solid rgba(255,255,255,0.05)" };
-const thStyle: React.CSSProperties = { textAlign: "left", padding: "20px", fontSize: "10px", color: "#64748b", fontWeight: 900, textTransform: 'uppercase' };
-const tdStyle: React.CSSProperties = { padding: "20px", fontSize: "14px" };
-const rowStyle: React.CSSProperties = { borderBottom: "1px solid rgba(255,255,255,0.02)" };
-const statusMessage: React.CSSProperties = { textAlign: "center", padding: "100px", display: 'flex', flexDirection: 'column', alignItems: 'center' };
-const actionBtn: React.CSSProperties = { background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)', color: '#38bdf8', padding: '10px 20px', borderRadius: '12px', fontSize: '10px', fontWeight: 900, cursor: 'pointer' };
-const itemCardStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', padding: '20px 24px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' };
-const iconBoxStyle: React.CSSProperties = { height: '44px', width: '44px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+// ── Main page ──────────────────────────────────────────────────────────────
+export default function BillingBatches() {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
-const statusBadge = (status: string): React.CSSProperties => {
-  const isDraft = String(status).toUpperCase() === 'OPEN';
-  return {
-    background: isDraft ? "rgba(56, 189, 248, 0.1)" : "rgba(16, 185, 129, 0.1)",
-    color: isDraft ? "#38bdf8" : "#10b981",
-    padding: "6px 16px", borderRadius: "10px", fontSize: "10px", fontWeight: 900, border: `1px solid ${isDraft ? "rgba(56, 189, 248, 0.2)" : "rgba(16, 185, 129, 0.2)"}`
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [invRes, metRes] = await Promise.allSettled([
+        api.get("/invoices"),
+        api.get("/invoices/metrics"),
+      ]);
+      if (invRes.status === "fulfilled") {
+        const d: any = invRes.value;
+        setInvoices(Array.isArray(d) ? d : (d?.data ?? []));
+      }
+      if (metRes.status === "fulfilled") {
+        const m: any = metRes.value;
+        setMetrics(m?.data ?? m);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const markSent = async (id: string) => {
+    setBusy(`sent-${id}`);
+    try { await api.patch(`/invoices/${id}`, { status: "SENT", sentAt: new Date().toISOString() }); await load(); }
+    finally { setBusy(null); }
   };
-};
+
+  const markPaid = async (id: string) => {
+    setBusy(`paid-${id}`);
+    try { await api.post(`/invoices/${id}/mark-paid`, {}); await load(); }
+    finally { setBusy(null); }
+  };
+
+  const grouped = useMemo(() => {
+    const groups: Record<string, Invoice[]> = { DRAFT: [], SENT: [], OVERDUE: [], PAID: [] };
+    invoices.forEach((inv) => {
+      const s = inv.status === "SENT" && inv.dueDate && new Date(inv.dueDate) < new Date() ? "OVERDUE" : inv.status;
+      if (groups[s]) groups[s].push(inv);
+    });
+    return groups;
+  }, [invoices]);
+
+  const totalDraft = grouped.DRAFT.reduce((s, i) => s + i.total, 0);
+
+  return (
+    <div className="space-y-6">
+      {showGenerate && <GenerateModal onClose={() => setShowGenerate(false)} onSaved={load} />}
+
+      {/* Header */}
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-300">
+              <Layers className="h-3.5 w-3.5" /> Billing Batches
+            </div>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-white">Invoice Management</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Batch delivered waybills into invoices, send to clients, and track payments.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <button onClick={() => setShowGenerate(true)}
+              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-2.5 text-sm font-bold text-slate-950">
+              <Plus className="h-4 w-4" /> Generate Batch
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary metrics */}
+      {metrics && (
+        <div className="grid gap-4 md:grid-cols-4">
+          {[
+            { label: "Draft",      val: totalDraft,              count: grouped.DRAFT.length,    tone: "text-slate-300", icon: FileText },
+            { label: "Outstanding", val: metrics.outstanding,    count: grouped.SENT.length + grouped.OVERDUE.length, tone: "text-amber-300", icon: Wallet },
+            { label: "Overdue",    val: grouped.OVERDUE.reduce((s,i)=>s+i.total,0), count: grouped.OVERDUE.length, tone: "text-rose-300", icon: Calculator },
+            { label: "Collected",  val: metrics.collected,       count: grouped.PAID.length,     tone: "text-emerald-300", icon: TrendingUp },
+          ].map(({ label, val, count, tone, icon: Icon }) => (
+            <div key={label} className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">{label}</div>
+                <Icon className="h-5 w-5 text-white/30" />
+              </div>
+              <div className={`mt-2 text-2xl font-black ${tone}`}>{money(val)}</div>
+              <div className="mt-1 text-xs text-slate-400">{count} invoice{count !== 1 ? "s" : ""}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Invoice groups */}
+      {loading ? (
+        <div className="grid gap-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-16 animate-pulse rounded-[24px] border border-white/5 bg-white/[0.03]" />
+          ))}
+        </div>
+      ) : invoices.length === 0 ? (
+        <div className="rounded-[28px] border border-dashed border-white/10 bg-white/[0.03] py-20 text-center">
+          <Layers className="mx-auto h-10 w-10 text-white/10 mb-3" />
+          <div className="text-white/40 font-bold">No invoices yet.</div>
+          <p className="text-slate-500 text-sm mt-1">Generate a batch from delivered waybills to get started.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {(["DRAFT","SENT","OVERDUE","PAID"] as const).map((status) => {
+            const group = grouped[status];
+            if (!group?.length) return null;
+            const { cls, label } = STATUS[status];
+            return (
+              <div key={status}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${cls}`}>{label}</span>
+                  <span className="text-sm font-bold text-white/60">{group.length} invoice{group.length > 1 ? "s" : ""} · {money(group.reduce((s,i)=>s+i.total,0))}</span>
+                </div>
+                <div className="rounded-[28px] border border-white/10 bg-white/[0.05] overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-white/40">
+                        <th className="px-5 py-3">Invoice</th>
+                        <th className="px-5 py-3">Client</th>
+                        <th className="px-5 py-3">Items</th>
+                        <th className="px-5 py-3">Total</th>
+                        <th className="px-5 py-3">Due</th>
+                        <th className="px-5 py-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.map((inv) => (
+                        <tr key={inv.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                          <td className="px-5 py-3 font-bold text-white">{inv.invoiceNumber}</td>
+                          <td className="px-5 py-3 text-slate-300">{inv.clientName}</td>
+                          <td className="px-5 py-3 text-slate-400">{inv.items?.length ?? "—"}</td>
+                          <td className="px-5 py-3 font-black text-white">{money(inv.total)}</td>
+                          <td className={`px-5 py-3 text-xs ${status === "OVERDUE" ? "text-rose-400 font-bold" : "text-slate-400"}`}>
+                            {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("en-ZA") : "—"}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            {status === "DRAFT" && (
+                              <button disabled={busy === `sent-${inv.id}`} onClick={() => markSent(inv.id)}
+                                className="inline-flex items-center gap-1 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-1.5 text-[11px] font-bold text-blue-200 hover:bg-blue-500/20 disabled:opacity-60">
+                                {busy === `sent-${inv.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                                Send
+                              </button>
+                            )}
+                            {(status === "SENT" || status === "OVERDUE") && (
+                              <button disabled={busy === `paid-${inv.id}`} onClick={() => markPaid(inv.id)}
+                                className="inline-flex items-center gap-1 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60">
+                                {busy === `paid-${inv.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                                Mark Paid
+                              </button>
+                            )}
+                            {status === "PAID" && (
+                              <span className="text-[11px] font-bold text-emerald-400">
+                                {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-ZA") : "Paid"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
