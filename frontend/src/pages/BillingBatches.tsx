@@ -59,9 +59,11 @@ function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
   useEffect(() => {
     (async () => {
-      const res: any = await api.get("/waybills");
-      const data = Array.isArray(res) ? res : (res?.data ?? []);
-      setWaybills(data.filter((w: any) => w.status === "DELIVERED" && w.totalAmount));
+      // Use the dedicated unbilled-waybills endpoint so the modal only shows
+      // deliveries that haven't been invoiced yet — prevents double-billing.
+      const raw: any = await api.get("/invoices/unbilled-waybills");
+      const data = raw?.data ?? raw;
+      setWaybills(Array.isArray(data) ? data : []);
     })();
   }, []);
 

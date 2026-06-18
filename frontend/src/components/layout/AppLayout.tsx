@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers
+  Layers, ScanLine
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -183,6 +183,7 @@ export default function AppLayout() {
     { section: "CORE", label: "Dashboard", desc: "Executive command", to: "/dashboard", icon: LayoutDashboard, perm: "dashboard" },
     { section: "CORE", label: "Shipments", desc: "Operations console", to: "/shipments", icon: Package, perm: "shipments" },
     { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search, perm: "waybillInbox" },
+    { section: "CORE", label: "Scan Capture", desc: "Barcode & OCR intake", to: "/waybills/scan", icon: ScanLine, perm: "waybillInbox" },
     { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList, perm: "waybills" },
     { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
     

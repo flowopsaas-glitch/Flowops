@@ -29,6 +29,18 @@ export class InvoicesController {
     return this.svc.create(u.companyId, body);
   }
 
+  /**
+   * GET /api/v1/invoices/unbilled-waybills
+   *
+   * Returns DELIVERED waybills that have a totalAmount and have not yet been
+   * added to any invoice. The Billing Batches → Generate modal uses this so
+   * dispatchers only see deliveries that still need to be billed.
+   */
+  @Get('invoices/unbilled-waybills')
+  getUnbilledWaybills(@CurrentUser() u: any) {
+    return this.svc.getUnbilledWaybills(u.companyId);
+  }
+
   @Get('invoices/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);
