@@ -60,14 +60,17 @@ export default function DriverDispatch() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [wbRes, collRes, usersRes, driversTableRes] = await Promise.allSettled([
-        api.get('/waybills'), api.get('/collections'), api.get('/users'), api.get('/drivers')
+      // Fix: api client auto-unwraps — don't access .data; use /users/my-company for tenant users
+      const [wbRes, collRes, driversTableRes] = await Promise.allSettled([
+        api.get('/waybills'), api.get('/collections'), api.get('/drivers')
       ]);
 
-      const waybillsData = wbRes.status === 'fulfilled' ? wbRes.value.data : [];
-      const collectionsData = collRes.status === 'fulfilled' ? collRes.value.data : [];
-      const rawUsers = usersRes.status === 'fulfilled' ? usersRes.value.data : [];
-      const rawDriversTable = driversTableRes.status === 'fulfilled' ? driversTableRes.value.data : [];
+      const waybillsData: any[] = wbRes.status === 'fulfilled'
+        ? (Array.isArray(wbRes.value) ? wbRes.value : (wbRes.value as any)?.data ?? []) : [];
+      const collectionsData: any[] = collRes.status === 'fulfilled'
+        ? (Array.isArray(collRes.value) ? collRes.value : (collRes.value as any)?.data ?? []) : [];
+      const rawDriversTable: any[] = driversTableRes.status === 'fulfilled'
+        ? (Array.isArray(driversTableRes.value) ? driversTableRes.value : (driversTableRes.value as any)?.data ?? []) : [];
 
       const deliveries = waybillsData.filter((w: any) => !w.driverId).map((w: any) => ({
           id: `DEL-${w.id}`, reference: w.waybillNumber || `WB-${w.id}`,
@@ -81,7 +84,7 @@ export default function DriverDispatch() {
           type: 'COLLECTION', lat: c.lat || -26.25, lng: c.lng || 28.10, raw: c
       }));
 
-      const fleetSource = rawDriversTable.length > 0 ? rawDriversTable : rawUsers.filter((u: any) => u.role === 'DRIVER');
+      const fleetSource = rawDriversTable;
       const fleet = fleetSource.map((d: any) => ({
         id: d.id, name: d.name || "Driver", status: (d.availabilityStatus || "AVAILABLE").toUpperCase(),
         vehicle: d.vehicleReg || d.vehicle || "Van", zone: (d.zone || "GENERAL ZONE").toUpperCase(),

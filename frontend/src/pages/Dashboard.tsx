@@ -167,7 +167,7 @@ function KpiCard(props: { title: string; kpi: Kpi; icon: any; currency: string; 
         {props.title}
       </div>
       <div className="mt-2 text-[10px] font-semibold text-white/30">
-        {hasDelta ? "vs prior 30 days" : "current balance"}
+        {hasDelta ? "vs prior 30 days" : "no data yet"}
       </div>
     </button>
   );
@@ -183,6 +183,7 @@ export default function Dashboard() {
   const [isAiOpen, setIsAiOpen] = useState(false);
 
   const currency = (user?.company?.currency as string) || "ZAR";
+  const company = user?.company;
 
   // Persona-aware dashboard: render the KPI/widget mix that matches what this
   // role is allowed to see (same permission matrix the sidebar + routes use).
@@ -300,7 +301,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100 p-8 space-y-8 font-sans">
-      <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`${persona} · Tenant Workspace ID: ${user?.companyId || 1}`} />
+      <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`${persona} · ${company?.name || "FlowOps Demo"}`} />
 
       {/* Operational metrics — shown to operations / dispatch / command personas */}
       {canSeeOps && (

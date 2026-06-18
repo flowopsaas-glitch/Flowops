@@ -130,9 +130,10 @@ export default function WaybillInbox() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await api.get("/waybills/inbox");
-      setItems(Array.isArray(res.data) ? res.data : []);
-      if (res.data.length > 0 && selectedId === null) setSelectedId(res.data[0].id);
+      const res: any = await api.get("/waybills/inbox");
+      const list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+      setItems(list);
+      if (list.length > 0 && selectedId === null) setSelectedId(list[0].id);
     } catch (err) { console.error("Inbox Fetch Failed:", err); }
   }, [selectedId, showToast]);
 

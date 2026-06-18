@@ -1,199 +1,391 @@
-import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { api } from '../api/client'; 
-import { 
-  FileText, 
-  MapPin, 
-  Eye, 
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  Clock,
+  MapPin,
+  Package,
+  RefreshCw,
+  Search,
   Truck,
-  AlertCircle
-} from 'lucide-react';
-import EvidenceModal from '../components/Shipments/EvidenceModal';
+  XCircle,
+} from "lucide-react";
+import { api } from "../api/client";
 
-interface Waybill {
-  id: number;
-  waybillNumber: string;
-  status: string;
-  recipient: string;
-  signatureUrl: string | null;
-  imageUrl: string | null;
+// ── Types ─────────────────────────────────────────────────────────────────
+
+type ShipmentStatus = "PENDING" | "IN_TRANSIT" | "DELIVERED" | "FAILED";
+
+type Shipment = {
+  id: string;
+  status: ShipmentStatus;
+  currentLat?: number | null;
+  currentLng?: number | null;
+  estimatedDelivery?: string | null;
+  deliveredAt?: string | null;
   createdAt: string;
-  currentBranch?: { name: string };
+  updatedAt: string;
+  waybill?: {
+    trackingNumber: string;
+    recipientName?: string | null;
+    recipientAddress?: string | null;
+    status?: string;
+  } | null;
+  driver?: {
+    name: string;
+    phone?: string | null;
+    vehicleType?: string | null;
+  } | null;
+};
+
+// ── Status config ──────────────────────────────────────────────────────────
+
+const STATUS: Record<
+  ShipmentStatus,
+  { label: string; color: string; bg: string; icon: React.ReactNode; dot: string }
+> = {
+  PENDING: {
+    label: "Pending",
+    color: "text-amber-300",
+    bg: "border-amber-400/20 bg-amber-500/10",
+    icon: <Clock className="h-3.5 w-3.5" />,
+    dot: "bg-amber-400",
+  },
+  IN_TRANSIT: {
+    label: "In Transit",
+    color: "text-cyan-300",
+    bg: "border-cyan-400/20 bg-cyan-500/10",
+    icon: <Truck className="h-3.5 w-3.5" />,
+    dot: "bg-cyan-400 animate-pulse",
+  },
+  DELIVERED: {
+    label: "Delivered",
+    color: "text-emerald-300",
+    bg: "border-emerald-400/20 bg-emerald-500/10",
+    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+    dot: "bg-emerald-400",
+  },
+  FAILED: {
+    label: "Failed",
+    color: "text-rose-300",
+    bg: "border-rose-400/20 bg-rose-500/10",
+    icon: <XCircle className="h-3.5 w-3.5" />,
+    dot: "bg-rose-400",
+  },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS[status as ShipmentStatus] ?? STATUS.PENDING;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${s.bg} ${s.color}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+      {s.icon}
+      {s.label}
+    </span>
+  );
 }
 
-export default function ShipmentsPage() {
-  const [waybills, setWaybills] = useState<Waybill[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedWaybill, setSelectedWaybill] = useState<Waybill | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const statusFilter = (searchParams.get('status') || '').toUpperCase();
+// ── ETA helper ─────────────────────────────────────────────────────────────
 
-  const fetchData = async () => {
-    setIsLoading(true);
+function formatEta(ts?: string | null): string {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = d.getTime() - now.getTime();
+  if (diff < 0) return "Overdue";
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h > 24) return d.toLocaleDateString("en-ZA");
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────
+
+export default function Shipments() {
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useSearchParams();
+  const activeStatusFilter = (statusFilter.get("status") || "").toUpperCase() as ShipmentStatus | "";
+
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      // FIXED: Backend currently returning 404 or non-array data in some states
-      const { data } = await api.get('/waybills');
-      
-      // 🛡️ Safety Bridge: Ensures waybills is always an array to prevent .map() crashes
-      setWaybills(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("OPERATIONAL_CLAW_ERROR:", err);
-      setWaybills([]); // Fallback to empty state on fetch failure
+      const res: any = await api.get("/shipments");
+      const data = res?.data ?? res;
+      setShipments(Array.isArray(data) ? data : []);
+    } catch {
+      setShipments([]);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  };
-
-  useEffect(() => { 
-    fetchData(); 
   }, []);
 
-  const openEvidence = (wb: Waybill) => {
-    setSelectedWaybill(wb);
-    setIsModalOpen(true);
-  };
+  useEffect(() => {
+    void load();
+    // Auto-refresh every 30 s (live dispatch environment)
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, [load]);
 
-  // Helper to count active linehauls safely
-  const activeLinehauls = Array.isArray(waybills) 
-    ? waybills.filter(w => w.status === 'IN_TRANSIT').length 
-    : 0;
+  const stats = useMemo(() => {
+    const s = shipments;
+    return {
+      total: s.length,
+      pending: s.filter((x) => x.status === "PENDING").length,
+      inTransit: s.filter((x) => x.status === "IN_TRANSIT").length,
+      delivered: s.filter((x) => x.status === "DELIVERED").length,
+      failed: s.filter((x) => x.status === "FAILED").length,
+    };
+  }, [shipments]);
 
-  // Deep-link filter: when the dashboard navigates here with ?status=, narrow
-  // the table to that status so the drill-down lands on a focused view.
-  const visibleWaybills = Array.isArray(waybills)
-    ? (statusFilter ? waybills.filter(w => String(w.status).toUpperCase() === statusFilter) : waybills)
-    : [];
+  const visible = useMemo(() => {
+    let list = shipments;
+    if (activeStatusFilter) list = list.filter((s) => s.status === activeStatusFilter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (s) =>
+          s.waybill?.trackingNumber?.toLowerCase().includes(q) ||
+          s.waybill?.recipientName?.toLowerCase().includes(q) ||
+          s.driver?.name?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [shipments, activeStatusFilter, search]);
 
   return (
-    <div className="min-h-full bg-[#07111f] p-8">
-      {/* Header Area */}
-      <div className="flex justify-between items-end mb-10">
-        <div>
-          <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-2">
-            Operations Table
-          </p>
-          <h1 className="text-4xl font-black text-white tracking-tighter">
-            Shipments & Logistics
-          </h1>
-          {statusFilter && (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-400">
+              Operations Console
+            </div>
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-white">
+              Shipments
+            </h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Live shipment tracking across all active routes. Auto-refreshes every 30s.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {activeStatusFilter && (
+              <button
+                onClick={() => statusFilter.delete("status")}
+                className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[11px] font-bold text-blue-300 hover:bg-blue-500/20"
+              >
+                {activeStatusFilter}
+                <XCircle className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
-              onClick={() => setSearchParams({})}
-              className="mt-3 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-300 hover:bg-blue-500/20"
+              onClick={load}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10"
             >
-              Filter: {statusFilter}
-              <span className="text-blue-400">✕ clear</span>
+              <RefreshCw className="h-4 w-4" /> Refresh
             </button>
-          )}
+          </div>
         </div>
-        <button className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-2xl flex items-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-95">
-          <Truck size={18} /> Initiate Linehaul ({activeLinehauls})
-        </button>
       </div>
 
-      {/* The Table */}
-      <div className="rounded-[30px] border border-white/10 bg-white/5 overflow-hidden backdrop-blur-md shadow-2xl">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-white/10 bg-white/5">
-              <th className="p-5 text-[10px] font-black text-white/40 uppercase tracking-widest">Waybill / ID</th>
-              <th className="p-5 text-[10px] font-black text-white/40 uppercase tracking-widest">Current Hub</th>
-              <th className="p-5 text-[10px] font-black text-white/40 uppercase tracking-widest">Status</th>
-              <th className="p-5 text-[10px] font-black text-white/40 uppercase tracking-widest">Evidence</th>
-              <th className="p-5 text-[10px] font-black text-white/40 uppercase tracking-widest text-right">Created</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {isLoading ? (
-               <tr>
-                <td colSpan={5} className="p-20 text-center">
-                  <div className="animate-pulse flex flex-col items-center gap-2">
-                    <div className="h-2 w-48 bg-blue-500/20 rounded-full mb-2" />
-                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Hydrating Dashboard...</p>
-                  </div>
-                </td>
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {(
+          [
+            { key: "inTransit", label: "In Transit", icon: <Truck className="h-5 w-5" />, tone: "text-cyan-300" },
+            { key: "pending", label: "Pending", icon: <Clock className="h-5 w-5" />, tone: "text-amber-300" },
+            { key: "delivered", label: "Delivered", icon: <CheckCircle2 className="h-5 w-5" />, tone: "text-emerald-300" },
+            { key: "failed", label: "Failed", icon: <AlertCircle className="h-5 w-5" />, tone: "text-rose-300" },
+          ] as const
+        ).map(({ key, label, icon, tone }) => (
+          <button
+            key={key}
+            onClick={() =>
+              statusFilter.set(
+                "status",
+                key === "inTransit" ? "IN_TRANSIT" : key.toUpperCase()
+              )
+            }
+            className={`rounded-[24px] border border-white/10 bg-white/[0.05] p-5 text-left shadow-xl transition-colors hover:bg-white/[0.08] ${
+              activeStatusFilter ===
+              (key === "inTransit" ? "IN_TRANSIT" : key.toUpperCase())
+                ? "ring-2 ring-blue-400/40"
+                : ""
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-white/50">
+                {label}
+              </div>
+              <div className={tone}>{icon}</div>
+            </div>
+            <div className={`mt-2 text-3xl font-black ${tone}`}>
+              {stats[key as keyof typeof stats]}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl">
+        {/* Search */}
+        <div className="border-b border-white/10 p-4 flex items-center gap-3">
+          <Search className="h-4 w-4 text-white/30 shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tracking number, recipient, driver…"
+            className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
+          />
+          <span className="text-xs text-slate-500">
+            {visible.length} of {shipments.length}
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-white/40">
+                <th className="px-5 py-3">Tracking</th>
+                <th className="px-5 py-3">Recipient</th>
+                <th className="px-5 py-3">Driver</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">ETA</th>
+                <th className="px-5 py-3">GPS</th>
+                <th className="px-5 py-3 text-right">Updated</th>
               </tr>
-            ) : Array.isArray(visibleWaybills) && visibleWaybills.length > 0 ? (
-              visibleWaybills.map((wb) => (
-                <tr key={wb.id} className="hover:bg-white/[0.02] transition-colors group">
-                  <td className="p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-                        <FileText className="text-blue-400 h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-white font-bold text-sm tracking-tight">{wb.waybillNumber}</p>
-                        <p className="text-[10px] font-mono text-white/30 uppercase">UUID: {wb.id}</p>
-                      </div>
+            </thead>
+            <tbody>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-white/5">
+                    {Array.from({ length: 7 }).map((_, j) => (
+                      <td key={j} className="px-5 py-4">
+                        <div className="h-3 animate-pulse rounded-full bg-white/5" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : visible.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-16 text-center">
+                    <Package className="mx-auto h-10 w-10 text-white/10 mb-3" />
+                    <div className="text-white/40 font-bold">
+                      {shipments.length === 0
+                        ? "No shipments yet — create a waybill and assign a driver to see live tracking here."
+                        : "No shipments match your filters."}
                     </div>
-                  </td>
-                  <td className="p-5">
-                    <div className="flex items-center gap-2 text-white/60 text-xs font-medium">
-                      <MapPin size={14} className="text-blue-500" />
-                      {wb.currentBranch?.name || 'Unassigned Hub'}
-                    </div>
-                  </td>
-                  <td className="p-5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                      wb.status === 'DELIVERED' 
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                        : 'bg-pink-500/10 text-pink-400 border-pink-500/20'
-                    }`}>
-                      <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${wb.status === 'DELIVERED' ? 'bg-emerald-400' : 'bg-pink-400'}`} />
-                      {wb.status}
-                    </span>
-                  </td>
-                  <td className="p-5">
-                    {wb.status === 'DELIVERED' ? (
-                      <button 
-                        onClick={() => openEvidence(wb)}
-                        className="flex items-center gap-2 text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-widest"
-                      >
-                        <Eye size={14} /> View POD
-                      </button>
-                    ) : (
-                      <span className="text-[10px] font-bold text-white/10 uppercase tracking-widest italic">In Transit</span>
-                    )}
-                  </td>
-                  <td className="p-5 text-right">
-                    <p className="text-white/40 text-xs font-medium">
-                      {wb.createdAt ? new Date(wb.createdAt).toLocaleDateString() : 'N/A'}
-                    </p>
                   </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={5} className="p-24 text-center">
-                  <div className="flex flex-col items-center gap-4 opacity-40">
-                    <AlertCircle size={40} className="text-pink-500" />
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-black uppercase tracking-[0.4em] text-white">
-                        Signal Lost: No Waybills Found
-                      </p>
-                      <p className="text-[9px] font-mono text-blue-400">
-                        Check API endpoint /waybills or database sync state
-                      </p>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                visible.map((s) => (
+                  <tr
+                    key={s.id}
+                    className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
+                  >
+                    {/* Tracking */}
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl border border-cyan-500/20 bg-cyan-500/10 grid place-items-center">
+                          <Activity className="h-4 w-4 text-cyan-400" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white">
+                            {s.waybill?.trackingNumber ?? s.id.slice(0, 8)}
+                          </div>
+                          <div className="text-[10px] font-mono text-white/30">{s.id.slice(0, 10)}…</div>
+                        </div>
+                      </div>
+                    </td>
 
-      {/* 🖼️ The Signature Viewer Modal */}
-      {selectedWaybill && (
-        <EvidenceModal 
-          isOpen={isModalOpen} 
-          onClose={() => setIsModalOpen(false)} 
-          waybillId={selectedWaybill.id} 
-          signatureUrl={selectedWaybill.signatureUrl} 
-          imageUrl={selectedWaybill.imageUrl}
-          waybillNumber={selectedWaybill.waybillNumber} 
-        />
-      )}
+                    {/* Recipient */}
+                    <td className="px-5 py-4">
+                      <div className="font-semibold text-white">
+                        {s.waybill?.recipientName ?? "—"}
+                      </div>
+                      {s.waybill?.recipientAddress && (
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
+                          <MapPin className="h-3 w-3" />
+                          <span className="truncate max-w-[180px]">{s.waybill.recipientAddress}</span>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Driver */}
+                    <td className="px-5 py-4">
+                      {s.driver ? (
+                        <div>
+                          <div className="font-semibold text-white">{s.driver.name}</div>
+                          <div className="text-[11px] text-slate-400">{s.driver.vehicleType ?? s.driver.phone}</div>
+                        </div>
+                      ) : (
+                        <span className="text-white/30 text-xs">Unassigned</span>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-5 py-4">
+                      <StatusBadge status={s.status} />
+                    </td>
+
+                    {/* ETA */}
+                    <td className="px-5 py-4">
+                      <span
+                        className={`text-sm font-bold ${
+                          s.estimatedDelivery &&
+                          new Date(s.estimatedDelivery) < new Date() &&
+                          s.status !== "DELIVERED"
+                            ? "text-rose-400"
+                            : "text-slate-300"
+                        }`}
+                      >
+                        {s.status === "DELIVERED"
+                          ? s.deliveredAt
+                            ? new Date(s.deliveredAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })
+                            : "Delivered"
+                          : formatEta(s.estimatedDelivery)}
+                      </span>
+                    </td>
+
+                    {/* GPS */}
+                    <td className="px-5 py-4">
+                      {s.currentLat && s.currentLng ? (
+                        <a
+                          href={`https://maps.google.com/?q=${s.currentLat},${s.currentLng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/20"
+                        >
+                          <MapPin className="h-3 w-3" /> Live
+                        </a>
+                      ) : (
+                        <span className="text-white/20 text-xs">No GPS</span>
+                      )}
+                    </td>
+
+                    {/* Updated */}
+                    <td className="px-5 py-4 text-right text-xs text-slate-400">
+                      {new Date(s.updatedAt).toLocaleString("en-ZA", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
