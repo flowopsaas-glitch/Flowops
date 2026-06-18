@@ -49,11 +49,13 @@ const OwnerAudit = lazy(() => import("./pages/owner/OwnerAudit"));
 const OwnerTenantDetail = lazy(() => import("./pages/owner/OwnerTenantDetail"));
 const OwnerOpsMap = lazy(() => import("./pages/owner/OwnerOpsMap"));
 const WaybillCapture = lazy(() => import("./pages/WaybillCapture"));
+const BatchScan      = lazy(() => import("./pages/BatchScan"));
 const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
 const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
 const ManifestsPage = lazy(() => import("./pages/ManifestsPage"));
 const RouteOptimizer = lazy(() => import("./pages/RouteOptimizer"));
+const FleetMaintenance = lazy(() => import("./pages/FleetMaintenance"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
 const UserRolesPage = lazy(() => import("./pages/UserRolesPage"));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
@@ -136,6 +138,7 @@ export default function App() {
               <Route path="/shipments" element={<RequirePermission perm="shipments"><Shipments /></RequirePermission>} />
               <Route path="/waybills/inbox" element={<RequirePermission perm="waybillInbox"><WaybillInbox /></RequirePermission>} />
               <Route path="/waybills/scan" element={<RequirePermission perm="waybillInbox"><WaybillCapture /></RequirePermission>} />
+              <Route path="/waybills/batch-scan" element={<RequirePermission perm="waybillInbox"><BatchScan /></RequirePermission>} />
               <Route path="/waybills" element={<RequirePermission perm="waybills"><Waybills /></RequirePermission>} />
               <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
               <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />
@@ -146,6 +149,7 @@ export default function App() {
               <Route path="/manifests" element={<ManifestsPage />} />
               <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
               <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
+              <Route path="/fleet" element={<RequirePermission perm="driverDispatch"><FleetMaintenance /></RequirePermission>} />
               <Route path="/high-risk-queue" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/security/high-risk" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/user-roles" element={<RequirePermission perm="usersRoles"><UserRolesPage /></RequirePermission>} />

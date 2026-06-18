@@ -38,4 +38,72 @@ export class DriversService {
     await this.findOne(id, companyId);
     return this.prisma.driver.update({ where: { id }, data: { isActive: false } });
   }
+
+  // ── Fleet maintenance ─────────────────────────────────────────────────────
+
+  async getServiceHistory(driverId: string, companyId: string) {
+    await this.findOne(driverId, companyId); // ownership check
+    return this.prisma.vehicleService.findMany({
+      where: { driverId },
+      orderBy: { servicedAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  async logService(driverId: string, companyId: string, dto: {
+    serviceType: string; notes?: string; kmAtService?: number; cost?: number; servicedAt?: string;
+  }) {
+    await this.findOne(driverId, companyId);
+    return this.prisma.vehicleService.create({
+      data: {
+        driverId,
+        serviceType: dto.serviceType,
+        notes: dto.notes,
+        kmAtService: dto.kmAtService,
+        cost: dto.cost,
+        servicedAt: dto.servicedAt ? new Date(dto.servicedAt) : new Date(),
+      },
+    });
+  }
+
+  async updateOdometer(driverId: string, companyId: string, dto: {
+    currentKm: number; nextServiceKm?: number; nextServiceDate?: string;
+  }) {
+    await this.findOne(driverId, companyId);
+    return this.prisma.driver.update({
+      where: { id: driverId },
+      data: {
+        currentKm: dto.currentKm,
+        ...(dto.nextServiceKm   && { nextServiceKm: dto.nextServiceKm }),
+        ...(dto.nextServiceDate && { nextServiceDate: new Date(dto.nextServiceDate) }),
+      },
+    });
+  }
+
+  /** Returns all drivers with their fleet status for the maintenance dashboard. */
+  async fleetDashboard(companyId: string) {
+    const drivers = await this.prisma.driver.findMany({
+      where: { companyId, isActive: true },
+      select: {
+        id: true, name: true, vehicleType: true, vehicleReg: true, status: true,
+        currentKm: true, nextServiceKm: true, nextServiceDate: true, vehicleNotes: true,
+        services: {
+          orderBy: { servicedAt: 'desc' },
+          take: 1,
+          select: { servicedAt: true, serviceType: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const now = new Date();
+    return drivers.map((d) => {
+      const kmDue    = d.nextServiceKm && d.currentKm ? d.nextServiceKm - d.currentKm : null;
+      const daysDue  = d.nextServiceDate
+        ? Math.ceil((d.nextServiceDate.getTime() - now.getTime()) / 86400000)
+        : null;
+      const alert = (kmDue != null && kmDue <= 500) || (daysDue != null && daysDue <= 14);
+      return { ...d, kmUntilService: kmDue, daysUntilService: daysDue, serviceAlert: alert };
+    });
+  }
 }

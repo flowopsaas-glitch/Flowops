@@ -71,11 +71,50 @@ export class WaybillsService {
   async update(id: string, companyId: string, dto: any) {
     const existing = await this.findOne(id, companyId);
     const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
-    // Event-driven customer notification when the status changes.
     if (dto.status && dto.status !== existing.status) {
       void this.notifications.notifyWaybillStatus(updated);
     }
     return updated;
+  }
+
+  /**
+   * Bulk status update for warehouse batch scanning.
+   * Returns per-waybill results so the scan UI can show colour-coded feedback.
+   */
+  async batchScan(
+    companyId: string,
+    trackingNumbers: string[],
+    targetStatus: string,
+  ) {
+    const unique = [...new Set(trackingNumbers.map((t) => t.trim()).filter(Boolean))];
+    const results: Array<{ trackingNumber: string; result: 'updated' | 'notFound' | 'unchanged'; id?: string }> = [];
+
+    for (const tn of unique) {
+      const waybill = await this.prisma.waybill.findFirst({
+        where: { trackingNumber: tn, companyId },
+      });
+      if (!waybill) {
+        results.push({ trackingNumber: tn, result: 'notFound' });
+        continue;
+      }
+      if (waybill.status === targetStatus) {
+        results.push({ trackingNumber: tn, result: 'unchanged', id: waybill.id });
+        continue;
+      }
+      const updated = await this.prisma.waybill.update({
+        where: { id: waybill.id },
+        data: { status: targetStatus as any },
+      });
+      void this.notifications.notifyWaybillStatus(updated);
+      results.push({ trackingNumber: tn, result: 'updated', id: waybill.id });
+    }
+
+    return {
+      results,
+      updated:   results.filter((r) => r.result === 'updated').length,
+      notFound:  results.filter((r) => r.result === 'notFound').length,
+      unchanged: results.filter((r) => r.result === 'unchanged').length,
+    };
   }
 
   // ── POD delivery recording ─────────────────────────────────────────

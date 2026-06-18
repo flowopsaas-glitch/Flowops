@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers, ScanLine, Wallet, Gauge
+  Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -13,6 +13,7 @@ import logo from "../../assets/logo.png";
 import { useTenant } from "../../contexts/TenantContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { isImpersonating, impersonatedTenantName, exitImpersonation } from "../../lib/impersonation";
+import { useTheme } from "../../contexts/ThemeContext";
 import {
   normalizeTenantNavPermissions,
   type TenantNavPermissionKey,
@@ -169,6 +170,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const { branding } = useTenant();
   const { user, isAuthenticated } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const handler = (e: Event) => { 
@@ -184,6 +186,7 @@ export default function AppLayout() {
     { section: "CORE", label: "Shipments", desc: "Operations console", to: "/shipments", icon: Package, perm: "shipments" },
     { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search, perm: "waybillInbox" },
     { section: "CORE", label: "Scan Capture", desc: "Barcode & OCR intake", to: "/waybills/scan", icon: ScanLine, perm: "waybillInbox" },
+    { section: "CORE", label: "Batch Scan", desc: "Bulk status at hub", to: "/waybills/batch-scan", icon: ScanLine, perm: "waybillInbox" },
     { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList, perm: "waybills" },
     { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
     
@@ -191,6 +194,7 @@ export default function AppLayout() {
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },
     { section: "OPS", label: "Route Optimizer", desc: "AI stop sequencing", to: "/routes", icon: Route, perm: "driverDispatch" },
+    { section: "OPS", label: "Fleet Maintenance", desc: "Vehicle service tracker", to: "/fleet", icon: Wrench, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers },
     
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp" },
@@ -271,7 +275,7 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-[#07111f] text-white overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#07111f] text-white overflow-hidden font-sans lm-main">
       {/* Desktop Sidebar */}
       <aside className="hidden w-[300px] shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col">
         <SidebarContent 
@@ -304,7 +308,7 @@ export default function AppLayout() {
             </button>
           </div>
         ) : null}
-        <header className="z-30 border-b border-white/5 bg-[#081120]/80 backdrop-blur-md px-6 py-4 flex justify-between items-center shrink-0">
+        <header className="z-30 border-b border-white/5 bg-[#081120]/80 backdrop-blur-md px-6 py-4 flex justify-between items-center shrink-0 lm-header">
           <div className="flex items-center gap-4">
             <button onClick={() => setMobileOpen(true)} className="xl:hidden p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400">
               <Menu className="h-5 w-5" />
@@ -318,6 +322,14 @@ export default function AppLayout() {
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             AI Monitoring Active
           </div>
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            className="ml-2 flex items-center justify-center rounded-xl border border-white/10 bg-white/5 p-2 text-white/60 hover:bg-white/10 hover:text-white transition"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
         </header>
 
         <main role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar">

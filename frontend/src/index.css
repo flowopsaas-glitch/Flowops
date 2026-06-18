@@ -11,3 +11,82 @@ html, body, #root {
   body { background: #fff !important; }
   .print-sheet { box-shadow: none !important; padding: 0 !important; }
 }
+
+
+/* ─── Light-mode overrides ────────────────────────────────────────────────────
+   Applied when ThemeContext sets class="light-mode" on <html>.
+   Strategy: override only the darkest backgrounds and hardest-to-read text.
+   The sidebar intentionally stays dark (common SaaS pattern).
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Main page background (replaced by Tailwind inline classes bg-[#07111f] etc.) */
+.light-mode .lm-main {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+}
+
+/* Cards / panels */
+.light-mode .lm-card {
+  background: #fff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Hardcoded bg hex overrides — covers the most common page backgrounds */
+.light-mode .bg-\[\#07111f\],
+.light-mode .bg-\[\#0b1530\],
+.light-mode .bg-\[\#0e1b3f\],
+.light-mode .bg-\[\#020817\],
+.light-mode .bg-\[\#060B1A\],
+.light-mode .bg-\[\#08111f\] {
+  background-color: #f1f5f9 !important;
+}
+
+/* Inner surface panels like bg-white/5 in dark become opaque white in light */
+.light-mode .bg-white\/\[0\.05\],
+.light-mode .bg-white\/6,
+.light-mode .bg-white\/\[0\.06\] {
+  background-color: rgba(255,255,255,0.85) !important;
+  border-color: rgba(0,0,0,0.08) !important;
+}
+
+/* Text: make dark "text-white" readable on light backgrounds */
+.light-mode .lm-main .text-white,
+.light-mode .lm-main .text-slate-100,
+.light-mode .lm-main .text-slate-200 {
+  color: #1e293b !important;
+}
+.light-mode .lm-main .text-white\/50,
+.light-mode .lm-main .text-white\/60,
+.light-mode .lm-main .text-slate-400 {
+  color: #475569 !important;
+}
+.light-mode .lm-main .text-white\/30,
+.light-mode .lm-main .text-white\/40 {
+  color: #94a3b8 !important;
+}
+
+/* Borders */
+.light-mode .lm-main .border-white\/10,
+.light-mode .lm-main .border-white\/5 {
+  border-color: rgba(0,0,0,0.08) !important;
+}
+
+/* Inputs */
+.light-mode .lm-main input,
+.light-mode .lm-main textarea,
+.light-mode .lm-main select {
+  background-color: #fff !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Header in light mode */
+.light-mode .lm-header {
+  background-color: #fff !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+/* Transition */
+.lm-main, .lm-header {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}

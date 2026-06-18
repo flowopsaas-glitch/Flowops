@@ -3,16 +3,19 @@ import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   FileText,
   Loader2,
   Plus,
+  Printer,
   RefreshCw,
   Search,
   Send,
   Trash2,
   XCircle,
 } from "lucide-react";
-import { api } from "../api/client";
+import { api, getToken } from "../api/client";
+import { exportCsv, csvFilename } from "../lib/exportCsv";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -288,6 +291,14 @@ export default function Invoices() {
     }
   };
 
+  const printInvoice = (id: string) => {
+    // Open the print-HTML endpoint in a new tab — the page auto-triggers print
+    const base = (import.meta.env.VITE_API_URL ?? "/api/v1") as string;
+    const token = getToken();
+    const url = `${base}/invoices/${id}/print-html${token ? `?t=${encodeURIComponent(token)}` : ""}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   const sendInvoice = async (id: string) => {
     setBusy(`send-${id}`);
     try {
@@ -314,6 +325,38 @@ export default function Invoices() {
           <div className="flex gap-3">
             <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10">
               <RefreshCw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => exportCsv(
+                visible.map((inv) => ({
+                  invoiceNumber: inv.invoiceNumber,
+                  client:        inv.clientName,
+                  email:         inv.clientEmail ?? "",
+                  status:        inv.status,
+                  subtotal:      inv.subtotal,
+                  tax:           inv.tax,
+                  total:         inv.total,
+                  due:           inv.dueDate ?? "",
+                  paid:          inv.paidAt ?? "",
+                  created:       inv.createdAt,
+                })),
+                csvFilename("invoices"),
+                [
+                  { key: "invoiceNumber", label: "Invoice #" },
+                  { key: "client",        label: "Client"     },
+                  { key: "email",         label: "Email"      },
+                  { key: "status",        label: "Status"     },
+                  { key: "subtotal",      label: "Subtotal"   },
+                  { key: "tax",           label: "Tax"        },
+                  { key: "total",         label: "Total ZAR"  },
+                  { key: "due",           label: "Due Date"   },
+                  { key: "paid",          label: "Paid At"    },
+                  { key: "created",       label: "Created"    },
+                ]
+              )}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white/70 hover:bg-white/10 hover:text-white"
+            >
+              <Download className="h-4 w-4" /> CSV
             </button>
             <button onClick={() => setShowCreate(true)}
               className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 px-5 py-2.5 text-sm font-bold text-slate-950">
@@ -457,6 +500,14 @@ export default function Invoices() {
                             {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-ZA") : "Paid"}
                           </span>
                         )}
+                        {/* PDF print — always available */}
+                        <button
+                          onClick={() => printInvoice(inv.id)}
+                          title="Download / Print PDF"
+                          className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-white/50 hover:bg-white/10 hover:text-white transition"
+                        >
+                          <Printer className="h-3 w-3" />
+                        </button>
                       </div>
                     </td>
                   </tr>

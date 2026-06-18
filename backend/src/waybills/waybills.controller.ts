@@ -32,6 +32,19 @@ export class WaybillsController {
     return this.svc.create(u.companyId, body);
   }
 
+  /**
+   * POST /waybills/batch-scan
+   * Used by warehouse clerks scanning multiple waybills at the hub.
+   * Accepts a list of tracking numbers and a target status, updates them all.
+   */
+  @Post('waybills/batch-scan')
+  batchScan(
+    @CurrentUser() u: any,
+    @Body() body: { trackingNumbers: string[]; targetStatus: string },
+  ) {
+    return this.svc.batchScan(u.companyId, body.trackingNumbers, body.targetStatus);
+  }
+
   @Get('waybills/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, HttpCode, HttpStatus, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -44,6 +44,22 @@ export class InvoicesController {
   @Get('invoices/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);
+  }
+
+  /**
+   * GET /api/v1/invoices/:id/print-html
+   * Returns a self-contained, print-optimised HTML page for the invoice.
+   * Open in a new browser tab and call window.print() to get a PDF.
+   */
+  @Get('invoices/:id/print-html')
+  async printHtml(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Res() res: any,
+  ) {
+    const html = await this.svc.generateInvoiceHtml(id, u.companyId);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   }
 
   @Patch('invoices/:id')
