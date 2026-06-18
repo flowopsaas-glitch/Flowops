@@ -33,6 +33,20 @@ export class CodController {
     return this.svc.settleDriver(driverId, body.amount, u.companyId, body.note);
   }
 
+  /**
+   * POST /cod/geofence
+   * Called by the driver app when GPS position updates. Any IN_TRANSIT waybill
+   * whose recipient is within radiusM (default 500 m) is automatically
+   * advanced to OUT_FOR_DELIVERY so the customer gets a real-time notification.
+   */
+  @Post('geofence')
+  geofence(
+    @Body() body: { driverId: string; lat: number; lng: number; radiusM?: number },
+    @CurrentUser() u: any,
+  ) {
+    return this.svc.checkGeofence(body.driverId, u.companyId, body.lat, body.lng, body.radiusM ?? 500);
+  }
+
   @Get('wallets')
   listWallets(@CurrentUser() u: any) {
     return this.svc.listWallets(u.companyId);

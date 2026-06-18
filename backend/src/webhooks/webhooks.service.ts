@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
 
@@ -92,9 +93,11 @@ export class WebhooksService {
             await this.prisma.webhookDelivery.update({
               where: { id: deliveryId },
               data: {
-                status: res.ok ? 'DELIVERED' : 'FAILED',
+                status: res.ok ? 'DELIVERED' : 'RETRYING',
                 responseStatus: res.status,
                 responseBody: responseBody.slice(0, 1000),
+                // Schedule first retry in 1 minute on non-2xx
+                nextRetryAt: !res.ok ? new Date(Date.now() + 60_000) : null,
               },
             }).catch(() => {});
           }
@@ -103,7 +106,12 @@ export class WebhooksService {
           if (deliveryId) {
             await this.prisma.webhookDelivery.update({
               where: { id: deliveryId },
-              data: { status: 'FAILED', responseBody: err?.message ?? 'Network error' },
+              data: {
+                status: 'RETRYING',
+                responseBody: err?.message ?? 'Network error',
+                // Schedule first retry in 1 minute
+                nextRetryAt: new Date(Date.now() + 60_000),
+              },
             }).catch(() => {});
           }
         }
@@ -122,6 +130,104 @@ export class WebhooksService {
         endpoint: { select: { id: true, url: true } },
       },
     });
+  }
+
+  // ── Exponential back-off retry engine ─────────────────────────────────────
+
+  /** Back-off schedule: attempt 2 → 1 min, 3 → 5 min, 4 → 30 min, 5 → 2 h */
+  private static retryDelay(attempts: number): number {
+    const seconds = [0, 60, 300, 1800, 7200][attempts] ?? 28800;
+    return seconds * 1000;
+  }
+
+  /**
+   * Every minute: find FAILED / RETRYING deliveries whose nextRetryAt is due,
+   * re-attempt them, and mark EXHAUSTED after 5 total attempts.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async processRetries() {
+    let due: Array<{ id: string; endpointId: string; payload: string; attempts: number }> = [];
+    try {
+      due = await this.prisma.webhookDelivery.findMany({
+        where: {
+          status: { in: ['FAILED', 'RETRYING'] },
+          attempts: { lt: 5 },
+          nextRetryAt: { lte: new Date() },
+        },
+        select: { id: true, endpointId: true, payload: true, attempts: true },
+        take: 50,
+      });
+    } catch { return; }
+
+    for (const delivery of due) {
+      await this.retryDelivery(delivery);
+    }
+  }
+
+  private async retryDelivery(delivery: {
+    id: string; endpointId: string; payload: string; attempts: number;
+  }) {
+    const endpoint = await this.prisma.webhookEndpoint.findUnique({
+      where: { id: delivery.endpointId },
+      select: { url: true, secret: true, active: true },
+    }).catch(() => null);
+
+    if (!endpoint?.active) {
+      await this.prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: { status: 'EXHAUSTED' },
+      }).catch(() => {});
+      return;
+    }
+
+    const newAttempts = delivery.attempts + 1;
+    const signature = crypto.createHmac('sha256', endpoint.secret).update(delivery.payload).digest('hex');
+    const body = JSON.parse(delivery.payload) as Record<string, unknown>;
+    const event = String(body.event ?? 'unknown');
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(endpoint.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-FlowOps-Event': event,
+          'X-FlowOps-Signature': `sha256=${signature}`,
+          'X-FlowOps-Retry': String(newAttempts),
+        },
+        body: delivery.payload,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      const responseBody = await res.text().catch(() => '');
+      await this.prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          attempts:       newAttempts,
+          status:         res.ok ? 'DELIVERED' : (newAttempts >= 5 ? 'EXHAUSTED' : 'RETRYING'),
+          responseStatus: res.status,
+          responseBody:   responseBody.slice(0, 1000),
+          nextRetryAt:    !res.ok && newAttempts < 5
+            ? new Date(Date.now() + WebhooksService.retryDelay(newAttempts))
+            : null,
+        },
+      }).catch(() => {});
+    } catch (err: any) {
+      const status = newAttempts >= 5 ? 'EXHAUSTED' : 'RETRYING';
+      await this.prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          attempts:    newAttempts,
+          status,
+          responseBody: err?.message ?? 'Network error',
+          nextRetryAt: status === 'RETRYING'
+            ? new Date(Date.now() + WebhooksService.retryDelay(newAttempts))
+            : null,
+        },
+      }).catch(() => {});
+    }
   }
 
 }
