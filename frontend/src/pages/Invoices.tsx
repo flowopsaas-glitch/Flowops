@@ -350,7 +350,13 @@ export default function Invoices() {
       <div className="flex flex-wrap gap-2">
         {(["", "DRAFT", "SENT", "PAID", "OVERDUE"] as const).map((s) => (
           <button key={s || "ALL"}
-            onClick={() => s ? searchParams.set("status", s) : searchParams.delete("status")}
+            onClick={() => {
+              if (s) {
+                setSearchParams({ status: s });
+              } else {
+                setSearchParams({});
+              }
+            }}
             className={`rounded-2xl px-4 py-2 text-sm font-bold transition-colors ${
               statusFilter === s
                 ? "bg-white/15 text-white border border-white/20"

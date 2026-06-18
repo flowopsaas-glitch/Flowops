@@ -1,0 +1,29 @@
+{
+  "driver": {
+    "portal_title": "Bestuurder Portaal",
+    "portal_subtitle": "FlowOps veld-app",
+    "status_online": "Aanlyn",
+    "status_offline": "Vanlyn",
+    "offline_deliveries": "Vanlyn Afleveringe",
+    "deliveries_synced": "Alle afleveringe gesinkroniseer",
+    "pending_count_online": "vanlyn vasgelê, gereed om te sinkroniseer",
+    "pending_count_offline": "gestoor — sal sinkroniseer wanneer jy weer aanlyn is",
+    "sync_now": "Sinkroniseer nou",
+    "installable": "Installeerbaar · Werk vanlyn",
+    "pod_tip": "Maak 'n aflewering oop via jou diepstuurskakels om aflewer bewys vas te lê. PODs sonder sein word op hierdie toestel gestoor en laai outomaties op sodra jy weer konnekteer — jy verloor nooit 'n aflewering nie.",
+    "return_to_portal": "Terug na Portaal",
+    "audit_list": "Ouditkantlys",
+    "units_for_delivery": "Eenhede vir Aflewering",
+    "item_id": "Item ID",
+    "sign_for_handover": "Teken vir Oordrag",
+    "complete_audit_first": "Voltooi Oudit Eers",
+    "proof_of_delivery": "Afleweringsbewys",
+    "confirm_complete": "Bevestig & Voltooi",
+    "signature_required": "Handtekening vereis vir oordrag.",
+    "delivery_confirmed": "Aflewering suksesvol bevestig!",
+    "saved_offline": "Geen sein — aflewering vanlyn gestoor, sal outomaties sinkroniseer.",
+    "saved_offline_sync": "Vanlyn gestoor — sal sinkroniseer wanneer verbinding herstel.",
+    "waybill_not_found": "Vragbrief nie in stelsel gevind nie",
+    "syncing": "Sinkroniseer..."
+  }
+}

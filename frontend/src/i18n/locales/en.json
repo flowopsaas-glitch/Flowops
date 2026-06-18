@@ -51,5 +51,32 @@
     "unauthorized": "You are not authorized to access this page.",
     "notFound": "Page not found.",
     "server": "Server error. Please try again later."
+  },
+  "driver": {
+    "portal_title": "Driver Portal",
+    "portal_subtitle": "FlowOps field app",
+    "status_online": "Online",
+    "status_offline": "Offline",
+    "offline_deliveries": "Offline Deliveries",
+    "deliveries_synced": "All deliveries synced",
+    "pending_count_online": "captured offline, ready to sync",
+    "pending_count_offline": "saved — will sync when you're back online",
+    "sync_now": "Sync now",
+    "installable": "Installable · Works offline",
+    "pod_tip": "Open a delivery from your dispatch link to capture proof of delivery. PODs captured without signal are stored on this device and upload automatically once you reconnect — you never lose a delivery.",
+    "return_to_portal": "Return to Portal",
+    "audit_list": "Audit List",
+    "units_for_delivery": "Units for Delivery",
+    "item_id": "Item ID",
+    "sign_for_handover": "Sign for Handover",
+    "complete_audit_first": "Complete Audit First",
+    "proof_of_delivery": "Proof of Delivery",
+    "confirm_complete": "Confirm & Complete",
+    "signature_required": "Signature required for handover.",
+    "delivery_confirmed": "Delivery confirmed successfully!",
+    "saved_offline": "No signal — delivery saved offline, will sync automatically.",
+    "saved_offline_sync": "Saved offline — will sync when connection returns.",
+    "waybill_not_found": "Waybill not found in system",
+    "syncing": "Syncing..."
   }
 }

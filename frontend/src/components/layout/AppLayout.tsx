@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers, ScanLine
+  Layers, ScanLine, Wallet
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -201,6 +201,7 @@ export default function AppLayout() {
     { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt, perm: "invoices" },
     { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText, perm: "quotes" },
     { section: "BILLING", label: "Credit Control", desc: "Arrears management", to: "/credit-control", icon: ShieldAlert, perm: "creditControl" },
+    { section: "BILLING", label: "COD Reconciliation", desc: "Cash on delivery tracking", to: "/cod", icon: Wallet, perm: "billingBatches" },
     
     { section: "AI", label: "AI Control Tower", desc: "6-Claw Mesh Status", to: "/ai-control-tower", icon: Sparkles, perm: "aiControlTower" },
     { section: "AI", label: "High Risk Queue", desc: "Exception management", to: "/high-risk-queue", icon: ShieldAlert, perm: "risksExceptions" },
