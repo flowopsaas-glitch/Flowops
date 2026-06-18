@@ -33,6 +33,7 @@ import { CodModule } from './cod/cod.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
 import { RoutingModule } from './routing/routing.module';
 import { EcommerceModule } from './ecommerce/ecommerce.module';
+import { RateShoppingModule } from './rate-shopping/rate-shopping.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
@@ -70,6 +71,7 @@ import { AlertingModule } from './alerting/alerting.module';
     WebhooksModule,
     ApiModule,
     EcommerceModule,
+    RateShoppingModule,
 
     // Platform audit trail (global)
     AuditModule,

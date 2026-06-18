@@ -67,29 +67,39 @@ async function main() {
   // ── 1. Branches ──────────────────────────────────────────────────────────
   let jhbBranch = await prisma.branch.findFirst({ where: { companyId: cid, name: 'Johannesburg Hub' } });
   if (!jhbBranch) {
-    jhbBranch = await prisma.branch.create({ data: { companyId: cid, name: 'Johannesburg Hub', address: '12 Jan Smuts Ave, Braamfontein, Johannesburg', city: 'Johannesburg', code: 'JHB-001' } });
+    // Branch model has: id, name, address?, city?, lat?, lng? — no 'code' field
+    jhbBranch = await prisma.branch.create({ data: { companyId: cid, name: 'Johannesburg Hub', lat: -26.2041, lng: 28.0473 } });
     console.log('  Created branch: Johannesburg Hub');
   } else { console.log('  Skip branch: Johannesburg Hub'); }
 
   let ctBranch = await prisma.branch.findFirst({ where: { companyId: cid, name: 'Cape Town Hub' } });
   if (!ctBranch) {
-    ctBranch = await prisma.branch.create({ data: { companyId: cid, name: 'Cape Town Hub', address: '45 Long Street, Cape Town', city: 'Cape Town', code: 'CPT-001' } });
+    ctBranch = await prisma.branch.create({ data: { companyId: cid, name: 'Cape Town Hub', lat: -33.9249, lng: 18.4241 } });
     console.log('  Created branch: Cape Town Hub');
   } else { console.log('  Skip branch: Cape Town Hub'); }
 
   // ── 2. Drivers ───────────────────────────────────────────────────────────
+  // Driver model has: name, phone, email, vehicleType, vehicleReg, status,
+  // isActive, lastLat, lastLng, lastSeen — NOT lat/lng directly
   const driverDefs = [
-    { name: 'Sipho Dlamini',    vehicleType: 'motorbike', vehicleReg: 'GP123456', status: 'AVAILABLE', lat: -26.2041, lng: 28.0473 },
-    { name: 'Thandi Molefe',    vehicleType: 'car',       vehicleReg: 'WC987654', status: 'ON_ROUTE',   lat: -33.9249, lng: 18.4241 },
-    { name: 'Kgosi Sithole',    vehicleType: 'van',       vehicleReg: 'KZN456789', status: 'AVAILABLE', lat: -29.8587, lng: 31.0218 },
-    { name: 'Bongani Zulu',     vehicleType: 'truck',     vehicleReg: 'GP741852', status: 'OFFLINE',    lat: -26.1076, lng: 28.0567 },
-    { name: 'Lerato Mokoena',   vehicleType: 'motorbike', vehicleReg: 'GP369258', status: 'ON_ROUTE',   lat: -25.7479, lng: 28.2293 },
+    { name: 'Sipho Dlamini',    vehicleType: 'motorbike', vehicleReg: 'GP123456',  status: 'AVAILABLE', lastLat: -26.2041, lastLng: 28.0473 },
+    { name: 'Thandi Molefe',    vehicleType: 'car',       vehicleReg: 'WC987654',  status: 'ON_ROUTE',  lastLat: -33.9249, lastLng: 18.4241 },
+    { name: 'Kgosi Sithole',    vehicleType: 'van',       vehicleReg: 'KZN456789', status: 'AVAILABLE', lastLat: -29.8587, lastLng: 31.0218 },
+    { name: 'Bongani Zulu',     vehicleType: 'truck',     vehicleReg: 'GP741852',  status: 'OFFLINE',   lastLat: -26.1076, lastLng: 28.0567 },
+    { name: 'Lerato Mokoena',   vehicleType: 'motorbike', vehicleReg: 'GP369258',  status: 'ON_ROUTE',  lastLat: -25.7479, lastLng: 28.2293 },
   ];
   const drivers = [];
   for (const d of driverDefs) {
     const existing = await prisma.driver.findFirst({ where: { companyId: cid, name: d.name } });
     if (existing) { drivers.push(existing); console.log('  Skip driver: ' + d.name); continue; }
-    const created = await prisma.driver.create({ data: { companyId: cid, ...d, phone: phone(), email: email(d.name), lastSeen: new Date(), lastLat: d.lat, lastLng: d.lng } });
+    const created = await prisma.driver.create({
+      data: {
+        companyId: cid,
+        name: d.name, vehicleType: d.vehicleType, vehicleReg: d.vehicleReg, status: d.status,
+        phone: phone(), email: email(d.name),
+        lastSeen: new Date(), lastLat: d.lastLat, lastLng: d.lastLng,
+      },
+    });
     drivers.push(created);
     console.log('  Created driver: ' + d.name);
   }
@@ -106,6 +116,7 @@ async function main() {
       const createdAt = daysAgo(randInt(1, 30));
       const wb = await prisma.waybill.create({ data: {
         companyId: cid,
+        // Waybill schema fields only — no serviceLevel, no estimatedDelivery
         trackingNumber: waybillNum(wbCount + i + 1),
         status,
         senderName:    rand(NAMES),
@@ -123,9 +134,7 @@ async function main() {
         description:   rand(['Electronics', 'Documents', 'Clothing', 'Food', 'Medicine', 'Auto Parts']),
         totalAmount:   parseFloat((Math.random() * 2000 + 200).toFixed(2)),
         codAmount:     i % 3 === 0 ? parseFloat((Math.random() * 500 + 100).toFixed(2)) : null,
-        serviceLevel:  rand(['STANDARD', 'EXPRESS', 'OVERNIGHT']),
         podDeliveredAt: status === 'DELIVERED' ? daysAgo(randInt(1, 5)) : null,
-        estimatedDelivery: daysFromNow(randInt(1, 3)),
         createdAt,
         updatedAt: new Date(),
       }});
@@ -162,7 +171,8 @@ async function main() {
   // ── 5. Collections ────────────────────────────────────────────────────────
   const colCount = await prisma.collection.count({ where: { companyId: cid } });
   if (colCount === 0) {
-    const colStatuses = ['PENDING','PENDING','IN_PROGRESS','IN_PROGRESS','COMPLETED'];
+    // CollectionStatus enum: PENDING | ASSIGNED | IN_PROGRESS | COLLECTED | FAILED | CANCELLED
+    const colStatuses = ['PENDING','PENDING','IN_PROGRESS','IN_PROGRESS','COLLECTED'];
     for (let i = 0; i < 5; i++) {
       const loc = rand(SA_LOCS);
       const driver = i < 2 ? null : rand(drivers.filter(d => d.status !== 'OFFLINE'));
@@ -285,10 +295,12 @@ async function main() {
         name:      client,
         lastMessageAt: new Date(),
       }});
+      // WhatsAppMessage has: threadId, content, direction, status, createdAt
+      // (no companyId field on messages — company is on the thread)
       await prisma.whatsAppMessage.createMany({ data: [
-        { companyId: cid, threadId: thread.id, content: 'Hi, when will my parcel arrive?', direction: 'inbound',  status: 'delivered', createdAt: daysAgo(1) },
-        { companyId: cid, threadId: thread.id, content: 'Your parcel is out for delivery and will arrive by 3pm today.', direction: 'outbound', status: 'delivered', createdAt: daysAgo(1) },
-        { companyId: cid, threadId: thread.id, content: 'Thank you!', direction: 'inbound', status: 'delivered', createdAt: new Date() },
+        { threadId: thread.id, content: 'Hi, when will my parcel arrive?', direction: 'inbound',  status: 'delivered', createdAt: daysAgo(1) },
+        { threadId: thread.id, content: 'Your parcel is out for delivery and will arrive by 3pm today.', direction: 'outbound', status: 'delivered', createdAt: daysAgo(1) },
+        { threadId: thread.id, content: 'Thank you!', direction: 'inbound', status: 'delivered', createdAt: new Date() },
       ]});
     }
     console.log('  Created WhatsApp threads for 3 clients');
