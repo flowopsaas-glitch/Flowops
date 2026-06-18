@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useToast } from "../components/ToastProvider";
+import { api } from "../api/client";
 import {
   FileText, Plus, Save, Upload, ScanLine, Sparkles, AlertTriangle,
   BadgeCheck, Hash, CreditCard, Truck, ClipboardList, Package,
@@ -155,6 +156,7 @@ export default function Waybills() {
   const { showToast } = useToast();
   const [mode, setMode] = useState<"CAPTURE" | "SCAN" | "UPLOAD">("CAPTURE");
   const [step, setStep] = useState<StepKey>("DETAILS");
+  const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState<WaybillDraft>(() => ({
     waybillNo: `WB-${Math.floor(100000 + Math.random() * 900000)}`,
     orderDate: todayISO(),
@@ -179,6 +181,63 @@ export default function Waybills() {
   const addParcel = () => setDraft(d => ({ ...d, parcels: [...d.parcels, { id: uid(), qty: 1, weightKg: 0, lengthCm: 0, widthCm: 0, heightCm: 0 }] }));
   const removeParcel = (id: string) => setDraft(d => ({ ...d, parcels: d.parcels.filter(p => p.id !== id) }));
 
+  // ── Save Draft → POST /waybills ──────────────────────────────────────────
+  async function saveDraft() {
+    if (!draft.senderName.trim() || !draft.receiverName.trim()) {
+      showToast("Please fill in Sender and Receiver names before saving.", "error");
+      setStep("PARTIES");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      // Map UI field names to the backend Waybill schema
+      const senderAddress = [draft.senderAddress1, draft.senderCity].filter(Boolean).join(", ");
+      const recipientAddress = [draft.receiverAddress1, draft.receiverCity].filter(Boolean).join(", ");
+      const totalAmount = parseFloat((t.chargeKg * 15.5).toFixed(2));
+
+      const payload: Record<string, unknown> = {
+        trackingNumber:   draft.waybillNo,
+        senderName:       draft.senderName,
+        senderPhone:      draft.senderPhone,
+        senderAddress:    senderAddress || "N/A",
+        recipientName:    draft.receiverName,
+        recipientPhone:   draft.receiverPhone,
+        recipientAddress: recipientAddress || "N/A",
+        weight:           parseFloat(t.chargeKg.toFixed(3)),
+        description:      draft.notes || undefined,
+        totalAmount,
+        status:           "PENDING",
+      };
+      if (draft.paymentType === "COD" && draft.codAmount > 0) {
+        payload.codAmount = draft.codAmount;
+      }
+
+      await api.post("/waybills", payload);
+      showToast(`Waybill ${draft.waybillNo} saved successfully!`, "success");
+
+      // Reset to a fresh draft
+      setDraft({
+        waybillNo: `WB-${Math.floor(100000 + Math.random() * 900000)}`,
+        orderDate: todayISO(),
+        serviceLevel: "Next Day",
+        paymentType: "PREPAID",
+        codAmount: 0,
+        chargeSide: "SENDER",
+        clientContractCode: "",
+        senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "",
+        receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "",
+        reference: "", notes: "",
+        parcels: [{ id: uid(), qty: 1, weightKg: 2.5, lengthCm: 30, widthCm: 20, heightCm: 15 }],
+      });
+      setStep("DETAILS");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to save waybill";
+      showToast(msg, "error");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const stepItems = [
     { key: "DETAILS" as StepKey, label: "Details", icon: ClipboardList },
     { key: "PARTIES" as StepKey, label: "Parties", icon: UserRound },
@@ -198,7 +257,10 @@ export default function Waybills() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" className="border-white/10 bg-white/5" onClick={() => setMode("SCAN")}><ScanLine className="mr-2 h-4 w-4"/> Scan</Button>
-            <Button className="bg-sky-500 hover:bg-sky-400" onClick={() => showToast("Saved to database", "success")}><Save className="mr-2 h-4 w-4"/> Save Draft</Button>
+            <Button className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50" disabled={isSaving} onClick={() => void saveDraft()}>
+              <Save className="mr-2 h-4 w-4"/>
+              {isSaving ? "Saving…" : "Save Draft"}
+            </Button>
           </div>
         </div>
 
