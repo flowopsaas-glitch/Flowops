@@ -59,20 +59,44 @@ export class TrackingService {
         ? { lat: waybill.recipientLat, lng: waybill.recipientLng }
         : null;
 
-    // Predictive ETA: remaining road distance approximated by great-circle km
-    // at an average urban speed. Falls back to the planned estimatedDelivery.
+    // ── Predictive ETA via OSRM (traffic-aware road routing) ─────────────
+    // OSRM public demo used when OSRM_BASE_URL is not set — works well for
+    // testing. Set OSRM_BASE_URL to a self-hosted instance for production.
+    // Falls back to great-circle approximation on any network error.
     let etaMinutes: number | null = null;
     let remainingKm: number | null = null;
     if (!delivered && current && destination) {
-      remainingKm = GeocodingService.haversineKm(
-        current.lat,
-        current.lng,
-        destination.lat,
-        destination.lng,
-      );
-      const avgSpeedKmh = 35; // conservative urban average incl. stops
-      etaMinutes = Math.max(1, Math.round((remainingKm / avgSpeedKmh) * 60));
-      remainingKm = Math.round(remainingKm * 10) / 10;
+      try {
+        const osrmBase = process.env.OSRM_BASE_URL ?? 'https://router.project-osrm.org';
+        const url =
+          `${osrmBase}/route/v1/driving/` +
+          `${current.lng},${current.lat};${destination.lng},${destination.lat}` +
+          `?overview=false&annotations=false`;
+
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 4000);
+        const res = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(timer);
+
+        if (res.ok) {
+          const data: any = await res.json();
+          const route = data?.routes?.[0];
+          if (route?.distance != null && route?.duration != null) {
+            remainingKm  = Math.round((route.distance / 1000) * 10) / 10;
+            etaMinutes   = Math.max(1, Math.round(route.duration / 60));
+          }
+        }
+      } catch { /* fall through to haversine */ }
+
+      // Haversine fallback if OSRM failed / timed out
+      if (remainingKm == null) {
+        const gc = GeocodingService.haversineKm(
+          current.lat, current.lng,
+          destination.lat, destination.lng,
+        );
+        remainingKm = Math.round(gc * 10) / 10;
+        etaMinutes  = Math.max(1, Math.round((gc / 35) * 60));
+      }
     }
 
     const timeline = [

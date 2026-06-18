@@ -32,6 +32,7 @@ import { EmailModule } from './email/email.module';
 import { CodModule } from './cod/cod.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
 import { RoutingModule } from './routing/routing.module';
+import { EcommerceModule } from './ecommerce/ecommerce.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
@@ -68,6 +69,7 @@ import { AlertingModule } from './alerting/alerting.module';
     // Tenant integration platform: outbound webhooks + public API (Shopify etc.)
     WebhooksModule,
     ApiModule,
+    EcommerceModule,
 
     // Platform audit trail (global)
     AuditModule,

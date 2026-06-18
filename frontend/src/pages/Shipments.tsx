@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  Download,
   MapPin,
   Package,
   RefreshCw,
@@ -14,6 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { api } from "../api/client";
+import { exportCsv, csvFilename } from "../lib/exportCsv";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -190,6 +192,32 @@ export default function Shipments() {
               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10"
             >
               <RefreshCw className="h-4 w-4" /> Refresh
+            </button>
+            <button
+              onClick={() => exportCsv(
+                visible.map((w: any) => ({
+                  tracking:  w.trackingNumber,
+                  status:    w.status,
+                  sender:    w.senderName,
+                  recipient: w.recipientName,
+                  address:   w.recipientAddress,
+                  amount:    w.totalAmount ?? "",
+                  created:   w.createdAt,
+                })),
+                csvFilename("shipments"),
+                [
+                  { key: "tracking",  label: "Tracking #"      },
+                  { key: "status",    label: "Status"          },
+                  { key: "sender",    label: "Sender"          },
+                  { key: "recipient", label: "Recipient"       },
+                  { key: "address",   label: "Delivery Address"},
+                  { key: "amount",    label: "Amount ZAR"      },
+                  { key: "created",   label: "Created"         },
+                ]
+              )}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white/70 hover:bg-white/10 hover:text-white"
+            >
+              <Download className="h-4 w-4" /> CSV
             </button>
           </div>
         </div>

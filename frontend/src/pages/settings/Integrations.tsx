@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Activity, Check, CheckCircle2, Copy, Loader2, Plus, RefreshCw,
-  Trash2, Webhook, KeyRound, AlertTriangle, Clock, XCircle,
+  Trash2, Webhook, KeyRound, AlertTriangle, Clock, XCircle, ShoppingBag,
 } from "lucide-react";
 import { api } from "../../api/client";
 
@@ -39,7 +39,7 @@ const DELIVERY_STATUS_CFG: Record<DeliveryStatus, { cls: string; icon: React.Com
   EXHAUSTED: { cls: "border-rose-600/30 bg-rose-700/10 text-rose-300",       icon: AlertTriangle },
 };
 
-type Tab = "keys" | "webhooks" | "log";
+type Tab = "keys" | "webhooks" | "log" | "stores";
 
 export default function Integrations() {
   const [tab, setTab] = useState<Tab>("keys");
@@ -136,6 +136,7 @@ export default function Integrations() {
           { k: "keys",    label: "API Keys",      icon: KeyRound },
           { k: "webhooks",label: "Webhooks",       icon: Webhook },
           { k: "log",     label: `Delivery Log${logStats.failed > 0 ? ` (${logStats.failed} failed)` : ""}`, icon: Activity },
+          { k: "stores",  label: "Stores",         icon: ShoppingBag },
         ] as const).map(({ k, label, icon: Icon }) => (
           <button key={k} onClick={() => setTab(k as Tab)}
             className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
@@ -348,6 +349,103 @@ export default function Integrations() {
           </div>
         </section>
       )}
+
+      {/* ── STORES (Shopify / WooCommerce) ── */}
+      {tab === "stores" && <StoresTab />}
     </div>
   );
 }
+
+// ── Stores Tab ────────────────────────────────────────────────────────────────
+
+function StoreCard({
+  logo, name, color, webhookPath, secretEnvHint, docUrl,
+}: {
+  logo: string; name: string; color: string;
+  webhookPath: string; secretEnvHint: string; docUrl: string;
+}) {
+  const base = (window as any).__VITE_API_BASE__ ?? window.location.origin;
+  const endpoint = `${base}/api/v1${webhookPath}`;
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(endpoint);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-slate-900/50 p-6 space-y-4">
+      <div className="flex items-center gap-3">
+        <div className={`text-2xl font-black ${color}`}>{logo}</div>
+        <div>
+          <div className="font-black text-white text-lg">{name}</div>
+          <a href={docUrl} target="_blank" rel="noreferrer" className="text-xs text-sky-400 hover:underline">
+            Setup guide →
+          </a>
+        </div>
+      </div>
+      <div>
+        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50 mb-1.5">
+          Webhook Endpoint URL
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+          <code className="flex-1 text-xs text-sky-200 break-all">{endpoint}</code>
+          <button onClick={copy} className="shrink-0 rounded-lg bg-white/10 p-1.5 text-white/60 hover:text-white">
+            {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+          </button>
+        </div>
+      </div>
+      <div className="rounded-xl border border-amber-400/20 bg-amber-500/8 px-4 py-3 text-xs text-amber-200/80 leading-relaxed">
+        <span className="font-bold">Secret env var: </span>
+        <code className="font-mono">{secretEnvHint}</code>
+        <br />
+        Set this to the webhook secret from your {name} admin. Every inbound order will become a FlowOps waybill automatically.
+      </div>
+    </div>
+  );
+}
+
+function StoresTab() {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-[24px] border border-white/10 bg-slate-900/50 p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <ShoppingBag size={18} className="text-sky-400" />
+          <h2 className="text-lg font-black">E-commerce Store Connections</h2>
+        </div>
+        <p className="text-sm text-white/50">
+          Connect your Shopify or WooCommerce store to automatically create waybills
+          whenever an order is placed. No polling — FlowOps receives a signed webhook
+          from your store the instant an order comes in.
+        </p>
+      </div>
+      <div className="grid gap-5 md:grid-cols-2">
+        <StoreCard
+          logo="🛍"
+          name="Shopify"
+          color="text-emerald-400"
+          webhookPath="/ecommerce/shopify/webhook"
+          secretEnvHint={`SHOPIFY_SECRET_<YOUR_COMPANY_ID>`}
+          docUrl="https://shopify.dev/docs/apps/build/webhooks/configure/https"
+        />
+        <StoreCard
+          logo="🛒"
+          name="WooCommerce"
+          color="text-purple-400"
+          webhookPath="/ecommerce/woocommerce/webhook"
+          secretEnvHint={`WC_SECRET_<YOUR_COMPANY_ID>`}
+          docUrl="https://woo.com/document/webhooks/"
+        />
+      </div>
+      <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-xs text-white/40 space-y-1">
+        <div className="font-bold text-white/60">How it works</div>
+        <ol className="list-decimal pl-4 space-y-1">
+          <li>Copy the webhook endpoint URL above into your store's webhook settings.</li>
+          <li>Set the secret as an environment variable on your backend server.</li>
+          <li>Also set <code className="font-mono">SHOPIFY_DOMAIN_&lt;id&gt;</code> or <code className="font-mono">WC_SOURCE_&lt;id&gt;</code> to link your store to your company.</li>
+          <li>Every new order will instantly create a FlowOps waybill with the recipient details.</li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+

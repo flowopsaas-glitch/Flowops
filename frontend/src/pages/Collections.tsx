@@ -22,6 +22,7 @@ import {
   Bot,
 } from "lucide-react";
 import { api } from '../api/client';
+import { exportCsv, csvFilename } from '../lib/exportCsv';
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -252,6 +253,32 @@ export default function Collections() {
             </div>
             <button onClick={() => loadAll("refresh")} className="flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 hover:bg-white/15 transition">
               <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} /> Refresh Workspace
+            </button>
+            <button
+              onClick={() => exportCsv(
+                rows.map((r) => ({
+                  name:     r.name,
+                  status:   r.status,
+                  address:  r.collectionAddress ?? "",
+                  contact:  r.collectionContactName ?? "",
+                  phone:    r.collectionContactPhone ?? "",
+                  parcels:  r.parcelCount ?? "",
+                  created:  r.createdAt ?? "",
+                })),
+                csvFilename("collections"),
+                [
+                  { key: "name",    label: "Collection"   },
+                  { key: "status",  label: "Status"       },
+                  { key: "address", label: "Address"      },
+                  { key: "contact", label: "Contact"      },
+                  { key: "phone",   label: "Phone"        },
+                  { key: "parcels", label: "Parcels"      },
+                  { key: "created", label: "Created"      },
+                ]
+              )}
+              className="flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 hover:bg-white/15 transition text-sm font-bold text-white/70"
+            >
+              <Save className="h-4 w-4" /> CSV
             </button>
           </div>
           

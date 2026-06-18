@@ -38,4 +38,34 @@ export class DriversController {
   remove(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.remove(id, u.companyId);
   }
+
+  // ── Fleet maintenance ─────────────────────────────────────────────────────
+
+  @Get(':id/service-history')
+  getServiceHistory(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.getServiceHistory(id, u.companyId);
+  }
+
+  @Post(':id/service-log')
+  logService(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Body() body: { serviceType: string; notes?: string; kmAtService?: number; cost?: number; servicedAt?: string },
+  ) {
+    return this.svc.logService(id, u.companyId, body);
+  }
+
+  @Patch(':id/odometer')
+  updateOdometer(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Body() body: { currentKm: number; nextServiceKm?: number; nextServiceDate?: string },
+  ) {
+    return this.svc.updateOdometer(id, u.companyId, body);
+  }
+
+  @Get('fleet/dashboard')
+  fleetDashboard(@CurrentUser() u: any) {
+    return this.svc.fleetDashboard(u.companyId);
+  }
 }

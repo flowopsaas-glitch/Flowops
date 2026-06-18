@@ -258,11 +258,24 @@ export default function Notifications() {
                         </span>
                       </div>
 
-                      {(item.body) && (
-                        <p className="mt-1.5 text-sm text-white/60 leading-relaxed line-clamp-2">
-                          {item.body}
-                        </p>
-                      )}
+                      <div className="mt-1.5 text-sm text-white/60 leading-relaxed line-clamp-2">
+                          {/* Render wa.me links as clickable WhatsApp buttons */}
+                          {(item.body ?? "").replace(/\[WhatsApp: (https?:\/\/[^\]]+)\]/g, "").trim()}
+                          {(() => {
+                            const m = (item.body ?? "").match(/\[WhatsApp: (https?:\/\/[^\]]+)\]/);
+                            return m ? (
+                              <a
+                                href={m[1]}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="ml-2 inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300 hover:bg-emerald-500/20 transition"
+                              >
+                                📱 Send WhatsApp
+                              </a>
+                            ) : null;
+                          })()}
+                        </div>
 
                       <div className="mt-2.5 flex items-center justify-between gap-4 flex-wrap">
                         <div className="flex items-center gap-1.5 text-xs text-white/35">

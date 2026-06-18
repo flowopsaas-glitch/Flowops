@@ -118,35 +118,45 @@ export class NotificationsService {
   /**
    * Fired when a waybill's status changes. Logs an internal notification for
    * the tenant and (when the recipient email + SendGrid are available) emails
-   * the customer a branded update with a live tracking link. Best-effort:
-   * failures are logged and never block the status change.
+   * the customer a branded update with a live tracking link.
+   *
+   * When the waybill has a recipientPhone, also prepares a pre-built WhatsApp
+   * click-to-chat URL — the operator sees a "Send WhatsApp" link in the
+   * notification feed and can forward it to the customer in one tap.
    */
   async notifyWaybillStatus(waybill: {
     companyId: string;
     trackingNumber: string;
     recipientName?: string | null;
     recipientEmail?: string | null;
+    recipientPhone?: string | null;
     status: string;
   }) {
     const copy = NotificationsService.CUSTOMER_STATUS_COPY[waybill.status];
     if (!copy) return; // not a customer-facing status
 
     const trackUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/track/${waybill.trackingNumber}`;
+    const name = (waybill.recipientName || 'there').split(/\s+/)[0];
 
-    // 0) Emit a webhook event for tenant integrations (Shopify, etc.).
+    // Build a WhatsApp click-to-chat URL when we have the recipient's phone.
+    const waLink = this.buildWaLink(waybill.recipientPhone, name, waybill.trackingNumber, copy.line, trackUrl);
+
+    // 0) Webhook event for tenant integrations.
     void this.webhooks.dispatch(waybill.companyId, 'waybill.status_changed', {
       trackingNumber: waybill.trackingNumber,
       status: waybill.status,
       trackUrl,
     });
 
-    // 1) Internal notification for the tenant operations feed.
+    // 1) Internal tenant notification (includes WA link when available).
     try {
       await this.prisma.notification.create({
         data: {
           companyId: waybill.companyId,
           title: `${copy.title} · ${waybill.trackingNumber}`,
-          body: `Parcel ${waybill.trackingNumber} ${copy.line}.`,
+          body: waLink
+            ? `${waybill.trackingNumber} ${copy.line}. [WhatsApp: ${waLink}]`
+            : `Parcel ${waybill.trackingNumber} ${copy.line}.`,
           type: 'STATUS_UPDATE',
         },
       });
@@ -154,9 +164,8 @@ export class NotificationsService {
       this.logger.warn(`Failed to log status notification: ${err?.message ?? err}`);
     }
 
-    // 2) Customer email (only if we have an address + a configured sender).
+    // 2) Customer email.
     if (waybill.recipientEmail) {
-      const name = (waybill.recipientName || 'there').split(/\s+/)[0];
       await this.email
         .send({
           to: waybill.recipientEmail,
@@ -165,10 +174,33 @@ export class NotificationsService {
           html: `
             <h2 style="margin-top:0;color:#1e3a5f;">${copy.title}</h2>
             <p>Hi ${name}, your parcel <strong>${waybill.trackingNumber}</strong> ${copy.line}.</p>
-            <a href="${trackUrl}" class="btn">Track your delivery</a>
+            <a href="${trackUrl}" style="display:inline-block;margin-top:12px;padding:10px 20px;background:#10b981;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Track your delivery</a>
+            ${waLink ? `<p style="margin-top:12px;font-size:12px;color:#888;">Reply on WhatsApp: <a href="${waLink}">${waLink}</a></p>` : ''}
           `,
         })
         .catch((err) => this.logger.warn(`Status email failed: ${err?.message ?? err}`));
     }
   }
+
+  /**
+   * Builds a wa.me click-to-chat URL with a pre-filled message.
+   * Returns null if no valid phone number is available.
+   */
+  private buildWaLink(
+    phone?: string | null,
+    recipientName = 'there',
+    trackingNumber = '',
+    statusLine = '',
+    trackUrl = '',
+  ): string | null {
+    if (!phone) return null;
+    // Normalise: keep only digits, strip leading 0, add 27 country code for SA
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 9) return null;
+    const intl = digits.startsWith('0') ? `27${digits.slice(1)}` : digits;
+
+    const text = `Hi ${recipientName}, your FlowOps parcel (${trackingNumber}) ${statusLine}. Track it here: ${trackUrl}`;
+    return `https://wa.me/${intl}?text=${encodeURIComponent(text)}`;
+  }
+
 }
