@@ -23,4 +23,10 @@ export class WebhooksController {
   remove(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.remove(id, u.companyId);
   }
+
+  /** GET /integrations/webhooks/deliveries — recent delivery attempts */
+  @Get('deliveries')
+  deliveries(@CurrentUser() u: any) {
+    return this.svc.listDeliveries(u.companyId, 200);
+  }
 }

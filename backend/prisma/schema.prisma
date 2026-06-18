@@ -184,6 +184,7 @@ model Company {
   approvalRequest    ApprovalRequest?
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
+  codTransactions    CodTransaction[]
 
   @@map("companies")
 }
@@ -268,6 +269,8 @@ model WebhookEndpoint {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  deliveries WebhookDelivery[]
 
   @@map("webhook_endpoints")
 }
@@ -355,6 +358,7 @@ model Driver {
   collections Collection[]
   shipments   Shipment[]
   manifests   Manifest[]
+  wallet      DriverWallet?
 
   @@map("drivers")
 }
@@ -411,6 +415,8 @@ model Waybill {
   description String?
   totalAmount Float?
   codAmount   Float?
+  codCollected    Boolean   @default(false)   // driver has physically collected the cash
+  codCollectedAt  DateTime?
 
   // Risk assessment
   riskLevel RiskLevel @default(LOW)
@@ -440,6 +446,7 @@ model Waybill {
   manifestWaybills ManifestWaybill[]
   invoiceItems     InvoiceItem[]
   inboxItem        WaybillInboxItem?
+  codTransactions  CodTransaction[]
 
   @@unique([trackingNumber, companyId])
   @@map("waybills")
@@ -984,4 +991,81 @@ model PlatformAlert {
   @@index([resolved])
   @@index([createdAt])
   @@map("platform_alerts")
+}
+
+
+// ─── COD Reconciliation ────────────────────────────────────────────────────
+
+model DriverWallet {
+  id             String    @id @default(cuid())
+  driverId       String    @unique
+  balance        Float     @default(0)
+  totalCollected Float     @default(0)
+  totalSettled   Float     @default(0)
+  lastSettledAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver       Driver         @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  transactions CodTransaction[]
+
+  @@map("driver_wallets")
+}
+
+model CodTransaction {
+  id        String             @id @default(cuid())
+  walletId  String
+  waybillId String?
+  companyId String
+  type      CodTransactionType
+  amount    Float
+  balance   Float              // running balance after this entry
+  note      String?
+
+  createdAt DateTime @default(now())
+
+  wallet  DriverWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  waybill Waybill?    @relation(fields: [waybillId], references: [id])
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+  @@map("cod_transactions")
+}
+
+enum CodTransactionType {
+  COLLECTION   // driver collected cash from a recipient
+  SETTLEMENT   // driver remitted cash to the company
+  ADJUSTMENT   // manual balance correction
+}
+
+// ─── Webhook Delivery Log ──────────────────────────────────────────────────
+
+model WebhookDelivery {
+  id             String                @id @default(cuid())
+  endpointId     String
+  event          String
+  payload        String                // JSON-serialised event body
+  status         WebhookDeliveryStatus @default(PENDING)
+  responseStatus Int?
+  responseBody   String?
+  attempts       Int                   @default(0)
+  nextRetryAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRetryAt])
+  @@index([endpointId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  RETRYING
+  EXHAUSTED
 }

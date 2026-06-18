@@ -29,6 +29,7 @@ import { OwnerModule } from './owner/owner.module';
 import { StorageModule } from './storage/storage.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { EmailModule } from './email/email.module';
+import { CodModule } from './cod/cod.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
 import { RoutingModule } from './routing/routing.module';
 import { TrackingModule } from './tracking/tracking.module';
@@ -56,6 +57,7 @@ import { AlertingModule } from './alerting/alerting.module';
 
     // Geocoding (address -> coordinates; global, powers routing/map/ETA/tracking)
     GeocodingModule,
+    CodModule,
 
     // Route optimization (nearest-neighbour + 2-opt over geocoded stops)
     RoutingModule,

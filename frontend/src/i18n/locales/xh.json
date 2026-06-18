@@ -1,0 +1,29 @@
+{
+  "driver": {
+    "portal_title": "Ikhompyutha Yabaqhubi",
+    "portal_subtitle": "Uhlelo lwe-FlowOps lwendle",
+    "status_online": "Ku-intanethi",
+    "status_offline": "Akukho Intanethi",
+    "offline_deliveries": "Ukuhanjiswa Ngaphandle Kwe-intanethi",
+    "deliveries_synced": "Zonke ukuhanjiswa kuyasinhronayiziwe",
+    "pending_count_online": "kugcinwe ngaphandle kwe-intanethi, zilungele ukusinhronayiza",
+    "pending_count_offline": "zigciniwe — zizosinhronayizwa xa ubuyela ku-intanethi",
+    "sync_now": "Sinhronayiza ngoku",
+    "installable": "Ingafakwa · Isebenza ngaphandle kwe-intanethi",
+    "pod_tip": "Vula ukuhanjiswa kwigqunywa lakho ukubamba ubungqina bokuhanjiswa. Ama-POD aphakathi kwenethiwekhi agcinwa kwesi sixeko kwaye alayishwa ngokuzenzekelayo xa ubuyela ekuqhagamsheleni — akudabuli ukuhanjiswa.",
+    "return_to_portal": "Buyela Ku-Portali",
+    "audit_list": "Uluhlu Lwehlolo",
+    "units_for_delivery": "Izinto Zokuhanjiswa",
+    "item_id": "Inombolo Yento",
+    "sign_for_handover": "Sayina Ngokudlulisela",
+    "complete_audit_first": "Gcwalisa Ukuhlola Kuqala",
+    "proof_of_delivery": "Ubungqina Bokuhanjiswa",
+    "confirm_complete": "Qinisekisa & Gcwalisa",
+    "signature_required": "Isignitsha iyadingeka ngokudlulisela.",
+    "delivery_confirmed": "Ukuhanjiswa kuqinisekisiwe ngempumelelo!",
+    "saved_offline": "Akukho nombolo — ukuhanjiswa kugcinwe ngaphandle kwe-intanethi, kuzosinhronayizwa ngokuzenzekelayo.",
+    "saved_offline_sync": "Kugcinwe ngaphandle kwe-intanethi — kuzosinhronayizwa xa ukuqhagamshelena kubuyela.",
+    "waybill_not_found": "I-waybill ayifumaneki kwinkqubo",
+    "syncing": "Iyasinhronayiza..."
+  }
+}

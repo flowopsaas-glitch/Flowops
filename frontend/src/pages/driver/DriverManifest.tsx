@@ -1,14 +1,18 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { api } from '../../api/client'; // Double-up to reach src/api from src/pages/driver
+import { useTranslation } from 'react-i18next';
+import { api } from '../../api/client';
 import { ChevronLeft, Package, CheckCircle, Square, PenTool, X } from 'lucide-react';
 import { useToast } from "../../components/ToastProvider"; 
 import SignatureCanvas from 'react-signature-canvas';
 import { queuePod, syncPodQueue, getPodQueue, registerPodAutoSync } from '../../lib/offlinePod';
+import LanguageSwitcher from '../../components/LanguageSwitcher';
+import '../../i18n';
 
 export default function DriverManifest() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation('driver');
   const [job, setJob] = useState<any>(null);
   const [confirmed, setConfirmed] = useState<number[]>([]);
   const [showSig, setShowSig] = useState(false);
@@ -24,9 +28,9 @@ export default function DriverManifest() {
   useEffect(() => {
     if (id) {
       api.get(`/waybills/${id}`)
-        .then(res => setJob(res.data))
+        .then((res: any) => setJob(res?.data ?? res))
         .catch(() => {
-          showToast("Waybill not found in system", "error");
+          showToast(t('waybill_not_found'), "error");
           navigate('/driver/portal');
         });
     }
@@ -36,7 +40,7 @@ export default function DriverManifest() {
   if (!job) {
     return (
       <div className="min-h-screen bg-[#020817] flex items-center justify-center text-sky-500 font-black italic tracking-widest uppercase animate-pulse">
-        Syncing...
+        {t('syncing')}
       </div>
     );
   }
@@ -45,7 +49,7 @@ export default function DriverManifest() {
 
   const submitPOD = async () => {
     if (sigPad.current?.isEmpty()) {
-      showToast("Signature required for handover.", "error");
+      showToast(t('signature_required'), "error");
       return;
     }
 
@@ -56,7 +60,7 @@ export default function DriverManifest() {
     // it sync automatically when the driver is back online — never lose a POD.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       queuePod({ waybillId: String(id), waybillNumber: job.waybillNumber, signatureDataUrl });
-      showToast("No signal — delivery saved offline, will sync automatically.", "success");
+      showToast(t('saved_offline'), "success");
       navigate("/driver/portal");
       return;
     }
@@ -69,13 +73,13 @@ export default function DriverManifest() {
       formData.append('signature', new File([blob], `POD_${job.waybillNumber}.png`, { type: 'image/png' }));
 
       try {
-        await api.post(`/waybills/${id}/complete`, formData);
-        showToast("Delivery confirmed successfully!", "success");
+        await api.post(`/waybills/${id}/deliver`, formData);
+        showToast(t('delivery_confirmed'), "success");
         navigate('/driver/portal');
       } catch (err) {
         // Network/other failure → queue offline instead of losing the POD.
         queuePod({ waybillId: String(id), waybillNumber: job.waybillNumber, signatureDataUrl });
-        showToast("Saved offline — will sync when connection returns.", "success");
+        showToast(t('saved_offline_sync'), "success");
         navigate('/driver/portal');
       }
     }, 'image/png');
@@ -83,18 +87,20 @@ export default function DriverManifest() {
 
   return (
     <div className="min-h-screen bg-[#020817] text-white p-6 pb-32 text-left font-sans">
-      <button 
-        onClick={() => navigate('/driver/portal')} 
+      <button onClick={() => navigate('/driver/portal')} 
         className="mb-8 text-sky-500 font-black text-[10px] uppercase flex items-center gap-2"
       >
-        <ChevronLeft size={16}/> Return to Portal
+        <ChevronLeft size={16}/> {t('return_to_portal')}
       </button>
 
-      <h1 className="text-3xl font-black italic tracking-tighter leading-none">
-        {job.waybillNumber}
-      </h1>
+      <div className="flex items-start justify-between mb-1">
+        <h1 className="text-3xl font-black italic tracking-tighter leading-none">
+          {job.waybillNumber}
+        </h1>
+        <LanguageSwitcher />
+      </div>
       <p className="text-slate-500 text-[10px] font-black uppercase mt-2">
-        Audit List: {job.quantity || 1} Units for Delivery
+        {t('audit_list')}: {job.quantity || 1} {t('units_for_delivery')}
       </p>
 
       {/* Parcel Audit List */}
@@ -113,7 +119,7 @@ export default function DriverManifest() {
           >
             <div className="flex items-center gap-4">
               <Package size={22}/>
-              <span className="font-black text-sm uppercase">Item ID: {i + 1}</span>
+            <span className="font-black text-sm uppercase">{t('item_id')}: {i + 1}</span>
             </div>
             {confirmed.includes(i) ? (
               <CheckCircle size={24} className="fill-emerald-500 text-slate-950"/>
@@ -135,7 +141,7 @@ export default function DriverManifest() {
         }`}
       >
         {isComplete ? <PenTool size={20}/> : <Package size={20}/>} 
-        {isComplete ? "Sign for Handover" : "Complete Audit First"}
+        {isComplete ? t('sign_for_handover') : t('complete_audit_first')}
       </button>
 
       {/* Signature Proof of Delivery Overlay */}
@@ -143,7 +149,7 @@ export default function DriverManifest() {
         <div className="fixed inset-0 bg-slate-950/98 backdrop-blur-2xl z-50 p-8 flex flex-col">
           <div className="flex justify-between items-center mt-8 mb-8">
              <h2 className="text-3xl font-black italic text-white tracking-tighter uppercase">
-               Proof of Delivery
+               {t('proof_of_delivery')}
              </h2>
              <button 
                onClick={() => setShowSig(false)} 
@@ -165,7 +171,7 @@ export default function DriverManifest() {
             onClick={submitPOD} 
             className="w-full mt-10 bg-emerald-500 py-6 rounded-3xl font-black text-xs uppercase tracking-widest text-white shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
           >
-            Confirm & Complete
+            {t('confirm_complete')}
           </button>
         </div>
       )}
