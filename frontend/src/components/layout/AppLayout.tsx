@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers, ScanLine, Wallet
+  Layers, ScanLine, Wallet, Gauge
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -197,6 +197,7 @@ export default function AppLayout() {
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email" },
     
     { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
+    { section: "BILLING", label: "Rate Shopping", desc: "Compare carrier quotes", to: "/rate-shopping", icon: Gauge, perm: "rateCards" },
     { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText, perm: "billingBatches" },
     { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt, perm: "invoices" },
     { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText, perm: "quotes" },
