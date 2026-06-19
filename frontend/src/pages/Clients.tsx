@@ -37,7 +37,9 @@ export default function Clients() {
     setLoading(true);
     try {
       const res: any = await api.get("/waybills");
-      const waybills = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+      // Waybills returns paginated {data:{data:[],total}}
+      const raw: any = res?.data ?? res;
+      const waybills = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
 
       // Build a client directory from unique sender + recipient names
       const map = new Map<string, ClientRecord>();
