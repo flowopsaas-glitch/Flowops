@@ -21,6 +21,7 @@ const Waybills = lazy(() => import("./pages/Waybills"));
 const Clients = lazy(() => import("./pages/Clients"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const Collections = lazy(() => import("./pages/Collections"));
+const OperationsDashboard = lazy(() => import("./pages/operations/OperationsDashboard"));
 const PodDeliveries = lazy(() => import("./pages/PodDeliveries"));
 const DriverDispatch = lazy(() => import("./pages/DriverDispatch"));
 const RateCards = lazy(() => import("./pages/RateCards"));
@@ -144,6 +145,7 @@ export default function App() {
               <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
               <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />
               <Route path="/collections" element={<RequirePermission perm="collections"><Collections /></RequirePermission>} />
+              <Route path="/operations" element={<RequirePermission perm="collections"><OperationsDashboard /></RequirePermission>} />
               <Route path="/pod-deliveries" element={<RequirePermission perm="podDeliveries"><PodDeliveries /></RequirePermission>} />
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />

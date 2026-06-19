@@ -24,6 +24,11 @@ export class DashboardController {
     return this.svc.getActivities(u.companyId, limit ? parseInt(limit) : 20);
   }
 
+  @Get('operations/summary')
+  getOperationsSummary(@CurrentUser() u: any) {
+    return this.svc.getOperationsSummary(u.companyId);
+  }
+
   @Get('collections-state-sync/dashboard')
   syncDashboard(@CurrentUser() u: any) {
     return this.svc.getCollectionsSyncDashboard(u.companyId);
