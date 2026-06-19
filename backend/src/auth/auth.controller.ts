@@ -59,6 +59,17 @@ export class AuthController {
   }
 
   /**
+   * POST /api/v1/auth/driver-portal/login
+   * Matches the path the compiled driver portal calls.
+   * Alias for driver-login — accepts { phone, pin }.
+   */
+  @Public()
+  @Post('driver-portal/login')
+  driverPortalLogin(@Body() body: { phone: string; pin: string }) {
+    return this.authService.driverLogin(body.phone, body.pin);
+  }
+
+  /**
    * POST /api/v1/auth/driver-login  — driver portal login (phone + PIN).
    */
   @Public()
