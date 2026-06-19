@@ -64,6 +64,11 @@ export class DriversController {
     return this.svc.updateOdometer(id, u.companyId, body);
   }
 
+  @Get('field-ops')
+  getFieldOps(@CurrentUser() u: any) {
+    return this.svc.getFieldOps(u.companyId);
+  }
+
   @Get('fleet/dashboard')
   fleetDashboard(@CurrentUser() u: any) {
     return this.svc.fleetDashboard(u.companyId);
