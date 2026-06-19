@@ -1,22 +1,17 @@
-import { Controller, Get } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
-
 import { Public } from './common/decorators/public.decorator';
+import { AuthService } from './auth/auth.service';
 
 @Controller()
 export class AppController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  /**
-   * GET /health
-   * @Public — no JWT required so Docker/ALB health checks work without auth
-   */
+  /** GET /health — no JWT required */
   @Public()
-  @Get('health')
-   * Used by Docker HEALTHCHECK, ALB target-group health checks, and
-   * the frontend's status page. Returns HTTP 200 when the server + DB
-   * are ready; 503 if the DB is unreachable.
-   */
   @Get('health')
   async health() {
     try {
@@ -25,5 +20,16 @@ export class AppController {
     } catch {
       return { status: 'degraded', db: 'unreachable', ts: new Date().toISOString() };
     }
+  }
+
+  /**
+   * POST /api/v1/driver-portal/login
+   * The compiled driver portal JS calls this exact path.
+   * After patching the bundle base URL to localhost:3000 this route is hit.
+   */
+  @Public()
+  @Post('driver-portal/login')
+  driverPortalLogin(@Body() body: { phone: string; pin: string }) {
+    return this.authService.driverLogin(body.phone, body.pin);
   }
 }
