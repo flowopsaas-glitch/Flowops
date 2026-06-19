@@ -206,7 +206,9 @@ export default function DriverDispatch() {
     for (const job of toAssign) {
       try {
         if (job.type === 'DELIVERY') {
-          await api.patch(`/waybills/${job.raw.id}`, { driverId: String(driverId) });
+          // Waybill has no driverId column — assign via the dedicated endpoint
+          // which upserts a Shipment and advances the waybill status.
+          await api.post(`/waybills/${job.raw.id}/assign`, { driverId: String(driverId) });
         } else {
           await api.patch(`/collections/${job.raw.id}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
         }
@@ -227,7 +229,9 @@ export default function DriverDispatch() {
       setAssigning(true);
       const originalId = selectedJob.raw.id;
       if (selectedJob.type === 'DELIVERY') {
-        await api.patch(`/waybills/${originalId}`, { driverId: String(driverId) });
+        // Waybill has no driverId column — assign via the dedicated endpoint
+        // which upserts a Shipment and advances the waybill status to COLLECTED.
+        await api.post(`/waybills/${originalId}/assign`, { driverId: String(driverId) });
       } else {
         await api.patch(`/collections/${originalId}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
       }

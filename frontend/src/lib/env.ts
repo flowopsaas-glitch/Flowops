@@ -42,7 +42,7 @@ export const FLOWOPS_API_URL =
 /** Origin without `/api` — uploads, PDFs, asset URLs, /admin, /auth/logout. */
 export const FLOWOPS_HTTP_ORIGIN = FLOWOPS_API_URL.replace(/\/api\/?$/, "");
 
-/** Base URL for Socket.IO (Nest `/broadcast`, `/tracking-dashboard`, etc.). */
+/** Base URL for Socket.IO — EventsGateway uses the default `/` namespace. */
 export const FLOWOPS_WS_ORIGIN =
   rawWs && /^https?:\/\//i.test(rawWs)
     ? rawWs.replace(/\/+$/, "")

@@ -78,6 +78,47 @@ export class WaybillsService {
   }
 
   /**
+   * Assign a driver to a waybill.
+   *
+   * Waybill has no direct driverId column — the driver relationship lives on
+   * the Shipment model.  This method upserts a Shipment for the waybill (or
+   * updates an existing one) and advances the waybill status to COLLECTED so
+   * it disappears from the "unassigned" queue and the driver can pick it up.
+   */
+  async assignDriver(waybillId: string, companyId: string, driverId: string) {
+    const waybill = await this.prisma.waybill.findFirst({
+      where: { id: waybillId, companyId },
+    });
+    if (!waybill) throw new NotFoundException('Waybill not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      // Upsert the linked shipment
+      const existing = await tx.shipment.findFirst({
+        where: { waybillId, companyId },
+      });
+
+      const shipment = existing
+        ? await tx.shipment.update({
+            where: { id: existing.id },
+            data: { driverId, status: 'IN_TRANSIT' },
+          })
+        : await tx.shipment.create({
+            data: { waybillId, companyId, driverId, status: 'IN_TRANSIT' },
+          });
+
+      // Advance the waybill so it leaves the pending/unassigned queue
+      if (waybill.status === 'PENDING') {
+        await tx.waybill.update({
+          where: { id: waybillId },
+          data: { status: 'COLLECTED' },
+        });
+      }
+
+      return { success: true, shipmentId: shipment.id };
+    });
+  }
+
+  /**
    * Bulk status update for warehouse batch scanning.
    * Returns per-waybill results so the scan UI can show colour-coded feedback.
    */
