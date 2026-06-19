@@ -1,16 +1,20 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  RefreshCw, Sparkles, Truck, MapPin, Clock, Package, 
-  PackagePlus, UserCheck, AlertTriangle, LayoutList, Map as MapIcon, ExternalLink 
+import {
+  RefreshCw, Sparkles, Truck, MapPin, Clock, Package,
+  PackagePlus, AlertTriangle, LayoutList, Map as MapIcon, ExternalLink,
+  CheckSquare, Square, MessageCircle, Users, TrendingUp, CheckCircle2,
+  XCircle, Zap, ChevronRight,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { api } from '../api/client'; 
+import { api } from '../api/client';
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { useToast } from "../components/ToastProvider";
+import { useSocket } from "../hooks/useSocket";
+import { useAuth } from "../contexts/AuthContext";
 
 // --- CUSTOM MAP ICONS ---
 const jobIcon = new L.Icon({
@@ -46,7 +50,9 @@ function ChangeView({ center }: { center: [number, number] }) {
 
 export default function DriverDispatch() {
   const { showToast } = useToast();
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const { socket } = useSocket(user?.companyId ?? "");
   const [viewMode, setViewMode] = useState<'LIST' | 'MAP'>('LIST');
   const [jobs, setJobs] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
@@ -55,7 +61,9 @@ export default function DriverDispatch() {
   const [offlineReason, setOfflineReason] = useState<'backend'|'session'>('backend');
   const [refreshTick, setRefreshTick] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set()); // batch selection
   const [assigning, setAssigning] = useState(false);
+  const [todayStats, setTodayStats] = useState({ assigned: 0, completed: 0, failed: 0, pending: 0 });
 
   const branchCenter: [number, number] = [-26.2041, 28.0473];
 
@@ -89,7 +97,18 @@ export default function DriverDispatch() {
         return;
       }
 
-      const waybillsData    = unwrapList(wbRes.status        === 'fulfilled' ? wbRes.value        : null);
+      const allWb = unwrapList(wbRes.status === 'fulfilled' ? wbRes.value : null);
+
+      // Today's progress stats
+      const today = new Date(); today.setHours(0,0,0,0);
+      setTodayStats({
+        assigned:  allWb.filter((w: any) => ['IN_TRANSIT','OUT_FOR_DELIVERY','COLLECTED'].includes(w.status)).length,
+        completed: allWb.filter((w: any) => w.status === 'DELIVERED' && new Date(w.updatedAt) >= today).length,
+        failed:    allWb.filter((w: any) => ['FAILED_DELIVERY','RETURNED'].includes(w.status) && new Date(w.updatedAt) >= today).length,
+        pending:   allWb.filter((w: any) => w.status === 'PENDING').length,
+      });
+
+      const waybillsData    = allWb;
       const collectionsData = unwrapList(collRes.status       === 'fulfilled' ? collRes.value      : null);
       const rawDriversTable = unwrapList(driversTableRes.status === 'fulfilled' ? driversTableRes.value : null);
 
@@ -166,31 +185,65 @@ export default function DriverDispatch() {
     }).sort((a, b) => b.score - a.score);
   }, [drivers, selectedJob]);
 
+  const toggleCheck = useCallback((id: string) => {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    setCheckedIds(prev => prev.size === jobs.length ? new Set() : new Set(jobs.map(j => j.id)));
+  }, [jobs]);
+
+  // Batch assign all checked jobs to a driver
+  const handleBatchAssign = async (driverId: string) => {
+    const toAssign = jobs.filter(j => checkedIds.has(j.id));
+    if (toAssign.length === 0) { showToast("Select jobs first", "error"); return; }
+    setAssigning(true);
+    let ok = 0; let fail = 0;
+    for (const job of toAssign) {
+      try {
+        if (job.type === 'DELIVERY') {
+          await api.patch(`/waybills/${job.raw.id}`, { driverId: String(driverId) });
+        } else {
+          await api.patch(`/collections/${job.raw.id}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
+        }
+        ok++;
+      } catch { fail++; }
+    }
+    showToast(`${ok} assigned${fail ? `, ${fail} failed` : ''}`, ok > 0 ? "success" : "error");
+    setCheckedIds(new Set());
+    setRefreshTick(v => v + 1);
+    setAssigning(false);
+  };
+
   const handleAssignment = async (driverId: string) => {
+    const selectedIds = checkedIds.size > 0 ? checkedIds : selectedJobId ? new Set([selectedJobId]) : new Set<string>();
+    if (selectedIds.size > 1) { await handleBatchAssign(driverId); return; }
     if (!selectedJob) return;
     try {
       setAssigning(true);
       const originalId = selectedJob.raw.id;
       if (selectedJob.type === 'DELIVERY') {
-        // Bug fix: endpoint was /waybills/:id/assign-driver (doesn't exist)
-        // Correct endpoint: PATCH /waybills/:id with { driverId }
         await api.patch(`/waybills/${originalId}`, { driverId: String(driverId) });
       } else {
-        // Bug fix: endpoint was /collections/:id/assign (doesn't exist)
-        // Correct endpoint: PATCH /collections/:id with { driverId, status }
-        await api.patch(`/collections/${originalId}`, {
-          driverId: String(driverId),
-          status: 'IN_PROGRESS',
-        });
+        await api.patch(`/collections/${originalId}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
       }
       showToast(`Assigned ${selectedJob.reference}`, "success");
       setRefreshTick(v => v + 1);
-    } catch (err) {
-      showToast("Failed to assign", "error");
-    } finally {
-      setAssigning(false);
-    }
+    } catch { showToast("Failed to assign", "error"); }
+    finally { setAssigning(false); }
   };
+
+  // Quick WhatsApp contact for a driver
+  const contactDriver = useCallback((driver: any) => {
+    if (driver.phone) {
+      const phone = driver.phone.replace(/\D/g, '');
+      window.open(`https://wa.me/${phone}?text=Hi+${encodeURIComponent(driver.name)}%2C+you+have+new+job(s)+assigned.+Please+check+the+app.`, '_blank');
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#07111f] p-7">
@@ -222,6 +275,24 @@ export default function DriverDispatch() {
           </div>
         </CommandCenterHeader>
 
+        {/* ── Today's progress strip ── */}
+        <div className="grid gap-4 sm:grid-cols-4">
+          {[
+            { label: "Pending",   value: todayStats.pending,   icon: Clock,        color: "text-amber-300",  bg: "border-amber-500/20 bg-amber-500/6"    },
+            { label: "In Transit",value: todayStats.assigned,  icon: Truck,        color: "text-cyan-300",   bg: "border-cyan-500/20 bg-cyan-500/6"      },
+            { label: "Delivered", value: todayStats.completed, icon: CheckCircle2, color: "text-emerald-300",bg: "border-emerald-500/20 bg-emerald-500/6" },
+            { label: "Failed",    value: todayStats.failed,    icon: XCircle,      color: "text-rose-300",   bg: "border-rose-500/20 bg-rose-500/6"      },
+          ].map(({ label, value, icon: Icon, color, bg }) => (
+            <div key={label} className={`rounded-[22px] border ${bg} flex items-center gap-4 px-5 py-4`}>
+              <Icon className={`h-5 w-5 ${color} flex-shrink-0`} />
+              <div>
+                <div className={`text-2xl font-black ${color}`}>{value}</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 mt-0.5">{label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* ── Offline banner ── */}
         {offline && (
           <div className="rounded-2xl border border-rose-500/25 bg-rose-500/8 px-5 py-4 flex items-center gap-3 text-sm text-rose-300">
@@ -238,9 +309,22 @@ export default function DriverDispatch() {
           <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr_1fr] animate-in fade-in zoom-in-95 duration-300">
             {/* COLUMN 1: QUEUE */}
             <div className={`${softCard} p-6 h-[75vh] overflow-y-auto custom-scrollbar`}>
-              <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2 font-mono italic underline decoration-sky-500/50">
+              <h2 className="text-xl font-black text-white mb-4 flex items-center gap-2 font-mono italic underline decoration-sky-500/50">
                 <Clock className="h-5 w-5 text-sky-400" /> UNASSIGNED QUEUE
               </h2>
+              {jobs.length > 0 && (
+                <div className="flex items-center gap-3 mb-3 pb-3 border-b border-white/10">
+                  <button onClick={toggleAll} className="flex items-center gap-2 text-xs font-bold text-white/50 hover:text-white transition">
+                    {checkedIds.size === jobs.length ? <CheckSquare className="h-4 w-4 text-sky-400" /> : <Square className="h-4 w-4" />}
+                    {checkedIds.size > 0 ? `${checkedIds.size} selected` : "Select all"}
+                  </button>
+                  {checkedIds.size > 0 && (
+                    <span className="ml-auto rounded-full bg-sky-500/20 border border-sky-500/30 px-2.5 py-1 text-[10px] font-black text-sky-300">
+                      {checkedIds.size} job{checkedIds.size !== 1 ? "s" : ""} ready to batch assign
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="space-y-3">
               {jobs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-48 text-center">
@@ -250,16 +334,28 @@ export default function DriverDispatch() {
                 </div>
               ) : (
                 jobs.map(job => (
-                  <div key={job.id} onClick={() => setSelectedJobId(job.id)} 
-                    className={`p-5 rounded-2xl cursor-pointer border transition-all ${selectedJobId === job.id ? 'bg-sky-500/20 border-sky-500 shadow-xl' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}>
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-3">
-                        {job.type === 'DELIVERY' ? <Package className="text-cyan-400" size={20} /> : <PackagePlus className="text-indigo-400" size={20} />}
-                        <div className="font-black text-white text-lg tracking-tight">{job.reference}</div>
+                  <div key={job.id}
+                    className={`p-4 rounded-2xl border transition-all ${selectedJobId === job.id ? 'bg-sky-500/20 border-sky-500 shadow-xl' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}>
+                    <div className="flex items-start gap-3">
+                      <button onClick={(e) => { e.stopPropagation(); toggleCheck(job.id); }} className="mt-0.5 shrink-0">
+                        {checkedIds.has(job.id)
+                          ? <CheckSquare className="h-4 w-4 text-sky-400" />
+                          : <Square className="h-4 w-4 text-white/30" />}
+                      </button>
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedJobId(job.id)}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-2">
+                            {job.type === 'DELIVERY' ? <Package className="text-cyan-400 shrink-0" size={16} /> : <PackagePlus className="text-indigo-400 shrink-0" size={16} />}
+                            <span className="font-black text-white text-base tracking-tight">{job.reference}</span>
+                          </div>
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${job.type === 'DELIVERY' ? 'border-cyan-500/30 text-cyan-400' : 'border-indigo-500/30 text-indigo-400'}`}>{job.type}</span>
+                        </div>
+                        <div className="mt-1.5 text-xs text-white/50 truncate">{job.customer}</div>
+                        <div className="mt-1 text-[11px] text-sky-300/70 font-bold flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />{job.area}
+                        </div>
                       </div>
-                      <div className={`px-2 py-1 rounded-full text-[9px] font-black tracking-widest border ${job.type === 'DELIVERY' ? 'border-cyan-500/30 text-cyan-400' : 'border-indigo-500/30 text-indigo-400'}`}>{job.type}</div>
                     </div>
-                    <div className="mt-3 text-xs text-sky-300 font-bold uppercase flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.area}</div>
                   </div>
                 ))
               )}
@@ -269,20 +365,53 @@ export default function DriverDispatch() {
             {/* COLUMN 2: AI */}
             <div className={`${softCard} p-6`}>
               <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2"><Sparkles className="h-5 w-5 text-sky-400" /> AI Optimization</h2>
-              {selectedJob ? (
+              {checkedIds.size > 1 ? (
+                <div className="rounded-[22px] border border-sky-500/30 bg-sky-500/8 p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="h-5 w-5 text-sky-400" />
+                    <span className="font-black text-white">Batch Assign</span>
+                  </div>
+                  <p className="text-sm text-white/60 mb-4">{checkedIds.size} jobs selected. Pick a driver below to assign all at once.</p>
+                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-300">
+                    <Users className="h-4 w-4" />
+                    <span className="font-bold">Select driver in Active Fleet →</span>
+                  </div>
+                </div>
+              ) : selectedJob ? (
                 <div className="space-y-4">
                   <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
                     <div className="text-xl font-black text-white">{selectedJob.reference}</div>
                     <p className="text-xs text-sky-400 font-bold">{selectedJob.area}</p>
+                    <p className="text-xs text-white/40 mt-1">{selectedJob.customer}</p>
                   </div>
                   {recommendedDrivers.length > 0 && (
                     <div className="p-6 bg-sky-500/10 border border-sky-500/30 rounded-[24px]">
                       <div className="font-bold text-white text-xl text-center">{recommendedDrivers[0].driver.name}</div>
-                      <p className="text-sm text-sky-200/70 mt-2 text-center font-medium">Match: **{recommendedDrivers[0].score}/100**</p>
+                      <div className="flex items-center justify-center gap-2 mt-1">
+                        <div className="w-full bg-white/10 rounded-full h-1.5 mt-2">
+                          <div className="bg-sky-400 h-1.5 rounded-full" style={{width: `${recommendedDrivers[0].score}%`}} />
+                        </div>
+                        <span className="text-xs text-sky-300 font-black shrink-0">{recommendedDrivers[0].score}%</span>
+                      </div>
                       <button onClick={() => handleAssignment(recommendedDrivers[0].driver.id)} disabled={assigning}
                         className="mt-6 w-full rounded-xl bg-sky-500 py-4 text-sm font-black text-white transition hover:bg-sky-400 shadow-lg active:scale-95 flex items-center justify-center gap-2">
                         {assigning ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />} AUTO-ASSIGN
                       </button>
+                    </div>
+                  )}
+                  {recommendedDrivers.slice(1, 3).length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35 mb-2">Alternates</p>
+                      {recommendedDrivers.slice(1, 3).map(({ driver, score }) => (
+                        <button key={driver.id} onClick={() => handleAssignment(driver.id)}
+                          className="w-full flex items-center justify-between rounded-xl border border-white/8 bg-black/20 px-4 py-2.5 mb-2 hover:border-white/20 hover:bg-white/5 transition">
+                          <span className="text-sm font-bold text-white">{driver.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-white/40">{score}%</span>
+                            <ChevronRight className="h-3.5 w-3.5 text-white/20" />
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -303,11 +432,24 @@ export default function DriverDispatch() {
                 drivers.map((driver) => (
                   <div key={driver.id} className="p-5 bg-white/5 rounded-2xl border border-white/10">
                     <div className="flex justify-between items-start">
-                      <div><div className="font-black text-white text-lg">{driver.name}</div><div className="text-[10px] text-white/40 uppercase font-bold">{driver.vehicle} • {driver.zone}</div></div>
-                      <div className={`px-2 py-0.5 rounded text-[10px] font-black ${driver.status === 'AVAILABLE' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>{driver.status}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-black text-white text-base">{driver.name}</div>
+                        <div className="text-[10px] text-white/40 uppercase font-bold mt-0.5">{driver.vehicle}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className={`px-2 py-0.5 rounded text-[10px] font-black ${driver.status === 'AVAILABLE' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>{driver.status}</div>
+                        <button onClick={() => contactDriver(driver)} title="WhatsApp driver"
+                          className="p-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition">
+                          <MessageCircle className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <button disabled={!selectedJob || assigning || driver.status !== 'AVAILABLE'} onClick={() => handleAssignment(driver.id)}
-                      className="mt-5 w-full py-3 bg-white/5 rounded-xl text-white text-[10px] font-black tracking-widest hover:bg-sky-500 transition-all uppercase disabled:opacity-40">Manual Assign</button>
+                    <button
+                      disabled={assigning || driver.status !== 'AVAILABLE'}
+                      onClick={() => checkedIds.size > 0 ? handleBatchAssign(driver.id) : handleAssignment(driver.id)}
+                      className="mt-4 w-full py-2.5 bg-white/5 rounded-xl text-white text-[10px] font-black tracking-widest hover:bg-sky-500 transition-all uppercase disabled:opacity-40">
+                      {checkedIds.size > 1 ? `Assign ${checkedIds.size} Jobs` : "Manual Assign"}
+                    </button>
                   </div>
                 ))
               )}
