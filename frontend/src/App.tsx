@@ -59,7 +59,7 @@ const ManifestsPage = lazy(() => import("./pages/ManifestsPage"));
 const RouteOptimizer = lazy(() => import("./pages/RouteOptimizer"));
 const FleetMaintenance = lazy(() => import("./pages/FleetMaintenance"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
-const UserRolesPage = lazy(() => import("./pages/UserRolesPage"));
+const UserRolesPage = lazy(() => import("./pages/UsersRoles"));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 const StatusPage = lazy(() => import('./pages/Status'));
