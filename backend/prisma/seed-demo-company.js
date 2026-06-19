@@ -156,8 +156,9 @@ const USERS = [
       dashboard: true, collections: false, shipments: false, waybills: false,
       waybillInbox: false, clients: false, podDeliveries: false, driverDispatch: false,
       branches: false, manifests: false, whatsapp: false, email: false,
-      rateCards: false, billingBatches: false, invoices: true, quotes: false,
-      creditControl: true, risksExceptions: false, notifications: false,
+      // Full billing/finance access — the Finance persona sees all money pages
+      rateCards: true, billingBatches: true, invoices: true, quotes: true,
+      creditControl: true, risksExceptions: false, notifications: true,
       aiControlTower: false, highRiskQueue: false, usersRoles: false, settings: false,
     },
   },

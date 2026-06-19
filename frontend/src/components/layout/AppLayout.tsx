@@ -195,7 +195,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },
     { section: "OPS", label: "Route Optimizer", desc: "AI stop sequencing", to: "/routes", icon: Route, perm: "driverDispatch" },
     { section: "OPS", label: "Fleet Maintenance", desc: "Vehicle service tracker", to: "/fleet", icon: Wrench, perm: "driverDispatch" },
-    { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers },
+    { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "driverDispatch" },
     
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email" },

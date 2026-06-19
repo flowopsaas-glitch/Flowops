@@ -195,8 +195,11 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     };
   }
 
-  if (value === "DISPATCH") {
-    return {
+  if (value === "VIEWER") {
+    return buildViewerPermissions();
+  }
+
+  if (value === "DISPATCH") {    return {
       dashboard: true,
       shipments: true,
       waybillInbox: true,
@@ -241,6 +244,35 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     invoices: false,
     creditControl: false,
     quotes: false,
+    aiControlTower: false,
+    risksExceptions: false,
+    usersRoles: false,
+    settings: false,
+  };
+}
+
+// ── VIEWER — Finance & Reporting ─────────────────────────────────────────
+
+function buildViewerPermissions(): TenantNavPermissions {
+  return {
+    dashboard: true,
+    shipments: false,
+    waybillInbox: false,
+    waybills: false,
+    clients: false,
+    notifications: true,
+    collections: false,
+    podDeliveries: false,
+    driverDispatch: false,
+    whatsapp: false,
+    email: false,
+    clientQueries: false,
+    rateCards: true,       // Rate Cards + Rate Shopping
+    billingBatches: true,  // Billing Batches + COD Reconciliation
+    invoiceDrafts: true,
+    invoices: true,        // Finance Home + Invoices
+    creditControl: true,
+    quotes: true,
     aiControlTower: false,
     risksExceptions: false,
     usersRoles: false,
