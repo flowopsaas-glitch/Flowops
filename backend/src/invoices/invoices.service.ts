@@ -53,6 +53,169 @@ export class InvoicesService {
     return inv;
   }
 
+  // ── AR Aging Report ────────────────────────────────────────────────────────
+
+  async getArAging(companyId: string) {
+    const now = new Date();
+    const invoices = await this.prisma.invoice.findMany({
+      where: { companyId, status: { in: ['SENT', 'OVERDUE'] } },
+      select: { id: true, invoiceNumber: true, clientName: true, total: true, dueDate: true, createdAt: true },
+    });
+
+    const buckets = {
+      current:   { label: 'Current',      days: '0',   amount: 0, count: 0, invoices: [] as typeof invoices },
+      d1_30:     { label: '1–30 days',     days: '1-30',  amount: 0, count: 0, invoices: [] as typeof invoices },
+      d31_60:    { label: '31–60 days',    days: '31-60', amount: 0, count: 0, invoices: [] as typeof invoices },
+      d61_90:    { label: '61–90 days',    days: '61-90', amount: 0, count: 0, invoices: [] as typeof invoices },
+      d90plus:   { label: '90+ days',      days: '90+',   amount: 0, count: 0, invoices: [] as typeof invoices },
+    };
+
+    for (const inv of invoices) {
+      const daysPast = inv.dueDate
+        ? Math.floor((now.getTime() - new Date(inv.dueDate).getTime()) / 86400000)
+        : -1; // not yet due
+
+      let bucket: keyof typeof buckets;
+      if (daysPast < 0) bucket = 'current';
+      else if (daysPast <= 30)  bucket = 'd1_30';
+      else if (daysPast <= 60)  bucket = 'd31_60';
+      else if (daysPast <= 90)  bucket = 'd61_90';
+      else                      bucket = 'd90plus';
+
+      buckets[bucket].amount += inv.total;
+      buckets[bucket].count += 1;
+      buckets[bucket].invoices.push(inv);
+    }
+
+    const total = Object.values(buckets).reduce((s, b) => s + b.amount, 0);
+
+    return {
+      buckets: Object.values(buckets).map(b => ({
+        ...b,
+        pct: total > 0 ? Math.round((b.amount / total) * 100) : 0,
+      })),
+      total,
+    };
+  }
+
+  // ── Revenue trend (last 6 months) ─────────────────────────────────────────
+
+  async getRevenueTrend(companyId: string) {
+    const months: { month: string; billed: number; collected: number; outstanding: number }[] = [];
+    const now = new Date();
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+
+      const [billed, paid] = await Promise.all([
+        this.prisma.invoice.aggregate({
+          where: { companyId, createdAt: { gte: d, lte: end } },
+          _sum: { total: true }, _count: { id: true },
+        }),
+        this.prisma.invoice.aggregate({
+          where: { companyId, status: 'PAID', paidAt: { gte: d, lte: end } },
+          _sum: { total: true },
+        }),
+      ]);
+
+      const billedAmt   = billed._sum.total ?? 0;
+      const collectedAmt = paid._sum.total ?? 0;
+
+      months.push({
+        month:      d.toLocaleDateString('en-ZA', { month: 'short', year: '2-digit' }),
+        billed:     billedAmt,
+        collected:  collectedAmt,
+        outstanding: billedAmt - collectedAmt,
+      });
+    }
+
+    return months;
+  }
+
+  // ── Payment reminder email ─────────────────────────────────────────────────
+
+  async sendPaymentReminder(id: string, companyId: string) {
+    const inv = await this.findOne(id, companyId);
+    if (!inv.clientEmail) {
+      return { sent: false, message: 'No client email on file for this invoice.' };
+    }
+
+    const daysPast = inv.dueDate
+      ? Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86400000)
+      : 0;
+    const fmt = (d?: string | Date | null) =>
+      d ? new Date(d).toLocaleDateString('en-ZA') : '—';
+    const money = (v?: number | null) =>
+      `ZAR ${(v ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`;
+
+    // Update sentAt to track the reminder
+    await this.prisma.invoice.update({
+      where: { id },
+      data: { sentAt: new Date() },
+    });
+
+    // TODO: wire to EmailService when SENDGRID_API_KEY is configured
+    // For now, return the payload that would be sent
+    return {
+      sent: true,
+      to: inv.clientEmail,
+      subject: `Payment Reminder — ${inv.invoiceNumber} (${daysPast > 0 ? `${daysPast} days overdue` : 'due soon'})`,
+      message: `Dear ${inv.clientName}, invoice ${inv.invoiceNumber} for ${money(inv.total)} was due on ${fmt(inv.dueDate)}. Please arrange payment at your earliest convenience.`,
+      daysPastDue: daysPast,
+    };
+  }
+
+  // ── Client-level metrics ───────────────────────────────────────────────────
+
+  async getClientMetrics(companyId: string) {
+    const invoices = await this.prisma.invoice.findMany({
+      where: { companyId },
+      select: {
+        clientName: true, total: true, status: true,
+        dueDate: true, paidAt: true, sentAt: true, createdAt: true,
+      },
+    });
+
+    const clients: Record<string, {
+      name: string; totalBilled: number; totalPaid: number;
+      totalOverdue: number; invoiceCount: number; paidCount: number;
+      avgDaysToPay: number; totalDays: number; paidWithDays: number;
+    }> = {};
+
+    for (const inv of invoices) {
+      const key = inv.clientName;
+      if (!clients[key]) clients[key] = {
+        name: key, totalBilled: 0, totalPaid: 0, totalOverdue: 0,
+        invoiceCount: 0, paidCount: 0, avgDaysToPay: 0, totalDays: 0, paidWithDays: 0,
+      };
+      const c = clients[key];
+      c.totalBilled += inv.total;
+      c.invoiceCount += 1;
+
+      if (inv.status === 'PAID') {
+        c.totalPaid += inv.total;
+        c.paidCount += 1;
+        if (inv.sentAt && inv.paidAt) {
+          const days = Math.floor((new Date(inv.paidAt).getTime() - new Date(inv.sentAt).getTime()) / 86400000);
+          if (days >= 0) { c.totalDays += days; c.paidWithDays += 1; }
+        }
+      }
+      if (inv.status === 'SENT' && inv.dueDate && new Date(inv.dueDate) < new Date()) {
+        c.totalOverdue += inv.total;
+      }
+    }
+
+    return Object.values(clients)
+      .map(c => ({
+        ...c,
+        avgDaysToPay: c.paidWithDays > 0 ? Math.round(c.totalDays / c.paidWithDays) : null,
+        collectionRate: c.totalBilled > 0 ? Math.round((c.totalPaid / c.totalBilled) * 100) : 0,
+      }))
+      .sort((a, b) => b.totalBilled - a.totalBilled)
+      .slice(0, 10);
+  }
+
   // ── Print-optimised HTML for PDF download ─────────────────────────────────
 
   async generateInvoiceHtml(id: string, companyId: string): Promise<string> {

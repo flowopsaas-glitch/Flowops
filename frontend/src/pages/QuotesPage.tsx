@@ -22,6 +22,7 @@ type Quote = {
   toAddress: string;
   weight: number;
   price: number;
+  clientName?: string | null;
   breakdown?: { base?: number; perKg?: number; total?: number } | null;
   accepted: boolean;
   expiresAt?: string | null;
@@ -39,7 +40,7 @@ function isExpired(ts?: string | null) {
 // ── Create Quote modal ─────────────────────────────────────────────────────
 
 function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ fromAddress: "", toAddress: "", weight: "" });
+  const [form, setForm] = useState({ fromAddress: "", toAddress: "", weight: "", clientName: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -58,6 +59,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         fromAddress: form.fromAddress,
         toAddress:   form.toAddress,
         weight:      parseFloat(form.weight),
+        ...(form.clientName.trim() && { clientName: form.clientName.trim() }),
       });
       onSaved();
       onClose();
@@ -95,6 +97,15 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
               />
             </div>
           ))}
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Client Name</label>
+            <input
+              value={form.clientName}
+              onChange={(e) => setForm((f) => ({ ...f, clientName: e.target.value }))}
+              placeholder="Acme Logistics (optional)"
+              className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400"
+            />
+          </div>
           <div>
             <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Weight (kg) *</label>
             <input
@@ -242,6 +253,7 @@ export default function QuotesPage() {
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead>
               <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-white/40">
+                <th className="px-5 py-3">Client</th>
                 <th className="px-5 py-3">From → To</th>
                 <th className="px-5 py-3">Weight</th>
                 <th className="px-5 py-3">Price</th>
@@ -261,7 +273,7 @@ export default function QuotesPage() {
                 ))
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-16 text-center">
+                  <td colSpan={7} className="px-5 py-16 text-center">
                     <Scale className="mx-auto h-10 w-10 text-white/10 mb-3" />
                     <div className="text-white/40 font-bold">
                       {quotes.length === 0 ? "No quotes yet — generate your first quote above." : "No quotes match your filter."}
@@ -272,6 +284,11 @@ export default function QuotesPage() {
                 const expired = isExpired(q.expiresAt);
                 return (
                   <tr key={q.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                    <td className="px-5 py-4">
+                      {q.clientName
+                        ? <span className="font-semibold text-white text-sm">{q.clientName}</span>
+                        : <span className="text-white/25 text-xs italic">—</span>}
+                    </td>
                     <td className="px-5 py-4">
                       <div className="font-semibold text-white text-xs leading-relaxed">
                         <span className="text-slate-400">FROM </span>{q.fromAddress}<br />

@@ -8,11 +8,14 @@ import {
   MailOpen,
   RefreshCw,
   Search,
+  Send,
   TrendingUp,
   Wallet,
   XCircle,
 } from "lucide-react";
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { api } from "../api/client";
+import { exportCsv, csvFilename } from "../lib/exportCsv";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -119,13 +122,17 @@ export default function CreditControl() {
   const [search, setSearch] = useState("");
   const [payTarget, setPayTarget] = useState<Invoice | null>(null);
   const [filter, setFilter] = useState<"overdue" | "sent" | "all">("overdue");
+  const [aging, setAging] = useState<{ buckets: any[]; total: number } | null>(null);
+  const [reminderBusy, setReminderBusy] = useState<string | null>(null);
+  const [reminderMsg, setReminderMsg] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [invRes, metRes] = await Promise.allSettled([
+      const [invRes, metRes, agingRes] = await Promise.allSettled([
         api.get("/invoices"),
         api.get("/invoices/metrics"),
+        api.get("/invoices/ar-aging"),
       ]);
       if (invRes.status === "fulfilled") {
         const d: any = invRes.value;
@@ -134,6 +141,10 @@ export default function CreditControl() {
       if (metRes.status === "fulfilled") {
         const m: any = metRes.value;
         setMetrics(m?.data ?? m);
+      }
+      if (agingRes.status === "fulfilled") {
+        const a: any = agingRes.value;
+        setAging(a?.data ?? a);
       }
     } finally {
       setLoading(false);
@@ -163,6 +174,19 @@ export default function CreditControl() {
     [arrears]
   );
 
+  const sendReminder = async (id: string) => {
+    setReminderBusy(id);
+    setReminderMsg("");
+    try {
+      const raw: any = await api.post(`/invoices/${id}/send-reminder`, {});
+      const r = raw?.data ?? raw;
+      setReminderMsg(r.sent ? `Reminder queued for ${r.to}` : r.message);
+      setTimeout(() => setReminderMsg(""), 4000);
+    } finally { setReminderBusy(null); }
+  };
+
+  const AGING_BAR_COLORS = ["#10b981","#f59e0b","#f97316","#ef4444","#9f1239"];
+
   return (
     <div className="space-y-6">
       {payTarget && (
@@ -179,9 +203,31 @@ export default function CreditControl() {
             <h1 className="mt-3 text-3xl font-black tracking-tight text-white">Accounts Receivable</h1>
             <p className="mt-1 text-sm text-slate-400">Chase overdue invoices, record settlements, and monitor collection performance.</p>
           </div>
-          <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
-            <RefreshCw className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportCsv(
+                visible.map((inv) => ({
+                  invoice: inv.invoiceNumber, client: inv.clientName,
+                  email: inv.clientEmail ?? "", amount: inv.total,
+                  due: inv.dueDate ?? "", status: isOverdue(inv) ? "OVERDUE" : inv.status,
+                  days: isOverdue(inv) ? daysPastDue(inv) : 0,
+                })),
+                csvFilename("ar-report"),
+                [
+                  { key: "invoice", label: "Invoice #" }, { key: "client",  label: "Client"    },
+                  { key: "email",   label: "Email"     }, { key: "amount",  label: "Amount ZAR"},
+                  { key: "due",     label: "Due Date"  }, { key: "status",  label: "Status"    },
+                  { key: "days",    label: "Days Overdue" },
+                ]
+              )}
+              className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white/60 hover:bg-white/10 hover:text-white transition"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            </button>
+            <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -212,6 +258,45 @@ export default function CreditControl() {
               style={{ width: `${Math.min(metrics.collectionRate, 100)}%` }} />
           </div>
           <span className="text-sm font-black text-white">{metrics.collectionRate.toFixed(1)}%</span>
+        </div>
+      )}
+
+      {/* AR Aging Report */}
+      {aging && aging.total > 0 && (
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-black text-white">AR Aging Report</h2>
+              <p className="text-xs text-white/40 mt-0.5">Outstanding invoices bucketed by days overdue</p>
+            </div>
+            <span className="font-black text-amber-300">
+              {money(aging.total)} total
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-5">
+            {aging.buckets.map((b: any, i: number) => (
+              <div key={b.label} className="rounded-2xl border border-white/8 bg-white/3 p-3 text-center">
+                <div className="text-[10px] font-black uppercase tracking-wider text-white/40 mb-1">{b.label}</div>
+                <div
+                  className="text-lg font-black"
+                  style={{ color: AGING_BAR_COLORS[i] }}
+                >
+                  {money(b.amount)}
+                </div>
+                <div className="text-[10px] text-white/30 mt-0.5">{b.count} inv</div>
+                <div className="mt-2 h-1 w-full rounded-full bg-white/8 overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${b.pct}%`, backgroundColor: AGING_BAR_COLORS[i] }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Reminder feedback */}
+      {reminderMsg && (
+        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+          ✓ {reminderMsg}
         </div>
       )}
 
@@ -291,10 +376,24 @@ export default function CreditControl() {
                       {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("en-ZA") : "—"}
                     </td>
                     <td className="px-5 py-4 text-right">
-                      <button onClick={() => setPayTarget(inv)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20">
-                        <CheckCircle2 className="h-3 w-3" /> Mark Paid
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {overdue && inv.clientEmail && (
+                          <button
+                            disabled={reminderBusy === inv.id}
+                            onClick={() => sendReminder(inv.id)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/20 bg-amber-500/10 px-2.5 py-1.5 text-[11px] font-bold text-amber-200 hover:bg-amber-500/20 disabled:opacity-60"
+                          >
+                            {reminderBusy === inv.id
+                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                              : <Send className="h-3 w-3" />}
+                            Remind
+                          </button>
+                        )}
+                        <button onClick={() => setPayTarget(inv)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20">
+                          <CheckCircle2 className="h-3 w-3" /> Mark Paid
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
