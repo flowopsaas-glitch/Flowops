@@ -154,6 +154,141 @@ export class DashboardService {
     };
   }
 
+  /**
+   * Operations Command Centre summary — today's stats, driver leaderboard,
+   * unassigned collections, and a 7-day delivery trend for the manager view.
+   */
+  async getOperationsSummary(companyId: string) {
+    const now    = new Date();
+    const today  = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const d7     = new Date(today); d7.setDate(today.getDate() - 7);
+    const d24    = new Date(now.getTime() - 86_400_000);
+
+    const [
+      todayCollections, unassignedCols, driverCounts, recentDeliveries,
+      recentFailed, exceptionWaybills, driverLeaderboard, trend7, allShipments,
+    ] = await Promise.all([
+      // Today's collection counts grouped by status
+      this.prisma.collection.groupBy({
+        by: ['status'],
+        where: { companyId, createdAt: { gte: today } },
+        _count: { _all: true },
+      }),
+      // Unassigned pending collections (no driver, no shipment yet)
+      this.prisma.collection.findMany({
+        where: { companyId, status: 'PENDING', driverId: null },
+        select: { id: true, clientName: true, pickupAddress: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+        take: 10,
+      }),
+      // Driver availability counts
+      this.prisma.driver.groupBy({
+        by: ['status'],
+        where: { companyId, isActive: true },
+        _count: { _all: true },
+      }),
+      // Deliveries completed today
+      this.prisma.waybill.count({
+        where: { companyId, status: 'DELIVERED', updatedAt: { gte: today } },
+      }),
+      // Failed/returned today
+      this.prisma.waybill.count({
+        where: { companyId, status: { in: ['FAILED_DELIVERY', 'RETURNED'] }, updatedAt: { gte: today } },
+      }),
+      // Exception feed — failed/returned in last 24h with waybill info
+      this.prisma.waybill.findMany({
+        where: {
+          companyId,
+          status: { in: ['FAILED_DELIVERY', 'RETURNED'] },
+          updatedAt: { gte: d24 },
+        },
+        select: {
+          id: true, trackingNumber: true, status: true, updatedAt: true,
+          recipientName: true, recipientAddress: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+      }),
+      // Driver leaderboard — collections completed (IN_PROGRESS or COLLECTED) today per driver
+      this.prisma.collection.groupBy({
+        by: ['driverId'],
+        where: {
+          companyId,
+          driverId: { not: null },
+          status: { in: ['IN_PROGRESS', 'COLLECTED'] },
+          updatedAt: { gte: today },
+        },
+        _count: { _all: true },
+        orderBy: { _count: { driverId: 'desc' } },
+        take: 5,
+      }),
+      // 7-day delivery trend
+      this.prisma.waybill.findMany({
+        where: { companyId, status: 'DELIVERED', updatedAt: { gte: d7 } },
+        select: { updatedAt: true },
+      }),
+      // Active shipments count
+      this.prisma.shipment.count({
+        where: { companyId, status: { in: ['PENDING', 'IN_TRANSIT'] } },
+      }),
+    ]);
+
+    // Resolve driver names for leaderboard
+    const driverIds = driverLeaderboard.map(d => d.driverId as string).filter(Boolean);
+    const driverNames = driverIds.length
+      ? await this.prisma.driver.findMany({
+          where: { id: { in: driverIds } },
+          select: { id: true, name: true, vehicleType: true, status: true },
+        })
+      : [];
+    const driverMap = new Map(driverNames.map(d => [d.id, d]));
+
+    // Build 7-day trend array (last 7 days, each with a count)
+    const trendMap = new Map<string, number>();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      trendMap.set(d.toISOString().slice(0, 10), 0);
+    }
+    for (const wb of trend7) {
+      const key = wb.updatedAt.toISOString().slice(0, 10);
+      if (trendMap.has(key)) trendMap.set(key, (trendMap.get(key) ?? 0) + 1);
+    }
+    const trend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
+
+    // Collection status map
+    const colByStatus: Record<string, number> = {};
+    for (const g of todayCollections) colByStatus[g.status] = g._count._all;
+
+    // Driver availability map
+    const driverByStatus: Record<string, number> = {};
+    for (const g of driverCounts) driverByStatus[g.status] = g._count._all;
+
+    return {
+      today: {
+        collected:     colByStatus['COLLECTED']   ?? 0,
+        inProgress:    colByStatus['IN_PROGRESS'] ?? 0,
+        pending:       colByStatus['PENDING']     ?? 0,
+        failed:        colByStatus['FAILED']      ?? 0,
+        deliveredWaybills: recentDeliveries,
+        failedWaybills:    recentFailed,
+        activeShipments:   allShipments,
+      },
+      drivers: {
+        available: driverByStatus['AVAILABLE'] ?? 0,
+        onRoute:   driverByStatus['ON_ROUTE']  ?? 0,
+        offline:   driverByStatus['OFFLINE']   ?? 0,
+      },
+      unassigned: unassignedCols,
+      exceptions: exceptionWaybills,
+      leaderboard: driverLeaderboard.map(d => ({
+        driverId:     d.driverId,
+        jobsToday:    d._count._all,
+        ...driverMap.get(d.driverId as string),
+      })),
+      trend,
+    };
+  }
+
   async getActivities(companyId: string, limit = 20) {
     // Recent waybill events + collections as activity feed
     const [waybills, collections, notifications] = await Promise.all([

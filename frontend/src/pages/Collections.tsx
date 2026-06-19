@@ -2,24 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Truck,
-  CalendarClock,
-  UserRound,
-  Sparkles,
-  Boxes,
-  ClipboardList,
-  MessageCircle,
   RefreshCw,
   Save,
-  CheckCircle2,
-  AlertTriangle,
-  Trash2,
-  ShieldCheck,
+  Sparkles,
   Search,
-  MapPin,
-  Package2,
-  CarFront,
-  Radio,
   Bot,
+  Filter,
 } from "lucide-react";
 import { api } from '../api/client';
 import { exportCsv, csvFilename } from '../lib/exportCsv';
@@ -28,49 +16,36 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-type CollectionStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "RESCHEDULED" | "CANCELLED";
-type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
-type BillingType = "PREPAID" | "COD" | "CONTRACT";
-type DriverAvailability = "AVAILABLE" | "BUSY" | "OFFLINE" | "ON_LEAVE";
+// Real Prisma enum values
+type CollectionStatus = "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "COLLECTED" | "FAILED" | "CANCELLED";
+type StatusFilter = "ALL" | CollectionStatus;
 
+// Matches the actual Prisma Collection model fields
 type CollectionRow = {
-  id: number;
-  name: string;
+  id: string;
   companyId: string;
   status: CollectionStatus;
-  approvalStatus?: ApprovalStatus;
-  referenceNo?: string | null;
-  companyName?: string | null;
-  collectionAddress?: string | null;
-  collectionContactName?: string | null;
-  collectionContactPhone?: string | null;
-  closingTime?: string | null;
-  deliveryAddress?: string | null;
-  deliveryContactName?: string | null;
-  deliveryContactPhone?: string | null;
-  parcelCount?: number | null;
-  palletCount?: number | null;
-  billingType?: BillingType;
-  contractCode?: string | null;
-  codAmount?: number | null;
-  scheduledFor?: string | null;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  clientEmail?: string | null;
+  pickupAddress?: string | null;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+  notes?: string | null;
+  scheduledAt?: string | null;
+  driverId?: string | null;
+  driver?: { id: string; name: string; vehicleType?: string | null; status?: string | null } | null;
   createdAt?: string;
-  dispatches?: Array<{
-    id: number;
-    status: string;
-    driver?: { id: number; name: string; phone?: string | null; zone?: string | null; vehicleType?: string | null; } | null;
-  }>;
+  updatedAt?: string;
 };
 
 type DriverRow = {
-  id: number;
+  id: string;
   name: string;
   phone?: string | null;
-  zone?: string | null;
-  homeBase?: string | null;
   vehicleType?: string | null;
   vehicleReg?: string | null;
-  availabilityStatus?: DriverAvailability;
+  status?: string | null;
 };
 
 function pickArray<T>(payload: any): T[] {
@@ -104,8 +79,9 @@ export default function Collections() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
   // 🚀 AI Suggestion Engine States
   const [suggestion, setSuggestion] = useState<any>(null);
@@ -156,30 +132,13 @@ export default function Collections() {
 
   useEffect(() => {
     if (!rows.length) return;
-
-    const requestedCollectionId = searchParams.get("collectionId");
-    if (requestedCollectionId) {
-      const requested = rows.find((row) => String(row.id) === requestedCollectionId);
-      if (requested && selectedId !== requested.id) {
-        setSelectedId(requested.id);
-      }
+    const requestedId = searchParams.get("collectionId");
+    if (requestedId) {
+      const found = rows.find((r) => String(r.id) === requestedId);
+      if (found && selectedId !== found.id) setSelectedId(found.id);
       return;
     }
-
-    const requestedReference = searchParams.get("reference");
-    if (requestedReference) {
-      const requested = rows.find(
-        (row) => String(row.referenceNo || row.name || "").toLowerCase() === requestedReference.toLowerCase()
-      );
-      if (requested && selectedId !== requested.id) {
-        setSelectedId(requested.id);
-      }
-      return;
-    }
-
-    if (selectedId === null && rows.length > 0) {
-      setSelectedId(rows[0].id);
-    }
+    if (selectedId === null && rows.length > 0) setSelectedId(rows[0].id);
   }, [rows, searchParams, selectedId]);
 
   useEffect(() => {
@@ -191,21 +150,27 @@ export default function Collections() {
     });
   }, [selectedId, setSearchParams]);
 
-  const filtered = useMemo(() => rows.filter(r => (showCancelled || r.status !== 'CANCELLED') && r.name.toLowerCase().includes(query.toLowerCase())), [rows, query, showCancelled]);
+  const filtered = useMemo(() => rows.filter(r =>
+    (showCancelled || r.status !== 'CANCELLED') &&
+    (statusFilter === 'ALL' || r.status === statusFilter) &&
+    (r.clientName ?? '').toLowerCase().includes(query.toLowerCase())
+  ), [rows, query, showCancelled, statusFilter]);
+
   const selected = useMemo(() => rows.find((r) => r.id === selectedId) ?? null, [rows, selectedId]);
-  
+
   const stats = useMemo(() => ({
-    total:      rows.length,
+    total:      rows.filter(r => r.status !== 'CANCELLED').length,
     pending:    rows.filter(r => r.status === 'PENDING').length,
+    assigned:   rows.filter(r => r.status === 'ASSIGNED').length,
     inProgress: rows.filter(r => r.status === 'IN_PROGRESS').length,
+    collected:  rows.filter(r => r.status === 'COLLECTED').length,
     failed:     rows.filter(r => r.status === 'FAILED').length,
-    rescheduled:rows.filter(r => r.status === 'RESCHEDULED').length,
-    approved:   rows.filter(r => r.approvalStatus === 'APPROVED').length,
-    unassigned: rows.filter(r => !r.dispatches?.length && r.status === 'PENDING').length,
+    unassigned: rows.filter(r => !r.driverId && r.status === 'PENDING').length,
     drivers:    drivers.length,
+    available:  drivers.filter(d => d.status === 'AVAILABLE').length,
   }), [rows, drivers]);
 
-  async function handleAutoSuggest(id: number) {
+  async function handleAutoSuggest(id: string) {
     setIsAnalyzing(true);
     setSuggestion(null);
     setError("");
@@ -215,26 +180,27 @@ export default function Collections() {
       if (suggestion && suggestion.id) {
         setSuggestion(suggestion);
       } else {
-        setError("AI: No suitable drivers found in zone.");
+        setError("AI: No suitable drivers found.");
       }
-    } catch (err) { 
-      setError("AI Engine: Optimization service offline."); 
-    } finally { 
-      setIsAnalyzing(false); 
+    } catch {
+      setError("AI Engine: Optimization service offline.");
+    } finally {
+      setIsAnalyzing(false);
     }
   }
 
-  async function handleAssignDriver(collectionId: number, nextDriverId: number) {
+  async function handleAssignDriver(collectionId: string, nextDriverId: string) {
     setSaving(true);
     try {
-      const col = rows.find(r => r.id === collectionId);
-      await api.patch(`/collections/${collectionId}`, { 
-        driverId: String(nextDriverId),
+      await api.patch(`/collections/${collectionId}`, {
+        driverId: nextDriverId,
         status: "IN_PROGRESS",
       });
-      setSuccess("Dispatch confirmed. WhatsApp sent.");
+      setSuccess("Dispatch confirmed.");
       setSuggestion(null);
       loadAll("refresh");
+    } catch (err: any) {
+      setError(err?.message || "Failed to assign driver.");
     } finally { setSaving(false); }
   }
 
@@ -257,22 +223,20 @@ export default function Collections() {
             <button
               onClick={() => exportCsv(
                 rows.map((r) => ({
-                  name:     r.name,
+                  client:   r.clientName ?? "",
                   status:   r.status,
-                  address:  r.collectionAddress ?? "",
-                  contact:  r.collectionContactName ?? "",
-                  phone:    r.collectionContactPhone ?? "",
-                  parcels:  r.parcelCount ?? "",
+                  address:  r.pickupAddress ?? "",
+                  phone:    r.clientPhone ?? "",
+                  driver:   r.driver?.name ?? "",
                   created:  r.createdAt ?? "",
                 })),
                 csvFilename("collections"),
                 [
-                  { key: "name",    label: "Collection"   },
+                  { key: "client",  label: "Client"       },
                   { key: "status",  label: "Status"       },
                   { key: "address", label: "Address"      },
-                  { key: "contact", label: "Contact"      },
                   { key: "phone",   label: "Phone"        },
-                  { key: "parcels", label: "Parcels"      },
+                  { key: "driver",  label: "Driver"       },
                   { key: "created", label: "Created"      },
                 ]
               )}
@@ -288,22 +252,45 @@ export default function Collections() {
           <div className="grid grid-cols-9 gap-4 text-center">
              <StatCard label="Active" value={stats.total} />
              <StatCard label="Pending" value={stats.pending} />
+             <StatCard label="Assigned" value={stats.assigned} />
              <StatCard label="In Progress" value={stats.inProgress} />
+             <StatCard label="Collected" value={stats.collected} />
              <StatCard label="Failed" value={stats.failed} />
-             <StatCard label="Rescheduled" value={stats.rescheduled} />
-             <StatCard label="Approved" value={stats.approved} />
              <StatCard label="Unassigned" value={stats.unassigned} />
              <StatCard label="Drivers" value={stats.drivers} />
-             <StatCard label="Tracking On" value={drivers.filter(d => d.availabilityStatus === 'AVAILABLE' || d.availabilityStatus === 'BUSY').length} />
+             <StatCard label="Available" value={stats.available} />
           </div>
         </div>
 
-        {/* CARDS GRID */}
-        <div className="grid gap-4 lg:grid-cols-4">
-           <ActionInfoCard title="Book Collection" icon={ClipboardList} desc="Capture pickup/delivery details." />
-           <ActionInfoCard title="Tenant Driver Registry" icon={CarFront} desc="Manage your own fleet." />
-           <ActionInfoCard title="3rd-Party Tracking" icon={Radio} desc="Store telematics references." />
-           <ActionInfoCard title="AI Dispatch Foundation" icon={Sparkles} desc="Power smart assignments." />
+        {/* STATUS FILTER TABS */}
+        <div className="flex flex-wrap gap-2">
+          <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.2em] text-white/30 self-center mr-2">
+            <Filter className="h-3 w-3" /> Filter
+          </span>
+          {(["ALL", "PENDING", "ASSIGNED", "IN_PROGRESS", "COLLECTED", "FAILED"] as StatusFilter[]).map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                "rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-wider transition",
+                statusFilter === s
+                  ? s === "ALL" ? "border-sky-400/40 bg-sky-500/15 text-sky-300"
+                    : s === "PENDING" ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+                    : s === "ASSIGNED" ? "border-violet-400/40 bg-violet-500/15 text-violet-300"
+                    : s === "IN_PROGRESS" ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-300"
+                    : s === "COLLECTED" ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
+                    : "border-rose-400/40 bg-rose-500/15 text-rose-300"
+                  : "border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70"
+              )}
+            >
+              {s === "ALL" ? `All (${stats.total})` :
+               s === "PENDING" ? `Pending (${stats.pending})` :
+               s === "ASSIGNED" ? `Assigned (${stats.assigned})` :
+               s === "IN_PROGRESS" ? `In Progress (${stats.inProgress})` :
+               s === "COLLECTED" ? `Collected (${stats.collected})` :
+               `Failed (${stats.failed})`}
+            </button>
+          ))}
         </div>
 
         {/* FORMS */}
@@ -396,10 +383,15 @@ export default function Collections() {
               {filtered.map(row => (
                 <button key={row.id} onClick={()=>setSelectedId(row.id)} className={cn("w-full rounded-2xl p-5 text-left border transition-all", selectedId === row.id ? "bg-blue-500/15 border-blue-400/40 shadow-lg" : "bg-black/20 border-white/5 hover:border-white/20")}>
                   <div className="flex justify-between font-black uppercase text-xs tracking-widest">
-                    <span>{row.name}</span>
+                    <span>{row.clientName ?? "—"}</span>
                     <span className={statusPill(row.status)}>{row.status}</span>
                   </div>
-                  <div className="text-[10px] mt-2 opacity-40 uppercase tracking-widest">{row.collectionAddress || "No Address Provided"}</div>
+                  <div className="text-[10px] mt-2 opacity-40 uppercase tracking-widest">{row.pickupAddress || "No Address Provided"}</div>
+                  {row.driver && (
+                    <div className="text-[10px] mt-1 text-cyan-400/70 font-bold">
+                      Driver: {row.driver.name}
+                    </div>
+                  )}
                 </button>
               ))}
               {filtered.length === 0 && !loading && (
@@ -411,7 +403,7 @@ export default function Collections() {
           <div className="min-h-[500px]">
             {selected ? (
               <div className="rounded-[28px] border border-white/10 bg-white/6 p-8 shadow-2xl animate-in fade-in duration-300 h-full flex flex-col">
-                <h2 className="text-3xl font-black tracking-tighter mb-8">{selected.name}</h2>
+                <h2 className="text-3xl font-black tracking-tighter mb-8">{selected.clientName ?? "Collection"}</h2>
                 
                 {/* 🚀 AI Suggestion Module */}
                 <div className="space-y-6 flex-1">
@@ -440,13 +432,13 @@ export default function Collections() {
                           onClick={() =>
                             navigate(
                               `/driver-dispatch?collectionId=${encodeURIComponent(String(selected.id))}&reference=${encodeURIComponent(
-                                selected.referenceNo || selected.name || ""
+                                selected.clientName || selected.id || ""
                               )}`
                             )
                           }
                           className="w-full rounded-2xl border border-white/10 bg-white/10 py-4 text-sm font-semibold text-white transition hover:bg-white/15"
                         >
-                          Collection Problem to Dispatch
+                          Open in Dispatch
                         </button>
                       </div>
                     </div>
@@ -459,8 +451,8 @@ export default function Collections() {
                 </div>
 
                 <div className="mt-8 grid grid-cols-2 gap-4 font-mono text-[10px]">
-                   <div className="bg-black/30 p-4 rounded-2xl border border-white/5 uppercase"><div className="opacity-30 mb-1">Load</div>{selected.palletCount || 0} Pallets</div>
-                   <div className="bg-black/30 p-4 rounded-2xl border border-white/5 uppercase truncate"><div className="opacity-30 mb-1">Address</div>{selected.collectionAddress || "N/A"}</div>
+                   <div className="bg-black/30 p-4 rounded-2xl border border-white/5 uppercase"><div className="opacity-30 mb-1">Status</div>{selected.status}</div>
+                   <div className="bg-black/30 p-4 rounded-2xl border border-white/5 uppercase truncate"><div className="opacity-30 mb-1">Address</div>{selected.pickupAddress || "N/A"}</div>
                 </div>
               </div>
             ) : (
@@ -484,16 +476,6 @@ function StatCard({ label, value }: { label: string, value: string | number }) {
   );
 }
 
-function ActionInfoCard({ title, icon: Icon, desc }: { title: string, icon: any, desc: string }) {
-  return (
-    <div className="rounded-[26px] border border-white/10 bg-white/5 p-5">
-      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 mb-4"><Icon className="h-5 w-5 text-white" /></div>
-      <div className="text-lg font-extrabold">{title}</div>
-      <div className="text-sm opacity-50">{desc}</div>
-    </div>
-  );
-}
-
 function Field({ label, children }: { label: string, children: React.ReactNode }) {
   return (
     <label className="grid gap-2">
@@ -503,15 +485,15 @@ function Field({ label, children }: { label: string, children: React.ReactNode }
   );
 }
 
-function DriverAssignButton({ drivers, disabled, onAssign }: { drivers: any[], disabled: boolean, onAssign: (id: number) => void }) {
+function DriverAssignButton({ drivers, disabled, onAssign }: { drivers: any[], disabled: boolean, onAssign: (id: string) => void }) {
   const [val, setVal] = useState("");
   return (
     <div className="flex gap-4">
       <select value={val} onChange={(e)=>setVal(e.target.value)} className="flex-1 bg-black/60 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none">
         <option value="">Manual fleet asset...</option>
-        {drivers.map(d => <option key={d.id} value={d.id}>{d.name} — {d.vehicleType || 'No Vehicle'}</option>)}
+        {drivers.map(d => <option key={d.id} value={String(d.id)}>{d.name} — {d.vehicleType || 'No Vehicle'}</option>)}
       </select>
-      <button disabled={disabled || !val} onClick={()=>{onAssign(Number(val)); setVal("");}} className="bg-blue-600 px-10 rounded-2xl font-black text-xs uppercase tracking-[0.2em] active:scale-95 transition-all hover:bg-blue-500 disabled:opacity-50">Assign</button>
+      <button disabled={disabled || !val} onClick={()=>{onAssign(val); setVal("");}} className="bg-blue-600 px-10 rounded-2xl font-black text-xs uppercase tracking-[0.2em] active:scale-95 transition-all hover:bg-blue-500 disabled:opacity-50">Assign</button>
     </div>
   );
 }
