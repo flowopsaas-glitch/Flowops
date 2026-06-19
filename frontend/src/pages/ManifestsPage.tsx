@@ -72,7 +72,9 @@ function CreateModal({
     (async () => {
       try {
         const res: any = await api.get("/waybills");
-        const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+        // Waybills endpoint returns paginated: {data:{data:[],total,page,limit}}
+        const raw = res?.data ?? res;
+        const data: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
         // Only show pending / collected waybills not yet dispatched
         setWaybills(data.filter((w: any) => ["PENDING", "COLLECTED"].includes(w.status)));
       } finally {
