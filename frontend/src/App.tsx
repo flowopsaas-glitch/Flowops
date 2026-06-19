@@ -1,6 +1,7 @@
 import { useEffect, lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { io } from "socket.io-client";
+import { getToken } from "./api/client";
 import { FLOWOPS_WS_ORIGIN } from "./lib/env";
 
 // Eager imports (initial shell)
@@ -74,8 +75,11 @@ const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
 
 export default function App() {
   useEffect(() => {
-    const socket = io(`${FLOWOPS_WS_ORIGIN}/broadcast`, {
-      transports: ["websocket"],
+    // Backend EventsGateway runs on the default namespace (/), not /broadcast.
+    // Add the JWT so the server doesn't disconnect us immediately.
+    const socket = io(FLOWOPS_WS_ORIGIN, {
+      transports: ["websocket", "polling"],
+      auth: { token: getToken?.() ?? '' },
       autoConnect: true,
       reconnectionAttempts: 10,
     });
