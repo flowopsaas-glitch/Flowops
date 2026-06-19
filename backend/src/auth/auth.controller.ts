@@ -59,6 +59,17 @@ export class AuthController {
   }
 
   /**
+   * POST /api/v1/auth/driver-portal/login
+   * Alias used by the compiled driver portal JS (was built against api.flowop.work).
+   * After patching the bundle's base URL to localhost:3000 this path is called.
+   */
+  @Public()
+  @Post('driver-portal/login')
+  driverPortalLogin(@Body() body: { phone: string; pin: string }) {
+    return this.authService.driverLogin(body.phone, body.pin);
+  }
+
+  /**
    * POST /api/v1/auth/driver-login  — driver portal login (phone + PIN).
    */
   @Public()
