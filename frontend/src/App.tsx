@@ -34,6 +34,7 @@ const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks")
 const CODReconciliation = lazy(() => import("./pages/billing/CODReconciliation"));
 const DriverWalletPage  = lazy(() => import("./pages/billing/DriverWalletPage"));
 const RateShopping      = lazy(() => import("./pages/billing/RateShopping"));
+const CustomerServiceHub = lazy(() => import("./pages/CustomerServiceHub"));
 const WarehouseHubPage  = lazy(() => import("./pages/WarehouseHubPage"));
 const BillingPlans      = lazy(() => import("./pages/billing/BillingPlans"));
 const QuotesPage = lazy(() => import("./pages/QuotesPage"));
@@ -153,6 +154,7 @@ export default function App() {
               <Route path="/collections" element={<RequirePermission perm="collections"><Collections /></RequirePermission>} />
               <Route path="/operations" element={<RequirePermission perm="collections"><OperationsDashboard /></RequirePermission>} />
               <Route path="/warehouse"  element={<RequirePermission perm="waybillInbox"><WarehouseHubPage /></RequirePermission>} />
+              <Route path="/customer-service" element={<RequirePermission perm="collections"><CustomerServiceHub /></RequirePermission>} />
               <Route path="/pod-deliveries" element={<RequirePermission perm="podDeliveries"><PodDeliveries /></RequirePermission>} />
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
