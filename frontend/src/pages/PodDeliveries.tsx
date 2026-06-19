@@ -244,9 +244,24 @@ export default function PodDeliveries() {
             icon={FileCheck2}
             onClick={() => setView('queue')}
           />
-          <Tile title="Image Intake" desc="Accept delivery photos and uploaded POD images." icon={ImageIcon} />
-          <Tile title="Scan Station" desc="Support manual office scan workflows for paperwork." icon={ScanLine} />
-          <Tile title="Evidence Health" desc="Surface missing or weak delivery evidence." icon={ShieldCheck} />
+          <Tile
+            title="Image Intake"
+            desc="Accept delivery photos and uploaded POD images for any waybill."
+            icon={ImageIcon}
+            onClick={() => setView('queue')}
+          />
+          <Tile
+            title="Scan Station"
+            desc="Support manual office scan workflows for paperwork."
+            icon={ScanLine}
+            onClick={() => navigate('/waybills/scan')}
+          />
+          <Tile
+            title="Evidence Health"
+            desc="Surface missing or weak delivery evidence that needs attention."
+            icon={ShieldCheck}
+            onClick={() => setView('queue')}
+          />
         </div>
 
         {/* Footer Info Sections */}
