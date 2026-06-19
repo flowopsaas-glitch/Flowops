@@ -30,6 +30,47 @@ export class InvoicesController {
   }
 
   /**
+   * GET /api/v1/invoices/ar-aging
+   * Returns outstanding invoices grouped into aging buckets:
+   * Current (not yet due), 1–30 days, 31–60, 61–90, 90+ days overdue.
+   * Standard AR Aging Report used by QuickBooks, NetSuite, Xero.
+   */
+  @Get('invoices/ar-aging')
+  getArAging(@CurrentUser() u: any) {
+    return this.svc.getArAging(u.companyId);
+  }
+
+  /**
+   * GET /api/v1/invoices/revenue-trend
+   * Returns monthly revenue totals for the last 6 months (billed + collected).
+   * Powers the Finance Command Center trend chart.
+   */
+  @Get('invoices/revenue-trend')
+  getRevenueTrend(@CurrentUser() u: any) {
+    return this.svc.getRevenueTrend(u.companyId);
+  }
+
+  /**
+   * POST /api/v1/invoices/:id/send-reminder
+   * Sends a payment reminder email to the client for an overdue invoice.
+   */
+  @Post('invoices/:id/send-reminder')
+  @HttpCode(HttpStatus.OK)
+  sendReminder(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.sendPaymentReminder(id, u.companyId);
+  }
+
+  /**
+   * GET /api/v1/invoices/client-metrics
+   * Returns per-client summary: total billed, paid, overdue, avg days to pay.
+   * Powers the "Top Clients" finance analytics.
+   */
+  @Get('invoices/client-metrics')
+  getClientMetrics(@CurrentUser() u: any) {
+    return this.svc.getClientMetrics(u.companyId);
+  }
+
+  /**
    * GET /api/v1/invoices/unbilled-waybills
    *
    * Returns DELIVERED waybills that have a totalAmount and have not yet been
