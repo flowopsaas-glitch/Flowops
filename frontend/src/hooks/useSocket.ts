@@ -1,9 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { FLOWOPS_WS_ORIGIN } from '../lib/env';
-
-// Tracking gateway lives under the `/tracking-dashboard` namespace.
-const SOCKET_URL = `${FLOWOPS_WS_ORIGIN}/tracking-dashboard`;
+import { getToken } from '../api/client';
 
 export const useSocket = (companyId: number | string) => {
   const socketRef = useRef<Socket | null>(null);
@@ -12,26 +10,28 @@ export const useSocket = (companyId: number | string) => {
   useEffect(() => {
     if (!companyId) return;
 
-    // Initialize using WebSocket transports to route around host proxy blocks safely
-    const socket = io(SOCKET_URL, {
+    // Backend EventsGateway runs on the default namespace (/).
+    // Must supply the JWT token in auth so the gateway can verify the tenant.
+    const socket = io(FLOWOPS_WS_ORIGIN, {
       withCredentials: true,
-      transports: ["websocket"], 
+      transports: ['websocket', 'polling'],
+      auth: { token: getToken() ?? '' },
       autoConnect: true,
     });
 
-    socket.on("connect", () => {
+    socket.on('connect', () => {
       setIsConnected(true);
-      socket.emit("joinCompanyDashboard", { companyId: Number(companyId) });
+      socket.emit('joinCompanyDashboard', { companyId: String(companyId) });
     });
 
-    socket.on("connect_error", (err) => {
+    socket.on('connect_error', (err) => {
       if (import.meta.env.DEV) {
-        console.warn("Socket connection failed:", err.message);
+        console.warn('Socket connection failed:', err.message);
       }
       setIsConnected(false);
     });
 
-    socket.on("disconnect", () => {
+    socket.on('disconnect', () => {
       setIsConnected(false);
     });
 
