@@ -33,6 +33,7 @@ const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks")
 const CODReconciliation = lazy(() => import("./pages/billing/CODReconciliation"));
 const DriverWalletPage  = lazy(() => import("./pages/billing/DriverWalletPage"));
 const RateShopping      = lazy(() => import("./pages/billing/RateShopping"));
+const BillingPlans      = lazy(() => import("./pages/billing/BillingPlans"));
 const QuotesPage = lazy(() => import("./pages/QuotesPage"));
 const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
@@ -165,6 +166,7 @@ export default function App() {
               <Route path="/rate-cards" element={<RequirePermission perm="rateCards"><RateCards /></RequirePermission>} />
               <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
+              <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
               <Route path="/finance" element={<RequirePermission perm="invoices"><FinanceDashboard /></RequirePermission>} />
               <Route path="/invoice-drafts" element={<RequirePermission perm="invoiceDrafts"><InvoiceDraftsPage /></RequirePermission>} />
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
