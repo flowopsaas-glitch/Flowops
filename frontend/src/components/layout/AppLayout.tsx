@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity,
+  Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -191,6 +191,7 @@ export default function AppLayout() {
     { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
     
     { section: "OPS", label: "Ops Command Centre", desc: "Today's stats & driver board", to: "/operations", icon: Activity, perm: "collections" },
+    { section: "OPS", label: "Warehouse Hub",       desc: "Intake, manifests & POD",      to: "/warehouse",  icon: Box,      perm: "waybillInbox" },
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },
