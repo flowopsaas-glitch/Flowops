@@ -4,7 +4,7 @@ import { Bell, ChevronRight, RefreshCcw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 type NotificationItem = {
-  id: number;
+  id: string | number;
   type?: string | null;
   title?: string | null;
   message?: string | null;
@@ -138,7 +138,7 @@ export default function NotificationsBell() {
                   const unread = !n.readAt;
                   return (
                     <div
-                      key={n.id}
+                      key={`${n.id}-${n.createdAt}`}
                       className="rounded-2xl border border-white/10 bg-white/5 p-3 hover:bg-white/10"
                     >
                       <div className="flex items-start justify-between gap-2">
