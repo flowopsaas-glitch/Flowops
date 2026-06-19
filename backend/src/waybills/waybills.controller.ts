@@ -55,6 +55,22 @@ export class WaybillsController {
     return this.svc.update(id, u.companyId, body);
   }
 
+  /**
+   * POST /waybills/:id/assign
+   * Assign a driver to a waybill.  Creates or updates the linked Shipment
+   * and advances the waybill status to COLLECTED so it leaves the dispatch
+   * queue.  The Waybill model has no driverId column — the link lives on
+   * Shipment — so this is the canonical assignment endpoint.
+   */
+  @Post('waybills/:id/assign')
+  assignDriver(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Body() body: { driverId: string },
+  ) {
+    return this.svc.assignDriver(id, u.companyId, body.driverId);
+  }
+
   @Post('waybills/:id/deliver')
   @UseInterceptors(FileInterceptor('photo'))
   @ApiConsumes('multipart/form-data')

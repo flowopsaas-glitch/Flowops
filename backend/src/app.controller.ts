@@ -9,14 +9,13 @@ export class AppController {
 
   /**
    * GET /health
-   * @Public — no JWT required so Docker/ALB health checks work without auth
-   */
-  @Public()
-  @Get('health')
+   * @Public — no JWT required so Docker/ALB health checks work without auth.
+   *
    * Used by Docker HEALTHCHECK, ALB target-group health checks, and
    * the frontend's status page. Returns HTTP 200 when the server + DB
    * are ready; 503 if the DB is unreachable.
    */
+  @Public()
   @Get('health')
   async health() {
     try {

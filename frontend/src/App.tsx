@@ -78,22 +78,37 @@ const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
 
 export default function App() {
   useEffect(() => {
-    // Backend EventsGateway runs on the default namespace (/), not /broadcast.
-    // Add the JWT so the server doesn't disconnect us immediately.
+    // Backend EventsGateway runs on the default namespace (/).
+    // Use a *function* for auth so every reconnect attempt reads the
+    // current token from storage — this lets the socket auto-recover after
+    // the user logs in without any explicit re-setup.
     const socket = io(FLOWOPS_WS_ORIGIN, {
       transports: ["websocket", "polling"],
-      auth: { token: getToken?.() ?? '' },
+      auth: (cb: (data: Record<string, string>) => void) => {
+        cb({ token: getToken?.() ?? '' });
+      },
       autoConnect: true,
-      reconnectionAttempts: 10,
+      // Keep retrying indefinitely — the gateway will accept once the user
+      // has a valid tenant JWT (after login).  Without Infinity the socket
+      // gives up before the user even reaches the dashboard.
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 3000,
+      reconnectionDelayMax: 10000,
     });
 
     socket.on("connect", () => {
-      // Connected — no console output needed in production.
+      // Connected successfully — no console noise in production.
     });
 
     socket.on("connect_error", (err) => {
-      if (import.meta.env.DEV) {
-        console.warn(`WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`, err.message);
+      // Suppress the expected "Invalid namespace" / "jwt malformed" noise
+      // that occurs before the user logs in (no token yet).  Only log if we
+      // actually have a token so the error is genuinely unexpected.
+      if (import.meta.env.DEV && getToken?.()) {
+        console.warn(
+          `WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`,
+          err.message,
+        );
       }
     });
 
