@@ -80,6 +80,67 @@ export class DriversService {
     });
   }
 
+  /** Field ops view — drivers with active jobs + today's delivery count */
+  async getFieldOps(companyId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [drivers, activeCollections, activeShipments, deliveredToday] = await Promise.all([
+      this.prisma.driver.findMany({
+        where: { companyId, isActive: true },
+        orderBy: [{ status: 'asc' }, { name: 'asc' }],
+      }),
+      this.prisma.collection.findMany({
+        where: { companyId, driverId: { not: null }, status: { in: ['IN_PROGRESS', 'ASSIGNED'] } },
+        select: { id: true, driverId: true, clientName: true, pickupAddress: true, status: true },
+      }),
+      this.prisma.shipment.findMany({
+        where: { companyId, status: { in: ['PENDING', 'IN_TRANSIT'] }, driverId: { not: null } },
+        select: { id: true, driverId: true, status: true, waybill: { select: { trackingNumber: true, recipientName: true } } },
+      }),
+      this.prisma.waybill.groupBy({
+        by: ['companyId'],
+        where: { companyId, status: 'DELIVERED', updatedAt: { gte: today } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    // Per-driver delivery counts today from shipments
+    const collectedToday = await this.prisma.collection.groupBy({
+      by: ['driverId'],
+      where: { companyId, driverId: { not: null }, status: 'COLLECTED', updatedAt: { gte: today } },
+      _count: { _all: true },
+    });
+    const collectedMap = new Map(collectedToday.map(c => [c.driverId, c._count._all]));
+    const colsByDriver = new Map<string, any[]>();
+    for (const c of activeCollections) {
+      if (!c.driverId) continue;
+      if (!colsByDriver.has(c.driverId)) colsByDriver.set(c.driverId, []);
+      colsByDriver.get(c.driverId)!.push(c);
+    }
+    const shipsByDriver = new Map<string, any[]>();
+    for (const s of activeShipments) {
+      if (!s.driverId) continue;
+      if (!shipsByDriver.has(s.driverId)) shipsByDriver.set(s.driverId, []);
+      shipsByDriver.get(s.driverId)!.push(s);
+    }
+
+    return drivers.map(d => ({
+      id:          d.id,
+      name:        d.name,
+      phone:       d.phone,
+      vehicleType: d.vehicleType,
+      vehicleReg:  d.vehicleReg,
+      status:      d.status,
+      lastLat:     d.lastLat,
+      lastLng:     d.lastLng,
+      lastSeen:    d.lastSeen,
+      activeCollections: colsByDriver.get(d.id) ?? [],
+      activeShipments:   shipsByDriver.get(d.id) ?? [],
+      jobsToday:   collectedMap.get(d.id) ?? 0,
+    }));
+  }
+
   /** Returns all drivers with their fleet status for the maintenance dashboard. */
   async fleetDashboard(companyId: string) {
     const drivers = await this.prisma.driver.findMany({
