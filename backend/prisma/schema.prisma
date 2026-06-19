@@ -346,6 +346,9 @@ model Driver {
   lastLng  Float?
   lastSeen DateTime?
 
+  // Driver portal auth (phone + hashed 4-digit PIN)
+  driverPin String?
+
   // Fleet / vehicle maintenance
   currentKm       Int?       // current odometer reading
   nextServiceKm   Int?       // odometer reading at which next service is due
