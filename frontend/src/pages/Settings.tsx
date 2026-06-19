@@ -51,7 +51,7 @@ const TILES: SettingTile[] = [
   { title: 'Users & Roles',   desc: 'Manage team members and permissions', icon: Users,     href: '/user-roles' },
   { title: 'Notifications',   desc: 'Alert preferences and channels',      icon: Bell,      href: '/notifications' },
   { title: 'Integrations',    desc: 'API keys, webhooks, third-party',     icon: Plug,      href: '/settings/integrations' },
-  { title: 'Billing & Plans', desc: 'Subscription and invoice history',    icon: CreditCard,href: '/billing-batches' },
+  { title: 'Billing & Plans', desc: 'Subscription and invoice history',    icon: CreditCard,href: '/invoices' },
   { title: 'Rate Cards',      desc: 'Pricing rules per zone and weight',   icon: Gauge,     href: '/rate-cards' },
 ];
 

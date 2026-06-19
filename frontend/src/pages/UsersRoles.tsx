@@ -3,7 +3,7 @@ import {
   Users, Shield, Mail, Lock, Save, X, ChevronRight, 
   Eye, EyeOff, Settings, Activity, Search, Command, Filter
 } from 'lucide-react';
-import api from '../api/api';
+import { api } from '../api/client';
 
 export default function UsersRoles() {
   const [users, setUsers] = useState([]);
@@ -14,8 +14,9 @@ export default function UsersRoles() {
   // 🚀 SYNC: Pull real-time personnel data
   const fetchUsers = async () => {
     try {
-      const res = await api.get('/users/my-company');
-      setUsers(res.data);
+      const res: any = await api.get('/users/my-company');
+      const list = Array.isArray(res) ? res : (res?.data ?? res ?? []);
+      setUsers(list);
     } catch (err) { 
       console.error("AI Sync failed: Connection to FlowOps core lost.", err); 
     }
