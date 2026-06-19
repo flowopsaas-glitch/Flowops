@@ -55,6 +55,54 @@ export class AuthService {
     };
   }
 
+  // ── Driver portal login (phone + 4-digit PIN) ────────────────────────
+
+  async driverLogin(phone: string, pin: string) {
+    // Normalize phone: remove spaces, ensure +27 prefix
+    const normalised = phone.replace(/\s/g, '');
+
+    const driver = await this.prisma.driver.findFirst({
+      where: {
+        phone: { in: [normalised, normalised.replace(/^\+/, '')] },
+        isActive: true,
+      },
+      include: { company: true },
+    });
+
+    if (!driver) throw new UnauthorizedException('Invalid phone number or PIN');
+    if (!(driver as any).driverPin) throw new UnauthorizedException('PIN not set — contact dispatch to set your PIN');
+
+    const pinOk = await bcrypt.compare(pin, (driver as any).driverPin);
+    if (!pinOk) throw new UnauthorizedException('Invalid phone number or PIN');
+
+    // Issue a short-lived JWT scoped to this driver
+    const payload = {
+      sub:       driver.id,
+      phone:     driver.phone,
+      companyId: driver.companyId,
+      type:      'driver',
+      name:      driver.name,
+    };
+    const accessToken = this.jwt.sign(payload, {
+      secret:    this.config.get<string>('JWT_SECRET'),
+      expiresIn: '12h',
+    });
+
+    return {
+      access_token: accessToken,
+      driver: {
+        id:          driver.id,
+        name:        driver.name,
+        phone:       driver.phone,
+        vehicleType: driver.vehicleType,
+        vehicleReg:  driver.vehicleReg,
+        status:      driver.status,
+        companyId:   driver.companyId,
+        companyName: driver.company?.name,
+      },
+    };
+  }
+
   // ── Register (creates ApprovalRequest, awaiting admin approval) ───────
 
   async register(dto: RegisterDto) {

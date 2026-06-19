@@ -59,6 +59,15 @@ export class AuthController {
   }
 
   /**
+   * POST /api/v1/auth/driver-login  — driver portal login (phone + PIN).
+   */
+  @Public()
+  @Post('driver-login')
+  driverLogin(@Body() dto: { phone: string; pin: string }) {
+    return this.authService.driverLogin(dto.phone, dto.pin);
+  }
+
+  /**
    * POST /api/v1/auth/owner-login  — platform owner login.
    * Response shape (same as tenant login):
    *   { access_token, refresh_token, user }
