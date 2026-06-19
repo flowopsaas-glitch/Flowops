@@ -52,11 +52,24 @@ export default function DriverDispatch() {
   const [drivers, setDrivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
+  const [offlineReason, setOfflineReason] = useState<'backend'|'session'>('backend');
   const [refreshTick, setRefreshTick] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
 
   const branchCenter: [number, number] = [-26.2041, 28.0473];
+
+  // Unwrap both the TransformInterceptor envelope AND optional pagination wrapper.
+  // Backend returns: { data: X, statusCode, message } (TransformInterceptor)
+  // Waybills also return paginated: { data: { data: [], total: n, page: p, limit: l } }
+  // Collections and drivers return plain arrays: { data: [] }
+  const unwrapList = (val: any): any[] => {
+    if (!val) return [];
+    const d = val?.data ?? val;                        // strip TransformInterceptor envelope
+    if (Array.isArray(d)) return d;                    // plain array → done
+    const d2 = d?.data ?? d?.items ?? d?.results ?? d; // strip pagination wrapper
+    return Array.isArray(d2) ? d2 : [];
+  };
 
   const loadData = async () => {
     try {
@@ -66,16 +79,19 @@ export default function DriverDispatch() {
         api.get('/waybills'), api.get('/collections'), api.get('/drivers')
       ]);
 
-      // Detect if all calls failed — backend likely offline
       const allFailed = [wbRes, collRes, driversTableRes].every(r => r.status === 'rejected');
-      if (allFailed) { setOffline(true); setLoading(false); return; }
+      if (allFailed) {
+        const firstErr: any = [wbRes, collRes, driversTableRes].find(r => r.status === 'rejected');
+        const status = (firstErr as any)?.reason?.status;
+        setOfflineReason(status === 401 || status === 403 ? 'session' : 'backend');
+        setOffline(true);
+        setLoading(false);
+        return;
+      }
 
-      const waybillsData: any[] = wbRes.status === 'fulfilled'
-        ? (Array.isArray(wbRes.value) ? wbRes.value : (wbRes.value as any)?.data ?? []) : [];
-      const collectionsData: any[] = collRes.status === 'fulfilled'
-        ? (Array.isArray(collRes.value) ? collRes.value : (collRes.value as any)?.data ?? []) : [];
-      const rawDriversTable: any[] = driversTableRes.status === 'fulfilled'
-        ? (Array.isArray(driversTableRes.value) ? driversTableRes.value : (driversTableRes.value as any)?.data ?? []) : [];
+      const waybillsData    = unwrapList(wbRes.status        === 'fulfilled' ? wbRes.value        : null);
+      const collectionsData = unwrapList(collRes.status       === 'fulfilled' ? collRes.value      : null);
+      const rawDriversTable = unwrapList(driversTableRes.status === 'fulfilled' ? driversTableRes.value : null);
 
       // FIX: Waybill has no driverId field — it links via Shipment.
       // Filter by status instead: PENDING and COLLECTED = unassigned to driver
@@ -210,7 +226,10 @@ export default function DriverDispatch() {
         {offline && (
           <div className="rounded-2xl border border-rose-500/25 bg-rose-500/8 px-5 py-4 flex items-center gap-3 text-sm text-rose-300">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 text-rose-400" />
-            <span><strong>Backend offline</strong> — start the backend server to load dispatch data.</span>
+            {offlineReason === 'session'
+              ? <span><strong>Session expired</strong> — please reload the page and log in again.</span>
+              : <span><strong>Backend offline</strong> — start the backend server to load dispatch data.</span>
+            }
             <button onClick={() => { setOffline(false); setRefreshTick(v => v + 1); }} className="ml-auto rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-1.5 text-xs font-bold hover:bg-rose-500/20 transition">Retry</button>
           </div>
         )}
