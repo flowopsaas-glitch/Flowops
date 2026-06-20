@@ -71,6 +71,7 @@ const StatusPage = lazy(() => import('./pages/Status'));
 const TrackingPage = lazy(() => import('./pages/TrackingPage'));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
+const DriverHomePage   = lazy(() => import("./pages/driver/DriverHomePage"));
 const SignupPage = lazy(() => import("./pages/Signup"));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPassword'));
@@ -173,6 +174,7 @@ export default function App() {
               <Route path="/customer-service" element={<RequirePermission perm="collections"><CustomerServiceHub /></RequirePermission>} />
               <Route path="/field-delivery"   element={<RequirePermission perm="podDeliveries"><FieldDeliveryPage /></RequirePermission>} />
               <Route path="/pod-deliveries" element={<RequirePermission perm="podDeliveries"><PodDeliveries /></RequirePermission>} />
+              <Route path="/driver-home"   element={<RequirePermission perm="podDeliveries"><DriverHomePage /></RequirePermission>} />
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/manifests" element={<ManifestsPage />} />
