@@ -1,11 +1,15 @@
-import { Controller, Get } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
+import { AuthService } from './auth/auth.service';
 
 import { Public } from './common/decorators/public.decorator';
 
 @Controller()
 export class AppController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
+  ) {}
 
   /**
    * GET /health
@@ -24,5 +28,16 @@ export class AppController {
     } catch {
       return { status: 'degraded', db: 'unreachable', ts: new Date().toISOString() };
     }
+  }
+
+  /**
+   * POST /driver-portal/login  (root-level alias, no /auth/ prefix)
+   * The standalone driver portal PWA calls this exact path.
+   * Also available as POST /auth/driver-portal/login in AuthController.
+   */
+  @Public()
+  @Post('driver-portal/login')
+  driverPortalLogin(@Body() body: { phone: string; pin: string }) {
+    return this.authService.driverLogin(body.phone, body.pin);
   }
 }
