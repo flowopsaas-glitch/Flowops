@@ -39,6 +39,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
 import { AuditModule } from './audit/audit.module';
 import { AlertingModule } from './alerting/alerting.module';
+import { DriverPortalModule } from './driver-portal/driver-portal.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { AlertingModule } from './alerting/alerting.module';
     // Geocoding (address -> coordinates; global, powers routing/map/ETA/tracking)
     GeocodingModule,
     CodModule,
+    DriverPortalModule,
 
     // Route optimization (nearest-neighbour + 2-opt over geocoded stops)
     RoutingModule,
