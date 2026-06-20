@@ -190,10 +190,11 @@ export default function AppLayout() {
     { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList, perm: "waybills" },
     { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
     
-    { section: "OPS", label: "Ops Command Centre", desc: "Today's stats & driver board", to: "/operations", icon: Activity, perm: "collections" },
+    { section: "OPS", label: "Ops Command Centre", desc: "Today's stats & driver board", to: "/operations", icon: Activity, perm: "driverDispatch" },
     { section: "OPS", label: "Warehouse Hub",       desc: "Intake, manifests & POD",      to: "/warehouse",          icon: Box,      perm: "waybillInbox"  },
     { section: "OPS", label: "Client Hub",          desc: "Quotes, pickups & comms",       to: "/customer-service",   icon: Users,    perm: "quotes"        },
-    { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "podDeliveries"  },
+    { section: "OPS", label: "Driver Home",         desc: "My jobs, pickups & portal",     to: "/driver-home",        icon: Truck,    perm: "podDeliveries" },
+    { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "driverDispatch" },
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },

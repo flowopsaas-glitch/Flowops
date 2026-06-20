@@ -169,17 +169,21 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
   }
 
   if (value === "DRIVER") {
+    // Field driver — focused on their active deliveries / pickups.
+    // Management pages (dispatch console, route optimizer, fleet mgmt,
+    // waybill register, shipments log, settings, integrations) are NOT
+    // relevant for someone in the field and are deliberately removed.
     return {
       dashboard: true,
-      shipments: true,
+      shipments: false,        // management console — not for field drivers
       waybillInbox: false,
-      waybills: true,
+      waybills: false,         // full waybill register — management only
       clients: false,
       notifications: true,
-      collections: true,
-      podDeliveries: true,
-      driverDispatch: true,
-      whatsapp: true,
+      collections: true,       // see their pickup queue
+      podDeliveries: true,     // POD capture + delivery list
+      driverDispatch: false,   // managing other drivers — removed
+      whatsapp: true,          // contact clients / dispatch
       email: false,
       clientQueries: false,
       rateCards: false,
@@ -191,7 +195,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       aiControlTower: false,
       risksExceptions: false,
       usersRoles: false,
-      settings: true,
+      settings: false,         // integrations / system config — removed
     };
   }
 
