@@ -28,31 +28,49 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   async handleConnection(client: Socket) {
+    // Extract the JWT from either the socket auth object or the HTTP header.
+    const token =
+      (client.handshake.auth as any)?.token ??
+      client.handshake.headers?.authorization?.replace('Bearer ', '');
+
+    // ── No token (page load before login, /track, /driver portal, etc.) ──
+    // Do NOT disconnect — disconnecting during handleConnection makes the
+    // Socket.IO client fire connect_error("Invalid namespace"), which floods
+    // the browser console with red errors on every page load.  Instead, let
+    // the socket stay connected but silently unsubscribed from any room.
+    // The client emits 'joinCompanyDashboard' after login, which adds it to
+    // the correct company room at that point.
+    if (!token) {
+      this.logger.debug(`Socket ${client.id} connected (no token – pre-login)`);
+      return;
+    }
+
     try {
-      const token =
-        (client.handshake.auth as any)?.token ??
-        client.handshake.headers?.authorization?.replace('Bearer ', '');
-
-      if (!token) {
-        client.disconnect();
-        return;
-      }
-
       const payload = this.jwtService.verify(token, {
         secret: this.config.get<string>('JWT_SECRET'),
       });
 
+      // Owner/driver tokens are valid JWTs but don't belong to a tenant room.
+      // Connect them silently — they won't receive company-scoped events.
       if (payload.type !== 'tenant') {
-        client.disconnect();
+        this.logger.debug(
+          `Socket ${client.id} connected as ${payload.type} (no company room)`,
+        );
         return;
       }
 
       const companyId: string = payload.companyId;
       await client.join(`company:${companyId}`);
       this.socketCompany.set(client.id, companyId);
-      this.logger.debug(`Socket connected: ${client.id} → company:${companyId}`);
+      this.logger.debug(
+        `Socket connected: ${client.id} → company:${companyId}`,
+      );
     } catch {
-      client.disconnect();
+      // Invalid / expired token — connect silently, no room access.
+      // Same reasoning as the no-token case: don't disconnect here.
+      this.logger.debug(
+        `Socket ${client.id} connected with invalid/expired token (unauthenticated)`,
+      );
     }
   }
 

@@ -11,11 +11,14 @@ export const useSocket = (companyId: number | string) => {
     if (!companyId) return;
 
     // Backend EventsGateway runs on the default namespace (/).
-    // Must supply the JWT token in auth so the gateway can verify the tenant.
+    // Use a *callback* for auth so every reconnect attempt reads the current
+    // token from storage (handles token refresh and post-login reconnect).
     const socket = io(FLOWOPS_WS_ORIGIN, {
       withCredentials: true,
       transports: ['websocket', 'polling'],
-      auth: { token: getToken() ?? '' },
+      auth: (cb: (data: Record<string, string>) => void) => {
+        cb({ token: getToken() ?? '' });
+      },
       autoConnect: true,
     });
 
