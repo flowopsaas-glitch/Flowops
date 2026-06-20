@@ -47,18 +47,26 @@ async function main() {
 
   let updated = 0;
   for (const d of allDrivers) {
-    // Find a matching PIN config by name (fuzzy) or use default 1234
+    // Find a matching PIN config by first name (case-insensitive)
     const cfg = DRIVERS.find(c =>
       d.name.toLowerCase().includes(c.name.split(' ')[0].toLowerCase())
     );
-    const pin = cfg ? cfg.pin : '1234';
+    const pin   = cfg ? cfg.pin   : '1234';
+    const phone = cfg ? cfg.phone : d.phone;  // update to known number if matched
+
     const hashedPin = await bcrypt.hash(pin, 12);
+
     await prisma.driver.update({
       where: { id: d.id },
-      data: { driverPin: hashedPin },
+      data: {
+        driverPin: hashedPin,
+        // Set the phone to the expected value so credentials are always
+        // predictable regardless of what phone() generated during seeding.
+        ...(phone && phone !== d.phone ? { phone } : {}),
+      },
     });
     updated++;
-    console.log(`  OK:  ${d.name.padEnd(22)} phone: ${(d.phone || 'N/A').padEnd(18)} PIN: ${pin}`);
+    console.log(`  OK:  ${d.name.padEnd(22)} phone: ${phone.padEnd(18)} PIN: ${pin}`);
   }
 
   console.log('');
@@ -72,8 +80,9 @@ async function main() {
     const cfg = DRIVERS.find(c =>
       d.name.toLowerCase().includes(c.name.split(' ')[0].toLowerCase())
     );
-    const pin = cfg ? cfg.pin : '1234';
-    console.log(`  ${d.name.padEnd(24)}${(d.phone || 'N/A').padEnd(24)}${pin}`);
+    const pin   = cfg ? cfg.pin   : '1234';
+    const phone = cfg ? cfg.phone : (d.phone || 'N/A');
+    console.log(`  ${d.name.padEnd(24)}${phone.padEnd(24)}${pin}`);
   }
   console.log('--------------------------------------------------------------------');
   console.log(`  ${updated} driver(s) updated with PINs`);
