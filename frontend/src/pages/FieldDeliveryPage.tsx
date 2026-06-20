@@ -30,7 +30,9 @@ type FieldDriver = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const DRIVER_APP_URL = import.meta.env.VITE_DRIVER_APP_URL ?? "http://localhost:4001";
+// The driver portal is embedded in the frontend at /driver/portal.
+// VITE_DRIVER_APP_URL can override this if a standalone PWA is deployed.
+const DRIVER_APP_URL = import.meta.env.VITE_DRIVER_APP_URL ?? "/driver/portal";
 
 function unwrapList(r: any): any[] {
   const d = r?.data ?? r;
@@ -458,8 +460,8 @@ export default function FieldDeliveryPage() {
             ))}
           </div>
           <p className="mt-4 text-[11px] text-white/25">
-            To start the driver portal locally: <code className="text-white/40">cd ~/FlowOps-Logistics/driver-portal && npx serve dist -p 4001</code>
-            {" · "}Override URL via <code className="text-white/40">VITE_DRIVER_APP_URL</code> in frontend/.env
+            The driver portal runs at <code className="text-white/40">/driver/portal</code> — no separate server needed.
+            {" "}Set <code className="text-white/40">VITE_DRIVER_APP_URL</code> in frontend/.env to point to a standalone deployed PWA.
           </p>
         </div>
 
