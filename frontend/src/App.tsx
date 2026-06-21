@@ -155,6 +155,7 @@ export default function App() {
               <Route path="/owner/access" element={<OwnerAccessManager />} />
               <Route path="/owner/ops" element={<OwnerOpsMap />} />
               <Route path="/owner/audit" element={<OwnerAudit />} />
+              <Route path="/owner/intel" element={<CompetitiveIntelligence />} />
             </Route>
           </Route>
 
