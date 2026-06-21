@@ -268,7 +268,7 @@ export default function BillingPlans() {
                       onClick={() =>
                         plan.key === "enterprise"
                           ? window.open("mailto:sales@flowops.io", "_blank")
-                          : navigate("/paystack-subscribe")
+                          : window.open("mailto:billing@flowops.io?subject=Upgrade+to+" + plan.name, "_blank")
                       }
                       className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition ${
                         plan.highlighted
