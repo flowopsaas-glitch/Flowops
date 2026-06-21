@@ -167,4 +167,29 @@ export class DriversService {
       return { ...d, kmUntilService: kmDue, daysUntilService: daysDue, serviceAlert: alert };
     });
   }
+
+  // ── Driver PIN management ─────────────────────────────────────────────────
+
+  /** Set or change a driver's 4–6 digit portal PIN (admin action). */
+  async setPin(id: string, companyId: string, pin: string) {
+    await this.findOne(id, companyId);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const bcrypt = require('bcrypt') as typeof import('bcrypt');
+    const hash = await bcrypt.hash(String(pin), 12);
+    return this.prisma.driver.update({
+      where: { id },
+      data: { driverPin: hash },
+      select: { id: true, name: true, phone: true },
+    });
+  }
+
+  /** Clear a driver's PIN so they must set a new one on next login. */
+  async resetPin(id: string, companyId: string) {
+    await this.findOne(id, companyId);
+    return this.prisma.driver.update({
+      where: { id },
+      data: { driverPin: null },
+      select: { id: true, name: true, phone: true },
+    });
+  }
 }

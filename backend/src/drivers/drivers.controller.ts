@@ -73,4 +73,16 @@ export class DriversController {
   fleetDashboard(@CurrentUser() u: any) {
     return this.svc.fleetDashboard(u.companyId);
   }
+
+  // ── Driver PIN management ─────────────────────────────────────────────────
+
+  @Patch(':id/pin')
+  setPin(@Param('id') id: string, @CurrentUser() u: any, @Body() body: { pin: string }) {
+    return this.svc.setPin(id, u.companyId, body.pin);
+  }
+
+  @Patch(':id/reset-pin')
+  resetPin(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.resetPin(id, u.companyId);
+  }
 }

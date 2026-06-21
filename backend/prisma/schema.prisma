@@ -185,6 +185,7 @@ model Company {
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
   codTransactions    CodTransaction[]
+  clients            Client[]
 
   @@map("companies")
 }
@@ -1097,4 +1098,50 @@ model VehicleService {
 
   @@index([driverId, servicedAt])
   @@map("vehicle_services")
+}
+
+
+// ─── Client Directory ─────────────────────────────────────────────────────
+// Proper client records with billing types — separate from the waybill-derived
+// read-only directory. COD, prepaid, and contract clients each have different
+// defaults (COD amount policy, credit limit, or contract terms).
+
+enum ClientBillingType {
+  COD        // Cash on delivery — driver collects per waybill
+  PREPAID    // Client pays before dispatch
+  CONTRACT   // Monthly invoiced account with credit terms
+  CASH       // Walk-in / once-off cash payer
+}
+
+model Client {
+  id            String            @id @default(cuid())
+  companyId     String
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Identity
+  name          String
+  tradingName   String?
+  phone         String?
+  email         String?
+  address       String?
+
+  // Billing
+  billingType   ClientBillingType @default(COD)
+  creditLimit   Float?            // for CONTRACT clients
+  paymentTerms  Int?              // days — e.g. 30 for net-30
+  vatNumber     String?
+  accountCode   String?
+
+  // Contract
+  contractStart DateTime?
+  contractEnd   DateTime?
+  notes         String?
+
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId, billingType])
+  @@index([companyId, name])
+  @@map("clients")
 }

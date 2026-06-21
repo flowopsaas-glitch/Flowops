@@ -15,6 +15,7 @@ import { DriversModule } from './drivers/drivers.module';
 import { BranchesModule } from './branches/branches.module';
 import { WaybillsModule } from './waybills/waybills.module';
 import { CollectionsModule } from './collections/collections.module';
+import { ClientsModule }     from './clients/clients.module';
 import { ShipmentsModule } from './shipments/shipments.module';
 import { ManifestsModule } from './manifests/manifests.module';
 import { InvoicesModule } from './invoices/invoices.module';
@@ -90,6 +91,7 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
     BranchesModule,
     WaybillsModule,
     CollectionsModule,
+    ClientsModule,
     ShipmentsModule,
     ManifestsModule,
     InvoicesModule,
