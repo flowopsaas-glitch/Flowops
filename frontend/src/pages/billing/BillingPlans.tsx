@@ -266,27 +266,38 @@ export default function BillingPlans() {
                   {!isCurrent && (
                     <button
                       onClick={() => {
+                        // Owner's WhatsApp number from env (e.g. 27821234567)
+                        const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "";
+                        const waBase  = ownerWa ? `https://wa.me/${ownerWa}` : "https://wa.me";
+
                         if (plan.key === "enterprise") {
-                          // Contact Sales → WhatsApp with pre-filled message
                           const msg = encodeURIComponent(
-                            `Hi! I'm interested in the FlowOps Enterprise plan for ${company?.name || "my company"}. Can we schedule a call?`
+                            `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
+                            `We'd like to learn more about the *FlowOps Enterprise Plan* — dedicated onboarding, unlimited drivers, and custom SLA targets.\n\n` +
+                            `Can we schedule a call? 🙏`
                           );
-                          window.open(`https://wa.me/?text=${msg}`, "_blank");
+                          window.open(`${waBase}?text=${msg}`, "_blank");
                         } else {
-                          // Upgrade → Paystack checkout (if configured) or toast
-                          api.post("/paystack/initialize", { plan: plan.key, email: company?.email })
+                          api.post("/paystack/initialize", { plan: plan.key })
                             .then((res: any) => {
                               const url = res?.data?.authorization_url ?? res?.authorization_url;
                               if (url) window.open(url, "_blank");
                               else {
-                                // Paystack not configured — show WhatsApp upgrade request
-                                const msg = encodeURIComponent(`Hi! I'd like to upgrade to the FlowOps ${plan.name} plan (${plan.price}/mo). Please send a payment link.`);
-                                window.open(`https://wa.me/?text=${msg}`, "_blank");
+                                const msg = encodeURIComponent(
+                                  `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
+                                  `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\n` +
+                                  `Please send us a payment link. Thank you! 🙏`
+                                );
+                                window.open(`${waBase}?text=${msg}`, "_blank");
                               }
                             })
                             .catch(() => {
-                              const msg = encodeURIComponent(`Hi! I'd like to upgrade to the FlowOps ${plan.name} plan (${plan.price}/mo). Please send a payment link.`);
-                              window.open(`https://wa.me/?text=${msg}`, "_blank");
+                              const msg = encodeURIComponent(
+                                `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
+                                `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\n` +
+                                `Please send us a payment link. Thank you! 🙏`
+                              );
+                              window.open(`${waBase}?text=${msg}`, "_blank");
                             });
                         }
                       }}

@@ -82,7 +82,16 @@ export class CompaniesService {
   }
 
   async create(data: any) {
-    return this.prisma.company.create({ data });
+    // Set 14-day trial for new companies (starters)
+    const trialStart = new Date();
+    const trialEnd   = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
+    return this.prisma.company.create({
+      data: {
+        ...data,
+        trialStartedAt: trialStart,
+        trialEndsAt: data.plan === 'professional' || data.plan === 'enterprise' ? null : trialEnd,
+      },
+    });
   }
 
   async update(id: string, data: any) {

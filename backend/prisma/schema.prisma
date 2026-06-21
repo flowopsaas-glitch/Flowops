@@ -155,8 +155,10 @@ model Company {
   slaEscalateMinutes Int @default(120)
 
   // Billing plan
-  plan     String  @default("starter")
-  isActive Boolean @default(true)
+  plan          String   @default("starter")
+  trialStartedAt DateTime @default(now())
+  trialEndsAt   DateTime?
+  isActive      Boolean  @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

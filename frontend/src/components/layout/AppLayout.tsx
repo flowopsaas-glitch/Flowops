@@ -5,6 +5,7 @@ import {
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
+  AlertTriangle, Zap,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -340,6 +341,53 @@ export default function AppLayout() {
         </header>
 
         <main role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar">
+          {/* ── Trial Banner ── */}
+          {(() => {
+            const co = user?.company as any;
+            if (!co) return null;
+            const days: number | null = co.trialDaysLeft ?? null;
+            if (days === null) return null;           // paid plan, no banner
+            if (co.trialExpired) return (
+              <div className="flex items-center justify-between gap-3 bg-red-500/15 px-6 py-2.5 text-sm text-red-200 border-b border-red-500/20">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+                  <span><strong>Your 14-day free trial has expired.</strong> Upgrade to keep access to all features.</span>
+                </div>
+                <button
+                  onClick={() => window.open(`https://wa.me/27814065725?text=${encodeURIComponent('Hi! My FlowOps trial has expired. I\'d like to upgrade to Professional.')}`, '_blank')}
+                  className="flex items-center gap-1.5 shrink-0 rounded-xl bg-red-500 text-white px-4 py-1.5 text-xs font-black hover:bg-red-400 transition"
+                >
+                  <Zap className="h-3.5 w-3.5" /> Upgrade Now
+                </button>
+              </div>
+            );
+            if (days <= 7) return (
+              <div className="flex items-center justify-between gap-3 bg-amber-500/15 px-6 py-2.5 text-sm text-amber-200 border-b border-amber-500/20">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span><strong>{days} day{days !== 1 ? 's' : ''} left in your free trial.</strong> Upgrade before it expires to keep all your data and features.</span>
+                </div>
+                <button
+                  onClick={() => window.open(`https://wa.me/27814065725?text=${encodeURIComponent(`Hi! My FlowOps trial expires in ${days} days. I'd like to upgrade to Professional.`)}`, '_blank')}
+                  className="flex items-center gap-1.5 shrink-0 rounded-xl bg-amber-500 text-slate-950 px-4 py-1.5 text-xs font-black hover:bg-amber-400 transition"
+                >
+                  <Zap className="h-3.5 w-3.5" /> Upgrade Now
+                </button>
+              </div>
+            );
+            // 8–14 days — subtle info banner
+            return (
+              <div className="flex items-center justify-between gap-3 bg-sky-500/8 px-6 py-2 text-xs text-sky-300/70 border-b border-sky-500/10">
+                <span>🎉 Free trial active — <strong>{days} days remaining</strong>. You have full access to all Professional features.</span>
+                <button
+                  onClick={() => window.open(`https://wa.me/27814065725?text=${encodeURIComponent('Hi! I want to upgrade my FlowOps account to Professional.')}`, '_blank')}
+                  className="shrink-0 text-sky-400 hover:text-sky-300 font-bold underline underline-offset-2 transition"
+                >
+                  Upgrade early →
+                </button>
+              </div>
+            );
+          })()}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(56,189,248,0.03),transparent)] pointer-events-none" />
           <div className="relative z-10 p-6">
             <Outlet />
