@@ -8,7 +8,6 @@ import { AiDevOpsService } from './ai-devops.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } // roles.enum removed;
 
 @ApiTags('FlowOps Core & AI Operations')
 @Controller('ai') // 💡 Patched: Base prefix set to 'ai' to resolve the /api/api/ path duplicate natively

@@ -11,7 +11,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WaybillStatus } from '@prisma/client';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } // roles.enum removed;
 
 // 💡 Patched: Changed from 'api/ai-diagnostics' to 'ai-diagnostics' 
 // This avoids the /api/api/ path mirroring since the global prefix is already 'api'
