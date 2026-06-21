@@ -119,7 +119,7 @@ export class AiDiscoveryService {
       'SELECT status, COUNT(id) as cnt FROM "Waybill" WHERE "companyId"=$1 GROUP BY status HAVING COUNT(id)>5', companyId
     ).catch(() => []);
 
-    if (clusters && clusters.length > 0) {
+    if (clusters && (clusters as any[]).length > 0) {
       return { 
         insight: 'Detected high delivery density.', 
         action: 'Ghost Dispatching recommended.', 
