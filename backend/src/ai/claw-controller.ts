@@ -22,7 +22,7 @@ export class AIClawController {
     
     // Architect check: Validates tenant isolation and existence
     const record = await this.prisma.emailHubItem.findUnique({
-      where: { id: communicationId, companyId },
+      where: { id: String(communicationId), companyId: String(companyId) },
     });
 
     if (!record) {

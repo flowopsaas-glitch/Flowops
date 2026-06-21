@@ -116,10 +116,10 @@ export class AiDiscoveryService {
     
     // Aggregates waybill data to find delivery clusters
     const clusters = await (this.prisma.waybill.groupBy({
-      by: ['receiverCity'] as any, 
+      by: ['status'] as any, 
       where: { companyId },
       _count: { id: true },
-      having: { id: { _count: { gt: 10 } } }
+      having: { status: { _count: { gt: 5 } } } as any
     }) as any);
 
     if (clusters && clusters.length > 0) {

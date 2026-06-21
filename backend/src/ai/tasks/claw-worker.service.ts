@@ -39,7 +39,7 @@ export class ClawWorkerService {
           this.logger.debug(`🔄 Syncing data pipeline matrix for Company ID: ${company.id}...`);
           
           // Trigger the operational sync via your core event layer service
-          await this.aiEventsService.syncExistingToAIEvents(company.id);
+          await this.aiEventsService.syncExistingToAIEvents(company.id as any);
           
           this.logger.log(`✅ System Sync successful for Company ID: ${company.id}`);
         } catch (error: unknown) {

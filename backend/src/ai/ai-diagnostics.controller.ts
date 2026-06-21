@@ -25,7 +25,7 @@ export class AiDiagnosticsController {
   @Get('logs')
   
   async getSystemHealth() {
-    return this.prisma.aiAuditLog.findMany({
+    return this.prisma.auditLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -59,7 +59,7 @@ export class AiDiagnosticsController {
     }
 
     const targetWaybill = await this.prisma.waybill.findFirst({
-      where: { companyId: targetCompanyId },
+      where: { companyId: String(targetCompanyId) },
     });
 
     if (!targetWaybill) {

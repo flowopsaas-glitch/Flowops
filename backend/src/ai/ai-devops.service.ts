@@ -54,7 +54,7 @@ export class AiDevOpsService {
         });
       }
       return await this.prisma.company.update({
-        where: { id: companyId },
+        where: { id: String(companyId) },
         data: { isActive: true }
       });
     } catch (dbErr: any) {

@@ -162,10 +162,10 @@ export class AiService implements OnModuleInit {
 
   async getDashboardStats(companyId: number) {
     const [pending, inTransit, drivers, exceptions] = await Promise.all([
-      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.PENDING } }),
-      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.IN_TRANSIT } }),
+      this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.PENDING } }),
+      this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.IN_TRANSIT } }),
       this.prisma.driver.count({ where: { companyId, status: 'AVAILABLE' } }),
-      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.EXCEPTION } }), 
+      this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.FAILED_DELIVERY } }), 
     ]);
 
     return { 
@@ -205,7 +205,7 @@ export class AiService implements OnModuleInit {
 
   private async getCurrentContext(companyId: number): Promise<string> {
     try {
-      const drivers = await this.prisma.driver.findMany({ where: { companyId }, take: 3 });
+      const drivers = await this.prisma.driver.findMany({ where: { companyId: String(companyId) }, take: 3 });
       if (!drivers || drivers.length === 0) return "No active operational delivery assets currently registered in the grid.";
       return `Drivers: ${drivers.map(d => d.name).join(', ')}`;
     } catch (dbErr) {

@@ -64,7 +64,7 @@ export class AiEventsService {
 
   async list(companyId: number) {
     return this.prisma.aiEvent.findMany({
-      where: { companyId },
+      where: { companyId: String(companyId) },
       orderBy: { createdAt: 'desc' },
     });
   }
