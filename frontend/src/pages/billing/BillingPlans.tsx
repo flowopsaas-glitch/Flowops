@@ -265,11 +265,31 @@ export default function BillingPlans() {
                   </div>
                   {!isCurrent && (
                     <button
-                      onClick={() =>
-                        plan.key === "enterprise"
-                          ? window.open("mailto:sales@flowops.io", "_blank")
-                          : window.open("mailto:billing@flowops.io?subject=Upgrade+to+" + plan.name, "_blank")
-                      }
+                      onClick={() => {
+                        if (plan.key === "enterprise") {
+                          // Contact Sales → WhatsApp with pre-filled message
+                          const msg = encodeURIComponent(
+                            `Hi! I'm interested in the FlowOps Enterprise plan for ${company?.name || "my company"}. Can we schedule a call?`
+                          );
+                          window.open(`https://wa.me/?text=${msg}`, "_blank");
+                        } else {
+                          // Upgrade → Paystack checkout (if configured) or toast
+                          api.post("/paystack/initialize", { plan: plan.key, email: company?.email })
+                            .then((res: any) => {
+                              const url = res?.data?.authorization_url ?? res?.authorization_url;
+                              if (url) window.open(url, "_blank");
+                              else {
+                                // Paystack not configured — show WhatsApp upgrade request
+                                const msg = encodeURIComponent(`Hi! I'd like to upgrade to the FlowOps ${plan.name} plan (${plan.price}/mo). Please send a payment link.`);
+                                window.open(`https://wa.me/?text=${msg}`, "_blank");
+                              }
+                            })
+                            .catch(() => {
+                              const msg = encodeURIComponent(`Hi! I'd like to upgrade to the FlowOps ${plan.name} plan (${plan.price}/mo). Please send a payment link.`);
+                              window.open(`https://wa.me/?text=${msg}`, "_blank");
+                            });
+                        }
+                      }}
                       className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition ${
                         plan.highlighted
                           ? "bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:bg-sky-500/30"

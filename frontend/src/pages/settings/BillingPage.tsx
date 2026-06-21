@@ -149,7 +149,12 @@ export default function BillingPage() {
                 <PlanFeature text="API Integration Access" />
               </div>
 
-              <button className="w-full py-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-black uppercase tracking-widest transition-all">
+              <button
+                onClick={() => {
+                  const msg = encodeURIComponent("Hi! I'm interested in upgrading to FlowOps Enterprise. Can we schedule a call?");
+                  window.open(`https://wa.me/?text=${msg}`, "_blank");
+                }}
+                className="w-full py-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-black uppercase tracking-widest transition-all">
                 Contact Sales
               </button>
             </div>
