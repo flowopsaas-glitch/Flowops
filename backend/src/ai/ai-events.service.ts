@@ -127,7 +127,7 @@ export class AiEventsService {
     }
 
     const pendingItems = await this.prisma.emailHubItem.findMany({
-      where: { status: 'PENDING', companyId }
+      where: { status: 'PENDING', companyId: String(companyId) }
     });
 
     for (const item of pendingItems) {

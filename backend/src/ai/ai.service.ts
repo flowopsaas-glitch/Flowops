@@ -164,7 +164,7 @@ export class AiService implements OnModuleInit {
     const [pending, inTransit, drivers, exceptions] = await Promise.all([
       this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.PENDING } }),
       this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.IN_TRANSIT } }),
-      this.prisma.driver.count({ where: { companyId, status: 'AVAILABLE' } }),
+      this.prisma.driver.count({ where: { companyId: String(companyId), status: 'AVAILABLE' } }),
       this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.FAILED_DELIVERY } }), 
     ]);
 

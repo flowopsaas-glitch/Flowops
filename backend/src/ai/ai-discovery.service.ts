@@ -115,12 +115,9 @@ export class AiDiscoveryService {
     this.logger.log(`Discovery: Analyzing patterns for company ${companyId}`);
     
     // Aggregates waybill data to find delivery clusters
-    const clusters = await (this.prisma.waybill.groupBy({
-      by: ['status'] as any, 
-      where: { companyId },
-      _count: { id: true },
-      having: { status: { _count: { gt: 5 } } } as any
-    }) as any);
+    const clusters = await this.prisma.$queryRawUnsafe(
+      'SELECT status, COUNT(id) as cnt FROM "Waybill" WHERE "companyId"=$1 GROUP BY status HAVING COUNT(id)>5', companyId
+    ).catch(() => []);
 
     if (clusters && clusters.length > 0) {
       return { 
