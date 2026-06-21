@@ -39,6 +39,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
 import { AuditModule } from './audit/audit.module';
+import { DriverPortalModule } from './driver-portal/driver-portal.module';
 import { AlertingModule } from './alerting/alerting.module';
 import { DriverPortalModule } from './driver-portal/driver-portal.module';
 
