@@ -1,67 +1,270 @@
+/**
+ * Clients — proper client directory with billing types.
+ *
+ * Supports COD, Prepaid, Contract, and Cash clients.
+ * CRUD operations backed by /clients endpoint.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Building2,
-  Mail,
-  Package,
-  Phone,
-  Plus,
-  RefreshCw,
-  Search,
-  User,
+  BadgeDollarSign, Building2, Edit2, Mail, Package, Phone, Plus, RefreshCw,
+  Search, ShieldCheck, Trash2, User, X, AlertCircle,
 } from "lucide-react";
-import { api } from "../api/client";
+import api from "../api/client";
 
-// ── Types ──────────────────────────────────────────────────────────────────
-// Clients are derived from unique sender/recipient names across all waybills.
-// This gives a live client directory from actual business activity.
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-type ClientRecord = {
+type BillingType = "COD" | "PREPAID" | "CONTRACT" | "CASH";
+
+interface Client {
+  id: string;
   name: string;
-  phone: string;
-  email?: string | null;
-  address?: string | null;
-  type: "sender" | "recipient";
-  waybillCount: number;
-  lastSeen: string;
+  tradingName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  billingType: BillingType;
+  creditLimit?: number;
+  paymentTerms?: number;
+  vatNumber?: string;
+  accountCode?: string;
+  contractStart?: string;
+  contractEnd?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+const EMPTY_FORM: Omit<Client, "id" | "isActive" | "createdAt"> = {
+  name: "",
+  tradingName: "",
+  phone: "",
+  email: "",
+  address: "",
+  billingType: "COD",
+  creditLimit: undefined,
+  paymentTerms: 30,
+  vatNumber: "",
+  accountCode: "",
+  notes: "",
 };
 
-// ── Main page ──────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-export default function Clients() {
-  const [clients, setClients] = useState<ClientRecord[]>([]);
+const BILLING_COLORS: Record<BillingType, string> = {
+  COD:      "border-amber-500/25  bg-amber-500/10  text-amber-200",
+  PREPAID:  "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
+  CONTRACT: "border-sky-500/25    bg-sky-500/10    text-sky-200",
+  CASH:     "border-slate-500/25  bg-slate-500/10  text-slate-300",
+};
+
+const BILLING_LABELS: Record<BillingType, string> = {
+  COD:      "COD",
+  PREPAID:  "Prepaid",
+  CONTRACT: "Contract",
+  CASH:     "Cash",
+};
+
+const BILLING_DESCRIPTIONS: Record<BillingType, string> = {
+  COD:      "Driver collects cash on delivery",
+  PREPAID:  "Client pays before dispatch",
+  CONTRACT: "Monthly account — invoiced with credit terms",
+  CASH:     "Walk-in / once-off cash payer",
+};
+
+function unwrap(res: any): any[] {
+  const d = res?.data ?? res;
+  return Array.isArray(d) ? d : [];
+}
+
+// ── Client Form Modal ─────────────────────────────────────────────────────────
+
+function ClientModal({
+  initial,
+  onSave,
+  onClose,
+}: {
+  initial?: Client | null;
+  onSave: (data: typeof EMPTY_FORM) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<typeof EMPTY_FORM>(
+    initial ? {
+      name: initial.name,
+      tradingName: initial.tradingName ?? "",
+      phone: initial.phone ?? "",
+      email: initial.email ?? "",
+      address: initial.address ?? "",
+      billingType: initial.billingType,
+      creditLimit: initial.creditLimit,
+      paymentTerms: initial.paymentTerms ?? 30,
+      vatNumber: initial.vatNumber ?? "",
+      accountCode: initial.accountCode ?? "",
+      notes: initial.notes ?? "",
+    } : { ...EMPTY_FORM }
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const set = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { setErr("Name is required."); return; }
+    setSaving(true);
+    setErr("");
+    try {
+      await onSave(form);
+    } catch (ex: any) {
+      setErr(ex?.message ?? "Failed to save client.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-white/10 bg-[#07111e] shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/8 bg-[#07111e] px-6 py-4">
+          <h2 className="text-lg font-black text-white">
+            {initial ? "Edit Client" : "Register New Client"}
+          </h2>
+          <button onClick={onClose} className="rounded-xl p-1.5 hover:bg-white/10 text-white/50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {err && (
+            <div className="flex gap-2 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" /> {err}
+            </div>
+          )}
+
+          {/* Billing type — first, most important */}
+          <div>
+            <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-white/50">Billing Type *</div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {(["COD","PREPAID","CONTRACT","CASH"] as BillingType[]).map(bt => (
+                <button type="button" key={bt}
+                  onClick={() => set("billingType", bt)}
+                  className={`rounded-2xl border p-3 text-left transition ${
+                    form.billingType === bt ? BILLING_COLORS[bt] : "border-white/8 bg-white/[0.03] text-white/40 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <div className="text-sm font-black">{BILLING_LABELS[bt]}</div>
+                  <div className="text-[10px] mt-0.5 opacity-70 leading-tight">{BILLING_DESCRIPTIONS[bt]}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Basic info */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Client Name *</label>
+              <input value={form.name} onChange={e => set("name", e.target.value)} required
+                placeholder="e.g. Acme Logistics" className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Trading Name</label>
+              <input value={form.tradingName} onChange={e => set("tradingName", e.target.value)}
+                placeholder="Optional" className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Phone</label>
+              <input value={form.phone} onChange={e => set("phone", e.target.value)}
+                placeholder="+27 82 000 0000" className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Email</label>
+              <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
+                placeholder="billing@client.co.za" className={inputCls} />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Address</label>
+            <input value={form.address} onChange={e => set("address", e.target.value)}
+              placeholder="Street, City, Province" className={inputCls} />
+          </div>
+
+          {/* Contract/billing details */}
+          {form.billingType === "CONTRACT" && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Credit Limit (R)</label>
+                <input type="number" value={form.creditLimit ?? ""} onChange={e => set("creditLimit", +e.target.value || undefined)}
+                  placeholder="e.g. 50000" className={inputCls} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Payment Terms (days)</label>
+                <input type="number" value={form.paymentTerms ?? 30} onChange={e => set("paymentTerms", +e.target.value)}
+                  className={inputCls} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Account Code</label>
+                <input value={form.accountCode} onChange={e => set("accountCode", e.target.value)}
+                  placeholder="e.g. CLI-001" className={inputCls} />
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">VAT Number</label>
+              <input value={form.vatNumber} onChange={e => set("vatNumber", e.target.value)}
+                placeholder="Optional" className={inputCls} />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Notes</label>
+            <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={3}
+              placeholder="Any special instructions or account notes…"
+              className={inputCls + " resize-none"} />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="rounded-2xl border border-white/10 px-5 py-2.5 text-sm font-bold text-white/60 hover:bg-white/5">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              className="rounded-2xl bg-sky-500 px-6 py-2.5 text-sm font-black text-slate-950 hover:bg-sky-400 disabled:opacity-50 transition">
+              {saving ? "Saving…" : initial ? "Save Changes" : "Create Client"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+const inputCls = "w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-2.5 text-sm text-white outline-none focus:border-sky-400 placeholder-white/20 transition";
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
+export default function ClientsPage() {
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "sender" | "recipient">("all");
+  const [billingFilter, setBillingFilter] = useState<BillingType | "ALL">("ALL");
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Client | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [toast, setToast] = useState("");
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3500);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res: any = await api.get("/waybills");
-      // Waybills returns paginated {data:{data:[],total}}
-      const raw: any = res?.data ?? res;
-      const waybills = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
-
-      // Build a client directory from unique sender + recipient names
-      const map = new Map<string, ClientRecord>();
-
-      waybills.forEach((w: any) => {
-        const addClient = (name: string, phone: string, email: string | null | undefined, address: string | null | undefined, type: "sender" | "recipient") => {
-          if (!name) return;
-          const key = `${type}:${name.trim().toLowerCase()}`;
-          const existing = map.get(key);
-          if (existing) {
-            existing.waybillCount += 1;
-            if (w.createdAt > existing.lastSeen) existing.lastSeen = w.createdAt;
-          } else {
-            map.set(key, { name: name.trim(), phone: phone || "—", email, address, type, waybillCount: 1, lastSeen: w.createdAt || new Date().toISOString() });
-          }
-        };
-
-        addClient(w.senderName, w.senderPhone, null, w.senderAddress, "sender");
-        addClient(w.recipientName, w.recipientPhone, w.recipientEmail, w.recipientAddress, "recipient");
-      });
-
-      setClients(Array.from(map.values()).sort((a, b) => b.waybillCount - a.waybillCount));
+      const res = await api.get("/clients");
+      setClients(unwrap(res));
     } finally {
       setLoading(false);
     }
@@ -71,135 +274,214 @@ export default function Clients() {
 
   const visible = useMemo(() => {
     let list = clients;
-    if (filter !== "all") list = list.filter((c) => c.type === filter);
+    if (billingFilter !== "ALL") list = list.filter(c => c.billingType === billingFilter);
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.email ?? "").toLowerCase().includes(q) || c.phone.includes(q));
+      const q = search.toLowerCase();
+      list = list.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.tradingName?.toLowerCase().includes(q)) ||
+        (c.phone?.includes(q)) ||
+        (c.email?.toLowerCase().includes(q))
+      );
     }
     return list;
-  }, [clients, search, filter]);
+  }, [clients, billingFilter, search]);
 
-  const senderCount    = clients.filter((c) => c.type === "sender").length;
-  const recipientCount = clients.filter((c) => c.type === "recipient").length;
+  const counts = useMemo(() => ({
+    ALL:      clients.length,
+    COD:      clients.filter(c => c.billingType === "COD").length,
+    PREPAID:  clients.filter(c => c.billingType === "PREPAID").length,
+    CONTRACT: clients.filter(c => c.billingType === "CONTRACT").length,
+    CASH:     clients.filter(c => c.billingType === "CASH").length,
+  }), [clients]);
+
+  async function handleSave(data: typeof EMPTY_FORM) {
+    if (editing) {
+      await api.patch(`/clients/${editing.id}`, data);
+      showToast(`${data.name} updated.`);
+    } else {
+      await api.post("/clients", data);
+      showToast(`${data.name} created.`);
+    }
+    setShowModal(false);
+    setEditing(null);
+    void load();
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id);
+    try {
+      await api.delete(`/clients/${id}`);
+      showToast("Client removed.");
+      void load();
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-2xl border border-emerald-500/30 bg-emerald-500/15 px-5 py-3 text-sm font-bold text-emerald-300 shadow-xl">
+          {toast}
+        </div>
+      )}
+
       {/* Header */}
-      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-white">Enterprise Clients</h1>
-            <p className="mt-1 text-sm text-slate-400">
-              All senders and recipients from your waybill activity — your live client directory.
-            </p>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">Client Management</p>
+            <h1 className="text-3xl font-black tracking-tight text-white">Clients</h1>
+            <p className="mt-1 text-sm text-white/45">COD, prepaid, contract, and cash clients — all in one place.</p>
           </div>
-          <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
-            <RefreshCw className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">Total Clients</div>
-          <div className="mt-2 text-3xl font-black text-white">{clients.length}</div>
-        </div>
-        <div className="rounded-[24px] border border-blue-400/20 bg-blue-500/5 p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-blue-300/60">Senders</div>
-          <div className="mt-2 text-3xl font-black text-blue-300">{senderCount}</div>
-          <div className="mt-1 text-xs text-slate-400">Companies sending via FlowOps</div>
-        </div>
-        <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-500/5 p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-300/60">Recipients</div>
-          <div className="mt-2 text-3xl font-black text-emerald-300">{recipientCount}</div>
-          <div className="mt-1 text-xs text-slate-400">Delivery destinations</div>
-        </div>
-      </div>
-
-      {/* Filter + search */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-2">
-          {(["all","sender","recipient"] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`rounded-2xl px-4 py-2 text-sm font-bold capitalize transition-colors ${filter === f ? "bg-white/15 text-white border border-white/20" : "border border-white/10 bg-white/5 text-white/50 hover:text-white"}`}>
-              {f}
+          <div className="flex gap-2">
+            <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
+              <RefreshCw className="h-4 w-4" />
             </button>
-          ))}
+            <button
+              onClick={() => { setEditing(null); setShowModal(true); }}
+              className="flex items-center gap-2 rounded-2xl bg-sky-500 px-5 py-2.5 text-sm font-black text-slate-950 hover:bg-sky-400 transition"
+            >
+              <Plus className="h-4 w-4" /> Add Client
+            </button>
+          </div>
         </div>
+      </div>
+
+      {/* Billing type filter strip */}
+      <div className="flex flex-wrap gap-2">
+        {(["ALL","COD","PREPAID","CONTRACT","CASH"] as const).map(bt => (
+          <button key={bt}
+            onClick={() => setBillingFilter(bt)}
+            className={`flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-bold transition ${
+              billingFilter === bt
+                ? bt === "ALL"
+                  ? "border-white/20 bg-white/15 text-white"
+                  : BILLING_COLORS[bt as BillingType]
+                : "border-white/8 bg-white/[0.03] text-white/45 hover:bg-white/[0.07]"
+            }`}
+          >
+            {bt !== "ALL" && <BadgeDollarSign className="h-3.5 w-3.5" />}
+            {bt === "ALL" ? "All Clients" : BILLING_LABELS[bt as BillingType]}
+            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px]">
+              {counts[bt]}
+            </span>
+          </button>
+        ))}
         <div className="ml-auto relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, phone…"
-            className="w-64 rounded-2xl border border-white/10 bg-[#071224] pl-9 pr-4 py-2.5 text-sm text-white outline-none focus:border-blue-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, phone, email…"
+            className="w-56 rounded-2xl border border-white/10 bg-[#071224] pl-9 pr-4 py-2 text-sm text-white outline-none focus:border-sky-400" />
         </div>
       </div>
 
-      {/* Client list */}
+      {/* Client grid */}
       {loading ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-28 animate-pulse rounded-[24px] border border-white/5 bg-white/[0.03]" />
+            <div key={i} className="h-36 animate-pulse rounded-[24px] border border-white/5 bg-white/[0.03]" />
           ))}
         </div>
       ) : visible.length === 0 ? (
-        <div className="rounded-[28px] border border-dashed border-white/10 bg-white/[0.03] py-20 text-center">
-          <Building2 className="mx-auto h-10 w-10 text-white/10 mb-3" />
-          <div className="text-white/40 font-bold">
-            {clients.length === 0
-              ? "No clients yet — they appear automatically once waybills are created."
-              : "No clients match your filter."}
+        <div className="flex flex-col items-center gap-4 rounded-[28px] border border-dashed border-white/10 bg-white/[0.03] py-20 text-center">
+          <Building2 className="h-12 w-12 text-white/10" />
+          <div>
+            <div className="text-sm font-bold text-white/40">
+              {clients.length === 0 ? "No clients yet" : "No clients match your filter"}
+            </div>
+            {clients.length === 0 && (
+              <p className="mt-1 text-xs text-white/25">Click "Add Client" to register your first COD, prepaid, or contract client.</p>
+            )}
           </div>
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visible.map((c) => (
-            <div key={`${c.type}:${c.name}`} className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors">
+          {visible.map(c => (
+            <div key={c.id}
+              className="group rounded-[24px] border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="h-10 w-10 rounded-xl border border-white/10 bg-white/10 grid place-items-center shrink-0">
                     <User className="h-4 w-4 text-white/60" />
                   </div>
                   <div className="min-w-0">
-                    <div className="font-bold text-white truncate">{c.name}</div>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold capitalize ${
-                      c.type === "sender"
-                        ? "border border-blue-400/20 bg-blue-500/10 text-blue-200"
-                        : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
-                    }`}>
-                      {c.type}
-                    </span>
+                    <div className="font-black text-white truncate">{c.name}</div>
+                    {c.tradingName && (
+                      <div className="text-xs text-white/40 truncate">{c.tradingName}</div>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-bold text-white/60 shrink-0">
-                  <Package className="h-3 w-3" />
-                  {c.waybillCount}
-                </div>
+                <span className={`shrink-0 rounded-xl border px-2.5 py-1 text-[11px] font-black ${BILLING_COLORS[c.billingType]}`}>
+                  {BILLING_LABELS[c.billingType]}
+                </span>
               </div>
 
-              <div className="mt-3 space-y-1.5 text-xs text-slate-400">
-                {c.phone !== "—" && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-3.5 w-3.5 shrink-0" /> {c.phone}
-                  </div>
+              <div className="mt-3 space-y-1 text-xs text-white/45">
+                {c.phone && (
+                  <div className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0" />{c.phone}</div>
                 )}
                 {c.email && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <Mail className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate">{c.email}</span>
                   </div>
                 )}
                 {c.address && (
-                  <div className="text-[11px] text-white/30 truncate pl-5">{c.address}</div>
+                  <div className="text-[11px] text-white/25 truncate">{c.address}</div>
+                )}
+                {c.billingType === "CONTRACT" && c.creditLimit && (
+                  <div className="flex items-center gap-1.5 text-sky-300/70">
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                    Credit limit: R{c.creditLimit.toLocaleString("en-ZA")}
+                    {c.paymentTerms ? ` · Net ${c.paymentTerms}` : ""}
+                  </div>
+                )}
+                {c.accountCode && (
+                  <div className="flex items-center gap-1.5">
+                    <Package className="h-3.5 w-3.5 shrink-0" /> {c.accountCode}
+                  </div>
                 )}
               </div>
 
-              <div className="mt-3 text-[10px] text-white/25">
-                Last seen: {new Date(c.lastSeen).toLocaleDateString("en-ZA")}
+              {c.notes && (
+                <div className="mt-2 text-[11px] text-white/25 italic truncate">{c.notes}</div>
+              )}
+
+              <div className="mt-4 flex items-center justify-between">
+                <div className="text-[10px] text-white/20">
+                  Added {new Date(c.createdAt).toLocaleDateString("en-ZA")}
+                </div>
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => { setEditing(c); setShowModal(true); }}
+                    className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-white/50 hover:bg-sky-500/20 hover:text-sky-300 transition"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(c.id)}
+                    disabled={deleting === c.id}
+                    className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-white/50 hover:bg-red-500/20 hover:text-red-300 transition disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {/* Create / Edit Modal */}
+      {showModal && (
+        <ClientModal
+          initial={editing}
+          onSave={handleSave}
+          onClose={() => { setShowModal(false); setEditing(null); }}
+        />
       )}
     </div>
   );
