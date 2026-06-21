@@ -135,4 +135,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   emitSystemHeal(companyId: string, reason: string) {
     this.emitToCompany(companyId, 'system-ui-heal', { reason });
   }
+
+  /**
+   * broadcastToCompany — called by the 6-Claw AI services.
+   * Accepts number OR string companyId for compatibility.
+   */
+  broadcastToCompany(companyId: number | string, event: string, data: any) {
+    this.server.to(`company:${String(companyId)}`).emit(event, data);
+  }
 }
