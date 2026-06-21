@@ -181,7 +181,8 @@ export class AuthService {
           select: {
             id: true, name: true, tradingName: true,
             logoUrl: true, primaryColor: true,
-            portalPrimaryColor: true, portalBrandName: true, plan: true,
+            portalPrimaryColor: true, portalBrandName: true,
+            plan: true,
           },
         },
         notificationPreference: true,
@@ -189,7 +190,30 @@ export class AuthService {
     });
 
     if (!user) throw new NotFoundException('User not found');
-    return this.safeUser(user);
+
+    // Compute trial status and inject into company object
+    const safeUser = this.safeUser(user) as any;
+    if (safeUser.company && user.companyId) {
+      try {
+        const co = await this.prisma.company.findUnique({
+          where: { id: user.companyId },
+          select: { plan: true, trialEndsAt: true } as any,
+        }) as any;
+        if (co?.trialEndsAt) {
+          const now      = new Date();
+          const trialEnd = new Date(co.trialEndsAt);
+          const daysLeft = Math.max(0, Math.ceil((trialEnd.getTime() - now.getTime()) / 86400000));
+          safeUser.company.trialDaysLeft = daysLeft;
+          safeUser.company.trialExpired  = daysLeft === 0;
+          safeUser.company.isOnTrial     = co.plan === 'starter' && daysLeft > 0;
+        } else {
+          safeUser.company.trialDaysLeft = null;
+          safeUser.company.trialExpired  = false;
+          safeUser.company.isOnTrial     = false;
+        }
+      } catch { /* trial fields not yet in DB — ignore */ }
+    }
+    return safeUser;
   }
 
   // ── Logout ────────────────────────────────────────────────────────────

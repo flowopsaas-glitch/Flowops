@@ -278,7 +278,7 @@ export default function BillingPlans() {
                           );
                           window.open(`${waBase}?text=${msg}`, "_blank");
                         } else {
-                          api.post("/paystack/initialize", { plan: plan.key, email: company?.email })
+                          api.post("/paystack/initialize", { plan: plan.key })
                             .then((res: any) => {
                               const url = res?.data?.authorization_url ?? res?.authorization_url;
                               if (url) window.open(url, "_blank");

@@ -35,6 +35,11 @@ export type UserCompanySummary = {
   /** "active" | "trialing" | "past_due" | "canceled" — backend-defined. */
   status?: string | null;
   trialEndsAt?: string | null;
+  trialStartedAt?: string | null;
+  /** Days left in trial (null = not on trial / paid plan). */
+  trialDaysLeft?: number | null;
+  trialExpired?: boolean;
+  isOnTrial?: boolean;
   baseTierPrice?: number | null;
   perUserPrice?: number | null;
   defaultVatRate?: number | null;
