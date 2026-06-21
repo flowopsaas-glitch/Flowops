@@ -1,154 +1,216 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { WaybillStatus } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { EventsGateway } from '../gateway/events.gateway';
 
 @Injectable()
-export class AiService {
-  constructor(private prisma: PrismaService) {}
+export class AiService implements OnModuleInit {
+  private readonly logger = new Logger('AiService');
+  
+  private readonly CLAW_MODELS = {
+    AUDITOR: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    DISPATCHER: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    VISION: '@cf/meta/llama-3.2-11b-vision-instruct',
+    COMMUNICATOR: '@cf/meta/llama-3.1-8b-instruct',
+    SHIELD: '@cf/meta/llama-guard-3-8b',
+    ARCHITECT: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+  };
 
-  // ── Shipments copilot ─────────────────────────────────────────────────
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly whatsapp: WhatsAppService,
+    private readonly config: ConfigService,
+    private readonly broadcast: EventsGateway,
+  ) {}
 
-  async shipmentsCoopilot(companyId: string, query: string) {
-    // Stub: in production, call OpenAI / Bedrock with shipment context
-    const activeShipments = await this.prisma.shipment.count({
-      where: { companyId, status: 'IN_TRANSIT' },
-    });
-    return {
-      reply: `You currently have ${activeShipments} shipments in transit. How can I help you further?`,
-      context: { activeShipments },
-      _note: 'Connect this to an LLM (OpenAI / AWS Bedrock) for real AI responses.',
+  async onModuleInit() {
+    this.logger.log('🚀 FlowOps 6-Claw Mesh: Connected to Cloudflare Workers AI');
+  }
+
+  async processInstruction(command: string, context: any, companyId: number): Promise<any> {
+    let pastTokens = 0;
+    
+    try {
+      if (typeof context === 'object' && context?.telemetry?.contextTokens) {
+        pastTokens = context.telemetry.contextTokens;
+      }
+
+      const safetyCheck = await this.callCloudflareAI(this.CLAW_MODELS.SHIELD, [{ role: 'user', content: command }]);
+      if (safetyCheck.toLowerCase().includes('unsafe')) {
+        return {
+          reply: "🚨 SECURITY METRICS BREACH DETECTED. Transaction terminated by system defense cluster.",
+          redirect: null,
+          telemetry: { tokensUsed: pastTokens + 45, subroutines: ['Shield Firewall Check'] }
+        };
+      }
+
+      const liveMetrics = typeof context === 'object' ? context?.liveMetrics : null;
+      const parsedHistory = typeof context === 'object' ? context?.history || [] : [];
+
+      const localContextString = await this.getCurrentContext(companyId);
+      const metricsSummary = liveMetrics 
+        ? `Live Sector State: ${liveMetrics.risks ?? 0} active sector exceptions. ${liveMetrics.activeDrivers ?? 0} tracking nodes.`
+        : `Live Sector State: Diagnostics data stream unavailable.`;
+
+      const baseSystemMsg = {
+        role: 'system',
+        content: `You are "The Claw v2.0", a hyper-intelligent, completely self-aware logistics orchestration terminal running inside FlowOps.
+        Runtime Node Environment Context: NestJS API Platform Engine.
+        Operational Target: Company ID Group cluster mapping: ${companyId}.
+        Database Diagnostics: ${localContextString}.
+        ${metricsSummary}
+
+        Execution Directives:
+        1. Keep responses clear, compact, and tactical.
+        2. Acknowledge your active parameters or execution constraints when questioned about your state or environment context.
+        3. Never break context-aware terminal presentation parameters.`
+      };
+
+      const completeLlmPayload = [
+        baseSystemMsg,
+        ...parsedHistory,
+        { role: 'user', content: command }
+      ];
+
+      const aiResponseRaw = await this.callCloudflareAI(this.CLAW_MODELS.DISPATCHER, completeLlmPayload);
+
+      let automatedRedirect: string | null = null;
+      const normalizedCommand = command.toLowerCase();
+
+      if (normalizedCommand.includes('driver') || normalizedCommand.includes('fleet') || normalizedCommand.includes('track')) {
+        automatedRedirect = '/dashboard/drivers';
+      } else if (normalizedCommand.includes('risk') || normalizedCommand.includes('alert') || normalizedCommand.includes('exception')) {
+        automatedRedirect = '/dashboard/security-center';
+      } else if (normalizedCommand.includes('waybill') || normalizedCommand.includes('parcel')) {
+        automatedRedirect = '/dashboard/waybills';
+      }
+
+      try {
+        const jsonMatch = aiResponseRaw.match(/\{.*\}/s);
+        if (jsonMatch) {
+          const actionData = JSON.parse(jsonMatch[0]); // FIXED: Extracted match index string passed
+          if (actionData.action === 'dispatch') {
+            this.broadcast.broadcastToCompany(companyId, 'ai-action', actionData);
+          }
+        }
+      } catch (innerParseErr) {
+        this.logger.debug("No execution dispatch payload structure caught inside response message string");
+      }
+
+      return {
+        reply: aiResponseRaw,
+        redirect: automatedRedirect,
+        telemetry: {
+          tokensUsed: pastTokens + Math.floor(command.length / 4) + Math.floor(aiResponseRaw.length / 4) + 160,
+          subroutines: ['Context Processing Core', 'Dynamic Subroutine Router', 'Risk Analytical Multiplexer']
+        }
+      };
+
+    } catch (error: any) {
+      this.logger.error("CLAW_COGNITIVE_FAULT_RESTORED_LOOP:", error.message);
+      return {
+        reply: `⚠️ NEURAL LINK INTERRUPT: Core processing failure. Reset initialized. Error: ${error.message}`,
+        redirect: null,
+        telemetry: { tokensUsed: pastTokens + 20, subroutines: ['Emergency Fallback Routine'] }
+      };
+    }
+  }
+
+  async analyzeMarketGaps(query: string): Promise<string[]> {
+    const messages = [
+      { role: 'system', content: 'You are an advanced logistical architect. Return only a comma-separated list of exactly 3 features.' },
+      { role: 'user', content: `Analyze logistics gaps for: ${query}.` }
+    ];
+    const response = await this.callCloudflareAI(this.CLAW_MODELS.ARCHITECT, messages);
+    return response.split(',').map(item => item.trim());
+  }
+
+  async systemRepairAudit(errorCode: string, logs: string): Promise<string> {
+    const messages = [
+      { role: 'system', content: 'You are the CLAW-6 Reliability Engineer. Suggest specific hotfixes based on provided logging details.' },
+      { role: 'user', content: `[SYSTEM_ARCHITECT] Analyze error: ${errorCode}. Logs: ${logs}. Suggest a TypeScript fix.` }
+    ];
+    return this.callCloudflareAI(this.CLAW_MODELS.ARCHITECT, messages);
+  }
+
+  async processIncomingMessage(sender: string, message: string, companyId: number): Promise<string> {
+    const safetyCheck = await this.callCloudflareAI(this.CLAW_MODELS.SHIELD, [{ role: 'user', content: message }]);
+    if (safetyCheck.toLowerCase().includes('unsafe')) return "Blocked by Security Claw.";
+
+    const context = await this.getCurrentContext(companyId);
+    const messages = [
+      { role: 'system', content: 'Concise logistics execution engine. Output actions precisely.' },
+      { role: 'user', content: `[DISPATCHER] Context: ${context}. User: ${message}. Output JSON: {"action": "dispatch", "driverId": 1, "reason": "string"}` }
+    ];
+    
+    const aiResponse = await this.callCloudflareAI(this.CLAW_MODELS.DISPATCHER, messages);
+
+    try {
+      const jsonMatch = aiResponse.match(/\{.*\}/s);
+      if (jsonMatch) {
+        const actionData = JSON.parse(jsonMatch[0]); // FIXED: Extracted match index string passed
+        if (actionData.action === 'dispatch') {
+          this.broadcast.broadcastToCompany(companyId, 'ai-action', actionData);
+          return `✅ Claw 2 initiated dispatch. Reason: ${actionData.reason}`;
+        }
+      }
+    } catch (e) { this.logger.error("JSON Parse Error"); }
+    return aiResponse;
+  }
+
+  async getDashboardStats(companyId: number) {
+    const [pending, inTransit, drivers, exceptions] = await Promise.all([
+      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.PENDING } }),
+      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.IN_TRANSIT } }),
+      this.prisma.driver.count({ where: { companyId, status: 'AVAILABLE' } }),
+      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.EXCEPTION } }), 
+    ]);
+
+    return { 
+      pendingCollections: pending, 
+      parcelsInTransit: inTransit, 
+      activeDrivers: drivers,
+      highAiEvents: exceptions 
     };
   }
 
-  // ── AI Events ─────────────────────────────────────────────────────────
+  private async callCloudflareAI(model: string, messages: { role: string; content: string }[]): Promise<string> {
+    const CF_ID = this.config.get('CLOUDFLARE_ACCOUNT_ID');
+    const CF_TOKEN = this.config.get('CLOUDFLARE_API_TOKEN');
+    
+    if (!CF_ID || !CF_TOKEN) {
+      this.logger.error("Cloudflare platform token matching parameters are absent inside system environments");
+      return "AI Environment Configuration Incomplete";
+    }
 
-  async getEvents(companyId: string, query?: any) {
-    const where: any = { companyId };
-    if (query?.resolved === 'false') where.resolved = false;
-    if (query?.severity) where.severity = query.severity;
-    return this.prisma.aiEvent.findMany({
-      where, orderBy: { createdAt: 'desc' }, take: 100,
-    });
+    try {
+      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ID}/ai/run/${model}`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${CF_TOKEN}`, 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ messages }),
+      });
+      
+      const data = await response.json() as any;
+      return data?.result?.response || data?.result?.answer || "AI Timeout / Null Response Stream Output";
+    } catch (e) { 
+      this.logger.error(`Failed connecting to Cloudflare Worker processing node: ${model}`, e);
+      return "AI Offline"; 
+    }
   }
 
-  async getEventStats(companyId: string) {
-    const [total, unresolved, critical] = await Promise.all([
-      this.prisma.aiEvent.count({ where: { companyId } }),
-      this.prisma.aiEvent.count({ where: { companyId, resolved: false } }),
-      this.prisma.aiEvent.count({ where: { companyId, severity: 'critical', resolved: false } }),
-    ]);
-    return { total, unresolved, critical };
-  }
-
-  async resolveEvent(id: string, companyId: string) {
-    return this.prisma.aiEvent.update({
-      where: { id },
-      data: { resolved: true, resolvedAt: new Date() },
-    });
-  }
-
-  async dismissEvent(id: string, companyId: string) {
-    return this.prisma.aiEvent.update({ where: { id }, data: { dismissed: true } });
-  }
-
-  async seedDemoEvents(companyId: string) {
-    const demos = [
-      { type: 'risk', title: 'High-risk waybill detected', body: 'Waybill FO24000012 flagged for review', severity: 'warning' },
-      { type: 'anomaly', title: 'Unusual delivery delay', body: 'Driver has not moved for 45 minutes', severity: 'info' },
-      { type: 'recommendation', title: 'Route optimisation available', body: '3 collections can be batched to save 20km', severity: 'info' },
-    ];
-    return this.prisma.aiEvent.createMany({ data: demos.map(d => ({ ...d, companyId })) });
-  }
-
-  // ── AI Ops supervisor ─────────────────────────────────────────────────
-
-  async getSupervisorOverview(companyId: string) {
-    const [shipments, collections, risks, events] = await Promise.all([
-      this.prisma.shipment.count({ where: { companyId, status: 'IN_TRANSIT' } }),
-      this.prisma.collection.count({ where: { companyId, status: { in: ['PENDING', 'ASSIGNED'] } } }),
-      this.prisma.waybill.count({ where: { companyId, riskLevel: { in: ['HIGH', 'CRITICAL'] } } }),
-      this.prisma.aiEvent.count({ where: { companyId, resolved: false } }),
-    ]);
-    return {
-      liveShipments: shipments, pendingCollections: collections,
-      highRiskWaybills: risks, unresolvedAlerts: events,
-      systemHealth: 'nominal',
-    };
-  }
-
-  async repairRoute(dto: any) {
-    // In production: call AI to suggest route repair
-    return { repaired: false, suggestion: 'Route repair not implemented — connect to routing AI.' };
-  }
-
-  // ── Email hub ─────────────────────────────────────────────────────────
-
-  async getEmailHub(companyId: string, query?: any) {
-    return this.prisma.emailHubItem.findMany({
-      where: { companyId }, orderBy: { createdAt: 'desc' }, take: 50,
-    });
-  }
-
-  async getEmailHubStats(companyId: string) {
-    const [total, unread, unresolved] = await Promise.all([
-      this.prisma.emailHubItem.count({ where: { companyId } }),
-      this.prisma.emailHubItem.count({ where: { companyId, read: false } }),
-      this.prisma.emailHubItem.count({ where: { companyId, resolved: false } }),
-    ]);
-    return { total, unread, unresolved };
-  }
-
-  async createEmailHubItem(companyId: string, dto: any) {
-    return this.prisma.emailHubItem.create({ data: { ...dto, companyId } });
-  }
-
-  async updateEmailHubItem(id: string, companyId: string, dto: any) {
-    return this.prisma.emailHubItem.update({ where: { id }, data: dto });
-  }
-
-  async seedDemoEmails(companyId: string) {
-    const demos = [
-      { subject: 'Delivery inquiry', from: 'customer@example.com', to: 'ops@company.com', body: 'Where is my parcel FO24001?', category: 'inquiry' },
-      { subject: 'Quote request', from: 'sales@client.com', to: 'ops@company.com', body: 'Please send a quote for 10kg Jhb to CT', category: 'quote_request' },
-    ];
-    return this.prisma.emailHubItem.createMany({ data: demos.map(d => ({ ...d, companyId })) });
-  }
-
-  // ── AI Audit logs ─────────────────────────────────────────────────────
-
-  async getAuditLogs(companyId: string, query?: any) {
-    return this.prisma.aiEvent.findMany({
-      where: { companyId },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
-  }
-
-  // ── Leads ─────────────────────────────────────────────────────────────
-
-  async createLead(companyId: string, email: string) {
-    return this.prisma.lead.create({ data: { email, companyId } });
-  }
-
-  // ── Booking portal ────────────────────────────────────────────────────
-
-  async getPortalLinks(companyId: string) {
-    return this.prisma.bookingPortalLink.findMany({ where: { companyId }, include: { _count: { select: { requests: true } } } });
-  }
-
-  async createPortalLink(companyId: string, dto: any) {
-    return this.prisma.bookingPortalLink.create({ data: { ...dto, companyId } });
-  }
-
-  async getPublicPortal(token: string) {
-    return this.prisma.bookingPortalLink.findFirst({
-      where: { token, isActive: true },
-      include: { company: { select: { name: true, portalBrandName: true, portalPrimaryColor: true, portalLogoUrl: true } } },
-    });
-  }
-
-  async submitBookingRequest(token: string, dto: any) {
-    const link = await this.prisma.bookingPortalLink.findFirst({ where: { token, isActive: true } });
-    if (!link) throw new Error('Invalid booking link');
-    return this.prisma.bookingRequest.create({ data: { ...dto, linkId: link.id } });
+  private async getCurrentContext(companyId: number): Promise<string> {
+    try {
+      const drivers = await this.prisma.driver.findMany({ where: { companyId }, take: 3 });
+      if (!drivers || drivers.length === 0) return "No active operational delivery assets currently registered in the grid.";
+      return `Drivers: ${drivers.map(d => d.name).join(', ')}`;
+    } catch (dbErr) {
+      return "Unable to pull live physical sector drivers from regional cluster logs.";
+    }
   }
 }
+

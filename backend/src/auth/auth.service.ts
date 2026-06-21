@@ -92,6 +92,7 @@ export class AuthService {
       access_token: accessToken,
       driver: {
         id:          driver.id,
+        driverId:    driver.id,
         name:        driver.name,
         phone:       driver.phone,
         vehicleType: driver.vehicleType,
