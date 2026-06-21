@@ -8,6 +8,7 @@ import {
   type TenantNavPermissionKey,
   type TenantNavPermissions,
 } from "../../lib/tenantUserPermissions";
+import { KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 
 type UserRow = {
   id: string;
@@ -22,6 +23,15 @@ type CreateForm = {
   password: string;
   role: string;
   permissions: TenantNavPermissions;
+};
+
+type DriverRow = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  vehicleReg?: string | null;
+  status: string;
+  hasPinSet: boolean;
 };
 
 const glassCard =
@@ -45,6 +55,13 @@ export default function UsersRoles() {
     role: "USER",
     permissions: buildRoleDefaultTenantNavPermissions("USER"),
   });
+
+  // ── Driver PIN state ────────────────────────────────────────────────────
+  const [drivers, setDrivers] = useState<DriverRow[]>([]);
+  const [driverLoading, setDriverLoading] = useState(false);
+  const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
+  const [pinSaving, setPinSaving] = useState<string | null>(null);
+  const [pinMsg, setPinMsg] = useState("");
 
   async function loadUsers() {
     setLoading(true);
@@ -71,7 +88,62 @@ export default function UsersRoles() {
 
   useEffect(() => {
     loadUsers();
+    void loadDrivers();
   }, []);
+
+  async function loadDrivers() {
+    setDriverLoading(true);
+    try {
+      const res = await api.get("/drivers");
+      const raw = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      setDrivers(raw.map((d: any) => ({
+        id: String(d.id),
+        name: d.name || "—",
+        phone: d.phone,
+        vehicleReg: d.vehicleReg,
+        status: d.status || "OFFLINE",
+        hasPinSet: !!d.driverPin,
+      })));
+    } catch {
+      // silently skip
+    } finally {
+      setDriverLoading(false);
+    }
+  }
+
+  async function handleSetPin(driverId: string) {
+    const pin = pinInputs[driverId]?.trim();
+    if (!pin || pin.length < 4 || pin.length > 6 || !/^\d+$/.test(pin)) {
+      setPinMsg("PIN must be 4–6 digits.");
+      return;
+    }
+    setPinSaving(driverId);
+    setPinMsg("");
+    try {
+      await api.patch(`/drivers/${driverId}/pin`, { pin });
+      setPinMsg("PIN set successfully.");
+      setPinInputs((p) => ({ ...p, [driverId]: "" }));
+      void loadDrivers();
+    } catch {
+      setPinMsg("Failed to set PIN.");
+    } finally {
+      setPinSaving(null);
+    }
+  }
+
+  async function handleResetPin(driverId: string) {
+    setPinSaving(driverId);
+    setPinMsg("");
+    try {
+      await api.patch(`/drivers/${driverId}/reset-pin`, {});
+      setPinMsg("PIN cleared. Driver must be issued a new PIN.");
+      void loadDrivers();
+    } catch {
+      setPinMsg("Failed to reset PIN.");
+    } finally {
+      setPinSaving(null);
+    }
+  }
 
   function setFormRole(role: string) {
     setForm((prev) => ({
@@ -345,6 +417,80 @@ export default function UsersRoles() {
                 No tenant users found.
               </div>
             ) : null}
+          </div>
+        )}
+      </div>
+
+      {/* ── Driver Accounts & PIN Management ─────────────────────────────── */}
+      <div className={glassCard}>
+        <div className="flex items-center gap-3 mb-5">
+          <div className="h-10 w-10 rounded-xl bg-amber-500/20 grid place-items-center">
+            <KeyRound className="h-5 w-5 text-amber-300" />
+          </div>
+          <div>
+            <div className="text-xl font-black">Driver Accounts & PINs</div>
+            <div className="text-xs text-white/45 mt-0.5">
+              Set or reset 4–6 digit PINs for driver portal login (phone + PIN)
+            </div>
+          </div>
+        </div>
+
+        {pinMsg && (
+          <div className={`mb-4 rounded-2xl px-4 py-2.5 text-sm font-bold ${pinMsg.includes("success") || pinMsg.includes("cleared") ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" : "bg-red-500/15 text-red-300 border border-red-500/25"}`}>
+            {pinMsg}
+          </div>
+        )}
+
+        {driverLoading ? (
+          <div className="space-y-3">
+            {[0,1,2].map(i => <div key={i} className="h-16 animate-pulse rounded-2xl bg-white/5" />)}
+          </div>
+        ) : drivers.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/10 py-8 text-center text-sm text-white/40">
+            No drivers found. Add drivers in the Driver Dispatch page first.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {drivers.map((d) => (
+              <div key={d.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-white">{d.name}</div>
+                  <div className="text-xs text-white/40 mt-0.5">
+                    {d.phone || "—"} {d.vehicleReg ? `· ${d.vehicleReg}` : ""} · {d.status}
+                  </div>
+                </div>
+                <div className={`flex items-center gap-1.5 rounded-xl px-3 py-1 text-[11px] font-bold border ${d.hasPinSet ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" : "border-amber-500/25 bg-amber-500/10 text-amber-300"}`}>
+                  {d.hasPinSet ? <><ShieldCheck className="h-3.5 w-3.5" /> PIN set</> : <><ShieldOff className="h-3.5 w-3.5" /> No PIN</>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1000"
+                    max="999999"
+                    value={pinInputs[d.id] ?? ""}
+                    onChange={(e) => setPinInputs(p => ({ ...p, [d.id]: e.target.value }))}
+                    placeholder="New PIN"
+                    className="w-24 rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-sky-400 [appearance:textfield]"
+                  />
+                  <button
+                    onClick={() => handleSetPin(d.id)}
+                    disabled={pinSaving === d.id}
+                    className="rounded-xl bg-sky-500/20 border border-sky-500/30 px-3 py-2 text-sm font-bold text-sky-300 hover:bg-sky-500/30 disabled:opacity-40 transition"
+                  >
+                    {pinSaving === d.id ? "…" : "Set PIN"}
+                  </button>
+                  {d.hasPinSet && (
+                    <button
+                      onClick={() => handleResetPin(d.id)}
+                      disabled={pinSaving === d.id}
+                      className="rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm font-bold text-red-300 hover:bg-red-500/20 disabled:opacity-40 transition"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
