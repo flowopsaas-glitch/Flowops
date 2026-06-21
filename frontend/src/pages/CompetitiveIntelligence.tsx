@@ -147,15 +147,17 @@ export default function CompetitiveIntelligencePage() {
     finally { setSweeping(false); }
   };
 
-  const visibleInsights = report?.insights.filter(i =>
+  const insights = report?.insights ?? [];
+
+  const visibleInsights = insights.filter(i =>
     filter === "ALL" || i.threatLevel === filter
-  ) ?? [];
+  );
 
   const counts = {
-    CRITICAL: report?.insights.filter(i => i.threatLevel === "CRITICAL").length ?? 0,
-    HIGH:     report?.insights.filter(i => i.threatLevel === "HIGH").length     ?? 0,
-    MEDIUM:   report?.insights.filter(i => i.threatLevel === "MEDIUM").length   ?? 0,
-    LOW:      report?.insights.filter(i => i.threatLevel === "LOW").length      ?? 0,
+    CRITICAL: insights.filter(i => i.threatLevel === "CRITICAL").length,
+    HIGH:     insights.filter(i => i.threatLevel === "HIGH").length,
+    MEDIUM:   insights.filter(i => i.threatLevel === "MEDIUM").length,
+    LOW:      insights.filter(i => i.threatLevel === "LOW").length,
   };
 
   // ── Skeleton ──────────────────────────────────────────────────────────────
