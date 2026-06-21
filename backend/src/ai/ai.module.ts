@@ -7,7 +7,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { AiDiagnosticsController } from './ai-diagnostics.controller';
-import { AiChatController } from './ai-chat.controller'; 
+import { AiOpsController } from './ai-ops.controller';import { AiChatController } from './ai-chat.controller'; 
 import { ClawService } from './claw.service';            
 import { AiWatchdog } from './ai.watchdog';
 import { AiDevOpsService } from './ai-devops.service'; 
@@ -35,7 +35,7 @@ import { GatewayModule } from '../gateway/gateway.module';
     AIEventsModule,
     // Required for Claw 5/6 to communicate with Socket.io and Validate JWTs
     GatewayModule,
-    // JwtModule handled globally 
+    JwtModule.register({}), 
   ],
   controllers: [
     AiController,
