@@ -41,6 +41,7 @@ const WarehouseHubPage  = lazy(() => import("./pages/WarehouseHubPage"));
 const BillingPlans      = lazy(() => import("./pages/billing/BillingPlans"));
 const QuotesPage = lazy(() => import("./pages/QuotesPage"));
 const AIControlTower = lazy(() => import("./pages/AIControlTower"));
+const CompetitiveIntelligence = lazy(() => import("./pages/CompetitiveIntelligence"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const BrandingSettings = lazy(() => import("./pages/settings/BrandingSettings"));
 const NotificationPreferences = lazy(
@@ -206,6 +207,7 @@ export default function App() {
               <Route path="/quotes" element={<RequirePermission perm="quotes"><QuotesPage /></RequirePermission>} />
               <Route path="/ai-control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
+              <Route path="/ai/intel" element={<RequirePermission perm="aiControlTower"><CompetitiveIntelligence /></RequirePermission>} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />
               <Route path="/settings/branding" element={<RequirePermission perm="settings"><BrandingSettings /></RequirePermission>} />
               <Route
