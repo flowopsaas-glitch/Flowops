@@ -172,13 +172,13 @@ export default function App() {
               <Route path="/collections" element={<RequirePermission perm="collections"><Collections /></RequirePermission>} />
               <Route path="/operations" element={<RequirePermission perm="driverDispatch"><OperationsDashboard /></RequirePermission>} />
               <Route path="/warehouse"  element={<RequirePermission perm="waybillInbox"><WarehouseHubPage /></RequirePermission>} />
-              <Route path="/customer-service" element={<RequirePermission perm="collections"><CustomerServiceHub /></RequirePermission>} />
+              <Route path="/customer-service" element={<RequirePermission perm="quotes"><CustomerServiceHub /></RequirePermission>} />
               <Route path="/field-delivery"   element={<RequirePermission perm="podDeliveries"><FieldDeliveryPage /></RequirePermission>} />
               <Route path="/pod-deliveries" element={<RequirePermission perm="podDeliveries"><PodDeliveries /></RequirePermission>} />
               <Route path="/driver-home"   element={<RequirePermission perm="podDeliveries"><DriverHomePage /></RequirePermission>} />
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
-              <Route path="/manifests" element={<ManifestsPage />} />
+              <Route path="/manifests" element={<RequirePermission perm="waybillInbox"><ManifestsPage /></RequirePermission>} />
               <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
               <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
               <Route path="/fleet" element={<RequirePermission perm="driverDispatch"><FleetMaintenance /></RequirePermission>} />
