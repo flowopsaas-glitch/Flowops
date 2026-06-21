@@ -117,6 +117,11 @@ export class OwnerController {
     return this.alerting.evaluate();
   }
 
+  @Post('trials/check')
+  runTrialCheck() {
+    return this.alerting.processTrials();
+  }
+
   @Post('alerts/:id/resolve')
   resolveAlert(@Param('id') id: string) {
     return this.alerting.resolve(id);

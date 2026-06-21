@@ -391,6 +391,13 @@ export default function SuperAdminDashboard() {
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10 disabled:opacity-60">
             <AlertTriangle className="h-3.5 w-3.5" /> {runningChecks ? "Running…" : "Run Alert Checks"}
           </button>
+          <button onClick={async () => {
+              try { await api.post("/owner/trials/check", {}); void load(); }
+              catch { /* ignore */ }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-300 hover:bg-violet-500/20">
+            <Zap className="h-3.5 w-3.5" /> Run Trial &amp; Subscription Check
+          </button>
           <button onClick={async () => { await api.post("/owner/mrr-snapshot", {}); void load(); }}
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10">
             <TrendingUp className="h-3.5 w-3.5" /> Capture MRR
