@@ -166,7 +166,7 @@ export default function WarehouseHubPage() {
                   <p className="text-[11px] text-white/40">{stats.inboxTotal} items · auto-refreshes</p>
                 </div>
               </div>
-              <button onClick={() => navigate("/waybill-inbox")}
+              <button onClick={() => navigate("/waybills/inbox")}
                 className="flex items-center gap-1.5 text-xs font-bold text-blue-300 hover:text-blue-200 transition">
                 Open <ArrowRight className="h-3.5 w-3.5" />
               </button>
@@ -176,12 +176,12 @@ export default function WarehouseHubPage() {
                 <div className="flex flex-col items-center justify-center py-10 rounded-2xl border border-dashed border-white/10 text-center">
                   <Upload className="h-7 w-7 text-white/10 mb-2" />
                   <p className="text-sm text-white/25">No items in inbox</p>
-                  <button onClick={() => navigate("/waybill-inbox")}
+                  <button onClick={() => navigate("/waybills/inbox")}
                     className="mt-3 text-xs text-blue-300 hover:underline">Upload first waybill</button>
                 </div>
               ) : (
                 recentInbox.map(item => (
-                  <div key={item.id} onClick={() => navigate("/waybill-inbox")}
+                  <div key={item.id} onClick={() => navigate("/waybills/inbox")}
                     className="flex items-center justify-between rounded-2xl border border-white/6 bg-black/25 px-4 py-3 cursor-pointer hover:border-white/15 hover:bg-white/5 transition">
                     <div className="flex items-center gap-3">
                       <div className={`h-2 w-2 rounded-full ${item.status === "READY" ? "bg-emerald-400" : item.status === "EXTRACTING" ? "bg-blue-400 animate-pulse" : "bg-rose-400"}`} />

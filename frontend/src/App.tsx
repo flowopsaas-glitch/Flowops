@@ -31,6 +31,7 @@ const FinanceDashboard = lazy(() => import("./pages/FinanceDashboard"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
+const CreditControl     = lazy(() => import("./pages/CreditControl"));
 const CODReconciliation = lazy(() => import("./pages/billing/CODReconciliation"));
 const DriverWalletPage  = lazy(() => import("./pages/billing/DriverWalletPage"));
 const RateShopping      = lazy(() => import("./pages/billing/RateShopping"));
@@ -169,7 +170,7 @@ export default function App() {
               <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
               <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />
               <Route path="/collections" element={<RequirePermission perm="collections"><Collections /></RequirePermission>} />
-              <Route path="/operations" element={<RequirePermission perm="collections"><OperationsDashboard /></RequirePermission>} />
+              <Route path="/operations" element={<RequirePermission perm="driverDispatch"><OperationsDashboard /></RequirePermission>} />
               <Route path="/warehouse"  element={<RequirePermission perm="waybillInbox"><WarehouseHubPage /></RequirePermission>} />
               <Route path="/customer-service" element={<RequirePermission perm="collections"><CustomerServiceHub /></RequirePermission>} />
               <Route path="/field-delivery"   element={<RequirePermission perm="podDeliveries"><FieldDeliveryPage /></RequirePermission>} />
@@ -198,7 +199,7 @@ export default function App() {
               <Route path="/invoice-drafts" element={<RequirePermission perm="invoiceDrafts"><InvoiceDraftsPage /></RequirePermission>} />
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
               <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
-              <Route path="/credit-control" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
+              <Route path="/credit-control" element={<RequirePermission perm="creditControl"><CreditControl /></RequirePermission>} />
               <Route path="/cod" element={<RequirePermission perm="billingBatches"><CODReconciliation /></RequirePermission>} />
               <Route path="/cod/wallets/:driverId" element={<RequirePermission perm="billingBatches"><DriverWalletPage /></RequirePermission>} />
               <Route path="/rate-shopping" element={<RequirePermission perm="rateCards"><RateShopping /></RequirePermission>} />
