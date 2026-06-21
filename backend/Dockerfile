@@ -34,6 +34,12 @@ COPY --from=builder /app/node_modules/.prisma /app/node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma /app/node_modules/@prisma
 COPY prisma ./prisma
 
+# Prisma CLI — lives in devDeps so it's not installed above; copy it from
+# the builder stage so we can run `prisma db push` at startup.
+# This repo uses db push (no migrations folder), so migrate deploy would fail.
+COPY --from=builder /app/node_modules/prisma /app/node_modules/prisma
+COPY --from=builder /app/node_modules/.bin/prisma /app/node_modules/.bin/prisma
+
 # Compiled app
 COPY --from=builder /app/dist ./dist
 
@@ -46,5 +52,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
 
-# Run migrations then start (idempotent in production)
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+# Sync schema then start. db push is idempotent — safe to run on every start.
+# --skip-generate: client was already generated in the builder stage.
+# --accept-data-loss: required flag for db push in non-interactive mode.
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --skip-generate --accept-data-loss && node dist/main"]

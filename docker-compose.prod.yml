@@ -1,0 +1,42 @@
+# Production overrides for docker-compose.yml
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# This file overrides only the values that differ in production (real domain,
+# no host port bindings for the API, resource limits). Everything else is
+# inherited from docker-compose.yml.
+
+name: flowops
+
+services:
+  frontend:
+    restart: always
+    environment:
+      BACKEND_HOST: api
+      BACKEND_PORT: 3000
+      NGINX_PORT: 80
+    # In production the frontend container is exposed on port 80 and reached
+    # via the Cloudflare tunnel (or a reverse proxy). We bind to 127.0.0.1 so
+    # only cloudflared / nginx on the host can reach it directly.
+    ports:
+      - "127.0.0.1:8080:80"
+
+  api:
+    restart: always
+    # Do NOT expose the API port to the host in production — traffic flows
+    # through the frontend nginx proxy only.
+    ports: []
+    environment:
+      NODE_ENV: production
+      CORS_ORIGINS: https://app.flowop.work,https://www.flowop.work
+      APP_URL: https://app.flowop.work
+
+  postgres:
+    restart: always
+    # Postgres is internal-only — never exposed to the host in production.
+    ports: []
+
+  redis:
+    restart: always
+    ports: []
