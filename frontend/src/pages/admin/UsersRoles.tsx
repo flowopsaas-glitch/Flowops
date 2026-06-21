@@ -169,7 +169,7 @@ export default function UsersRoles() {
     setSuccess("");
 
     try {
-      await api.post("/users/my-company", {
+      await api.post("/users", {
         email: form.email.trim(),
         password: form.password,
         role: form.role,
