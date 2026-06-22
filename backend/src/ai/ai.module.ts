@@ -28,6 +28,8 @@ import { CompetitiveIntelligenceService }    from './competitive-intelligence.se
 import { PrismaModule }   from '../prisma/prisma.module';
 import { GatewayModule }  from '../gateway/gateway.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { JwtModule }      from '@nestjs/jwt';
+import { ConfigService }  from '@nestjs/config';
 
 @Module({
   imports: [
@@ -37,6 +39,15 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
     GatewayModule,
     // WhatsAppService injected into AiService for notification dispatch
     WhatsAppModule,
+    // JwtService injected into Claw6SentinelService (and possibly others)
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET', 'default_secret'),
+        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '15m') },
+      }),
+      inject: [ConfigService],
+    }),
   ],
   controllers: [
     AiController,
