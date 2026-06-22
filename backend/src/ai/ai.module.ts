@@ -1,13 +1,33 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
-import { AiController } from './ai.controller';
-import { AiService } from './ai.service';
-import { CompetitiveIntelligenceService }    from './competitive-intelligence.service';
+
+// ── Route controllers ────────────────────────────────────────────────────────
+import { AiController }                      from './ai.controller';
+import { AiChatController }                  from './ai-chat.controller';
+import { AiDiagnosticsController }           from './ai-diagnostics.controller';
+import { AiEventsController }                from './ai-events.controller';
+import { AiOpsController }                   from './ai-ops.controller';
 import { CompetitiveIntelligenceController } from './competitive-intelligence.controller';
-import { PrismaModule }    from '../prisma/prisma.module';
-import { GatewayModule }   from '../gateway/gateway.module';
-import { WhatsAppModule }  from '../whatsapp/whatsapp.module';
+
+// ── Services / injectable providers ─────────────────────────────────────────
+import { AiService }                         from './ai.service';
+import { AiDiscoveryService }                from './ai-discovery.service';
+import { AiDevOpsService }                   from './ai-devops.service';
+import { AiAutonomyService }                 from './ai-autonomy.service';
+import { AiEventsService }                   from './ai-events.service';
+import { AiWatchdog }                        from './ai.watchdog';
+import { ClawService }                       from './claw.service';
+import { AIClawController }                  from './claw-controller';   // injectable — not a route controller
+import { Claw5SyncService }                  from './claw-5-sync.service';
+import { Claw6SentinelService }              from './claw-6-sentinel.service';
+import { ClawLogicEngine }                   from './claw-logic.engine';
+import { CompetitiveIntelligenceService }    from './competitive-intelligence.service';
+
+// ── External modules ─────────────────────────────────────────────────────────
+import { PrismaModule }   from '../prisma/prisma.module';
+import { GatewayModule }  from '../gateway/gateway.module';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -15,17 +35,38 @@ import { WhatsAppModule }  from '../whatsapp/whatsapp.module';
     ConfigModule,
     PrismaModule,
     GatewayModule,
-    // WhatsAppService is injected into AiService for notification dispatch
+    // WhatsAppService injected into AiService for notification dispatch
     WhatsAppModule,
   ],
   controllers: [
     AiController,
+    AiChatController,
+    AiDiagnosticsController,
+    AiEventsController,
+    AiOpsController,
     CompetitiveIntelligenceController,
   ],
   providers: [
     AiService,
+    AiDiscoveryService,
+    AiDevOpsService,
+    AiAutonomyService,
+    AiEventsService,
+    AiWatchdog,
+    ClawService,
+    AIClawController,     // injectable service, not a route controller
+    Claw5SyncService,
+    Claw6SentinelService,
+    ClawLogicEngine,
     CompetitiveIntelligenceService,
   ],
-  exports: [AiService, CompetitiveIntelligenceService],
+  exports: [
+    AiService,
+    AiDiscoveryService,
+    AiDevOpsService,
+    AiEventsService,
+    ClawService,
+    CompetitiveIntelligenceService,
+  ],
 })
 export class AiModule {}
