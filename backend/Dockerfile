@@ -25,11 +25,15 @@ ENV NODE_ENV=${NODE_ENV}
 
 WORKDIR /app
 
+# OpenSSL is required by the Prisma query-engine binary at runtime.
+# Without it, Prisma prints "failed to detect libssl" and refuses to start.
+RUN apk add --no-cache openssl
+
 # Only production deps
 COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
-# Prisma schema + generated client (required at runtime)
+# Prisma schema + generated client + ALL engine binaries
 COPY --from=builder /app/node_modules/.prisma /app/node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma /app/node_modules/@prisma
 COPY prisma ./prisma
@@ -43,8 +47,11 @@ COPY --from=builder /app/node_modules/.bin/prisma /app/node_modules/.bin/prisma
 # Compiled app
 COPY --from=builder /app/dist ./dist
 
-# Non-root user
-RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
+# Non-root user — create BEFORE chown so the user exists
+RUN addgroup -g 1001 -S nodejs \
+ && adduser -S nestjs -u 1001 \
+ && chown -R nestjs:nodejs /app
+
 USER nestjs
 
 EXPOSE 3000
