@@ -240,44 +240,60 @@ function Features() {
 
 /* ── Visual Gallery ───────────────────────────────────────────── */
 function VisualGallery() {
+  const images = [
+    { src: "/flowops-render1.png", alt: "FlowOps platform" },
+    { src: "/flowops-render2.png", alt: "FlowOps logistics" },
+    { src: "/flowops-photo1.jpg",  alt: "FlowOps in action" },
+    { src: "/flowops-render3.png", alt: "FlowOps operations" },
+    { src: "/flowops-photo2.jpg",  alt: "FlowOps courier" },
+  ];
+  // duplicate for seamless loop
+  const track = [...images, ...images];
+
   return (
-    <section className="py-16 border-t border-white/5">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="text-center mb-10">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/30">
-            Logistics, Evolved.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div className="col-span-2 md:col-span-1 row-span-2">
-            <img
-              src="/flowops-render1.png"
-              alt="FlowOps platform"
-              className="w-full h-full object-cover rounded-[24px] border border-white/10 min-h-[280px]"
-            />
-          </div>
-          <img
-            src="/flowops-render2.png"
-            alt="FlowOps logistics"
-            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
-          />
-          <img
-            src="/flowops-render3.png"
-            alt="FlowOps operations"
-            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
-          />
-          <img
-            src="/flowops-photo1.jpg"
-            alt="FlowOps team"
-            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
-          />
-          <img
-            src="/flowops-photo2.jpg"
-            alt="FlowOps courier"
-            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
-          />
+    <section className="py-16 border-t border-white/5 overflow-hidden">
+      <div className="mb-8 text-center">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-white/25">
+          Logistics, Evolved.
+        </p>
+      </div>
+
+      {/* Scrolling track */}
+      <div className="relative">
+        {/* Fade edges */}
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-32 bg-gradient-to-r from-[#07111f] to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-32 bg-gradient-to-l from-[#07111f] to-transparent" />
+
+        <div
+          className="flex gap-5"
+          style={{
+            animation: "marquee 40s linear infinite",
+            width: "max-content",
+          }}
+        >
+          {track.map((img, i) => (
+            <div
+              key={i}
+              className="relative shrink-0 w-[420px] h-[260px] rounded-[20px] overflow-hidden border border-white/10 group"
+            >
+              {/* glow on hover */}
+              <div className="absolute inset-0 bg-sky-500/0 group-hover:bg-sky-500/5 transition-all duration-500 z-10 rounded-[20px]" />
+              <img
+                src={img.src}
+                alt={img.alt}
+                className="w-full h-full object-contain bg-[#080f1e] group-hover:scale-[1.03] transition-transform duration-700"
+              />
+            </div>
+          ))}
         </div>
       </div>
+
+      <style>{`
+        @keyframes marquee {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
+        }
+      `}</style>
     </section>
   );
 }
