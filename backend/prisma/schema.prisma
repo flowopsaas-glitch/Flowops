@@ -344,6 +344,12 @@ model Driver {
   status      DriverStatus @default(OFFLINE)
   isActive    Boolean      @default(true)
 
+  // ── Customer delivery rating ──────────────────────────────────────────
+  customerRating      Int?
+  customerRatingNote  String?
+  ratingToken         String?   @unique
+  ratingRequestedAt   DateTime?
+
   // Last known GPS position
   lastLat  Float?
   lastLng  Float?

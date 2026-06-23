@@ -79,6 +79,7 @@ const SignupPage = lazy(() => import("./pages/Signup"));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPassword'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
+const RatingPage   = lazy(() => import("./pages/RatingPage"));
 // Marketing pages
 const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
 const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
@@ -146,6 +147,7 @@ export default function App() {
           <Route path="/status" element={<StatusPage />} />
           <Route path="/track" element={<TrackingPage />} />
           <Route path="/track/:trackingNumber" element={<TrackingPage />} />
+          <Route path="/rate/:token" element={<RatingPage />} />
           <Route path="/setup" element={<CompanySetupPage />} />
           {/* Marketing pages — public, no auth required */}
           <Route path="/features" element={<FeaturesPage />} />
