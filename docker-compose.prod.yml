@@ -20,7 +20,7 @@ services:
     # via the Cloudflare tunnel (or a reverse proxy). We bind to 127.0.0.1 so
     # only cloudflared / nginx on the host can reach it directly.
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:8081:80"
 
   api:
     restart: always
