@@ -169,7 +169,7 @@ export class WaybillsService {
     const token = `${waybill.trackingNumber}-${uuid()}`;
     const updated = await this.prisma.waybill.update({
       where: { id },
-      data: { ratingToken: token, ratingRequestedAt: new Date() } as any,
+      data: { ratingToken: token, ratingRequestedAt: new Date() },
     });
     await this.notifications.sendRatingRequest(updated);
     return { success: true, token };
@@ -177,7 +177,7 @@ export class WaybillsService {
 
   /** Public — returns waybill info for the rating page (no auth needed). */
   async getPublicRating(token: string) {
-    const waybill = await (this.prisma.waybill as any).findUnique({
+    const waybill = await this.prisma.waybill.findUnique({
       where: { ratingToken: token },
       select: {
         id: true, trackingNumber: true, status: true,
@@ -191,9 +191,9 @@ export class WaybillsService {
 
   /** Public — submits a delivery rating. */
   async submitRating(token: string, dto: { rating: number; note?: string }) {
-    const waybill = await this.prisma.waybill.findUnique({ where: { ratingToken: token } as any });
+    const waybill = await this.prisma.waybill.findUnique({ where: { ratingToken: token } });
     if (!waybill) throw new NotFoundException('Rating link not found or expired');
-    if ((waybill as any).customerRating) {
+    if (waybill.customerRating) {
       throw new BadRequestException('Rating already submitted');
     }
     if (dto.rating < 1 || dto.rating > 5) {
@@ -201,7 +201,7 @@ export class WaybillsService {
     }
     await this.prisma.waybill.update({
       where: { id: waybill.id },
-      data: { customerRating: dto.rating, customerRatingNote: dto.note ?? null } as any,
+      data: { customerRating: dto.rating, customerRatingNote: dto.note ?? null },
     });
     return { success: true, message: 'Thank you for your feedback!' };
   }
