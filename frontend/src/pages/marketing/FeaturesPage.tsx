@@ -1,0 +1,249 @@
+import { Link } from "react-router-dom";
+import {
+  Package, Truck, BarChart3, MessageCircle, Shield,
+  MapPin, FileText, Scan, Wallet, Route, Bell, Users,
+  CheckCircle2, ArrowRight, Zap,
+} from "lucide-react";
+import PublicNav from "../../components/layout/PublicNav";
+import PublicFooter from "../../components/layout/PublicFooter";
+
+const sections = [
+  {
+    label: "Operations",
+    color: "sky",
+    features: [
+      {
+        icon: Package,
+        title: "Waybill Management",
+        points: [
+          "OCR-powered waybill capture from photos",
+          "Barcode & QR batch scanning",
+          "Full status lifecycle (Pending → Delivered)",
+          "Proof of delivery with signature + photo",
+          "Recipient email notifications on status change",
+        ],
+      },
+      {
+        icon: Truck,
+        title: "Driver Dispatch",
+        points: [
+          "Real-time GPS tracking on live map",
+          "AI-scored driver suggestions (availability, load, proximity)",
+          "Route optimisation with stop sequencing",
+          "Offline POD capture — syncs when back online",
+          "Driver mobile portal with Zulu / Afrikaans / Xhosa support",
+        ],
+      },
+      {
+        icon: Route,
+        title: "Route Optimizer",
+        points: [
+          "Nearest-neighbour + 2-opt algorithm",
+          "Supports up to 50 stops per route",
+          "Distance and ETA estimates",
+          "Save and assign optimised routes to drivers",
+        ],
+      },
+    ],
+  },
+  {
+    label: "Billing & Finance",
+    color: "indigo",
+    features: [
+      {
+        icon: BarChart3,
+        title: "Invoicing",
+        points: [
+          "Auto-generate invoices from delivered waybills",
+          "Line-item control with VAT calculation",
+          "Send invoices directly from the platform",
+          "Paid / Sent / Overdue / Draft status tracking",
+          "PDF print and CSV export",
+        ],
+      },
+      {
+        icon: Wallet,
+        title: "COD Reconciliation",
+        points: [
+          "Driver wallets track cash on delivery",
+          "Geofence auto-trigger on arrival at recipient",
+          "Settlement workflow with audit trail",
+          "Outstanding COD dashboard per driver",
+        ],
+      },
+      {
+        icon: FileText,
+        title: "Rate Cards & Quotes",
+        points: [
+          "Zone-based rate cards with weight bands",
+          "Multi-carrier rate shopping (Aramex, DHL, PostNet, more)",
+          "Generate and accept quotes",
+          "Customer portal for booking requests",
+        ],
+      },
+    ],
+  },
+  {
+    label: "Communications",
+    color: "emerald",
+    features: [
+      {
+        icon: MessageCircle,
+        title: "WhatsApp Hub",
+        points: [
+          "Click-to-chat using your own WhatsApp number",
+          "Auto-send status updates to recipients",
+          "Thread history per client",
+          "No Meta Business API required",
+        ],
+      },
+      {
+        icon: Bell,
+        title: "Notifications",
+        points: [
+          "In-app notification feed with read/unread",
+          "Email alerts on SLA breach risk",
+          "Trial expiry and payment reminders",
+          "Configurable per-user notification preferences",
+        ],
+      },
+    ],
+  },
+  {
+    label: "AI & Intelligence",
+    color: "violet",
+    features: [
+      {
+        icon: Shield,
+        title: "AI Control Tower",
+        points: [
+          "6-Claw AI mesh monitors operations continuously",
+          "Route deviation and SLA breach risk alerts",
+          "Exception rate monitoring per tenant",
+          "One-click resolve or dismiss from the dashboard",
+        ],
+      },
+      {
+        icon: BarChart3,
+        title: "Performance KPIs",
+        points: [
+          "On-time delivery %, delivery success rate",
+          "Average delivery time and exception rate",
+          "Revenue per waybill with 30-day trend deltas",
+          "Outstanding AR aging buckets",
+        ],
+      },
+    ],
+  },
+  {
+    label: "Platform & Admin",
+    color: "amber",
+    features: [
+      {
+        icon: Users,
+        title: "Multi-Role Access",
+        points: [
+          "8 built-in roles: Admin, Manager, Dispatch, Warehouse, Agent, Driver, Finance, Viewer",
+          "Per-user permission overrides",
+          "Persona-aware dashboards per role",
+          "Audit trail of all admin actions",
+        ],
+      },
+      {
+        icon: MapPin,
+        title: "Multi-Branch",
+        points: [
+          "Unlimited branches (depots, hubs)",
+          "Manifest and linehaul between branches",
+          "Per-branch waybill and driver assignment",
+          "Owner console to manage all tenants from one screen",
+        ],
+      },
+      {
+        icon: Scan,
+        title: "Integrations",
+        points: [
+          "Public REST API with API key management",
+          "Signed webhooks with exponential back-off retries",
+          "Shopify and WooCommerce order → waybill connectors",
+          "Geocoding pipeline (Nominatim / Google / Mapbox)",
+        ],
+      },
+    ],
+  },
+];
+
+const colorMap: Record<string, { badge: string; icon: string; dot: string }> = {
+  sky:     { badge: "border-sky-400/20 bg-sky-400/10 text-sky-300",       icon: "border-sky-400/20 bg-sky-400/10 text-sky-300",       dot: "bg-sky-400" },
+  indigo:  { badge: "border-indigo-400/20 bg-indigo-400/10 text-indigo-300", icon: "border-indigo-400/20 bg-indigo-400/10 text-indigo-300", dot: "bg-indigo-400" },
+  emerald: { badge: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400" },
+  violet:  { badge: "border-violet-400/20 bg-violet-400/10 text-violet-300",   icon: "border-violet-400/20 bg-violet-400/10 text-violet-300",   dot: "bg-violet-400" },
+  amber:   { badge: "border-amber-400/20 bg-amber-400/10 text-amber-300",     icon: "border-amber-400/20 bg-amber-400/10 text-amber-300",     dot: "bg-amber-400" },
+};
+
+export default function FeaturesPage() {
+  return (
+    <div className="min-h-screen bg-[#07111f] text-white">
+      <PublicNav />
+      <div className="pt-24 pb-8 text-center px-6">
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-white/50">
+          <Zap className="h-3.5 w-3.5 text-sky-400" /> Full Feature List
+        </div>
+        <h1 className="text-5xl font-black text-white mb-4">
+          Everything your team needs
+        </h1>
+        <p className="text-lg text-white/50 max-w-xl mx-auto">
+          Built for South African courier operations — from waybill to invoice,
+          driver to depot, cash to reconciliation.
+        </p>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-6 py-12 space-y-20">
+        {sections.map((sec) => {
+          const c = colorMap[sec.color];
+          return (
+            <div key={sec.label}>
+              <div className={`mb-8 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-bold ${c.badge}`}>
+                {sec.label}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {sec.features.map(({ icon: Icon, title, points }) => (
+                  <div
+                    key={title}
+                    className="rounded-[24px] border border-white/10 bg-white/[0.03] p-7 hover:border-white/20 transition-all"
+                  >
+                    <div className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl border ${c.icon}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="text-lg font-black text-white mb-4">{title}</h3>
+                    <ul className="space-y-2.5">
+                      {points.map((p) => (
+                        <li key={p} className="flex items-start gap-2.5 text-sm text-white/60">
+                          <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-400/70" />
+                          {p}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* CTA */}
+      <div className="border-t border-white/5 py-20 text-center px-6">
+        <h2 className="text-4xl font-black text-white mb-4">Start using all of this today</h2>
+        <p className="text-white/50 mb-8">14-day free trial · No credit card · ZAR billing</p>
+        <Link
+          to="/signup"
+          className="inline-flex items-center gap-2 rounded-2xl bg-sky-500 px-8 py-4 text-base font-black text-white hover:bg-sky-400 transition-colors"
+        >
+          Start Free Trial <ArrowRight className="h-5 w-5" />
+        </Link>
+      </div>
+      <PublicFooter />
+    </div>
+  );
+}
