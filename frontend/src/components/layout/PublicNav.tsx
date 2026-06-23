@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, Zap } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
 const links = [
   { label: "Features", to: "/features" },
@@ -34,9 +34,12 @@ export default function PublicNav() {
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/20 border border-sky-400/30 group-hover:bg-sky-500/30 transition-colors">
-              <Zap className="h-5 w-5 text-sky-300" />
-            </div>
+            <img
+              src="/flowops-logo.png"
+              alt="FlowOps"
+              className="h-9 w-9 rounded-xl object-cover border border-sky-400/20"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
             <span className="text-lg font-black tracking-tight text-white">
               Flow<span className="text-sky-400">Ops</span>
             </span>
