@@ -158,6 +158,68 @@ export class WaybillsService {
     };
   }
 
+  // ── Customer rating ────────────────────────────────────────────────
+
+  /** Generates a unique token and sends the rating request to the customer. */
+  async requestRating(id: string, companyId: string) {
+    const waybill = await this.findOne(id, companyId);
+    if (waybill.status !== 'DELIVERED') {
+      throw new BadRequestException('Rating can only be requested after delivery');
+    }
+    const token = `${waybill.trackingNumber}-${uuid()}`;
+    const updated = await this.prisma.waybill.update({
+      where: { id },
+      data: { ratingToken: token, ratingRequestedAt: new Date() } as any,
+    });
+    await this.notifications.sendRatingRequest(updated);
+    return { success: true, token };
+  }
+
+  /** Public — returns waybill info for the rating page (no auth needed). */
+  async getPublicRating(token: string) {
+    const waybill = await (this.prisma.waybill as any).findUnique({
+      where: { ratingToken: token },
+      select: {
+        id: true, trackingNumber: true, status: true,
+        recipientName: true,
+        company: { select: { name: true, logoUrl: true, primaryColor: true, brandName: true } },
+      },
+    });
+    if (!waybill) throw new NotFoundException('Rating link not found or expired');
+    return waybill;
+  }
+
+  /** Public — submits a delivery rating. */
+  async submitRating(token: string, dto: { rating: number; note?: string }) {
+    const waybill = await this.prisma.waybill.findUnique({ where: { ratingToken: token } as any });
+    if (!waybill) throw new NotFoundException('Rating link not found or expired');
+    if ((waybill as any).customerRating) {
+      throw new BadRequestException('Rating already submitted');
+    }
+    if (dto.rating < 1 || dto.rating > 5) {
+      throw new BadRequestException('Rating must be between 1 and 5');
+    }
+    await this.prisma.waybill.update({
+      where: { id: waybill.id },
+      data: { customerRating: dto.rating, customerRatingNote: dto.note ?? null } as any,
+    });
+    return { success: true, message: 'Thank you for your feedback!' };
+  }
+
+  /** Dispatcher triggers a stops-ahead + ETA notification for a recipient. */
+  async notifyCustomerEta(
+    id: string,
+    companyId: string,
+    dto: { stopsAhead: number; etaMinutes?: number },
+  ) {
+    const waybill = await this.findOne(id, companyId);
+    if (!waybill.recipientPhone && !waybill.recipientEmail) {
+      throw new BadRequestException('Recipient has no contact details');
+    }
+    await this.notifications.sendEtaAlert(waybill, dto.stopsAhead, dto.etaMinutes);
+    return { success: true };
+  }
+
   // ── POD delivery recording ─────────────────────────────────────────
 
   async recordDelivery(
@@ -194,8 +256,10 @@ export class WaybillsService {
         ...(podImageUrl && { podImageUrl }),
       },
     });
-    // Notify the customer their parcel was delivered.
+    // Notify the customer their parcel was delivered + request rating.
     void this.notifications.notifyWaybillStatus(delivered);
+    // Auto-request rating after a short delay would happen via a cron job
+    // For now, the dispatcher can trigger it manually via /rate-request
     return delivered;
   }
 
