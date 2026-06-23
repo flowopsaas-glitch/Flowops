@@ -37,6 +37,9 @@ function Hero() {
             Built for South African logistics teams
           </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          {/* Left: copy */}
+          <div>
           {/* Headline */}
           <h1 className="text-5xl md:text-7xl font-black leading-[1.05] tracking-tight text-white mb-6">
             Run your courier ops
@@ -53,7 +56,7 @@ function Hero() {
           </p>
 
           {/* CTAs */}
-          <div className="flex flex-wrap items-center gap-4 mb-16">
+          <div className="flex flex-wrap items-center gap-4 mb-10">
             <Link
               to="/signup"
               className="inline-flex items-center gap-2 rounded-2xl bg-sky-500 px-8 py-4 text-base font-black text-white shadow-xl shadow-sky-500/25 hover:bg-sky-400 transition-colors"
@@ -73,19 +76,32 @@ function Hero() {
           </div>
 
           {/* Trust signals */}
-          <div className="flex flex-wrap items-center gap-6 text-sm text-white/40">
-            {[
-              "14-day free trial",
-              "No credit card required",
-              "ZAR billing",
-              "SA support",
-            ].map((t) => (
+          <div className="flex flex-wrap items-center gap-5 text-sm text-white/40">
+            {["14-day free trial","No credit card required","ZAR billing","SA support"].map((t) => (
               <span key={t} className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-emerald-400/60" />
                 {t}
               </span>
             ))}
           </div>
+          </div>
+
+          {/* Right: Logo hero image */}
+          <div className="flex items-center justify-center">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-3xl bg-sky-500/20 blur-3xl scale-110" />
+              <img
+                src="/flowops-logo.jpg"
+                alt="FlowOps — Logistics, Evolved"
+                className="relative w-full max-w-md rounded-3xl shadow-2xl shadow-sky-500/20 border border-white/10"
+                onError={(e) => {
+                  // fallback to png if jpg not found
+                  e.currentTarget.src = "/flowops-logo.png";
+                }}
+              />
+            </div>
+          </div>
+      </div>
         </div>
       </div>
     </section>
@@ -222,7 +238,51 @@ function Features() {
   );
 }
 
-/* ── How it works ─────────────────────────────────────────────── */
+/* ── Visual Gallery ───────────────────────────────────────────── */
+function VisualGallery() {
+  return (
+    <section className="py-16 border-t border-white/5">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="text-center mb-10">
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/30">
+            Logistics, Evolved.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="col-span-2 md:col-span-1 row-span-2">
+            <img
+              src="/flowops-render1.png"
+              alt="FlowOps platform"
+              className="w-full h-full object-cover rounded-[24px] border border-white/10 min-h-[280px]"
+            />
+          </div>
+          <img
+            src="/flowops-render2.png"
+            alt="FlowOps logistics"
+            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
+          />
+          <img
+            src="/flowops-render3.png"
+            alt="FlowOps operations"
+            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
+          />
+          <img
+            src="/flowops-photo1.jpg"
+            alt="FlowOps team"
+            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
+          />
+          <img
+            src="/flowops-photo2.jpg"
+            alt="FlowOps courier"
+            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function HowItWorks() {
   const steps = [
     {
@@ -392,6 +452,7 @@ export default function LandingPage() {
       <Hero />
       <Stats />
       <Features />
+      <VisualGallery />
       <HowItWorks />
       <SocialProof />
       <CTABand />

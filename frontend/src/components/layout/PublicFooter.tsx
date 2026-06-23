@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Zap, MessageCircle } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 
 const WA_NUMBER = "27814065725";
 
@@ -29,9 +29,12 @@ export default function PublicFooter() {
           {/* Brand */}
           <div className="col-span-2">
             <Link to="/" className="flex items-center gap-2.5 mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/20 border border-sky-400/30">
-                <Zap className="h-5 w-5 text-sky-300" />
-              </div>
+              <img
+                src="/flowops-logo.png"
+                alt="FlowOps"
+                className="h-9 w-9 rounded-xl object-cover border border-sky-400/20"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
               <span className="text-lg font-black tracking-tight text-white">
                 Flow<span className="text-sky-400">Ops</span>
               </span>
