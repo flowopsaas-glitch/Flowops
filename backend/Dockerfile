@@ -49,7 +49,12 @@ COPY --from=builder /app/dist ./dist
 
 # Non-root user — create BEFORE chown so the user exists
 RUN addgroup -g 1001 -S nodejs \
- && adduser -S nestjs -u 1001 \
+ && adduser -S nestjs -u 1001
+
+# Regenerate Prisma client inside the production container so the engine
+# binary matches the installed OpenSSL version (linux-musl + openssl3).
+# The builder's binary may be for a different platform/openssl combo.
+RUN ./node_modules/.bin/prisma generate \
  && chown -R nestjs:nodejs /app
 
 USER nestjs
