@@ -37,6 +37,10 @@ export default function ProtectedRoute({ children }: { children?: ReactNode }) {
   }
 
   if (!isAuthenticated) {
+    // Root path → show marketing landing page for unauthenticated visitors
+    if (location.pathname === "/" || location.pathname === "") {
+      return <Navigate to="/home" replace />;
+    }
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 

@@ -79,6 +79,10 @@ const SignupPage = lazy(() => import("./pages/Signup"));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPassword'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
+// Marketing pages
+const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
+const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
+const PricingPage   = lazy(() => import("./pages/marketing/PricingPage"));
 
 export default function App() {
   useEffect(() => {
@@ -143,6 +147,9 @@ export default function App() {
           <Route path="/track" element={<TrackingPage />} />
           <Route path="/track/:trackingNumber" element={<TrackingPage />} />
           <Route path="/setup" element={<CompanySetupPage />} />
+          {/* Marketing pages — public, no auth required */}
+          <Route path="/features" element={<FeaturesPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
 
           <Route path="/driver/portal" element={<DriverPortalPage />} />
           <Route path="/driver/manifest/:id" element={<DriverManifest />} />
@@ -224,6 +231,8 @@ export default function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          {/* Public marketing root — shown to unauthenticated visitors going to / */}
+          <Route path="/home" element={<LandingPage />} />
         </Routes>
       </Suspense>
     </ErrorBoundary>
