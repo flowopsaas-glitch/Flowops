@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 #
 # FlowOps frontend — multi-stage build.
 #
