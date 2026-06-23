@@ -238,7 +238,51 @@ function Features() {
   );
 }
 
-/* ── How it works ─────────────────────────────────────────────── */
+/* ── Visual Gallery ───────────────────────────────────────────── */
+function VisualGallery() {
+  return (
+    <section className="py-16 border-t border-white/5">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="text-center mb-10">
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/30">
+            Logistics, Evolved.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="col-span-2 md:col-span-1 row-span-2">
+            <img
+              src="/flowops-render1.png"
+              alt="FlowOps platform"
+              className="w-full h-full object-cover rounded-[24px] border border-white/10 min-h-[280px]"
+            />
+          </div>
+          <img
+            src="/flowops-render2.png"
+            alt="FlowOps logistics"
+            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
+          />
+          <img
+            src="/flowops-render3.png"
+            alt="FlowOps operations"
+            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
+          />
+          <img
+            src="/flowops-photo1.jpg"
+            alt="FlowOps team"
+            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
+          />
+          <img
+            src="/flowops-photo2.jpg"
+            alt="FlowOps courier"
+            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function HowItWorks() {
   const steps = [
     {
@@ -408,6 +452,7 @@ export default function LandingPage() {
       <Hero />
       <Stats />
       <Features />
+      <VisualGallery />
       <HowItWorks />
       <SocialProof />
       <CTABand />
