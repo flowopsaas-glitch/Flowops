@@ -10,6 +10,17 @@ export default function UsersRoles() {
   const [flippedId, setFlippedId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [cEmail, setCEmail] = useState('');
+  const [cPassword, setCPassword] = useState('');
+  const [cRole, setCRole] = useState('DISPATCH');
+  const [cName, setCName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState('');
+  const [drivers, setDrivers] = useState<any[]>([]);
+  const [pinInputs, setPinInputs] = useState<Record<string,string>>({});
+  const [pinSaving, setPinSaving] = useState<string|null>(null);
+  const [pinMsg, setPinMsg] = useState('');
 
   // 🚀 SYNC: Pull real-time personnel data
   const fetchUsers = async () => {
@@ -22,7 +33,44 @@ export default function UsersRoles() {
     }
   };
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => { fetchUsers(); loadDrivers(); }, []);
+
+  const loadDrivers = async () => {
+    try {
+      const res: any = await api.get('/drivers');
+      const list = Array.isArray(res) ? res : (res?.data ?? []);
+      setDrivers(list.map((d:any) => ({ id: String(d.id), name: d.name||'Driver', phone: d.phone, vehicleReg: d.vehicleReg, hasPinSet: !!d.driverPin })));
+    } catch {}
+  };
+
+  const handleSetPin = async (id: string) => {
+    const pin = (pinInputs[id]||'').trim();
+    if (!pin || pin.length < 4 || pin.length > 6 || !/^\d+$/.test(pin)) { setPinMsg('PIN must be 4-6 digits'); return; }
+    setPinSaving(id); setPinMsg('');
+    try { await api.patch(`/drivers/${id}/pin`, { pin }); setPinMsg('PIN set!'); setPinInputs(p=>({...p,[id]:''})); loadDrivers(); }
+    catch { setPinMsg('Failed to set PIN'); }
+    finally { setPinSaving(null); }
+  };
+
+  const handleClearPin = async (id: string) => {
+    setPinSaving(id); setPinMsg('');
+    try { await api.patch(`/drivers/${id}/reset-pin`, {}); setPinMsg('PIN cleared.'); loadDrivers(); }
+    catch { setPinMsg('Failed to clear PIN'); }
+    finally { setPinSaving(null); }
+  };
+
+  const createUser = async () => {
+    if (!cEmail || !cPassword) { setCreateMsg('Email and password required'); return; }
+    setCreating(true); setCreateMsg('');
+    try {
+      await api.post('/users', { email: cEmail.trim(), name: cName || cEmail.split('@')[0], password: cPassword, role: cRole });
+      setCreateMsg('User created successfully!');
+      setCEmail(''); setCPassword(''); setCName('');
+      setTimeout(() => { setShowCreate(false); setCreateMsg(''); fetchUsers(); }, 1200);
+    } catch (e: any) {
+      setCreateMsg(e?.response?.data?.message || 'Failed to create user');
+    } finally { setCreating(false); }
+  };
 
   // 🚀 PERMISSION ENGINE: Real-time patch to database
   const handleTogglePermission = async (userId: number, currentPermissions: any, key: string) => {
@@ -53,7 +101,7 @@ export default function UsersRoles() {
                 </p>
               </div>
             </div>
-            <button className="bg-white text-black px-10 py-5 rounded-[24px] font-black text-sm transition-all hover:bg-blue-600 hover:text-white active:scale-95 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+            <button onClick={() => setShowCreate(true)} className="bg-white text-black px-10 py-5 rounded-[24px] font-black text-sm transition-all hover:bg-blue-600 hover:text-white active:scale-95 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
               + INVITE AGENT
             </button>
           </div>
@@ -90,7 +138,7 @@ export default function UsersRoles() {
               <div className={`relative w-full h-full transition-all duration-[1000ms] [transform-style:preserve-3d] ${flippedId === user.id ? '[transform:rotateX(180deg)]' : ''}`}>
                 
                 {/* --- FRONT: THE IDENTITY SURFACE --- */}
-                <div className="absolute inset-0 backface-hidden bg-white/5 border border-white/10 rounded-[48px] p-10 backdrop-blur-3xl shadow-2xl flex flex-col justify-between hover:border-blue-500/30 transition-colors">
+                <div className={`absolute inset-0 backface-hidden bg-white/5 border border-white/10 rounded-[48px] p-10 backdrop-blur-3xl shadow-2xl flex flex-col justify-between hover:border-blue-500/30 transition-colors${flippedId === user.id ? " pointer-events-none" : ""}` }>
                   <div className="flex justify-between items-start">
                     <div className="flex gap-7">
                       <div className="h-20 w-20 rounded-[28px] bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white text-3xl font-black shadow-2xl ring-4 ring-blue-500/20">
@@ -178,6 +226,66 @@ export default function UsersRoles() {
           ))}
         </div>
       </div>
+
+      {showCreate && (
+        <div style={{position:'fixed',inset:0,zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.8)'}}>
+          <div style={{width:'100%',maxWidth:420,borderRadius:28,border:'1px solid rgba(255,255,255,0.1)',background:'#0b1530',padding:32}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
+              <h2 style={{color:'white',fontWeight:900,fontSize:22,margin:0}}>Invite Agent</h2>
+              <button onClick={()=>{setShowCreate(false);setCreateMsg('');}} style={{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:20}}>&#x2715;</button>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              <div><div style={{color:'#94a3b8',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:2,marginBottom:4}}>Name</div>
+                <input value={cName} onChange={e=>setCName(e.target.value)} placeholder='Display name' style={{width:'100%',borderRadius:14,border:'1px solid rgba(255,255,255,0.1)',background:'rgba(0,0,0,0.4)',padding:'12px 14px',color:'white',fontSize:14,outline:'none',boxSizing:'border-box'}} /></div>
+              <div><div style={{color:'#94a3b8',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:2,marginBottom:4}}>Email *</div>
+                <input type='email' value={cEmail} onChange={e=>setCEmail(e.target.value)} placeholder='agent@company.com' style={{width:'100%',borderRadius:14,border:'1px solid rgba(255,255,255,0.1)',background:'rgba(0,0,0,0.4)',padding:'12px 14px',color:'white',fontSize:14,outline:'none',boxSizing:'border-box'}} /></div>
+              <div><div style={{color:'#94a3b8',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:2,marginBottom:4}}>Password *</div>
+                <input type='password' value={cPassword} onChange={e=>setCPassword(e.target.value)} placeholder='Min 6 characters' style={{width:'100%',borderRadius:14,border:'1px solid rgba(255,255,255,0.1)',background:'rgba(0,0,0,0.4)',padding:'12px 14px',color:'white',fontSize:14,outline:'none',boxSizing:'border-box'}} /></div>
+              <div><div style={{color:'#94a3b8',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:2,marginBottom:4}}>Role</div>
+                <select value={cRole} onChange={e=>setCRole(e.target.value)} style={{width:'100%',borderRadius:14,border:'1px solid rgba(255,255,255,0.1)',background:'#0b1530',padding:'12px 14px',color:'white',fontSize:14,outline:'none'}}>
+                  <option value='DISPATCH'>Dispatch Controller</option>
+                  <option value='WAREHOUSE'>Warehouse Clerk</option>
+                  <option value='DRIVER'>Field Driver</option>
+                  <option value='MANAGER'>Ops Manager</option>
+                  <option value='AGENT'>Sales Agent</option>
+                  <option value='VIEWER'>Finance Viewer</option>
+                  <option value='ADMIN'>Administrator</option>
+                  <option value='COMPANY_ADMIN'>Company Admin</option>
+                </select></div>
+              {createMsg && <div style={{padding:'10px 14px',borderRadius:14,background:createMsg.includes('!')||createMsg.includes('success')?'rgba(16,185,129,0.15)':'rgba(239,68,68,0.15)',color:createMsg.includes('!')||createMsg.includes('success')?'#6ee7b7':'#fca5a5',fontSize:13,fontWeight:700}}>{createMsg}</div>}
+              <button onClick={createUser} disabled={creating} style={{marginTop:8,width:'100%',borderRadius:14,background:'#2563eb',padding:'14px',color:'white',fontWeight:900,fontSize:13,border:'none',cursor:creating?'not-allowed':'pointer',opacity:creating?0.6:1}}>
+                {creating ? 'Deploying...' : 'Deploy Agent'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+        {/* DRIVER PINs */}
+        <div style={{marginTop:48}}>
+          <div style={{marginBottom:24}}>
+            <h2 style={{color:'white',fontWeight:900,fontSize:28,margin:0,letterSpacing:'-1px'}}>DRIVER <span style={{color:'#2563eb'}}>PINs</span></h2>
+            <p style={{color:'#475569',fontSize:12,marginTop:6,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.2em'}}>Portal access codes for field drivers</p>
+          </div>
+          {pinMsg && <div style={{marginBottom:16,padding:'10px 16px',borderRadius:16,background:pinMsg.includes('set')||pinMsg.includes('clear')||pinMsg.includes('!')? 'rgba(16,185,129,0.15)':'rgba(239,68,68,0.15)',color:pinMsg.includes('set')||pinMsg.includes('clear')||pinMsg.includes('!')?'#6ee7b7':'#fca5a5',fontSize:13,fontWeight:700}}>{pinMsg}</div>}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:16}}>
+            {drivers.length===0 && <div style={{color:'#475569',fontSize:14}}>No drivers yet. Add drivers in Driver Dispatch first.</div>}
+            {drivers.map((d:any) => (
+              <div key={d.id} style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:24,padding:20,display:'flex',flexWrap:'wrap' as any,alignItems:'center',gap:12}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:'white',fontWeight:900,fontSize:15}}>{d.name}</div>
+                  <div style={{color:'#64748b',fontSize:12,marginTop:2}}>{d.phone||'—'}{d.vehicleReg?` · ${d.vehicleReg}`:''}</div>
+                </div>
+                <span style={{padding:'4px 10px',borderRadius:20,fontSize:11,fontWeight:700,background:d.hasPinSet?'rgba(16,185,129,0.15)':'rgba(245,158,11,0.15)',color:d.hasPinSet?'#6ee7b7':'#fbbf24',border:`1px solid ${d.hasPinSet?'rgba(16,185,129,0.3)':'rgba(245,158,11,0.3)'}`}}>{d.hasPinSet?'PIN SET':'NO PIN'}</span>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <input type='number' value={pinInputs[d.id]||''} onChange={e=>setPinInputs(p=>({...p,[d.id]:e.target.value}))} placeholder='4-6 digit PIN' style={{width:100,borderRadius:12,border:'1px solid rgba(255,255,255,0.1)',background:'rgba(0,0,0,0.4)',padding:'8px 12px',color:'white',fontSize:13,outline:'none'}} />
+                  <button onClick={()=>handleSetPin(d.id)} disabled={pinSaving===d.id} style={{borderRadius:12,background:'rgba(37,99,235,0.2)',border:'1px solid rgba(37,99,235,0.3)',padding:'8px 14px',color:'#93c5fd',fontSize:12,fontWeight:700,cursor:'pointer'}}>Set</button>
+                  {d.hasPinSet && <button onClick={()=>handleClearPin(d.id)} disabled={pinSaving===d.id} style={{borderRadius:12,background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',padding:'8px 14px',color:'#fca5a5',fontSize:12,fontWeight:700,cursor:'pointer'}}>Clear</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
     </div>
   );
 }
