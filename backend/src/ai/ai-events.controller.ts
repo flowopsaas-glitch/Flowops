@@ -11,19 +11,16 @@ import {
   HttpStatus
 } from '@nestjs/common';
 import { AiEventsService } from './ai-events.service';
+import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 
 @Controller('ai-events')
 export class AiEventsController {
   constructor(private readonly aiEventsService: AiEventsService) {}
 
-  @Public()
   @Get()
-  async list(@Query('companyId') companyId: number) {
-    if (!companyId) {
-      throw new BadRequestException('A valid companyId is required to fetch AI events');
-    }
-    return this.aiEventsService.list(companyId);
+  async list(@CurrentUser() user: { companyId: string }) {
+    return this.aiEventsService.list(user.companyId as any);
   }
 
   // 🚀 FIX: The missing Copilot Endpoint

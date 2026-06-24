@@ -71,6 +71,41 @@ export class WaybillsController {
     return this.svc.assignDriver(id, u.companyId, body.driverId);
   }
 
+  // ── Customer rating endpoints ──────────────────────────────────────
+
+  /** POST /waybills/:id/rate-request — dispatcher sends rating invite */
+  @Post('waybills/:id/rate-request')
+  requestRating(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.requestRating(id, u.companyId);
+  }
+
+  /** GET /waybills/rate/:token — public, loads rating page data */
+  @Public()
+  @Get('waybills/rate/:token')
+  getPublicRating(@Param('token') token: string) {
+    return this.svc.getPublicRating(token);
+  }
+
+  /** POST /waybills/rate/:token — public, submits rating */
+  @Public()
+  @Post('waybills/rate/:token')
+  submitRating(
+    @Param('token') token: string,
+    @Body() body: { rating: number; note?: string },
+  ) {
+    return this.svc.submitRating(token, body);
+  }
+
+  /** POST /waybills/:id/notify-eta — dispatcher triggers ETA + stops-ahead */
+  @Post('waybills/:id/notify-eta')
+  notifyCustomerEta(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Body() body: { stopsAhead: number; etaMinutes?: number },
+  ) {
+    return this.svc.notifyCustomerEta(id, u.companyId, body);
+  }
+
   @Post('waybills/:id/deliver')
   @UseInterceptors(FileInterceptor('photo'))
   @ApiConsumes('multipart/form-data')
