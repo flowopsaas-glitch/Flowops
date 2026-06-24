@@ -169,6 +169,7 @@ model Company {
   collections        Collection[]
   shipments          Shipment[]
   drivers            Driver[]
+  driverChatMessages DriverChatMessage[] @relation("CompanyDriverChats")
   branches           Branch[]
   manifests          Manifest[]
   invoices           Invoice[]
@@ -363,6 +364,8 @@ model Driver {
   nextServiceKm   Int?       // odometer reading at which next service is due
   nextServiceDate DateTime?  // calendar-based service due date
   vehicleNotes    String?    // free-form notes (tyre condition, defects etc.)
+
+  chatMessages    DriverChatMessage[]
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1159,4 +1162,26 @@ model Client {
   @@index([companyId, billingType])
   @@index([companyId, name])
   @@map("clients")
+}
+
+
+// ── Driver ↔ Dispatch real-time chat ─────────────────────────────────────────
+
+model DriverChatMessage {
+  id             String    @id @default(cuid())
+  driverId       String
+  driver         Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company   @relation("CompanyDriverChats", fields: [companyId], references: [id], onDelete: Cascade)
+  /// 'driver' | 'dispatch'
+  senderType     String
+  message        String
+  attachmentUrl  String?
+  attachmentType String?   // 'image' | 'document'
+  readAt         DateTime? // null = unread
+  createdAt      DateTime  @default(now())
+
+  @@index([driverId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("driver_chat_messages")
 }
