@@ -92,6 +92,15 @@ export default function WaybillInbox() {
   const assetBase = FLOWOPS_HTTP_ORIGIN;
   const selectedItem = useMemo(() => Array.isArray(items) ? items.find(i => i.id === selectedId) : null, [items, selectedId]);
 
+  // 🔴 Real-time: new inbox item arrives → refresh the list
+  usePremiumWebSocket({
+    onEvent: (event: any) => {
+      if (event?.type === "inbox:new" || event?.type === "waybill:inbox") {
+        void fetchData();
+      }
+    },
+  });
+
   useEffect(() => {
     if (selectedItem) {
       const ai = selectedItem.extractedData || {};

@@ -1,32 +1,21 @@
 import React, { useMemo, useState } from "react";
 import Tesseract from "tesseract.js";
-import { getApiBaseUrl, getToken } from "../api/client";
+import { api } from "../api/client";
 import BarcodeQrScanner from "../components/BarcodeQrScanner";
-
-type WaybillType = "COLLECTION" | "DELIVERY";
 
 type Captured = {
   waybillNumber: string;
-  type: WaybillType;
-  customerName: string;
-  customerNo?: string;
-
-  origin?: string;
-  destination?: string;
-
   senderName?: string;
   senderPhone?: string;
   senderAddress?: string;
-
-  receiverName?: string;
-  receiverPhone?: string;
-  receiverAddress?: string;
-
-  charges?: number;
-  costs?: number;
+  recipientName?: string;
+  recipientPhone?: string;
+  recipientAddress?: string;
+  totalAmount?: number;
+  weight?: number;
   status?: string;
-
   scanImageUrl?: string;
+  description?: string;
 };
 
 function inputBase() {
@@ -99,21 +88,10 @@ function parseWaybillText(raw: string): { data: Partial<Captured>; hints: string
     text.match(/\bCustomer\s*[:#]?\s*([A-Za-z0-9 .,'&-]{2,})\b/i)?.[1] ||
     text.match(/\bBill\s*To\s*[:#]?\s*([A-Za-z0-9 .,'&-]{2,})\b/i)?.[1];
 
-  if (cust) data.customerName = cust.trim();
-  else hints.push("Customer name not detected — type/select it.");
+  if (cust) data.senderName = cust.trim();  // map detected "customer" to senderName
+  else hints.push("Sender name not detected — type it in.");
 
-  const customerNo = text.match(/\bCustomer\s*#\s*([A-Za-z0-9-]{2,})\b/i)?.[1];
-  if (customerNo) data.customerNo = customerNo;
-
-  const isCollection = /collection|pickup|pick up|collected/i.test(text);
-  const isDelivery = /delivery|deliver to|delivered/i.test(text);
-  data.type = isCollection && !isDelivery ? "COLLECTION" : "DELIVERY";
-
-  const origin = text.match(/\bOrigin\s*[:#]?\s*([A-Z]{3})\b/i)?.[1];
-  const dest = text.match(/\bDestination\s*[:#]?\s*([A-Z]{3})\b/i)?.[1];
-  if (origin) data.origin = origin;
-  if (dest) data.destination = dest;
-
+  // Ignore origin/destination codes and type flags — not on Waybill model
   const pickUpBlock = blockAfter(text, ["Pick Up From", "Pickup From", "Collect From"], 6);
   const deliverBlock = blockAfter(text, ["Deliver To", "Delivery To", "Ship To"], 6);
 
@@ -126,15 +104,13 @@ function parseWaybillText(raw: string): { data: Partial<Captured>; hints: string
 
   if (deliverBlock) {
     const r = parsePartyBlock(deliverBlock);
-    data.receiverName = r.name;
-    data.receiverPhone = r.phone;
-    data.receiverAddress = r.address;
+    data.recipientName = r.name;
+    data.recipientPhone = r.phone;
+    data.recipientAddress = r.address;
   }
 
   const charges = text.match(/\bCharges?\s*[:R$]?\s*([0-9]+(\.[0-9]{1,2})?)\b/i)?.[1];
-  const costs = text.match(/\bCosts?\s*[:R$]?\s*([0-9]+(\.[0-9]{1,2})?)\b/i)?.[1];
-  if (charges) data.charges = Number(charges);
-  if (costs) data.costs = Number(costs);
+  if (charges) data.totalAmount = Number(charges);
 
   const status =
     text.match(/\bStatus\s*[:#]?\s*(Delivered|Pending|In Transit|Collected|Exception)\b/i)?.[1] ||
@@ -145,23 +121,19 @@ function parseWaybillText(raw: string): { data: Partial<Captured>; hints: string
 }
 
 async function saveWaybill(payload: Captured) {
-  const base = getApiBaseUrl();
-  const token = getToken();
-
-  const res = await fetch(`${base}/waybills`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(payload),
+  return api.post("/waybills", {
+    trackingNumber: payload.waybillNumber || undefined,
+    senderName:        payload.senderName,
+    senderPhone:       payload.senderPhone,
+    senderAddress:     payload.senderAddress,
+    recipientName:     payload.recipientName,
+    recipientPhone:    payload.recipientPhone,
+    recipientAddress:  payload.recipientAddress,
+    totalAmount:       payload.totalAmount ?? 0,
+    weight:            payload.weight ?? 0,
+    status:            payload.status || "PENDING",
+    description:       payload.description,
   });
-
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Save failed (${res.status}). ${t}`);
-  }
-  return res.json();
 }
 
 export default function WaybillCapture() {
@@ -177,30 +149,24 @@ export default function WaybillCapture() {
 
   const [form, setForm] = useState<Captured>({
     waybillNumber: "",
-    type: "DELIVERY",
-    customerName: "",
-    customerNo: "",
-    origin: "",
-    destination: "",
     senderName: "",
     senderPhone: "",
     senderAddress: "",
-    receiverName: "",
-    receiverPhone: "",
-    receiverAddress: "",
-    charges: 0,
-    costs: 0,
+    recipientName: "",
+    recipientPhone: "",
+    recipientAddress: "",
+    totalAmount: 0,
+    weight: 0,
     status: "PENDING",
   });
 
   const quality = useMemo(() => {
     let s = 0;
-    if (form.waybillNumber.trim()) s += 30; // barcode makes this strong
-    if (form.customerName.trim()) s += 20;
-    if ((form.senderAddress || "").trim()) s += 15;
-    if ((form.receiverAddress || "").trim()) s += 15;
-    if ((form.charges ?? 0) > 0) s += 10;
-    if ((form.origin || "").trim() && (form.destination || "").trim()) s += 10;
+    if (form.waybillNumber?.trim()) s += 30;
+    if (form.senderName?.trim() || form.senderAddress?.trim()) s += 20;
+    if (form.recipientName?.trim()) s += 20;
+    if (form.recipientAddress?.trim()) s += 15;
+    if ((form.totalAmount ?? 0) > 0) s += 15;
     return Math.max(0, Math.min(100, s));
   }, [form]);
 
@@ -244,8 +210,7 @@ export default function WaybillCapture() {
       setForm((f) => ({
         ...f,
         ...parsed.data,
-        // DO NOT override waybillNumber if barcode already set
-        waybillNumber: f.waybillNumber?.trim() ? f.waybillNumber : (parsed.data.waybillNumber as any) || "",
+        waybillNumber: f.waybillNumber?.trim() ? f.waybillNumber : (parsed.data as any).waybillNumber || "",
       }));
     } catch (e: any) {
       setErr(e?.message || "OCR failed.");
@@ -258,8 +223,8 @@ export default function WaybillCapture() {
     setErr(null);
     setSavedMsg(null);
 
-    if (!form.waybillNumber.trim()) return setErr("Waybill number is required (scan barcode/QR or type it).");
-    if (!form.customerName.trim()) return setErr("Customer name is required.");
+    if (!form.waybillNumber?.trim()) return setErr("Waybill number is required (scan barcode/QR or type it).");
+    if (!form.recipientName?.trim() && !form.recipientAddress?.trim()) return setErr("Recipient name or address is required.");
 
     setSaving(true);
     try {
@@ -267,19 +232,14 @@ export default function WaybillCapture() {
       setSavedMsg("Saved ✅ and queued for invoicing (UNBILLED).");
       setForm({
         waybillNumber: "",
-        type: "DELIVERY",
-        customerName: "",
-        customerNo: "",
-        origin: "",
-        destination: "",
         senderName: "",
         senderPhone: "",
         senderAddress: "",
-        receiverName: "",
-        receiverPhone: "",
-        receiverAddress: "",
-        charges: 0,
-        costs: 0,
+        recipientName: "",
+        recipientPhone: "",
+        recipientAddress: "",
+        totalAmount: 0,
+        weight: 0,
         status: "PENDING",
       });
       setImgUrl(null);
@@ -383,57 +343,61 @@ export default function WaybillCapture() {
             </div>
 
             <div>
-              <div className="text-xs font-semibold text-slate-500">Type</div>
-              <select className={inputBase()} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as WaybillType }))}>
-                <option value="COLLECTION">Collection</option>
-                <option value="DELIVERY">Delivery</option>
-              </select>
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="text-xs font-semibold text-slate-500">Customer Name *</div>
-              <input className={inputBase()} value={form.customerName} onChange={(e) => setForm((f) => ({ ...f, customerName: e.target.value }))} />
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold text-slate-500">Origin</div>
-              <input className={inputBase()} value={form.origin || ""} onChange={(e) => setForm((f) => ({ ...f, origin: e.target.value }))} />
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold text-slate-500">Destination</div>
-              <input className={inputBase()} value={form.destination || ""} onChange={(e) => setForm((f) => ({ ...f, destination: e.target.value }))} />
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="text-xs font-semibold text-slate-500">Sender Address</div>
-              <input className={inputBase()} value={form.senderAddress || ""} onChange={(e) => setForm((f) => ({ ...f, senderAddress: e.target.value }))} />
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="text-xs font-semibold text-slate-500">Receiver Address</div>
-              <input className={inputBase()} value={form.receiverAddress || ""} onChange={(e) => setForm((f) => ({ ...f, receiverAddress: e.target.value }))} />
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold text-slate-500">Charges</div>
-              <input className={inputBase()} value={String(form.charges ?? 0)} onChange={(e) => setForm((f) => ({ ...f, charges: Number(e.target.value || 0) }))} />
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold text-slate-500">Costs</div>
-              <input className={inputBase()} value={String(form.costs ?? 0)} onChange={(e) => setForm((f) => ({ ...f, costs: Number(e.target.value || 0) }))} />
-            </div>
-
-            <div>
               <div className="text-xs font-semibold text-slate-500">Status</div>
               <select className={inputBase()} value={form.status || "PENDING"} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
                 <option value="PENDING">PENDING</option>
                 <option value="COLLECTED">COLLECTED</option>
                 <option value="IN_TRANSIT">IN_TRANSIT</option>
+                <option value="OUT_FOR_DELIVERY">OUT_FOR_DELIVERY</option>
                 <option value="DELIVERED">DELIVERED</option>
-                <option value="EXCEPTION">EXCEPTION</option>
+                <option value="FAILED_DELIVERY">FAILED_DELIVERY</option>
+                <option value="RETURNED">RETURNED</option>
               </select>
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-500">Sender Name</div>
+              <input className={inputBase()} value={form.senderName || ""} onChange={(e) => setForm((f) => ({ ...f, senderName: e.target.value }))} />
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-500">Sender Phone</div>
+              <input className={inputBase()} value={form.senderPhone || ""} onChange={(e) => setForm((f) => ({ ...f, senderPhone: e.target.value }))} />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="text-xs font-semibold text-slate-500">Sender / Pickup Address</div>
+              <input className={inputBase()} value={form.senderAddress || ""} onChange={(e) => setForm((f) => ({ ...f, senderAddress: e.target.value }))} />
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-500">Recipient Name *</div>
+              <input className={inputBase()} value={form.recipientName || ""} onChange={(e) => setForm((f) => ({ ...f, recipientName: e.target.value }))} />
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-500">Recipient Phone</div>
+              <input className={inputBase()} value={form.recipientPhone || ""} onChange={(e) => setForm((f) => ({ ...f, recipientPhone: e.target.value }))} />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="text-xs font-semibold text-slate-500">Delivery Address</div>
+              <input className={inputBase()} value={form.recipientAddress || ""} onChange={(e) => setForm((f) => ({ ...f, recipientAddress: e.target.value }))} />
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-500">Total Amount (ZAR)</div>
+              <input className={inputBase()} value={String(form.totalAmount ?? 0)} onChange={(e) => setForm((f) => ({ ...f, totalAmount: Number(e.target.value || 0) }))} />
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-500">Weight (kg)</div>
+              <input className={inputBase()} value={String(form.weight ?? 0)} onChange={(e) => setForm((f) => ({ ...f, weight: Number(e.target.value || 0) }))} />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="text-xs font-semibold text-slate-500">Description / Notes</div>
+              <input className={inputBase()} value={form.description || ""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
             </div>
 
             <div className="flex items-end">
