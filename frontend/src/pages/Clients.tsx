@@ -308,7 +308,8 @@ export default function ClientsPage() {
     void load();
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
+    if (!window.confirm(`Remove "${name}" from your client directory? This cannot be undone.`)) return;
     setDeleting(id);
     try {
       await api.delete(`/clients/${id}`);
@@ -455,6 +456,20 @@ export default function ClientsPage() {
                   Added {new Date(c.createdAt).toLocaleDateString("en-ZA")}
                 </div>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* WhatsApp quick-dial — Freshdesk/CRM standard */}
+                  {c.phone && (
+                    <button
+                      onClick={() => {
+                        const phone = c.phone!.replace(/\D/g, "").replace(/^0/, "27");
+                        const text = `Hi ${c.name}, this is FlowOps Couriers. `;
+                        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+                      }}
+                      title="WhatsApp client"
+                      className="rounded-xl border border-green-500/20 bg-green-500/10 p-1.5 text-green-400 hover:bg-green-500/20 transition"
+                    >
+                      💬
+                    </button>
+                  )}
                   <button
                     onClick={() => { setEditing(c); setShowModal(true); }}
                     className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-white/50 hover:bg-sky-500/20 hover:text-sky-300 transition"
@@ -462,7 +477,7 @@ export default function ClientsPage() {
                     <Edit2 className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => handleDelete(c.id)}
+                    onClick={() => handleDelete(c.id, c.name)}
                     disabled={deleting === c.id}
                     className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-white/50 hover:bg-red-500/20 hover:text-red-300 transition disabled:opacity-40"
                   >
