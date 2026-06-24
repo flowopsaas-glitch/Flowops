@@ -226,6 +226,8 @@ model User {
   notificationPreference NotificationPreference?
   assignedCollections    Collection[]            @relation("AssignedAgent")
   assignedShipments      Shipment[]
+  // Optional link to a Driver record so DRIVER-role users see only their own jobs
+  linkedDriver           Driver?
 
   @@unique([email, companyId])
   @@map("users")
@@ -357,6 +359,10 @@ model Driver {
 
   // Driver portal auth (phone + hashed 4-digit PIN)
   driverPin String?
+
+  // Optional link to a User account — enables role-scoped job delivery
+  userId    String? @unique
+  user      User?   @relation(fields: [userId], references: [id])
 
   // Fleet / vehicle maintenance
   currentKm       Int?       // current odometer reading
