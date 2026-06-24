@@ -186,7 +186,11 @@ export default function QuotesPage() {
     if (filter === "expired")  list = list.filter((q) => !q.accepted && isExpired(q.expiresAt));
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter((x) => x.fromAddress.toLowerCase().includes(q) || x.toAddress.toLowerCase().includes(q));
+      list = list.filter((x) =>
+        x.fromAddress.toLowerCase().includes(q) ||
+        x.toAddress.toLowerCase().includes(q) ||
+        (x.clientName?.toLowerCase().includes(q))
+      );
     }
     return list;
   }, [quotes, filter, search]);
@@ -245,7 +249,7 @@ export default function QuotesPage() {
         <div className="border-b border-white/10 p-4 flex items-center gap-3">
           <Search className="h-4 w-4 text-white/30 shrink-0" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by address…"
+            placeholder="Search by client name or address…"
             className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30" />
         </div>
 
@@ -325,13 +329,34 @@ export default function QuotesPage() {
                       ) : "—"}
                     </td>
                     <td className="px-5 py-4 text-right">
-                      {!q.accepted && !expired && (
-                        <button disabled={busy === q.id} onClick={() => accept(q.id)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60">
-                          {busy === q.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                          Accept
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Send quote via WhatsApp — Freshdesk/modern CRM standard */}
+                        <button
+                          title="Send quote via WhatsApp"
+                          onClick={() => {
+                            const text = [
+                              `Hi${q.clientName ? ` ${q.clientName}` : ""}! Here's your FlowOps freight quote:`,
+                              `From: ${q.fromAddress}`,
+                              `To: ${q.toAddress}`,
+                              `Weight: ${q.weight}kg`,
+                              `Price: ZAR ${q.price.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`,
+                              q.expiresAt ? `Valid until: ${new Date(q.expiresAt).toLocaleDateString("en-ZA")}` : "",
+                              "Reply to accept.",
+                            ].filter(Boolean).join("\n");
+                            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-green-400/20 bg-green-500/10 px-2.5 py-1.5 text-[11px] font-bold text-green-200 hover:bg-green-500/20 transition"
+                        >
+                          💬 WhatsApp
                         </button>
-                      )}
+                        {!q.accepted && !expired && (
+                          <button disabled={busy === q.id} onClick={() => accept(q.id)}
+                            className="inline-flex items-center gap-1 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60">
+                            {busy === q.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                            Accept
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

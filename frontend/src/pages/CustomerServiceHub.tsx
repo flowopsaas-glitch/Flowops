@@ -95,6 +95,7 @@ export default function CustomerServiceHub() {
 
   // Stats
   const today       = new Date(); today.setHours(0,0,0,0);
+  const todayQuotes = quotes.filter(q => new Date(q.createdAt) >= today).length;
   const pendingQ    = quotes.filter(q => !q.accepted && !isExpired(q.expiresAt)).length;
   const acceptedQ   = quotes.filter(q => q.accepted).length;
   const expiredQ    = quotes.filter(q => isExpired(q.expiresAt) && !q.accepted).length;
@@ -128,16 +129,18 @@ export default function CustomerServiceHub() {
         </div>
 
         {/* Quick actions */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <QuickAction icon={Plus}           label="New Quote"       desc="Calculate & send pricing"    to="/quotes"       color="border-violet-500/25 bg-violet-500/8 hover:bg-violet-500/14" />
           <QuickAction icon={Package}        label="New Collection"  desc="Book a pickup request"       to="/collections"  color="border-amber-500/25 bg-amber-500/8 hover:bg-amber-500/14" />
           <QuickAction icon={MessageCircle}  label="WhatsApp"        desc="Client messaging hub"        to="/whatsapp"     color="border-green-500/25 bg-green-500/8 hover:bg-green-500/14" />
+          <QuickAction icon={Mail}           label="Email Hub"       desc="Inbound email triage"        to="/email"        color="border-blue-500/25 bg-blue-500/8 hover:bg-blue-500/14" />
           <QuickAction icon={Users}          label="Clients"         desc="View client directory"       to="/clients"      color="border-sky-500/25 bg-sky-500/8 hover:bg-sky-500/14" />
         </div>
 
         {/* KPI strip */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
           {[
+            { label: "Quotes Today",      value: todayQuotes,     icon: Scale,         color: "border-violet-500/20 text-violet-300"  },
             { label: "Pending Quotes",    value: pendingQ,        icon: Scale,         color: "border-violet-500/20 text-violet-300"  },
             { label: "Accepted",          value: acceptedQ,       icon: CheckCircle2,  color: "border-emerald-500/20 text-emerald-300" },
             { label: "Expired",           value: expiredQ,        icon: XCircle,       color: "border-rose-500/20 text-rose-300"      },

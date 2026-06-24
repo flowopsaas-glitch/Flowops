@@ -205,7 +205,9 @@ export default function WhatsAppHub() {
           <>
             <div className="p-6 border-b border-white/5 bg-slate-950/40 backdrop-blur-md flex items-center justify-between">
               <div>
-                <h3 className="font-black text-white text-2xl tracking-tighter">{selectedPhone}</h3>
+                <h3 className="font-black text-white text-2xl tracking-tighter">
+                {threads.find(t => t.phone === selectedPhone)?.name || selectedPhone}
+              </h3>
                 <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mt-1">
                   Click-to-Chat · History
                 </p>
