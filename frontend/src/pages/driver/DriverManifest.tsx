@@ -99,7 +99,7 @@ export default function DriverManifest() {
     // Offline-first: if there's no connectivity, queue the POD locally and let
     // it sync automatically when the driver is back online — never lose a POD.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      queuePod({ waybillId: String(id), waybillNumber: job.waybillNumber, signatureDataUrl });
+      queuePod({ waybillId: String(id), waybillNumber: job.trackingNumber ?? job.waybillNumber ?? String(id), signatureDataUrl });
       showToast(t('saved_offline'), "success");
       navigate("/driver/portal");
       return;
@@ -109,8 +109,8 @@ export default function DriverManifest() {
       if (!blob) return;
 
       const formData = new FormData();
-      // 'signature' matches the @UploadedFile('signature') in NestJS backend
-      formData.append('signature', new File([blob], `POD_${job.waybillNumber}.png`, { type: 'image/png' }));
+      // Field name MUST be 'photo' — matches FileInterceptor('photo') in the controller
+      formData.append('photo', new File([blob], `POD_${job.trackingNumber ?? id}.png`, { type: 'image/png' }));
 
       try {
         await api.post(`/waybills/${id}/deliver`, formData);
@@ -135,13 +135,60 @@ export default function DriverManifest() {
 
       <div className="flex items-start justify-between mb-1">
         <h1 className="text-3xl font-black italic tracking-tighter leading-none">
-          {job.waybillNumber}
+          {job.trackingNumber ?? job.waybillNumber ?? id}
         </h1>
         <LanguageSwitcher />
       </div>
       <p className="text-slate-500 text-[10px] font-black uppercase mt-2">
         {t('audit_list')}: {job.quantity || 1} {t('units_for_delivery')}
       </p>
+
+      {/* COD indicator — show how much cash to collect */}
+      {job.codAmount && !job.codCollected && (
+        <div className="rounded-[22px] border border-amber-500/30 bg-amber-500/10 px-5 py-4 flex items-center gap-3">
+          <span className="text-2xl">💵</span>
+          <div>
+            <div className="text-xs font-black uppercase tracking-widest text-amber-300">Cash on Delivery</div>
+            <div className="text-xl font-black text-white mt-0.5">
+              R {Number(job.codAmount).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+            </div>
+            <div className="text-[10px] text-amber-200/50">Collect from recipient before handover</div>
+          </div>
+        </div>
+      )}
+
+      {/* Google Maps navigation */}
+      {(job.recipientLat || job.recipientAddress) && (
+        <a
+          href={
+            job.recipientLat
+              ? `https://www.google.com/maps/dir/?api=1&destination=${job.recipientLat},${job.recipientLng}`
+              : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.recipientAddress ?? "")}`
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-3 w-full py-4 rounded-[22px] border border-sky-500/25 bg-sky-500/10 text-sky-300 text-sm font-black uppercase tracking-widest"
+        >
+          🗺️ Navigate to Recipient
+        </a>
+      )}
+
+      {/* Recipient info */}
+      {(job.recipientName || job.recipientAddress) && (
+        <div className="rounded-[20px] border border-white/8 bg-white/3 px-5 py-4 text-sm">
+          <div className="font-black text-white/80">{job.recipientName}</div>
+          {job.recipientAddress && <div className="text-white/40 text-xs mt-1">{job.recipientAddress}</div>}
+          {job.recipientPhone && (
+            <a
+              href={`https://wa.me/${job.recipientPhone.replace(/\D/g,'').replace(/^0/,'27')}`}
+              target="_blank" rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 text-green-400 text-xs font-bold"
+            >
+              💬 WhatsApp recipient
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Parcel Audit List */}
       <section className="space-y-3 my-10">
