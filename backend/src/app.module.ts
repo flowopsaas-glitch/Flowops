@@ -81,6 +81,7 @@ import { AlertingModule } from './alerting/alerting.module';
 
     // Owner alerting engine (global)
     AlertingModule,
+    EmailHubModule,
 
     // Domain modules
     AuthModule,

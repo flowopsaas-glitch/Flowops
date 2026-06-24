@@ -63,9 +63,15 @@ function formatDate(value?: string | null) {
 
 function statusPill(status: string) {
   const base = "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-extrabold border";
-  if (status === "COMPLETED") return `${base} border-emerald-400/30 bg-emerald-500/10 text-emerald-200`;
-  if (status === "IN_PROGRESS") return `${base} border-sky-400/30 bg-sky-500/10 text-sky-200`;
-  return `${base} border-white/10 bg-white/10 text-white/80`;
+  switch (status) {
+    case "PENDING":     return `${base} border-amber-400/30 bg-amber-500/10 text-amber-200`;
+    case "ASSIGNED":    return `${base} border-violet-400/30 bg-violet-500/10 text-violet-200`;
+    case "IN_PROGRESS": return `${base} border-sky-400/30 bg-sky-500/10 text-sky-200`;
+    case "COLLECTED":   return `${base} border-emerald-400/30 bg-emerald-500/10 text-emerald-200`;
+    case "FAILED":      return `${base} border-rose-400/30 bg-rose-500/10 text-rose-200`;
+    case "CANCELLED":   return `${base} border-white/10 bg-white/5 text-white/40`;
+    default:            return `${base} border-white/10 bg-white/10 text-white/80`;
+  }
 }
 
 export default function Collections() {

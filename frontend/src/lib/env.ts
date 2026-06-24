@@ -43,10 +43,25 @@ export const FLOWOPS_API_URL =
 export const FLOWOPS_HTTP_ORIGIN = FLOWOPS_API_URL.replace(/\/api\/?$/, "");
 
 /** Base URL for Socket.IO — EventsGateway uses the default `/` namespace. */
-export const FLOWOPS_WS_ORIGIN =
-  rawWs && /^https?:\/\//i.test(rawWs)
-    ? rawWs.replace(/\/+$/, "")
-    : FLOWOPS_HTTP_ORIGIN;
+// When VITE_API_URL is a relative path (e.g. `/api/v1` in Docker-behind-nginx
+// deployments), we can't derive the WebSocket origin at build time. Instead,
+// fall back to `window.location.origin` at runtime — which is always correct
+// for same-origin deployments (e.g. https://app.flowop.work).
+function deriveWsOrigin(): string {
+  if (rawWs && /^https?:\/\//i.test(rawWs)) {
+    return rawWs.replace(/\/+$/, "");
+  }
+  // If FLOWOPS_HTTP_ORIGIN resolved to a real non-localhost URL, use it.
+  if (FLOWOPS_HTTP_ORIGIN && !/localhost/.test(FLOWOPS_HTTP_ORIGIN)) {
+    return FLOWOPS_HTTP_ORIGIN;
+  }
+  // API URL was relative — derive origin from the browser's current URL.
+  if (typeof window !== "undefined" && window.location.origin !== "null") {
+    return window.location.origin;
+  }
+  return "http://localhost:3000";
+}
+export const FLOWOPS_WS_ORIGIN = deriveWsOrigin();
 
 /**
  * Optional Ollama (local LLM) endpoint for the AI copilot dev panel.

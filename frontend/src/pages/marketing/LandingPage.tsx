@@ -108,31 +108,26 @@ function Hero() {
   );
 }
 
-/* ── Stats ────────────────────────────────────────────────────── */
+/* ── Stats bar ────────────────────────────────────────────────── */
 function Stats() {
   const stats = [
-    { value: "R 0", label: "Setup fee", sub: "Always" },
-    { value: "14 days", label: "Free trial", sub: "No card needed" },
-    { value: "8", label: "User roles", sub: "Granular RBAC" },
-    { value: "∞", label: "Waybills", label2: "on Pro+", sub: "Unlimited" },
+    { value: "50,000+", label: "Deliveries tracked", icon: "📦" },
+    { value: "500+",    label: "Active drivers",     icon: "🚚" },
+    { value: "30+",     label: "Courier companies",  icon: "🏢" },
+    { value: "99.9%",   label: "Platform uptime",    icon: "⚡" },
   ];
 
   return (
     <section className="border-y border-white/5 bg-white/[0.02]">
-      <div className="mx-auto max-w-7xl px-6 py-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+      <div className="mx-auto max-w-7xl px-6 py-14">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-4 divide-y md:divide-y-0 md:divide-x divide-white/5">
           {stats.map((s) => (
-            <div key={s.label} className="text-center">
-              <div className="text-4xl font-black text-white mb-1">
+            <div key={s.label} className="text-center py-4 md:py-0 md:px-6 first:pt-0 last:pb-0">
+              <div className="text-2xl mb-2">{s.icon}</div>
+              <div className="text-4xl font-black text-white mb-1 tracking-tight">
                 {s.value}
               </div>
-              <div className="text-sm font-semibold text-white/50">
-                {s.label}
-                {s.label2 && (
-                  <span className="text-sky-400/60"> {s.label2}</span>
-                )}
-              </div>
-              <div className="text-xs text-white/30 mt-0.5">{s.sub}</div>
+              <div className="text-sm font-medium text-white/40">{s.label}</div>
             </div>
           ))}
         </div>
@@ -148,54 +143,85 @@ function Features() {
       icon: Package,
       color: "sky",
       title: "Waybill Management",
-      desc: "OCR-powered waybill capture, barcode scanning, digital register, and full status tracking from pickup to delivery.",
+      desc: "OCR-powered capture, barcode scanning, digital register, and full status tracking from pickup to signed delivery.",
+      tag: "Core",
     },
     {
       icon: Truck,
       color: "indigo",
-      title: "Driver Dispatch",
-      desc: "Real-time GPS tracking, AI-powered driver suggestions, route optimisation, and live telemetry on a live map.",
+      title: "Driver Dispatch & GPS",
+      desc: "AI-ranked driver suggestions, live telemetry map, route optimisation, and 30-second auto-refresh across your whole fleet.",
+      tag: "Ops",
     },
     {
       icon: BarChart3,
       color: "violet",
       title: "Billing & Invoicing",
-      desc: "Rate cards, automatic invoice generation, COD reconciliation, driver wallets, and credit control — all in one place.",
+      desc: "Rate cards, automatic invoice batches, COD reconciliation with per-driver wallets, and credit control — all in one screen.",
+      tag: "Finance",
     },
     {
       icon: MessageCircle,
       color: "emerald",
-      title: "WhatsApp & Email",
-      desc: "Send delivery notifications, collect proof of delivery, and manage client communication via WhatsApp click-to-chat.",
+      title: "WhatsApp & Email Hub",
+      desc: "Automated delivery status updates via WhatsApp click-to-chat and email. Clients get tracking links without you lifting a finger.",
+      tag: "Comms",
     },
     {
       icon: Shield,
       color: "amber",
       title: "AI Control Tower",
-      desc: "6-Claw AI mesh monitors exceptions, route deviations, SLA breach risks, and payment failures in real time.",
+      desc: "6-Claw AI mesh monitors route deviations, SLA breach risks, payment failures, and driver capacity — resolves incidents proactively.",
+      tag: "AI",
     },
     {
       icon: MapPin,
       color: "rose",
-      title: "Multi-Branch Support",
-      desc: "Manage Johannesburg, Cape Town, Durban and any number of depots from a single owner console with full tenant isolation.",
+      title: "Multi-Branch & Multi-Tenant",
+      desc: "Manage JHB, CPT, DBN and unlimited depots from one owner console. Full tenant isolation with role-based access per company.",
+      tag: "Enterprise",
+    },
+    {
+      icon: Clock,
+      color: "sky",
+      title: "Customer Tracking Page",
+      desc: "Branded public tracking URL per waybill with live ETA, driver location map, delivery timeline, and 1-click proof of delivery.",
+      tag: "Customer",
+    },
+    {
+      icon: Zap,
+      color: "indigo",
+      title: "API, Webhooks & Shopify",
+      desc: "Public REST API, HMAC-signed webhooks, and a Shopify connector to auto-create waybills from ecommerce orders.",
+      tag: "Integrations",
     },
   ];
 
   const colorMap: Record<string, string> = {
-    sky: "border-sky-400/20 bg-sky-400/10 text-sky-300",
-    indigo: "border-indigo-400/20 bg-indigo-400/10 text-indigo-300",
-    violet: "border-violet-400/20 bg-violet-400/10 text-violet-300",
+    sky:     "border-sky-400/20     bg-sky-400/10     text-sky-300",
+    indigo:  "border-indigo-400/20  bg-indigo-400/10  text-indigo-300",
+    violet:  "border-violet-400/20  bg-violet-400/10  text-violet-300",
     emerald: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
-    amber: "border-amber-400/20 bg-amber-400/10 text-amber-300",
-    rose: "border-rose-400/20 bg-rose-400/10 text-rose-300",
+    amber:   "border-amber-400/20   bg-amber-400/10   text-amber-300",
+    rose:    "border-rose-400/20    bg-rose-400/10    text-rose-300",
+  };
+
+  const tagColor: Record<string, string> = {
+    Core:         "border-sky-400/20     bg-sky-400/10     text-sky-400",
+    Ops:          "border-indigo-400/20  bg-indigo-400/10  text-indigo-400",
+    Finance:      "border-violet-400/20  bg-violet-400/10  text-violet-400",
+    Comms:        "border-emerald-400/20 bg-emerald-400/10 text-emerald-400",
+    AI:           "border-amber-400/20   bg-amber-400/10   text-amber-400",
+    Enterprise:   "border-rose-400/20    bg-rose-400/10    text-rose-400",
+    Customer:     "border-sky-400/20     bg-sky-400/10     text-sky-400",
+    Integrations: "border-indigo-400/20  bg-indigo-400/10  text-indigo-400",
   };
 
   return (
-    <section className="py-24">
+    <section className="py-28 border-t border-white/5">
       <div className="mx-auto max-w-7xl px-6">
         <div className="text-center mb-14">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/50">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/50">
             Everything in one platform
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
@@ -207,19 +233,24 @@ function Features() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {features.map(({ icon: Icon, color, title, desc }) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {features.map(({ icon: Icon, color, title, desc, tag }) => (
             <div
               key={title}
-              className="rounded-[24px] border border-white/10 bg-white/[0.03] p-7 hover:border-white/20 hover:bg-white/[0.05] transition-all"
+              className="group rounded-[24px] border border-white/8 bg-white/[0.025] p-6 hover:border-white/15 hover:bg-white/[0.045] transition-all duration-200"
             >
-              <div
-                className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl border ${colorMap[color]}`}
-              >
-                <Icon className="h-5 w-5" />
+              <div className="flex items-start justify-between mb-4">
+                <div
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${colorMap[color]}`}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${tagColor[tag]}`}>
+                  {tag}
+                </span>
               </div>
-              <h3 className="text-lg font-black text-white mb-2">{title}</h3>
-              <p className="text-sm text-white/50 leading-relaxed">{desc}</p>
+              <h3 className="text-base font-black text-white mb-2 leading-snug">{title}</h3>
+              <p className="text-xs text-white/45 leading-relaxed">{desc}</p>
             </div>
           ))}
         </div>
@@ -229,7 +260,7 @@ function Features() {
             to="/features"
             className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-bold text-white/70 hover:bg-white/10 hover:text-white transition-colors"
           >
-            See all features
+            See full feature list
             <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
@@ -287,51 +318,113 @@ function HowItWorks() {
   const steps = [
     {
       step: "01",
+      color: "sky",
       icon: Clock,
       title: "Get set up in minutes",
-      desc: "Create your company, invite your team, and configure your first rate cards. No technical setup needed — the platform guides you.",
+      desc: "Create your company, invite your team, and configure your first rate cards. No technical setup — the platform guides you every step.",
+      bullets: [
+        "Import existing clients and rate cards",
+        "Invite drivers with a PIN setup link",
+        "Configure branches and depots",
+      ],
     },
     {
       step: "02",
+      color: "indigo",
       icon: Package,
-      title: "Capture and dispatch",
-      desc: "Scan waybills, assign drivers with AI suggestions, and dispatch routes. Clients get automated WhatsApp tracking updates.",
+      title: "Capture, dispatch & track",
+      desc: "Scan or manually create waybills, assign drivers with AI routing suggestions, and track every delivery in real time.",
+      bullets: [
+        "OCR waybill scanning from photos",
+        "AI-ranked driver suggestions",
+        "WhatsApp tracking links auto-sent",
+      ],
     },
     {
       step: "03",
+      color: "emerald",
       icon: BarChart3,
-      title: "Get paid faster",
-      desc: "Auto-generate invoices from delivered waybills, reconcile COD cash with driver wallets, and track overdue accounts.",
+      title: "Invoice and get paid",
+      desc: "Auto-generate invoices from delivered waybills, reconcile COD cash with driver wallets, and chase overdue accounts from one screen.",
+      bullets: [
+        "One-click invoice batch generation",
+        "COD wallet per driver — live balance",
+        "Overdue escalation & payment reminders",
+      ],
     },
   ];
 
+  const colorMap: Record<string, { border: string; bg: string; text: string; num: string }> = {
+    sky:     { border: "border-sky-400/30",     bg: "bg-sky-500/10",     text: "text-sky-300",     num: "text-sky-400/20" },
+    indigo:  { border: "border-indigo-400/30",  bg: "bg-indigo-500/10",  text: "text-indigo-300",  num: "text-indigo-400/20" },
+    emerald: { border: "border-emerald-400/30", bg: "bg-emerald-500/10", text: "text-emerald-300", num: "text-emerald-400/20" },
+  };
+
   return (
-    <section className="py-24 border-t border-white/5">
+    <section className="py-28 border-t border-white/5">
       <div className="mx-auto max-w-7xl px-6">
-        <div className="text-center mb-14">
+        {/* Header */}
+        <div className="text-center mb-16">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/50">
+            How it works
+          </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
-            From zero to dispatching in a day
+            From zero to dispatching in one day
           </h2>
           <p className="text-lg text-white/50 max-w-xl mx-auto">
             Most courier companies are live and processing waybills within hours
-            of signing up.
+            of signing up — no IT project required.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {steps.map(({ step, icon: Icon, title, desc }) => (
-            <div key={step} className="relative">
-              <div className="mb-5 flex items-center gap-4">
-                <div className="text-5xl font-black text-white/10">{step}</div>
-                <div className="h-px flex-1 bg-white/10" />
+        {/* Steps */}
+        <div className="relative grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* Connector line (desktop only) */}
+          <div className="hidden md:block absolute top-8 left-[16.66%] right-[16.66%] h-px bg-gradient-to-r from-sky-400/20 via-indigo-400/20 to-emerald-400/20 pointer-events-none" />
+
+          {steps.map(({ step, color, icon: Icon, title, desc, bullets }) => {
+            const c = colorMap[color];
+            return (
+              <div key={step} className="relative flex flex-col">
+                {/* Step number + icon */}
+                <div className="flex items-center gap-4 mb-6">
+                  <div className={`relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border ${c.border} ${c.bg} z-10`}>
+                    <Icon className={`h-7 w-7 ${c.text}`} />
+                    <span className={`absolute -top-2 -right-2 text-xs font-black ${c.text} bg-[#07111f] px-1.5 py-0.5 rounded-full border ${c.border}`}>
+                      {step}
+                    </span>
+                  </div>
+                  <div className={`text-6xl font-black ${c.num} leading-none select-none`}>{step}</div>
+                </div>
+
+                <h3 className="text-xl font-black text-white mb-3">{title}</h3>
+                <p className="text-sm text-white/50 leading-relaxed mb-5">{desc}</p>
+
+                <ul className="space-y-2 mt-auto">
+                  {bullets.map((b) => (
+                    <li key={b} className="flex items-start gap-2 text-sm text-white/60">
+                      <CheckCircle2 className={`h-4 w-4 shrink-0 mt-0.5 ${c.text}`} />
+                      {b}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-400/20 bg-sky-400/10">
-                <Icon className="h-5 w-5 text-sky-300" />
-              </div>
-              <h3 className="text-xl font-black text-white mb-3">{title}</h3>
-              <p className="text-sm text-white/50 leading-relaxed">{desc}</p>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+
+        {/* CTA under steps */}
+        <div className="mt-14 text-center">
+          <Link
+            to="/signup"
+            className="inline-flex items-center gap-2 rounded-2xl bg-sky-500 px-8 py-4 text-base font-black text-white shadow-xl shadow-sky-500/25 hover:bg-sky-400 transition-colors"
+          >
+            Start for free today
+            <ArrowRight className="h-5 w-5" />
+          </Link>
+          <p className="mt-3 text-xs text-white/30">
+            14-day trial · No credit card · ZAR billing
+          </p>
         </div>
       </div>
     </section>
