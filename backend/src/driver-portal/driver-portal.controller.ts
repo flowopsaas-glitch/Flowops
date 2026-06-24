@@ -1,11 +1,33 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Res, UnauthorizedException } from '@nestjs/common';
 import { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { DriverPortalService } from './driver-portal.service';
+import { AuthService } from '../auth/auth.service';
 
 @Controller('driver-portal')
 export class DriverPortalController {
-  constructor(private readonly svc: DriverPortalService) {}
+  constructor(
+    private readonly svc: DriverPortalService,
+    private readonly auth: AuthService,
+  ) {}
+
+  /**
+   * POST /driver-portal/login
+   *
+   * Authenticates a driver using phone number and 4-digit PIN.
+   * Returns an access_token + driver profile on success.
+   * This is the primary login endpoint for the standalone driver PWA.
+   */
+  @Public()
+  @Post('login')
+  async login(
+    @Body() body: { phone: string; pin: string },
+  ) {
+    if (!body.phone || !body.pin) {
+      throw new UnauthorizedException('Phone and PIN are required');
+    }
+    return this.auth.driverLogin(body.phone, String(body.pin));
+  }
 
   /**
    * GET /driver-portal/deliveries/:driverId
