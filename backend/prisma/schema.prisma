@@ -344,6 +344,12 @@ model Driver {
   status      DriverStatus @default(OFFLINE)
   isActive    Boolean      @default(true)
 
+  // ── Customer delivery rating ──────────────────────────────────────────
+  customerRating      Int?
+  customerRatingNote  String?
+  ratingToken         String?   @unique
+  ratingRequestedAt   DateTime?
+
   // Last known GPS position
   lastLat  Float?
   lastLng  Float?
@@ -430,6 +436,12 @@ model Waybill {
   codAmount   Float?
   codCollected    Boolean   @default(false)   // driver has physically collected the cash
   codCollectedAt  DateTime?
+
+  // Customer delivery rating (requested via /waybills/:id/rate-request after delivery)
+  customerRating      Int?
+  customerRatingNote  String?
+  ratingToken         String?   @unique
+  ratingRequestedAt   DateTime?
 
   // Risk assessment
   riskLevel RiskLevel @default(LOW)
@@ -691,6 +703,7 @@ model Quote {
   id          String  @id @default(cuid())
   fromAddress String
   toAddress   String
+  clientName  String?   // optional — who the quote is for
   weight      Float
   price       Float
   breakdown   Json?

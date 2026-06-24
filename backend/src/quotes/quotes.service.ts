@@ -9,7 +9,7 @@ export class QuotesService {
     return this.prisma.quote.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' }, take: 100 });
   }
 
-  async create(companyId: string, dto: { fromAddress: string; toAddress: string; weight: number }) {
+  async create(companyId: string, dto: { fromAddress: string; toAddress: string; weight: number; clientName?: string }) {
     // Simple pricing calculation — replace with rate-card lookup in production
     const basePrice = 80;
     const pricePerKg = 15;
@@ -20,7 +20,10 @@ export class QuotesService {
 
     return this.prisma.quote.create({
       data: {
-        ...dto,
+        fromAddress: dto.fromAddress,
+        toAddress:   dto.toAddress,
+        weight:      dto.weight,
+        clientName:  dto.clientName ?? null,
         price,
         expiresAt,
         companyId,

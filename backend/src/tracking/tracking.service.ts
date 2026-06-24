@@ -122,6 +122,9 @@ export class TrackingService {
       etaMinutes,
       estimatedDelivery: shipment?.estimatedDelivery ?? null,
       deliveredAt: waybill.podDeliveredAt ?? null,
+      // Only expose the rating token once the parcel is delivered — prevents
+      // customers from accessing the rating page before they've received it.
+      ratingToken: delivered ? (waybill.ratingToken ?? null) : null,
       timeline,
       branding: {
         brandName: brand?.brandName || brand?.name || 'FlowOps',
