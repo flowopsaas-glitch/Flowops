@@ -19,6 +19,11 @@ export class DashboardController {
     return this.svc.getKpis(u.companyId);
   }
 
+  @Get('dashboard/live-etas')
+  getLiveEtas(@CurrentUser() u: any) {
+    return this.svc.getLiveEtas(u.companyId);
+  }
+
   @Get('dashboard/activities')
   getActivities(@CurrentUser() u: any, @Query('limit') limit?: string) {
     return this.svc.getActivities(u.companyId, limit ? parseInt(limit) : 20);

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -351,6 +352,72 @@ export class InvoicesService {
     });
   }
 
+
+  // ── Auto monthly invoicing ────────────────────────────────────────────────
+
+  /**
+   * Runs on the 1st of every month at 02:00 (off-peak).
+   * For each active company, bundles every DELIVERED waybill that has a
+   * totalAmount and isn't already on an invoice into one consolidated
+   * "Monthly Delivery Statement" invoice, creates line-items per waybill,
+   * and sets dueDate = +30 days.
+   *
+   * Idempotent: unbilledWaybills already filters out waybills on existing
+   * invoices (invoiceItems: { none: {} }), so running twice in a month is safe.
+   */
+  @Cron('0 2 1 * *', { name: 'auto-monthly-invoicing' })
+  async autoGenerateMonthlyInvoices(): Promise<{ generated: number; skipped: number }> {
+    const companies = await this.prisma.company.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, tradingName: true },
+    });
+
+    let generated = 0;
+    let skipped   = 0;
+
+    for (const company of companies) {
+      const waybills = await this.getUnbilledWaybills(company.id);
+      if (!waybills.length) { skipped++; continue; }
+
+      const subtotal = waybills.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
+      const tax      = Math.round(subtotal * 0.15 * 100) / 100;
+      const total    = Math.round((subtotal + tax) * 100) / 100;
+
+      const count       = await this.prisma.invoice.count({ where: { companyId: company.id } });
+      const year        = new Date().getFullYear();
+      const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
+      const dueDate       = new Date();
+      dueDate.setDate(dueDate.getDate() + 30);
+
+      const items = waybills.map((w) => ({
+        description: `Delivery ${w.trackingNumber} — ${w.recipientName ?? ''}`.trimEnd(),
+        quantity:    1,
+        unitPrice:   w.totalAmount ?? 0,
+        total:       w.totalAmount ?? 0,
+        waybillId:   w.id,
+      }));
+
+      await this.prisma.invoice.create({
+        data: {
+          companyId:     company.id,
+          invoiceNumber,
+          clientName:    company.tradingName ?? company.name,
+          subtotal,
+          tax,
+          total,
+          status:        'SENT',
+          sentAt:        new Date(),
+          dueDate,
+          notes:         `Auto-generated monthly statement — ${waybills.length} deliveries`,
+          items:         { create: items },
+        },
+      });
+
+      generated++;
+    }
+
+    return { generated, skipped };
+  }
 
   async create(companyId: string, dto: any) {
     const count = await this.prisma.invoice.count({ where: { companyId } });

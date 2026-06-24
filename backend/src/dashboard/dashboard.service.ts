@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 
+/** Average road speed used for ETA estimates (km/h).
+ *  40 km/h is conservative for urban SA deliveries on a busy day. */
+const AVG_SPEED_KMH = 40;
+
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
@@ -287,6 +291,59 @@ export class DashboardService {
       })),
       trend,
     };
+  }
+
+  /**
+   * Live ETA for every shipment currently IN_TRANSIT.
+   * Uses haversine straight-line distance ÷ AVG_SPEED_KMH as a first-pass
+   * estimate.  Values refresh every 30 s in the Dashboard so the map popup
+   * always shows a fresh countdown without page reloads.
+   */
+  async getLiveEtas(companyId: string) {
+    const shipments = await this.prisma.shipment.findMany({
+      where: { companyId, status: 'IN_TRANSIT' },
+      include: {
+        driver: { select: { id: true, name: true, lastLat: true, lastLng: true } },
+        waybill: {
+          select: {
+            trackingNumber: true,
+            recipientName: true,
+            recipientLat: true,
+            recipientLng: true,
+          },
+        },
+      },
+    });
+
+    return shipments
+      .filter(
+        (s) =>
+          s.driver?.lastLat != null &&
+          s.driver?.lastLng != null &&
+          s.waybill?.recipientLat != null &&
+          s.waybill?.recipientLng != null,
+      )
+      .map((s) => {
+        const distKm = GeocodingService.haversineKm(
+          s.driver!.lastLat as number,
+          s.driver!.lastLng as number,
+          s.waybill!.recipientLat as number,
+          s.waybill!.recipientLng as number,
+        );
+        const etaMinutes = Math.max(1, Math.round((distKm / AVG_SPEED_KMH) * 60));
+        return {
+          driverId:       s.driverId,
+          shipmentId:     s.id,
+          trackingNumber: s.waybill!.trackingNumber,
+          recipientName:  s.waybill!.recipientName,
+          etaMinutes,
+          distanceKm:     Math.round(distKm * 10) / 10,
+          urgency:
+            etaMinutes <= 15 ? 'imminent'
+            : etaMinutes <= 60 ? 'near'
+            : 'en-route',
+        };
+      });
   }
 
   async getActivities(companyId: string, limit = 20) {

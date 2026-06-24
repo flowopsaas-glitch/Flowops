@@ -162,6 +162,100 @@ export class EcommerceService {
     return { status: 'created', waybillId: waybill.id, trackingNumber };
   }
 
+  // ── Status push-back to Shopify ───────────────────────────────────────────
+
+  /**
+   * Called by WaybillsService whenever a waybill status changes.
+   * If the waybill was created from a Shopify order (description contains
+   * "shopify:<ORDER_ID>"), this pushes a fulfillment or note update back to
+   * the merchant's Shopify store so they see live delivery progress.
+   *
+   * Credentials read from env per company:
+   *   SHOPIFY_DOMAIN_<COMPANY_ID>         = mystore.myshopify.com
+   *   SHOPIFY_ACCESS_TOKEN_<COMPANY_ID>   = shpat_xxxxx
+   *
+   * Shopify API is called only when both are configured — degrades silently
+   * when not set so tenants without Shopify are unaffected.
+   */
+  async pushStatusToShopify(waybill: {
+    id: string;
+    description?: string | null;
+    status: string;
+    trackingNumber: string;
+    companyId: string;
+    recipientName?: string | null;
+    podDeliveredAt?: Date | null;
+  }): Promise<void> {
+    if (!waybill.description?.includes('shopify:')) return;
+
+    const match = waybill.description.match(/shopify:(\d+)/);
+    if (!match) return;
+    const orderId = match[1];
+
+    const domain       = this.config.get<string>(`SHOPIFY_DOMAIN_${waybill.companyId}`);
+    const accessToken  = this.config.get<string>(`SHOPIFY_ACCESS_TOKEN_${waybill.companyId}`);
+    if (!domain || !accessToken) return; // not configured — skip silently
+
+    const apiVersion = '2024-01';
+    const base       = `https://${domain}/admin/api/${apiVersion}`;
+    const headers    = {
+      'X-Shopify-Access-Token': accessToken,
+      'Content-Type': 'application/json',
+    };
+
+    try {
+      // Map FlowOps status to Shopify fulfillment status
+      const shopifyStatus = this.mapToShopifyStatus(waybill.status);
+
+      if (waybill.status === 'DELIVERED') {
+        // Create a fulfillment on the Shopify order
+        await fetch(`${base}/orders/${orderId}/fulfillments.json`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            fulfillment: {
+              status: 'success',
+              tracking_number: waybill.trackingNumber,
+              tracking_company: 'FlowOps',
+              notify_customer: true,
+            },
+          }),
+        });
+        this.logger.log(`Shopify fulfillment created for order ${orderId}`);
+      } else if (['IN_TRANSIT', 'OUT_FOR_DELIVERY', 'FAILED_DELIVERY', 'RETURNED'].includes(waybill.status)) {
+        // Add an order note so the merchant can see progress
+        await fetch(`${base}/orders/${orderId}.json`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            order: {
+              id: orderId,
+              note: `FlowOps: ${shopifyStatus} (${waybill.trackingNumber}) — ${new Date().toISOString()}`,
+            },
+          }),
+        });
+        this.logger.log(`Shopify order ${orderId} note updated: ${shopifyStatus}`);
+      }
+    } catch (err) {
+      // Network or Shopify API errors must NOT break the waybill update flow
+      this.logger.warn(`Shopify push-back failed for order ${orderId}: ${(err as Error).message}`);
+    }
+  }
+
+  private mapToShopifyStatus(flowopsStatus: string): string {
+    const map: Record<string, string> = {
+      PENDING:          'Pending pickup',
+      COLLECTED:        'Collected from sender',
+      IN_TRANSIT:       'In transit',
+      OUT_FOR_DELIVERY: 'Out for delivery',
+      DELIVERED:        'Delivered',
+      FAILED_DELIVERY:  'Delivery attempt failed',
+      RETURNED:         'Returned to sender',
+      CANCELLED:        'Cancelled',
+    };
+    return map[flowopsStatus] ?? flowopsStatus;
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private totalWeightKg(lineItems: any[] = []): number {
