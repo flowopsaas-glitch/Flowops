@@ -1,9 +1,23 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DriverPortalController } from './driver-portal.controller';
 import { DriverPortalService } from './driver-portal.service';
+import { AuthService } from '../auth/auth.service';
 
 @Module({
+  imports: [
+    ConfigModule,
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: (cfg: ConfigService) => ({
+        secret: cfg.get('JWT_SECRET'),
+        signOptions: { expiresIn: '12h' },
+      }),
+      inject: [ConfigService],
+    }),
+  ],
   controllers: [DriverPortalController],
-  providers: [DriverPortalService],
+  providers: [DriverPortalService, AuthService],
 })
 export class DriverPortalModule {}

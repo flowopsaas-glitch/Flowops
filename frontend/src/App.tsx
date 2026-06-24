@@ -156,7 +156,28 @@ export default function App() {
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/pricing" element={<PricingPage />} />
 
-          <Route path="/driver/portal" element={<DriverPortalPage />} />
+          {/* Driver portal — redirect to the dedicated standalone PWA at driver.flowop.work */}
+          <Route
+            path="/driver/portal"
+            element={
+              <div className="min-h-screen bg-[#07111f] flex items-center justify-center p-8">
+                <div className="max-w-sm w-full rounded-[28px] border border-white/10 bg-white/[0.05] p-8 text-center">
+                  <div className="text-5xl mb-4">🚚</div>
+                  <h2 className="text-xl font-black text-white mb-2">Driver App</h2>
+                  <p className="text-sm text-white/50 mb-6">
+                    The driver app has moved to its own dedicated portal — installable as a PWA, works offline, and supports phone + PIN login.
+                  </p>
+                  <a
+                    href="https://driver.flowop.work"
+                    className="block w-full rounded-2xl bg-blue-600 py-4 text-sm font-black text-white hover:bg-blue-500 transition"
+                  >
+                    Open Driver Portal →
+                  </a>
+                  <p className="mt-4 text-[11px] text-white/25">driver.flowop.work</p>
+                </div>
+              </div>
+            }
+          />
           <Route path="/driver/manifest/:id" element={<DriverManifest />} />
 
           <Route element={<OwnerRoute />}>

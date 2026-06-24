@@ -21,6 +21,11 @@ export class WaybillsController {
     return this.svc.findAll(u.companyId, q);
   }
 
+  @Get('waybills/my-deliveries')
+  findMyDeliveries(@CurrentUser() u: any) {
+    return this.svc.findMyDeliveries(u.id, u.companyId);
+  }
+
   @Get('waybills/recent')
   findRecent(@CurrentUser() u: any) {
     return this.svc.findRecent(u.companyId);

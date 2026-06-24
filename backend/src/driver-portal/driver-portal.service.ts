@@ -52,28 +52,43 @@ export class DriverPortalService {
       notes: c.notes,
       scheduledAt: c.scheduledAt,
       createdAt: c.createdAt,
+      // ── Backward-compatible aliases ──────────────────────────────────────
+      waybillNumber: `COL-${c.id.slice(-6).toUpperCase()}`,
+      receiverName:  c.clientName ?? 'Client',
+      receiverPhone: c.clientPhone,
+      destination:   c.pickupAddress,
     }));
 
     const deliveryJobs = shipments.map(s => {
       const wb = wbMap[s.waybillId] ?? {};
+      const tnum = (wb as any).trackingNumber ?? s.id;
+      const rname = (wb as any).recipientName ?? 'Recipient';
+      const rphone = (wb as any).recipientPhone ?? null;
+      const raddress = (wb as any).recipientAddress ?? null;
       return {
         id: s.id,
         type: 'delivery',
         status: s.status,
-        trackingNumber: (wb as any).trackingNumber ?? s.id,
-        recipientName: (wb as any).recipientName ?? 'Recipient',
-        recipientPhone: (wb as any).recipientPhone,
-        recipientAddress: (wb as any).recipientAddress,
+        // Canonical fields
+        trackingNumber: tnum,
+        recipientName:  rname,
+        recipientPhone: rphone,
+        recipientAddress: raddress,
         recipientLat: (wb as any).recipientLat ?? s.currentLat,
         recipientLng: (wb as any).recipientLng ?? s.currentLng,
-        senderName: (wb as any).senderName,
+        senderName:    (wb as any).senderName,
         senderAddress: (wb as any).senderAddress,
-        weight: (wb as any).weight,
+        weight:      (wb as any).weight,
         totalAmount: (wb as any).totalAmount,
-        codAmount: (wb as any).codAmount,
-        codCollected: (wb as any).codCollected,
-        waybillId: s.waybillId,
-        createdAt: s.createdAt,
+        codAmount:   (wb as any).codAmount,
+        codCollected:(wb as any).codCollected,
+        waybillId:   s.waybillId,
+        createdAt:   s.createdAt,
+        // ── Backward-compatible aliases used by the standalone driver portal ──
+        waybillNumber: tnum,          // Dashboard reads w.waybillNumber
+        receiverName:  rname,         // Dashboard reads w.receiverName
+        receiverPhone: rphone,        // Dashboard reads w.receiverPhone
+        destination:   raddress,      // Dashboard reads w.destination
       };
     });
 
