@@ -26,6 +26,9 @@ export default function BatchScan() {
   const [queue, setQueue]         = useState<string[]>([]);
   const [targetStatus, setStatus] = useState("COLLECTED");
   const [results, setResults]     = useState<ScanResult[]>([]);
+  const [history, setHistory]     = useState<Array<{ts: string; status: string; updated: number; notFound: number}>>(() => {
+    try { return JSON.parse(localStorage.getItem("batchScanHistory") ?? "[]"); } catch { return []; }
+  });
   const [processing, setProcessing] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [manualInput, setManualInput] = useState("");
@@ -58,7 +61,18 @@ export default function BatchScan() {
         targetStatus,
       });
       const data = raw?.data ?? raw;
-      setResults(data?.results ?? []);
+      const r: ScanResult[] = data?.results ?? [];
+      setResults(r);
+      // Save to history
+      const entry = {
+        ts: new Date().toLocaleString("en-ZA"),
+        status: targetStatus,
+        updated: r.filter(x => x.result === "updated").length,
+        notFound: r.filter(x => x.result === "notFound").length,
+      };
+      const next = [entry, ...history].slice(0, 5);
+      setHistory(next);
+      localStorage.setItem("batchScanHistory", JSON.stringify(next));
       setQueue([]);
     } catch (err: any) {
       console.error("Batch scan failed:", err?.message);
@@ -226,6 +240,23 @@ export default function BatchScan() {
             </div>
           </div>
         )}
+        {/* Session history */}
+        {history.length > 0 && (
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/40 mb-3">Recent Sessions</div>
+            <div className="space-y-2">
+              {history.map((h, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-4 py-2.5 text-xs">
+                  <span className="text-white/30 shrink-0">{h.ts}</span>
+                  <span className="font-bold text-white/60">{h.status}</span>
+                  <span className="ml-auto text-emerald-300 font-bold">{h.updated} updated</span>
+                  {h.notFound > 0 && <span className="text-rose-300 font-bold">{h.notFound} not found</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

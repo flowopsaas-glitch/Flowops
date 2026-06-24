@@ -227,7 +227,11 @@ function ManifestRow({ m, onDispatch, dispatching }: {
       setLoading(true);
       try {
         const res: any = await api.get(`/manifests/${m.id}`);
-        setDetail(res?.data ?? res);
+        const d = res?.data ?? res;
+        setDetail(d);
+        // Cache for the print button
+        (window as any)._manifestDetailCache = (window as any)._manifestDetailCache ?? {};
+        (window as any)._manifestDetailCache[m.id] = d;
       } finally {
         setLoading(false);
       }
@@ -267,16 +271,45 @@ function ManifestRow({ m, onDispatch, dispatching }: {
           {new Date(m.createdAt).toLocaleDateString("en-ZA")}
         </td>
         <td className="px-5 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-          {!m.dispatched && (
+          <div className="flex items-center justify-end gap-2">
+            {/* Print load sheet */}
             <button
-              disabled={dispatching === m.id}
-              onClick={() => onDispatch(m.id)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-1.5 text-[11px] font-bold text-blue-200 hover:bg-blue-500/20 disabled:opacity-60"
+              onClick={() => {
+                const d = (window as any)._manifestDetailCache?.[m.id];
+                const wbList = d?.waybills?.map((mw: any) =>
+                  `  - ${mw.waybill?.trackingNumber ?? "?"} | ${mw.waybill?.recipientName ?? "?"} | ${mw.waybill?.status ?? "?"}`
+                ).join("\n") || "  (expand to load waybills first)";
+                const win = window.open("", "_blank");
+                if (win) {
+                  win.document.write(`<pre style="font-family:monospace;padding:20px">
+MANIFEST: ${m.code}
+Driver:   ${m.driver?.name ?? "Unassigned"}
+Branch:   ${m.branch?.name ?? "—"}
+Date:     ${new Date(m.createdAt).toLocaleString("en-ZA")}
+Status:   ${m.dispatched ? "DISPATCHED" : "PENDING"}
+Waybills (${m._count?.waybills ?? 0}):
+${wbList}
+</pre>`);
+                  win.document.close();
+                  win.print();
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-white/40 hover:bg-white/10 hover:text-white/80"
+              title="Print manifest"
             >
-              {dispatching === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}
-              Dispatch
+              🖨
             </button>
-          )}
+            {!m.dispatched && (
+              <button
+                disabled={dispatching === m.id}
+                onClick={() => onDispatch(m.id)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-1.5 text-[11px] font-bold text-blue-200 hover:bg-blue-500/20 disabled:opacity-60"
+              >
+                {dispatching === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}
+                Dispatch
+              </button>
+            )}
+          </div>
         </td>
       </tr>
 
