@@ -19,6 +19,20 @@ export class DriversController {
     return this.svc.create(u.companyId, body);
   }
 
+  // ── Static named routes must come BEFORE /:id to avoid being shadowed ──────
+
+  @Get('field-ops')
+  getFieldOps(@CurrentUser() u: any) {
+    return this.svc.getFieldOps(u.companyId);
+  }
+
+  @Get('fleet/dashboard')
+  fleetDashboard(@CurrentUser() u: any) {
+    return this.svc.fleetDashboard(u.companyId);
+  }
+
+  // ── Param routes ─────────────────────────────────────────────────────────────
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);
@@ -62,16 +76,6 @@ export class DriversController {
     @Body() body: { currentKm: number; nextServiceKm?: number; nextServiceDate?: string },
   ) {
     return this.svc.updateOdometer(id, u.companyId, body);
-  }
-
-  @Get('field-ops')
-  getFieldOps(@CurrentUser() u: any) {
-    return this.svc.getFieldOps(u.companyId);
-  }
-
-  @Get('fleet/dashboard')
-  fleetDashboard(@CurrentUser() u: any) {
-    return this.svc.fleetDashboard(u.companyId);
   }
 
   // ── Driver PIN management ─────────────────────────────────────────────────

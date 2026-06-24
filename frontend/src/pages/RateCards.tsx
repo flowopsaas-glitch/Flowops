@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Bot, CheckCircle2, Receipt, ShieldAlert, Sparkles, TrendingUp } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
-import { FLOWOPS_API_URL } from "../lib/env";
+import api from "../api/client";
 
 type RateCard = {
   id: string;
@@ -28,7 +28,11 @@ type RateCardForm = {
   marginPercent: string;
 };
 
-const API_BASE = `${FLOWOPS_API_URL}/v2`;
+function unwrap(r: any): any { return r?.data ?? r; }
+function unwrapList(r: any): any[] {
+  const d = r?.data ?? r;
+  return Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
+}
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -62,15 +66,16 @@ export default function RateCardsPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const [cardsRes, compRes] = await Promise.all([
-        fetch(`${API_BASE}/rate-cards`),
-        fetch(`${API_BASE}/companies`),
+      const [cardsRaw, compRaw] = await Promise.all([
+        api.get("/rate-cards"),
+        api.get("/companies/my-company"),
       ]);
-      const cards = await cardsRes.json();
-      const comps = await compRes.json();
-      setRateCards(Array.isArray(cards) ? cards : []);
-      setCompanies(Array.isArray(comps) ? comps : []);
-      if (Array.isArray(cards) && cards.length > 0 && !selectedRateCardId) {
+      const cards = unwrapList(cardsRaw);
+      const comp  = unwrap(compRaw);
+      setRateCards(cards);
+      // Tenant has one company — wrap in array for the select dropdown
+      setCompanies(comp && comp.id ? [comp] : []);
+      if (cards.length > 0 && !selectedRateCardId) {
         setSelectedRateCardId(cards[0].id);
       }
     } catch (err) {
@@ -207,24 +212,18 @@ export default function RateCardsPage() {
 
   async function handleSave() {
     try {
-      const res = await fetch(`${API_BASE}/rate-cards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          baseFee: Number(form.baseFee),
-          fuelSurchargePercent: Number(form.fuelPercent),
-          perKm: Number(form.distanceRate),
-          perKg: Number(form.weightRate),
-          targetMarginPercent: Number(form.marginPercent),
-          vatPercent: 15,
-          isActive: true,
-        }),
+      await api.post("/rate-cards", {
+        ...form,
+        baseFee: Number(form.baseFee),
+        fuelSurchargePercent: Number(form.fuelPercent),
+        perKm: Number(form.distanceRate),
+        perKg: Number(form.weightRate),
+        targetMarginPercent: Number(form.marginPercent),
+        vatPercent: 15,
+        isActive: true,
       });
-      if (res.ok) {
-        setShowEditor(false);
-        await fetchData();
-      }
+      setShowEditor(false);
+      await fetchData();
     } catch (err) {
       showToast("Save failed", "error");
     }

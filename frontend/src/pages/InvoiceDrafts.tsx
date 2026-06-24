@@ -20,8 +20,8 @@ export default function InvoiceDrafts() {
     const fetchDrafts = async () => {
       try {
         const res = await api.get('/invoice-drafts');
-        // Ensure we handle the backend response shape correctly
-        const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        // api client already unwraps the TransformInterceptor envelope
+        const data = Array.isArray(res) ? res : Array.isArray((res as any)?.data) ? (res as any).data : [];
         setDrafts(data);
       } catch (err) {
         console.error("Failed to fetch drafts", err);

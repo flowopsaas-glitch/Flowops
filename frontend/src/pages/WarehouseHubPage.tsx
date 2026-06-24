@@ -137,7 +137,7 @@ export default function WarehouseHubPage() {
 
         {/* Quick actions */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <QuickAction icon={Upload}        label="Waybill Inbox"    desc="Scan & verify new waybills"   to="/waybill-inbox"   color="border-blue-500/25 bg-blue-500/8 hover:bg-blue-500/14" />
+          <QuickAction icon={Upload}        label="Waybill Inbox"    desc="Scan & verify new waybills"   to="/waybills/inbox"  color="border-blue-500/25 bg-blue-500/8 hover:bg-blue-500/14" />
           <QuickAction icon={ScanLine}      label="Batch Scan"       desc="Bulk barcode processing"      to="/waybills/scan"   color="border-violet-500/25 bg-violet-500/8 hover:bg-violet-500/14" />
           <QuickAction icon={Layers}        label="Manifests"        desc="Create & dispatch load sheets" to="/manifests"      color="border-amber-500/25 bg-amber-500/8 hover:bg-amber-500/14" />
           <QuickAction icon={CheckCircle2}  label="POD Queue"        desc="Verify delivery evidence"     to="/pod-deliveries"  color="border-emerald-500/25 bg-emerald-500/8 hover:bg-emerald-500/14" />
