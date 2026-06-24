@@ -83,13 +83,13 @@ export default function DriverDispatch() {
     try {
       setLoading(true);
       setOffline(false);
-      const [wbRes, collRes, driversTableRes] = await Promise.allSettled([
-        api.get('/waybills'), api.get('/collections'), api.get('/drivers')
+      const [wbRes, collRes, driversTableRes, shipmentsRes] = await Promise.allSettled([
+        api.get('/waybills'), api.get('/collections'), api.get('/drivers'), api.get('/shipments')
       ]);
 
-      const allFailed = [wbRes, collRes, driversTableRes].every(r => r.status === 'rejected');
+      const allFailed = [wbRes, collRes, driversTableRes, shipmentsRes].every(r => r.status === 'rejected');
       if (allFailed) {
-        const firstErr: any = [wbRes, collRes, driversTableRes].find(r => r.status === 'rejected');
+        const firstErr: any = [wbRes, collRes, driversTableRes, shipmentsRes].find(r => r.status === 'rejected');
         const status = (firstErr as any)?.reason?.status;
         setOfflineReason(status === 401 || status === 403 ? 'session' : 'backend');
         setOffline(true);
@@ -111,6 +111,15 @@ export default function DriverDispatch() {
       const waybillsData    = allWb;
       const collectionsData = unwrapList(collRes.status       === 'fulfilled' ? collRes.value      : null);
       const rawDriversTable = unwrapList(driversTableRes.status === 'fulfilled' ? driversTableRes.value : null);
+      const activeShipments = unwrapList(shipmentsRes.status === 'fulfilled' ? shipmentsRes.value : null);
+
+      // Build per-driver job count from IN_TRANSIT/PENDING shipments
+      const jobsByDriver: Record<string, number> = {};
+      for (const s of activeShipments) {
+        if (s.driverId && ['PENDING', 'IN_TRANSIT'].includes(s.status ?? '')) {
+          jobsByDriver[String(s.driverId)] = (jobsByDriver[String(s.driverId)] ?? 0) + 1;
+        }
+      }
 
       // FIX: Waybill has no driverId field — it links via Shipment.
       // Filter by status instead: PENDING and COLLECTED = unassigned to driver
@@ -145,9 +154,11 @@ export default function DriverDispatch() {
         name: d.name || "Driver",
         status: (d.status || "AVAILABLE").toUpperCase(),
         vehicle: d.vehicleReg || "Van",
+        phone: d.phone || "",
         zone: "GENERAL ZONE",
         lat: d.lastLat ?? -26.20,
         lng: d.lastLng ?? 28.05,
+        jobsActive: jobsByDriver[String(d.id)] ?? 0,
       }));
 
       setJobs([...deliveries, ...collections]);
@@ -244,10 +255,46 @@ export default function DriverDispatch() {
   // Quick WhatsApp contact for a driver
   const contactDriver = useCallback((driver: any) => {
     if (driver.phone) {
-      const phone = driver.phone.replace(/\D/g, '');
+      // Normalise: strip non-digits, replace leading 0 with SA country code 27
+      const phone = driver.phone.replace(/\D/g, '').replace(/^0/, '27');
       window.open(`https://wa.me/${phone}?text=Hi+${encodeURIComponent(driver.name)}%2C+you+have+new+job(s)+assigned.+Please+check+the+app.`, '_blank');
     }
   }, []);
+
+  // Haversine distance (km) between two lat/lng pairs
+  const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
+  // Estimate ETA for a job → nearest available driver at 40 km/h average
+  const etaForJob = useMemo(() => {
+    if (!selectedJob || drivers.length === 0) return null;
+    const nearest = [...drivers].sort((a, b) => {
+      if (a.status !== 'AVAILABLE') return 1;
+      if (b.status !== 'AVAILABLE') return -1;
+      return haversineKm(a.lat, a.lng, selectedJob.lat, selectedJob.lng)
+           - haversineKm(b.lat, b.lng, selectedJob.lat, selectedJob.lng);
+    })[0];
+    if (!nearest || nearest.status !== 'AVAILABLE') return null;
+    const km = haversineKm(nearest.lat, nearest.lng, selectedJob.lat, selectedJob.lng);
+    const mins = Math.round(km / 40 * 60);
+    return mins < 60 ? `~${mins} min` : `~${Math.floor(mins/60)}h ${mins%60}m`;
+  }, [selectedJob, drivers]);
+
+  // Notify customer with stops-ahead ETA via POST /waybills/:id/notify-eta
+  const notifyEta = useCallback(async (job: any, stopsAhead: number) => {
+    if (job.type !== 'DELIVERY') return;
+    try {
+      await (api as any).post(`/waybills/${job.raw.id}/notify-eta`, { stopsAhead, etaMinutes: 30 });
+      showToast(`Customer notified: ${stopsAhead} stop${stopsAhead !== 1 ? 's' : ''} ahead`, "success");
+    } catch {
+      showToast("Notification failed", "error");
+    }
+  }, [showToast]);
 
   return (
     <div className="min-h-screen bg-[#07111f] p-7">
@@ -456,6 +503,11 @@ export default function DriverDispatch() {
                       </div>
                       <div className="flex items-center gap-2">
                         <div className={`px-2 py-0.5 rounded text-[10px] font-black ${driver.status === 'AVAILABLE' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>{driver.status}</div>
+                        {driver.jobsActive > 0 && (
+                          <div className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 text-[10px] font-black">
+                            {driver.jobsActive} active
+                          </div>
+                        )}
                         <button onClick={() => contactDriver(driver)} title="WhatsApp driver"
                           className="p-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition">
                           <MessageCircle className="h-3.5 w-3.5" />

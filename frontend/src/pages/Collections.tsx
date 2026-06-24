@@ -425,7 +425,7 @@ export default function Collections() {
                     <div className="rounded-3xl border-2 border-emerald-500/30 bg-emerald-500/5 p-7 animate-in slide-in-from-top-6 duration-500 backdrop-blur-3xl">
                       <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-2 text-[10px] font-black text-emerald-400 tracking-[0.2em]"><Bot className="h-5 w-5"/> AI RECOMMENDATION</div>
-                        <div className="bg-emerald-500 text-black px-4 py-1.5 rounded-full text-[11px] font-black">{suggestion.matchScore || 98}% MATCH</div>
+                        <div className="bg-emerald-500 text-black px-4 py-1.5 rounded-full text-[11px] font-black">{Math.round((suggestion.score || 0.85) * 100)}% MATCH</div>
                       </div>
                       <div className="text-2xl font-black mb-1">{suggestion.name}</div>
                       <div className="text-sm font-bold opacity-50 mb-6 uppercase tracking-widest">{suggestion.vehicleType || "Standard Vehicle"} • {suggestion.zone || "Local"}</div>
