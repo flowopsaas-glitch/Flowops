@@ -271,6 +271,14 @@ function Features() {
 
 /* ── Visual Gallery ───────────────────────────────────────────── */
 function VisualGallery() {
+  const images = [
+    { src: "/flowops-render1.png", alt: "FlowOps platform" },
+    { src: "/flowops-render2.png", alt: "FlowOps logistics" },
+    { src: "/flowops-render3.png", alt: "FlowOps operations" },
+    { src: "/flowops-photo1.jpg",  alt: "FlowOps team" },
+    { src: "/flowops-photo2.jpg",  alt: "FlowOps courier" },
+  ];
+
   return (
     <section className="py-16 border-t border-white/5">
       <div className="mx-auto max-w-7xl px-6">
@@ -279,34 +287,21 @@ function VisualGallery() {
             Logistics, Evolved.
           </p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div className="col-span-2 md:col-span-1 row-span-2">
-            <img
-              src="/flowops-render1.png"
-              alt="FlowOps platform"
-              className="w-full h-full object-cover rounded-[24px] border border-white/10 min-h-[280px]"
-            />
-          </div>
-          <img
-            src="/flowops-render2.png"
-            alt="FlowOps logistics"
-            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
-          />
-          <img
-            src="/flowops-render3.png"
-            alt="FlowOps operations"
-            className="w-full aspect-square object-cover rounded-[24px] border border-white/10"
-          />
-          <img
-            src="/flowops-photo1.jpg"
-            alt="FlowOps team"
-            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
-          />
-          <img
-            src="/flowops-photo2.jpg"
-            alt="FlowOps courier"
-            className="w-full aspect-video object-cover rounded-[24px] border border-white/10"
-          />
+
+        {/*
+          CSS masonry via `columns` — each image renders at its
+          full natural height so nothing is ever cropped.
+        */}
+        <div className="columns-2 md:columns-3 gap-4 space-y-4">
+          {images.map((img, i) => (
+            <div key={i} className="break-inside-avoid">
+              <img
+                src={img.src}
+                alt={img.alt}
+                className="w-full rounded-[24px] border border-white/10 block"
+              />
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -314,7 +309,6 @@ function VisualGallery() {
 }
 
 
-/* ── How It Works ─────────────────────────────────────────────── */
 function HowItWorks() {
   const steps = [
     {
