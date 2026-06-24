@@ -110,10 +110,12 @@ export default function App() {
     });
 
     socket.on("connect_error", (err) => {
-      // Suppress the expected "Invalid namespace" / "jwt malformed" noise
-      // that occurs before the user logs in (no token yet).  Only log if we
-      // actually have a token so the error is genuinely unexpected.
-      if (import.meta.env.DEV && getToken?.()) {
+      // "Invalid namespace" fires during NestJS hot-reload restarts (the /
+      // namespace briefly disappears then reappears).  "xhr poll error" fires
+      // when the backend is temporarily down.  Both are expected in dev and
+      // produce no actionable output, so we filter them out.
+      const silent = ['Invalid namespace', 'xhr poll error', 'timeout'];
+      if (import.meta.env.DEV && getToken?.() && !silent.includes(err.message)) {
         console.warn(
           `WebSocket connection failed. Is the FlowOps backend running at ${FLOWOPS_WS_ORIGIN}?`,
           err.message,

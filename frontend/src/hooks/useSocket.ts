@@ -3,6 +3,11 @@ import { io, Socket } from 'socket.io-client';
 import { FLOWOPS_WS_ORIGIN } from '../lib/env';
 import { getToken } from '../api/client';
 
+// Errors that occur routinely during dev hot-reload restarts or before login
+// should NOT pollute the console. We only warn when a token is present (i.e.
+// the user is logged-in and the error is genuinely unexpected).
+const SILENT_ERRORS = new Set(['Invalid namespace', 'xhr poll error', 'timeout']);
+
 export const useSocket = (companyId: number | string) => {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -28,7 +33,9 @@ export const useSocket = (companyId: number | string) => {
     });
 
     socket.on('connect_error', (err) => {
-      if (import.meta.env.DEV) {
+      // Only surface in DEV when the user has a token — anything else is
+      // expected noise (pre-login page loads, hot-reload restarts, etc.)
+      if (import.meta.env.DEV && getToken() && !SILENT_ERRORS.has(err.message)) {
         console.warn('Socket connection failed:', err.message);
       }
       setIsConnected(false);
