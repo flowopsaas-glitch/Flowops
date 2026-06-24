@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EcommerceService } from '../ecommerce/ecommerce.service';
+import { WaybillStatus } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
 
 @Injectable()
@@ -17,6 +18,48 @@ export class WaybillsService {
     private notifications: NotificationsService,
     private ecommerce: EcommerceService,
   ) {}
+
+  // ── CRUD ──────────────────────────────────────────────────────────────
+
+  /**
+   * Return the active deliveries for the authenticated user's linked Driver.
+   * Only returns waybills that are assigned (via a Shipment) to that specific
+   * driver — so a DRIVER-role user sees only their own jobs.
+   * Falls back to all in-transit waybills for the company if no driver link exists.
+   */
+  async findMyDeliveries(userId: string, companyId: string) {
+    // Find the driver linked to this user
+    const driver = await this.prisma.driver.findFirst({
+      where: { userId, companyId, isActive: true },
+    });
+
+    const ACTIVE_STATUSES: WaybillStatus[] = [
+      WaybillStatus.PENDING, WaybillStatus.COLLECTED,
+      WaybillStatus.IN_TRANSIT, WaybillStatus.OUT_FOR_DELIVERY,
+    ];
+
+    if (driver) {
+      // Scoped: only this driver's shipments
+      const shipments = await this.prisma.shipment.findMany({
+        where: { driverId: driver.id, companyId },
+        select: { waybillId: true },
+      });
+      const waybillIds = shipments.map((s) => s.waybillId);
+      if (waybillIds.length === 0) return [];
+      return this.prisma.waybill.findMany({
+        where: { id: { in: waybillIds }, status: { in: ACTIVE_STATUSES } },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+      });
+    }
+
+    // Fallback (no driver link yet): return company's active waybills
+    return this.prisma.waybill.findMany({
+      where: { companyId, status: { in: ACTIVE_STATUSES } },
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+    });
+  }
 
   // ── CRUD ──────────────────────────────────────────────────────────────
 

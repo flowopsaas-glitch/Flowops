@@ -20,7 +20,8 @@ export default function DriverPortalPage() {
     setLoadingJobs(true);
     try {
       // Fetch in-transit / active waybills — driver sees all jobs in progress
-      const res: any = await api.get("/waybills?status=IN_TRANSIT,COLLECTED,OUT_FOR_DELIVERY");
+      const res: any = await api.get("/waybills/my-deliveries");
+      // Falls back to company-wide when no driver link, scoped when linked
       const d = res?.data ?? res;
       const list: any[] = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
       setJobs(list.slice(0, 10));
