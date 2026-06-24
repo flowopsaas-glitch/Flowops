@@ -181,6 +181,8 @@ export default function Dashboard() {
   });
   const [kpis, setKpis] = useState<KpiSet | null>(null);
   const [isAiOpen, setIsAiOpen] = useState(false);
+  // Keyed by driverId — refreshed every 30 s alongside metrics
+  const [etaMap, setEtaMap] = useState<Record<string, { etaMinutes: number; distanceKm: number; trackingNumber: string; urgency: string }>>({});
 
   const currency = (user?.company?.currency as string) || "ZAR";
   const company = user?.company;
@@ -235,6 +237,19 @@ export default function Dashboard() {
       }
     };
 
+    const fetchEtas = async () => {
+      try {
+        const res = await api.get<any, any>(`/dashboard/live-etas`);
+        const data: any[] = Array.isArray(res) ? res
+          : Array.isArray((res as any)?.data) ? (res as any).data : [];
+        const map: typeof etaMap = {};
+        for (const e of data) map[e.driverId] = e;
+        setEtaMap(map);
+      } catch {
+        // ETAs are best-effort — don't log noise if backend returns nothing
+      }
+    };
+
     const fetchKpis = async () => {
       try {
         const res = await api.get<any, any>(`/dashboard/kpis`);
@@ -247,6 +262,11 @@ export default function Dashboard() {
 
     fetchMetrics();
     fetchKpis();
+    fetchEtas();
+
+    // Refresh metrics + ETAs every 30 seconds (KPIs only need daily precision)
+    const interval = setInterval(() => { fetchMetrics(); fetchEtas(); }, 30_000);
+    return () => clearInterval(interval);
   }, [user, booting]);
 
   // 2. Real-time WebSockets Over-the-Air Update Listener Loop
@@ -349,17 +369,47 @@ export default function Dashboard() {
         <MapContainer center={mapCenterPoint} zoom={5} style={{ height: "100%", width: "100%", borderRadius: "24px" }} zoomControl={false}>
           <TileLayer attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <MarkerClusterGroup>
-            {activeDrivers.map((driver) => (
-              <Marker key={driver.id} position={[driver.lat, driver.lng]}>
-                <Popup>
-                  <div className="text-slate-900 p-1 font-sans">
-                    <h4 className="font-black text-sm">{driver.name}</h4>
-                    <p className="text-xs text-slate-500 font-bold">Reg: {driver.vehicleReg}</p>
-                    <p className="text-[10px] text-emerald-600 font-bold mt-1">Coords: {driver.lat.toFixed(4)}, {driver.lng.toFixed(4)}</p>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+            {activeDrivers.map((driver) => {
+              const eta = etaMap[driver.id];
+              const etaColor = !eta ? '#6b7280'
+                : eta.urgency === 'imminent' ? '#10b981'
+                : eta.urgency === 'near'     ? '#f59e0b'
+                : '#3b82f6';
+              return (
+                <Marker key={driver.id} position={[driver.lat, driver.lng]}>
+                  <Popup>
+                    <div className="text-slate-900 p-1 font-sans min-w-[160px]">
+                      <h4 className="font-black text-sm">{driver.name}</h4>
+                      <p className="text-xs text-slate-500 font-bold">Reg: {driver.vehicleReg}</p>
+                      {eta ? (
+                        <>
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{
+                              background: etaColor + '22',
+                              color: etaColor,
+                              border: `1px solid ${etaColor}55`,
+                              borderRadius: 999,
+                              padding: '2px 8px',
+                              fontWeight: 900,
+                              fontSize: 11,
+                            }}>
+                              ⏱ {eta.etaMinutes} min ETA
+                            </span>
+                          </div>
+                          <p style={{ fontSize: 10, color: '#6b7280', marginTop: 4, fontWeight: 600 }}>
+                            {eta.distanceKm} km · {eta.trackingNumber}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-1">
+                          Coords: {driver.lat.toFixed(4)}, {driver.lng.toFixed(4)}
+                        </p>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MarkerClusterGroup>
           <MapController center={mapCenterPoint} />
         </MapContainer>

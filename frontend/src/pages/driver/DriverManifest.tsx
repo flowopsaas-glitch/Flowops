@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
-import { ChevronLeft, Package, CheckCircle, Square, PenTool, X } from 'lucide-react';
+import { ChevronLeft, Package, CheckCircle, Square, PenTool, X, MapPin } from 'lucide-react';
 import { useToast } from "../../components/ToastProvider"; 
 import SignatureCanvas from 'react-signature-canvas';
 import { queuePod, syncPodQueue, getPodQueue, registerPodAutoSync } from '../../lib/offlinePod';
@@ -35,6 +35,46 @@ export default function DriverManifest() {
         });
     }
   }, [id, navigate, showToast]);
+
+  // ── Hooks must all be declared before the early return ─────────────────
+  /**
+   * Fire-and-forget geofence check.  Sends the device GPS position to the
+   * backend so IN_TRANSIT waybills within 500 m auto-advance to
+   * OUT_FOR_DELIVERY before the driver captures the POD signature.
+   * Silently no-ops if GPS is unavailable, permissions are denied, or
+   * the waybill has no driver assigned yet.
+   */
+  const triggerGeofence = useCallback(async () => {
+    try {
+      const shipments = (job as any)?.shipments as any[] | undefined;
+      const driverId  = shipments?.[0]?.driverId ?? shipments?.[0]?.driver?.id;
+      if (!driverId) return;
+
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        if (!navigator.geolocation) { reject(new Error('no-geo')); return; }
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 30_000,
+        });
+      });
+
+      await api.post('/cod/geofence', {
+        driverId,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      });
+    } catch {
+      // GPS unavailable, permission denied, or API error — silently ignore
+    }
+  }, [job]);
+
+  /** Opens the POD signature overlay and fires the geofence check in the
+   *  background so the waybill status can advance before the driver signs. */
+  const handleOpenSignature = useCallback(() => {
+    void triggerGeofence();   // non-blocking
+    setShowSig(true);
+  }, [triggerGeofence]);
 
   // This state persists until the API returns data
   if (!job) {
@@ -132,7 +172,7 @@ export default function DriverManifest() {
 
       {/* Bottom Action Button */}
       <button 
-        onClick={() => setShowSig(true)} 
+        onClick={handleOpenSignature} 
         disabled={!isComplete} 
         className={`w-full py-6 rounded-[32px] font-black text-sm uppercase flex justify-center items-center gap-3 shadow-2xl transition-all ${
           isComplete 

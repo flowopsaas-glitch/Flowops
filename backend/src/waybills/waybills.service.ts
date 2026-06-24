@@ -4,6 +4,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EcommerceService } from '../ecommerce/ecommerce.service';
 import { v4 as uuid } from 'uuid';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class WaybillsService {
     private prisma: PrismaService,
     private storage: StorageService,
     private notifications: NotificationsService,
+    private ecommerce: EcommerceService,
   ) {}
 
   // ── CRUD ──────────────────────────────────────────────────────────────
@@ -73,6 +75,7 @@ export class WaybillsService {
     const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
     if (dto.status && dto.status !== existing.status) {
       void this.notifications.notifyWaybillStatus(updated);
+      void this.ecommerce.pushStatusToShopify(updated);
     }
     return updated;
   }
@@ -258,6 +261,7 @@ export class WaybillsService {
     });
     // Notify the customer their parcel was delivered + request rating.
     void this.notifications.notifyWaybillStatus(delivered);
+    void this.ecommerce.pushStatusToShopify(delivered);
     // Auto-request rating after a short delay would happen via a cron job
     // For now, the dispatcher can trigger it manually via /rate-request
     return delivered;

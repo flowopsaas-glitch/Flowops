@@ -24,6 +24,13 @@ export class InvoicesController {
     return this.svc.getMetrics(u.companyId);
   }
 
+  @Post('invoices/auto-generate')
+  @HttpCode(HttpStatus.OK)
+  triggerAutoInvoice() {
+    // Manual trigger for admins — same logic as the monthly cron.
+    return this.svc.autoGenerateMonthlyInvoices();
+  }
+
   @Post('invoices')
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);
