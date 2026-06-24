@@ -103,7 +103,14 @@ export class OwnerService {
         // Send welcome email to the newly approved admin user
         await this.email.sendWelcomeEmail(req.email, req.fullName, req.company);
       }
-      const updated = await this.prisma.company.update({ where: { id: tenantId }, data: { isActive: true } });
+      const updated = await this.prisma.company.update({
+        where: { id: tenantId },
+        data: {
+          isActive: true,
+          plan: 'starter',
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      });
       await audit('tenant.approve');
       return updated;
     }
@@ -820,8 +827,9 @@ export class OwnerService {
     let passwordHash: string;
     try { passwordHash = JSON.parse(req.notes ?? '{}').passwordHash; } catch { passwordHash = await bcrypt.hash('ChangeMe123!', 12); }
 
+    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14-day trial
     const company = await this.prisma.company.create({
-      data: { name: req.company, email: req.email, isActive: true },
+      data: { name: req.company, email: req.email, isActive: true, plan: 'starter', trialEndsAt },
     });
     await this.prisma.user.create({
       data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id },

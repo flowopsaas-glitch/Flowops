@@ -32,6 +32,7 @@ type Company = {
   plan?: string | null;
   isActive?: boolean;
   currency?: string | null;
+  trialEndsAt?: string | null;
 };
 
 // ── Plan definitions ───────────────────────────────────────────────────────
@@ -87,6 +88,12 @@ const PLANS = [
   },
 ];
 
+// ── Plan codes (Paystack) ──────────────────────────────────────────────────
+const PLAN_CODES: Record<string, string> = {
+  professional: 'PLN_l3kobthzahnkpf3',
+  enterprise:   'PLN_9at9kn2ra8jtae0',
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function unwrap(r: any): any { return r?.data ?? r; }
@@ -115,6 +122,7 @@ export default function BillingPlans() {
   const [company, setCompany] = useState<Company | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [upgrading, setUpgrading] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -142,6 +150,70 @@ export default function BillingPlans() {
 
   const currentPlanKey = String(company?.plan ?? "starter").toLowerCase();
   const currentPlan = PLANS.find(p => p.key === currentPlanKey) ?? PLANS[0];
+
+  // Trial countdown
+  const trialDaysLeft = company?.trialEndsAt
+    ? Math.ceil((new Date(company.trialEndsAt).getTime() - Date.now()) / 86400000)
+    : null;
+  const onTrial = trialDaysLeft !== null && trialDaysLeft > 0;
+
+  const handleUpgrade = async (plan: typeof PLANS[0]) => {
+    const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "";
+    const waBase  = ownerWa ? `https://wa.me/${ownerWa}` : "https://wa.me";
+
+    if (plan.key === "enterprise") {
+      const msg = encodeURIComponent(
+        `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
+        `We'd like to discuss the *FlowOps Enterprise Plan* — dedicated onboarding, unlimited drivers, and custom SLA.\n\nCan we schedule a call? 🙏`
+      );
+      window.open(`${waBase}?text=${msg}`, "_blank");
+      return;
+    }
+
+    if (plan.key === "starter") {
+      // Downgrade to free Starter (no Paystack)
+      setUpgrading("starter");
+      try {
+        await api.post("/paystack/subscribe", { planId: "starter" });
+        const cRaw = await api.get("/companies/my-company");
+        setCompany(unwrap(cRaw));
+      } catch {
+        // fallback to WhatsApp
+        const msg = encodeURIComponent(
+          `Hi! 👋 I'd like to downgrade *${company?.name}* to the free Starter plan.`
+        );
+        window.open(`${waBase}?text=${msg}`, "_blank");
+      } finally { setUpgrading(null); }
+      return;
+    }
+
+    // Professional — initialize a Paystack subscription checkout
+    const planCode = PLAN_CODES[plan.key];
+    setUpgrading(plan.key);
+    try {
+      const res: any = await api.post("/paystack/initialize", {
+        plan: plan.key,
+        planCode,      // backend embeds this as Paystack's plan param → sets up recurring billing
+      });
+      const raw = unwrap(res);
+      const url = raw?.authorizationUrl ?? raw?.authorization_url ?? raw?.data?.authorization_url;
+      if (url) {
+        window.open(url, "_blank");
+      } else {
+        // Paystack not configured — WhatsApp fallback
+        const msg = encodeURIComponent(
+          `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
+          `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\nPlease send a payment link. 🙏`
+        );
+        window.open(`${waBase}?text=${msg}`, "_blank");
+      }
+    } catch {
+      const msg = encodeURIComponent(
+        `Hi! 👋 *${company?.name}* would like to upgrade to *FlowOps ${plan.name}* (${plan.price}/mo). Please send a payment link. 🙏`
+      );
+      window.open(`${waBase}?text=${msg}`, "_blank");
+    } finally { setUpgrading(null); }
+  };
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(30,80,140,0.14),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 overflow-y-auto">
@@ -172,6 +244,29 @@ export default function BillingPlans() {
             </button>
           </div>
         </div>
+
+        {/* ── Trial banner ── */}
+        {onTrial && (
+          <div className="rounded-[20px] border border-amber-400/30 bg-amber-500/10 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 text-amber-300 shrink-0" />
+              <div>
+                <p className="text-sm font-black text-amber-200">
+                  14-day Pro trial — <span className="text-amber-300">{trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} remaining</span>
+                </p>
+                <p className="text-xs text-amber-300/60 mt-0.5">
+                  After the trial your account stays on the free Starter plan unless you upgrade.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleUpgrade(PLANS.find(p => p.key === "professional")!)}
+              className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-xs font-black text-amber-200 hover:bg-amber-500/30 transition"
+            >
+              Upgrade to Pro →
+            </button>
+          </div>
+        )}
 
         {/* ── Current plan card ── */}
         {loading ? (
@@ -265,52 +360,22 @@ export default function BillingPlans() {
                   </div>
                   {!isCurrent && (
                     <button
-                      onClick={() => {
-                        // Owner's WhatsApp number from env (e.g. 27821234567)
-                        const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "";
-                        const waBase  = ownerWa ? `https://wa.me/${ownerWa}` : "https://wa.me";
-
-                        if (plan.key === "enterprise") {
-                          const msg = encodeURIComponent(
-                            `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-                            `We'd like to learn more about the *FlowOps Enterprise Plan* — dedicated onboarding, unlimited drivers, and custom SLA targets.\n\n` +
-                            `Can we schedule a call? 🙏`
-                          );
-                          window.open(`${waBase}?text=${msg}`, "_blank");
-                        } else {
-                          api.post("/paystack/initialize", { plan: plan.key })
-                            .then((res: any) => {
-                              const url = res?.data?.authorization_url ?? res?.authorization_url;
-                              if (url) window.open(url, "_blank");
-                              else {
-                                const msg = encodeURIComponent(
-                                  `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-                                  `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\n` +
-                                  `Please send us a payment link. Thank you! 🙏`
-                                );
-                                window.open(`${waBase}?text=${msg}`, "_blank");
-                              }
-                            })
-                            .catch(() => {
-                              const msg = encodeURIComponent(
-                                `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-                                `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\n` +
-                                `Please send us a payment link. Thank you! 🙏`
-                              );
-                              window.open(`${waBase}?text=${msg}`, "_blank");
-                            });
-                        }
-                      }}
+                      disabled={upgrading === plan.key}
+                      onClick={() => handleUpgrade(plan)}
                       className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition ${
                         plan.highlighted
                           ? "bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:bg-sky-500/30"
                           : "bg-white/8 border border-white/10 text-white/70 hover:bg-white/15 hover:text-white"
-                      }`}
+                      } disabled:opacity-50 disabled:cursor-wait`}
                     >
-                      {plan.key === "enterprise" ? (
+                      {upgrading === plan.key ? (
+                        <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing…</>
+                      ) : plan.key === "enterprise" ? (
                         <>Contact Sales <ExternalLink className="h-3.5 w-3.5" /></>
+                      ) : plan.key === "starter" && currentPlanKey !== "starter" ? (
+                        <>Downgrade to Free <ArrowRight className="h-3.5 w-3.5" /></>
                       ) : (
-                        <>Upgrade <ArrowRight className="h-3.5 w-3.5" /></>
+                        <>Upgrade to {plan.name} <ArrowRight className="h-3.5 w-3.5" /></>
                       )}
                     </button>
                   )}

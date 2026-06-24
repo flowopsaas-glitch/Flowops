@@ -203,4 +203,95 @@ export class NotificationsService {
     return `https://wa.me/${intl}?text=${encodeURIComponent(text)}`;
   }
 
+  // ── ETA + Stops-ahead alert ───────────────────────────────────────
+
+  async sendEtaAlert(
+    waybill: { companyId: string; trackingNumber: string; recipientName?: string | null; recipientEmail?: string | null; recipientPhone?: string | null },
+    stopsAhead: number,
+    etaMinutes?: number,
+  ) {
+    const appUrl = this.config.get('APP_URL', 'http://localhost:8080');
+    const trackUrl = `${appUrl}/track/${waybill.trackingNumber}`;
+    const name = (waybill.recipientName || 'there').split(/\s+/)[0];
+    const etaText = etaMinutes ? ` in approximately ${etaMinutes} min` : '';
+    const stopsText = stopsAhead <= 1 ? 'next stop' : `${stopsAhead} stops away`;
+
+    const message = `Hi ${name}, your FlowOps delivery (${waybill.trackingNumber}) is ${stopsText} — arriving${etaText}. Track live: ${trackUrl}`;
+
+    // Internal notification
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId: waybill.companyId,
+          title: `ETA alert sent · ${waybill.trackingNumber}`,
+          body: `${stopsText} — ETA${etaText}. Customer notified.`,
+          type: 'ETA_ALERT',
+        },
+      });
+    } catch {}
+
+    // Customer email
+    if (waybill.recipientEmail) {
+      await this.email.send({
+        to: waybill.recipientEmail,
+        subject: `Your delivery is ${stopsText} — ${waybill.trackingNumber}`,
+        text: message,
+        html: `
+          <h2 style="margin-top:0;color:#1e3a5f;">🚚 Your delivery is almost here!</h2>
+          <p>Hi ${name}, your parcel <strong>${waybill.trackingNumber}</strong> is <strong>${stopsText}</strong>${etaText}.</p>
+          <a href="${trackUrl}" style="display:inline-block;margin-top:12px;padding:10px 20px;background:#3b82f6;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Track your delivery live →</a>
+        `,
+      }).catch((e) => this.logger.warn(`ETA email failed: ${e?.message}`));
+    }
+
+    // WhatsApp link
+    const waLink = this.buildWaLink(waybill.recipientPhone, name, waybill.trackingNumber, `is ${stopsText}${etaText}`, trackUrl);
+    return { waLink, message };
+  }
+
+  // ── Delivery rating request ───────────────────────────────────────
+
+  async sendRatingRequest(waybill: {
+    companyId: string; trackingNumber: string; recipientName?: string | null;
+    recipientEmail?: string | null; recipientPhone?: string | null;
+    ratingToken?: string | null;
+  }) {
+    if (!waybill.ratingToken) return;
+    const appUrl = this.config.get('APP_URL', 'http://localhost:8080');
+    const rateUrl = `${appUrl}/rate/${waybill.ratingToken}`;
+    const name = (waybill.recipientName || 'there').split(/\s+/)[0];
+
+    if (waybill.recipientEmail) {
+      await this.email.send({
+        to: waybill.recipientEmail,
+        subject: `How was your delivery? — ${waybill.trackingNumber}`,
+        text: `Hi ${name}, your FlowOps delivery ${waybill.trackingNumber} is complete. Rate your experience: ${rateUrl}`,
+        html: `
+          <h2 style="margin-top:0;color:#1e3a5f;">How was your delivery?</h2>
+          <p>Hi ${name}, your parcel <strong>${waybill.trackingNumber}</strong> has been delivered. We'd love your feedback!</p>
+          <a href="${rateUrl}" style="display:inline-block;margin-top:12px;padding:12px 24px;background:#f59e0b;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Rate your experience ★</a>
+          <p style="margin-top:12px;font-size:12px;color:#888;">This link expires in 7 days.</p>
+        `,
+      }).catch((e) => this.logger.warn(`Rating email failed: ${e?.message}`));
+    }
+
+    // WhatsApp
+    const digits = (waybill.recipientPhone || '').replace(/\D/g, '');
+    if (digits.length >= 9) {
+      const intl = digits.startsWith('0') ? `27${digits.slice(1)}` : digits;
+      const text = `Hi ${name}, your FlowOps delivery (${waybill.trackingNumber}) is complete! Rate your experience here: ${rateUrl}`;
+      const waLink = `https://wa.me/${intl}?text=${encodeURIComponent(text)}`;
+      try {
+        await this.prisma.notification.create({
+          data: {
+            companyId: waybill.companyId,
+            title: `Rating request sent · ${waybill.trackingNumber}`,
+            body: `[WhatsApp rating link: ${waLink}]`,
+            type: 'RATING_REQUEST',
+          },
+        });
+      } catch {}
+    }
+  }
+
 }

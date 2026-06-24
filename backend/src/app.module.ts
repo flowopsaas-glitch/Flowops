@@ -82,6 +82,7 @@ import { EmailHubModule } from './email-hub/email-hub.module';
 
     // Owner alerting engine (global)
     AlertingModule,
+    EmailHubModule,
 
     // Domain modules
     AuthModule,

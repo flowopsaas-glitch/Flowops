@@ -166,6 +166,8 @@ export class PaystackService {
 
       case 'subscription.create':
         this.logger.log(`Subscription created: ${data.subscription_code}`);
+        // Promote the company's plan based on Paystack plan code
+        await this.handleSubscriptionCreated(data);
         break;
 
       case 'subscription.not_renew':
@@ -202,6 +204,39 @@ export class PaystackService {
       });
       this.logger.log(`Invoice ${payment.invoiceId} marked PAID via webhook`);
     }
+
+    // If this charge is tied to a Paystack subscription plan, promote company.plan
+    const planCode = tx.plan?.plan_code as string | undefined;
+    if (planCode && payment?.companyId) {
+      await this.promotePlanByCode(planCode, payment.companyId);
+    }
+  }
+
+  private async handleSubscriptionCreated(data: any) {
+    const planCode = data.plan?.plan_code as string | undefined;
+    const email    = data.customer?.email as string | undefined;
+    if (!planCode || !email) return;
+
+    const company = await this.prisma.company.findFirst({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
+    if (company) await this.promotePlanByCode(planCode, company.id);
+  }
+
+  /** Map a Paystack plan code → internal plan name and persist it. */
+  private async promotePlanByCode(planCode: string, companyId: string) {
+    const planMap: Record<string, string> = {
+      'PLN_l3kobthzahnkpf3': 'professional',
+      'PLN_9at9kn2ra8jtae0': 'enterprise',
+    };
+    const plan = planMap[planCode];
+    if (!plan) return;
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { plan, trialEndsAt: null }, // clear trial — they're now on a paid plan
+    });
+    this.logger.log(`Company ${companyId} promoted to plan '${plan}' via webhook`);
   }
 
   // ── Subscriptions ─────────────────────────────────────────────────────
