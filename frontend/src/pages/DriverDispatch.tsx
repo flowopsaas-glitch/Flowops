@@ -358,6 +358,20 @@ export default function DriverDispatch() {
                         <div className="mt-1 text-[11px] text-sky-300/70 font-bold flex items-center gap-1">
                           <MapPin className="h-3 w-3" />{job.area}
                         </div>
+                        {/* Notify customer button */}
+                        {job.type === 'DELIVERY' && job.raw?.recipientPhone && (
+                          <div className="mt-2 flex gap-2">
+                            <a
+                              href={`https://wa.me/${(job.raw.recipientPhone || '').replace(/\D/g,'').replace(/^0/,'27')}?text=${encodeURIComponent(`Hi, your FlowOps parcel (${job.reference}) is being prepared for dispatch. Track it: ${window.location.origin}/track/${job.reference}`)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1 rounded-lg bg-emerald-500/15 border border-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-300 hover:bg-emerald-500/25 transition-colors"
+                            >
+                              <MessageCircle className="h-3 w-3" /> Notify
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -13,7 +13,7 @@ const footerLinks = {
   Platform: [
     { label: "Login", to: "/login" },
     { label: "Owner Console", to: "/owner/dashboard" },
-    { label: "Driver Portal", to: "/driver/portal" },
+    { label: "Driver Portal", href: "https://driver.flowop.work" },
   ],
   Legal: [
     { label: "Terms of Service", to: "/legal/terms" },
@@ -62,13 +62,24 @@ export default function PublicFooter() {
               </h4>
               <ul className="space-y-2.5">
                 {items.map((item) => (
-                  <li key={item.to}>
-                    <Link
-                      to={item.to}
-                      className="text-sm text-white/50 hover:text-white transition-colors"
-                    >
-                      {item.label}
-                    </Link>
+                  <li key={item.label}>
+                    {"href" in item ? (
+                      <a
+                        href={item.href as string}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-white/50 hover:text-white transition-colors"
+                      >
+                        {item.label}
+                      </a>
+                    ) : (
+                      <Link
+                        to={item.to as string}
+                        className="text-sm text-white/50 hover:text-white transition-colors"
+                      >
+                        {item.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
