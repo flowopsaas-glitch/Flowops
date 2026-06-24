@@ -195,23 +195,29 @@ export default function Shipments() {
             </button>
             <button
               onClick={() => exportCsv(
-                visible.map((w: any) => ({
-                  tracking:  w.trackingNumber,
-                  status:    w.status,
-                  sender:    w.senderName,
-                  recipient: w.recipientName,
-                  address:   w.recipientAddress,
-                  amount:    w.totalAmount ?? "",
-                  created:   w.createdAt,
+                visible.map((s: Shipment) => ({
+                  tracking:  s.waybill?.trackingNumber ?? s.id,
+                  status:    s.status,
+                  recipient: s.waybill?.recipientName  ?? "",
+                  address:   s.waybill?.recipientAddress ?? "",
+                  driver:    s.driver?.name             ?? "",
+                  eta:       s.estimatedDelivery
+                    ? new Date(s.estimatedDelivery).toLocaleDateString("en-ZA")
+                    : "",
+                  gps:       (s.currentLat && s.currentLng)
+                    ? `${s.currentLat},${s.currentLng}`
+                    : "",
+                  created:   s.createdAt,
                 })),
                 csvFilename("shipments"),
                 [
                   { key: "tracking",  label: "Tracking #"      },
                   { key: "status",    label: "Status"          },
-                  { key: "sender",    label: "Sender"          },
                   { key: "recipient", label: "Recipient"       },
                   { key: "address",   label: "Delivery Address"},
-                  { key: "amount",    label: "Amount ZAR"      },
+                  { key: "driver",    label: "Driver"          },
+                  { key: "eta",       label: "ETA"             },
+                  { key: "gps",       label: "GPS Coords"      },
                   { key: "created",   label: "Created"         },
                 ]
               )}
