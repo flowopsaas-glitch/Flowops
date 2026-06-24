@@ -703,6 +703,7 @@ model Quote {
   id          String  @id @default(cuid())
   fromAddress String
   toAddress   String
+  clientName  String?   // optional — who the quote is for
   weight      Float
   price       Float
   breakdown   Json?
