@@ -118,8 +118,8 @@ export default function CompetitiveIntelligencePage() {
     setLoading(true);
     try {
       const [latestRes, histRes] = await Promise.allSettled([
-        api.get("/ai/intel/latest"),
-        api.get("/ai/intel/insights?limit=10"),
+        api.get("/owner/intel/latest"),
+        api.get("/owner/intel/insights?limit=10"),
       ]);
       if (latestRes.status === "fulfilled") {
         const d = (latestRes.value as any)?.data ?? latestRes.value;
@@ -139,7 +139,7 @@ export default function CompetitiveIntelligencePage() {
   const runSweep = async () => {
     setSweeping(true);
     try {
-      const res = await api.post("/ai/intel/sweep", {});
+      const res = await api.post("/owner/intel/sweep", {});
       const d = (res as any)?.data ?? res;
       setReport(d as Report);
       await load();
