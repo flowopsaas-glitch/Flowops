@@ -136,9 +136,21 @@ export class DriverPortalService {
     });
   }
 
-  async markRead(messageId: string) {
+  async markRead(id: string) {
+    // The driver portal frontend passes the driverId (not a messageId) to this
+    // endpoint. Detect which case we're in: if the id matches a driver record,
+    // bulk-mark all unread dispatch messages for that driver as read.
+    const driver = await this.prisma.driver.findUnique({ where: { id }, select: { id: true } });
+    if (driver) {
+      const result = await this.prisma.driverChatMessage.updateMany({
+        where: { driverId: id, senderType: 'dispatch', readAt: null },
+        data: { readAt: new Date() },
+      });
+      return { ok: true, marked: result.count };
+    }
+    // Fallback: treat as a single messageId (original behavior)
     return this.prisma.driverChatMessage.update({
-      where: { id: messageId },
+      where: { id },
       data: { readAt: new Date() },
     });
   }
