@@ -105,10 +105,11 @@ export class AiAutonomyService {
   /** 📦 EMAIL HUB: Processes logistics data extraction and promotion */
   private async auditEmailLogistics(): Promise<void> {
     try {
-      // Filter for PENDING items that contain body text to prevent type runtime drops
+      // Filter for unresolved items that contain body text to prevent type runtime drops.
+      // EmailHubItem has no `status` field; pending == not yet resolved.
       const pendingItems = await (this.prisma as any).emailHubItem.findMany({ 
         where: { 
-          status: 'PENDING',
+          resolved: false,
           body: { not: null }
         } 
       });
@@ -127,10 +128,10 @@ export class AiAutonomyService {
             } 
           });
 
-          // Mutate the hub state context flag cleanly to RESOLVED
+          // Mark the hub item resolved (EmailHubItem uses a `resolved` boolean, not `status`)
           await (this.prisma as any).emailHubItem.update({ 
             where: { id: item.id }, 
-            data: { status: 'RESOLVED' } 
+            data: { resolved: true } 
           });
 
           this.logger.log(`Successfully promoted EmailHubItem entry ID ${item.id} to enterprise Waybill.`);
