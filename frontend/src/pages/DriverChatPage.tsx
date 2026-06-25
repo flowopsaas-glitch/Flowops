@@ -67,23 +67,36 @@ export default function DriverChatPage() {
     setLoading(false);
   }, []);
 
-  const loadMessages = useCallback(async (driverId: string) => {
-    setLoadingMsgs(true);
+  const loadMessages = useCallback(async (driverId: string, opts?: { initial?: boolean }) => {
+    if (opts?.initial) setLoadingMsgs(true);
     try {
       const r = await api.get(`/driver-portal/dispatch/messages/${driverId}`);
-      setMessages(unwrapList(r));
+      const incoming = unwrapList(r);
+      setMessages(prev => {
+        // Only update state if new messages arrived (avoid re-render flicker/jump)
+        const prevLastId = prev[prev.length - 1]?.id;
+        const incomingLastId = incoming[incoming.length - 1]?.id;
+        if (prev.length === incoming.length && prevLastId === incomingLastId) return prev;
+        // New messages — scroll to bottom after render
+        if (!opts?.initial && incoming.length > prev.length) {
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        }
+        return incoming;
+      });
       // Mark unread as read in the sidebar
       setDrivers(ds => ds.map(d => d.id === driverId ? { ...d, unreadCount: 0 } : d));
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      if (opts?.initial) {
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      }
     } catch { /* offline */ }
-    setLoadingMsgs(false);
+    if (opts?.initial) setLoadingMsgs(false);
   }, []);
 
   useEffect(() => { void loadDrivers(); }, [loadDrivers]);
 
   useEffect(() => {
     if (!selectedId) return;
-    void loadMessages(selectedId);
+    void loadMessages(selectedId, { initial: true });
     intervalRef.current = setInterval(() => void loadMessages(selectedId), 5000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [selectedId, loadMessages]);
