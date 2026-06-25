@@ -388,4 +388,65 @@ Return ONLY the JSON array, no other text.`;
       take: limit,
     });
   }
+
+  // ── Platform-wide views (owner console) ───────────────────────────────────
+  // Competitive intel is market-wide, not tenant-specific — the sweep does web
+  // search + AI analysis and stores the same report per company. For the owner
+  // console (which runs on an owner token, not a tenant token) we aggregate
+  // across ALL companies so the owner sees the latest platform intelligence.
+
+  /** Latest competitive report across every company. */
+  async getLatestReportAny(): Promise<IntelligenceReport | null> {
+    const event = await (this.prisma.aiEvent as any).findFirst({
+      where: { type: 'COMPETITIVE_INTELLIGENCE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!event?.metadata) return null;
+    try {
+      return (typeof event.metadata === 'string'
+        ? JSON.parse(event.metadata)
+        : event.metadata) as IntelligenceReport;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Recent intel events across every company, de-duplicated by title. */
+  async getInsightsAny(limit = 20) {
+    const rows = await (this.prisma.aiEvent as any).findMany({
+      where: { type: { in: ['COMPETITIVE_INTELLIGENCE', 'COMPETITOR_THREAT'] } },
+      orderBy: { createdAt: 'desc' },
+      take: limit * 4,
+    });
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const r of rows) {
+      if (seen.has(r.title)) continue;
+      seen.add(r.title);
+      out.push(r);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /**
+   * Run a single sweep and persist the same report to every active company,
+   * so the owner console and all tenant buckets stay in sync. Returns the
+   * fresh report for immediate display.
+   */
+  async runSweepForPlatform(): Promise<IntelligenceReport> {
+    const report = await this.runSweep('platform');
+    const companies = await this.prisma.company.findMany({
+      where: { isActive: true },
+      select: { id: true },
+    });
+    for (const c of companies) {
+      try {
+        await this.persistAndBroadcast(c.id, report);
+      } catch (err: any) {
+        this.logger.error(`Intel persist failed for company ${c.id}: ${err.message}`);
+      }
+    }
+    return report;
+  }
 }

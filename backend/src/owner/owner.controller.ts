@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@ne
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OwnerService } from './owner.service';
 import { AlertingService } from '../alerting/alerting.service';
+import { CompetitiveIntelligenceService } from '../ai/competitive-intelligence.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -16,6 +17,7 @@ export class OwnerController {
   constructor(
     private readonly svc: OwnerService,
     private readonly alerting: AlertingService,
+    private readonly intel: CompetitiveIntelligenceService,
   ) {}
 
   @Get('tenants')
@@ -125,6 +127,22 @@ export class OwnerController {
   @Post('alerts/:id/resolve')
   resolveAlert(@Param('id') id: string) {
     return this.alerting.resolve(id);
+  }
+
+  // ── Competitive Intelligence (platform-wide, owner-scoped) ────────────────
+  @Get('intel/latest')
+  intelLatest() {
+    return this.intel.getLatestReportAny();
+  }
+
+  @Get('intel/insights')
+  intelInsights(@Query('limit') limit?: string) {
+    return this.intel.getInsightsAny(Number(limit) || 20);
+  }
+
+  @Post('intel/sweep')
+  intelSweep() {
+    return this.intel.runSweepForPlatform();
   }
 
   @Get('audit')
