@@ -18,6 +18,7 @@ export type TenantNavPermissionKey =
   | "creditControl"
   | "quotes"
   | "aiControlTower"
+  | "copilot"
   | "risksExceptions"
   | "usersRoles"
   | "settings";
@@ -44,6 +45,7 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   creditControl: "Credit Control",
   quotes: "Quotes",
   aiControlTower: "AI Control Tower",
+  copilot: "Ask FlowOps",
   risksExceptions: "High Risk Queue",
   usersRoles: "Users & Roles",
   settings: "Settings",
@@ -69,6 +71,7 @@ export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [
   "creditControl",
   "quotes",
   "aiControlTower",
+  "copilot",
   "risksExceptions",
   "usersRoles",
   "settings",
@@ -95,6 +98,7 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     creditControl: true,
     quotes: true,
     aiControlTower: true,
+    copilot: true,
     risksExceptions: true,
     usersRoles: true,
     settings: true,
@@ -134,6 +138,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       creditControl: true,
       quotes: true,
       aiControlTower: true,
+      copilot: true,
       risksExceptions: true,
       usersRoles: false,
       settings: false,
@@ -162,6 +167,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       creditControl: false,
       quotes: false,
       aiControlTower: false,
+      copilot: false,
       risksExceptions: true,
       usersRoles: false,
       settings: false,
@@ -193,6 +199,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       creditControl: false,
       quotes: false,
       aiControlTower: false,
+      copilot: false,
       risksExceptions: false,
       usersRoles: false,
       settings: false,         // integrations / system config — removed
@@ -223,6 +230,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       creditControl: false,
       quotes: true,
       aiControlTower: true,
+      copilot: true,
       risksExceptions: true,
       usersRoles: false,
       settings: false,
@@ -249,6 +257,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     creditControl: false,
     quotes: false,
     aiControlTower: false,
+    copilot: false,
     risksExceptions: false,
     usersRoles: false,
     settings: false,
@@ -278,6 +287,7 @@ function buildViewerPermissions(): TenantNavPermissions {
     creditControl: true,
     quotes: true,
     aiControlTower: false,
+    copilot: true,         // Ask FlowOps — analytics Q&A fits the finance/reporting viewer
     risksExceptions: false,
     usersRoles: false,
     settings: false,

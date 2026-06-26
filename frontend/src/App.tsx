@@ -19,6 +19,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Shipments = lazy(() => import("./pages/Shipments"));
 const WaybillInbox = lazy(() => import("./pages/WaybillInbox"));
 const Waybills = lazy(() => import("./pages/Waybills"));
+const AskFlowOps = lazy(() => import("./pages/AskFlowOps"));
 const Clients = lazy(() => import("./pages/Clients"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const Collections = lazy(() => import("./pages/Collections"));
@@ -242,6 +243,8 @@ export default function App() {
               <Route path="/rate-shopping" element={<RequirePermission perm="rateCards"><RateShopping /></RequirePermission>} />
               <Route path="/quotes" element={<RequirePermission perm="quotes"><QuotesPage /></RequirePermission>} />
               <Route path="/ai-control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
+              <Route path="/ask" element={<RequirePermission perm="copilot"><AskFlowOps /></RequirePermission>} />
+              <Route path="/copilot" element={<RequirePermission perm="copilot"><AskFlowOps /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />

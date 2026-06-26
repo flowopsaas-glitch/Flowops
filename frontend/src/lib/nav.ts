@@ -235,6 +235,17 @@ export const NAV_ITEMS: NavItem[] = [
     hotkey: "Ctrl+K",
   },
   {
+    key: "copilot",
+    name: "Ask FlowOps",
+    page: "AskFlowOps",
+    path: "/ask",
+    permissionKey: "copilot",
+    icon: Sparkles,
+    section: "AI",
+    description: "Ask anything about your operation in plain English",
+    badge: "NEW",
+  },
+  {
     key: "risksExceptions",
     name: "High Risk Queue",
     page: "HighRiskQueue",

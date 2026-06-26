@@ -42,6 +42,7 @@ import { AuditModule } from './audit/audit.module';
 import { DriverPortalModule } from './driver-portal/driver-portal.module';
 import { AlertingModule } from './alerting/alerting.module';
 import { EmailHubModule } from './email-hub/email-hub.module';
+import { CopilotModule } from './copilot/copilot.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { EmailHubModule } from './email-hub/email-hub.module';
     // Owner alerting engine (global)
     AlertingModule,
     EmailHubModule,
+    CopilotModule,
 
     // Domain modules
     AuthModule,
