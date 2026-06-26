@@ -12,6 +12,7 @@ export class WhatsAppService {
   private readonly accessToken: string;
   private readonly webhookVerifyToken: string;
   private readonly appSecret: string;
+  private readonly businessAccountId: string;
 
   constructor(
     private prisma: PrismaService,
@@ -22,6 +23,7 @@ export class WhatsAppService {
     this.accessToken = config.get<string>('WHATSAPP_ACCESS_TOKEN', '');
     this.webhookVerifyToken = config.get<string>('WHATSAPP_WEBHOOK_VERIFY_TOKEN', '');
     this.appSecret = config.get<string>('WHATSAPP_APP_SECRET', '');
+    this.businessAccountId = config.get<string>('WHATSAPP_BUSINESS_ACCOUNT_ID', '');
     this.apiBase = `https://graph.facebook.com/${version}`;
   }
 
@@ -186,6 +188,116 @@ export class WhatsAppService {
       return challenge;
     }
     throw new UnauthorizedException('Webhook verification failed — check WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+  }
+
+  // ── Templates (proactive / first-contact messaging) ──────────────────
+
+  /**
+   * List approved message templates from the WhatsApp Business Account.
+   * Requires WHATSAPP_BUSINESS_ACCOUNT_ID. Sending a template by name works
+   * without it; this is only for populating the picker.
+   */
+  async listTemplates() {
+    if (!this.businessAccountId || !this.accessToken) {
+      return {
+        configured: false,
+        templates: [] as any[],
+        message:
+          'Add WHATSAPP_BUSINESS_ACCOUNT_ID to your .env to list templates. ' +
+          'You can still send a template by typing its exact name.',
+      };
+    }
+    try {
+      const res = await axios.get(
+        `${this.apiBase}/${this.businessAccountId}/message_templates`,
+        {
+          headers: { Authorization: `Bearer ${this.accessToken}` },
+          params: { fields: 'name,status,language,category,components', limit: 100 },
+        },
+      );
+      const templates = (res.data?.data ?? []).map((t: any) => {
+        const body = (t.components ?? []).find((c: any) => c.type === 'BODY');
+        const bodyText: string = body?.text ?? '';
+        const variableCount = (bodyText.match(/\{\{\d+\}\}/g) ?? []).length;
+        return {
+          name: t.name,
+          language: t.language,
+          status: t.status,
+          category: t.category,
+          bodyText,
+          variableCount,
+        };
+      });
+      return { configured: true, templates };
+    } catch (err: any) {
+      const detail = err?.response?.data?.error?.message ?? err.message;
+      throw new BadRequestException(`Could not load templates: ${detail}`);
+    }
+  }
+
+  /**
+   * Send an approved template message — the only way to message a customer
+   * outside the 24-hour customer-service window (e.g. "out for delivery").
+   */
+  async sendTemplate(
+    companyId: string,
+    to: string,
+    name: string,
+    language: string,
+    variables: string[] = [],
+  ) {
+    if (!this.phoneNumberId || !this.accessToken) {
+      return {
+        sent: false,
+        configured: false,
+        message: 'WhatsApp is not configured. Add WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN.',
+      };
+    }
+    if (!name) throw new BadRequestException('Template name is required');
+
+    const phone = to.replace(/^\+/, '').replace(/\s/g, '');
+    const components = variables.length
+      ? [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: String(v) })) }]
+      : [];
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'template',
+      template: { name, language: { code: language || 'en_US' }, components },
+    };
+
+    let wabaMessageId: string | undefined;
+    try {
+      const response = await axios.post(
+        `${this.apiBase}/${this.phoneNumberId}/messages`,
+        payload,
+        { headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' } },
+      );
+      wabaMessageId = response.data?.messages?.[0]?.id;
+      this.logger.log(`WhatsApp template '${name}' sent to ${phone}, waba_id: ${wabaMessageId}`);
+    } catch (err: any) {
+      const detail = err?.response?.data?.error?.message ?? err.message;
+      const code = err?.response?.data?.error?.code;
+      this.logger.error(`WhatsApp template send failed: ${detail}`);
+      throw new BadRequestException(
+        `WhatsApp could not send template: ${detail}${code ? ` (Meta error ${code})` : ''}`,
+      );
+    }
+
+    const summary = variables.length
+      ? `[Template: ${name}] ${variables.join(' · ')}`
+      : `[Template: ${name}]`;
+    const thread = await this.upsertThread(companyId, phone);
+    const msg = await this.prisma.whatsAppMessage.create({
+      data: { content: summary, direction: 'OUTBOUND', status: 'sent', wabaMessageId, threadId: thread.id },
+    });
+    await this.prisma.whatsAppThread.update({
+      where: { id: thread.id },
+      data: { lastMessage: summary, lastMessageAt: new Date() },
+    });
+    return msg;
   }
 
   // ── Webhook: incoming message events ─────────────────────────────────

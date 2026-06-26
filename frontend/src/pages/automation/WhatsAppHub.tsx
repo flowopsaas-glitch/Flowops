@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Zap, MessageSquare, Phone, Plus, Save, ExternalLink, Loader2 } from "lucide-react";
+import { Send, Zap, MessageSquare, Phone, Plus, Save, ExternalLink, Loader2, FileText } from "lucide-react";
 import { api } from "../../api/client";
 import { useToast } from "../../components/ui/use-toast";
+import WhatsAppTemplateModal from "../../components/WhatsAppTemplateModal";
 
 type Thread = {
   id: string;
@@ -56,6 +57,7 @@ export default function WhatsAppHub() {
   // click-to-chat (wa.me) which opens WhatsApp for the agent to press send.
   const [apiConfigured, setApiConfigured] = useState(false);
   const [sending, setSending] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   // Start a brand-new conversation with any number (no existing thread needed).
   const [newChatNumber, setNewChatNumber] = useState("");
@@ -306,6 +308,15 @@ export default function WhatsAppHub() {
                 placeholder={apiConfigured ? "Type a message…" : "Type a message — opens in WhatsApp..."}
                 className="flex-1 bg-white/5 border border-white/10 rounded-[28px] py-5 px-8 text-sm font-medium outline-none focus:border-emerald-500/40"
               />
+              {apiConfigured && selectedPhone && (
+                <button
+                  onClick={() => setTemplateOpen(true)}
+                  title="Send an approved template (for first contact / outside the 24h window)"
+                  className="bg-white/5 border border-white/10 text-white/80 px-5 rounded-[24px] font-bold flex items-center gap-2 hover:bg-white/10"
+                >
+                  <FileText size={18} /> Template
+                </button>
+              )}
               <button
                 onClick={handleSend}
                 disabled={sending || !newMessage.trim()}
@@ -322,6 +333,18 @@ export default function WhatsAppHub() {
           </div>
         )}
       </div>
+
+      {templateOpen && selectedPhone && (
+        <WhatsAppTemplateModal
+          to={selectedPhone}
+          onClose={() => setTemplateOpen(false)}
+          onSent={() => {
+            setTemplateOpen(false);
+            loadMessages(selectedPhone);
+            fetchSidebar();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -40,6 +40,26 @@ export class WhatsAppController {
     return this.svc.sendMessage(u.companyId, body.to, body.message);
   }
 
+  @Get('templates')
+  templates() {
+    return this.svc.listTemplates();
+  }
+
+  @Post('send-template')
+  @HttpCode(200)
+  sendTemplate(
+    @CurrentUser() u: any,
+    @Body() body: { to: string; name: string; language?: string; variables?: string[] },
+  ) {
+    return this.svc.sendTemplate(
+      u.companyId,
+      body.to,
+      body.name,
+      body.language ?? 'en_US',
+      body.variables ?? [],
+    );
+  }
+
   @Post('register-client-number')
   registerNumber(@CurrentUser() u: any, @Body() body: { phoneNumber: string }) {
     return this.svc.registerNumber(u.companyId, body.phoneNumber);
