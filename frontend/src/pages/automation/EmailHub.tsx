@@ -8,12 +8,20 @@ import {
   MessageSquare,
   ArrowUpRight,
   ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  Paperclip,
+  Send,
+  X,
+  Plus,
+  Loader2,
   RefreshCw,
   Search,
   CheckCheck,
   Sparkles,
 } from "lucide-react";
 import {
+  EmailHubAttachment,
   EmailHubItem,
   EmailHubPriority,
   EmailHubStatus,
@@ -23,6 +31,7 @@ import {
   markEmailHubRead,
   resolveEmailHubItem,
   seedEmailHubDemo,
+  sendEmailHub,
   updateEmailHubItem,
 } from "../../api/emailHubApi";
 
@@ -114,11 +123,18 @@ export default function EmailHub() {
   const [type, setType] = useState<EmailHubType | "">("");
   const [status, setStatus] = useState<EmailHubStatus | "">("");
   const [priority, setPriority] = useState<EmailHubPriority | "">("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [opsNote, setOpsNote] = useState("");
   const [pageError, setPageError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [seeding, setSeeding] = useState(false);
+
+  // Compose
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [composeError, setComposeError] = useState("");
+  const [composeForm, setComposeForm] = useState({ to: "", subject: "", body: "" });
+  const [composeFiles, setComposeFiles] = useState<File[]>([]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedId) ?? items[0] ?? null,
@@ -172,7 +188,7 @@ export default function EmailHub() {
     await loadAll();
   }
 
-  async function handleMarkRead(id: number) {
+  async function handleMarkRead(id: string) {
     try {
       await markEmailHubRead(id);
       await loadAll();
@@ -181,12 +197,36 @@ export default function EmailHub() {
     }
   }
 
-  async function handleResolve(id: number) {
+  async function handleResolve(id: string) {
     try {
       await resolveEmailHubItem(id);
       await loadAll();
     } catch (error) {
       setPageError(getErrorMessage(error));
+    }
+  }
+
+  async function handleSend() {
+    setComposeError("");
+    if (!composeForm.to.trim() || !composeForm.subject.trim()) {
+      setComposeError("Recipient and subject are required.");
+      return;
+    }
+    setSending(true);
+    try {
+      const result = await sendEmailHub(
+        { to: composeForm.to.trim(), subject: composeForm.subject.trim(), body: composeForm.body },
+        composeFiles
+      );
+      setComposeOpen(false);
+      setComposeForm({ to: "", subject: "", body: "" });
+      setComposeFiles([]);
+      await loadAll();
+      if (result?.id) setSelectedId(result.id);
+    } catch (error) {
+      setComposeError(getErrorMessage(error));
+    } finally {
+      setSending(false);
     }
   }
 
@@ -241,6 +281,18 @@ export default function EmailHub() {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setComposeError("");
+                  setComposeOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-500/90 px-4 py-3 text-sm font-bold text-white ring-1 ring-white/15 transition hover:bg-blue-500"
+              >
+                <Send className="h-4 w-4" />
+                Compose
+              </button>
+
               <button
                 type="button"
                 onClick={handleSeedDemo}
@@ -516,6 +568,10 @@ export default function EmailHub() {
                   </div>
                 </div>
 
+                {selectedItem.attachments && selectedItem.attachments.length > 0 ? (
+                  <AttachmentsPanel attachments={selectedItem.attachments} />
+                ) : null}
+
                 <div className="mt-4 rounded-[22px] border border-white/10 bg-black/20 p-4">
                   <div className="text-sm font-extrabold text-white">Ops note</div>
                   <textarea
@@ -563,6 +619,213 @@ export default function EmailHub() {
             )}
           </div>
         </div>
+      </div>
+
+      {composeOpen ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => !sending && setComposeOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-[24px] border border-white/10 bg-[#0b1530] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xl font-black text-white">
+                <Send className="h-5 w-5" /> Compose email
+              </h2>
+              <button
+                type="button"
+                onClick={() => !sending && setComposeOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <input
+                value={composeForm.to}
+                onChange={(e) => setComposeForm((f) => ({ ...f, to: e.target.value }))}
+                placeholder="To (email address)"
+                className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-blue-400/40"
+              />
+              <input
+                value={composeForm.subject}
+                onChange={(e) => setComposeForm((f) => ({ ...f, subject: e.target.value }))}
+                placeholder="Subject"
+                className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-blue-400/40"
+              />
+              <textarea
+                value={composeForm.body}
+                onChange={(e) => setComposeForm((f) => ({ ...f, body: e.target.value }))}
+                rows={7}
+                placeholder="Write your message..."
+                className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-blue-400/40"
+              />
+
+              <div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/15">
+                  <Paperclip className="h-4 w-4" /> Attach files
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const fl = Array.from(e.target.files ?? []);
+                      setComposeFiles((prev) => [...prev, ...fl]);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+                <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-white/45">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-300" />
+                  Every attachment is automatically scanned for threats before sending.
+                </p>
+
+                {composeFiles.length > 0 ? (
+                  <ul className="mt-3 space-y-2">
+                    {composeFiles.map((file, idx) => (
+                      <li
+                        key={`${file.name}-${idx}`}
+                        className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <FileText className="h-4 w-4 shrink-0 text-white/60" />
+                          <span className="truncate">{file.name}</span>
+                          <span className="shrink-0 text-xs text-white/40">
+                            {formatBytes(file.size)}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setComposeFiles((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                          className="ml-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/70 transition hover:bg-white/20"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
+              {composeError ? (
+                <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-100">
+                  {composeError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={sending}
+                onClick={() => setComposeOpen(false)}
+                className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/15 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={sending}
+                onClick={handleSend}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-500/90 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-500 disabled:opacity-50"
+              >
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sending ? "Scanning & sending..." : "Send email"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function threatTone(level: EmailHubAttachment["threatLevel"]) {
+  switch (level) {
+    case "CRITICAL":
+    case "HIGH":
+      return "bg-red-500/15 text-red-200 border-red-400/25";
+    case "MEDIUM":
+      return "bg-amber-500/15 text-amber-200 border-amber-400/25";
+    case "LOW":
+      return "bg-yellow-500/10 text-yellow-200 border-yellow-400/20";
+    default:
+      return "bg-emerald-500/15 text-emerald-200 border-emerald-400/25";
+  }
+}
+
+function AttachmentsPanel(props: { attachments: EmailHubAttachment[] }) {
+  return (
+    <div className="mt-4 rounded-[22px] border border-white/10 bg-black/20 p-4">
+      <div className="flex items-center gap-2 text-sm font-extrabold text-white">
+        <Paperclip className="h-4 w-4" />
+        Attachments ({props.attachments.length})
+      </div>
+      <div className="mt-3 space-y-2">
+        {props.attachments.map((att) => {
+          const flagged = att.threatLevel !== "NONE" || att.scanStatus === "THREAT";
+          return (
+            <div
+              key={att.id}
+              className={cn(
+                "rounded-xl border p-3",
+                att.scanStatus === "THREAT"
+                  ? "border-red-400/30 bg-red-500/10"
+                  : "border-white/10 bg-white/5"
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2 text-sm text-white/90">
+                  <FileText className="h-4 w-4 shrink-0 text-white/60" />
+                  <span className="truncate font-semibold">{att.filename}</span>
+                  <span className="shrink-0 text-xs text-white/40">{formatBytes(att.size)}</span>
+                </span>
+                <span
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-extrabold",
+                    threatTone(att.threatLevel)
+                  )}
+                >
+                  {flagged ? (
+                    <AlertTriangle className="h-3 w-3" />
+                  ) : (
+                    <ShieldCheck className="h-3 w-3" />
+                  )}
+                  {att.scanStatus === "THREAT"
+                    ? `THREAT · ${att.threatLevel}`
+                    : flagged
+                      ? `REVIEW · ${att.threatLevel}`
+                      : "CLEAN"}
+                </span>
+              </div>
+              {att.threatReason ? (
+                <div className="mt-2 text-xs text-white/60">{att.threatReason}</div>
+              ) : null}
+              {att.fileUrl && att.scanStatus !== "THREAT" ? (
+                <a
+                  href={att.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-blue-300 hover:text-blue-200"
+                >
+                  Download <ArrowUpRight className="h-3 w-3" />
+                </a>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

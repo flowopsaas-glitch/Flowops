@@ -900,13 +900,64 @@ model EmailHubItem {
   resolved Boolean @default(false)
   category String?
 
+  // ── Triage / classification (matches frontend contract) ──
+  type      String @default("GENERAL") // COLLECTION_REQUEST|POD|QUOTE|FEEDBACK|NOTIFICATION|AI_MONITOR|GENERAL
+  status    String @default("NEW") // NEW|TRIAGED|IN_PROGRESS|WAITING|RESOLVED|ARCHIVED
+  priority  String @default("MEDIUM") // LOW|MEDIUM|HIGH|CRITICAL
+  direction String @default("INBOUND") // INBOUND|OUTBOUND
+
+  senderName     String?
+  senderEmail    String?
+  recipientEmail String?
+
+  waybillNumber String?
+  podNumber     String?
+
+  // ── AI monitoring ──
+  aiSummary         String? @db.Text
+  aiConfidence      Float?
+  aiCategory        String?
+  aiSuggestedAction String?
+  opsNote           String? @db.Text
+
+  isRead         Boolean  @default(false)
+  needsOpsAction Boolean  @default(false)
+  receivedAt     DateTime @default(now())
+
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  attachments EmailAttachment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([companyId])
   @@map("email_hub_items")
+}
+
+model EmailAttachment {
+  id             String       @id @default(cuid())
+  emailHubItemId String
+  emailHubItem   EmailHubItem @relation(fields: [emailHubItemId], references: [id], onDelete: Cascade)
+
+  filename String
+  mimeType String?
+  size     Int     @default(0)
+  fileKey  String? // object key in Cloudflare R2
+  fileUrl  String? // resolved (signed/public) URL
+
+  // ── AI threat scan ──
+  scanStatus   String    @default("PENDING") // PENDING|CLEAN|THREAT|SKIPPED|ERROR
+  threatLevel  String    @default("NONE") // NONE|LOW|MEDIUM|HIGH|CRITICAL
+  threatReason String?
+  scanEngine   String? // heuristic | clamav | virustotal
+  scannedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([emailHubItemId])
+  @@map("email_attachments")
 }
 
 // ─── Leads ────────────────────────────────────────────────────────────────
