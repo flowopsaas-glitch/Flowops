@@ -15,6 +15,7 @@ export type TenantNavPermissionKey =
   | "billingBatches"
   | "invoiceDrafts"
   | "invoices"
+  | "accounting"
   | "creditControl"
   | "quotes"
   | "aiControlTower"
@@ -41,6 +42,7 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   billingBatches: "Billing Batches",
   invoiceDrafts: "Invoice Drafts",
   invoices: "Invoices",
+  accounting: "Accounting",
   creditControl: "Credit Control",
   quotes: "Quotes",
   aiControlTower: "AI Control Tower",
@@ -66,6 +68,7 @@ export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [
   "billingBatches",
   "invoiceDrafts",
   "invoices",
+  "accounting",
   "creditControl",
   "quotes",
   "aiControlTower",
@@ -92,6 +95,7 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     billingBatches: true,
     invoiceDrafts: true,
     invoices: true,
+    accounting: true,
     creditControl: true,
     quotes: true,
     aiControlTower: true,
@@ -113,7 +117,6 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
   }
 
   if (value === "MANAGER") {
-    // Operational oversight + billing visibility, but no user admin / settings.
     return {
       dashboard: true,
       shipments: true,
@@ -131,6 +134,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: true,
       invoiceDrafts: true,
       invoices: true,
+      accounting: true,
       creditControl: true,
       quotes: true,
       aiControlTower: true,
@@ -141,7 +145,6 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
   }
 
   if (value === "WAREHOUSE") {
-    // Hub clerk: inbound/outbound goods handling, POD capture, exception flags.
     return {
       dashboard: true,
       shipments: true,
@@ -159,6 +162,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      accounting: false,
       creditControl: false,
       quotes: false,
       aiControlTower: false,
@@ -169,33 +173,30 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
   }
 
   if (value === "DRIVER") {
-    // Field driver — focused on their active deliveries / pickups.
-    // Management pages (dispatch console, route optimizer, fleet mgmt,
-    // waybill register, shipments log, settings, integrations) are NOT
-    // relevant for someone in the field and are deliberately removed.
     return {
       dashboard: true,
-      shipments: false,        // management console — not for field drivers
+      shipments: false,
       waybillInbox: false,
-      waybills: false,         // full waybill register — management only
+      waybills: false,
       clients: false,
       notifications: true,
-      collections: true,       // see their pickup queue
-      podDeliveries: true,     // POD capture + delivery list
-      driverDispatch: false,   // managing other drivers — removed
-      whatsapp: true,          // contact clients / dispatch
+      collections: true,
+      podDeliveries: true,
+      driverDispatch: false,
+      whatsapp: true,
       email: false,
       clientQueries: false,
       rateCards: false,
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      accounting: false,
       creditControl: false,
       quotes: false,
       aiControlTower: false,
       risksExceptions: false,
       usersRoles: false,
-      settings: false,         // integrations / system config — removed
+      settings: false,
     };
   }
 
@@ -203,7 +204,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     return buildViewerPermissions();
   }
 
-  if (value === "DISPATCH") {    return {
+  if (value === "DISPATCH") {
+    return {
       dashboard: true,
       shipments: true,
       waybillInbox: true,
@@ -220,6 +222,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      accounting: false,
       creditControl: false,
       quotes: true,
       aiControlTower: true,
@@ -246,6 +249,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     billingBatches: false,
     invoiceDrafts: false,
     invoices: false,
+    accounting: false,
     creditControl: false,
     quotes: false,
     aiControlTower: false,
@@ -271,10 +275,11 @@ function buildViewerPermissions(): TenantNavPermissions {
     whatsapp: false,
     email: false,
     clientQueries: false,
-    rateCards: true,       // Rate Cards + Rate Shopping
-    billingBatches: true,  // Billing Batches + COD Reconciliation
+    rateCards: true,
+    billingBatches: true,
     invoiceDrafts: true,
-    invoices: true,        // Finance Home + Invoices
+    invoices: true,
+    accounting: true,
     creditControl: true,
     quotes: true,
     aiControlTower: false,

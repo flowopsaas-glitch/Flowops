@@ -189,6 +189,10 @@ model Company {
   webhookEndpoints   WebhookEndpoint[]
   codTransactions    CodTransaction[]
   clients            Client[]
+  creditNotes        CreditNote[]
+  debitNotes         DebitNote[]
+  salespeople        Salesperson[]
+  commissions        Commission[]
 
   @@map("companies")
 }
@@ -644,6 +648,9 @@ model Invoice {
 
   items    InvoiceItem[]
   payments Payment[]
+  creditNotes CreditNote[]
+  debitNotes  DebitNote[]
+  commissions Commission[]
 
   @@unique([invoiceNumber, companyId])
   @@map("invoices")
@@ -1241,4 +1248,175 @@ model DriverChatMessage {
   @@index([driverId, createdAt])
   @@index([companyId, createdAt])
   @@map("driver_chat_messages")
+}
+
+
+// ─── Accounting: Credit / Debit Notes, Statements, Sales Commission ─────────
+// Adjustment documents and salesperson commission tracking that close the
+// accounting-depth gap vs incumbents (credit/debit notes, age analysis,
+// statements, Pastel/CSV export, sales commission).
+
+enum CreditNoteStatus {
+  DRAFT    // being prepared
+  ISSUED   // finalised + numbered, owed back to the client
+  APPLIED  // offset against an invoice / fully consumed
+  VOID     // cancelled
+}
+
+enum DebitNoteStatus {
+  DRAFT
+  ISSUED
+  SETTLED
+  VOID
+}
+
+enum CommissionStatus {
+  PENDING   // calculated, awaiting approval
+  APPROVED  // approved for payout
+  PAID      // paid out to the salesperson
+  VOID
+}
+
+model CreditNote {
+  id         String           @id @default(cuid())
+  number     String           // CN-YYYY-#### per company
+  status     CreditNoteStatus @default(DRAFT)
+
+  clientName  String
+  clientEmail String?
+
+  // Optional link to the invoice this credit adjusts
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  reason   String?
+  subtotal Float  @default(0)
+  tax      Float  @default(0)
+  total    Float  @default(0)
+  // How much of `total` has been applied/offset so far
+  appliedAmount Float @default(0)
+
+  issuedAt  DateTime?
+  appliedAt DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  items CreditNoteItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([number, companyId])
+  @@index([companyId, status])
+  @@index([companyId, clientName])
+  @@map("credit_notes")
+}
+
+model CreditNoteItem {
+  id           String     @id @default(cuid())
+  description  String
+  quantity     Int        @default(1)
+  unitPrice    Float
+  total        Float
+  creditNoteId String
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+
+  @@map("credit_note_items")
+}
+
+model DebitNote {
+  id         String          @id @default(cuid())
+  number     String          // DN-YYYY-#### per company
+  status     DebitNoteStatus @default(DRAFT)
+
+  clientName  String
+  clientEmail String?
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  reason   String?
+  subtotal Float @default(0)
+  tax      Float @default(0)
+  total    Float @default(0)
+
+  issuedAt  DateTime?
+  settledAt DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  items DebitNoteItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([number, companyId])
+  @@index([companyId, status])
+  @@index([companyId, clientName])
+  @@map("debit_notes")
+}
+
+model DebitNoteItem {
+  id          String    @id @default(cuid())
+  description String
+  quantity    Int       @default(1)
+  unitPrice   Float
+  total       Float
+  debitNoteId String
+  debitNote   DebitNote @relation(fields: [debitNoteId], references: [id], onDelete: Cascade)
+
+  @@map("debit_note_items")
+}
+
+model Salesperson {
+  id                  String  @id @default(cuid())
+  name                String
+  email               String?
+  // Default commission rate (percent of invoice value) used when generating
+  // commission records. Can be overridden per generated record.
+  defaultCommissionPct Float  @default(0)
+  isActive            Boolean @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  commissions Commission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("salespeople")
+}
+
+model Commission {
+  id            String           @id @default(cuid())
+  salespersonId String
+  salesperson   Salesperson      @relation(fields: [salespersonId], references: [id], onDelete: Cascade)
+
+  // Source of the commissionable amount
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  periodMonth String           // YYYY-MM the commission belongs to
+  baseAmount  Float            // commissionable base (e.g. invoice total ex-VAT)
+  ratePct     Float            // percent applied
+  amount      Float            // computed commission payout
+  status      CommissionStatus @default(PENDING)
+  note        String?
+
+  approvedAt DateTime?
+  paidAt     DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, periodMonth])
+  @@index([salespersonId, status])
+  @@map("commissions")
 }
