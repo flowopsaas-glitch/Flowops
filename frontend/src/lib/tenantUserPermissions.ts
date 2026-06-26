@@ -6,6 +6,7 @@ export type TenantNavPermissionKey =
   | "clients"
   | "notifications"
   | "collections"
+  | "returns"
   | "podDeliveries"
   | "driverDispatch"
   | "whatsapp"
@@ -32,6 +33,7 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   clients: "Clients",
   notifications: "Notifications",
   collections: "Collections",
+  returns: "Returns (RMA)",
   podDeliveries: "POD / Deliveries",
   driverDispatch: "Driver Dispatch",
   whatsapp: "WhatsApp",
@@ -57,6 +59,7 @@ export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [
   "clients",
   "notifications",
   "collections",
+  "returns",
   "podDeliveries",
   "driverDispatch",
   "whatsapp",
@@ -83,6 +86,7 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     clients: true,
     notifications: true,
     collections: true,
+    returns: true,
     podDeliveries: true,
     driverDispatch: true,
     whatsapp: true,
@@ -122,6 +126,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       clients: true,
       notifications: true,
       collections: true,
+      returns: true,
       podDeliveries: true,
       driverDispatch: true,
       whatsapp: true,
@@ -142,6 +147,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
 
   if (value === "WAREHOUSE") {
     // Hub clerk: inbound/outbound goods handling, POD capture, exception flags.
+    // Returns land at the warehouse for receiving + inspection, so they get it.
     return {
       dashboard: true,
       shipments: true,
@@ -150,6 +156,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       clients: false,
       notifications: true,
       collections: false,
+      returns: true,
       podDeliveries: true,
       driverDispatch: false,
       whatsapp: true,
@@ -181,6 +188,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       clients: false,
       notifications: true,
       collections: true,       // see their pickup queue
+      returns: false,          // returns are managed back-office, collected via driver portal
       podDeliveries: true,     // POD capture + delivery list
       driverDispatch: false,   // managing other drivers — removed
       whatsapp: true,          // contact clients / dispatch
@@ -211,6 +219,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       clients: true,
       notifications: true,
       collections: true,
+      returns: true,
       podDeliveries: true,
       driverDispatch: true,
       whatsapp: true,
@@ -237,6 +246,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     clients: true,
     notifications: true,
     collections: false,
+    returns: false,
     podDeliveries: true,
     driverDispatch: false,
     whatsapp: false,
@@ -266,6 +276,7 @@ function buildViewerPermissions(): TenantNavPermissions {
     clients: false,
     notifications: true,
     collections: false,
+    returns: false,
     podDeliveries: false,
     driverDispatch: false,
     whatsapp: false,

@@ -189,6 +189,7 @@ model Company {
   webhookEndpoints   WebhookEndpoint[]
   codTransactions    CodTransaction[]
   clients            Client[]
+  returns            Return[]
 
   @@map("companies")
 }
@@ -387,6 +388,7 @@ model Driver {
   manifests   Manifest[]
   wallet      DriverWallet?
   services    VehicleService[]
+  returns     Return[]
 
   @@map("drivers")
 }
@@ -481,6 +483,7 @@ model Waybill {
   invoiceItems     InvoiceItem[]
   inboxItem        WaybillInboxItem?
   codTransactions  CodTransaction[]
+  returns          Return[]
 
   @@unique([trackingNumber, companyId])
   @@map("waybills")
@@ -1241,4 +1244,128 @@ model DriverChatMessage {
   @@index([driverId, createdAt])
   @@index([companyId, createdAt])
   @@map("driver_chat_messages")
+}
+
+
+// ─── Returns Management ────────────────────────────────────────────────────
+// Full RMA lifecycle: a customer/agent logs a return against an original
+// waybill (or ad-hoc), it gets triaged + approved, a driver collects it, it's
+// received and inspected at the warehouse, then resolved (refund / replace /
+// restock / dispose). Mirrors the courier-industry returns workflow that
+// incumbents like Parcel Perfect ship, with COD-aware refunds + restocking.
+
+enum ReturnStatus {
+  REQUESTED   // logged, awaiting triage/approval
+  APPROVED    // approved for collection
+  REJECTED    // return refused
+  SCHEDULED   // collection booked / driver assigned
+  IN_TRANSIT  // being returned to the warehouse
+  RECEIVED    // physically back at the warehouse
+  INSPECTING  // QA inspection in progress
+  COMPLETED   // resolved (refund/replace/restock/dispose done)
+  CANCELLED   // withdrawn by customer/agent
+}
+
+enum ReturnReason {
+  DAMAGED
+  DEFECTIVE
+  WRONG_ITEM
+  NOT_AS_DESCRIBED
+  MISSING_PARTS
+  NO_LONGER_NEEDED
+  FAILED_DELIVERY
+  LATE_DELIVERY
+  OTHER
+}
+
+enum ReturnResolution {
+  PENDING
+  REFUND
+  REPLACEMENT
+  REPAIR
+  STORE_CREDIT
+  RESTOCK
+  DISPOSE
+}
+
+enum ReturnCondition {
+  RESELLABLE
+  MINOR_DAMAGE
+  DAMAGED
+  UNUSABLE
+}
+
+model Return {
+  id        String @id @default(cuid())
+  rmaNumber String // human-friendly return reference (e.g. RMA-2406-0007)
+
+  // Link back to the original outbound waybill (optional — supports ad-hoc returns).
+  // trackingNumber is denormalised so search/history survives if the waybill is gone.
+  waybillId      String?
+  waybill        Waybill? @relation(fields: [waybillId], references: [id])
+  trackingNumber String?
+
+  // Who is returning
+  customerName  String
+  customerPhone String?
+  customerEmail String?
+  pickupAddress String?
+  pickupLat     Float?
+  pickupLng     Float?
+
+  reason     ReturnReason     @default(OTHER)
+  reasonNote String?
+  status     ReturnStatus     @default(REQUESTED)
+  resolution ReturnResolution @default(PENDING)
+
+  // Financials (COD-aware: a returned COD parcel may owe the customer a refund)
+  refundAmount Float?
+  restockFee   Float?
+  currency     String @default("ZAR")
+
+  // Logistics — reuse the existing driver fleet for collection
+  assignedDriverId String?
+  assignedDriver   Driver?   @relation(fields: [assignedDriverId], references: [id])
+  scheduledAt      DateTime?
+  collectedAt      DateTime?
+  receivedAt       DateTime?
+
+  // Inspection / QA
+  inspectionNotes String?
+  condition       ReturnCondition?
+  restocked       Boolean          @default(false)
+
+  // Audit trail
+  approvedById String?
+  approvedAt   DateTime?
+  resolvedAt   DateTime?
+
+  items ReturnItem[]
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([rmaNumber, companyId])
+  @@index([companyId])
+  @@index([status])
+  @@index([waybillId])
+  @@map("returns")
+}
+
+model ReturnItem {
+  id          String  @id @default(cuid())
+  returnId    String
+  return      Return  @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  description String
+  sku         String?
+  quantity    Int     @default(1)
+  unitValue   Float?
+  condition   ReturnCondition?
+  restocked   Boolean @default(false)
+
+  @@index([returnId])
+  @@map("return_items")
 }
