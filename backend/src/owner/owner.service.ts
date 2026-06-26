@@ -227,7 +227,7 @@ export class OwnerService {
 
   private static readonly PLAN_PRICE_ZAR: Record<string, number> = {
     starter: 0,
-    professional: 14999,
+    professional: 11999,
     enterprise: 29999,
   };
 
@@ -750,8 +750,11 @@ export class OwnerService {
    * FlowOps billing plans — synced from Paystack (Flowops Holdings, ID: 1839930).
    *
    *   Starter:      FREE   (no Paystack plan — instant activation, no billing)
-   *   Professional: ZAR 14,999 / month  PLN_l3kobthzahnkpf3
+   *   Professional: ZAR 11,999 / month  PLN_l3kobthzahnkpf3
    *   Enterprise:   ZAR 29,999 / month  PLN_9at9kn2ra8jtae0
+   *
+   *   NOTE: the Professional Paystack plan amount must be updated in the
+   *   Paystack dashboard (or a new plan code issued) to charge R11,999.
    */
   async getPlans() {
     return [
@@ -773,7 +776,7 @@ export class OwnerService {
         description: 'Full FlowOps feature suite for growing couriers',
         maxUsers: 50,
         maxWaybills: 10000,
-        price: 14999,
+        price: 11999,
         currency: 'ZAR',
         interval: 'month',
         paystackPlanCode: 'PLN_l3kobthzahnkpf3',
