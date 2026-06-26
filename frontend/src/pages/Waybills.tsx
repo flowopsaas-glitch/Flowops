@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import {
   FileText, Plus, Save, Upload, ScanLine, Sparkles, AlertTriangle,
   BadgeCheck, Hash, CreditCard, Truck, ClipboardList, Package,
-  ChevronRight, UserRound, Calculator, Trash2
+  ChevronRight, UserRound, Calculator, Trash2, Printer
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
@@ -157,6 +157,8 @@ export default function Waybills() {
   const [mode, setMode] = useState<"CAPTURE" | "SCAN" | "UPLOAD">("CAPTURE");
   const [step, setStep] = useState<StepKey>("DETAILS");
   const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<{ id: string; trackingNumber: string } | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [draft, setDraft] = useState<WaybillDraft>(() => ({
     waybillNo: `WB-${Math.floor(100000 + Math.random() * 900000)}`,
     orderDate: todayISO(),
@@ -212,10 +214,15 @@ export default function Waybills() {
         payload.codAmount = draft.codAmount;
       }
 
-      await api.post("/waybills", payload);
+      const saved: any = await api.post("/waybills", payload);
+      const savedWb = saved?.data ?? saved;
       showToast(`Waybill ${draft.waybillNo} saved successfully!`, "success");
-
-      // Reset to a fresh draft
+      if (savedWb?.id) {
+        setLastSaved({
+          id: savedWb.id,
+          trackingNumber: savedWb.trackingNumber || draft.waybillNo,
+        });
+      }
       setDraft({
         waybillNo: `WB-${Math.floor(100000 + Math.random() * 900000)}`,
         orderDate: todayISO(),
@@ -238,6 +245,35 @@ export default function Waybills() {
     }
   }
 
+  // ── Print Label → GET /waybills/:id/label (PDF, opens in new tab) ─────────
+  async function printLabel(id: string) {
+    setIsPrinting(true);
+    try {
+      const blob = await api.get<Blob>(`/waybills/${id}/label`, {
+        responseType: "blob",
+      } as any);
+      const url = URL.createObjectURL(blob as unknown as Blob);
+      const win = window.open(url, "_blank");
+      if (!win) {
+        // Popup blocked — fall back to a direct download.
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `label-${id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      // Revoke after a delay so the new tab has time to load the PDF.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message || err?.message || "Failed to generate label";
+      showToast(msg, "error");
+    } finally {
+      setIsPrinting(false);
+    }
+  }
+
   const stepItems = [
     { key: "DETAILS" as StepKey, label: "Details", icon: ClipboardList },
     { key: "PARTIES" as StepKey, label: "Parties", icon: UserRound },
@@ -257,6 +293,18 @@ export default function Waybills() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" className="border-white/10 bg-white/5" onClick={() => setMode("SCAN")}><ScanLine className="mr-2 h-4 w-4"/> Scan</Button>
+            {lastSaved && (
+              <Button
+                variant="outline"
+                className="border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20 disabled:opacity-50"
+                disabled={isPrinting}
+                onClick={() => void printLabel(lastSaved.id)}
+                title={`Print label for ${lastSaved.trackingNumber}`}
+              >
+                <Printer className="mr-2 h-4 w-4"/>
+                {isPrinting ? "Preparing…" : `Print Label (${lastSaved.trackingNumber})`}
+              </Button>
+            )}
             <Button className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50" disabled={isSaving} onClick={() => void saveDraft()}>
               <Save className="mr-2 h-4 w-4"/>
               {isSaving ? "Saving…" : "Save Draft"}

@@ -1,18 +1,77 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, Res,
   UseInterceptors, UploadedFile, HttpStatus, HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { Response } from 'express';
+import { UserRole } from '@prisma/client';
 import { WaybillsService } from './waybills.service';
+import { LabelService } from './label.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('Waybills')
 @ApiBearerAuth()
 @Controller()
 export class WaybillsController {
-  constructor(private readonly svc: WaybillsService) {}
+  constructor(
+    private readonly svc: WaybillsService,
+    private readonly labels: LabelService,
+  ) {}
+
+  // ── Parcel label printing (PDF) ───────────────────────────────────
+  // Staff-only: who physically prints/applies labels at the hub.
+
+  /**
+   * POST /waybills/labels — bulk label sheet for many waybills in one PDF.
+   * Declared before the GET '/waybills/:id/label' so the literal path is
+   * matched cleanly. Body: { ids: string[] }.
+   */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
+  @Post('waybills/labels')
+  async printLabels(
+    @CurrentUser() u: any,
+    @Body() body: { ids: string[] },
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.labels.generateForMany(
+      body?.ids ?? [],
+      u.companyId,
+    );
+    this.streamPdf(res, buffer, filename);
+  }
+
+  /** GET /waybills/:id/label — single 4x6" parcel label PDF. */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
+  @Get('waybills/:id/label')
+  async printLabel(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.labels.generateForWaybill(
+      id,
+      u.companyId,
+    );
+    this.streamPdf(res, buffer, filename);
+  }
+
+  private streamPdf(res: Response, buffer: Buffer, filename: string) {
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.end(buffer);
+  }
 
   // ── Waybills CRUD ─────────────────────────────────────────────────
 
