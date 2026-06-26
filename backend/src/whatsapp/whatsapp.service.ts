@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 import axios from 'axios';
@@ -147,8 +147,14 @@ export class WhatsAppService {
       this.logger.log(`WhatsApp sent to ${phone}, waba_id: ${wabaMessageId}`);
     } catch (err: any) {
       const detail = err?.response?.data?.error?.message ?? err.message;
+      const code = err?.response?.data?.error?.code;
       this.logger.error(`WhatsApp send failed: ${detail}`);
-      throw new Error(`WhatsApp send failed: ${detail}`);
+      // Surface Meta's actual reason to the client as a 400 (not a generic 500),
+      // so the UI can show e.g. "Recipient phone number not in allowed list" or
+      // the 24-hour re-engagement window message.
+      throw new BadRequestException(
+        `WhatsApp could not send this message: ${detail}${code ? ` (Meta error ${code})` : ''}`,
+      );
     }
 
     // Persist outbound message
