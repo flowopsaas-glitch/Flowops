@@ -1,0 +1,10 @@
+# Generated / installed — regenerated locally, never committed
+node_modules/
+www/
+android/
+ios/
+
+# Misc
+*.log
+.DS_Store
+.env

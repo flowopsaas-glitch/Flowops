@@ -189,6 +189,11 @@ model Company {
   webhookEndpoints   WebhookEndpoint[]
   codTransactions    CodTransaction[]
   clients            Client[]
+  returns            Return[]
+  creditNotes        CreditNote[]
+  debitNotes         DebitNote[]
+  salespeople        Salesperson[]
+  commissions        Commission[]
 
   @@map("companies")
 }
@@ -387,6 +392,7 @@ model Driver {
   manifests   Manifest[]
   wallet      DriverWallet?
   services    VehicleService[]
+  returns     Return[]
 
   @@map("drivers")
 }
@@ -481,6 +487,7 @@ model Waybill {
   invoiceItems     InvoiceItem[]
   inboxItem        WaybillInboxItem?
   codTransactions  CodTransaction[]
+  returns          Return[]
 
   @@unique([trackingNumber, companyId])
   @@map("waybills")
@@ -644,6 +651,9 @@ model Invoice {
 
   items    InvoiceItem[]
   payments Payment[]
+  creditNotes CreditNote[]
+  debitNotes  DebitNote[]
+  commissions Commission[]
 
   @@unique([invoiceNumber, companyId])
   @@map("invoices")
@@ -1241,4 +1251,299 @@ model DriverChatMessage {
   @@index([driverId, createdAt])
   @@index([companyId, createdAt])
   @@map("driver_chat_messages")
+}
+
+
+// ─── Returns Management ────────────────────────────────────────────────────
+// Full RMA lifecycle: a customer/agent logs a return against an original
+// waybill (or ad-hoc), it gets triaged + approved, a driver collects it, it's
+// received and inspected at the warehouse, then resolved (refund / replace /
+// restock / dispose). Mirrors the courier-industry returns workflow that
+// incumbents like Parcel Perfect ship, with COD-aware refunds + restocking.
+
+enum ReturnStatus {
+  REQUESTED   // logged, awaiting triage/approval
+  APPROVED    // approved for collection
+  REJECTED    // return refused
+  SCHEDULED   // collection booked / driver assigned
+  IN_TRANSIT  // being returned to the warehouse
+  RECEIVED    // physically back at the warehouse
+  INSPECTING  // QA inspection in progress
+  COMPLETED   // resolved (refund/replace/restock/dispose done)
+  CANCELLED   // withdrawn by customer/agent
+}
+
+enum ReturnReason {
+  DAMAGED
+  DEFECTIVE
+  WRONG_ITEM
+  NOT_AS_DESCRIBED
+  MISSING_PARTS
+  NO_LONGER_NEEDED
+  FAILED_DELIVERY
+  LATE_DELIVERY
+  OTHER
+}
+
+enum ReturnResolution {
+  PENDING
+  REFUND
+  REPLACEMENT
+  REPAIR
+  STORE_CREDIT
+  RESTOCK
+  DISPOSE
+}
+
+enum ReturnCondition {
+  RESELLABLE
+  MINOR_DAMAGE
+  DAMAGED
+  UNUSABLE
+}
+
+model Return {
+  id        String @id @default(cuid())
+  rmaNumber String // human-friendly return reference (e.g. RMA-2406-0007)
+
+  // Link back to the original outbound waybill (optional — supports ad-hoc returns).
+  // trackingNumber is denormalised so search/history survives if the waybill is gone.
+  waybillId      String?
+  waybill        Waybill? @relation(fields: [waybillId], references: [id])
+  trackingNumber String?
+
+  // Who is returning
+  customerName  String
+  customerPhone String?
+  customerEmail String?
+  pickupAddress String?
+  pickupLat     Float?
+  pickupLng     Float?
+
+  reason     ReturnReason     @default(OTHER)
+  reasonNote String?
+  status     ReturnStatus     @default(REQUESTED)
+  resolution ReturnResolution @default(PENDING)
+
+  // Financials (COD-aware: a returned COD parcel may owe the customer a refund)
+  refundAmount Float?
+  restockFee   Float?
+  currency     String @default("ZAR")
+
+  // Logistics — reuse the existing driver fleet for collection
+  assignedDriverId String?
+  assignedDriver   Driver?   @relation(fields: [assignedDriverId], references: [id])
+  scheduledAt      DateTime?
+  collectedAt      DateTime?
+  receivedAt       DateTime?
+
+  // Inspection / QA
+  inspectionNotes String?
+  condition       ReturnCondition?
+  restocked       Boolean          @default(false)
+
+  // Audit trail
+  approvedById String?
+  approvedAt   DateTime?
+  resolvedAt   DateTime?
+
+  items ReturnItem[]
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([rmaNumber, companyId])
+  @@index([companyId])
+  @@index([status])
+  @@index([waybillId])
+  @@map("returns")
+}
+
+model ReturnItem {
+  id          String  @id @default(cuid())
+  returnId    String
+  return      Return  @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  description String
+  sku         String?
+  quantity    Int     @default(1)
+  unitValue   Float?
+  condition   ReturnCondition?
+  restocked   Boolean @default(false)
+
+  @@index([returnId])
+  @@map("return_items")
+}
+
+
+// ─── Accounting: Credit / Debit Notes, Statements, Sales Commission ─────────
+// Adjustment documents and salesperson commission tracking that close the
+// accounting-depth gap vs incumbents (credit/debit notes, age analysis,
+// statements, Pastel/CSV export, sales commission).
+
+enum CreditNoteStatus {
+  DRAFT    // being prepared
+  ISSUED   // finalised + numbered, owed back to the client
+  APPLIED  // offset against an invoice / fully consumed
+  VOID     // cancelled
+}
+
+enum DebitNoteStatus {
+  DRAFT
+  ISSUED
+  SETTLED
+  VOID
+}
+
+enum CommissionStatus {
+  PENDING   // calculated, awaiting approval
+  APPROVED  // approved for payout
+  PAID      // paid out to the salesperson
+  VOID
+}
+
+model CreditNote {
+  id         String           @id @default(cuid())
+  number     String           // CN-YYYY-#### per company
+  status     CreditNoteStatus @default(DRAFT)
+
+  clientName  String
+  clientEmail String?
+
+  // Optional link to the invoice this credit adjusts
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  reason   String?
+  subtotal Float  @default(0)
+  tax      Float  @default(0)
+  total    Float  @default(0)
+  // How much of `total` has been applied/offset so far
+  appliedAmount Float @default(0)
+
+  issuedAt  DateTime?
+  appliedAt DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  items CreditNoteItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([number, companyId])
+  @@index([companyId, status])
+  @@index([companyId, clientName])
+  @@map("credit_notes")
+}
+
+model CreditNoteItem {
+  id           String     @id @default(cuid())
+  description  String
+  quantity     Int        @default(1)
+  unitPrice    Float
+  total        Float
+  creditNoteId String
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+
+  @@map("credit_note_items")
+}
+
+model DebitNote {
+  id         String          @id @default(cuid())
+  number     String          // DN-YYYY-#### per company
+  status     DebitNoteStatus @default(DRAFT)
+
+  clientName  String
+  clientEmail String?
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  reason   String?
+  subtotal Float @default(0)
+  tax      Float @default(0)
+  total    Float @default(0)
+
+  issuedAt  DateTime?
+  settledAt DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  items DebitNoteItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([number, companyId])
+  @@index([companyId, status])
+  @@index([companyId, clientName])
+  @@map("debit_notes")
+}
+
+model DebitNoteItem {
+  id          String    @id @default(cuid())
+  description String
+  quantity    Int       @default(1)
+  unitPrice   Float
+  total       Float
+  debitNoteId String
+  debitNote   DebitNote @relation(fields: [debitNoteId], references: [id], onDelete: Cascade)
+
+  @@map("debit_note_items")
+}
+
+model Salesperson {
+  id                  String  @id @default(cuid())
+  name                String
+  email               String?
+  // Default commission rate (percent of invoice value) used when generating
+  // commission records. Can be overridden per generated record.
+  defaultCommissionPct Float  @default(0)
+  isActive            Boolean @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  commissions Commission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("salespeople")
+}
+
+model Commission {
+  id            String           @id @default(cuid())
+  salespersonId String
+  salesperson   Salesperson      @relation(fields: [salespersonId], references: [id], onDelete: Cascade)
+
+  // Source of the commissionable amount
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  periodMonth String           // YYYY-MM the commission belongs to
+  baseAmount  Float            // commissionable base (e.g. invoice total ex-VAT)
+  ratePct     Float            // percent applied
+  amount      Float            // computed commission payout
+  status      CommissionStatus @default(PENDING)
+  note        String?
+
+  approvedAt DateTime?
+  paidAt     DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, periodMonth])
+  @@index([salespersonId, status])
+  @@map("commissions")
 }

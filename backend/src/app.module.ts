@@ -43,6 +43,8 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
 import { AlertingModule } from './alerting/alerting.module';
 import { EmailHubModule } from './email-hub/email-hub.module';
 import { CopilotModule } from './copilot/copilot.module';
+import { ReturnsModule } from './returns/returns.module';
+import { AccountingModule } from './accounting/accounting.module';
 
 @Module({
   imports: [
@@ -96,8 +98,10 @@ import { CopilotModule } from './copilot/copilot.module';
     CollectionsModule,
     ClientsModule,
     ShipmentsModule,
+    ReturnsModule,
     ManifestsModule,
     InvoicesModule,
+    AccountingModule,
     RateCardsModule,
     QuotesModule,
     NotificationsModule,

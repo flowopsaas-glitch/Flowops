@@ -226,7 +226,7 @@ export class AlertingService {
       const daysSincePayment = Math.floor((now.getTime() - billingStart.getTime()) / 86400000);
       const today = now.toISOString().slice(0, 10);
       const planLabel = co.plan === 'enterprise' ? 'Enterprise' : 'Professional';
-      const price    = co.plan === 'enterprise' ? 'Custom' : 'R14,999/mo';
+      const price    = co.plan === 'enterprise' ? 'Custom' : 'R11,999/mo';
 
       // Warn at 30 days (renewal due), 33 days (overdue), 37 days (final warning)
       if (daysSincePayment === 30) {
