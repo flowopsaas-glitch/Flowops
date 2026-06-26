@@ -43,14 +43,23 @@ export class AIClawController {
    */
   async implement(plan: any, extractedData: any) {
     this.logger.log(`[Claw 2] Implementing ${plan.action} on ${plan.target}`);
-    
+
     try {
       // Cast prisma to 'any' for dynamic table targeting (e.g., emailHubItem vs waybill)
       return await (this.prisma as any)[plan.target].update({
-        where: { id: plan.payload.id },
+        where: { id: String(plan.payload.id) },
         data: {
-          aiMetadata: extractedData,
-          status: 'PROCESSED',
+          // EmailHubItem columns only (see prisma/schema.prisma): there is no
+          // `aiMetadata` column, and `status` must be one of the documented
+          // values NEW|TRIAGED|IN_PROGRESS|WAITING|RESOLVED|ARCHIVED. Persist
+          // the extraction into `aiSummary` and mark the item handled.
+          aiSummary:
+            typeof extractedData === 'string'
+              ? extractedData
+              : JSON.stringify(extractedData ?? {}),
+          status: 'RESOLVED',
+          resolved: true,
+          needsOpsAction: false,
         },
       });
     } catch (error: any) {
