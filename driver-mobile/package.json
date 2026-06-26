@@ -1,0 +1,33 @@
+{
+  "name": "flowops-driver-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Capacitor native (iOS + Android) wrapper for the FlowOps Driver PWA. Bundles the existing built driver-portal web app into store-ready apps — no rewrite.",
+  "scripts": {
+    "prepare:web": "node scripts/prepare-web.mjs",
+    "sync": "npm run prepare:web && cap sync",
+    "add:android": "cap add android",
+    "add:ios": "cap add ios",
+    "open:android": "npm run sync && cap open android",
+    "open:ios": "npm run sync && cap open ios",
+    "run:android": "npm run sync && cap run android",
+    "run:ios": "npm run sync && cap run ios",
+    "assets": "capacitor-assets generate --iconBackgroundColor \"#020817\" --splashBackgroundColor \"#020817\" --splashBackgroundColorDark \"#020817\""
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/camera": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/geolocation": "^6.1.0",
+    "@capacitor/ios": "^6.1.2",
+    "@capacitor/network": "^6.0.3",
+    "@capacitor/splash-screen": "^6.0.3",
+    "@capacitor/status-bar": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.2"
+  }
+}
