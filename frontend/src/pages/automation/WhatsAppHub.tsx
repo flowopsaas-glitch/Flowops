@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Zap, MessageSquare, Phone, Plus, Save, ExternalLink, Loader2 } from "lucide-react";
+import { Send, Zap, MessageSquare, Phone, Plus, Save, ExternalLink, Loader2, FileText } from "lucide-react";
 import { api } from "../../api/client";
 import { useToast } from "../../components/ui/use-toast";
+import WhatsAppTemplateModal from "../../components/WhatsAppTemplateModal";
 
 type Thread = {
   id: string;
