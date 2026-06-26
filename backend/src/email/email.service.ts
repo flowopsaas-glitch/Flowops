@@ -2,11 +2,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
+export interface EmailAttachmentInput {
+  /** base64-encoded file content */
+  content: string;
+  filename: string;
+  /** MIME type, e.g. application/pdf */
+  type?: string;
+  disposition?: 'attachment' | 'inline';
+  contentId?: string;
+}
+
 export interface SendEmailParams {
   to: string;
   subject: string;
   html: string;
   text?: string;
+  attachments?: EmailAttachmentInput[];
 }
 
 @Injectable()
@@ -48,6 +59,17 @@ export class EmailService {
             { type: 'text/html', value: params.html },
             ...(params.text ? [{ type: 'text/plain', value: params.text }] : []),
           ],
+          ...(params.attachments?.length
+            ? {
+                attachments: params.attachments.map((a) => ({
+                  content: a.content,
+                  filename: a.filename,
+                  type: a.type || 'application/octet-stream',
+                  disposition: a.disposition || 'attachment',
+                  ...(a.contentId ? { content_id: a.contentId } : {}),
+                })),
+              }
+            : {}),
         },
         {
           headers: {
