@@ -19,6 +19,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Shipments = lazy(() => import("./pages/Shipments"));
 const WaybillInbox = lazy(() => import("./pages/WaybillInbox"));
 const Waybills = lazy(() => import("./pages/Waybills"));
+const Returns = lazy(() => import("./pages/Returns"));
 const Clients = lazy(() => import("./pages/Clients"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const Collections = lazy(() => import("./pages/Collections"));
@@ -206,6 +207,7 @@ export default function App() {
               <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
               <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />
               <Route path="/collections" element={<RequirePermission perm="collections"><Collections /></RequirePermission>} />
+              <Route path="/returns" element={<RequirePermission perm="returns"><Returns /></RequirePermission>} />
               <Route path="/operations" element={<RequirePermission perm="driverDispatch"><OperationsDashboard /></RequirePermission>} />
               <Route path="/warehouse"  element={<RequirePermission perm="waybillInbox"><WarehouseHubPage /></RequirePermission>} />
               <Route path="/driver-chat" element={<RequirePermission perm="driverDispatch"><DriverChatPage /></RequirePermission>} />
