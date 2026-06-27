@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
+import { PLAN_ENTITLEMENTS } from '../billing/plan-entitlements';
 
 type OwnerActor = { id?: string; email?: string } | null | undefined;
 
@@ -757,13 +758,16 @@ export class OwnerService {
    *   Paystack dashboard (or a new plan code issued) to charge R11,999.
    */
   async getPlans() {
+    const E = PLAN_ENTITLEMENTS;
     return [
       {
         id: 'starter',
         name: 'Starter',
         description: 'For small couriers getting started — free, no credit card required',
-        maxUsers: 5,
-        maxWaybills: 200,
+        maxUsers: E.starter.limits.users,
+        maxWaybills: E.starter.limits.waybillsPerMonth,
+        maxDrivers: E.starter.limits.drivers,
+        maxBranches: E.starter.limits.branches,
         price: 0,
         currency: 'ZAR',
         interval: null,            // free — not billed
@@ -774,9 +778,11 @@ export class OwnerService {
         id: 'professional',
         name: 'Professional',
         description: 'Full FlowOps feature suite for growing couriers',
-        maxUsers: 50,
-        maxWaybills: 10000,
-        price: 11999,
+        maxUsers: E.professional.limits.users,
+        maxWaybills: E.professional.limits.waybillsPerMonth,
+        maxDrivers: E.professional.limits.drivers,
+        maxBranches: E.professional.limits.branches,
+        price: E.professional.priceZar,
         currency: 'ZAR',
         interval: 'month',
         paystackPlanCode: 'PLN_l3kobthzahnkpf3',
@@ -786,9 +792,11 @@ export class OwnerService {
         id: 'enterprise',
         name: 'Enterprise',
         description: 'Unlimited scale + white-label + dedicated support',
-        maxUsers: -1,
-        maxWaybills: -1,
-        price: 29999,
+        maxUsers: E.enterprise.limits.users,
+        maxWaybills: E.enterprise.limits.waybillsPerMonth,
+        maxDrivers: E.enterprise.limits.drivers,
+        maxBranches: E.enterprise.limits.branches,
+        price: E.enterprise.priceZar,
         currency: 'ZAR',
         interval: 'month',
         paystackPlanCode: 'PLN_9at9kn2ra8jtae0',

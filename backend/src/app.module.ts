@@ -43,6 +43,7 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
 import { AlertingModule } from './alerting/alerting.module';
 import { EmailHubModule } from './email-hub/email-hub.module';
 import { CopilotModule } from './copilot/copilot.module';
+import { BillingModule } from './billing/billing.module';
 import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
 
@@ -56,6 +57,9 @@ import { AccountingModule } from './accounting/accounting.module';
 
     // Database (global — exported PrismaService available everywhere)
     PrismaModule,
+
+    // Plan entitlements + limit enforcement (global)
+    BillingModule,
 
     // Storage (Cloudflare R2 — global)
     StorageModule,

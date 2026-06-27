@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EcommerceService } from '../ecommerce/ecommerce.service';
 import { WaybillStatus } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class WaybillsService {
@@ -17,6 +18,7 @@ export class WaybillsService {
     private storage: StorageService,
     private notifications: NotificationsService,
     private ecommerce: EcommerceService,
+    private billing: BillingService,
   ) {}
 
   // ── CRUD ──────────────────────────────────────────────────────────────
@@ -107,6 +109,7 @@ export class WaybillsService {
   }
 
   async create(companyId: string, dto: any) {
+    await this.billing.assertCanCreate(companyId, 'waybill');
     const trackingNumber = await this.generateTrackingNumber(companyId);
     return this.prisma.waybill.create({
       data: { ...dto, trackingNumber, companyId },
