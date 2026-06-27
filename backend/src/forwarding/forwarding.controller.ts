@@ -12,6 +12,7 @@ import { CustomsService } from './customs.service';
 import { ForwardingPdfService } from './forwarding-pdf.service';
 import { CustomsDeclarationService } from './customs-declaration.service';
 import { DemurrageService } from './demurrage.service';
+import { ConsolidationService } from './consolidation.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
 import { UpdateShipmentFileDto } from './dto/update-shipment-file.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -33,6 +34,7 @@ export class ForwardingController {
     private readonly pdf: ForwardingPdfService,
     private readonly declarations: CustomsDeclarationService,
     private readonly demurrage: DemurrageService,
+    private readonly consolidation: ConsolidationService,
   ) {}
 
   // ── Shipment files ─────────────────────────────────────────────────────────
@@ -158,6 +160,38 @@ export class ForwardingController {
   @ApiOperation({ summary: 'Compute accruing demurrage/detention for the file' })
   getDemurrage(@CurrentUser() u: any, @Param('id') id: string) {
     return this.demurrage.calcForFile(u.companyId, id);
+  }
+
+  // ── Consolidation / co-load (Phase 3) ───────────────────────────────────────────
+
+  @Post('files/:id/mark-master')
+  @ApiOperation({ summary: 'Promote a file to a consolidation master' })
+  markMaster(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.consolidation.markAsMaster(u.companyId, id);
+  }
+
+  @Get('files/:id/consolidation')
+  @ApiOperation({ summary: 'Master view: house files + aggregated summary' })
+  getConsolidation(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.consolidation.getConsolidation(u.companyId, id);
+  }
+
+  @Get('files/:id/attachable-houses')
+  @ApiOperation({ summary: 'Files that can be attached as houses to this master' })
+  attachableHouses(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.consolidation.attachableHouses(u.companyId, id);
+  }
+
+  @Post('files/:id/houses')
+  @ApiOperation({ summary: 'Attach a house file to this master' })
+  attachHouse(@CurrentUser() u: any, @Param('id') id: string, @Body() body: { houseId: string }) {
+    return this.consolidation.attachHouse(u.companyId, id, body?.houseId);
+  }
+
+  @Delete('files/:id/houses/:houseId')
+  @ApiOperation({ summary: 'Detach a house file from this master' })
+  detachHouse(@CurrentUser() u: any, @Param('id') id: string, @Param('houseId') houseId: string) {
+    return this.consolidation.detachHouse(u.companyId, id, houseId);
   }
 
   // ── Document PDFs (Phase 2) ────────────────────────────────────────────────────

@@ -39,6 +39,8 @@ export interface ShipmentFile {
   eta?: string | null;
   aiRiskScore?: number | null;
   aiRiskNote?: string | null;
+  isMaster?: boolean;
+  masterFileId?: string | null;
   createdAt: string;
   containers?: Container[];
   cargo?: Cargo[];
@@ -134,6 +136,23 @@ export interface Demurrage {
 export const getDemurrage = async (id: string): Promise<Demurrage> => unwrap(await api.get(`/forwarding/files/${id}/demurrage`));
 export const setDemurrage = async (id: string, cid: string, dto: { freeDays?: number; perDiemRate?: number; availableFrom?: string | null; returnedAt?: string | null }) =>
   unwrap(await api.patch(`/forwarding/files/${id}/containers/${cid}/demurrage`, dto));
+
+// ── Consolidation / co-load ───────────────────────────────────────────────
+
+export interface AttachableHouse { id: string; fileNumber: string; direction: string; mode: string; consigneeName?: string | null; pod?: string | null; }
+export interface ConsolidationView {
+  master: ShipmentFile;
+  houses: (ShipmentFile & { _count?: { containers: number; cargo: number } })[];
+  summary: { houseCount: number; packages: number; grossWeightKg: number; volumeCbm: number };
+}
+export const markMaster = async (id: string): Promise<ShipmentFile> => unwrap(await api.post(`/forwarding/files/${id}/mark-master`, {}));
+export const getConsolidation = async (id: string): Promise<ConsolidationView> => unwrap(await api.get(`/forwarding/files/${id}/consolidation`));
+export const attachableHouses = async (id: string): Promise<AttachableHouse[]> => {
+  const r = unwrap(await api.get(`/forwarding/files/${id}/attachable-houses`));
+  return Array.isArray(r) ? r : [];
+};
+export const attachHouse = async (id: string, houseId: string): Promise<ConsolidationView> => unwrap(await api.post(`/forwarding/files/${id}/houses`, { houseId }));
+export const detachHouse = async (id: string, houseId: string): Promise<ConsolidationView> => unwrap(await api.delete(`/forwarding/files/${id}/houses/${houseId}`));
 
 /** Fetch a generated PDF (auth header) and open it in a new tab. */
 export async function downloadDoc(id: string, type: ForwardingDocType): Promise<void> {

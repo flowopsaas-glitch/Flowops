@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   Loader2, Plus, Trash2, Sparkles, Wand2, FileText, Truck, AlertTriangle,
   Box, Package, DollarSign, Anchor, ChevronRight, CheckCircle2, Download, Calculator,
-  Stamp, Send, Timer,
+  Stamp, Send, Timer, Layers,
 } from "lucide-react";
 import * as fwd from "../../api/forwardingApi";
 import { useToast } from "../../components/ToastProvider";
@@ -164,6 +164,7 @@ export default function ShipmentFilePage() {
         {/* SAD declaration + demurrage (Phase 3) */}
         <DeclarationPanel fileId={id} />
         <DemurragePanel fileId={id} containers={file.containers || []} />
+        <ConsolidationPanel file={file} onChange={load} />
 
         {/* Milestone timeline */}
         <Section title="Milestones" icon={CheckCircle2}>
@@ -499,6 +500,101 @@ function DemurragePanel({ fileId, containers }: { fileId: string; containers: fw
             </div>
           );
         })}
+      </div>
+    </Section>
+  );
+}
+
+function ConsolidationPanel({ file, onChange }: { file: fwd.ShipmentFile; onChange: () => void }) {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const [view, setView] = useState<fwd.ConsolidationView | null>(null);
+  const [candidates, setCandidates] = useState<fwd.AttachableHouse[]>([]);
+  const [pick, setPick] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const isMaster = !!file.isMaster;
+  const isHouse = !!file.masterFileId;
+
+  const load = async () => {
+    if (!isMaster) return;
+    try {
+      const [v, c] = await Promise.all([fwd.getConsolidation(file.id), fwd.attachableHouses(file.id)]);
+      setView(v); setCandidates(c);
+    } catch { /* none */ }
+  };
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [file.id, file.isMaster]);
+
+  const act = async (key: string, fn: () => Promise<any>, ok: string) => {
+    setBusy(key);
+    try { await fn(); showToast(ok, "success"); await load(); onChange(); }
+    catch (e: any) { showToast(e?.message ?? "Action failed", "error"); }
+    finally { setBusy(null); }
+  };
+
+  // House file → show its master link.
+  if (isHouse) {
+    return (
+      <Section title="Consolidation" icon={Layers}>
+        <div className="flex items-center gap-3 flex-wrap text-sm">
+          <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-bold text-indigo-300">HOUSE FILE</span>
+          <span className="text-white/55">Consolidated under a master file.</span>
+          <button onClick={() => navigate(`/forwarding/${file.masterFileId}`)} className="ml-auto flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10">
+            Open master <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </Section>
+    );
+  }
+
+  // Neither master nor house → offer to promote.
+  if (!isMaster) {
+    return (
+      <Section title="Consolidation" icon={Layers}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-xs text-white/40">Group multiple house files under this one (LCL groupage / air co-load).</p>
+          <button onClick={() => act("mk", () => fwd.markMaster(file.id), "Now a consolidation master")} disabled={busy === "mk"}
+            className="flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/15 px-3 py-2 text-sm font-bold text-indigo-200 disabled:opacity-40">
+            {busy === "mk" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />} Make consolidation master
+          </button>
+        </div>
+      </Section>
+    );
+  }
+
+  // Master view.
+  return (
+    <Section title="Consolidation (master)" icon={Layers}>
+      {view && (
+        <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/8 px-3 py-2 text-sm flex flex-wrap gap-x-4 gap-y-1">
+          <span className="text-white/60">Houses <b className="text-white/85">{view.summary.houseCount}</b></span>
+          <span className="text-white/60">Packages <b className="text-white/85">{view.summary.packages}</b></span>
+          <span className="text-white/60">Weight <b className="text-white/85">{view.summary.grossWeightKg} kg</b></span>
+          <span className="text-white/60">Volume <b className="text-white/85">{view.summary.volumeCbm} CBM</b></span>
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        {(view?.houses ?? []).map((h) => (
+          <div key={h.id} className="flex items-center gap-2 rounded-xl border border-white/6 bg-black/20 px-3 py-2 text-sm">
+            <button onClick={() => navigate(`/forwarding/${h.id}`)} className="font-mono font-bold text-white/85 hover:text-cyan-300">{h.fileNumber}</button>
+            <span className="text-white/40 text-[11px]">{h.consigneeName || "—"} · {h.pod || "?"}</span>
+            <button onClick={() => act("d" + h.id, () => fwd.detachHouse(file.id, h.id), "House detached")} disabled={busy === "d" + h.id}
+              className="ml-auto text-white/25 hover:text-rose-300 disabled:opacity-40">
+              {busy === "d" + h.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+        ))}
+        {view && view.houses.length === 0 && <p className="text-xs text-white/30">No house files attached yet.</p>}
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <select value={pick} onChange={(e) => setPick(e.target.value)} className={`${inputCls} flex-1`}>
+          <option value="">Attach a house file…</option>
+          {candidates.map((c) => <option key={c.id} value={c.id}>{c.fileNumber} — {c.consigneeName || "—"} ({c.pod || "?"})</option>)}
+        </select>
+        <button onClick={() => { if (pick) { act("att", () => fwd.attachHouse(file.id, pick), "House attached"); setPick(""); } }} disabled={!pick || busy === "att"}
+          className="flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/15 px-3 py-1.5 text-xs font-bold text-indigo-200 disabled:opacity-40"><Plus className="h-3.5 w-3.5" /> Attach</button>
       </div>
     </Section>
   );

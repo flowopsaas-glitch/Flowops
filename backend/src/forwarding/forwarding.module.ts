@@ -9,6 +9,7 @@ import { CustomsService } from './customs.service';
 import { ForwardingPdfService } from './forwarding-pdf.service';
 import { CustomsDeclarationService } from './customs-declaration.service';
 import { DemurrageService } from './demurrage.service';
+import { ConsolidationService } from './consolidation.service';
 
 /**
  * Freight Forwarding (import/export) — Phases 1–3.
@@ -20,6 +21,7 @@ import { DemurrageService } from './demurrage.service';
   providers: [
     ShipmentFileService, ContainersService, ChargesService, ForwardingAiService,
     CustomsService, ForwardingPdfService, CustomsDeclarationService, DemurrageService,
+    ConsolidationService,
   ],
   exports: [ShipmentFileService],
 })
