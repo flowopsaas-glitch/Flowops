@@ -8,9 +8,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronUp,
-  Clock, ExternalLink, Globe, Loader2, RefreshCw, Sparkles, Target,
-  TrendingUp, Zap,
+  AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronUp,
+  Clock, ExternalLink, Globe, ListChecks, Loader2, RefreshCw, Sparkles, Target,
+  TrendingUp, X, Zap,
 } from "lucide-react";
 import api from "../api/client";
 
@@ -43,6 +43,7 @@ interface IntelEvent {
   resolved:  boolean;
   metadata?: string;
   createdAt: string;
+  counterMoveScore?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -110,6 +111,8 @@ function InsightCard({ insight }: { insight: Insight }) {
 export default function CompetitiveIntelligencePage() {
   const [report,    setReport]    = useState<Report | null>(null);
   const [history,   setHistory]   = useState<IntelEvent[]>([]);
+  const [actions,   setActions]   = useState<IntelEvent[]>([]);
+  const [actingId,  setActingId]  = useState<string | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [sweeping,  setSweeping]  = useState(false);
   const [filter,    setFilter]    = useState<ThreatLevel | "ALL">("ALL");
@@ -117,9 +120,10 @@ export default function CompetitiveIntelligencePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [latestRes, histRes] = await Promise.allSettled([
+      const [latestRes, histRes, actRes] = await Promise.allSettled([
         api.get("/owner/intel/latest"),
         api.get("/owner/intel/insights?limit=10"),
+        api.get("/owner/intel/actions"),
       ]);
       if (latestRes.status === "fulfilled") {
         const d = (latestRes.value as any)?.data ?? latestRes.value;
@@ -129,12 +133,30 @@ export default function CompetitiveIntelligencePage() {
         const d = (histRes.value as any)?.data ?? histRes.value;
         setHistory(Array.isArray(d) ? d : []);
       }
+      if (actRes.status === "fulfilled") {
+        const d = (actRes.value as any)?.data ?? actRes.value;
+        setActions(Array.isArray(d) ? d : []);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const setActionStatus = async (id: string, status: "resolved" | "dismissed") => {
+    setActingId(id);
+    // Optimistic: drop it from the open list immediately.
+    setActions(prev => prev.filter(a => a.id !== id));
+    try {
+      await api.patch(`/owner/intel/actions/${id}`, { status });
+    } catch {
+      // Re-sync on failure so we don't lose the item silently.
+      void load();
+    } finally {
+      setActingId(null);
+    }
+  };
 
   const runSweep = async () => {
     setSweeping(true);
@@ -217,6 +239,66 @@ export default function CompetitiveIntelligencePage() {
             </div>
           )}
         </div>
+
+        {/* Action items — every recommendation, tracked until you act on it */}
+        {actions.length > 0 && (
+          <section className="rounded-[28px] border border-emerald-500/20 bg-emerald-500/[0.06] p-5 shadow-[0_16px_50px_rgba(0,0,0,0.25)]">
+            <div className="flex items-center gap-2 mb-3">
+              <ListChecks className="h-5 w-5 text-emerald-300" />
+              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-emerald-200">
+                Action items ({actions.length})
+              </h2>
+              <span className="ml-auto text-[11px] text-white/35">CLAW ranks by Counter-Move Score &amp; remembers every decision</span>
+            </div>
+            <div className="space-y-2">
+              {actions.map(a => {
+                const score = a.counterMoveScore ?? 0;
+                const scoreCls =
+                  score >= 85 ? "border-red-500/30 bg-red-500/10 text-red-300" :
+                  score >= 65 ? "border-orange-500/30 bg-orange-500/10 text-orange-300" :
+                  score >= 40 ? "border-amber-500/30 bg-amber-500/10 text-amber-300" :
+                  "border-sky-500/30 bg-sky-500/10 text-sky-300";
+                return (
+                <div
+                  key={a.id}
+                  className="flex items-start gap-3 rounded-[16px] border border-white/8 bg-black/20 p-3"
+                >
+                  <div
+                    title="FlowOps Counter-Move Score — urgency ranked by threat severity + freshness"
+                    className={`shrink-0 grid place-items-center h-10 w-10 rounded-xl border text-sm font-black ${scoreCls}`}
+                  >
+                    {score}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white/85">{a.title}</p>
+                    {a.body && <p className="text-xs text-white/50 mt-0.5 leading-relaxed">{a.body}</p>}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => setActionStatus(a.id, "resolved")}
+                      disabled={actingId === a.id}
+                      title="Mark done — CLAW records the win"
+                      className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/20 transition disabled:opacity-40"
+                    >
+                      {actingId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      Done
+                    </button>
+                    <button
+                      onClick={() => setActionStatus(a.id, "dismissed")}
+                      disabled={actingId === a.id}
+                      title="Dismiss — CLAW remembers you passed on this"
+                      className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-white/50 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* No data state */}
         {!report && (
