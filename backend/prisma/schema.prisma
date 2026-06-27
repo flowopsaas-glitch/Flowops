@@ -194,6 +194,8 @@ model Company {
   debitNotes         DebitNote[]
   salespeople        Salesperson[]
   commissions        Commission[]
+  accountingConnections AccountingConnection[]
+  accountingSyncLogs    AccountingSyncLog[]
 
   @@map("companies")
 }
@@ -1546,4 +1548,94 @@ model Commission {
   @@index([companyId, periodMonth])
   @@index([salespersonId, status])
   @@map("commissions")
+}
+
+
+// ─── AI Accounting Bridge: two-way sync to Xero / Sage / Pastel ─────────────
+// One unified connection per accounting provider, OAuth tokens, and a sync log
+// per pushed document. The AI reconciliation layer reads these to flag
+// mismatches, duplicates and unsynced paid invoices.
+
+enum AccountingProvider {
+  XERO
+  SAGE
+  PASTEL
+}
+
+enum AccountingConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  EXPIRED
+}
+
+enum AccountingSyncDocType {
+  INVOICE
+  CREDIT_NOTE
+}
+
+enum AccountingSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+  SKIPPED
+}
+
+model AccountingConnection {
+  id       String                     @id @default(cuid())
+  provider AccountingProvider
+  status   AccountingConnectionStatus @default(DISCONNECTED)
+
+  // OAuth (Xero/Sage). Pastel is file-based and needs none.
+  accessToken    String?   @db.Text
+  refreshToken   String?   @db.Text
+  tokenExpiresAt DateTime?
+
+  // Provider org/tenant (Xero tenantId, Sage business id)
+  externalTenantId   String?
+  externalTenantName String?
+
+  // Account-code mapping + options (AR account, sales account, VAT type…)
+  settings Json?
+
+  lastSyncAt DateTime?
+  lastError  String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  syncLogs AccountingSyncLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, provider])
+  @@index([companyId])
+  @@map("accounting_connections")
+}
+
+model AccountingSyncLog {
+  id           String                @id @default(cuid())
+  connectionId String
+  connection   AccountingConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  docType        AccountingSyncDocType
+  documentId     String // FlowOps invoice / credit-note id
+  documentNumber String?
+  externalId     String? // id in Xero/Sage after push
+  status         AccountingSyncStatus  @default(PENDING)
+  amount         Float?
+  direction      String                @default("PUSH") // PUSH | PULL
+  error          String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([connectionId])
+  @@index([documentId])
+  @@map("accounting_sync_logs")
 }
