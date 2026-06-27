@@ -99,7 +99,9 @@ export default function App() {
     // current token from storage — this lets the socket auto-recover after
     // the user logs in without any explicit re-setup.
     const socket = io(FLOWOPS_WS_ORIGIN, {
-      transports: ["websocket", "polling"],
+      // Polling-first, then upgrade to WebSocket when the proxy allows it —
+      // avoids a hard failure (and console 502) when the WS upgrade is blocked.
+      transports: ["polling", "websocket"],
       auth: (cb: (data: Record<string, string>) => void) => {
         cb({ token: getToken?.() ?? '' });
       },

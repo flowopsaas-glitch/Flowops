@@ -15,7 +15,11 @@ export const WaybillDashboard: React.FC = () => {
   useEffect(() => {
     // 1. Initialize secure client connection targeting the active BroadcastGateway port
     const socket: Socket = io(FLOWOPS_WS_ORIGIN, {
-      transports: ['websocket'],
+      // Polling-first, then upgrade to WebSocket when the proxy/CDN allows it.
+      // Long-polling works over plain HTTP even when a WS upgrade is blocked
+      // (e.g. a 502 at the tunnel), so real-time degrades gracefully instead
+      // of failing outright.
+      transports: ['polling', 'websocket'],
       autoConnect: true,
     });
 

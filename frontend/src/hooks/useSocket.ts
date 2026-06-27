@@ -20,7 +20,9 @@ export const useSocket = (companyId: number | string) => {
     // token from storage (handles token refresh and post-login reconnect).
     const socket = io(FLOWOPS_WS_ORIGIN, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      // Polling-first, then upgrade to WebSocket when available — resilient to
+      // proxies/CDNs that block the WS upgrade (real-time still works via polling).
+      transports: ['polling', 'websocket'],
       auth: (cb: (data: Record<string, string>) => void) => {
         cb({ token: getToken() ?? '' });
       },
