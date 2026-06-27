@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronUp,
-  Clock, ExternalLink, Globe, ListChecks, Loader2, RefreshCw, Sparkles, Target,
+  Clock, ExternalLink, Globe, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
   TrendingUp, X, Zap,
 } from "lucide-react";
 import api from "../api/client";
@@ -115,6 +115,7 @@ export default function CompetitiveIntelligencePage() {
   const [actingId,  setActingId]  = useState<string | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [sweeping,  setSweeping]  = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [filter,    setFilter]    = useState<ThreatLevel | "ALL">("ALL");
 
   const load = useCallback(async () => {
@@ -169,6 +170,15 @@ export default function CompetitiveIntelligencePage() {
     finally { setSweeping(false); }
   };
 
+  const runSuggestUpgrades = async () => {
+    setSuggesting(true);
+    try {
+      await api.post("/owner/intel/suggest-upgrades", {});
+      await load(); // new upgrade ideas land in the Action items queue
+    } catch { /* toast handled globally */ }
+    finally { setSuggesting(false); }
+  };
+
   const insights = report?.insights ?? [];
 
   const visibleInsights = insights.filter(i =>
@@ -221,14 +231,25 @@ export default function CompetitiveIntelligencePage() {
               </div>
             </div>
 
-            <button
-              onClick={runSweep}
-              disabled={sweeping}
-              className="flex items-center gap-2 rounded-2xl border border-sky-500/30 bg-sky-500/15 px-5 py-2.5 text-sm font-bold text-sky-300 hover:bg-sky-500/25 transition disabled:opacity-40"
-            >
-              {sweeping ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {sweeping ? "Running sweep…" : "Run Intel Sweep"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={runSuggestUpgrades}
+                disabled={suggesting || sweeping}
+                title="Ask CLAW for platform upgrade ideas → queued into Action items"
+                className="flex items-center gap-2 rounded-2xl border border-violet-500/30 bg-violet-500/15 px-4 py-2.5 text-sm font-bold text-violet-300 hover:bg-violet-500/25 transition disabled:opacity-40"
+              >
+                {suggesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lightbulb className="h-4 w-4" />}
+                {suggesting ? "Thinking…" : "Suggest Upgrades"}
+              </button>
+              <button
+                onClick={runSweep}
+                disabled={sweeping || suggesting}
+                className="flex items-center gap-2 rounded-2xl border border-sky-500/30 bg-sky-500/15 px-5 py-2.5 text-sm font-bold text-sky-300 hover:bg-sky-500/25 transition disabled:opacity-40"
+              >
+                {sweeping ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {sweeping ? "Running sweep…" : "Run Intel Sweep"}
+              </button>
+            </div>
           </div>
 
           {/* Summary */}
@@ -270,7 +291,16 @@ export default function CompetitiveIntelligencePage() {
                     {score}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white/85">{a.title}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                        a.type === "PLATFORM_UPGRADE"
+                          ? "border-violet-500/30 bg-violet-500/10 text-violet-300"
+                          : "border-orange-500/30 bg-orange-500/10 text-orange-300"
+                      }`}>
+                        {a.type === "PLATFORM_UPGRADE" ? "Upgrade" : "Threat"}
+                      </span>
+                      <p className="text-sm font-bold text-white/85">{a.title}</p>
+                    </div>
                     {a.body && <p className="text-xs text-white/50 mt-0.5 leading-relaxed">{a.body}</p>}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
