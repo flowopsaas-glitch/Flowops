@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -340,17 +340,29 @@ Return ONLY the JSON array, no other text.`;
       },
     });
 
-    // Store individual HIGH/CRITICAL insights as separate events
-    for (const insight of report.insights.filter(i => ['HIGH','CRITICAL'].includes(i.threatLevel))) {
+    // Store EVERY insight as an individually trackable action item — not just
+    // HIGH/CRITICAL — so no recommendation is lost. Deduped by a stable
+    // sourceId so the weekly re-run doesn't pile up duplicates OR resurrect
+    // items you've already actioned (resolved/dismissed).
+    for (const insight of report.insights) {
+      const sourceId = this.intelKey(insight);
+      const existing = await (this.prisma.aiEvent as any).findFirst({
+        where: { companyId, type: 'COMPETITOR_THREAT', sourceId },
+        select: { id: true },
+      });
+      if (existing) continue; // already tracked — leave its status alone
       await (this.prisma.aiEvent as any).create({
         data: {
           companyId,
-          type:     'COMPETITOR_THREAT',
-          title:    `${insight.competitor}: ${insight.finding.slice(0, 80)}`,
-          body:     insight.recommendation,
-          severity: insight.threatLevel === 'CRITICAL' ? 'critical' : 'warning',
-          resolved: false,
-          metadata: JSON.stringify(insight),
+          type:       'COMPETITOR_THREAT',
+          title:      `${insight.competitor}: ${String(insight.finding).slice(0, 80)}`,
+          body:       insight.recommendation,
+          severity:   this.severityFromThreat(insight.threatLevel),
+          sourceType: 'INTEL',
+          sourceId,
+          resolved:   false,
+          dismissed:  false,
+          metadata:   JSON.stringify(insight),
         },
       });
     }
@@ -362,6 +374,147 @@ Return ONLY the JSON array, no other text.`;
     });
 
     this.logger.log(`📊 CLAW INTEL: Persisted ${report.insights.length} insights for company ${companyId}`);
+  }
+
+  // ── Action items (trackable recommendations) ──────────────────────────────
+  //
+  // Every insight becomes a COMPETITOR_THREAT AiEvent (sourceType 'INTEL'). The
+  // AiEvent resolved/dismissed flags give each recommendation a lifecycle:
+  // open → done (resolved) or dismissed. A stable sourceId dedupes across the
+  // weekly sweeps so re-runs never duplicate or reopen an actioned item.
+
+  private severityFromThreat(t: ThreatLevel): string {
+    return t === 'CRITICAL' ? 'critical' : t === 'HIGH' ? 'warning' : 'info';
+  }
+
+  /**
+   * FlowOps Counter-Move Score (0–100): how urgently this recommendation
+   * deserves attention. Deterministic (no LLM cost): threat weight + a
+   * freshness bonus that decays over ~10 days. Drives the ranked briefing.
+   */
+  private counterMoveScore(ev: any): number {
+    let threat: ThreatLevel = 'MEDIUM';
+    try {
+      const m = typeof ev.metadata === 'string' ? JSON.parse(ev.metadata) : ev.metadata;
+      if (m?.threatLevel) threat = m.threatLevel;
+    } catch { /* keep default */ }
+    const base = threat === 'CRITICAL' ? 90 : threat === 'HIGH' ? 70 : threat === 'MEDIUM' ? 45 : 20;
+    const ageDays = (Date.now() - new Date(ev.createdAt).getTime()) / 86_400_000;
+    const freshness = Math.max(0, 10 - Math.floor(ageDays)); // up to +10 for fresh intel
+    return Math.min(100, Math.round(base + freshness));
+  }
+
+  private withScore = (rows: any[]) =>
+    rows
+      .map((r) => ({ ...r, counterMoveScore: this.counterMoveScore(r) }))
+      .sort((a, b) => b.counterMoveScore - a.counterMoveScore);
+
+  /**
+   * Close the loop: record the human's decision into CLAW's competitive memory
+   * so the system learns which threats you act on vs. dismiss. This is the bit
+   * unique to FlowOps — intel → action → memory, not just a static report.
+   */
+  private async recordDecisionLearning(companyId: string, metadata: any, decision: string) {
+    if (decision !== 'resolved' && decision !== 'dismissed') return;
+    try {
+      const m = typeof metadata === 'string' ? JSON.parse(metadata) : (metadata || {});
+      await (this.prisma.aiEvent as any).create({
+        data: {
+          companyId,
+          type:       'INTEL_DECISION',
+          title:      `CLAW memory: ${decision === 'resolved' ? 'actioned' : 'dismissed'} ${m.competitor || 'competitor'} threat`,
+          body:       `Strategic decision recorded for CLAW's competitive memory — "${String(m.finding || '').slice(0, 120)}" → ${decision}.`,
+          severity:   'info',
+          sourceType: 'CLAW_LEARNING',
+          resolved:   true,
+          dismissed:  false,
+          metadata:   JSON.stringify({
+            competitor: m.competitor, finding: m.finding,
+            threatLevel: m.threatLevel, decision, at: new Date().toISOString(),
+          }),
+        },
+      });
+    } catch { /* learning is best-effort — never block the status change */ }
+  }
+
+  private intelKey(insight: CompetitorInsight): string {
+    const slug = (s: string) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 60);
+    return `intel:${slug(insight.competitor)}:${slug(insight.finding)}`;
+  }
+
+  private statusData(status: string): any {
+    switch (status) {
+      case 'resolved':  return { resolved: true,  dismissed: false, resolvedAt: new Date() };
+      case 'dismissed': return { resolved: false, dismissed: true,  resolvedAt: null };
+      case 'open':      return { resolved: false, dismissed: false, resolvedAt: null };
+      default: throw new NotFoundException(`Unknown status "${status}" (use open|resolved|dismissed)`);
+    }
+  }
+
+  /** Tenant: open (or all) competitive-intel action items, ranked by score. */
+  async getActionItems(companyId: string, includeClosed = false) {
+    const where: any = { companyId, type: 'COMPETITOR_THREAT' };
+    if (!includeClosed) { where.resolved = false; where.dismissed = false; }
+    const rows = await (this.prisma.aiEvent as any).findMany({
+      where, orderBy: { createdAt: 'desc' }, take: 100,
+    });
+    return this.withScore(rows);
+  }
+
+  /** Tenant: mark one action item open|resolved|dismissed. */
+  async setActionStatus(companyId: string, id: string, status: string) {
+    const ev = await (this.prisma.aiEvent as any).findFirst({
+      where: { id, companyId, type: 'COMPETITOR_THREAT' },
+      select: { id: true, metadata: true },
+    });
+    if (!ev) throw new NotFoundException('Action item not found');
+    const updated = await (this.prisma.aiEvent as any).update({ where: { id }, data: this.statusData(status) });
+    await this.recordDecisionLearning(companyId, ev.metadata, status);
+    return updated;
+  }
+
+  /** Owner console: open action items across all companies, de-duped + ranked. */
+  async getActionItemsAny(includeClosed = false) {
+    const where: any = { type: 'COMPETITOR_THREAT' };
+    if (!includeClosed) { where.resolved = false; where.dismissed = false; }
+    const rows = await (this.prisma.aiEvent as any).findMany({
+      where, orderBy: { createdAt: 'desc' }, take: 400,
+    });
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const r of rows) {
+      const key = r.sourceId || r.title;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+      if (out.length >= 100) break;
+    }
+    return this.withScore(out);
+  }
+
+  /**
+   * Owner console: set status for an item AND every sibling copy across
+   * companies (intel is stored per-company), so the aggregated owner view
+   * stays consistent — action it once, it's actioned everywhere. The decision
+   * is also written to CLAW's competitive memory.
+   */
+  async setActionStatusAny(id: string, status: string) {
+    const ev = await (this.prisma.aiEvent as any).findFirst({
+      where: { id, type: 'COMPETITOR_THREAT' },
+      select: { sourceId: true, title: true, companyId: true, metadata: true },
+    });
+    if (!ev) throw new NotFoundException('Action item not found');
+    const match = ev.sourceId
+      ? { type: 'COMPETITOR_THREAT', sourceId: ev.sourceId }
+      : { type: 'COMPETITOR_THREAT', title: ev.title };
+    const res = await (this.prisma.aiEvent as any).updateMany({ where: match, data: this.statusData(status) });
+    await this.recordDecisionLearning(ev.companyId, ev.metadata, status);
+    return { updated: res.count, status };
   }
 
   // ── Public helper: latest report for dashboard ────────────────────────────

@@ -145,6 +145,18 @@ export class OwnerController {
     return this.intel.runSweepForPlatform();
   }
 
+  /** Open competitive-intel action items (set ?all=1 to include actioned). */
+  @Get('intel/actions')
+  intelActions(@Query('all') all?: string) {
+    return this.intel.getActionItemsAny(all === '1');
+  }
+
+  /** Mark an action item open|resolved|dismissed (applies across all companies). */
+  @Patch('intel/actions/:id')
+  intelActionStatus(@Param('id') id: string, @Body() body: { status: string }) {
+    return this.intel.setActionStatusAny(id, body?.status);
+  }
+
   @Get('audit')
   getAudit(@Query() q: any) {
     return this.svc.getAuditLog(q);
