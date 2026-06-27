@@ -21,7 +21,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const BACKEND_DIR = path.resolve(__dirname, '..', 'backend');
+// Where the built backend lives. Defaults to the dev-box layout (<repo>/backend);
+// override with BACKEND_DIR=/app when running inside the Compose api container.
+const BACKEND_DIR = process.env.BACKEND_DIR || path.resolve(__dirname, '..', 'backend');
 
 // ── Load DATABASE_URL from backend/.env if not already in the environment ──
 function loadDatabaseUrl() {
