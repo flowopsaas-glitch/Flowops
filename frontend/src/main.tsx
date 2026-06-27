@@ -1,3 +1,4 @@
+import './lib/hardening';
 import { initSentry } from './lib/sentry';
 import './i18n';
 import React from 'react';
@@ -11,6 +12,7 @@ import { TenantProvider } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { registerSW } from 'virtual:pwa-register';
 import { initObservatory } from './lib/observatory';
+import { initIntegrityTripwire } from './lib/integrity';
 import ObservatoryErrorBoundary from './components/ObservatoryErrorBoundary';
 
 const updateSW = registerSW({
@@ -26,6 +28,7 @@ const updateSW = registerSW({
 
 initSentry();
 initObservatory();
+initIntegrityTripwire();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

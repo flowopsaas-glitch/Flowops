@@ -2,6 +2,7 @@ import {
   Controller, Post, Get, Body, UseGuards, Request, BadRequestException, Logger, Patch 
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AiService } from './ai.service';
 import { AiDiscoveryService } from './ai-discovery.service';
 import { AiDevOpsService } from './ai-devops.service';
@@ -10,6 +11,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('FlowOps Core & AI Operations')
+@Throttle({ default: { limit: 30, ttl: 60_000 } }) // cap expensive LLM calls per user
 @Controller('ai') // 💡 Patched: Base prefix set to 'ai' to resolve the /api/api/ path duplicate natively
 @UseGuards(JwtAuthGuard) // Enforces authentication and role verification pools across all endpoints
 export class AiController {

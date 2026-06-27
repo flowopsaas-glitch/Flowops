@@ -3,6 +3,7 @@ import {
   HttpCode, HttpStatus, UnauthorizedException, Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { PaystackService } from './paystack.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -135,6 +136,7 @@ export class PaystackController {
    *   Settings → API Keys & Webhooks → Webhooks → Add webhook URL
    */
   @Public()
+  @SkipThrottle() // external provider callback (IP + signature verified)
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Paystack event webhook' })

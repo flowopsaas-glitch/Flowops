@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as compression from 'compression';
@@ -14,9 +15,13 @@ async function bootstrap() {
   // Initialise error tracking before anything else so early failures are caught.
   initSentry();
 
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
+
+  // Trust the proxy chain (Cloudflare tunnel -> nginx) so req.ip reflects the
+  // forwarded client address — required for accurate rate-limit tracking.
+  app.set('trust proxy', 1);
 
   const config = app.get(ConfigService);
   const port = config.get<number>('PORT', 3000);

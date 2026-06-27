@@ -88,7 +88,7 @@ export default function PublicFooter() {
         </div>
 
         <div className="mt-14 border-t border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-white/30">
-          <p>© {new Date().getFullYear()} FlowOps. All rights reserved. Built for South Africa 🇿🇦</p>
+          <p>© {new Date().getFullYear()} FlowOps (Pty) Ltd. All rights reserved. FlowOps&trade; and CLAW&trade; are trademarks of FlowOps (Pty) Ltd. Built for South Africa 🇿🇦</p>
           <p>
             Questions?{" "}
             <a

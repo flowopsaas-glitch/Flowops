@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, Ip, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Ip, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ObservabilityService } from './observability.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -8,6 +8,14 @@ interface ClientErrorDto {
   stack?: string;
   path?: string;
   level?: 'error' | 'warning';
+}
+
+interface IntegrityBeaconDto {
+  host?: string;
+  origin?: string;
+  ref?: string;
+  buildId?: string;
+  path?: string;
 }
 
 @ApiTags('Observability')
@@ -54,6 +62,46 @@ export class ObservabilityController {
         stack: body.stack,
         path: body.path,
         context: { userAgent },
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * GET /api/v1/observability/integrity-beacon
+   * Clone tripwire. The frontend calls this (cross-origin, as a simple GET so it
+   * dodges CORS preflight) only when the bundle is served from a host that is
+   * NOT on the canonical allow-list — i.e. someone has deployed a verbatim copy
+   * of the FlowOps build elsewhere. Recorded into the CLAW Observatory
+   * (source: 'integrity') so the owner is alerted. Always 204.
+   *
+   * This does not — and cannot — stop a clone; a public web UI is inherently
+   * copyable. It gives the owner fast visibility of impersonation/clones.
+   */
+  @Public()
+  @Get('integrity-beacon')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Report a FlowOps bundle served from an unrecognised host' })
+  async integrityBeacon(
+    @Query() q: IntegrityBeaconDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<void> {
+    if (!this.allowed(ip || 'unknown')) return;
+    const host = String(q?.host || q?.origin || 'unknown').slice(0, 200);
+    await this.observability
+      .capture({
+        source: 'integrity',
+        level: 'warning',
+        message: `Possible clone: FlowOps bundle served from unrecognised host "${host}"`,
+        path: q?.path,
+        context: {
+          host,
+          origin: q?.origin,
+          referrer: q?.ref,
+          buildId: q?.buildId,
+          userAgent,
+          reportedIp: ip,
+        },
       })
       .catch(() => undefined);
   }

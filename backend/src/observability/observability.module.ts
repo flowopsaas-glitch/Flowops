@@ -4,6 +4,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { ObservabilityService } from './observability.service';
 import { ObservabilityController } from './observability.controller';
 import { ObservabilityInterceptor } from './observability.interceptor';
+import { ScrapeDetectorInterceptor } from './scrape-detector.interceptor';
 
 /**
  * CLAW Observatory — self-hosted error intelligence. @Global so the owner
@@ -17,6 +18,7 @@ import { ObservabilityInterceptor } from './observability.interceptor';
   providers: [
     ObservabilityService,
     { provide: APP_INTERCEPTOR, useClass: ObservabilityInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ScrapeDetectorInterceptor },
   ],
   exports: [ObservabilityService],
 })

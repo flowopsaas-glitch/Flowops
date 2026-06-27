@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CaptureInput {
-  source?: 'backend' | 'frontend';
+  source?: 'backend' | 'frontend' | 'integrity';
   level?: 'error' | 'warning';
   message: string;
   stack?: string | null;

@@ -1,8 +1,10 @@
 import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ClawService } from './claw.service';
 import { Public } from '../common/decorators/public.decorator';
 
 @Controller('ai/claw-chat')
+@Throttle({ default: { limit: 20, ttl: 60_000 } }) // public endpoint — tighter, IP-tracked
 export class AiChatController {
   constructor(private readonly claw: ClawService) {}
 
