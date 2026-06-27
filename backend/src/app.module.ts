@@ -47,6 +47,7 @@ import { BillingModule } from './billing/billing.module';
 import { AccountingIntegrationsModule } from './accounting-integrations/accounting-integrations.module';
 import { AutopilotModule } from './autopilot/autopilot.module';
 import { SsoModule } from './sso/sso.module';
+import { ObservabilityModule } from './observability/observability.module';
 import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
 
@@ -97,6 +98,7 @@ import { AccountingModule } from './accounting/accounting.module';
     AccountingIntegrationsModule,
     AutopilotModule,
     SsoModule,
+    ObservabilityModule,
 
     // Domain modules
     AuthModule,

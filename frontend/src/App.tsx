@@ -47,6 +47,7 @@ const BillingPlans      = lazy(() => import("./pages/billing/BillingPlans"));
 const QuotesPage = lazy(() => import("./pages/QuotesPage"));
 const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const CompetitiveIntelligence = lazy(() => import("./pages/CompetitiveIntelligence"));
+const Observatory = lazy(() => import("./pages/Observatory"));
 const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
 const SsoSettings = lazy(() => import("./pages/enterprise/SsoSettings"));
 const DepotsPage        = lazy(() => import("./pages/DepotsPage"));
@@ -199,6 +200,7 @@ export default function App() {
               <Route path="/owner/ops" element={<OwnerOpsMap />} />
               <Route path="/owner/audit" element={<OwnerAudit />} />
               <Route path="/owner/intel" element={<CompetitiveIntelligence />} />
+              <Route path="/owner/observatory" element={<Observatory />} />
             </Route>
           </Route>
 

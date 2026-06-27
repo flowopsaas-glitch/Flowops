@@ -10,6 +10,8 @@ import { AuthProvider } from './contexts/AuthContext';
 import { TenantProvider } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { registerSW } from 'virtual:pwa-register';
+import { initObservatory } from './lib/observatory';
+import ObservatoryErrorBoundary from './components/ObservatoryErrorBoundary';
 
 const updateSW = registerSW({
   onNeedRefresh() {
@@ -23,19 +25,22 @@ const updateSW = registerSW({
 });
 
 initSentry();
+initObservatory();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ThemeProvider>
-        <AuthProvider>
-          <TenantProvider>
-            <ToastProvider>
-              <App />
-            </ToastProvider>
-          </TenantProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <ObservatoryErrorBoundary>
+        <ThemeProvider>
+          <AuthProvider>
+            <TenantProvider>
+              <ToastProvider>
+                <App />
+              </ToastProvider>
+            </TenantProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </ObservatoryErrorBoundary>
     </BrowserRouter>
   </React.StrictMode>
 );

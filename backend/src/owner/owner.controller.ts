@@ -5,6 +5,7 @@ import { AlertingService } from '../alerting/alerting.service';
 import { CompetitiveIntelligenceService } from '../ai/competitive-intelligence.service';
 import { AiDevOpsService } from '../ai/ai-devops.service';
 import { IntegrationSentinelService } from '../ai/integration-sentinel.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -22,6 +23,7 @@ export class OwnerController {
     private readonly intel: CompetitiveIntelligenceService,
     private readonly devops: AiDevOpsService,
     private readonly sentinel: IntegrationSentinelService,
+    private readonly observatory: ObservabilityService,
   ) {}
 
   @Get('tenants')
@@ -171,6 +173,28 @@ export class OwnerController {
   @Get('health/integrations')
   integrationHealth() {
     return this.sentinel.runAndPersist();
+  }
+
+  // ── CLAW Observatory (self-hosted error intelligence) ─────────────────────
+  @Get('observatory/stats')
+  observatoryStats() {
+    return this.observatory.stats();
+  }
+
+  @Get('observatory/errors')
+  observatoryErrors(@Query('resolved') resolved?: string, @Query('source') source?: string, @Query('limit') limit?: string) {
+    const r = resolved === 'true' ? true : resolved === 'false' ? false : undefined;
+    return this.observatory.list({ resolved: r, source, limit: limit ? parseInt(limit, 10) : 100 });
+  }
+
+  @Patch('observatory/errors/:id/resolve')
+  observatoryResolve(@Param('id') id: string, @Body() body: { resolved?: boolean }) {
+    return this.observatory.setResolved(id, body?.resolved !== false);
+  }
+
+  @Post('observatory/errors/:id/retriage')
+  observatoryRetriage(@Param('id') id: string) {
+    return this.observatory.retriage(id);
   }
 
   @Get('audit')
