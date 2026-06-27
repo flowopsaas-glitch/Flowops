@@ -2,10 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private billing: BillingService) {}
 
   async findByCompany(companyId: string) {
     return this.prisma.user.findMany({
@@ -29,6 +30,7 @@ export class UsersService {
   }
 
   async create(companyId: string, dto: any) {
+    await this.billing.assertCanCreate(companyId, 'user');
     const passwordHash = await bcrypt.hash(dto.password ?? uuid(), 12);
     const user = await this.prisma.user.create({
       data: {

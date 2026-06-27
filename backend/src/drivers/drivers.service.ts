@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class DriversService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private billing: BillingService) {}
 
   async findAll(companyId: string, query?: any) {
     const where: any = { companyId };
@@ -30,6 +31,7 @@ export class DriversService {
   }
 
   async create(companyId: string, dto: any) {
+    await this.billing.assertCanCreate(companyId, 'driver');
     return this.prisma.driver.create({ data: { ...dto, companyId } });
   }
 

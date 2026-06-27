@@ -1,18 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowRight,
   BadgeCheck,
+  Building2,
   CheckCircle2,
   CreditCard,
   ExternalLink,
   FileText,
   Loader2,
+  Package,
   RefreshCw,
   Sparkles,
+  Truck,
+  Users,
   Zap,
 } from "lucide-react";
 import { api } from "../../api/client";
+import { getEntitlements, type Entitlements, type UsageMeter } from "../../api/billingApi";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -119,23 +125,90 @@ const STATUS_STYLE: Record<string, string> = {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
+function UsageCard({
+  label,
+  sub,
+  icon: Icon,
+  meter,
+}: {
+  label: string;
+  sub?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  meter: UsageMeter;
+}) {
+  const pct = meter.unlimited
+    ? 0
+    : meter.limit === 0
+    ? 100
+    : Math.min(100, Math.round((meter.used / meter.limit) * 100));
+  const near = !meter.unlimited && pct >= 80 && !meter.atLimit;
+  const barColor = meter.atLimit
+    ? "bg-rose-400"
+    : near
+    ? "bg-amber-400"
+    : "bg-sky-400";
+
+  return (
+    <div
+      className={`rounded-2xl border p-4 ${
+        meter.atLimit
+          ? "border-rose-500/30 bg-rose-500/8"
+          : near
+          ? "border-amber-500/25 bg-amber-500/8"
+          : "border-white/8 bg-black/20"
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Icon className="h-4 w-4 text-white/40" />
+        <span className="text-[11px] font-black uppercase tracking-wider text-white/45">
+          {label}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-black text-white">{meter.used}</span>
+        <span className="text-sm font-bold text-white/40">
+          {meter.unlimited ? "/ ∞" : `/ ${meter.limit}`}
+        </span>
+        {sub && <span className="ml-auto text-[10px] text-white/30">{sub}</span>}
+      </div>
+      {meter.unlimited ? (
+        <p className="mt-2 text-[11px] font-bold text-emerald-300/80">Unlimited</p>
+      ) : (
+        <>
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/8">
+            <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+          </div>
+          <p className={`mt-1.5 text-[11px] font-semibold ${meter.atLimit ? "text-rose-300" : "text-white/40"}`}>
+            {meter.atLimit
+              ? "Limit reached"
+              : `${meter.remaining} remaining`}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function BillingPlans() {
   const navigate = useNavigate();
   const [company, setCompany] = useState<Company | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [cRaw, iRaw] = await Promise.all([
+        const [cRaw, iRaw, entRaw] = await Promise.all([
           api.get("/companies/my-company"),
           api.get("/invoices/supervisor"),
+          getEntitlements().catch(() => null),
         ]);
         const c = unwrap(cRaw);
         const iList: any = unwrap(iRaw);
         setCompany(c);
+        if (entRaw) setEntitlements(entRaw);
         const arr: Invoice[] = Array.isArray(iList)
           ? iList
           : Array.isArray(iList?.data)
@@ -319,6 +392,40 @@ export default function BillingPlans() {
                   {f}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Usage this month ── */}
+        {!loading && entitlements && (
+          <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.3)]">
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 ring-1 ring-sky-500/20">
+                  <Zap className="h-4 w-4 text-sky-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">Usage this month</h3>
+                  <p className="text-[11px] text-white/40">
+                    Live against your {entitlements.planName} plan limits
+                    {entitlements.onTrial && (
+                      <span className="text-amber-300/80"> · Pro trial active</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              {Object.values(entitlements.usage).some((m) => m.atLimit) && (
+                <span className="flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-bold text-rose-300">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Limit reached — upgrade to add more
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <UsageCard label="Waybills" sub="this month" icon={Package} meter={entitlements.usage.waybillsThisMonth} />
+              <UsageCard label="Drivers" sub="active" icon={Truck} meter={entitlements.usage.drivers} />
+              <UsageCard label="Team members" sub="active" icon={Users} meter={entitlements.usage.users} />
+              <UsageCard label="Branches" sub="" icon={Building2} meter={entitlements.usage.branches} />
             </div>
           </div>
         )}
