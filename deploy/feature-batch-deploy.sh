@@ -8,7 +8,7 @@
 #
 #  What it does, in order:
 #    1. Pull latest main
-#    2. Backend: prisma db push + generate, build  (adds the new
+#    2. Backend: npm install + prisma db push + generate, build  (adds the new
 #       autopilot/SSO columns + sso_connections table)
 #    3. PRE-FLIGHT GUARD: report any tenant already over its plan limit
 #       BEFORE enforcement goes live (prompts before continuing)
@@ -76,10 +76,18 @@ info "Now at $(git rev-parse --short HEAD): $(git log -1 --pretty=%s)"
 
 # ── 2. Backend build (schema + code) ─────────────────────────────────────--
 if [[ $DO_BACKEND -eq 1 ]]; then
-  step "Backend: prisma db push + generate + build"
+  step "Backend: install deps + prisma db push + generate + build"
   pushd backend >/dev/null
   command -v npx >/dev/null || die "npx not found"
-  npx prisma db push          # additive: autopilot columns + sso_connections
+  # Install deps first so newly-added packages (e.g. @sentry/node) are present
+  # before prisma generate / build. npm ci when the lockfile is in sync (clean,
+  # reproducible), falling back to npm install otherwise.
+  if [[ -f package-lock.json ]]; then
+    npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+  else
+    npm install --no-audit --no-fund
+  fi
+  npx prisma db push          # additive schema changes
   npx prisma generate
   npm run build
   popd >/dev/null
