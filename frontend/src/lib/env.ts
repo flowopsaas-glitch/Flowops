@@ -26,21 +26,37 @@ const rawOtel = String(
 export const FLOWOPS_ENV = rawEnv || "development";
 
 /**
- * Backend HTTP API base URL, including the `/api` suffix.
+ * Backend HTTP API base URL, including the `/api/v1` suffix.
  *
- * In production this should be set to an absolute https URL via
- * `VITE_API_URL`. The `localhost` fallback exists only so that running
- * `npm run dev` against a local backend works without configuration —
- * production builds without `VITE_API_URL` set will still emit this
- * fallback, which is intentionally easy to spot in DevTools.
+ * - Absolute URL via `VITE_API_URL` (e.g. https://api.example.com/api/v1) → used verbatim.
+ * - Relative path (e.g. `/api/v1` for same-origin Docker-behind-nginx) → resolved
+ *   against the browser's origin at RUNTIME, so calls hit the deployed host
+ *   (app.flowop.work) instead of a baked-in localhost. This is the common
+ *   production setup and the previous localhost fallback silently broke every
+ *   direct `fetch(`${FLOWOPS_API_URL}...`)` caller in prod.
+ * - Nothing configured → local dev backend (includes the /api/v1 prefix).
  */
-export const FLOWOPS_API_URL =
-  rawApiUrl && /^https?:\/\//i.test(rawApiUrl)
-    ? rawApiUrl.replace(/\/+$/, "")
-    : "http://localhost:3000/api";
+function deriveApiUrl(): string {
+  if (rawApiUrl && /^https?:\/\//i.test(rawApiUrl)) {
+    return rawApiUrl.replace(/\/+$/, "");
+  }
+  if (rawApiUrl && rawApiUrl.startsWith("/")) {
+    const path = rawApiUrl.replace(/\/+$/, "");
+    if (
+      typeof window !== "undefined" &&
+      window.location?.origin &&
+      window.location.origin !== "null"
+    ) {
+      return window.location.origin + path;
+    }
+    return path; // SSR / no window — keep relative (still same-origin)
+  }
+  return "http://localhost:3000/api/v1";
+}
+export const FLOWOPS_API_URL = deriveApiUrl();
 
-/** Origin without `/api` — uploads, PDFs, asset URLs, /admin, /auth/logout. */
-export const FLOWOPS_HTTP_ORIGIN = FLOWOPS_API_URL.replace(/\/api\/?$/, "");
+/** Origin without the `/api` (or `/api/v1`) suffix — uploads, PDFs, asset URLs, /admin. */
+export const FLOWOPS_HTTP_ORIGIN = FLOWOPS_API_URL.replace(/\/api(\/v\d+)?\/?$/, "");
 
 /** Base URL for Socket.IO — EventsGateway uses the default `/` namespace. */
 // When VITE_API_URL is a relative path (e.g. `/api/v1` in Docker-behind-nginx

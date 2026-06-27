@@ -194,7 +194,7 @@ export class CompetitiveIntelligenceService {
         const res = await fetch(this.GROQ, {
           method: 'POST',
           headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'llama3-8b-8192', messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
         });
         const data = (await res.json()) as any;
         const text = data?.choices?.[0]?.message?.content || '';
@@ -250,7 +250,7 @@ Return ONLY the JSON array, no other text.`;
           method: 'POST',
           headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'llama3-8b-8192',
+            model: 'llama-3.3-70b-versatile',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user',   content: userMsg },
