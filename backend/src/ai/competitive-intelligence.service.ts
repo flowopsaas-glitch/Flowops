@@ -35,6 +35,8 @@ export interface IntelligenceReport {
 
 /** AiEvent types that appear in the unified, ranked "Action items" worklist. */
 const ACTIONABLE_TYPES = ['COMPETITOR_THREAT', 'PLATFORM_UPGRADE'];
+/** Owner console also sees platform integration-health alerts (CLAW Sentinel). */
+const OWNER_ACTIONABLE_TYPES = [...ACTIONABLE_TYPES, 'INTEGRATION_HEALTH'];
 
 @Injectable()
 export class CompetitiveIntelligenceService {
@@ -483,7 +485,7 @@ Return ONLY the JSON array, no other text.`;
 
   /** Owner console: open action items across all companies, de-duped + ranked. */
   async getActionItemsAny(includeClosed = false) {
-    const where: any = { type: { in: ACTIONABLE_TYPES } };
+    const where: any = { type: { in: OWNER_ACTIONABLE_TYPES } };
     if (!includeClosed) { where.resolved = false; where.dismissed = false; }
     const rows = await (this.prisma.aiEvent as any).findMany({
       where, orderBy: { createdAt: 'desc' }, take: 400,
@@ -508,7 +510,7 @@ Return ONLY the JSON array, no other text.`;
    */
   async setActionStatusAny(id: string, status: string) {
     const ev = await (this.prisma.aiEvent as any).findFirst({
-      where: { id, type: { in: ACTIONABLE_TYPES } },
+      where: { id, type: { in: OWNER_ACTIONABLE_TYPES } },
       select: { sourceId: true, title: true, companyId: true, metadata: true },
     });
     if (!ev) throw new NotFoundException('Action item not found');

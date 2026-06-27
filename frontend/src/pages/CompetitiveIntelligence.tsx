@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronUp,
-  Clock, ExternalLink, Globe, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
+  Clock, ExternalLink, Globe, HeartPulse, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
   TrendingUp, X, Zap,
 } from "lucide-react";
 import api from "../api/client";
@@ -44,6 +44,16 @@ interface IntelEvent {
   metadata?: string;
   createdAt: string;
   counterMoveScore?: number;
+}
+
+interface IntegrationCheck {
+  key: string;
+  name: string;
+  category: string;
+  configured: boolean;
+  status: "ok" | "misconfigured" | "failing";
+  detail: string;
+  latencyMs: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -116,6 +126,8 @@ export default function CompetitiveIntelligencePage() {
   const [loading,   setLoading]   = useState(true);
   const [sweeping,  setSweeping]  = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const [integrations, setIntegrations] = useState<IntegrationCheck[] | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
   const [filter,    setFilter]    = useState<ThreatLevel | "ALL">("ALL");
 
   const load = useCallback(async () => {
@@ -177,6 +189,17 @@ export default function CompetitiveIntelligencePage() {
       await load(); // new upgrade ideas land in the Action items queue
     } catch { /* toast handled globally */ }
     finally { setSuggesting(false); }
+  };
+
+  const runHealthCheck = async () => {
+    setCheckingHealth(true);
+    try {
+      const res: any = await api.get("/owner/health/integrations");
+      const d = res?.data ?? res;
+      setIntegrations(Array.isArray(d?.checks) ? d.checks : []);
+      await load(); // any failing integration also shows up in Action items
+    } catch { /* toast handled globally */ }
+    finally { setCheckingHealth(false); }
   };
 
   const insights = report?.insights ?? [];
@@ -260,6 +283,53 @@ export default function CompetitiveIntelligencePage() {
             </div>
           )}
         </div>
+
+        {/* Integration health — CLAW Sentinel pings every external service */}
+        <section className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_16px_50px_rgba(0,0,0,0.25)]">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <HeartPulse className="h-5 w-5 text-sky-300" />
+            <h2 className="text-sm font-black uppercase tracking-[0.18em] text-sky-200">
+              Integration Health
+            </h2>
+            <span className="text-[11px] text-white/35">CLAW Sentinel · live external-service checks</span>
+            <button
+              onClick={runHealthCheck}
+              disabled={checkingHealth}
+              className="ml-auto flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/15 px-3 py-1.5 text-xs font-bold text-sky-300 hover:bg-sky-500/25 transition disabled:opacity-40"
+            >
+              {checkingHealth ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              {checkingHealth ? "Checking…" : "Check now"}
+            </button>
+          </div>
+
+          {integrations === null ? (
+            <p className="text-xs text-white/30 py-4 text-center">
+              Click "Check now" to ping Groq, Tavily, Paystack, SendGrid, WhatsApp and the database.
+            </p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {integrations.map((c) => {
+                const dot =
+                  c.status === "ok" ? "bg-emerald-400" :
+                  c.status === "failing" ? "bg-rose-400" : "bg-amber-400";
+                const ring =
+                  c.status === "ok" ? "border-emerald-500/20" :
+                  c.status === "failing" ? "border-rose-500/30" : "border-amber-500/25";
+                return (
+                  <div key={c.key} className={`rounded-2xl border ${ring} bg-black/20 p-3`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${dot} ${c.status !== "ok" ? "animate-pulse" : ""}`} />
+                      <span className="text-sm font-bold text-white/85">{c.name}</span>
+                      <span className="ml-auto text-[10px] uppercase tracking-wider text-white/30">{c.status}</span>
+                      {c.latencyMs > 0 && <span className="text-[10px] text-white/25">{c.latencyMs}ms</span>}
+                    </div>
+                    <p className="mt-1 text-[11px] text-white/45 leading-relaxed">{c.detail}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         {/* Action items — every recommendation, tracked until you act on it */}
         {actions.length > 0 && (

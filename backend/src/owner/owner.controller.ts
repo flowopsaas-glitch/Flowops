@@ -4,6 +4,7 @@ import { OwnerService } from './owner.service';
 import { AlertingService } from '../alerting/alerting.service';
 import { CompetitiveIntelligenceService } from '../ai/competitive-intelligence.service';
 import { AiDevOpsService } from '../ai/ai-devops.service';
+import { IntegrationSentinelService } from '../ai/integration-sentinel.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -20,6 +21,7 @@ export class OwnerController {
     private readonly alerting: AlertingService,
     private readonly intel: CompetitiveIntelligenceService,
     private readonly devops: AiDevOpsService,
+    private readonly sentinel: IntegrationSentinelService,
   ) {}
 
   @Get('tenants')
@@ -163,6 +165,12 @@ export class OwnerController {
   @Post('intel/suggest-upgrades')
   intelSuggestUpgrades() {
     return this.devops.suggestPlatformUpgrades();
+  }
+
+  /** CLAW Integration Sentinel — ping every external service; flag breakage into Action items. */
+  @Get('health/integrations')
+  integrationHealth() {
+    return this.sentinel.runAndPersist();
   }
 
   @Get('audit')
