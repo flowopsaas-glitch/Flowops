@@ -7,9 +7,11 @@ import { ChargesService } from './charges.service';
 import { ForwardingAiService } from './forwarding-ai.service';
 import { CustomsService } from './customs.service';
 import { ForwardingPdfService } from './forwarding-pdf.service';
+import { CustomsDeclarationService } from './customs-declaration.service';
+import { DemurrageService } from './demurrage.service';
 
 /**
- * Freight Forwarding (import/export) — Phase 1 + 2.
+ * Freight Forwarding (import/export) — Phases 1–3.
  * BillingService is @Global (entitlement gate via freightForwarding feature).
  */
 @Module({
@@ -17,7 +19,7 @@ import { ForwardingPdfService } from './forwarding-pdf.service';
   controllers: [ForwardingController],
   providers: [
     ShipmentFileService, ContainersService, ChargesService, ForwardingAiService,
-    CustomsService, ForwardingPdfService,
+    CustomsService, ForwardingPdfService, CustomsDeclarationService, DemurrageService,
   ],
   exports: [ShipmentFileService],
 })

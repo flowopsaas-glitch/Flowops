@@ -9,7 +9,7 @@ export type ShipmentStatus =
   | "DRAFT" | "BOOKED" | "CARGO_RECEIVED" | "LOADED" | "DEPARTED"
   | "ARRIVED" | "CUSTOMS_CLEARED" | "DELIVERED" | "CANCELLED";
 
-export interface Container { id: string; containerNo: string; isoType: string; sealNo?: string | null; vgmKg?: number | null; }
+export interface Container { id: string; containerNo: string; isoType: string; sealNo?: string | null; vgmKg?: number | null; freeDays?: number | null; perDiemRate?: number | null; availableFrom?: string | null; returnedAt?: string | null; }
 export interface Cargo { id: string; description: string; pieces?: number | null; weightKg?: number | null; dimensions?: string | null; hsCode?: string | null; customsValue?: number | null; dutyRatePct?: number | null; }
 export interface Charge { id: string; description: string; currency: string; cost: number; sell: number; invoiceTo?: string | null; }
 export interface ShipDoc { id: string; type: string; fileName: string; fileKey: string; createdAt: string; }
@@ -106,6 +106,34 @@ export const updateCargo = async (id: string, cid: string, dto: Partial<Cargo>) 
   unwrap(await api.patch(`/forwarding/files/${id}/cargo/${cid}`, dto));
 
 export type ForwardingDocType = "commercial-invoice" | "packing-list" | "bill-of-lading" | "sad500";
+
+// ── Phase 3: SAD declaration + demurrage ──────────────────────────────────
+
+export type DeclarationStatus = "DRAFT" | "SUBMITTED" | "QUERY" | "RELEASED" | "REJECTED";
+export interface CustomsDeclaration {
+  id: string; status: DeclarationStatus; type: string;
+  lrn?: string | null; mrn?: string | null;
+  customsValueTotal?: number | null; dutyTotal?: number | null; vatTotal?: number | null;
+  submittedAt?: string | null; responseNote?: string | null; payload?: any;
+}
+
+export const getDeclaration = async (id: string): Promise<CustomsDeclaration | null> => unwrap(await api.get(`/forwarding/files/${id}/declaration`));
+export const buildDeclaration = async (id: string): Promise<CustomsDeclaration> => unwrap(await api.post(`/forwarding/files/${id}/declaration`, {}));
+export const submitDeclaration = async (did: string): Promise<CustomsDeclaration> => unwrap(await api.post(`/forwarding/declarations/${did}/submit`, {}));
+export const setDeclarationStatus = async (did: string, status: string, mrn?: string, note?: string): Promise<CustomsDeclaration> =>
+  unwrap(await api.patch(`/forwarding/declarations/${did}/status`, { status, mrn, note }));
+
+export interface DemurrageLine {
+  containerId: string; containerNo: string; freeDays?: number; perDiemRate?: number;
+  daysUsed: number; chargeableDays: number; charge: number; daysToFree?: number; open: boolean;
+}
+export interface Demurrage {
+  lines: DemurrageLine[]; totalCharge: number; accruing: boolean; nearLimit: boolean;
+  riskLevel: "low" | "medium" | "high";
+}
+export const getDemurrage = async (id: string): Promise<Demurrage> => unwrap(await api.get(`/forwarding/files/${id}/demurrage`));
+export const setDemurrage = async (id: string, cid: string, dto: { freeDays?: number; perDiemRate?: number; availableFrom?: string | null; returnedAt?: string | null }) =>
+  unwrap(await api.patch(`/forwarding/files/${id}/containers/${cid}/demurrage`, dto));
 
 /** Fetch a generated PDF (auth header) and open it in a new tab. */
 export async function downloadDoc(id: string, type: ForwardingDocType): Promise<void> {

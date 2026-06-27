@@ -10,6 +10,8 @@ import { ChargesService } from './charges.service';
 import { ForwardingAiService } from './forwarding-ai.service';
 import { CustomsService } from './customs.service';
 import { ForwardingPdfService } from './forwarding-pdf.service';
+import { CustomsDeclarationService } from './customs-declaration.service';
+import { DemurrageService } from './demurrage.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
 import { UpdateShipmentFileDto } from './dto/update-shipment-file.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -29,6 +31,8 @@ export class ForwardingController {
     private readonly ai: ForwardingAiService,
     private readonly customs: CustomsService,
     private readonly pdf: ForwardingPdfService,
+    private readonly declarations: CustomsDeclarationService,
+    private readonly demurrage: DemurrageService,
   ) {}
 
   // ── Shipment files ─────────────────────────────────────────────────────────
@@ -114,6 +118,46 @@ export class ForwardingController {
   @ApiOperation({ summary: 'AI: suggest SA ad valorem duty rate for an HS code' })
   dutySuggest(@Body() body: { hsCode?: string; description?: string }) {
     return this.customs.suggestDutyRate(body?.hsCode, body?.description);
+  }
+
+  // ── SAD declaration workflow (Phase 3) ─────────────────────────────────────────
+
+  @Get('files/:id/declaration')
+  @ApiOperation({ summary: 'Get the latest SAD declaration for a file' })
+  getDeclaration(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.declarations.getForFile(u.companyId, id);
+  }
+
+  @Post('files/:id/declaration')
+  @ApiOperation({ summary: 'Build/refresh the SAD declaration (CUSDEC payload) from the file' })
+  buildDeclaration(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.declarations.buildForFile(u.companyId, id);
+  }
+
+  @Post('declarations/:did/submit')
+  @ApiOperation({ summary: 'Submit declaration (workflow stub — no live SARS EDI gateway)' })
+  submitDeclaration(@CurrentUser() u: any, @Param('did') did: string) {
+    return this.declarations.submit(u.companyId, did);
+  }
+
+  @Patch('declarations/:did/status')
+  @ApiOperation({ summary: 'Record a SARS response / status (RELEASED | QUERY | REJECTED)' })
+  declarationStatus(@CurrentUser() u: any, @Param('did') did: string, @Body() body: { status: string; mrn?: string; note?: string }) {
+    return this.declarations.setStatus(u.companyId, did, body?.status, body?.mrn, body?.note);
+  }
+
+  // ── Demurrage / detention (Phase 3) ─────────────────────────────────────────────
+
+  @Patch('files/:id/containers/:cid/demurrage')
+  @ApiOperation({ summary: 'Set demurrage/detention terms on a container' })
+  setDemurrage(@CurrentUser() u: any, @Param('id') id: string, @Param('cid') cid: string, @Body() dto: any) {
+    return this.demurrage.setTerms(u.companyId, id, cid, dto);
+  }
+
+  @Get('files/:id/demurrage')
+  @ApiOperation({ summary: 'Compute accruing demurrage/detention for the file' })
+  getDemurrage(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.demurrage.calcForFile(u.companyId, id);
   }
 
   // ── Document PDFs (Phase 2) ────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   Loader2, Plus, Trash2, Sparkles, Wand2, FileText, Truck, AlertTriangle,
   Box, Package, DollarSign, Anchor, ChevronRight, CheckCircle2, Download, Calculator,
+  Stamp, Send, Timer,
 } from "lucide-react";
 import * as fwd from "../../api/forwardingApi";
 import { useToast } from "../../components/ToastProvider";
@@ -159,6 +160,10 @@ export default function ShipmentFilePage() {
 
         {/* Documents & SA customs (Phase 2) */}
         <CustomsDocs fileId={id} cargo={file.cargo || []} onChange={load} />
+
+        {/* SAD declaration + demurrage (Phase 3) */}
+        <DeclarationPanel fileId={id} />
+        <DemurragePanel fileId={id} containers={file.containers || []} />
 
         {/* Milestone timeline */}
         <Section title="Milestones" icon={CheckCircle2}>
@@ -359,6 +364,141 @@ function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.C
           </div>
         )}
         {est && <p className="mt-1 text-[10px] text-white/25">{est.note}</p>}
+      </div>
+    </Section>
+  );
+}
+
+const DECL_STATUS_CLS: Record<string, string> = {
+  DRAFT: "border-white/15 bg-white/5 text-white/50",
+  SUBMITTED: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+  QUERY: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  RELEASED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  REJECTED: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+};
+
+function DeclarationPanel({ fileId }: { fileId: string }) {
+  const { showToast } = useToast();
+  const [decl, setDecl] = useState<fwd.CustomsDeclaration | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => { try { setDecl(await fwd.getDeclaration(fileId)); } catch { /* none */ } };
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [fileId]);
+
+  const act = async (key: string, fn: () => Promise<any>, ok: string) => {
+    setBusy(key);
+    try { const r = await fn(); setDecl(r); showToast(ok, "success"); }
+    catch (e: any) { showToast(e?.message ?? "Action failed", "error"); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <Section title="Customs declaration (SAD)" icon={Stamp}>
+      {!decl ? (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-xs text-white/40">Build a SAD declaration (CUSDEC payload) from this file's cargo, HS codes and customs estimate.</p>
+          <button onClick={() => act("build", () => fwd.buildDeclaration(fileId), "Declaration built")} disabled={busy === "build"}
+            className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/15 px-3 py-2 text-sm font-bold text-cyan-200 disabled:opacity-40">
+            {busy === "build" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stamp className="h-4 w-4" />} Build declaration
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono font-bold text-white/85">{decl.lrn}</span>
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${DECL_STATUS_CLS[decl.status]}`}>{decl.status}</span>
+            {decl.mrn && <span className="text-[11px] text-white/40">MRN {decl.mrn}</span>}
+            <span className="ml-auto text-[11px] text-white/50">duty {(decl.dutyTotal ?? 0).toFixed(0)} · VAT {(decl.vatTotal ?? 0).toFixed(0)}</span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => act("build", () => fwd.buildDeclaration(fileId), "Refreshed from file")} disabled={!!busy}
+              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-white/60 hover:bg-white/10 disabled:opacity-40">Refresh from file</button>
+            {(decl.status === "DRAFT" || decl.status === "REJECTED") && (
+              <button onClick={() => act("submit", () => fwd.submitDeclaration(decl.id), "Submitted")} disabled={!!busy}
+                className="flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/15 px-2.5 py-1.5 text-xs font-bold text-sky-200 disabled:opacity-40">
+                {busy === "submit" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Submit
+              </button>
+            )}
+            {decl.status === "SUBMITTED" && (
+              <>
+                <button onClick={() => act("rel", () => fwd.setDeclarationStatus(decl.id, "RELEASED"), "Marked released")} disabled={!!busy}
+                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-40">Mark released</button>
+                <button onClick={() => act("qry", () => fwd.setDeclarationStatus(decl.id, "QUERY"), "Marked query")} disabled={!!busy}
+                  className="rounded-lg border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 disabled:opacity-40">Query</button>
+              </>
+            )}
+          </div>
+
+          {decl.responseNote && <p className="text-[11px] text-amber-300/70">{decl.responseNote}</p>}
+          <p className="text-[10px] text-white/25">Workflow + CUSDEC payload only — live SARS EDI submission needs accreditation + a registered gateway (not connected).</p>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function DemurragePanel({ fileId, containers }: { fileId: string; containers: fwd.Container[] }) {
+  const { showToast } = useToast();
+  const [dem, setDem] = useState<fwd.Demurrage | null>(null);
+  const [edits, setEdits] = useState<Record<string, any>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => { try { setDem(await fwd.getDemurrage(fileId)); } catch { /* none */ } };
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [fileId]);
+
+  if (containers.length === 0) return null;
+
+  const save = async (cid: string) => {
+    const e = edits[cid] || {};
+    setBusy(cid);
+    try {
+      await fwd.setDemurrage(fileId, cid, {
+        freeDays: e.freeDays !== undefined ? Number(e.freeDays) : undefined,
+        perDiemRate: e.perDiemRate !== undefined ? Number(e.perDiemRate) : undefined,
+        availableFrom: e.availableFrom !== undefined ? (e.availableFrom || null) : undefined,
+        returnedAt: e.returnedAt !== undefined ? (e.returnedAt || null) : undefined,
+      });
+      await load();
+      showToast("Demurrage terms saved", "success");
+    } catch (err: any) { showToast(err?.message ?? "Save failed", "error"); }
+    finally { setBusy(null); }
+  };
+
+  const lineFor = (cid: string) => dem?.lines.find((l) => l.containerId === cid);
+
+  return (
+    <Section title="Demurrage & detention" icon={Timer}>
+      {dem && (
+        <div className={`rounded-xl border px-3 py-2 text-sm flex items-center gap-3 flex-wrap ${
+          dem.riskLevel === "high" ? "border-rose-500/30 bg-rose-500/8" : dem.riskLevel === "medium" ? "border-amber-500/30 bg-amber-500/8" : "border-white/8 bg-black/20"}`}>
+          {dem.accruing && <AlertTriangle className="h-4 w-4 text-rose-300" />}
+          <span className="text-white/70">Accruing charges: <b className={dem.totalCharge > 0 ? "text-rose-300" : "text-white/85"}>{dem.totalCharge.toFixed(2)}</b></span>
+          {dem.nearLimit && <span className="text-amber-300 text-xs">free days nearly used</span>}
+        </div>
+      )}
+      <div className="space-y-1.5">
+        {containers.map((c) => {
+          const e = edits[c.id] || {};
+          const ln = lineFor(c.id);
+          return (
+            <div key={c.id} className="rounded-xl border border-white/6 bg-black/20 px-3 py-2 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono font-bold text-white/85 text-sm">{c.containerNo}</span>
+                {ln && ln.charge > 0 && <span className="text-[11px] text-rose-300">{ln.chargeableDays}d × rate = {ln.charge.toFixed(2)}</span>}
+                {ln && ln.charge === 0 && ln.open && (ln.daysToFree ?? 0) >= 0 && <span className="text-[11px] text-white/40">{ln.daysToFree}d free left</span>}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <input type="number" placeholder="free days" defaultValue={c.freeDays ?? ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], freeDays: ev.target.value } }))} className={`${inputCls} w-24`} />
+                <input type="number" placeholder="per-diem" defaultValue={c.perDiemRate ?? ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], perDiemRate: ev.target.value } }))} className={`${inputCls} w-24`} />
+                <input type="date" title="available from" defaultValue={c.availableFrom ? c.availableFrom.slice(0, 10) : ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], availableFrom: ev.target.value } }))} className={`${inputCls} w-36`} />
+                <input type="date" title="returned at" defaultValue={c.returnedAt ? c.returnedAt.slice(0, 10) : ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], returnedAt: ev.target.value } }))} className={`${inputCls} w-36`} />
+                <button onClick={() => save(c.id)} disabled={busy === c.id}
+                  className="rounded-lg border border-cyan-500/30 bg-cyan-500/15 px-2.5 py-1.5 text-xs font-bold text-cyan-200 disabled:opacity-40">{busy === c.id ? "…" : "save"}</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </Section>
   );
