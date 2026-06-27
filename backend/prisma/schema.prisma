@@ -160,6 +160,13 @@ model Company {
   trialEndsAt   DateTime?
   isActive      Boolean  @default(true)
 
+  // CLAW Autopilot for Operations (Enterprise) — when enabled, the autonomy
+  // engine may auto-execute safe ops actions (reassign stalled pickups,
+  // escalate SLA pre-breaches / COD mismatches). Aggression overrides the
+  // global CLAW_AGGRESSION_LEVEL for this tenant when set (LOW|MEDIUM|HIGH).
+  autopilotEnabled    Boolean @default(false)
+  autopilotAggression String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -196,6 +203,7 @@ model Company {
   commissions        Commission[]
   accountingConnections AccountingConnection[]
   accountingSyncLogs    AccountingSyncLog[]
+  ssoConnection         SsoConnection?
 
   @@map("companies")
 }
@@ -1638,4 +1646,40 @@ model AccountingSyncLog {
   @@index([connectionId])
   @@index([documentId])
   @@map("accounting_sync_logs")
+}
+
+
+// ─── Enterprise SSO (OIDC) ──────────────────────────────────────────────────
+// Per-tenant single sign-on via OpenID Connect (Okta, Azure AD, Google
+// Workspace, Auth0, etc.). Gated to the Enterprise plan. Authorization-Code
+// flow handled server-side; users are JIT-provisioned on first login.
+
+model SsoConnection {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  provider String  @default("oidc") // oidc (covers Okta / Azure AD / Google / Auth0)
+  enabled  Boolean @default(false)
+
+  // OIDC endpoints + credentials
+  issuer       String?
+  clientId     String?
+  clientSecret String? // NOTE: stored as-is; encrypt at rest before GA
+  authUrl      String? // authorization endpoint
+  tokenUrl     String? // token endpoint
+  userInfoUrl  String? // userinfo endpoint (preferred for claims)
+  scopes       String  @default("openid email profile")
+
+  // JIT provisioning controls
+  allowedDomain String? // only emails on this domain may sign in (e.g. acme.com)
+  autoProvision Boolean @default(true)
+  defaultRole   String  @default("AGENT")
+
+  lastLoginAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sso_connections")
 }

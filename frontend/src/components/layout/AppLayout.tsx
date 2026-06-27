@@ -5,7 +5,7 @@ import {
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
-  AlertTriangle, Zap,
+  AlertTriangle, Zap, Bot, ShieldCheck,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -218,11 +218,13 @@ export default function AppLayout() {
     { section: "BILLING", label: "COD Reconciliation", desc: "Cash on delivery tracking", to: "/cod", icon: Wallet, perm: "billingBatches" },
     
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower"   },
+    { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower"   },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
     { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
     { section: "ADMIN", label: "Integrations", desc: "API keys & webhooks", to: "/settings/integrations", icon: Settings, perm: "settings" },
+    { section: "ADMIN", label: "Single Sign-On", desc: "OIDC SSO (Enterprise)", to: "/settings/sso", icon: ShieldCheck, adminOnly: true },
     { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings, perm: "settings" },
   ], []);
 

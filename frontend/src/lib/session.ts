@@ -27,6 +27,7 @@
 export type LoginMode = "tenant" | "owner" | "driver";
 
 const ACCESS_TOKEN_KEY = "flowops.access_token";
+const REFRESH_TOKEN_KEY = "flowops.refresh_token";
 const LOGIN_MODE_KEY = "flowops.login_mode";
 const USER_KEY = "flowops.user";
 
@@ -157,6 +158,31 @@ export function setMemoryToken(token: string | null): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Refresh token
+//
+// Persisted so the API client can perform a silent token refresh (the backend
+// /auth/refresh endpoint rotates and returns a new pair). Used by tenant and
+// SSO sessions alike — both are issued real RefreshToken rows server-side.
+// ─────────────────────────────────────────────────────────────────────────
+
+export function getRefreshToken(): string | null {
+  return safeRead(REFRESH_TOKEN_KEY);
+}
+
+export function setRefreshToken(token: string | null | undefined): void {
+  const trimmed = (token ?? "").trim();
+  if (!trimmed) {
+    clearRefreshToken();
+    return;
+  }
+  safeWrite(REFRESH_TOKEN_KEY, trimmed);
+}
+
+export function clearRefreshToken(): void {
+  safeRemove(REFRESH_TOKEN_KEY);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Login mode
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -245,6 +271,7 @@ export function clearStoredUser(): void {
 /** Atomic logout: clear the access token, login mode, cached user, and any leftover legacy aux keys. */
 export function clearSession(): void {
   clearAccessToken();
+  clearRefreshToken();
   clearLoginMode();
   clearStoredUser();
   for (const key of LEGACY_AUX_KEYS) safeRemove(key);
