@@ -62,6 +62,9 @@ const plans = [
     description: "For large fleets, 3PLs, and multi-company platforms.",
     features: [
       "Everything in Professional",
+      "CLAW Autopilot — autonomous ops (auto-assign, SLA escalation, COD checks)",
+      "Freight Forwarding — import/export, containers, customs & last-mile",
+      "OIDC Single Sign-On (Okta, Azure AD, Google Workspace, Auth0)",
       "Native iOS & Android driver apps",
       "Self-hosted / on-premise deployment",
       "White-label branding & custom domain",
