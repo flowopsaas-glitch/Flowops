@@ -55,7 +55,7 @@ export function usePremiumWebSocket({
       const url = `${base}/broadcast`;
 
       socketRef.current = io(url, {
-        transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 10000,
