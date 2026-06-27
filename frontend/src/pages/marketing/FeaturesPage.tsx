@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import {
   Package, Truck, BarChart3, MessageCircle, Shield,
   MapPin, FileText, Scan, Wallet, Route, Bell, Users,
-  CheckCircle2, ArrowRight, Zap,
+  CheckCircle2, ArrowRight, Zap, Bot, ShieldCheck, Ship, Mail, RotateCcw,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
@@ -81,6 +81,16 @@ const sections = [
           "Customer portal for booking requests",
         ],
       },
+      {
+        icon: RotateCcw,
+        title: "Returns / RMA",
+        points: [
+          "Full RMA lifecycle — request, collect, inspect, resolve",
+          "Refund, replace, restock or dispose outcomes",
+          "Warehouse receiving & inspection workflow",
+          "Credit-note generation on approved returns",
+        ],
+      },
     ],
   },
   {
@@ -105,6 +115,16 @@ const sections = [
           "Email alerts on SLA breach risk",
           "Trial expiry and payment reminders",
           "Configurable per-user notification preferences",
+        ],
+      },
+      {
+        icon: Mail,
+        title: "Email Hub",
+        points: [
+          "Unified inbox for ops & client email",
+          "AI triage and logistics-data extraction",
+          "Attachment threat scanning",
+          "Auto-promote bookings into waybills",
         ],
       },
     ],
@@ -171,6 +191,42 @@ const sections = [
       },
     ],
   },
+  {
+    label: "Enterprise",
+    color: "cyan",
+    features: [
+      {
+        icon: Bot,
+        title: "CLAW Autopilot",
+        points: [
+          "Autonomous ops — detects risk and takes safe, confidence-gated actions",
+          "Auto-assigns stalled pickups and escalates SLA pre-breaches",
+          "Flags COD mismatches before they cost you",
+          "Adjustable aggression with full action audit log",
+        ],
+      },
+      {
+        icon: Ship,
+        title: "Freight Forwarding",
+        points: [
+          "Import/export shipment files — ocean, air & road",
+          "Container (ISO 6346), cargo, charges & margin tracking",
+          "SA customs estimator (ATV-based VAT) + AI HS classification",
+          "Commercial invoice, packing list, B/L & SAD500 PDFs",
+        ],
+      },
+      {
+        icon: ShieldCheck,
+        title: "Single Sign-On (SSO)",
+        points: [
+          "OIDC SSO — Okta, Azure AD, Google Workspace, Auth0",
+          "Just-in-time user provisioning on first login",
+          "Domain restriction and default-role mapping",
+          "Centralised identity for your whole team",
+        ],
+      },
+    ],
+  },
 ];
 
 const colorMap: Record<string, { badge: string; icon: string; dot: string }> = {
@@ -179,6 +235,7 @@ const colorMap: Record<string, { badge: string; icon: string; dot: string }> = {
   emerald: { badge: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400" },
   violet:  { badge: "border-violet-400/20 bg-violet-400/10 text-violet-300",   icon: "border-violet-400/20 bg-violet-400/10 text-violet-300",   dot: "bg-violet-400" },
   amber:   { badge: "border-amber-400/20 bg-amber-400/10 text-amber-300",     icon: "border-amber-400/20 bg-amber-400/10 text-amber-300",     dot: "bg-amber-400" },
+  cyan:    { badge: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",        icon: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",        dot: "bg-cyan-400" },
 };
 
 export default function FeaturesPage() {
