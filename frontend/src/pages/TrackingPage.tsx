@@ -8,6 +8,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup } from "react-leaflet"
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { FLOWOPS_API_URL } from "../lib/env";
+import BackButton from "../components/BackButton";
 
 type TrackData = {
   trackingNumber: string;
@@ -106,10 +107,13 @@ export default function TrackingPage() {
     <div className="min-h-screen bg-[#07111f] text-white">
       {/* Header */}
       <div className="border-b border-white/10 px-4 py-4">
-        <div className="mx-auto max-w-2xl flex items-center justify-between">
-          <Link to="/" className="text-xl font-black text-white">
-            {data?.branding?.brandName || "FlowOps"}
-          </Link>
+        <div className="mx-auto max-w-2xl flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <BackButton to="/" />
+            <Link to="/" className="text-xl font-black text-white">
+              {data?.branding?.brandName || "FlowOps"}
+            </Link>
+          </div>
           <span className="text-xs text-white/30 font-mono">LIVE TRACKING</span>
         </div>
       </div>
