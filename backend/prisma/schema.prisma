@@ -430,6 +430,211 @@ model Branch {
   @@map("branches")
 }
 
+// ─── Freight Forwarding (import/export) ─────────────────────────────────────
+// New product line: ocean/air container import/export. A ShipmentFile is the
+// central record per consignment; containers/cargo, routing milestones, charges
+// (cost vs sell) and documents hang off it. Additive — no changes to the
+// existing courier tables. See .kiro/specs/freight-forwarding.
+
+enum FreightMode {
+  OCEAN
+  AIR
+  ROAD
+}
+
+enum FreightDirection {
+  IMPORT
+  EXPORT
+}
+
+enum LoadType {
+  FCL
+  LCL
+  BREAKBULK
+  AIR
+}
+
+enum ShipmentFileStatus {
+  DRAFT
+  BOOKED
+  CARGO_RECEIVED
+  LOADED
+  DEPARTED
+  ARRIVED
+  CUSTOMS_CLEARED
+  DELIVERED
+  CANCELLED
+}
+
+model ShipmentFile {
+  id         String              @id @default(cuid())
+  fileNumber String // e.g. IMP-2026-00042 (unique per tenant)
+  mode       FreightMode
+  direction  FreightDirection
+  loadType   LoadType
+  status     ShipmentFileStatus  @default(DRAFT)
+  incoterm   String? // EXW|FOB|CIF|DDP...
+
+  // Parties (denormalised; optional Client links can come later)
+  shipperName   String?
+  consigneeName String?
+  notifyParty   String?
+  carrierName   String?
+  agentName     String?
+
+  // Cargo summary
+  goodsDescription String? @db.Text
+  packages         Int?
+  grossWeightKg    Float?
+  volumeCbm        Float?
+
+  // Routing
+  pol          String? // port of loading (UN/LOCODE or name)
+  pod          String? // port of discharge
+  vesselVoyage String? // or flight number
+  etd          DateTime?
+  eta          DateTime?
+
+  // AI-derived (demurrage / delay risk)
+  aiRiskScore Int?
+  aiRiskNote  String? @db.Text
+
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  containers ShipmentContainer[]
+  cargo      CargoLine[]
+  charges    ShipmentCharge[]
+  documents  ShipmentDocument[]
+  milestones ShipmentMilestone[]
+  declarations CustomsDeclaration[]
+
+  // Consolidation / co-load (Phase 3): house files grouped under a master file.
+  isMaster     Boolean        @default(false)
+  masterFileId String?
+  master       ShipmentFile?  @relation("Consolidation", fields: [masterFileId], references: [id], onDelete: SetNull)
+  houseFiles   ShipmentFile[] @relation("Consolidation")
+
+  @@unique([fileNumber, companyId])
+  @@index([companyId, status])
+  @@map("shipment_files")
+}
+
+model ShipmentContainer {
+  id          String       @id @default(cuid())
+  fileId      String
+  file        ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  containerNo String // e.g. ABCU1234567
+  isoType     String // 20GP|40HC|40RF...
+  sealNo      String?
+  vgmKg       Float?
+
+  // Demurrage / detention (Phase 3)
+  freeDays      Int?      // free days before per-diem starts
+  perDiemRate   Float?    // demurrage/detention rate per day
+  availableFrom DateTime? // clock start (discharge / availability)
+  returnedAt    DateTime? // empty-return / gate-in (clock stop)
+
+  @@index([fileId])
+  @@map("shipment_containers")
+}
+
+model CargoLine {
+  id           String       @id @default(cuid())
+  fileId       String
+  file         ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  description  String
+  pieces       Int?
+  weightKg     Float?
+  dimensions   String?
+  hsCode       String? // tariff heading
+  customsValue Float?
+  dutyRatePct  Float? // ad valorem duty rate % (operator-set or AI-suggested)
+
+  @@index([fileId])
+  @@map("cargo_lines")
+}
+
+model ShipmentCharge {
+  id          String       @id @default(cuid())
+  fileId      String
+  file        ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  description String
+  currency    String       @default("ZAR")
+  cost        Float        @default(0)
+  sell        Float        @default(0)
+  invoiceTo   String? // party to bill
+
+  @@index([fileId])
+  @@map("shipment_charges")
+}
+
+model ShipmentDocument {
+  id        String       @id @default(cuid())
+  fileId    String
+  file      ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  type      String // BILL_OF_LADING|COMMERCIAL_INVOICE|PACKING_LIST|CERT_OF_ORIGIN|SAD500|OTHER
+  fileName  String
+  fileKey   String // storage key (R2/local)
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+  @@map("shipment_documents")
+}
+
+model ShipmentMilestone {
+  id        String             @id @default(cuid())
+  fileId    String
+  file      ShipmentFile       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  status    ShipmentFileStatus
+  note      String?
+  reachedAt DateTime           @default(now())
+
+  @@index([fileId])
+  @@map("shipment_milestones")
+}
+
+enum CustomsDeclarationStatus {
+  DRAFT
+  SUBMITTED
+  QUERY
+  RELEASED
+  REJECTED
+}
+
+// SAD (Single Administrative Document) declaration workflow (Phase 3). Holds a
+// CUSDEC-style structured payload and a lifecycle. NOTE: actual SARS EDI wire
+// submission requires SARS accreditation + a registered EDI gateway — this
+// models the workflow + payload; submission is a pluggable stub for now.
+model CustomsDeclaration {
+  id     String                   @id @default(cuid())
+  fileId String
+  file   ShipmentFile             @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  type   String // IMPORT | EXPORT
+  status CustomsDeclarationStatus @default(DRAFT)
+
+  lrn String? // local reference number (our side)
+  mrn String? // movement/customs reference (from SARS)
+
+  payload           Json?  // CUSDEC-style declaration data
+  customsValueTotal Float?
+  dutyTotal         Float?
+  vatTotal          Float?
+
+  submittedAt  DateTime?
+  responseAt   DateTime?
+  responseNote String?
+
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fileId])
+  @@index([companyId, status])
+  @@map("customs_declarations")
+}
+
 // ─── Waybills ─────────────────────────────────────────────────────────────
 
 model Waybill {

@@ -48,6 +48,8 @@ const QuotesPage = lazy(() => import("./pages/QuotesPage"));
 const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const CompetitiveIntelligence = lazy(() => import("./pages/CompetitiveIntelligence"));
 const Observatory = lazy(() => import("./pages/Observatory"));
+const ForwardingConsole = lazy(() => import("./pages/forwarding/ForwardingConsole"));
+const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
 const SsoSettings = lazy(() => import("./pages/enterprise/SsoSettings"));
 const DepotsPage        = lazy(() => import("./pages/DepotsPage"));
@@ -244,6 +246,8 @@ export default function App() {
               <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
+              <Route path="/forwarding" element={<ForwardingConsole />} />
+              <Route path="/forwarding/:id" element={<ShipmentFilePage />} />
               <Route path="/autopilot" element={<AutopilotConsole />} />
               <Route path="/settings/sso" element={<SsoSettings />} />
               <Route path="/finance" element={<RequirePermission perm="invoices"><FinanceDashboard /></RequirePermission>} />
