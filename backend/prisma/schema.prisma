@@ -1683,3 +1683,52 @@ model SsoConnection {
 
   @@map("sso_connections")
 }
+
+
+// ─── CLAW Observatory (self-hosted error intelligence) ──────────────────────
+// FlowOps-native, self-hosted error capture for backend 5xx + frontend JS
+// errors. Identical errors are grouped by a stable fingerprint (count + first/
+// last seen), CLAW AI triages each group (severity + summary + suggested fix),
+// and the owner console surfaces them ranked. Complements the proactive
+// Integration Sentinel and reactive Sentry — but owns the data (no third party).
+
+model ErrorEvent {
+  id          String  @id @default(cuid())
+  fingerprint String  @unique // groups identical errors
+
+  source  String  @default("backend") // backend | frontend
+  level   String  @default("error")   // error | warning
+  message String  @db.Text
+  stack   String? @db.Text
+
+  // Where it happened
+  path    String? // request path or page URL
+  method  String?
+
+  // Occurrence tracking
+  count       Int      @default(1)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  // Lifecycle
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+
+  // CLAW AI triage (best-effort, populated async)
+  aiSeverity   String? // LOW | MEDIUM | HIGH | CRITICAL
+  aiSummary    String? @db.Text
+  aiSuggestion String? @db.Text
+  aiTriagedAt  DateTime?
+
+  // Latest-occurrence context + optional tenant/user association
+  context   Json?
+  companyId String?
+  userId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resolved, lastSeenAt])
+  @@index([source, level])
+  @@map("error_events")
+}

@@ -71,6 +71,7 @@ export default function OwnerLayout() {
   const onOps = location.pathname.startsWith("/owner/ops");
   const onAudit = location.pathname.startsWith("/owner/audit");
   const onIntel = location.pathname.startsWith("/owner/intel");
+  const onObservatory = location.pathname.startsWith("/owner/observatory");
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0d2a63_0%,_#07142d_45%,_#030816_100%)] text-white">
@@ -134,6 +135,14 @@ export default function OwnerLayout() {
               className={navButtonClass(onIntel)}
             >
               🔍 Intel
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/owner/observatory")}
+              className={navButtonClass(onObservatory)}
+            >
+              📡 Observatory
             </button>
 
             <button
