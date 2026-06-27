@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Calculator, Sparkles, FileMinus, FilePlus, ScrollText, Layers, Percent,
   Download, Plus, X, RefreshCw, CheckCircle2, Banknote, AlertTriangle, TrendingUp,
+  Plug, ShieldCheck, Link2,
 } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 import { Button } from "../components/ui/button";
@@ -15,6 +16,11 @@ import {
   type CreditNote, type DebitNote, type Statement, type AgeAnalysis, type AiAssist,
   type Salesperson, type Commission, type CommissionSummaryRow,
 } from "../api/accountingApi";
+import {
+  listIntegrations, reconcileBooks, authorizeProvider, connectPastel,
+  disconnectIntegration, downloadPastelImport,
+  type IntegrationStatus, type Reconciliation, type ProviderKey,
+} from "../api/accountingIntegrationsApi";
 
 const glassCard = (c?: string) =>
   cn("rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-xl", c);
@@ -23,9 +29,10 @@ const money = (n?: number | null) =>
 const pretty = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
-type TabKey = "ai" | "credit" | "debit" | "statements" | "aging" | "commission";
+type TabKey = "ai" | "credit" | "debit" | "statements" | "aging" | "commission" | "bridge";
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: "ai", label: "AI Assist", icon: Sparkles },
+  { key: "bridge", label: "AI Bridge", icon: Link2 },
   { key: "credit", label: "Credit Notes", icon: FileMinus },
   { key: "debit", label: "Debit Notes", icon: FilePlus },
   { key: "statements", label: "Statements", icon: ScrollText },
@@ -75,6 +82,7 @@ export default function Accounting() {
       </div>
 
       {tab === "ai" && <AiAssistPanel />}
+      {tab === "bridge" && <BridgeTab />}
       {tab === "credit" && <CreditNotesTab />}
       {tab === "debit" && <DebitNotesTab />}
       {tab === "statements" && <StatementsTab />}
@@ -692,5 +700,186 @@ function ActBtn({ children, onClick, tone }: { children: React.ReactNode; onClic
         : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10")}>
       {children}
     </button>
+  );
+}
+
+
+// ── AI Accounting Bridge tab ──────────────────────────────────────────────
+const PROVIDER_META: Record<ProviderKey, { label: string; blurb: string }> = {
+  XERO: { label: "Xero", blurb: "Two-way sync — push invoices & credit notes, auto-refresh tokens." },
+  SAGE: { label: "Sage Accounting", blurb: "Push sales invoices & credit notes to Sage Business Cloud." },
+  PASTEL: { label: "Sage Pastel", blurb: "Generate a Pastel Partner/Xpress import file (no API needed)." },
+};
+
+function BridgeTab() {
+  const { showToast } = useToast();
+  const [providers, setProviders] = useState<IntegrationStatus[]>([]);
+  const [recon, setRecon] = useState<Reconciliation | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [p, r] = await Promise.all([listIntegrations(), reconcileBooks()]);
+      setProviders(p);
+      setRecon(r);
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || "Failed to load accounting bridge", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+  useEffect(() => { void load(); }, [load]);
+
+  // surface the OAuth redirect result if present
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("integration") === "connected") showToast(`${q.get("provider")} connected ✓`, "success");
+    if (q.get("integration") === "error") showToast(`Connect failed: ${q.get("reason") || "unknown"}`, "error");
+  }, [showToast]);
+
+  async function connect(p: IntegrationStatus) {
+    setBusy(p.provider);
+    try {
+      if (p.provider === "PASTEL") {
+        await connectPastel();
+        showToast("Pastel connected — use Export to download import files.", "success");
+        await load();
+      } else if (!p.configured) {
+        showToast(`${p.name} isn't configured on the server (admin must set ${p.provider}_CLIENT_ID/SECRET).`, "error");
+      } else {
+        const { url } = await authorizeProvider(p.provider);
+        window.location.href = url; // OAuth redirect
+      }
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || "Connect failed", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function disconnect(p: IntegrationStatus) {
+    if (!p.connectionId) return;
+    setBusy(p.provider);
+    try { await disconnectIntegration(p.connectionId); showToast(`${p.name} disconnected`, "success"); await load(); }
+    catch (e: any) { showToast(e?.response?.data?.message || "Failed", "error"); }
+    finally { setBusy(null); }
+  }
+
+  const ring = (s: number) =>
+    s >= 80 ? "text-emerald-300" : s >= 50 ? "text-amber-300" : "text-rose-300";
+  const sevCls = (s: string) =>
+    s === "HIGH" ? "border-rose-400/30 bg-rose-400/10 text-rose-200"
+    : s === "MEDIUM" ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+    : "border-white/10 bg-white/5 text-white/70";
+
+  return (
+    <div className="space-y-4">
+      {/* Provider connections */}
+      <div className="grid gap-3 md:grid-cols-3">
+        {providers.map((p) => (
+          <div key={p.provider} className={glassCard("p-4 flex flex-col")}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Plug className="h-4 w-4 text-sky-300" />
+                <span className="font-bold">{PROVIDER_META[p.provider]?.label ?? p.name}</span>
+              </div>
+              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                p.status === "CONNECTED" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-white/10 bg-white/5 text-white/50")}>
+                {p.status === "CONNECTED" ? "Connected" : "Not connected"}
+              </span>
+            </div>
+            <p className="mt-2 flex-1 text-xs text-white/45">{PROVIDER_META[p.provider]?.blurb}</p>
+            {p.tenantName && <p className="mt-1 text-[11px] text-white/40">Org: {p.tenantName}</p>}
+            {p.lastError && <p className="mt-1 text-[11px] text-rose-300/80 truncate">⚠ {p.lastError}</p>}
+            {!p.configured && p.usesOAuth && (
+              <p className="mt-1 text-[10px] text-amber-300/70">Server credentials not set</p>
+            )}
+            <div className="mt-3 flex gap-2">
+              {p.status === "CONNECTED" ? (
+                <>
+                  {p.provider === "PASTEL" && (
+                    <Button className="bg-white/10 hover:bg-white/20 text-xs" onClick={() => void downloadPastelImport().catch((e) => showToast(e.message, "error"))}>
+                      <Download className="mr-1 h-3.5 w-3.5" /> Export
+                    </Button>
+                  )}
+                  <Button variant="outline" className="border-white/10 bg-white/5 text-xs" disabled={busy === p.provider} onClick={() => void disconnect(p)}>
+                    Disconnect
+                  </Button>
+                </>
+              ) : (
+                <Button className="bg-sky-500 hover:bg-sky-400 text-xs" disabled={busy === p.provider} onClick={() => void connect(p)}>
+                  {busy === p.provider ? "…" : "Connect"}
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* AI reconciliation */}
+      {loading ? (
+        <div className={glassCard("p-10 text-center text-white/40")}>Reconciling your books…</div>
+      ) : recon && (
+        <div className={glassCard("p-5")}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-300"><ShieldCheck className="h-5 w-5" /></div>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide text-violet-300/80">FlowOps AI · Books reconciliation</div>
+                <p className="mt-1 max-w-3xl text-sm leading-relaxed text-white/80">{recon.summary}</p>
+              </div>
+            </div>
+            <button onClick={() => void load()} title="Re-run" className="text-white/40 hover:text-white"><RefreshCw className="h-4 w-4" /></button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+            <Kpi label="Books health" value={<span className={ring(recon.healthScore)}>{recon.healthScore}/100</span>} />
+            <Kpi label="Documents" value={recon.totals.documents} />
+            <Kpi label="Synced" value={recon.totals.synced} />
+            <Kpi label="Unsynced" value={recon.totals.unsynced} />
+            <Kpi label="High issues" value={<span className={recon.totals.high ? "text-rose-300" : "text-emerald-300"}>{recon.totals.high}</span>} />
+          </div>
+
+          {recon.issues.length > 0 && (
+            <div className="mt-4">
+              <h4 className="mb-2 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-white/60"><AlertTriangle className="h-4 w-4" /> Issues to fix</h4>
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {recon.issues.map((i, idx) => (
+                  <div key={idx} className="flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-sm">
+                    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", sevCls(i.severity))}>{i.severity}</span>
+                    <div>
+                      <span className="font-mono text-sky-300">{i.doc}</span> · <span className="text-white/70">{i.client}</span>
+                      <p className="text-xs text-white/55">{i.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {recon.connected.length > 0 && (
+            <div className="mt-4">
+              <h4 className="mb-2 text-sm font-black uppercase tracking-wide text-white/60">AI-suggested ledger mapping</h4>
+              <div className="grid gap-2 md:grid-cols-3">
+                {recon.connected.map((c) => {
+                  const m = recon.suggestedMapping[c.provider];
+                  if (!m) return null;
+                  return (
+                    <div key={c.provider} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs">
+                      <div className="mb-1 font-bold text-white/80">{c.provider}</div>
+                      <div className="text-white/55">Sales: <span className="text-white/80">{m.sales}</span></div>
+                      <div className="text-white/55">AR: <span className="text-white/80">{m.accountsReceivable}</span></div>
+                      <div className="text-white/55">VAT: <span className="text-white/80">{m.vat}</span></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
