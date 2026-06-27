@@ -44,6 +44,7 @@ import { AlertingModule } from './alerting/alerting.module';
 import { EmailHubModule } from './email-hub/email-hub.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { BillingModule } from './billing/billing.module';
+import { AccountingIntegrationsModule } from './accounting-integrations/accounting-integrations.module';
 import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
 
@@ -91,6 +92,7 @@ import { AccountingModule } from './accounting/accounting.module';
     AlertingModule,
     EmailHubModule,
     CopilotModule,
+    AccountingIntegrationsModule,
 
     // Domain modules
     AuthModule,
