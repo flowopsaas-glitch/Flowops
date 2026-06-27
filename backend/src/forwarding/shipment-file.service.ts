@@ -112,4 +112,77 @@ export class ShipmentFileService {
       data: { status: 'CANCELLED' },
     });
   }
+
+  // ── Milestones ─────────────────────────────────────────────────────────────
+
+  /** Advance the file to a status, record a milestone, and emit a tracked event. */
+  async advanceMilestone(companyId: string, id: string, status: string, note?: string) {
+    await this.assertEntitled(companyId);
+    const file = await this.get(companyId, id);
+
+    await this.prisma.shipmentMilestone.create({
+      data: { fileId: id, status: status as any, note: note ?? null },
+    });
+    const updated = await this.prisma.shipmentFile.update({
+      where: { id },
+      data: { status: status as any },
+    });
+
+    // Tracked event (surfaces in AI Control Tower; best-effort).
+    try {
+      await (this.prisma as any).aiEvent.create({
+        data: {
+          companyId,
+          type: 'FORWARDING_MILESTONE',
+          title: `${file.fileNumber}: ${String(status).replace(/_/g, ' ').toLowerCase()}`,
+          body: note || `Shipment file advanced to ${status}.`,
+          severity: 'info',
+          sourceType: 'FORWARDING',
+          sourceId: id,
+          resolved: true,
+        },
+      });
+    } catch { /* event logging is best-effort */ }
+
+    return updated;
+  }
+
+  // ── Documents (metadata; file bytes uploaded via storage separately) ─────────
+
+  async attachDocument(companyId: string, id: string, dto: { type: string; fileName: string; fileKey: string }) {
+    await this.assertEntitled(companyId);
+    await this.get(companyId, id);
+    return this.prisma.shipmentDocument.create({
+      data: { fileId: id, type: dto.type, fileName: dto.fileName, fileKey: dto.fileKey },
+    });
+  }
+
+  async removeDocument(companyId: string, id: string, documentId: string) {
+    await this.assertEntitled(companyId);
+    await this.get(companyId, id);
+    await this.prisma.shipmentDocument.deleteMany({ where: { id: documentId, fileId: id } });
+    return { deleted: true };
+  }
+
+  // ── Last-mile bridge ─────────────────────────────────────────────────────────
+
+  /**
+   * The unique cross-sell: once a file is cleared, spawn a domestic delivery
+   * (Collection) pre-filled from the file, so the same platform handles the
+   * final leg. Returns the new collection id for deep-linking.
+   */
+  async createDeliveryFromFile(companyId: string, id: string) {
+    await this.assertEntitled(companyId);
+    const file = await this.get(companyId, id);
+    const collection = await this.prisma.collection.create({
+      data: {
+        companyId,
+        clientName: file.consigneeName || 'Consignee',
+        clientPhone: '',
+        pickupAddress: file.pod || 'To be confirmed',
+        notes: `Domestic leg for forwarding file ${file.fileNumber} (${file.direction} ${file.mode}). Complete consignee phone & address.`,
+      },
+    });
+    return { collectionId: collection.id, fileNumber: file.fileNumber };
+  }
 }
