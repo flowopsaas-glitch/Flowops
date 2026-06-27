@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { ThrottlerProxyGuard } from './common/guards/throttler-proxy.guard';
 
 // Feature modules
 import { AuthModule } from './auth/auth.module';
@@ -59,6 +61,12 @@ import { AccountingModule } from './accounting/accounting.module';
 
     // Cron scheduling
     ScheduleModule.forRoot(),
+
+    // ── API rate limiting (anti-scrape / anti-abuse) ─────────────────────
+    // Generous global backstop (600 req / 60s per client) that only trips on
+    // bulk scraping or floods; sensitive routes set tighter @Throttle limits.
+    // ttl is in milliseconds (throttler v5).
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 600 }]),
 
     // Database (global — exported PrismaService available everywhere)
     PrismaModule,
@@ -138,6 +146,11 @@ import { AccountingModule } from './accounting/accounting.module';
 
     // Apply RolesGuard globally — only enforced when @Roles() is present
     { provide: APP_GUARD, useClass: RolesGuard },
+
+    // Rate limiting runs last so authenticated requests are tracked per-user
+    // (fair on shared office NATs) while @Public routes fall back to client IP
+    // (stops login brute-force and unauthenticated scraping).
+    { provide: APP_GUARD, useClass: ThrottlerProxyGuard },
   ],
 })
 export class AppModule {}

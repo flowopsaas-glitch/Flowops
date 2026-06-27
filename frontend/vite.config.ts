@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
@@ -49,6 +49,11 @@ export default defineConfig({
     },
   },
   build: {
+    // Never ship source maps to production — they would expose readable source.
+    sourcemap: false,
+    // Strip console.* and debugger from the production bundle (esbuild minifier).
+    // Keeps console.error/console.warn so genuine runtime issues still surface.
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {
@@ -61,6 +66,17 @@ export default defineConfig({
       },
     },
   },
+  // Production-only source hardening: drop debugger statements and mark the
+  // chatty console methods as pure so the minifier removes them, while keeping
+  // console.error / console.warn for genuine runtime diagnostics.
+  esbuild:
+    mode === 'production'
+      ? {
+          drop: ['debugger'],
+          pure: ['console.log', 'console.info', 'console.debug', 'console.trace'],
+          legalComments: 'none',
+        }
+      : {},
   server: {
     port: 5173,
     strictPort: true,
@@ -86,4 +102,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

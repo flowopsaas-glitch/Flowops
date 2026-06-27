@@ -21,8 +21,18 @@ export const TERMS_SECTIONS: {
     ],
   },
   {
+    id: 'acceptable-use',
+    title: '3. Acceptable use, scraping and intellectual property',
+    paragraphs: [
+      'The Services — including their software, source and object code, APIs, user interfaces, visual design, workflows, data models, AI prompts and the CLAW automation engine — are the exclusive property of FlowOps (Pty) Ltd and are protected by copyright, trademark and other intellectual property laws.',
+      'You may not, and may not permit any third party to: (a) copy, reproduce, clone, frame, mirror or imitate any part of the Services or their look and feel; (b) reverse engineer, decompile, disassemble or otherwise attempt to derive source code, algorithms or underlying ideas; (c) create derivative, similar or competing works based on the Services; or (d) remove, obscure or alter any proprietary notice.',
+      'Automated access, scraping, crawling, spidering, bulk export or data harvesting — other than retrieval of your own data through documented, authorised API endpoints — is prohibited. You may not exceed published rate limits, circumvent access or security controls, or use the Services (or data obtained from them) to build a similar or competing product.',
+      'FlowOps, CLAW and associated logos are trademarks of FlowOps (Pty) Ltd. All rights not expressly granted are reserved. We monitor for unauthorised copies and automated abuse, and reserve the right to throttle or suspend access and to pursue all available legal remedies.',
+    ],
+  },
+  {
     id: 'logistics-risk',
-    title: '3. Logistics outcomes and liability',
+    title: '4. Logistics outcomes and liability',
     paragraphs: [
       'FlowOps provides software tools only. It does not transport goods, act as carrier or insurer, or guarantee delivery times, OCR accuracy, AI suggestions, or uninterrupted availability.',
       'You remain responsible for operational decisions, insurance, subcontracting, and compliance with transport and consumer laws. Liability caps and exclusions apply as set out in the full Terms (see repository `legal/TERMS_OF_SERVICE.md`).',
@@ -30,14 +40,14 @@ export const TERMS_SECTIONS: {
   },
   {
     id: 'sla',
-    title: '4. Availability',
+    title: '5. Availability',
     paragraphs: [
       'Unless a separate SLA is signed, availability is best-effort. Maintenance may occur with reasonable notice where practicable.',
     ],
   },
   {
     id: 'popia',
-    title: '5. Data protection (POPIA)',
+    title: '6. Data protection (POPIA)',
     paragraphs: [
       'Personal information (names, addresses, waybill data, etc.) is processed to deliver the Services. Details of purposes, retention, subprocessors, cross-border transfers, and data-subject rights are in the Privacy Notice.',
       'You warrant lawful authority to load personal information about your staff, drivers, and consignees. A data processing agreement may be signed where your compliance programme requires it.',
@@ -45,7 +55,7 @@ export const TERMS_SECTIONS: {
   },
   {
     id: 'changes',
-    title: '6. Changes and version',
+    title: '7. Changes and version',
     paragraphs: [
       'We may update these documents. Material changes may require renewed acceptance in the product. The version shown at login is the record of what was accepted.',
     ],

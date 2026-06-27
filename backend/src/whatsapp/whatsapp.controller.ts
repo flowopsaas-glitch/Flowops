@@ -2,6 +2,7 @@ import {
   Controller, Get, Post, Body, Param, Query, Req, Res, RawBodyRequest, HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { WhatsAppService } from './whatsapp.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -73,6 +74,7 @@ export class WhatsAppController {
    * your webhook URL in the Meta developer portal.
    */
   @Public()
+  @SkipThrottle() // Meta verification challenge
   @Get('webhook')
   @ApiOperation({ summary: 'Meta webhook verification challenge' })
   verifyWebhook(
@@ -93,6 +95,7 @@ export class WhatsAppController {
    * so we can return 200 OK quickly as Meta requires.
    */
   @Public()
+  @SkipThrottle() // external provider callback (signature verified)
   @Post('webhook')
   @HttpCode(200)
   @ApiOperation({ summary: 'Meta webhook event receiver' })

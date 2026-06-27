@@ -72,7 +72,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 RUN npm run build && \
-    test -f dist/index.html  # fail loudly if the build produced no index
+    test -f dist/index.html && \
+    node scripts/check-bundle-leak.mjs dist  # fail loudly on missing index, leaked secrets or source maps
 
 # ─────────────────────────────────────────────────────────────────────────
 # 3. Production runtime — nginx serves the SPA + proxies /api and /socket.io.
