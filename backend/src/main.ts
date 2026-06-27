@@ -8,8 +8,12 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { initSentry } from './common/sentry';
 
 async function bootstrap() {
+  // Initialise error tracking before anything else so early failures are caught.
+  initSentry();
+
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
