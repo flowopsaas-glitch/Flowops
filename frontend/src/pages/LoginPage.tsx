@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Shield, Lock, Building2 } from "lucide-react";
+import { Shield, Lock, Building2, KeyRound } from "lucide-react";
 import {
   hasAcceptedCurrentTerms,
   persistTermsAcceptanceLocally,
@@ -11,6 +11,7 @@ import {
   ownerLogin,
   type LoginResponse,
 } from "../api/authApi";
+import { lookupSso } from "../api/ssoApi";
 import {
   setLoginMode as setSessionLoginMode,
   setStoredUser,
@@ -51,6 +52,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState(INITIAL_TENANT_DEFAULTS.email);
   const [password, setPassword] = useState(INITIAL_TENANT_DEFAULTS.password);
   const [busy, setBusy] = useState(false);
+  const [ssoBusy, setSsoBusy] = useState(false);
   const [error, setError] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(() =>
     hasAcceptedCurrentTerms(),
@@ -111,6 +113,29 @@ export default function LoginPage() {
       setError(String(message));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleSsoLogin() {
+    setError("");
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@")) {
+      setError("Enter your work email first, then continue with SSO.");
+      return;
+    }
+    setSsoBusy(true);
+    try {
+      const res = await lookupSso(trimmed);
+      if (res.sso && res.startUrl) {
+        // Hand off to the identity provider (full-page redirect).
+        window.location.href = res.startUrl;
+      } else {
+        setError("No single sign-on is configured for this email domain.");
+        setSsoBusy(false);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Could not start single sign-on.");
+      setSsoBusy(false);
     }
   }
 
@@ -313,6 +338,29 @@ export default function LoginPage() {
             >
               {busy ? "Signing in…" : submitLabel}
             </button>
+
+            {/* SSO (tenant only) — uses /sso/lookup to find the workspace IdP */}
+            {mode === "tenant" && (
+              <>
+                <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.25em] text-slate-500">
+                  <span className="h-px flex-1 bg-white/10" />
+                  or
+                  <span className="h-px flex-1 bg-white/10" />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSsoLogin}
+                  disabled={ssoBusy || busy}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 py-3.5 font-semibold text-slate-100 transition hover:bg-white/10 disabled:opacity-60"
+                >
+                  <KeyRound className="h-4 w-4 text-blue-300" />
+                  {ssoBusy ? "Redirecting to your provider…" : "Sign in with SSO"}
+                </button>
+                <p className="text-center text-[11px] text-slate-500">
+                  Enterprise SSO · Okta · Azure AD · Google Workspace · Auth0
+                </p>
+              </>
+            )}
 
             {/* Dev autofill hint */}
             {SHOW_DEV_HINT && (
