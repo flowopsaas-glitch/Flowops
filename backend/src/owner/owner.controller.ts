@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OwnerService } from './owner.service';
 import { AlertingService } from '../alerting/alerting.service';
 import { CompetitiveIntelligenceService } from '../ai/competitive-intelligence.service';
+import { AiDevOpsService } from '../ai/ai-devops.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -18,6 +19,7 @@ export class OwnerController {
     private readonly svc: OwnerService,
     private readonly alerting: AlertingService,
     private readonly intel: CompetitiveIntelligenceService,
+    private readonly devops: AiDevOpsService,
   ) {}
 
   @Get('tenants')
@@ -155,6 +157,12 @@ export class OwnerController {
   @Patch('intel/actions/:id')
   intelActionStatus(@Param('id') id: string, @Body() body: { status: string }) {
     return this.intel.setActionStatusAny(id, body?.status);
+  }
+
+  /** Run CLAW market-gap ideation → queue upgrade suggestions into Action items. */
+  @Post('intel/suggest-upgrades')
+  intelSuggestUpgrades() {
+    return this.devops.suggestPlatformUpgrades();
   }
 
   @Get('audit')
