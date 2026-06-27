@@ -1,4 +1,4 @@
-import { api, clearToken, setToken } from "./client";
+import { api, clearToken, setToken, setRefreshToken } from "./client";
 
 // ── Shared response shape ─────────────────────────────────────────────────
 //
@@ -41,6 +41,7 @@ export async function login(
 ): Promise<LoginResponse> {
   const res = await api.post<LoginResponse>("/auth/login", { email, password });
   if (res.data?.access_token) setToken(res.data.access_token);
+  if (res.data?.refresh_token) setRefreshToken(res.data.refresh_token);
   return res.data;
 }
 

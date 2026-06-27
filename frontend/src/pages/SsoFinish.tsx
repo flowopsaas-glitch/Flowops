@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
-import { setToken, setLoginMode } from "../api/client";
+import { setToken, setLoginMode, setRefreshToken } from "../api/client";
 
 /**
  * Landing page for the SSO redirect: /sso/finish?access_token=...&refresh_token=...
- * Stores the tenant access token and hands off to the dashboard. AuthContext
- * then hydrates the user via /auth/me.
- *
- * NOTE: silent token refresh for SSO sessions is a follow-up — when the access
- * token expires the user re-authenticates through their IdP.
+ * Stores the tenant access + refresh tokens and hands off to the dashboard.
+ * AuthContext then hydrates the user via /auth/me, and the API client performs
+ * silent token refresh using the stored refresh token (rotated server-side).
  */
 export default function SsoFinish() {
   const [error, setError] = useState<string | null>(null);
@@ -16,12 +14,14 @@ export default function SsoFinish() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const access = params.get("access_token");
+    const refresh = params.get("refresh_token");
     if (!access) {
       setError("Single sign-on did not return a session. Please try again.");
       return;
     }
     try {
       setToken(access);
+      if (refresh) setRefreshToken(refresh);
       setLoginMode("tenant");
       // Full-page nav so AuthContext re-initialises with the new token.
       window.location.replace("/dashboard");
