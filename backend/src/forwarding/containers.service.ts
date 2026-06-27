@@ -62,4 +62,20 @@ export class ContainersService {
     await this.prisma.cargoLine.deleteMany({ where: { id: cargoId, fileId } });
     return { deleted: true };
   }
+
+  /** Update a cargo line (HS code, customs value, duty rate, etc.). */
+  async updateCargo(
+    companyId: string,
+    fileId: string,
+    cargoId: string,
+    dto: { description?: string; hsCode?: string; customsValue?: number; dutyRatePct?: number; pieces?: number; weightKg?: number; dimensions?: string },
+  ) {
+    await this.assertFile(companyId, fileId);
+    const data: any = {};
+    for (const k of ['description', 'hsCode', 'customsValue', 'dutyRatePct', 'pieces', 'weightKg', 'dimensions'] as const) {
+      if (dto[k] !== undefined) data[k] = dto[k];
+    }
+    await this.prisma.cargoLine.updateMany({ where: { id: cargoId, fileId }, data });
+    return this.prisma.cargoLine.findFirst({ where: { id: cargoId, fileId } });
+  }
 }

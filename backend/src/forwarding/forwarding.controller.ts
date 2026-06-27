@@ -1,12 +1,15 @@
 import {
-  Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards,
+  Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { ShipmentFileService } from './shipment-file.service';
 import { ContainersService } from './containers.service';
 import { ChargesService } from './charges.service';
 import { ForwardingAiService } from './forwarding-ai.service';
+import { CustomsService } from './customs.service';
+import { ForwardingPdfService } from './forwarding-pdf.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
 import { UpdateShipmentFileDto } from './dto/update-shipment-file.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -24,6 +27,8 @@ export class ForwardingController {
     private readonly containers: ContainersService,
     private readonly charges: ChargesService,
     private readonly ai: ForwardingAiService,
+    private readonly customs: CustomsService,
+    private readonly pdf: ForwardingPdfService,
   ) {}
 
   // ── Shipment files ─────────────────────────────────────────────────────────
@@ -90,6 +95,49 @@ export class ForwardingController {
   @Delete('files/:id/cargo/:cid')
   removeCargo(@CurrentUser() u: any, @Param('id') id: string, @Param('cid') cid: string) {
     return this.containers.removeCargo(u.companyId, id, cid);
+  }
+
+  @Patch('files/:id/cargo/:cid')
+  updateCargo(@CurrentUser() u: any, @Param('id') id: string, @Param('cid') cid: string, @Body() dto: any) {
+    return this.containers.updateCargo(u.companyId, id, cid, dto);
+  }
+
+  // ── Customs (Phase 2) ────────────────────────────────────────────────────────
+
+  @Get('files/:id/customs-estimate')
+  @ApiOperation({ summary: 'SA duty + VAT (ATV) estimate for the file' })
+  customsEstimate(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.customs.estimate(u.companyId, id);
+  }
+
+  @Post('files/:id/ai/duty-suggest')
+  @ApiOperation({ summary: 'AI: suggest SA ad valorem duty rate for an HS code' })
+  dutySuggest(@Body() body: { hsCode?: string; description?: string }) {
+    return this.customs.suggestDutyRate(body?.hsCode, body?.description);
+  }
+
+  // ── Document PDFs (Phase 2) ────────────────────────────────────────────────────
+
+  @Get('files/:id/documents/:type.pdf')
+  @ApiOperation({ summary: 'Generate a PDF: commercial-invoice | packing-list | bill-of-lading | sad500' })
+  async documentPdf(
+    @CurrentUser() u: any,
+    @Param('id') id: string,
+    @Param('type') type: string,
+    @Res() res: Response,
+  ) {
+    const allowed = ['commercial-invoice', 'packing-list', 'bill-of-lading', 'sad500'];
+    if (!allowed.includes(type)) {
+      res.status(400).json({ message: `Unknown document type. Use: ${allowed.join(', ')}` });
+      return;
+    }
+    const { buffer, filename } = await this.pdf.generate(u.companyId, id, type as any);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.end(buffer);
   }
 
   // ── Charges, totals & invoicing ──────────────────────────────────────────────

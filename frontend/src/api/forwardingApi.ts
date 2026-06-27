@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, getToken, getApiBaseUrl } from "./client";
 
 const unwrap = (r: any) => r?.data ?? r;
 
@@ -10,7 +10,7 @@ export type ShipmentStatus =
   | "ARRIVED" | "CUSTOMS_CLEARED" | "DELIVERED" | "CANCELLED";
 
 export interface Container { id: string; containerNo: string; isoType: string; sealNo?: string | null; vgmKg?: number | null; }
-export interface Cargo { id: string; description: string; pieces?: number | null; weightKg?: number | null; dimensions?: string | null; hsCode?: string | null; customsValue?: number | null; }
+export interface Cargo { id: string; description: string; pieces?: number | null; weightKg?: number | null; dimensions?: string | null; hsCode?: string | null; customsValue?: number | null; dutyRatePct?: number | null; }
 export interface Charge { id: string; description: string; currency: string; cost: number; sell: number; invoiceTo?: string | null; }
 export interface ShipDoc { id: string; type: string; fileName: string; fileKey: string; createdAt: string; }
 export interface Milestone { id: string; status: ShipmentStatus; note?: string | null; reachedAt: string; }
@@ -84,3 +84,37 @@ export const hsClassify = async (id: string, description: string): Promise<{ ava
   unwrap(await api.post(`/forwarding/files/${id}/ai/hs-classify`, { description }));
 export const assessRisk = async (id: string): Promise<{ riskScore: number; riskNote: string }> =>
   unwrap(await api.post(`/forwarding/files/${id}/ai/risk`, {}));
+
+// ── Phase 2: customs + documents ──────────────────────────────────────────
+
+export interface CustomsEstimateLine {
+  cargoId: string; description: string; hsCode?: string | null;
+  customsValue: number; dutyRatePct: number; duty: number; atv: number; vat: number; totalPayable: number;
+}
+export interface CustomsEstimate {
+  currency: string; vatRatePct: number; upliftmentPct: number;
+  lines: CustomsEstimateLine[];
+  totals: { customsValue: number; duty: number; vat: number; totalPayable: number };
+  note: string;
+}
+
+export const getCustomsEstimate = async (id: string): Promise<CustomsEstimate> =>
+  unwrap(await api.get(`/forwarding/files/${id}/customs-estimate`));
+export const suggestDuty = async (id: string, hsCode?: string, description?: string): Promise<{ available: boolean; dutyRatePct?: number; note?: string }> =>
+  unwrap(await api.post(`/forwarding/files/${id}/ai/duty-suggest`, { hsCode, description }));
+export const updateCargo = async (id: string, cid: string, dto: Partial<Cargo>) =>
+  unwrap(await api.patch(`/forwarding/files/${id}/cargo/${cid}`, dto));
+
+export type ForwardingDocType = "commercial-invoice" | "packing-list" | "bill-of-lading" | "sad500";
+
+/** Fetch a generated PDF (auth header) and open it in a new tab. */
+export async function downloadDoc(id: string, type: ForwardingDocType): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/forwarding/files/${id}/documents/${type}.pdf`, {
+    headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+  });
+  if (!res.ok) throw new Error("Could not generate document");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

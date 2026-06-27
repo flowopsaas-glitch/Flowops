@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Loader2, Plus, Trash2, Sparkles, Wand2, FileText, Truck, AlertTriangle,
-  Box, Package, DollarSign, Anchor, ChevronRight, CheckCircle2,
+  Box, Package, DollarSign, Anchor, ChevronRight, CheckCircle2, Download, Calculator,
 } from "lucide-react";
 import * as fwd from "../../api/forwardingApi";
 import { useToast } from "../../components/ToastProvider";
@@ -157,6 +157,9 @@ export default function ShipmentFilePage() {
           )}
         </Section>
 
+        {/* Documents & SA customs (Phase 2) */}
+        <CustomsDocs fileId={id} cargo={file.cargo || []} onChange={load} />
+
         {/* Milestone timeline */}
         <Section title="Milestones" icon={CheckCircle2}>
           {file.milestones && file.milestones.length > 0 ? (
@@ -251,5 +254,112 @@ function AddCharge({ onAdd, disabled }: { onAdd: (d: any) => void; disabled: boo
       <button onClick={() => { if (description) { onAdd({ description, currency, cost: Number(cost) || 0, sell: Number(sell) || 0 }); setDesc(""); setCost(""); setSell(""); } }} disabled={disabled || !description}
         className="flex items-center gap-1 rounded-lg border border-cyan-500/30 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-200 disabled:opacity-40"><Plus className="h-3.5 w-3.5" /> Add</button>
     </div>
+  );
+}
+
+const DOC_TYPES: { type: fwd.ForwardingDocType; label: string }[] = [
+  { type: "commercial-invoice", label: "Commercial Invoice" },
+  { type: "packing-list", label: "Packing List" },
+  { type: "bill-of-lading", label: "Bill of Lading" },
+  { type: "sad500", label: "SAD 500 (draft)" },
+];
+
+function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.Cargo[]; onChange: () => void }) {
+  const { showToast } = useToast();
+  const [est, setEst] = useState<fwd.CustomsEstimate | null>(null);
+  const [edits, setEdits] = useState<Record<string, { customsValue?: string; dutyRatePct?: string }>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const loadEst = async () => { try { setEst(await fwd.getCustomsEstimate(fileId)); } catch { /* none yet */ } };
+  useEffect(() => { void loadEst(); /* eslint-disable-next-line */ }, [fileId]);
+
+  const dl = async (type: fwd.ForwardingDocType) => {
+    setBusy(type);
+    try { await fwd.downloadDoc(fileId, type); }
+    catch { showToast("Could not generate document", "error"); }
+    finally { setBusy(null); }
+  };
+
+  const saveLine = async (c: fwd.Cargo) => {
+    const e = edits[c.id] || {};
+    setBusy(c.id);
+    try {
+      await fwd.updateCargo(fileId, c.id, {
+        customsValue: e.customsValue !== undefined ? Number(e.customsValue) : undefined,
+        dutyRatePct: e.dutyRatePct !== undefined ? Number(e.dutyRatePct) : undefined,
+      });
+      await loadEst(); onChange();
+      showToast("Customs line updated", "success");
+    } catch (err: any) { showToast(err?.message ?? "Update failed", "error"); }
+    finally { setBusy(null); }
+  };
+
+  const suggest = async (c: fwd.Cargo) => {
+    setBusy("ai" + c.id);
+    try {
+      const r = await fwd.suggestDuty(fileId, c.hsCode ?? undefined, c.description);
+      if (r.available && r.dutyRatePct != null) {
+        setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], dutyRatePct: String(r.dutyRatePct) } }));
+        showToast(`CLAW suggests ~${r.dutyRatePct}% duty`, "success");
+      } else showToast("AI duty suggestion unavailable (set GROQ_API_KEY)", "error");
+    } catch { showToast("Suggestion failed", "error"); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <Section title="Documents & SA customs" icon={Calculator}>
+      {/* Document downloads */}
+      <div className="flex flex-wrap gap-2">
+        {DOC_TYPES.map((d) => (
+          <button key={d.type} onClick={() => dl(d.type)} disabled={busy === d.type}
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-40">
+            {busy === d.type ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {d.label}
+          </button>
+        ))}
+      </div>
+
+      {/* SA customs estimate */}
+      <div className="mt-3">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-white/40 mb-2">Duty &amp; VAT estimate (ZAR)</p>
+        {cargo.length === 0 ? (
+          <p className="text-xs text-white/30">Add cargo lines (with customs value) to estimate duty &amp; VAT.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {cargo.map((c) => {
+              const e = edits[c.id] || {};
+              const line = est?.lines.find((l) => l.cargoId === c.id);
+              return (
+                <div key={c.id} className="flex items-center gap-2 rounded-xl border border-white/6 bg-black/20 px-3 py-2 flex-wrap text-sm">
+                  <span className="text-white/75 flex-1 min-w-[120px] truncate">{c.description}{c.hsCode ? ` · HS ${c.hsCode}` : ""}</span>
+                  <input className={`${inputCls} w-24`} placeholder="value"
+                    value={e.customsValue ?? (c.customsValue ?? "")}
+                    onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], customsValue: ev.target.value } }))} />
+                  <input className={`${inputCls} w-16`} placeholder="duty%"
+                    value={e.dutyRatePct ?? (c.dutyRatePct ?? "")}
+                    onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], dutyRatePct: ev.target.value } }))} />
+                  <button onClick={() => suggest(c)} disabled={busy === "ai" + c.id} title="AI duty rate"
+                    className="rounded-lg border border-violet-500/30 bg-violet-500/15 px-2 py-1.5 text-violet-200 disabled:opacity-40">
+                    {busy === "ai" + c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                  </button>
+                  <button onClick={() => saveLine(c)} disabled={busy === c.id}
+                    className="rounded-lg border border-cyan-500/30 bg-cyan-500/15 px-2.5 py-1.5 text-xs font-bold text-cyan-200 disabled:opacity-40">save</button>
+                  {line && <span className="text-[11px] text-white/40 w-full sm:w-auto">duty {line.duty.toFixed(0)} · VAT {line.vat.toFixed(0)}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {est && est.totals.customsValue > 0 && (
+          <div className="mt-2 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm flex flex-wrap gap-x-4 gap-y-1">
+            <span className="text-white/60">Customs value <b className="text-white/85">{est.totals.customsValue.toFixed(2)}</b></span>
+            <span className="text-white/60">Duty <b className="text-white/85">{est.totals.duty.toFixed(2)}</b></span>
+            <span className="text-white/60">VAT (15% on ATV) <b className="text-white/85">{est.totals.vat.toFixed(2)}</b></span>
+            <span className="ml-auto text-emerald-300 font-black">Payable to SARS (est.) {est.totals.totalPayable.toFixed(2)}</span>
+          </div>
+        )}
+        {est && <p className="mt-1 text-[10px] text-white/25">{est.note}</p>}
+      </div>
+    </Section>
   );
 }

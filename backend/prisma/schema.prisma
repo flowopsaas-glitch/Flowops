@@ -537,6 +537,7 @@ model CargoLine {
   dimensions   String?
   hsCode       String? // tariff heading
   customsValue Float?
+  dutyRatePct  Float? // ad valorem duty rate % (operator-set or AI-suggested)
 
   @@index([fileId])
   @@map("cargo_lines")
