@@ -411,6 +411,22 @@ export class AuthService {
     this.logger.log(`Owner account seeded: ${email}`);
   }
 
+  // ── SSO token issuance (used by SsoService after IdP auth) ────────────
+
+  /**
+   * Issues a tenant token pair for an already-authenticated SSO user.
+   * The user is resolved/provisioned by SsoService; this just mints tokens
+   * using the same path as a normal password login.
+   */
+  async issueTokensForUser(user: any) {
+    const tokens = await this.issueTokenPair(user);
+    return {
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      user: this.safeUser(user),
+    };
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────
 
   private async sendVerificationEmail(user: any) {

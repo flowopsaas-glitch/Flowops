@@ -15,6 +15,7 @@ import PageLoader from "./components/PageLoader";
 
 // Lazy-loaded pages
 const LoginPage = lazy(() => import("./pages/LoginPage"));
+const SsoFinish = lazy(() => import("./pages/SsoFinish"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Shipments = lazy(() => import("./pages/Shipments"));
 const WaybillInbox = lazy(() => import("./pages/WaybillInbox"));
@@ -46,6 +47,8 @@ const BillingPlans      = lazy(() => import("./pages/billing/BillingPlans"));
 const QuotesPage = lazy(() => import("./pages/QuotesPage"));
 const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const CompetitiveIntelligence = lazy(() => import("./pages/CompetitiveIntelligence"));
+const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
+const SsoSettings = lazy(() => import("./pages/enterprise/SsoSettings"));
 const DepotsPage        = lazy(() => import("./pages/DepotsPage"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const BrandingSettings = lazy(() => import("./pages/settings/BrandingSettings"));
@@ -154,6 +157,7 @@ export default function App() {
           <Route path="/track" element={<TrackingPage />} />
           <Route path="/track/:trackingNumber" element={<TrackingPage />} />
           <Route path="/rate/:token" element={<RatingPage />} />
+          <Route path="/sso/finish" element={<SsoFinish />} />
           <Route path="/setup" element={<CompanySetupPage />} />
           {/* Marketing pages — public, no auth required */}
           <Route path="/features" element={<FeaturesPage />} />
@@ -236,6 +240,8 @@ export default function App() {
               <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
+              <Route path="/autopilot" element={<AutopilotConsole />} />
+              <Route path="/settings/sso" element={<SsoSettings />} />
               <Route path="/finance" element={<RequirePermission perm="invoices"><FinanceDashboard /></RequirePermission>} />
               <Route path="/invoice-drafts" element={<RequirePermission perm="invoiceDrafts"><InvoiceDraftsPage /></RequirePermission>} />
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />

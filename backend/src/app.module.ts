@@ -45,6 +45,8 @@ import { EmailHubModule } from './email-hub/email-hub.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { BillingModule } from './billing/billing.module';
 import { AccountingIntegrationsModule } from './accounting-integrations/accounting-integrations.module';
+import { AutopilotModule } from './autopilot/autopilot.module';
+import { SsoModule } from './sso/sso.module';
 import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
 
@@ -93,6 +95,8 @@ import { AccountingModule } from './accounting/accounting.module';
     EmailHubModule,
     CopilotModule,
     AccountingIntegrationsModule,
+    AutopilotModule,
+    SsoModule,
 
     // Domain modules
     AuthModule,
