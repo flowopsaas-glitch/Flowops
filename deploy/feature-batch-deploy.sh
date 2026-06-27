@@ -148,16 +148,19 @@ fi
 # ── 6. Health checks ─────────────────────────────────────────────────────--
 step "Health checks"
 sleep 3
-backend_code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${BACKEND_PORT}/api/v1/health" 2>/dev/null || echo "000")
+# Backend health lives at /health (excluded from the /api/v1 prefix in main.ts).
+backend_code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${BACKEND_PORT}/health" 2>/dev/null || echo "000")
 front_root=$(curl -s -o /dev/null -w '%{http_code}'  "http://localhost:${PUBLIC_PORT}/" 2>/dev/null || echo "000")
-front_api=$(curl -s -o /dev/null -w '%{http_code}'   "http://localhost:${PUBLIC_PORT}/api/v1/health" 2>/dev/null || echo "000")
+# Through the nginx proxy, hit a real /api/v1 route. 401 (auth required) proves
+# the proxy reaches the backend; 502/000 would mean the upstream is broken.
+front_api=$(curl -s -o /dev/null -w '%{http_code}'   "http://localhost:${PUBLIC_PORT}/api/v1/auth/me" 2>/dev/null || echo "000")
 
-echo    "   backend  /api/v1/health      → $backend_code  (expect 200)"
+echo    "   backend  /health             → $backend_code  (expect 200)"
 echo    "   frontend root :$PUBLIC_PORT  → $front_root  (expect 200)"
-echo    "   frontend→api  :$PUBLIC_PORT  → $front_api  (expect 200/401)"
+echo    "   frontend→api  :$PUBLIC_PORT  → $front_api  (expect 401 = proxy + backend OK)"
 
 echo ""
-if [[ "$backend_code" == "200" && "$front_root" == "200" ]]; then
+if [[ "$backend_code" == "200" && "$front_root" == "200" && "$front_api" != "502" && "$front_api" != "000" ]]; then
   info "Deploy complete. Hard-reload app.flowop.work to pick up the new bundle."
 else
   warn "Something looks off — check 'pm2 logs $PM2_APP' and 'docker logs $FRONTEND_CONTAINER'."
