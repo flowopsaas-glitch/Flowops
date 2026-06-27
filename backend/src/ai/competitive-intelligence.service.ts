@@ -33,6 +33,9 @@ export interface IntelligenceReport {
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
+/** AiEvent types that appear in the unified, ranked "Action items" worklist. */
+const ACTIONABLE_TYPES = ['COMPETITOR_THREAT', 'PLATFORM_UPGRADE'];
+
 @Injectable()
 export class CompetitiveIntelligenceService {
   private readonly logger = new Logger('CLAW_INTEL');
@@ -456,9 +459,9 @@ Return ONLY the JSON array, no other text.`;
     }
   }
 
-  /** Tenant: open (or all) competitive-intel action items, ranked by score. */
+  /** Tenant: open (or all) action items (competitor threats + upgrade ideas), ranked. */
   async getActionItems(companyId: string, includeClosed = false) {
-    const where: any = { companyId, type: 'COMPETITOR_THREAT' };
+    const where: any = { companyId, type: { in: ACTIONABLE_TYPES } };
     if (!includeClosed) { where.resolved = false; where.dismissed = false; }
     const rows = await (this.prisma.aiEvent as any).findMany({
       where, orderBy: { createdAt: 'desc' }, take: 100,
@@ -469,7 +472,7 @@ Return ONLY the JSON array, no other text.`;
   /** Tenant: mark one action item open|resolved|dismissed. */
   async setActionStatus(companyId: string, id: string, status: string) {
     const ev = await (this.prisma.aiEvent as any).findFirst({
-      where: { id, companyId, type: 'COMPETITOR_THREAT' },
+      where: { id, companyId, type: { in: ACTIONABLE_TYPES } },
       select: { id: true, metadata: true },
     });
     if (!ev) throw new NotFoundException('Action item not found');
@@ -480,7 +483,7 @@ Return ONLY the JSON array, no other text.`;
 
   /** Owner console: open action items across all companies, de-duped + ranked. */
   async getActionItemsAny(includeClosed = false) {
-    const where: any = { type: 'COMPETITOR_THREAT' };
+    const where: any = { type: { in: ACTIONABLE_TYPES } };
     if (!includeClosed) { where.resolved = false; where.dismissed = false; }
     const rows = await (this.prisma.aiEvent as any).findMany({
       where, orderBy: { createdAt: 'desc' }, take: 400,
@@ -505,16 +508,49 @@ Return ONLY the JSON array, no other text.`;
    */
   async setActionStatusAny(id: string, status: string) {
     const ev = await (this.prisma.aiEvent as any).findFirst({
-      where: { id, type: 'COMPETITOR_THREAT' },
+      where: { id, type: { in: ACTIONABLE_TYPES } },
       select: { sourceId: true, title: true, companyId: true, metadata: true },
     });
     if (!ev) throw new NotFoundException('Action item not found');
+    // sourceIds are namespaced (intel:* / upgrade:*) so they match siblings safely.
     const match = ev.sourceId
-      ? { type: 'COMPETITOR_THREAT', sourceId: ev.sourceId }
-      : { type: 'COMPETITOR_THREAT', title: ev.title };
+      ? { sourceId: ev.sourceId }
+      : { type: { in: ACTIONABLE_TYPES }, title: ev.title };
     const res = await (this.prisma.aiEvent as any).updateMany({ where: match, data: this.statusData(status) });
     await this.recordDecisionLearning(ev.companyId, ev.metadata, status);
     return { updated: res.count, status };
+  }
+
+  /**
+   * Persist a CLAW platform-upgrade suggestion as a trackable, ranked action
+   * item in the same worklist as competitor threats. Deduped by a stable
+   * sourceId so re-running ideation never duplicates or resurrects an idea
+   * you've already shipped or dismissed. This replaces the old (dishonest)
+   * "self-deployed feature node" path — CLAW proposes, a human decides.
+   */
+  async recordUpgradeSuggestion(companyId: string, feature: string) {
+    const clean = String(feature || '').trim();
+    if (!clean) return null;
+    const slug = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+    const sourceId = `upgrade:${slug}`;
+    const existing = await (this.prisma.aiEvent as any).findFirst({
+      where: { companyId, type: 'PLATFORM_UPGRADE', sourceId },
+      select: { id: true },
+    });
+    if (existing) return existing;
+    return (this.prisma.aiEvent as any).create({
+      data: {
+        companyId,
+        type:       'PLATFORM_UPGRADE',
+        title:      `Upgrade idea: ${clean.slice(0, 80)}`,
+        body:       'CLAW market-gap analysis suggests evaluating this capability. Mark Done once shipped, or Dismiss if it is not a fit.',
+        severity:   'info',
+        sourceType: 'CLAW_SUGGESTION',
+        resolved:   false,
+        dismissed:  false,
+        metadata:   JSON.stringify({ feature: clean, threatLevel: 'MEDIUM', kind: 'upgrade' }),
+      },
+    });
   }
 
   // ── Public helper: latest report for dashboard ────────────────────────────
