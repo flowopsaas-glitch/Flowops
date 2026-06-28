@@ -8,8 +8,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronUp,
-  Clock, ExternalLink, Globe, HeartPulse, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
+  AlertTriangle, ArrowRight, Bot, Check, CheckCircle2, ChevronDown, ChevronUp,
+  Clock, Copy, ExternalLink, Globe, Hammer, HeartPulse, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
   TrendingUp, X, Zap,
 } from "lucide-react";
 import api from "../api/client";
@@ -116,6 +116,75 @@ function InsightCard({ insight }: { insight: Insight }) {
   );
 }
 
+// ── Build Plan Panel (CLAW Build Planner output) ───────────────────────────
+
+function BuildPlanPanel({ plan, onCopy, copied }: { plan: any; onCopy: () => void; copied: boolean }) {
+  const Section = ({ label, items }: { label: string; items?: string[] }) =>
+    items && items.length ? (
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-wider text-white/35">{label}</p>
+        <ul className="mt-1 space-y-0.5">
+          {items.map((it, i) => (
+            <li key={i} className="text-[11px] text-white/60 leading-relaxed">• {it}</li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+
+  return (
+    <div className="mt-3 rounded-[14px] border border-sky-500/20 bg-sky-500/[0.05] p-3 space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Hammer className="h-4 w-4 text-sky-300" />
+        <span className="text-sm font-black text-sky-200">{plan.title || "Build plan"}</span>
+        {plan.entitlementTier && (
+          <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-300">
+            {plan.entitlementTier}
+          </span>
+        )}
+        {plan.effort && (
+          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white/50">
+            Effort {plan.effort}
+          </span>
+        )}
+      </div>
+      {plan.summary && <p className="text-xs text-white/70 leading-relaxed">{plan.summary}</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Section label="Data model" items={plan.dataModelChanges} />
+        <Section label="Backend" items={plan.backendChanges} />
+        <Section label="Endpoints" items={plan.newEndpoints} />
+        <Section label="Frontend" items={plan.frontendChanges} />
+        <Section label="Acceptance criteria" items={plan.acceptanceCriteria} />
+        <Section label="Risks" items={plan.risks} />
+        <Section label="Steps" items={plan.implementationSteps} />
+      </div>
+      {plan.suggestedBranch && (
+        <p className="text-[11px] text-white/40">
+          Branch <code className="text-white/60">{plan.suggestedBranch}</code>
+          {plan.navPlacement ? <> · Nav: <span className="text-white/60">{plan.navPlacement}</span></> : null}
+        </p>
+      )}
+      {plan.agentPrompt && (
+        <div className="rounded-[12px] border border-white/10 bg-black/30 p-2.5">
+          <div className="flex items-center gap-2 mb-1">
+            <Bot className="h-3.5 w-3.5 text-emerald-300" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-200">
+              Coding-agent prompt — paste into Kiro to build it
+            </span>
+            <button
+              onClick={onCopy}
+              className="ml-auto flex items-center gap-1 rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[10px] font-bold text-white/60 hover:text-white hover:bg-white/10 transition"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="text-[11px] text-white/55 leading-relaxed whitespace-pre-wrap">{plan.agentPrompt}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CompetitiveIntelligencePage() {
@@ -129,6 +198,12 @@ export default function CompetitiveIntelligencePage() {
   const [integrations, setIntegrations] = useState<IntegrationCheck[] | null>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [filter,    setFilter]    = useState<ThreatLevel | "ALL">("ALL");
+
+  // CLAW Build Planner state
+  const [plans,      setPlans]      = useState<Record<string, any>>({});
+  const [planningId, setPlanningId] = useState<string | null>(null);
+  const [openPlanId, setOpenPlanId] = useState<string | null>(null);
+  const [copiedId,   setCopiedId]   = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,8 +246,30 @@ export default function CompetitiveIntelligencePage() {
     }
   };
 
-  const runSweep = async () => {
-    setSweeping(true);
+  const generatePlan = async (id: string) => {
+    // Toggle the panel if we already have a plan for this item.
+    if (plans[id]) { setOpenPlanId(prev => (prev === id ? null : id)); return; }
+    setPlanningId(id);
+    try {
+      const res: any = await api.post(`/owner/intel/actions/${id}/build-plan`, {});
+      const d = res?.data ?? res;
+      setPlans(prev => ({ ...prev, [id]: d }));
+      setOpenPlanId(id);
+    } catch { /* toast handled globally */ }
+    finally { setPlanningId(null); }
+  };
+
+  const copyAgentPrompt = async (id: string) => {
+    const prompt = plans[id]?.agentPrompt;
+    if (!prompt) return;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(c => (c === id ? null : c)), 2000);
+    } catch { /* clipboard may be blocked — ignore */ }
+  };
+
+  const runSweep = async () => {    setSweeping(true);
     try {
       const res = await api.post("/owner/intel/sweep", {});
       const d = (res as any)?.data ?? res;
@@ -352,8 +449,9 @@ export default function CompetitiveIntelligencePage() {
                 return (
                 <div
                   key={a.id}
-                  className="flex items-start gap-3 rounded-[16px] border border-white/8 bg-black/20 p-3"
+                  className="rounded-[16px] border border-white/8 bg-black/20 p-3"
                 >
+                  <div className="flex items-start gap-3">
                   <div
                     title="FlowOps Counter-Move Score — urgency ranked by threat severity + freshness"
                     className={`shrink-0 grid place-items-center h-10 w-10 rounded-xl border text-sm font-black ${scoreCls}`}
@@ -375,6 +473,15 @@ export default function CompetitiveIntelligencePage() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
+                      onClick={() => generatePlan(a.id)}
+                      disabled={planningId === a.id}
+                      title="CLAW Build Planner — turn this into a buildable spec + coding-agent prompt"
+                      className="flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-bold text-sky-300 hover:bg-sky-500/20 transition disabled:opacity-40"
+                    >
+                      {planningId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Hammer className="h-3.5 w-3.5" />}
+                      {plans[a.id] ? (openPlanId === a.id ? "Hide plan" : "Show plan") : "Plan build"}
+                    </button>
+                    <button
                       onClick={() => setActionStatus(a.id, "resolved")}
                       disabled={actingId === a.id}
                       title="Mark done — CLAW records the win"
@@ -393,6 +500,14 @@ export default function CompetitiveIntelligencePage() {
                       Dismiss
                     </button>
                   </div>
+                  </div>
+                  {openPlanId === a.id && plans[a.id] && (
+                    <BuildPlanPanel
+                      plan={plans[a.id]}
+                      onCopy={() => copyAgentPrompt(a.id)}
+                      copied={copiedId === a.id}
+                    />
+                  )}
                 </div>
                 );
               })}
