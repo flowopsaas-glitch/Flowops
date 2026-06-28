@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Sparkles,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -244,6 +245,8 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = (searchParams.get("status") || "").toUpperCase() as InvoiceStatus | "";
@@ -309,6 +312,23 @@ export default function Invoices() {
     }
   };
 
+  // Bundle every unbilled DELIVERED waybill into one monthly statement —
+  // the same pipeline the 1st-of-month cron runs, scoped to this tenant.
+  const autoGenerate = async () => {
+    setGenerating(true);
+    setGenMsg(null);
+    try {
+      const res: any = await api.post("/invoices/auto-generate", {});
+      const r = res?.data ?? res;
+      setGenMsg(r?.message ?? (r?.generated ? "Statement generated." : "No unbilled deliveries to invoice."));
+      await load();
+    } catch (err: any) {
+      setGenMsg(err?.message || "Could not generate statement.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {showCreate && (
@@ -325,6 +345,15 @@ export default function Invoices() {
           <div className="flex gap-3">
             <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10">
               <RefreshCw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={autoGenerate}
+              disabled={generating}
+              title="Bundle all unbilled delivered waybills into one monthly statement"
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+            >
+              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Generate statement
             </button>
             <button
               onClick={() => exportCsv(
@@ -365,6 +394,17 @@ export default function Invoices() {
           </div>
         </div>
       </div>
+
+      {/* Auto-generate result banner */}
+      {genMsg && (
+        <div className="flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">
+          <Sparkles className="h-4 w-4 shrink-0" />
+          <span>{genMsg}</span>
+          <button onClick={() => setGenMsg(null)} className="ml-auto text-emerald-200/60 hover:text-emerald-200">
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Metrics */}
       {metrics && (

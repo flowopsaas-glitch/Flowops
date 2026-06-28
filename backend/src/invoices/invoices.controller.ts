@@ -26,9 +26,9 @@ export class InvoicesController {
 
   @Post('invoices/auto-generate')
   @HttpCode(HttpStatus.OK)
-  triggerAutoInvoice() {
-    // Manual trigger for admins — same logic as the monthly cron.
-    return this.svc.autoGenerateMonthlyInvoices();
+  triggerAutoInvoice(@CurrentUser() u: any) {
+    // Tenant-scoped: generates a statement only for the caller's company.
+    return this.svc.autoGenerateForCompany(u.companyId);
   }
 
   @Post('invoices')

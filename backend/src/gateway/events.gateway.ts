@@ -128,8 +128,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.emitToCompany(companyId, 'risk-score-updated', data);
   }
 
-  emitAutoInvoiceCompleted(companyId: string, invoiceId: string) {
-    this.emitToCompany(companyId, 'auto-invoice-completed', { invoiceId });
+  emitAutoInvoiceCompleted(
+    companyId: string,
+    invoice: { id: string; invoiceNumber?: string; total?: number; deliveryCount?: number },
+  ) {
+    this.emitToCompany(companyId, 'auto-invoice-completed', invoice);
   }
 
   emitSystemHeal(companyId: string, reason: string) {
