@@ -37,6 +37,30 @@ The SPA calls **`/api/v1/*`** (relative, same-origin); nginx proxies it to the
 
 ## 2. One-time VPS setup
 
+### Fast path (recommended) — one bootstrap script
+
+```bash
+git clone https://github.com/flowopsaas-glitch/Flowops.git ~/FlowOps && cd ~/FlowOps
+./deploy/vps-bootstrap.sh app.flowop.work   # installs Docker, creates .env,
+                                            # generates secrets, wires the domain
+nano .env                                   # fill OWNER_SEED_*, GROQ_API_KEY, etc.
+# point the Cloudflare tunnel:  <domain> -> http://localhost:8080
+./deploy/vps-deploy.sh --seed               # first deploy (with demo data)
+```
+
+`vps-bootstrap.sh` auto-generates `POSTGRES_PASSWORD` / `JWT_SECRET` /
+`JWT_REFRESH_SECRET`, sets `APP_URL` / `CORS_ORIGINS` / `API_PUBLIC_URL` /
+`VITE_CANONICAL_HOSTS` from the domain, and keeps `VITE_API_URL=/api/v1`. You
+only fill in the API keys it lists. It never overwrites an existing `.env`.
+
+> **GROQ_API_KEY matters:** it unlocks *all* AI — copilot, CLAW chat, the
+> competitive-intel sweep, the **AI Support Agent** and **Courier
+> orchestration**. The compose `api` service now forwards it (and Tavily,
+> GitHub, accounting, geocoding keys) into the container, so these work under
+> compose — not just on a PM2-on-host backend.
+
+### Manual path (equivalent, step by step)
+
 ```bash
 # 2.1 Docker + Compose v2
 curl -fsSL https://get.docker.com | sh
@@ -49,10 +73,13 @@ cd ~/FlowOps
 # 2.3 Create the real .env (root) from the template and fill in secrets
 cp .env.production.example .env
 #   Generate strong secrets:
-#     openssl rand -hex 32   # for JWT_SECRET / JWT_REFRESH_SECRET
+#     openssl rand -hex 32   # for JWT_SECRET / JWT_REFRESH_SECRET / POSTGRES_PASSWORD
 #   MUST set: POSTGRES_PASSWORD, JWT_SECRET, JWT_REFRESH_SECRET,
 #             OWNER_SEED_EMAIL, OWNER_SEED_PASSWORD,
-#             CORS_ORIGINS=https://app.flowop.work,https://platform.flowop.work
+#             CORS_ORIGINS + APP_URL + API_PUBLIC_URL (your domain),
+#             GROQ_API_KEY (unlocks all AI features)
+#   For a NON-flowop.work domain also set VITE_CANONICAL_HOSTS=<your-domain>
+#             and VITE_INTEGRITY_BEACON_URL=https://<your-domain>/api/v1
 #   MUST keep: VITE_API_URL=/api/v1   (NOT /api — see §6)
 
 # 2.4 Cloudflare tunnel (if not already running)
@@ -124,6 +151,8 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **Owner login works but data is empty / tenant logins fail** | Two parallel DBs (host vs docker) | This runbook uses **one** compose Postgres — never start a second backend on the host |
 | **Owner "Intel" tab empty / sweep does nothing** | Calling tenant-guarded `/ai/intel/*` with an owner token | Fixed in PR #119 — owner uses `/owner/intel/*`; ensure backend image is current |
 | **Driver app CORS error** | `driver.flowop.work` not in `CORS_ORIGINS` | Add it, `restart api` |
+| **AI features dead (Support Agent, Courier orchestrate, copilot, intel) — only fallback replies** | `GROQ_API_KEY` not reaching the container | Set it in `.env`; the compose `api` service forwards it — rebuild/`up -d`. Confirm with `docker compose ... exec api printenv GROQ_API_KEY` |
+| **Fresh instance flags a "clone" in Observatory** | New domain not in `VITE_CANONICAL_HOSTS` (tripwire false-fire) | Set `VITE_CANONICAL_HOSTS=<your-domain>` + rebuild frontend |
 | **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
 
 ---

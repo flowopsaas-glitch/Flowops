@@ -36,6 +36,10 @@ services:
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
         VITE_OLLAMA_URL: ${VITE_OLLAMA_URL:-}
         VITE_OTEL_EXPORTER_OTLP_ENDPOINT: ${VITE_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+        # Clone-tripwire config — set these to the new instance's domain so the
+        # integrity beacon doesn't false-fire when served from a non-flowop.work host.
+        VITE_CANONICAL_HOSTS: ${VITE_CANONICAL_HOSTS:-}
+        VITE_INTEGRITY_BEACON_URL: ${VITE_INTEGRITY_BEACON_URL:-}
         # Paystack public key — safe to include in the frontend bundle
         VITE_PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-pk_test_fa7d0085df63bad80b49faefefb}
     image: ${FRONTEND_IMAGE:-flowops/frontend:${IMAGE_TAG:-latest}}
@@ -117,6 +121,42 @@ services:
       # ── Email (SendGrid) ──────────────────────────────────────────────
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-noreply@flowops.local}
+      SENDGRID_FROM_NAME: ${SENDGRID_FROM_NAME:-FlowOps}
+
+      # ── AI providers ──────────────────────────────────────────────────
+      # Groq powers Ask FlowOps, CLAW chat, competitive intel, the AI Support
+      # Agent, Courier orchestration, Observatory triage and the Build Planner.
+      # WITHOUT these reaching the container, all AI features silently fall back
+      # — this block is why they work under compose (not just PM2-on-host).
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      TAVILY_TIMEOUT_MS: ${TAVILY_TIMEOUT_MS:-15000}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLAW_AGGRESSION_LEVEL: ${CLAW_AGGRESSION_LEVEL:-MEDIUM}
+
+      # ── Public backend URL (SSO + accounting OAuth callbacks) ─────────
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8080/api/v1}
+
+      # ── CLAW Build Planner → GitHub issue handoff (optional) ──────────
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+
+      # ── Accounting integrations (Xero / Sage OAuth — optional) ────────
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      SAGE_CLIENT_ID: ${SAGE_CLIENT_ID:-}
+      SAGE_CLIENT_SECRET: ${SAGE_CLIENT_SECRET:-}
+
+      # ── Geocoding ─────────────────────────────────────────────────────
+      GEOCODER_PROVIDER: ${GEOCODER_PROVIDER:-nominatim}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+      DEFAULT_COUNTRY: ${DEFAULT_COUNTRY:-za}
+
+      # ── Paystack plan codes + error tracking (optional) ───────────────
+      PAYSTACK_PROFESSIONAL_PLAN_CODE: ${PAYSTACK_PROFESSIONAL_PLAN_CODE:-}
+      PAYSTACK_ENTERPRISE_PLAN_CODE: ${PAYSTACK_ENTERPRISE_PLAN_CODE:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy
