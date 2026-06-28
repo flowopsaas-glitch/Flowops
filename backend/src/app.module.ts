@@ -47,6 +47,7 @@ import { EmailHubModule } from './email-hub/email-hub.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { BillingModule } from './billing/billing.module';
 import { ForwardingModule } from './forwarding/forwarding.module';
+import { CarriersModule } from './carriers/carriers.module';
 import { AccountingIntegrationsModule } from './accounting-integrations/accounting-integrations.module';
 import { AutopilotModule } from './autopilot/autopilot.module';
 import { SsoModule } from './sso/sso.module';
@@ -78,6 +79,7 @@ import { CourierManagementModule } from './courier-management/courier-management
 
     // Freight forwarding (import/export — Enterprise, feature-gated)
     ForwardingModule,
+    CarriersModule,
 
     // Storage (Cloudflare R2 — global)
     StorageModule,
