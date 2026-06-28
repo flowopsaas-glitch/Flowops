@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards,
+  Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Res, UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -11,6 +11,7 @@ import { ForwardingAiService } from './forwarding-ai.service';
 import { CustomsService } from './customs.service';
 import { ForwardingPdfService } from './forwarding-pdf.service';
 import { CustomsDeclarationService } from './customs-declaration.service';
+import { CustomsEdiCredentialService } from './customs-edi/customs-edi-credential.service';
 import { DemurrageService } from './demurrage.service';
 import { ConsolidationService } from './consolidation.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
@@ -33,6 +34,7 @@ export class ForwardingController {
     private readonly customs: CustomsService,
     private readonly pdf: ForwardingPdfService,
     private readonly declarations: CustomsDeclarationService,
+    private readonly ediCredentials: CustomsEdiCredentialService,
     private readonly demurrage: DemurrageService,
     private readonly consolidation: ConsolidationService,
   ) {}
@@ -146,6 +148,26 @@ export class ForwardingController {
   @ApiOperation({ summary: 'Record a SARS response / status (RELEASED | QUERY | REJECTED)' })
   declarationStatus(@CurrentUser() u: any, @Param('did') did: string, @Body() body: { status: string; mrn?: string; note?: string }) {
     return this.declarations.setStatus(u.companyId, did, body?.status, body?.mrn, body?.note);
+  }
+
+  // ── SARS EDI transmission credentials (per-tenant, BYO) ─────────────────────────
+
+  @Get('customs/edi/credential')
+  @ApiOperation({ summary: 'Get this tenant\'s SARS transmission config (secrets masked)' })
+  getEdiCredential(@CurrentUser() u: any) {
+    return this.ediCredentials.getMasked(u.companyId);
+  }
+
+  @Put('customs/edi/credential')
+  @ApiOperation({ summary: 'Configure the SARS transmission path (DIRECT_EDI | SERVICE_PROVIDER | CLEARING_AGENT_HANDOFF)' })
+  upsertEdiCredential(@CurrentUser() u: any, @Body() dto: any) {
+    return this.ediCredentials.upsert(u.companyId, u?.id ?? u?.sub ?? null, dto);
+  }
+
+  @Post('customs/edi/verify')
+  @ApiOperation({ summary: 'Test the configured SARS transmission connection (non-mutating)' })
+  verifyEdi(@CurrentUser() u: any) {
+    return this.ediCredentials.verify(u.companyId, u?.id ?? u?.sub ?? null);
   }
 
   // ── Demurrage / detention (Phase 3) ─────────────────────────────────────────────
