@@ -10,6 +10,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { normalizeTenantNavPermissions } from "../lib/tenantUserPermissions";
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { ForwardingControlTower } from "../components/premium/ForwardingControlTower";
+import { TiltCard } from "../components/premium/TiltCard";
 import { getEntitlements } from "../api/billingApi";
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../api/client';
@@ -51,14 +52,14 @@ function MapController({ center }: { center: [number, number] }) {
 
 function MetricCard(props: { 
   title: string; value: string; subtitle: string; icon: any; 
-  gradient: string; to: string; onAiClick?: () => void 
+  gradient: string; to: string; onAiClick?: () => void; className?: string;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const navigate = useNavigate();
   const Icon = props.icon;
 
   return (
-    <div className="group h-[190px] w-full [perspective:1000px] cursor-pointer" onClick={() => setIsFlipped(!isFlipped)}>
+    <div className={`group h-[190px] w-full [perspective:1000px] cursor-pointer ${props.className ?? ""}`} onClick={() => setIsFlipped(!isFlipped)}>
       <div className={`relative h-full w-full rounded-[24px] transition-all duration-700 [transform-style:preserve-3d] ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
         <div className={`absolute inset-0 h-full w-full rounded-[24px] p-6 [backface-visibility:hidden] border border-white/10 shadow-xl ${props.gradient}`}>
           <div className="flex items-start justify-between">
@@ -141,7 +142,7 @@ function KpiCard(props: { title: string; kpi: Kpi; icon: any; currency: string; 
   return (
     <button
       onClick={() => navigate(props.to)}
-      className="group text-left rounded-[20px] border border-white/10 bg-slate-900/60 p-5 transition-all hover:border-sky-400/40 hover:bg-slate-900/90"
+      className="group h-full w-full text-left rounded-[20px] border border-white/10 bg-slate-900/60 p-5 transition-all hover:border-sky-400/40 hover:bg-slate-900/90"
     >
       <div className="flex items-center justify-between">
         <div className="rounded-xl border border-white/10 bg-white/[0.04] p-2 text-sky-300">
@@ -343,11 +344,11 @@ export default function Dashboard() {
       {/* Operational metrics — shown to operations / dispatch / command personas */}
       {canSeeOps && (
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-        <MetricCard title="Pending Collection" value={liveMetrics.collections} subtitle="Waybills awaiting courier dropoff assignment." icon={Package} gradient="bg-gradient-to-br from-amber-500 to-orange-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="Active Resources" value={liveMetrics.activeDrivers} subtitle="Live registered logistics drivers checked-in." icon={Users} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" to="/driver-dispatch" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/shipments?status=IN_TRANSIT" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="At Local Hubs" value={liveMetrics.stock} subtitle="Waybills scanned inside processing nodes safely." icon={FileText} gradient="bg-gradient-to-br from-purple-500 to-pink-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="Anomalies Flagged" value={liveMetrics.risks} subtitle="Operational exceptions under AI review queues." icon={AlertTriangle} gradient="bg-gradient-to-br from-rose-500 to-red-600" to="/high-risk-queue" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-1" title="Pending Collection" value={liveMetrics.collections} subtitle="Waybills awaiting courier dropoff assignment." icon={Package} gradient="bg-gradient-to-br from-amber-500 to-orange-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-2" title="Active Resources" value={liveMetrics.activeDrivers} subtitle="Live registered logistics drivers checked-in." icon={Users} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" to="/driver-dispatch" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-3" title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/shipments?status=IN_TRANSIT" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-4" title="At Local Hubs" value={liveMetrics.stock} subtitle="Waybills scanned inside processing nodes safely." icon={FileText} gradient="bg-gradient-to-br from-purple-500 to-pink-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-5" title="Anomalies Flagged" value={liveMetrics.risks} subtitle="Operational exceptions under AI review queues." icon={AlertTriangle} gradient="bg-gradient-to-br from-rose-500 to-red-600" to="/high-risk-queue" onAiClick={() => setIsAiOpen(true)} />
       </div>
       )}
 
@@ -362,8 +363,10 @@ export default function Dashboard() {
         </div>
         {kpis ? (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            {kpiCards.map((c) => (
-              <KpiCard key={c.title} title={c.title} kpi={c.kpi} icon={c.icon} currency={currency} to={c.to} />
+            {kpiCards.map((c, i) => (
+              <TiltCard key={c.title} className={`h-full fx-reveal fx-reveal-${(i % 6) + 1}`}>
+                <KpiCard title={c.title} kpi={c.kpi} icon={c.icon} currency={currency} to={c.to} />
+              </TiltCard>
             ))}
           </div>
         ) : (

@@ -350,7 +350,7 @@ export default function AppLayout() {
           </button>
         </header>
 
-        <main role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar">
+        <main role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar fx-ambient fx-grid">
           {/* ── Trial Banner ── */}
           {(() => {
             const co = user?.company as any;
