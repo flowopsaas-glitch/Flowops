@@ -96,20 +96,33 @@ export class CompetitiveIntelligenceService {
   private readonly CF_BASE = 'https://api.cloudflare.com/client/v4/accounts';
   private readonly GROQ   = 'https://api.groq.com/openai/v1/chat/completions';
 
-  /** Tracked competitors — add more as needed */
+  /** Tracked competitors — grouped by the arena FlowOps competes in. Add more as needed. */
   private readonly COMPETITORS = [
+    // Global last-mile / dispatch platforms (the feature bar)
     'Onfleet', 'Track-POD', 'Detrack', 'Shipday', 'Bringg',
-    'Locus', 'Routific', 'Tookan', 'Courier IT', 'RAM Couriers',
+    'Locus', 'Routific', 'Tookan', 'DispatchTrack', 'OptimoRoute', 'Circuit',
+    // SA-native couriers & shipping platforms
+    'Courier IT', 'RAM Couriers', 'Bob Go', 'Metafour', 'Parcelninja',
+    'Cartrack Delivery', 'Leta', 'The Courier Guy',
+    // Freight forwarding / import-export TMS (the import/export arena)
+    'CargoWise', 'GoFreight', 'Magaya', 'Descartes', 'Flexport', 'Freightos', 'Shipwell',
   ];
 
-  /** Search queries — mix of competitor-specific and market-wide */
+  /** Search queries — mix of competitor-specific and market-wide across all three arenas */
   private readonly QUERIES = [
-    'South African logistics courier SaaS new features 2025',
-    'Onfleet OR Track-POD OR Detrack new features update 2025',
-    'last mile delivery software AI tracking Africa innovation 2025',
-    'courier management SaaS competitors comparison 2025',
+    // Last-mile / courier
+    'South African logistics courier SaaS new features 2025 2026',
+    'Onfleet OR Track-POD OR Detrack OR Bringg new features update 2026',
+    'last mile delivery software AI tracking Africa innovation 2026',
     'route optimisation real-time ETA delivery app South Africa',
-    'fleet management COD cash on delivery app Africa 2025',
+    'fleet management COD cash on delivery app Africa 2026',
+    // SA-native shipping / e-commerce
+    'Bob Go OR Metafour OR Parcelninja South Africa shipping platform features pricing',
+    // Freight forwarding / import-export (FlowOps Enterprise flagship)
+    'CargoWise OR GoFreight OR Magaya freight forwarding software pricing 2026',
+    'freight forwarding software customs HS code container management import export 2026',
+    'South Africa SARS EDI customs declaration software clearing forwarding agent',
+    'AI freight forwarding TMS automation predict prevent 2026',
   ];
 
   constructor(
@@ -256,7 +269,7 @@ export class CompetitiveIntelligenceService {
       return [{ title: 'No search key configured', url: '', content: 'Add TAVILY_API_KEY to enable live web search.' }];
     }
 
-    const prompt = `You are a logistics market analyst. List 5 recent feature additions or competitive moves by Onfleet, Track-POD, Detrack, Shipday, or Bringg in 2025 that a South African courier SaaS should be aware of. Format as: Competitor | Feature | Threat Level (LOW/MEDIUM/HIGH/CRITICAL) | Recommended counter-move`;
+    const prompt = `You are a logistics market analyst for FlowOps, a South African courier, last-mile AND freight-forwarding (import/export) SaaS. List 6 recent competitive moves in 2025-2026 that FlowOps should be aware of, spanning: (a) last-mile/courier platforms (Onfleet, Track-POD, Detrack, Bringg), (b) SA-native shipping platforms (Bob Go, Metafour, Parcelninja), and (c) freight-forwarding / customs TMS (CargoWise, GoFreight, Magaya, Descartes). Format each as: Competitor | Feature/Move | Threat Level (LOW/MEDIUM/HIGH/CRITICAL) | Recommended counter-move`;
 
     try {
       if (groqKey) {
@@ -302,8 +315,9 @@ export class CompetitiveIntelligenceService {
       .join('\n\n---\n\n')
       .slice(0, 4000); // keep within token limits
 
-    const systemPrompt = `You are a strategic competitive analyst for FlowOps, a South African courier & logistics SaaS. 
+    const systemPrompt = `You are a strategic competitive analyst for FlowOps, a South African courier, last-mile & freight-forwarding (import/export) SaaS.
 Analyse the provided search results and identify specific competitive threats or opportunities.
+Pay particular attention to these tracked competitors (map findings to the closest one when possible): ${this.COMPETITORS.join(', ')}.
 For each finding, respond in STRICT JSON array format:
 [{"competitor":"name","finding":"what they did","threatLevel":"HIGH","recommendation":"what FlowOps should do","source":"url or title"}]
 Threat levels: LOW (informational), MEDIUM (monitor), HIGH (respond in 90 days), CRITICAL (respond immediately).
