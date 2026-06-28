@@ -4,6 +4,8 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { ClawLogicEngine } from '../ai/claw-logic.engine';
+import { EventsGateway } from '../gateway/events.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,8 @@ export class AutopilotService {
     private readonly billing: BillingService,
     private readonly clawLogic: ClawLogicEngine,
     private readonly config: ConfigService,
+    private readonly gateway: EventsGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Feature gating ─────────────────────────────────────────────────────────
@@ -323,15 +327,61 @@ export class AutopilotService {
     loads.sort((a, b) => a.load - b.load);
     const chosen = loads[0].d;
 
-    await this.prisma.collection.update({
+    // Assign + move to ASSIGNED so it leaves the unassigned queue and the
+    // driver portal surfaces it as a live job.
+    const updated = await this.prisma.collection.update({
       where: { id: sig.entity.id },
-      data: { driverId: chosen.id },
+      data: { driverId: chosen.id, status: 'ASSIGNED' },
     });
+
+    // ── Close the loop to the humans ─────────────────────────────────────────
+    // 1) Tell the driver directly in Driver Chat (the channel they watch).
+    await this.notifyDriverOfAssignment(companyId, chosen, updated).catch(() => undefined);
+    // 2) Live-update the dispatch board.
+    this.safeEmit(() =>
+      this.gateway.emitDispatchAssigned(companyId, {
+        collectionId: updated.id, driverId: chosen.id, driverName: chosen.name,
+        clientName: updated.clientName, source: 'autopilot',
+      }),
+    );
+    // 3) Surface it in the staff notification bell.
+    await this.notifyStaff(companyId, {
+      title: `Autopilot assigned a pickup to ${chosen.name}`,
+      body: `${updated.clientName} — ${updated.pickupAddress}`,
+      type: 'operations', link: '/driver-dispatch',
+    }).catch(() => undefined);
+
     await this.logEvent(companyId, { ...sig, summary: `${sig.summary} Auto-assigned to ${chosen.name}.` }, 'assigned', {
       driverId: chosen.id,
       driverName: chosen.name,
     });
-    return `Assigned pickup to ${chosen.name}.`;
+    return `Assigned pickup to ${chosen.name} and notified them.`;
+  }
+
+  /** Notify the assigned driver in Driver Chat + ping the chat live. */
+  private async notifyDriverOfAssignment(companyId: string, driver: { id: string; name: string }, collection: any): Promise<void> {
+    await this.prisma.driverChatMessage.create({
+      data: {
+        driverId: driver.id,
+        companyId,
+        senderType: 'dispatch',
+        message:
+          `📦 CLAW Autopilot assigned you a pickup: ${collection.clientName} at ` +
+          `${collection.pickupAddress}. Please action it as soon as you can.`,
+      },
+    });
+    this.safeEmit(() => this.gateway.emitToCompany(companyId, 'driver-chat-message', { driverId: driver.id, source: 'autopilot' }));
+  }
+
+  /** Create an in-app notification for staff + ping listeners. Best-effort. */
+  private async notifyStaff(companyId: string, dto: { title: string; body: string; type?: string; link?: string }): Promise<void> {
+    await this.notifications.create(companyId, dto);
+    this.safeEmit(() => this.gateway.emitToCompany(companyId, 'notification-created', { title: dto.title, type: dto.type ?? 'info' }));
+  }
+
+  /** Realtime emits must never break an autopilot action. */
+  private safeEmit(fn: () => void): void {
+    try { fn(); } catch { /* socket emit is best-effort */ }
   }
 
   private async logEvent(companyId: string, sig: OpsSignal, action: string, extra: Record<string, any> = {}) {
@@ -349,6 +399,17 @@ export class AutopilotService {
         resolved: false,
       },
     });
+
+    // Surface high-impact escalations to staff (notification bell + live ping),
+    // so they don't sit unseen until someone opens the Autopilot console.
+    if (action === 'escalated' && (sig.severity === 'critical' || sig.severity === 'high')) {
+      await this.notifyStaff(companyId, {
+        title: `Autopilot: ${sig.kind.replace(/_/g, ' ').toLowerCase()}`,
+        body: sig.summary,
+        type: 'operations',
+        link: '/high-risk-queue',
+      }).catch(() => undefined);
+    }
   }
 
   /** Recent autopilot activity, for the console + audit. */
