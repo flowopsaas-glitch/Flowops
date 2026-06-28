@@ -29,8 +29,9 @@ services:
     ports: []
     environment:
       NODE_ENV: production
-      CORS_ORIGINS: https://app.flowop.work,https://www.flowop.work
-      APP_URL: https://app.flowop.work
+      # CORS_ORIGINS / APP_URL / API_PUBLIC_URL are inherited from the base
+      # compose, which reads them from .env — so a new instance on a different
+      # domain just sets them in .env (no edit to this file needed).
 
   postgres:
     restart: always
