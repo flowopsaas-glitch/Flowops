@@ -93,7 +93,7 @@ export function ForwardingControlTower() {
   ];
 
   return (
-    <div className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_40%),rgba(255,255,255,0.03)] p-5 sm:p-6 space-y-5">
+    <div className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_40%),rgba(255,255,255,0.03)] p-5 sm:p-6 space-y-5 fx-reveal">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
@@ -193,7 +193,7 @@ function Kpi({ icon: Icon, label, value, sub, tone = "text-white", alert, isText
   icon: any; label: string; value: number | string; sub?: string; tone?: string; alert?: boolean; isText?: boolean;
 }) {
   return (
-    <div className={`rounded-2xl border p-4 ${alert ? "border-rose-500/25 bg-rose-500/[0.06]" : "border-white/8 bg-white/[0.03]"}`}>
+    <div className={`rounded-2xl border p-4 fx-lift ${alert ? "border-rose-500/25 bg-rose-500/[0.06]" : "border-white/8 bg-white/[0.03]"}`}>
       <Icon className={`h-4 w-4 ${tone} opacity-80`} />
       <div className={`mt-2 font-black tracking-tight ${tone} ${isText ? "text-lg" : "text-2xl"}`}>{value}</div>
       <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 mt-0.5">{label}</div>
