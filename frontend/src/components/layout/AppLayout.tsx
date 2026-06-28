@@ -5,7 +5,7 @@ import {
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
-  AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy,
+  AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -198,6 +198,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Driver Home",         desc: "My jobs, pickups & portal",     to: "/driver-home",        icon: Truck,    perm: "podDeliveries" },
     { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "driverDispatch" },
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
+    { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck },
     { section: "OPS", label: "Returns / RMA", desc: "Collect, inspect, refund, restock", to: "/returns", icon: RotateCcw, perm: "returns" },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },

@@ -205,6 +205,7 @@ model Company {
   accountingSyncLogs    AccountingSyncLog[]
   ssoConnection         SsoConnection?
   supportTickets        SupportTicket[]
+  courierOrders         CourierOrder[]
 
   @@map("companies")
 }
@@ -1969,4 +1970,54 @@ model SupportTicket {
 
   @@index([companyId, status])
   @@map("support_tickets")
+}
+
+
+enum CourierOrderStatus {
+  NEW
+  ASSIGNED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+enum CourierOrderPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Client-submitted delivery order in the Courier Management Suite. Distinct from
+// a Waybill (the formal parcel record): an order is the intake/work item that
+// the AI delivery-orchestration engine assigns + sequences across drivers.
+// assignedDriverId is a plain column (no FK relation) to keep the Driver model
+// untouched; driver details are resolved on read.
+model CourierOrder {
+  id               String               @id @default(cuid())
+  companyId        String
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reference        String
+  clientName       String
+  clientId         String?
+  pickupAddress    String
+  dropoffAddress   String
+  contactName      String?
+  contactPhone     String?
+  itemsDesc        String?
+  pieces           Int                  @default(1)
+  weightKg         Float?
+  priority         CourierOrderPriority @default(NORMAL)
+  windowStart      DateTime?
+  windowEnd        DateTime?
+  status           CourierOrderStatus   @default(NEW)
+  assignedDriverId String?
+  sequence         Int?
+  aiReasoning      String?              @db.Text
+  notes            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([companyId, status])
+  @@map("courier_orders")
 }
