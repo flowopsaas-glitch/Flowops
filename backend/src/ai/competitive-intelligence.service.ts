@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -657,9 +657,112 @@ Return ONLY the JSON array, no other text.`;
     return plan;
   }
 
-  /** Call Groq expecting a single JSON object back. Returns null on any failure. */
-  private async callGroqJSON(apiKey: string, system: string, user: string): Promise<any | null> {
+  // ── Stage 3: one-click GitHub Issue from a build plan ─────────────────────
+  //
+  // Turns a generated build plan into a real, tracked engineering task in the
+  // FlowOps repo so a coding agent or dev can pick it up. Requires GITHUB_REPO
+  // (owner/name) and GITHUB_TOKEN (fine-grained PAT with issues:write). The
+  // token lives server-side only and is never returned to the client.
+
+  async createGithubIssue(id: string): Promise<any> {
+    const ev = await (this.prisma.aiEvent as any).findFirst({
+      where: { id, type: { in: OWNER_ACTIONABLE_TYPES } },
+      select: { id: true, title: true, metadata: true },
+    });
+    if (!ev) throw new NotFoundException('Action item not found');
+
+    let meta: any = {};
     try {
+      meta = typeof ev.metadata === 'string' ? JSON.parse(ev.metadata) : (ev.metadata || {});
+    } catch { meta = {}; }
+
+    // Idempotent: if we already opened an issue for this item, return it.
+    if (meta.githubIssueUrl) {
+      return { url: meta.githubIssueUrl, number: meta.githubIssueNumber, existing: true };
+    }
+
+    const plan = meta.buildPlan;
+    if (!plan) throw new BadRequestException('Generate a build plan first, then create the issue.');
+
+    const repo = this.config.get<string>('GITHUB_REPO');
+    const token = this.config.get<string>('GITHUB_TOKEN');
+    if (!repo || !token) {
+      throw new ServiceUnavailableException(
+        'GitHub issue creation is not configured. Set GITHUB_REPO (owner/name) and GITHUB_TOKEN (fine-grained PAT with issues:write).',
+      );
+    }
+
+    const title = `[CLAW] ${plan.suggestedPrTitle || plan.title || ev.title}`.slice(0, 250);
+    const body = this.formatGithubIssueBody(plan, ev);
+
+    let res: Response;
+    try {
+      res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+          'User-Agent': 'FlowOps-CLAW',
+        },
+        body: JSON.stringify({ title, body, labels: ['claw-build-planner', 'competitive-intel'] }),
+      });
+    } catch (err: any) {
+      this.logger.error(`GitHub issue network error: ${err.message}`);
+      throw new ServiceUnavailableException('Could not reach GitHub to create the issue.');
+    }
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      this.logger.warn(`GitHub issue creation failed: ${res.status} ${txt.slice(0, 200)}`);
+      throw new ServiceUnavailableException(
+        `GitHub rejected the request (${res.status}). Check the token scope (issues:write) and GITHUB_REPO.`,
+      );
+    }
+
+    const data = (await res.json()) as any;
+    meta.githubIssueUrl = data.html_url;
+    meta.githubIssueNumber = data.number;
+    await (this.prisma.aiEvent as any)
+      .update({ where: { id }, data: { metadata: JSON.stringify(meta) } })
+      .catch(() => undefined);
+    this.logger.log(`📌 CLAW: opened GitHub issue #${data.number} for action item ${id}`);
+    return { url: data.html_url, number: data.number, existing: false };
+  }
+
+  /** Render a build plan as a GitHub-flavoured markdown issue body. */
+  private formatGithubIssueBody(plan: any, ev: any): string {
+    const list = (label: string, items?: string[]) =>
+      Array.isArray(items) && items.length
+        ? `\n### ${label}\n${items.map((i) => `- ${i}`).join('\n')}`
+        : '';
+    return [
+      '> Auto-drafted by **CLAW Build Planner** from a competitive Action Item. Review before implementing — CLAW plans, a human ships.',
+      '',
+      plan.summary ? `**Summary:** ${plan.summary}` : '',
+      `**Tier:** ${plan.entitlementTier || 'n/a'}  ·  **Effort:** ${plan.effort || 'n/a'}`,
+      plan.backendModule ? `**Backend module:** \`${plan.backendModule}\`` : '',
+      plan.navPlacement ? `**Nav placement:** ${plan.navPlacement}` : '',
+      list('Data model', plan.dataModelChanges),
+      list('Backend changes', plan.backendChanges),
+      list('New endpoints', plan.newEndpoints),
+      list('Frontend changes', plan.frontendChanges),
+      list('Acceptance criteria', plan.acceptanceCriteria),
+      list('Risks', plan.risks),
+      list('Implementation steps', plan.implementationSteps),
+      plan.agentPrompt ? `\n### Coding-agent prompt\n\`\`\`\n${plan.agentPrompt}\n\`\`\`` : '',
+      '',
+      '---',
+      `Source action item: ${ev.title}`,
+      plan.suggestedBranch ? `Suggested branch: \`${plan.suggestedBranch}\`` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  /** Call Groq expecting a single JSON object back. Returns null on any failure. */
+  private async callGroqJSON(apiKey: string, system: string, user: string): Promise<any | null> {    try {
       const res = await fetch(this.GROQ, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },

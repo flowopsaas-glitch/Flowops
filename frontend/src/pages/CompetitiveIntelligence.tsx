@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Bot, Check, CheckCircle2, ChevronDown, ChevronUp,
-  Clock, Copy, ExternalLink, Globe, Hammer, HeartPulse, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
+  Clock, Copy, ExternalLink, Github, Globe, Hammer, HeartPulse, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
   TrendingUp, X, Zap,
 } from "lucide-react";
 import api from "../api/client";
@@ -118,7 +118,14 @@ function InsightCard({ insight }: { insight: Insight }) {
 
 // ── Build Plan Panel (CLAW Build Planner output) ───────────────────────────
 
-function BuildPlanPanel({ plan, onCopy, copied }: { plan: any; onCopy: () => void; copied: boolean }) {
+function BuildPlanPanel({ plan, onCopy, copied, onCreateIssue, creatingIssue, issueUrl }: {
+  plan: any;
+  onCopy: () => void;
+  copied: boolean;
+  onCreateIssue: () => void;
+  creatingIssue: boolean;
+  issueUrl?: string;
+}) {
   const Section = ({ label, items }: { label: string; items?: string[] }) =>
     items && items.length ? (
       <div>
@@ -181,6 +188,28 @@ function BuildPlanPanel({ plan, onCopy, copied }: { plan: any; onCopy: () => voi
           <p className="text-[11px] text-white/55 leading-relaxed whitespace-pre-wrap">{plan.agentPrompt}</p>
         </div>
       )}
+      <div className="flex items-center gap-2 flex-wrap pt-0.5">
+        {issueUrl ? (
+          <a
+            href={issueUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/20 transition"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" /> View GitHub issue
+          </a>
+        ) : (
+          <button
+            onClick={onCreateIssue}
+            disabled={creatingIssue}
+            className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
+          >
+            {creatingIssue ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Github className="h-3.5 w-3.5" />}
+            Create GitHub issue
+          </button>
+        )}
+        <span className="text-[10px] text-white/30">Opens a tracked task in your repo — implement via PR, never auto-shipped.</span>
+      </div>
     </div>
   );
 }
@@ -204,6 +233,8 @@ export default function CompetitiveIntelligencePage() {
   const [planningId, setPlanningId] = useState<string | null>(null);
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
   const [copiedId,   setCopiedId]   = useState<string | null>(null);
+  const [issues,     setIssues]     = useState<Record<string, string>>({});
+  const [issuingId,  setIssuingId]  = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -267,6 +298,16 @@ export default function CompetitiveIntelligencePage() {
       setCopiedId(id);
       setTimeout(() => setCopiedId(c => (c === id ? null : c)), 2000);
     } catch { /* clipboard may be blocked — ignore */ }
+  };
+
+  const createIssue = async (id: string) => {
+    setIssuingId(id);
+    try {
+      const res: any = await api.post(`/owner/intel/actions/${id}/create-issue`, {});
+      const d = res?.data ?? res;
+      if (d?.url) setIssues(prev => ({ ...prev, [id]: d.url }));
+    } catch { /* toast handled globally (e.g. GitHub not configured) */ }
+    finally { setIssuingId(null); }
   };
 
   const runSweep = async () => {    setSweeping(true);
@@ -506,6 +547,9 @@ export default function CompetitiveIntelligencePage() {
                       plan={plans[a.id]}
                       onCopy={() => copyAgentPrompt(a.id)}
                       copied={copiedId === a.id}
+                      onCreateIssue={() => createIssue(a.id)}
+                      creatingIssue={issuingId === a.id}
+                      issueUrl={issues[a.id] || plans[a.id]?.githubIssueUrl}
                     />
                   )}
                 </div>

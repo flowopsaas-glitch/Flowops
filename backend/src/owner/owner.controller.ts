@@ -169,6 +169,12 @@ export class OwnerController {
     return this.intel.generateBuildPlan(id, body?.force === true);
   }
 
+  /** Stage 3 — open a real GitHub Issue in the FlowOps repo from the build plan. */
+  @Post('intel/actions/:id/create-issue')
+  intelCreateIssue(@Param('id') id: string) {
+    return this.intel.createGithubIssue(id);
+  }
+
   /** Run CLAW market-gap ideation → queue upgrade suggestions into Action items. */
   @Post('intel/suggest-upgrades')
   intelSuggestUpgrades() {
