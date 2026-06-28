@@ -176,10 +176,11 @@ export class CustomsDeclarationService {
 
   /** Record a SARS response / manual status change (RELEASED | QUERY | REJECTED). */
   async setStatus(companyId: string, id: string, status: string, mrn?: string, note?: string) {
-    await this.getDeclaration(companyId, id);
+    const existing = await this.getDeclaration(companyId, id);
     const allowed = ['DRAFT', 'SUBMITTED', 'QUERY', 'RELEASED', 'REJECTED'];
     if (!allowed.includes(status)) throw new ForbiddenException(`Invalid status. Use: ${allowed.join(', ')}`);
-    return this.prisma.customsDeclaration.update({
+
+    const updated = await this.prisma.customsDeclaration.update({
       where: { id },
       data: {
         status: status as any,
@@ -187,6 +188,49 @@ export class CustomsDeclarationService {
         responseNote: note ?? undefined,
         responseAt: new Date(),
       },
+    });
+
+    // ── Close the loop ───────────────────────────────────────────────────
+    // A status change is the inbound SARS/agent response (CUSRES). Record it as
+    // an INBOUND message and raise a staff notification so the response is
+    // visible end-to-end. Best-effort — never blocks the status write.
+    try {
+      await (this.prisma as any).customsEdiMessage.create({
+        data: {
+          declarationId: id,
+          companyId,
+          direction: 'INBOUND',
+          messageType: 'CUSRES',
+          status: 'RECEIVED',
+          reference: mrn ?? null,
+          payload: { status, mrn: mrn ?? null, note: note ?? null } as any,
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+    try {
+      await (this.prisma as any).notification.create({
+        data: {
+          companyId,
+          title: `Customs ${status.toLowerCase()} · ${existing.lrn ?? id}`,
+          body: `SARS response recorded${mrn ? ` — MRN ${mrn}` : ''}.${note ? ` ${note}` : ''}`,
+          type: 'CUSTOMS_RESPONSE',
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+
+    return updated;
+  }
+
+  /** Full CUSDEC/CUSRES message log for a declaration (audit + UI timeline). */
+  async getMessages(companyId: string, id: string) {
+    await this.getDeclaration(companyId, id);
+    return (this.prisma as any).customsEdiMessage.findMany({
+      where: { declarationId: id, companyId },
+      orderBy: { createdAt: 'asc' },
     });
   }
 }

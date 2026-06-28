@@ -150,6 +150,12 @@ export class ForwardingController {
     return this.declarations.setStatus(u.companyId, did, body?.status, body?.mrn, body?.note);
   }
 
+  @Get('declarations/:did/messages')
+  @ApiOperation({ summary: 'CUSDEC/CUSRES message log for a declaration (timeline)' })
+  declarationMessages(@CurrentUser() u: any, @Param('did') did: string) {
+    return this.declarations.getMessages(u.companyId, did);
+  }
+
   // ── SARS EDI transmission credentials (per-tenant, BYO) ─────────────────────────
 
   @Get('customs/edi/credential')
