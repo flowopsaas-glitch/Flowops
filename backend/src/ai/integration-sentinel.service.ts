@@ -41,9 +41,32 @@ export class IntegrationSentinelService {
     try {
       const res = await fetch(url, { ...rest, signal: ctrl.signal });
       return { res, latencyMs: Date.now() - start };
+    } catch (e: any) {
+      // Surface a clear, human message instead of the cryptic "This operation
+      // was aborted" that an AbortController timeout otherwise produces.
+      if (e?.name === 'AbortError') {
+        const err: any = new Error(`timed out after ${(timeoutMs / 1000).toFixed(0)}s`);
+        err.isTimeout = true;
+        throw err;
+      }
+      throw e;
     } finally {
       clearTimeout(t);
     }
+  }
+
+  /** Retry a transient check (timeout / network blip) a couple of times. */
+  private async withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 800): Promise<T> {
+    let lastErr: any;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await fn();
+      } catch (e) {
+        lastErr = e;
+        if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+    throw lastErr;
   }
 
   private mk(
@@ -79,17 +102,29 @@ export class IntegrationSentinelService {
   private async checkTavily(): Promise<IntegrationCheck> {
     const key = this.config.get<string>('TAVILY_API_KEY');
     if (!key) return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', false, 'misconfigured', 'TAVILY_API_KEY not set — the intel sweep has no live web search.');
+    // Tavily /search performs live web crawling and is legitimately slow, so it
+    // needs a much longer budget than a simple auth ping; and we retry once so a
+    // single slow response doesn't get flagged as a critical outage.
+    const timeoutMs = Number(this.config.get<string>('TAVILY_TIMEOUT_MS')) || 15000;
     try {
-      const { res, latencyMs } = await this.timedFetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ query: 'flowops integration healthcheck', max_results: 1, search_depth: 'basic' }),
-      });
-      if (res.status === 401 || res.status === 403) return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'failing', `Tavily key rejected (${res.status}).`, latencyMs);
+      const { res, latencyMs } = await this.withRetry(() =>
+        this.timedFetch('https://api.tavily.com/search', {
+          method: 'POST',
+          timeoutMs,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body: JSON.stringify({ query: 'flowops integration healthcheck', max_results: 1, search_depth: 'basic' }),
+        }),
+      );
+      if (res.status === 401 || res.status === 403) return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'failing', `Tavily key rejected (${res.status}) — check TAVILY_API_KEY.`, latencyMs);
+      if (res.status === 429) return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'misconfigured', 'Tavily rate-limited (429) — usage cap reached; sweeps will retry later.', latencyMs);
       if (!res.ok) return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'failing', `Tavily returned ${res.status}.`, latencyMs);
-      return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'ok', 'Reachable and authenticated.', latencyMs);
+      return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'ok', `Reachable and authenticated (${latencyMs}ms).`, latencyMs);
     } catch (e: any) {
-      return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'failing', `Could not reach Tavily: ${e.message}`);
+      // A timeout means slow/unreachable, not a misconfiguration — say so plainly.
+      const detail = e?.isTimeout
+        ? `Tavily ${e.message} (slow or unreachable) after 2 attempts — intel sweep falls back to the AI knowledge base until it recovers.`
+        : `Could not reach Tavily: ${e.message}`;
+      return this.mk('tavily', 'Tavily (Competitive Intel search)', 'Search', true, 'failing', detail);
     }
   }
 

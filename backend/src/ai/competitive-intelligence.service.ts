@@ -184,12 +184,28 @@ export class CompetitiveIntelligenceService {
     return this.synthesiseFallback();
   }
 
+  /** fetch with an AbortController timeout; clearer message on timeout so a
+   *  hung Tavily request surfaces as "timed out" rather than the cryptic
+   *  "This operation was aborted", and can never stall the whole sweep. */
+  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 15000): Promise<Response> {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: ctrl.signal });
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw new Error(`request timed out after ${Math.round(timeoutMs / 1000)}s`);
+      throw e;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
   private async searchTavily(apiKey: string): Promise<SearchResult[]> {
     const allResults: SearchResult[] = [];
 
     for (const query of this.QUERIES) {
       try {
-        const res = await fetch(this.TAVILY, {
+        const res = await this.fetchWithTimeout(this.TAVILY, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -201,7 +217,7 @@ export class CompetitiveIntelligenceService {
             max_results: 5,
             include_answer: false,
           }),
-        });
+        }, 15000);
 
         if (!res.ok) {
           this.logger.warn(`Tavily search failed for "${query}": ${res.status}`);
