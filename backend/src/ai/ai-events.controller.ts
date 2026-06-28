@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import { AiEventsService } from './ai-events.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { Public } from '../common/decorators/public.decorator';
 
 @Controller('ai-events')
 export class AiEventsController {
@@ -24,7 +23,6 @@ export class AiEventsController {
   }
 
   // 🚀 FIX: The missing Copilot Endpoint
-  @Public()
   @Post('ask')
   @HttpCode(HttpStatus.OK)
   async askCopilot(
@@ -44,21 +42,18 @@ export class AiEventsController {
     };
   }
 
-  @Public()
   @Post('action/verify-pod')
   @HttpCode(HttpStatus.OK)
   async verifyPod(@Body('companyId') companyId: number) {
     return this.aiEventsService.verifyCompliance(companyId);
   }
 
-  @Public()
   @Post('action/repair-billing')
   @HttpCode(HttpStatus.OK)
   async repairBilling(@Body('companyId') companyId: number) {
     return this.aiEventsService.repairInvoicing(companyId);
   }
 
-  @Public()
   @Post('logic/learn')
   @HttpCode(HttpStatus.CREATED)
   async learn(
@@ -82,7 +77,6 @@ export class AiEventsController {
     return this.aiEventsService.learnFromCorrection(Number(companyId), patternData);
   }
 
-  @Public()
   @Post(':id/resolve')
   @HttpCode(HttpStatus.OK)
   async resolve(
