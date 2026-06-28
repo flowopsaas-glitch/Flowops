@@ -294,4 +294,84 @@ export class NotificationsService {
     }
   }
 
+  // ── Returns (RMA) status notifications ───────────────────────────────
+
+  private static readonly RETURN_STATUS_COPY: Record<
+    string,
+    { title: string; line: string }
+  > = {
+    APPROVED: { title: 'Return approved', line: 'has been approved — we will arrange collection' },
+    REJECTED: { title: 'Return declined', line: 'could not be approved. Please contact support if you have questions' },
+    SCHEDULED: { title: 'Collection scheduled', line: 'is scheduled for collection' },
+    IN_TRANSIT: { title: 'Return collected', line: 'has been collected and is on its way back to us' },
+    RECEIVED: { title: 'Return received', line: 'has arrived at our facility and is being processed' },
+    COMPLETED: { title: 'Return completed', line: 'has been completed' },
+    CANCELLED: { title: 'Return cancelled', line: 'has been cancelled' },
+  };
+
+  /**
+   * Fired when a return (RMA) transitions. Logs an internal tenant
+   * notification (surfaced in the staff bell) and — when a customer email is
+   * on file — emails the customer a branded update. Best-effort: a failure
+   * here never blocks the RMA transition itself.
+   */
+  async notifyReturnStatus(ret: {
+    companyId: string;
+    rmaNumber: string;
+    trackingNumber?: string | null;
+    customerName?: string | null;
+    customerEmail?: string | null;
+    status: string;
+    resolution?: string | null;
+    refundAmount?: number | null;
+  }) {
+    const copy = NotificationsService.RETURN_STATUS_COPY[ret.status];
+    if (!copy) return; // not a customer-facing transition
+
+    const ref = ret.rmaNumber || ret.trackingNumber || 'your return';
+    const name = (ret.customerName || 'there').split(/\s+/)[0];
+
+    const refundLine =
+      ret.status === 'COMPLETED' && ret.refundAmount && ret.refundAmount > 0
+        ? ` A refund of R${ret.refundAmount.toFixed(2)} is being processed.`
+        : '';
+
+    // Webhook event for tenant integrations.
+    void this.webhooks.dispatch(ret.companyId, 'return.status_changed', {
+      rmaNumber: ret.rmaNumber,
+      trackingNumber: ret.trackingNumber,
+      status: ret.status,
+      resolution: ret.resolution ?? null,
+    });
+
+    // 1) Internal tenant notification (staff bell).
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId: ret.companyId,
+          title: `${copy.title} · ${ref}`,
+          body: `Return ${ref} ${copy.line}.${refundLine}`,
+          type: 'RETURN_UPDATE',
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to log return notification: ${err?.message ?? err}`);
+    }
+
+    // 2) Customer email (best-effort).
+    if (ret.customerEmail) {
+      await this.email
+        .send({
+          to: ret.customerEmail,
+          subject: `${copy.title} — ${ref}`,
+          text: `Hi ${name}, your return ${ref} ${copy.line}.${refundLine}`,
+          html: `
+            <h2 style="margin-top:0;color:#1e3a5f;">${copy.title}</h2>
+            <p>Hi ${name}, your return <strong>${ref}</strong> ${copy.line}.${refundLine}</p>
+          `,
+        })
+        .catch((err) => this.logger.warn(`Return status email failed: ${err?.message ?? err}`));
+    }
+  }
+
 }

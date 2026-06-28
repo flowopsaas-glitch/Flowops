@@ -8,6 +8,7 @@ import { EcommerceService } from '../ecommerce/ecommerce.service';
 import { WaybillStatus } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
 import { BillingService } from '../billing/billing.service';
+import { EventsGateway } from '../gateway/events.gateway';
 
 @Injectable()
 export class WaybillsService {
@@ -19,7 +20,13 @@ export class WaybillsService {
     private notifications: NotificationsService,
     private ecommerce: EcommerceService,
     private billing: BillingService,
+    private gateway: EventsGateway,
   ) {}
+
+  /** Realtime emits are best-effort — they must never break a write. */
+  private safeEmit(fn: () => void): void {
+    try { fn(); } catch (err: any) { this.logger.warn(`Waybill realtime emit failed: ${err?.message ?? err}`); }
+  }
 
   // ── CRUD ──────────────────────────────────────────────────────────────
 
@@ -400,7 +407,13 @@ export class WaybillsService {
     // 4. Updates status to READY
     await this.stubExtract(item.id);
 
-    return this.prisma.waybillInboxItem.findUnique({ where: { id: item.id } });
+    const ready = await this.prisma.waybillInboxItem.findUnique({ where: { id: item.id } });
+
+    // Live-refresh the Waybill Inbox UI (frontend listens for these).
+    this.safeEmit(() => this.gateway.emitWaybillInboxChanged(companyId, ready));
+    this.safeEmit(() => this.gateway.emitInboxItemStatus(companyId, item.id, ready?.status ?? 'READY'));
+
+    return ready;
   }
 
   private async stubExtract(itemId: string) {
@@ -444,6 +457,10 @@ export class WaybillsService {
       where: { id: itemId },
       data: { status: 'COMMITTED', waybillId: waybill.id },
     });
+
+    // Live-refresh the inbox: item leaves the queue, new waybill appears.
+    this.safeEmit(() => this.gateway.emitInboxItemStatus(companyId, itemId, 'COMMITTED'));
+    this.safeEmit(() => this.gateway.emitWaybillInboxChanged(companyId, { id: itemId, status: 'COMMITTED', waybillId: waybill.id }));
 
     return waybill;
   }

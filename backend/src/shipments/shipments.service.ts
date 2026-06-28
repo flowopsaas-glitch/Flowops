@@ -1,9 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventsGateway } from '../gateway/events.gateway';
 
 @Injectable()
 export class ShipmentsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(ShipmentsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private gateway: EventsGateway,
+  ) {}
+
+  private safeEmit(fn: () => void): void {
+    try { fn(); } catch (err: any) { this.logger.warn(`Shipment realtime emit failed: ${err?.message ?? err}`); }
+  }
 
   async findAll(companyId: string, query?: any) {
     const where: any = { companyId };
@@ -43,7 +53,16 @@ export class ShipmentsService {
   }
 
   async update(id: string, companyId: string, dto: any) {
-    return this.prisma.shipment.update({ where: { id }, data: dto });
+    const updated = await this.prisma.shipment.update({ where: { id }, data: dto });
+    // Live-refresh the operations dashboard / live map (the frontend's
+    // premium socket listens for `shipment-status-changed`).
+    this.safeEmit(() => this.gateway.emitShipmentUpdate(companyId, {
+      id: updated.id,
+      waybillId: updated.waybillId,
+      status: updated.status,
+      driverId: updated.driverId,
+    }));
+    return updated;
   }
 
   async getRisk(waybillId: string, companyId: string) {
@@ -58,6 +77,13 @@ export class ShipmentsService {
       where: { id: dto.waybillId },
       data: { riskScore: Math.random(), riskLevel: 'LOW' },
     });
+    // Push the new score to dashboards listening on `risk-score-updated`.
+    this.safeEmit(() => this.gateway.emitRiskScoreUpdated(companyId, {
+      waybillId: waybill.id,
+      trackingNumber: waybill.trackingNumber,
+      riskLevel: waybill.riskLevel,
+      riskScore: waybill.riskScore,
+    }));
     return waybill;
   }
 }
