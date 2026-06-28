@@ -605,6 +605,21 @@ enum CustomsDeclarationStatus {
   REJECTED
 }
 
+// Per-tenant SARS transmission method. FlowOps holds NO SARS credentials and is
+// never the declarant — the tenant brings their own path (see the
+// sars-edi-customs-bridge spec).
+enum CustomsEdiPath {
+  DIRECT_EDI             // tenant is a registered SARS EDI user
+  SERVICE_PROVIDER       // tenant uses a SARS-approved VAN / EDI service provider
+  CLEARING_AGENT_HANDOFF // no live wire — package handed to the tenant's agent
+}
+
+enum CustomsEdiCredentialStatus {
+  UNVERIFIED
+  VERIFIED
+  DISABLED
+}
+
 // SAD (Single Administrative Document) declaration workflow (Phase 3). Holds a
 // CUSDEC-style structured payload and a lifecycle. NOTE: actual SARS EDI wire
 // submission requires SARS accreditation + a registered EDI gateway — this
@@ -624,6 +639,9 @@ model CustomsDeclaration {
   dutyTotal         Float?
   vatTotal          Float?
 
+  // Which transmission path actually lodged this (null until submitted live).
+  lodgementProvider String?
+
   submittedAt  DateTime?
   responseAt   DateTime?
   responseNote String?
@@ -632,12 +650,62 @@ model CustomsDeclaration {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  ediMessages CustomsEdiMessage[]
+
   @@index([fileId])
   @@index([companyId, status])
   @@map("customs_declarations")
 }
 
+// Per-tenant customs transmission credentials. One active record per company.
+// Secret material is AES-256-GCM encrypted at rest and never returned to clients
+// (masked on read). FlowOps never stores a platform-wide SARS credential.
+model CustomsEdiCredential {
+  id     String                     @id @default(cuid())
+  companyId String
+  path   CustomsEdiPath
+  status CustomsEdiCredentialStatus  @default(UNVERIFIED)
+
+  customsClientCode String? // tenant's SARS CCN (not secret — appears on the SAD)
+  providerName      String? // VAN/provider label or agent name
+  endpointUrl       String? // provider gateway / agent webhook
+  agentEmail        String? // CLEARING_AGENT_HANDOFF target
+
+  // Encrypted secret (AES-256-GCM). Never serialized to clients or logs.
+  secretCiphertext String? @db.Text
+  secretIv         String?
+  secretAuthTag    String?
+
+  lastVerifiedAt DateTime?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([companyId]) // one credential record per tenant
+  @@map("customs_edi_credentials")
+}
+
+// CUSDEC/CUSRES message log — audit trail + LRN-based idempotency for the bridge.
+model CustomsEdiMessage {
+  id            String             @id @default(cuid())
+  declarationId String
+  declaration   CustomsDeclaration @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+  companyId     String
+  direction     String   // OUTBOUND | INBOUND
+  messageType   String   // CUSDEC | CUSRES | VERIFY
+  status        String   // SENT | ACK | ERROR | RECEIVED
+  reference     String?  // provider/SARS message ref
+  payload       Json?
+  error         String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  @@index([declarationId])
+  @@index([companyId, createdAt])
+  @@map("customs_edi_messages")
+}
+
 // ─── Waybills ─────────────────────────────────────────────────────────────
+
 
 model Waybill {
   id             String        @id @default(cuid())
