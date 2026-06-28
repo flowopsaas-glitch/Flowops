@@ -1,10 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventsGateway } from '../gateway/events.gateway';
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(InvoicesService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private gateway: EventsGateway,
+  ) {}
+
+  /** Realtime emits are best-effort — they must never break invoicing. */
+  private safeEmit(fn: () => void): void {
+    try { fn(); } catch (err: any) { this.logger.warn(`Invoice realtime emit failed: ${err?.message ?? err}`); }
+  }
 
   async findAll(companyId: string, query?: any) {
     const where: any = { companyId };
@@ -356,14 +367,87 @@ export class InvoicesService {
   // ── Auto monthly invoicing ────────────────────────────────────────────────
 
   /**
-   * Runs on the 1st of every month at 02:00 (off-peak).
-   * For each active company, bundles every DELIVERED waybill that has a
-   * totalAmount and isn't already on an invoice into one consolidated
-   * "Monthly Delivery Statement" invoice, creates line-items per waybill,
-   * and sets dueDate = +30 days.
+   * Builds one consolidated "Monthly Delivery Statement" for a single company:
+   * bundles every DELIVERED waybill that has a totalAmount and isn't already on
+   * an invoice into line-items, sets dueDate = +30 days, and closes the loop —
+   * emits `auto-invoice-completed` to refresh finance dashboards live and logs
+   * a staff notification.
    *
-   * Idempotent: unbilledWaybills already filters out waybills on existing
-   * invoices (invoiceItems: { none: {} }), so running twice in a month is safe.
+   * Idempotent: getUnbilledWaybills filters out waybills already on an invoice,
+   * so re-running is safe. Returns the created invoice, or null if there was
+   * nothing to bill.
+   */
+  async generateMonthlyInvoiceForCompany(company: {
+    id: string;
+    name: string;
+    tradingName?: string | null;
+  }) {
+    const waybills = await this.getUnbilledWaybills(company.id);
+    if (!waybills.length) return null;
+
+    const subtotal = waybills.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
+    const tax      = Math.round(subtotal * 0.15 * 100) / 100;
+    const total    = Math.round((subtotal + tax) * 100) / 100;
+
+    const count         = await this.prisma.invoice.count({ where: { companyId: company.id } });
+    const year          = new Date().getFullYear();
+    const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
+    const dueDate       = new Date();
+    dueDate.setDate(dueDate.getDate() + 30);
+
+    const items = waybills.map((w) => ({
+      description: `Delivery ${w.trackingNumber} — ${w.recipientName ?? ''}`.trimEnd(),
+      quantity:    1,
+      unitPrice:   w.totalAmount ?? 0,
+      total:       w.totalAmount ?? 0,
+      waybillId:   w.id,
+    }));
+
+    const invoice = await this.prisma.invoice.create({
+      data: {
+        companyId:     company.id,
+        invoiceNumber,
+        clientName:    company.tradingName ?? company.name,
+        subtotal,
+        tax,
+        total,
+        status:        'SENT',
+        sentAt:        new Date(),
+        dueDate,
+        notes:         `Auto-generated monthly statement — ${waybills.length} deliveries`,
+        items:         { create: items },
+      },
+      include: { items: true },
+    });
+
+    // ── Close the loop ───────────────────────────────────────────────────
+    // Live-refresh the Finance dashboards (frontend listens on
+    // `auto-invoice-completed`) and drop a staff notification in the bell.
+    this.safeEmit(() => this.gateway.emitAutoInvoiceCompleted(company.id, {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      total: invoice.total,
+      deliveryCount: waybills.length,
+    }));
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId: company.id,
+          title: `Monthly statement generated · ${invoiceNumber}`,
+          body: `${waybills.length} deliveries bundled — total R${total.toFixed(2)}, due ${dueDate.toLocaleDateString('en-ZA')}.`,
+          type: 'INVOICE_GENERATED',
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Auto-invoice notification failed: ${err?.message ?? err}`);
+    }
+
+    return invoice;
+  }
+
+  /**
+   * Platform-wide monthly cron. Runs on the 1st of every month at 02:00
+   * (off-peak) and generates a statement for every active company.
    */
   @Cron('0 2 1 * *', { name: 'auto-monthly-invoicing' })
   async autoGenerateMonthlyInvoices(): Promise<{ generated: number; skipped: number }> {
@@ -376,47 +460,40 @@ export class InvoicesService {
     let skipped   = 0;
 
     for (const company of companies) {
-      const waybills = await this.getUnbilledWaybills(company.id);
-      if (!waybills.length) { skipped++; continue; }
-
-      const subtotal = waybills.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
-      const tax      = Math.round(subtotal * 0.15 * 100) / 100;
-      const total    = Math.round((subtotal + tax) * 100) / 100;
-
-      const count       = await this.prisma.invoice.count({ where: { companyId: company.id } });
-      const year        = new Date().getFullYear();
-      const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
-      const dueDate       = new Date();
-      dueDate.setDate(dueDate.getDate() + 30);
-
-      const items = waybills.map((w) => ({
-        description: `Delivery ${w.trackingNumber} — ${w.recipientName ?? ''}`.trimEnd(),
-        quantity:    1,
-        unitPrice:   w.totalAmount ?? 0,
-        total:       w.totalAmount ?? 0,
-        waybillId:   w.id,
-      }));
-
-      await this.prisma.invoice.create({
-        data: {
-          companyId:     company.id,
-          invoiceNumber,
-          clientName:    company.tradingName ?? company.name,
-          subtotal,
-          tax,
-          total,
-          status:        'SENT',
-          sentAt:        new Date(),
-          dueDate,
-          notes:         `Auto-generated monthly statement — ${waybills.length} deliveries`,
-          items:         { create: items },
-        },
-      });
-
-      generated++;
+      try {
+        const invoice = await this.generateMonthlyInvoiceForCompany(company);
+        if (invoice) generated++; else skipped++;
+      } catch (err: any) {
+        this.logger.error(`Auto-invoice failed for company ${company.id}: ${err?.message ?? err}`);
+        skipped++;
+      }
     }
 
     return { generated, skipped };
+  }
+
+  /**
+   * Tenant-scoped manual trigger — used by the "Generate now" button so an
+   * admin can produce their own statement on demand without waiting for the
+   * 1st. Strictly isolated to the caller's company (the platform-wide cron
+   * is the only path that touches every tenant).
+   */
+  async autoGenerateForCompany(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, name: true, tradingName: true },
+    });
+    if (!company) throw new NotFoundException('Company not found');
+
+    const invoice = await this.generateMonthlyInvoiceForCompany(company);
+    return {
+      generated: invoice ? 1 : 0,
+      skipped:   invoice ? 0 : 1,
+      invoice:   invoice ?? null,
+      message:   invoice
+        ? `Statement ${invoice.invoiceNumber} created with ${invoice.items?.length ?? 0} deliveries.`
+        : 'No unbilled deliveries — nothing to invoice right now.',
+    };
   }
 
   async create(companyId: string, dto: any) {
