@@ -6,6 +6,7 @@ import {
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -46,16 +47,20 @@ function SidebarSection(props: {
   items: NavItem[];
   currentPath: string;
   onNavigate: () => void;
+  collapsed?: boolean;
 }) {
   if (!props.items || props.items.length === 0) return null;
+  const { collapsed } = props;
 
   return (
     <div className="mb-6">
-      <div className="mb-2 px-4 text-[10px] font-black uppercase tracking-[0.24em] text-white/40">
-        {props.title}
-      </div>
+      {!collapsed && (
+        <div className="mb-2 px-4 text-[10px] font-black uppercase tracking-[0.24em] text-white/40">
+          {props.title}
+        </div>
+      )}
 
-      <div className="space-y-1.5 px-2">
+      <div className={cn("space-y-1.5", collapsed ? "px-2" : "px-2")}>
         {props.items.map((item) => {
           const Icon = item.icon;
           return (
@@ -63,9 +68,12 @@ function SidebarSection(props: {
               key={item.to}
               to={item.to}
               onClick={props.onNavigate}
+              title={collapsed ? item.label : undefined}
+              aria-label={item.label}
               className={({ isActive }) =>
                 cn(
-                  "group flex items-start gap-3 rounded-2xl border px-3 py-3 transition",
+                  "group flex items-start gap-3 rounded-2xl border transition",
+                  collapsed ? "justify-center px-2 py-2.5" : "px-3 py-3",
                   isActive
                     ? "border-sky-300/20 bg-sky-300/10 text-white shadow-[0_0_15px_rgba(125,211,252,0.05)]"
                     : "border-transparent bg-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
@@ -76,12 +84,14 @@ function SidebarSection(props: {
                 <Icon className="h-4 w-4" />
               </div>
 
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold leading-5">{item.label}</div>
-                <div className="mt-0.5 text-[11px] leading-4 text-white/45">
-                  {item.desc}
+              {!collapsed && (
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold leading-5">{item.label}</div>
+                  <div className="mt-0.5 text-[11px] leading-4 text-white/45">
+                    {item.desc}
+                  </div>
                 </div>
-              </div>
+              )}
             </NavLink>
           );
         })}
@@ -99,28 +109,32 @@ function SidebarContent(props: {
   onLogout: () => void;
   brandName: string;
   brandLogoUrl: string | null;
+  collapsed?: boolean;
 }) {
   const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
     ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
+  const { collapsed } = props;
 
   return (
     <div className="flex h-full flex-col bg-[#081120]">
-      <div className="shrink-0 border-b border-white/10 px-5 py-5">
-        <div className="flex items-center gap-3">
+      <div className={cn("shrink-0 border-b border-white/10 py-5", collapsed ? "px-3" : "px-5")}>
+        <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
           <img 
             src={props.brandLogoUrl ?? logo} 
             alt={`${props.brandName} logo`} 
-            className="h-12 w-12 rounded-2xl border border-white/10 bg-white/5 object-cover" 
+            className="h-12 w-12 rounded-2xl border border-white/10 bg-white/5 object-cover shrink-0" 
             onError={(e) => { (e.target as HTMLImageElement).src = logo; }}
           />
-          <div className="min-w-0">
-            <div className="text-lg font-black tracking-tight text-white uppercase italic">
-              {props.brandName}
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="text-lg font-black tracking-tight text-white uppercase italic">
+                {props.brandName}
+              </div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/50">
+                Tactical OS v1.8.2
+              </div>
             </div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/50">
-              Tactical OS v1.8.2
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -132,30 +146,37 @@ function SidebarContent(props: {
             items={props.grouped[sec] || []} 
             currentPath={props.currentPath} 
             onNavigate={props.onNavigate} 
+            collapsed={collapsed}
           />
         ))}
       </div>
 
-      <div className="shrink-0 border-t border-white/10 p-4 space-y-2 bg-[#081120]">
+      <div className={cn("shrink-0 border-t border-white/10 space-y-2 bg-[#081120]", collapsed ? "p-2" : "p-4")}>
         <button 
           onClick={props.onInstall}
           aria-label="Install application"
+          title={collapsed ? "Install application" : undefined}
           disabled={!props.canInstall} 
           className={cn(
-            "flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold transition", 
+            "flex w-full items-center justify-center gap-2 rounded-2xl border text-xs font-bold transition", 
+            collapsed ? "px-2 py-2.5" : "px-4 py-3",
             props.canInstall 
               ? "border-sky-300/20 bg-sky-300/10 text-sky-100 cursor-pointer hover:bg-sky-300/20" 
               : "border-white/5 bg-white/[0.02] text-white/20 cursor-not-allowed"
           )}
         >
-          <Download className="h-4 w-4" /> Install Application
+          <Download className="h-4 w-4" /> {!collapsed && "Install Application"}
         </button>
         <button 
           onClick={props.onLogout}
           aria-label="Log out"
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/10 bg-red-500/5 px-4 py-3 text-xs font-bold text-red-400/80 transition hover:bg-red-500/10"
+          title={collapsed ? "Terminate session" : undefined}
+          className={cn(
+            "flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/10 bg-red-500/5 text-xs font-bold text-red-400/80 transition hover:bg-red-500/10",
+            collapsed ? "px-2 py-2.5" : "px-4 py-3"
+          )}
         >
-          <LogOut className="h-4 w-4" /> Terminate Session
+          <LogOut className="h-4 w-4" /> {!collapsed && "Terminate Session"}
         </button>
       </div>
     </div>
@@ -166,6 +187,15 @@ function SidebarContent(props: {
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("flowops.sidebar.collapsed") === "1"; } catch { return false; }
+  });
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem("flowops.sidebar.collapsed", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -295,7 +325,7 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen bg-[#07111f] text-white overflow-hidden font-sans lm-main">
       {/* Desktop Sidebar */}
-      <aside className="hidden w-[300px] shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col">
+      <aside className={cn("hidden shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col fx-sidebar", collapsed ? "w-[84px]" : "w-[300px]")}>
         <SidebarContent 
           grouped={grouped} 
           currentPath={location.pathname} 
@@ -305,6 +335,7 @@ export default function AppLayout() {
           onLogout={handleLogout}
           brandName={branding.brandName}
           brandLogoUrl={branding.logoUrl}
+          collapsed={collapsed}
         />
       </aside>
 
@@ -328,6 +359,9 @@ export default function AppLayout() {
         ) : null}
         <header className="z-30 border-b border-white/5 bg-[#081120]/80 backdrop-blur-md px-6 py-4 flex justify-between items-center shrink-0 lm-header">
           <div className="flex items-center gap-4">
+            <button onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} className="hidden xl:flex p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400 hover:bg-white/10 transition">
+              {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+            </button>
             <button onClick={() => setMobileOpen(true)} className="xl:hidden p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400">
               <Menu className="h-5 w-5" />
             </button>
@@ -400,7 +434,9 @@ export default function AppLayout() {
           })()}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(56,189,248,0.03),transparent)] pointer-events-none" />
           <div className="relative z-10 p-6">
-            <Outlet />
+            <div key={location.pathname} className="fx-page">
+              <Outlet />
+            </div>
           </div>
         </main>
       </div>
