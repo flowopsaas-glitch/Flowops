@@ -117,6 +117,7 @@ export interface CustomsDeclaration {
   lrn?: string | null; mrn?: string | null;
   customsValueTotal?: number | null; dutyTotal?: number | null; vatTotal?: number | null;
   submittedAt?: string | null; responseNote?: string | null; payload?: any;
+  lodgementProvider?: string | null;
 }
 
 export const getDeclaration = async (id: string): Promise<CustomsDeclaration | null> => unwrap(await api.get(`/forwarding/files/${id}/declaration`));
@@ -124,6 +125,45 @@ export const buildDeclaration = async (id: string): Promise<CustomsDeclaration> 
 export const submitDeclaration = async (did: string): Promise<CustomsDeclaration> => unwrap(await api.post(`/forwarding/declarations/${did}/submit`, {}));
 export const setDeclarationStatus = async (did: string, status: string, mrn?: string, note?: string): Promise<CustomsDeclaration> =>
   unwrap(await api.patch(`/forwarding/declarations/${did}/status`, { status, mrn, note }));
+
+// ── SARS EDI transmission credentials (per-tenant, BYO) ────────────────────
+
+export type CustomsEdiPath = "DIRECT_EDI" | "SERVICE_PROVIDER" | "CLEARING_AGENT_HANDOFF";
+export interface CustomsEdiCredential {
+  path: CustomsEdiPath;
+  status: "UNVERIFIED" | "VERIFIED" | "DISABLED";
+  customsClientCode?: string | null;
+  providerName?: string | null;
+  endpointUrl?: string | null;
+  agentEmail?: string | null;
+  hasSecret: boolean;
+  secretMasked?: string | null;
+  lastVerifiedAt?: string | null;
+  updatedAt?: string | null;
+}
+export interface UpsertEdiCredential {
+  path: CustomsEdiPath;
+  customsClientCode?: string;
+  providerName?: string;
+  endpointUrl?: string;
+  agentEmail?: string;
+  secret?: string;
+}
+export interface CustomsEdiMessage {
+  id: string; direction: "OUTBOUND" | "INBOUND"; messageType: string;
+  status: string; reference?: string | null; error?: string | null; createdAt: string;
+}
+
+export const getEdiCredential = async (): Promise<CustomsEdiCredential | null> =>
+  unwrap(await api.get(`/forwarding/customs/edi/credential`));
+export const upsertEdiCredential = async (dto: UpsertEdiCredential): Promise<CustomsEdiCredential> =>
+  unwrap(await api.put(`/forwarding/customs/edi/credential`, dto));
+export const verifyEdi = async (): Promise<{ ok: boolean; reason?: string | null }> =>
+  unwrap(await api.post(`/forwarding/customs/edi/verify`, {}));
+export const getDeclarationMessages = async (did: string): Promise<CustomsEdiMessage[]> => {
+  const r = unwrap(await api.get(`/forwarding/declarations/${did}/messages`));
+  return Array.isArray(r) ? r : [];
+};
 
 export interface DemurrageLine {
   containerId: string; containerNo: string; freeDays?: number; perDiemRate?: number;

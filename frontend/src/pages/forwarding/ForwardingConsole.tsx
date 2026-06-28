@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Ship, Plane, Truck, Plus, Loader2, Crown, Search, AlertTriangle,
-  ArrowRight, Anchor, Package,
+  ArrowRight, Anchor, Package, KeyRound,
 } from "lucide-react";
 import { listFiles, createFile, type ShipmentFile } from "../../api/forwardingApi";
 import { getEntitlements } from "../../api/billingApi";
 import { useToast } from "../../components/ToastProvider";
+import SarsEdiSetup from "./SarsEdiSetup";
 
 const MODE_ICON: Record<string, any> = { OCEAN: Ship, AIR: Plane, ROAD: Truck };
 
@@ -35,6 +36,7 @@ export default function ForwardingConsole() {
   const [filter, setFilter] = useState<{ direction?: string; status?: string; q?: string }>({});
   const [creating, setCreating] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [showEdi, setShowEdi] = useState(false);
   const [form, setForm] = useState({ mode: "OCEAN", direction: "IMPORT", loadType: "FCL", shipperName: "", consigneeName: "" });
 
   useEffect(() => {
@@ -118,6 +120,10 @@ export default function ForwardingConsole() {
             <button onClick={() => setShowNew((v) => !v)} className="flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/15 px-5 py-2.5 text-sm font-bold text-cyan-200 hover:bg-cyan-500/25 transition">
               <Plus className="h-4 w-4" /> New file
             </button>
+            <button onClick={() => setShowEdi((v) => !v)} title="SARS EDI transmission setup"
+              className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white/70 hover:bg-white/10 transition">
+              <KeyRound className="h-4 w-4" /> SARS EDI
+            </button>
           </div>
 
           {/* KPIs */}
@@ -145,6 +151,9 @@ export default function ForwardingConsole() {
             </div>
           )}
         </div>
+
+        {/* SARS EDI transmission setup */}
+        {showEdi && <SarsEdiSetup />}
 
         {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">

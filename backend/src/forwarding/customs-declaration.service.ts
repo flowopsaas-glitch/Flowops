@@ -1,21 +1,25 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomsService } from './customs.service';
+import { CustomsEdiCredentialService } from './customs-edi/customs-edi-credential.service';
+import { CustomsEdiTransportFactory } from './customs-edi/customs-edi-transport.factory';
 
 /**
  * SAD (Single Administrative Document) declaration workflow.
  *
- * IMPORTANT: this builds the declaration + a CUSDEC-style payload and runs the
- * lifecycle (DRAFT → SUBMITTED → RELEASED/QUERY/REJECTED). Actual SARS EDI wire
- * submission requires SARS accreditation + a registered EDI gateway/VAN, which
- * is not connected here — `submit()` is a clearly-marked stub. When a gateway
- * is available, swap the stub for the real CUSDEC transmission + CUSRES handler.
+ * Build + lifecycle is unchanged. `submit()` now routes through the pluggable
+ * per-tenant transport (see customs-edi/): the tenant's configured path decides
+ * how (and whether) the declaration reaches SARS. Status is only advanced to
+ * SUBMITTED on a genuine SARS acknowledgement — handoff / fail-closed / no-config
+ * paths keep the declaration honest and explain the next step.
  */
 @Injectable()
 export class CustomsDeclarationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly customs: CustomsService,
+    private readonly credentials: CustomsEdiCredentialService,
+    private readonly transports: CustomsEdiTransportFactory,
   ) {}
 
   private async getFile(companyId: string, fileId: string) {
@@ -87,41 +91,96 @@ export class CustomsDeclarationService {
   }
 
   /**
-   * Submit the declaration. STUB: no live SARS EDI gateway is configured, so
-   * this records the intent and moves to SUBMITTED. Replace with the real
-   * CUSDEC transmission once accredited.
+   * Submit the declaration through the tenant's configured transmission path.
+   * Status advances to SUBMITTED only on a genuine SARS acknowledgement
+   * (`result.lodged`). Handoff / fail-closed / unconfigured paths keep the
+   * current status and record an explicit, honest note + an OUTBOUND message.
    */
   async submit(companyId: string, id: string) {
     const d = await this.getDeclaration(companyId, id);
     if (d.status !== 'DRAFT' && d.status !== 'REJECTED') {
       throw new ForbiddenException(`Declaration is already ${d.status}.`);
     }
-    const updated = await this.prisma.customsDeclaration.update({
-      where: { id },
+
+    // Idempotency: never re-transmit a CUSDEC that already got an ACK for this LRN.
+    const priorAck = await (this.prisma as any).customsEdiMessage.findFirst({
+      where: { declarationId: id, direction: 'OUTBOUND', messageType: 'CUSDEC', status: 'ACK' },
+    });
+    if (priorAck) {
+      throw new ForbiddenException('This declaration has already been transmitted (CUSDEC ack on record).');
+    }
+
+    const cred = await this.credentials.decryptFor(companyId);
+    const transport = this.transports.forPath(cred?.path);
+    const result = await transport.transmit(
+      cred ?? ({ companyId, path: 'NONE' } as any),
+      d as any,
+    );
+
+    // Record the OUTBOUND CUSDEC attempt (audit + idempotency).
+    await (this.prisma as any).customsEdiMessage.create({
       data: {
-        status: 'SUBMITTED',
-        submittedAt: new Date(),
-        responseNote: 'Queued for SARS EDI. NOTE: no live EDI gateway is configured — this is a workflow stub, not a real SARS lodgement.',
+        declarationId: id,
+        companyId,
+        direction: 'OUTBOUND',
+        messageType: 'CUSDEC',
+        status: result.accepted ? 'ACK' : 'ERROR',
+        reference: result.reference ?? null,
+        payload: (d.payload as any) ?? undefined,
+        error: result.accepted ? null : result.note,
       },
     });
+
+    let updated;
+    if (result.lodged) {
+      // Genuine SARS acknowledgement — safe to claim SUBMITTED.
+      updated = await this.prisma.customsDeclaration.update({
+        where: { id },
+        data: {
+          status: 'SUBMITTED',
+          submittedAt: new Date(),
+          lodgementProvider: cred?.path ?? null,
+          responseNote: result.note,
+        },
+      });
+    } else {
+      // Not lodged with SARS — keep status honest, record what happened + next step.
+      updated = await this.prisma.customsDeclaration.update({
+        where: { id },
+        data: {
+          responseNote: result.note,
+          lodgementProvider: result.accepted ? cred?.path ?? null : null,
+        },
+      });
+    }
+
     try {
       await (this.prisma as any).aiEvent.create({
         data: {
-          companyId, type: 'CUSTOMS_DECLARATION', title: `Declaration submitted: ${d.lrn}`,
-          body: 'SAD declaration moved to SUBMITTED (EDI gateway stub).', severity: 'info',
-          sourceType: 'FORWARDING', sourceId: d.fileId, resolved: true,
+          companyId,
+          type: 'CUSTOMS_DECLARATION',
+          title: `Declaration submit: ${d.lrn}`,
+          body: result.note,
+          severity: 'info',
+          sourceType: 'FORWARDING',
+          sourceId: d.fileId,
+          resolved: true,
         },
       });
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
+
     return updated;
   }
 
   /** Record a SARS response / manual status change (RELEASED | QUERY | REJECTED). */
   async setStatus(companyId: string, id: string, status: string, mrn?: string, note?: string) {
-    await this.getDeclaration(companyId, id);
+    const existing = await this.getDeclaration(companyId, id);
     const allowed = ['DRAFT', 'SUBMITTED', 'QUERY', 'RELEASED', 'REJECTED'];
     if (!allowed.includes(status)) throw new ForbiddenException(`Invalid status. Use: ${allowed.join(', ')}`);
-    return this.prisma.customsDeclaration.update({
+
+    const updated = await this.prisma.customsDeclaration.update({
       where: { id },
       data: {
         status: status as any,
@@ -129,6 +188,49 @@ export class CustomsDeclarationService {
         responseNote: note ?? undefined,
         responseAt: new Date(),
       },
+    });
+
+    // ── Close the loop ───────────────────────────────────────────────────
+    // A status change is the inbound SARS/agent response (CUSRES). Record it as
+    // an INBOUND message and raise a staff notification so the response is
+    // visible end-to-end. Best-effort — never blocks the status write.
+    try {
+      await (this.prisma as any).customsEdiMessage.create({
+        data: {
+          declarationId: id,
+          companyId,
+          direction: 'INBOUND',
+          messageType: 'CUSRES',
+          status: 'RECEIVED',
+          reference: mrn ?? null,
+          payload: { status, mrn: mrn ?? null, note: note ?? null } as any,
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+    try {
+      await (this.prisma as any).notification.create({
+        data: {
+          companyId,
+          title: `Customs ${status.toLowerCase()} · ${existing.lrn ?? id}`,
+          body: `SARS response recorded${mrn ? ` — MRN ${mrn}` : ''}.${note ? ` ${note}` : ''}`,
+          type: 'CUSTOMS_RESPONSE',
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+
+    return updated;
+  }
+
+  /** Full CUSDEC/CUSRES message log for a declaration (audit + UI timeline). */
+  async getMessages(companyId: string, id: string) {
+    await this.getDeclaration(companyId, id);
+    return (this.prisma as any).customsEdiMessage.findMany({
+      where: { declarationId: id, companyId },
+      orderBy: { createdAt: 'asc' },
     });
   }
 }

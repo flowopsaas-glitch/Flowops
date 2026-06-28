@@ -381,14 +381,28 @@ const DECL_STATUS_CLS: Record<string, string> = {
 function DeclarationPanel({ fileId }: { fileId: string }) {
   const { showToast } = useToast();
   const [decl, setDecl] = useState<fwd.CustomsDeclaration | null>(null);
+  const [msgs, setMsgs] = useState<fwd.CustomsEdiMessage[]>([]);
+  const [mrn, setMrn] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = async () => { try { setDecl(await fwd.getDeclaration(fileId)); } catch { /* none */ } };
+  const loadMsgs = async (did: string) => { try { setMsgs(await fwd.getDeclarationMessages(did)); } catch { /* none */ } };
+  const load = async () => {
+    try {
+      const d = await fwd.getDeclaration(fileId);
+      setDecl(d);
+      if (d) await loadMsgs(d.id);
+    } catch { /* none */ }
+  };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [fileId]);
 
   const act = async (key: string, fn: () => Promise<any>, ok: string) => {
     setBusy(key);
-    try { const r = await fn(); setDecl(r); showToast(ok, "success"); }
+    try {
+      const r = await fn();
+      setDecl(r);
+      if (r?.id) await loadMsgs(r.id);
+      showToast(ok, "success");
+    }
     catch (e: any) { showToast(e?.message ?? "Action failed", "error"); }
     finally { setBusy(null); }
   };
@@ -416,23 +430,52 @@ function DeclarationPanel({ fileId }: { fileId: string }) {
             <button onClick={() => act("build", () => fwd.buildDeclaration(fileId), "Refreshed from file")} disabled={!!busy}
               className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-white/60 hover:bg-white/10 disabled:opacity-40">Refresh from file</button>
             {(decl.status === "DRAFT" || decl.status === "REJECTED") && (
-              <button onClick={() => act("submit", () => fwd.submitDeclaration(decl.id), "Submitted")} disabled={!!busy}
+              <button onClick={() => act("submit", () => fwd.submitDeclaration(decl.id), "Submitted via configured path")} disabled={!!busy}
                 className="flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/15 px-2.5 py-1.5 text-xs font-bold text-sky-200 disabled:opacity-40">
                 {busy === "submit" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Submit
               </button>
             )}
-            {decl.status === "SUBMITTED" && (
-              <>
-                <button onClick={() => act("rel", () => fwd.setDeclarationStatus(decl.id, "RELEASED"), "Marked released")} disabled={!!busy}
-                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-40">Mark released</button>
-                <button onClick={() => act("qry", () => fwd.setDeclarationStatus(decl.id, "QUERY"), "Marked query")} disabled={!!busy}
-                  className="rounded-lg border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 disabled:opacity-40">Query</button>
-              </>
-            )}
           </div>
 
+          {/* Honest lodgement state */}
           {decl.responseNote && <p className="text-[11px] text-amber-300/70">{decl.responseNote}</p>}
-          <p className="text-[10px] text-white/25">Workflow + CUSDEC payload only — live SARS EDI submission needs accreditation + a registered gateway (not connected).</p>
+          {decl.lodgementProvider && (
+            <p className="text-[10px] text-white/35">Routed via <span className="text-white/55">{decl.lodgementProvider.replace(/_/g, " ").toLowerCase()}</span></p>
+          )}
+
+          {/* Record SARS / agent response (closes the loop) */}
+          {decl.status !== "RELEASED" && (
+            <div className="rounded-xl border border-white/8 bg-black/20 p-2.5 space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">Record SARS response</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input placeholder="MRN (from SARS / agent)" value={mrn} onChange={(e) => setMrn(e.target.value)} className={`${inputCls} w-48`} />
+                <button onClick={() => act("rel", () => fwd.setDeclarationStatus(decl.id, "RELEASED", mrn || undefined), "Marked released")} disabled={!!busy}
+                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-40">Released</button>
+                <button onClick={() => act("qry", () => fwd.setDeclarationStatus(decl.id, "QUERY", mrn || undefined), "Marked query")} disabled={!!busy}
+                  className="rounded-lg border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 disabled:opacity-40">Query</button>
+                <button onClick={() => act("rej", () => fwd.setDeclarationStatus(decl.id, "REJECTED", mrn || undefined), "Marked rejected")} disabled={!!busy}
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/15 px-2.5 py-1.5 text-xs font-bold text-rose-200 disabled:opacity-40">Rejected</button>
+              </div>
+            </div>
+          )}
+
+          {/* CUSDEC / CUSRES message timeline */}
+          {msgs.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">Transmission log</p>
+              {msgs.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 text-[11px] text-white/55">
+                  <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${m.direction === "OUTBOUND" ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>{m.direction === "OUTBOUND" ? "→" : "←"} {m.messageType}</span>
+                  <span className={m.status === "ERROR" ? "text-rose-300" : "text-white/55"}>{m.status}</span>
+                  {m.reference && <span className="text-white/35">· {m.reference}</span>}
+                  {m.error && <span className="text-rose-300/70 truncate">· {m.error}</span>}
+                  <span className="ml-auto text-white/25">{new Date(m.createdAt).toLocaleString("en-ZA")}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-[10px] text-white/25">Transmission path is configured per company under Freight Forwarding ▸ SARS EDI. Nothing is marked “lodged with SARS” without a real acknowledgement.</p>
         </div>
       )}
     </Section>
