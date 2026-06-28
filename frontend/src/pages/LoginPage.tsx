@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Shield, Lock, Building2, KeyRound } from "lucide-react";
 import {
@@ -18,65 +18,39 @@ import {
 } from "../lib/session";
 
 // ── Dev-only autofill ─────────────────────────────────────────────────────
-// Reads from VITE_DEV_TENANT_EMAIL / VITE_DEV_OWNER_EMAIL (set in .env.local).
-// In production builds import.meta.env.DEV is false so these always return "".
-
-type LoginMode = "tenant" | "owner";
-
-function getDevDefaults(mode: LoginMode) {
+// Reads from VITE_DEV_TENANT_EMAIL (falls back to VITE_DEV_OWNER_EMAIL) so the
+// single unified form can be prefilled in dev. Production builds get "".
+function getDevDefaults() {
   if (!import.meta.env.DEV) return { email: "", password: "" };
-  if (mode === "owner") {
-    return {
-      email: String(import.meta.env.VITE_DEV_OWNER_EMAIL ?? ""),
-      password: String(import.meta.env.VITE_DEV_OWNER_PASSWORD ?? ""),
-    };
-  }
   return {
-    email: String(import.meta.env.VITE_DEV_TENANT_EMAIL ?? ""),
-    password: String(import.meta.env.VITE_DEV_TENANT_PASSWORD ?? ""),
+    email: String(
+      import.meta.env.VITE_DEV_TENANT_EMAIL ?? import.meta.env.VITE_DEV_OWNER_EMAIL ?? "",
+    ),
+    password: String(
+      import.meta.env.VITE_DEV_TENANT_PASSWORD ?? import.meta.env.VITE_DEV_OWNER_PASSWORD ?? "",
+    ),
   };
 }
 
-const INITIAL_TENANT_DEFAULTS = getDevDefaults("tenant");
+const DEV_DEFAULTS = getDevDefaults();
 const SHOW_DEV_HINT =
   import.meta.env.DEV &&
-  Boolean(
-    import.meta.env.VITE_DEV_TENANT_EMAIL ||
-      import.meta.env.VITE_DEV_OWNER_EMAIL,
-  );
+  Boolean(import.meta.env.VITE_DEV_TENANT_EMAIL || import.meta.env.VITE_DEV_OWNER_EMAIL);
 
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<LoginMode>("tenant");
-  const [email, setEmail] = useState(INITIAL_TENANT_DEFAULTS.email);
-  const [password, setPassword] = useState(INITIAL_TENANT_DEFAULTS.password);
+  const [email, setEmail] = useState(DEV_DEFAULTS.email);
+  const [password, setPassword] = useState(DEV_DEFAULTS.password);
   const [busy, setBusy] = useState(false);
   const [ssoBusy, setSsoBusy] = useState(false);
   const [error, setError] = useState("");
-  const [termsAccepted, setTermsAccepted] = useState(() =>
-    hasAcceptedCurrentTerms(),
-  );
-
-  const submitLabel = useMemo(
-    () => (mode === "owner" ? "Sign in as Owner" : "Sign in as Tenant"),
-    [mode],
-  );
-
-  const helperText = useMemo(
-    () =>
-      mode === "owner"
-        ? "Hidden FlowOps platform owner access."
-        : "Tenant company workspace access.",
-    [mode],
-  );
+  const [termsAccepted, setTermsAccepted] = useState(() => hasAcceptedCurrentTerms());
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!termsAccepted) {
-      setError(
-        "Please confirm that you agree to the Terms of Service and Privacy Notice.",
-      );
+      setError("Please confirm that you agree to the Terms of Service and Privacy Notice.");
       return;
     }
 
@@ -84,32 +58,37 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const termsPayload = persistTermsAcceptanceRemotePayload();
+      persistTermsAcceptanceRemotePayload();
 
-      // authApi.login / ownerLogin:
-      //  1. Calls the backend via the canonical `api` client (auth interceptors,
-      //     401 refresh, ApiError on failure).
-      //  2. Reads res.data (inner payload from TransformInterceptor envelope).
-      //  3. Calls setToken(access_token) from lib/session.ts internally.
-      const result: LoginResponse =
-        mode === "owner"
-          ? await ownerLogin(email, password)
-          : await login(email, password);
+      // ── One sign-in, auto-routed ───────────────────────────────────────────
+      // Try the tenant account first; if those credentials aren't a tenant,
+      // fall back to the platform-owner account. The user never picks a "mode"
+      // and a tenant can't accidentally land on the owner login.
+      let result: LoginResponse;
+      let resolvedMode: "tenant" | "owner";
+      try {
+        result = await login(email, password);
+        resolvedMode = "tenant";
+      } catch (tenantErr) {
+        try {
+          result = await ownerLogin(email, password);
+          resolvedMode = "owner";
+        } catch {
+          // Both failed → surface the tenant error (the common case).
+          throw tenantErr;
+        }
+      }
 
-      // Persist user + login mode so ProtectedRoute and guards can read them.
       if (result.user) setStoredUser(result.user);
-      setSessionLoginMode(mode);
-
+      setSessionLoginMode(resolvedMode);
       persistTermsAcceptanceLocally();
 
       // Full-page navigation so AuthContext re-initialises with the new token
       // and calls /auth/me to hydrate the user object.
-      window.location.href =
-        mode === "owner" ? "/owner/dashboard" : "/dashboard";
+      window.location.href = resolvedMode === "owner" ? "/owner/dashboard" : "/dashboard";
     } catch (err: any) {
-      // api/client.ts wraps 4xx/5xx as ApiError with a .message field.
       const message =
-        err?.message || err?.response?.data?.message || "Login failed";
+        err?.message || err?.response?.data?.message || "Invalid email or password.";
       setError(String(message));
     } finally {
       setBusy(false);
@@ -127,7 +106,6 @@ export default function LoginPage() {
     try {
       const res = await lookupSso(trimmed);
       if (res.sso && res.startUrl) {
-        // Hand off to the identity provider (full-page redirect).
         window.location.href = res.startUrl;
       } else {
         setError("No single sign-on is configured for this email domain.");
@@ -137,14 +115,6 @@ export default function LoginPage() {
       setError(err?.message || "Could not start single sign-on.");
       setSsoBusy(false);
     }
-  }
-
-  function switchMode(next: LoginMode) {
-    const defaults = getDevDefaults(next);
-    setMode(next);
-    setEmail(defaults.email);
-    setPassword(defaults.password);
-    setError("");
   }
 
   return (
@@ -168,9 +138,9 @@ export default function LoginPage() {
               The operations workspace modern courier teams run on.
             </h1>
             <p className="text-slate-300 text-lg max-w-2xl leading-relaxed">
-              Tenant sign-in for day-to-day ops, or owner sign-in for platform
-              control. Same premium shell as dispatch, inbox, and billing — not a
-              bolt-on portal.
+              One secure sign-in. Enter your details and FlowOps takes you straight to
+              your workspace — the same premium shell as dispatch, inbox, and billing,
+              not a bolt-on portal.
             </p>
           </div>
 
@@ -188,8 +158,8 @@ export default function LoginPage() {
               },
               {
                 icon: <Lock className="h-5 w-5" />,
-                title: "Owner Layer",
-                body: "Separate hidden owner login for platform control.",
+                title: "One Sign-In",
+                body: "Your credentials route you to the right workspace automatically.",
               },
             ].map(({ icon, title, body }) => (
               <div
@@ -215,38 +185,8 @@ export default function LoginPage() {
             <div>
               <h2 className="text-4xl font-black tracking-tight">Sign in</h2>
               <p className="text-slate-300 mt-2 text-sm">
-                Choose the correct login mode before entering your details.
+                Enter your FlowOps credentials — we&apos;ll take you to the right place.
               </p>
-            </div>
-
-            {/* Mode toggle */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => switchMode("tenant")}
-                className={`rounded-2xl py-3 text-sm font-semibold transition ${
-                  mode === "tenant"
-                    ? "bg-blue-400 text-slate-950"
-                    : "bg-white/10 text-slate-200 hover:bg-white/15"
-                }`}
-              >
-                Tenant Login
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMode("owner")}
-                className={`rounded-2xl py-3 text-sm font-semibold transition ${
-                  mode === "owner"
-                    ? "bg-blue-400 text-slate-950"
-                    : "bg-white/10 text-slate-200 hover:bg-white/15"
-                }`}
-              >
-                Owner Login
-              </button>
-            </div>
-
-            <div className="text-xs text-blue-200 bg-blue-500/10 border border-blue-400/20 rounded-2xl px-4 py-3">
-              {helperText}
             </div>
 
             {/* Email */}
@@ -336,38 +276,32 @@ export default function LoginPage() {
               disabled={busy}
               className="w-full rounded-2xl bg-gradient-to-r from-blue-400 to-indigo-400 py-4 font-semibold text-slate-950 shadow-lg disabled:opacity-60 transition hover:brightness-110 active:scale-[0.99]"
             >
-              {busy ? "Signing in…" : submitLabel}
+              {busy ? "Signing in…" : "Sign in"}
             </button>
 
-            {/* SSO (tenant only) — uses /sso/lookup to find the workspace IdP */}
-            {mode === "tenant" && (
-              <>
-                <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.25em] text-slate-500">
-                  <span className="h-px flex-1 bg-white/10" />
-                  or
-                  <span className="h-px flex-1 bg-white/10" />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSsoLogin}
-                  disabled={ssoBusy || busy}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 py-3.5 font-semibold text-slate-100 transition hover:bg-white/10 disabled:opacity-60"
-                >
-                  <KeyRound className="h-4 w-4 text-blue-300" />
-                  {ssoBusy ? "Redirecting to your provider…" : "Sign in with SSO"}
-                </button>
-                <p className="text-center text-[11px] text-slate-500">
-                  Enterprise SSO · Okta · Azure AD · Google Workspace · Auth0
-                </p>
-              </>
-            )}
+            {/* SSO — uses /sso/lookup to find the workspace IdP by email domain */}
+            <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.25em] text-slate-500">
+              <span className="h-px flex-1 bg-white/10" />
+              or
+              <span className="h-px flex-1 bg-white/10" />
+            </div>
+            <button
+              type="button"
+              onClick={handleSsoLogin}
+              disabled={ssoBusy || busy}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 py-3.5 font-semibold text-slate-100 transition hover:bg-white/10 disabled:opacity-60"
+            >
+              <KeyRound className="h-4 w-4 text-blue-300" />
+              {ssoBusy ? "Redirecting to your provider…" : "Sign in with SSO"}
+            </button>
+            <p className="text-center text-[11px] text-slate-500">
+              Enterprise SSO · Okta · Azure AD · Google Workspace · Auth0
+            </p>
 
             {/* Dev autofill hint */}
             {SHOW_DEV_HINT && (
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-xs text-slate-300">
-                <div className="font-medium text-white mb-1">
-                  Dev autofill active
-                </div>
+                <div className="font-medium text-white mb-1">Dev autofill active</div>
                 <div>
                   Credentials loaded from{" "}
                   <code className="text-blue-200">VITE_DEV_TENANT_*</code> /{" "}
