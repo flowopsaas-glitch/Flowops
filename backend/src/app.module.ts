@@ -54,6 +54,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { SupportModule } from './support/support.module';
+import { CourierManagementModule } from './courier-management/courier-management.module';
 
 @Module({
   imports: [
@@ -113,6 +114,7 @@ import { SupportModule } from './support/support.module';
     SsoModule,
     ObservabilityModule,
     SupportModule,
+    CourierManagementModule,
 
     // Domain modules
     AuthModule,
