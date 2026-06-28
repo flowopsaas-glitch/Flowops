@@ -162,6 +162,22 @@ const USERS = [
       aiControlTower: false, highRiskQueue: false, usersRoles: false, settings: false,
     },
   },
+  {
+    name:         'Procurement Officer',
+    email:        'procurement@demo.flowops.local',
+    password:     'Demo@Procure123!',
+    role:         'MANAGER',
+    department:   'Procurement & Carrier Relations',
+    permissions: {
+      dashboard: true, collections: false, shipments: true, waybills: false,
+      waybillInbox: false, clients: true, podDeliveries: false, driverDispatch: false,
+      branches: false, manifests: false, whatsapp: false, email: true,
+      // rateCards gates Carriers & Procurement + Rate Cards/Shopping
+      rateCards: true, billingBatches: false, invoices: false, quotes: true,
+      creditControl: false, risksExceptions: false, notifications: true,
+      aiControlTower: false, highRiskQueue: false, usersRoles: false, settings: false,
+    },
+  },
 ];
 
 // ── Main ──────────────────────────────────────────────────────────────────

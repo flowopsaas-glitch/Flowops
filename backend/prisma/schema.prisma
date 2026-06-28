@@ -704,6 +704,60 @@ model CustomsEdiMessage {
   @@map("customs_edi_messages")
 }
 
+// ─── Carriers & Procurement (buy-side) ─────────────────────────────────────
+// Shipping lines, airlines, road carriers and broker/vendor partners a forwarder
+// books space with — plus their negotiated buy-rates. Distinct from the sell-side
+// RateCard. Scoped per tenant.
+enum CarrierType {
+  OCEAN_LINE
+  AIRLINE
+  ROAD_CARRIER
+  COURIER
+  CUSTOMS_BROKER
+  OTHER
+}
+
+model Carrier {
+  id            String      @id @default(cuid())
+  companyId     String
+  name          String
+  type          CarrierType @default(OTHER)
+  code          String?     // SCAC / IATA / internal code
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  accountNumber String?     // our account number with this carrier
+  notes         String?     @db.Text
+  isActive      Boolean     @default(true)
+
+  rates     CarrierRate[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, isActive])
+  @@map("carriers")
+}
+
+model CarrierRate {
+  id            String   @id @default(cuid())
+  carrierId     String
+  carrier       Carrier  @relation(fields: [carrierId], references: [id], onDelete: Cascade)
+  companyId     String
+  lane          String?  // e.g. "CNSHA → ZADUR"
+  mode          String?  // OCEAN | AIR | ROAD
+  containerType String?  // 20GP | 40HC | LCL | AIR
+  buyRate       Float    @default(0)
+  currency      String   @default("USD")
+  validFrom     DateTime?
+  validTo       DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([carrierId])
+  @@map("carrier_rates")
+}
+
 // ─── Waybills ─────────────────────────────────────────────────────────────
 
 
