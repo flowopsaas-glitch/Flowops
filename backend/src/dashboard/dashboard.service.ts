@@ -159,6 +159,83 @@ export class DashboardService {
   }
 
   /**
+   * Freight-forwarding control-tower metrics (import/export). Powers the
+   * Forwarding View on the dashboard — shipment files by mode/direction,
+   * arrivals window, customs pipeline, demurrage risk, ETA exceptions and
+   * gross profit. All derived from live forwarding data, tenant-scoped.
+   */
+  async getForwardingMetrics(companyId: string) {
+    const now = new Date();
+    const in7 = new Date(now.getTime() + 7 * 86_400_000);
+    const in14 = new Date(now.getTime() + 14 * 86_400_000);
+    const OPEN: any = { notIn: ['DELIVERED', 'CANCELLED'] };
+
+    const [
+      totalFiles, openFiles, byMode, byDirection,
+      arriving7, arriving14, etaExceptions,
+      customsByStatus, charges, openContainers, recentFiles,
+    ] = await Promise.all([
+      this.prisma.shipmentFile.count({ where: { companyId } }),
+      this.prisma.shipmentFile.count({ where: { companyId, status: OPEN } }),
+      this.prisma.shipmentFile.groupBy({ by: ['mode'], where: { companyId }, _count: { _all: true } }),
+      this.prisma.shipmentFile.groupBy({ by: ['direction'], where: { companyId }, _count: { _all: true } }),
+      this.prisma.shipmentFile.count({ where: { companyId, status: OPEN, eta: { gte: now, lte: in7 } } }),
+      this.prisma.shipmentFile.count({ where: { companyId, status: OPEN, eta: { gte: now, lte: in14 } } }),
+      this.prisma.shipmentFile.count({
+        where: { companyId, eta: { lt: now }, status: { notIn: ['CUSTOMS_CLEARED', 'DELIVERED', 'CANCELLED'] } as any },
+      }),
+      this.prisma.customsDeclaration.groupBy({ by: ['status'], where: { companyId }, _count: { _all: true } }),
+      this.prisma.shipmentCharge.findMany({ where: { file: { companyId } }, select: { cost: true, sell: true } }),
+      this.prisma.shipmentContainer.findMany({
+        where: { file: { companyId }, availableFrom: { not: null }, returnedAt: null },
+        select: { freeDays: true, availableFrom: true },
+      }),
+      this.prisma.shipmentFile.findMany({
+        where: { companyId },
+        orderBy: { updatedAt: 'desc' },
+        take: 8,
+        select: {
+          id: true, fileNumber: true, mode: true, direction: true, status: true,
+          pol: true, pod: true, eta: true, aiRiskScore: true, consigneeName: true,
+        },
+      }),
+    ]);
+
+    let revenue = 0, cost = 0;
+    for (const c of charges) { revenue += c.sell || 0; cost += c.cost || 0; }
+
+    let demurrageAtRisk = 0;
+    for (const ct of openContainers) {
+      if (ct.availableFrom == null) continue;
+      const daysOut = (now.getTime() - new Date(ct.availableFrom).getTime()) / 86_400_000;
+      if (daysOut >= (ct.freeDays ?? 0) - 2) demurrageAtRisk++;
+    }
+
+    const m: any = {}; for (const x of byMode) m[x.mode] = x._count._all;
+    const d: any = {}; for (const x of byDirection) d[x.direction] = x._count._all;
+    const c: any = {}; for (const x of customsByStatus) c[x.status] = x._count._all;
+
+    return {
+      totalFiles,
+      openFiles,
+      mode: { OCEAN: m.OCEAN || 0, AIR: m.AIR || 0, ROAD: m.ROAD || 0 },
+      direction: { IMPORT: d.IMPORT || 0, EXPORT: d.EXPORT || 0 },
+      arriving7,
+      arriving14,
+      etaExceptions,
+      customs: {
+        draft: c.DRAFT || 0, submitted: c.SUBMITTED || 0, query: c.QUERY || 0,
+        released: c.RELEASED || 0, rejected: c.REJECTED || 0,
+      },
+      demurrageAtRisk,
+      revenue: Math.round(revenue),
+      cost: Math.round(cost),
+      grossProfit: Math.round(revenue - cost),
+      recentFiles,
+    };
+  }
+
+  /**
    * Operations Command Centre summary — today's stats, driver leaderboard,
    * unassigned collections, and a 7-day delivery trend for the manager view.
    */

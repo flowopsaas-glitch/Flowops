@@ -24,6 +24,11 @@ export class DashboardController {
     return this.svc.getLiveEtas(u.companyId);
   }
 
+  @Get('dashboard/forwarding-metrics')
+  getForwardingMetrics(@CurrentUser() u: any) {
+    return this.svc.getForwardingMetrics(u.companyId);
+  }
+
   @Get('dashboard/activities')
   getActivities(@CurrentUser() u: any, @Query('limit') limit?: string) {
     return this.svc.getActivities(u.companyId, limit ? parseInt(limit) : 20);
