@@ -129,26 +129,23 @@ export class AiAutonomyService {
             } 
           });
 
-          // Mark the hub item handled. `resolved` is the canonical handled flag
-          // and is always present, so the promotion pipeline never depends on
-          // optional/newer columns.
-          await (this.prisma as any).emailHubItem.update({
-            where: { id: item.id },
-            data: { resolved: true },
-          });
-
-          // Best-effort: align the Email Hub UI `status` to the documented
-          // 'RESOLVED' value. This column landed with the Email Hub revamp; on a
-          // Prisma client/DB that predates it the write is skipped silently so a
-          // single deployment drift never interrupts the sweep nor spews the
-          // noisy `Unknown argument 'status'` error on every run.
+          // Mark the hub item handled in a single atomic write. `resolved` is
+          // the canonical handled flag and `status` aligns the Email Hub UI to
+          // the documented 'RESOLVED' value (see schema.prisma EmailHubItem).
+          // If a deployment ever drifts to a Prisma client that predates the
+          // `status` column, we fall back to writing the canonical `resolved`
+          // flag alone — so promotion is never left half-done and the sweep
+          // never spews the noisy `Unknown argument 'status'` error each run.
           try {
             await (this.prisma as any).emailHubItem.update({
               where: { id: item.id },
-              data: { status: 'RESOLVED' },
+              data: { resolved: true, status: 'RESOLVED', needsOpsAction: false },
             });
           } catch {
-            /* `status` column not present on this client — `resolved` already set */
+            await (this.prisma as any).emailHubItem.update({
+              where: { id: item.id },
+              data: { resolved: true },
+            });
           }
 
           this.logger.log(`Successfully promoted EmailHubItem entry ID ${item.id} to enterprise Waybill.`);
