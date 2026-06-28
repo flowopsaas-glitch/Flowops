@@ -53,6 +53,7 @@ import { SsoModule } from './sso/sso.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -111,6 +112,7 @@ import { AccountingModule } from './accounting/accounting.module';
     AutopilotModule,
     SsoModule,
     ObservabilityModule,
+    SupportModule,
 
     // Domain modules
     AuthModule,
