@@ -2,6 +2,20 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 
+/**
+ * AiEvent types owned by the OWNER/platform intelligence domain. They are
+ * persisted per-company by the competitive-intel sweep + Integration Sentinel,
+ * but are surfaced only on the owner console — never in a tenant's High Risk
+ * Queue (which is for the tenant's own operational exceptions).
+ */
+const OWNER_ONLY_EVENT_TYPES = [
+  'COMPETITIVE_INTELLIGENCE',
+  'COMPETITOR_THREAT',
+  'PLATFORM_UPGRADE',
+  'INTEL_DECISION',
+  'INTEGRATION_HEALTH',
+];
+
 @Injectable()
 export class AiEventsService {
   private readonly logger = new Logger(AiEventsService.name);
@@ -64,7 +78,14 @@ export class AiEventsService {
 
   async list(companyId: number) {
     return this.prisma.aiEvent.findMany({
-      where: { companyId: String(companyId) },
+      where: {
+        companyId: String(companyId),
+        // Tenants must only see their OWN operational exceptions. The intel
+        // sweep + sentinel persist owner/platform events into every company's
+        // bucket (for the owner console); those must never surface in a
+        // tenant's High Risk Queue.
+        type: { notIn: OWNER_ONLY_EVENT_TYPES },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
