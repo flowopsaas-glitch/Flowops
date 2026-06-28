@@ -133,6 +133,89 @@ const USERS = [
   },
 ];
 
+// ── Forwarding demo data (makes the control tower + customs come alive) ─────
+async function seedForwardingData(companyId) {
+  const existing = await prisma.shipmentFile.count({ where: { companyId } });
+  if (existing > 0) {
+    console.log(`   ⏭  Forwarding data already present (${existing} files) — skipped.`);
+    return;
+  }
+
+  const now = Date.now();
+  const day = 86_400_000;
+  const d = (offset) => new Date(now + offset * day);
+
+  // [fileNumber, mode, direction, loadType, status, etaOffsetDays, pol, pod, consignee, goods,
+  //  containers[{no,iso,freeDays,availFromDaysAgo}], cargo[{desc,hs,value,duty}],
+  //  charges[{desc,cost,sell}], decl{status,mrn}]
+  const FILES = [
+    ['IMP-2026-0001','OCEAN','IMPORT','FCL','ARRIVED',3,'CNSHA','ZADUR','Cape Electronics (Pty) Ltd','Consumer electronics',
+      [{no:'MSCU2310455',iso:'40HC',freeDays:7,availDaysAgo:6}], [{desc:'LED televisions',hs:'8528.72',value:480000,duty:10}],
+      [{desc:'Ocean freight',cost:38000,sell:52000},{desc:'Customs clearance',cost:2500,sell:4500}], {status:'SUBMITTED'}],
+    ['IMP-2026-0002','OCEAN','IMPORT','FCL','CUSTOMS_CLEARED',-2,'CNSHA','ZADUR','Highveld Retail Group','Apparel & textiles',
+      [{no:'TGHU6654120',iso:'40GP',freeDays:5,availDaysAgo:1}], [{desc:'Cotton garments',hs:'6109.10',value:215000,duty:45}],
+      [{desc:'Ocean freight',cost:31000,sell:43000},{desc:'Duty & VAT disbursement',cost:96750,sell:99000}], {status:'RELEASED',mrn:'MRN-ZA-884211'}],
+    ['EXP-2026-0007','OCEAN','EXPORT','LCL','DEPARTED',14,'ZADUR','NLRTM','Stellar Wines BV','Bottled wine',
+      [], [{desc:'Bottled wine 750ml',hs:'2204.21',value:130000,duty:0}],
+      [{desc:'LCL freight',cost:14000,sell:21000},{desc:'Export docs',cost:1200,sell:2800}], {status:'DRAFT'}],
+    ['IMP-2026-0003','AIR','IMPORT','AIR','ARRIVED',-1,'HKG','ZAJNB','MedTech SA','Medical devices',
+      [], [{desc:'Diagnostic equipment',hs:'9018.19',value:620000,duty:0}],
+      [{desc:'Air freight',cost:54000,sell:71000},{desc:'Customs clearance',cost:2500,sell:4800}], {status:'QUERY'}],
+    ['IMP-2026-0004','OCEAN','IMPORT','FCL','BOOKED',20,'INNSA','ZADUR','Karoo Auto Parts','Automotive components',
+      [{no:'CMAU7781290',iso:'20GP',freeDays:7,availDaysAgo:null}], [{desc:'Brake assemblies',hs:'8708.30',value:175000,duty:20}],
+      [{desc:'Ocean freight',cost:22000,sell:31000}], {status:'DRAFT'}],
+    ['EXP-2026-0008','ROAD','EXPORT','ROAD','LOADED',4,'Johannesburg','Gaborone','Botswana Mining Supplies','Industrial spares',
+      [], [{desc:'Conveyor parts',hs:'8431.39',value:88000,duty:0}],
+      [{desc:'Cross-border road',cost:9000,sell:14500}], {status:'DRAFT'}],
+    ['IMP-2026-0005','OCEAN','IMPORT','FCL','DELIVERED',-12,'SGSIN','ZACPT','Table Bay Foods','Packaged foods',
+      [{no:'OOLU1199883',iso:'40RF',freeDays:10,availDaysAgo:14}], [{desc:'Frozen seafood',hs:'0306.17',value:340000,duty:0}],
+      [{desc:'Reefer ocean freight',cost:47000,sell:63000},{desc:'Port handling',cost:6000,sell:9500}], {status:'RELEASED',mrn:'MRN-ZA-871002'}],
+  ];
+
+  let made = 0;
+  for (const f of FILES) {
+    const [fileNumber, mode, direction, loadType, status, etaOff, pol, pod, consignee, goods, containers, cargo, charges, decl] = f;
+    const file = await prisma.shipmentFile.create({
+      data: {
+        companyId, fileNumber, mode, direction, loadType, status,
+        incoterm: direction === 'IMPORT' ? 'CIF' : 'FOB',
+        consigneeName: consignee, shipperName: direction === 'IMPORT' ? 'Overseas Supplier Co.' : consignee,
+        goodsDescription: goods, pol, pod,
+        etd: d(etaOff - 25), eta: d(etaOff),
+        aiRiskScore: status === 'ARRIVED' && etaOff < 0 ? 72 : (containers.some(c => c.availDaysAgo != null) ? 48 : 12),
+        packages: 1 + Math.floor(Math.random() * 400),
+        grossWeightKg: 500 + Math.floor(Math.random() * 18000),
+        containers: containers.length ? {
+          create: containers.map(c => ({
+            containerNo: c.no, isoType: c.iso, freeDays: c.freeDays, perDiemRate: 850,
+            availableFrom: c.availDaysAgo != null ? d(-c.availDaysAgo) : null,
+          })),
+        } : undefined,
+        cargo: { create: cargo.map(c => ({ description: c.desc, hsCode: c.hs, customsValue: c.value, dutyRatePct: c.duty, pieces: 100, weightKg: 1200 })) },
+        charges: { create: charges.map(c => ({ description: c.desc, currency: 'ZAR', cost: c.cost, sell: c.sell, invoiceTo: consignee })) },
+      },
+    });
+
+    if (decl) {
+      const customsValue = cargo.reduce((s, c) => s + (c.value || 0), 0);
+      const duty = cargo.reduce((s, c) => s + (c.value || 0) * (c.duty || 0) / 100, 0);
+      const vat = (customsValue + duty) * 0.15;
+      await prisma.customsDeclaration.create({
+        data: {
+          fileId: file.id, companyId, type: direction, status: decl.status,
+          lrn: `${fileNumber}-SAD`, mrn: decl.mrn || null,
+          customsValueTotal: customsValue, dutyTotal: Math.round(duty), vatTotal: Math.round(vat),
+          submittedAt: decl.status === 'DRAFT' ? null : new Date(),
+          payload: { generated: true, source: 'enterprise-demo-seed' },
+          lodgementProvider: decl.mrn ? 'CLEARING_AGENT_HANDOFF' : null,
+        },
+      });
+    }
+    made++;
+  }
+  console.log(`   ✅ Forwarding demo: ${made} shipment files (containers, cargo, charges, customs).`);
+}
+
 async function main() {
   console.log('\n🚀 FlowOps Enterprise Demo Seed\n' + '─'.repeat(50));
 
@@ -174,6 +257,9 @@ async function main() {
     console.log(`   ✅ Created: ${u.email} (${u.role})`);
     results.push({ ...u, status: 'created' });
   }
+
+  // Seed forwarding demo data so the control tower + customs pages are alive.
+  await seedForwardingData(companyId);
 
   const newUsers = results.filter((r) => r.status === 'created');
   const existed = results.filter((r) => r.status === 'existed');
