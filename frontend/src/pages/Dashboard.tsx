@@ -9,6 +9,8 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { normalizeTenantNavPermissions } from "../lib/tenantUserPermissions";
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
+import { ForwardingControlTower } from "../components/premium/ForwardingControlTower";
+import { getEntitlements } from "../api/billingApi";
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../api/client';
 
@@ -181,6 +183,17 @@ export default function Dashboard() {
   });
   const [kpis, setKpis] = useState<KpiSet | null>(null);
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [forwardingEntitled, setForwardingEntitled] = useState(false);
+
+  useEffect(() => {
+    if (booting || !user) return;
+    (async () => {
+      try {
+        const ent = await getEntitlements().catch(() => null);
+        setForwardingEntitled(Boolean((ent as any)?.features?.freightForwarding));
+      } catch { /* entitlement check best-effort */ }
+    })();
+  }, [user, booting]);
   // Keyed by driverId — refreshed every 30 s alongside metrics
   const [etaMap, setEtaMap] = useState<Record<string, { etaMinutes: number; distanceKm: number; trackingNumber: string; urgency: string }>>({});
 
@@ -322,6 +335,10 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100 p-8 space-y-8 font-sans">
       <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`${persona} · ${company?.name || "FlowOps Demo"}`} />
+
+      {/* Freight Control Tower — import/export hero for forwarding-entitled tenants */}
+      {forwardingEntitled && <ForwardingControlTower />}
+
 
       {/* Operational metrics — shown to operations / dispatch / command personas */}
       {canSeeOps && (
