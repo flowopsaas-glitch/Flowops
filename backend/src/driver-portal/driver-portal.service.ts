@@ -1,9 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EventsGateway } from '../gateway/events.gateway';
 
 @Injectable()
 export class DriverPortalService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(DriverPortalService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+    private gateway: EventsGateway,
+  ) {}
 
   /**
    * Returns all active jobs for a driver as a flat array.
@@ -109,7 +117,7 @@ export class DriverPortalService {
     recipientName?: string;
     notes?: string;
   }) {
-    return this.prisma.waybill.update({
+    const updated = await this.prisma.waybill.update({
       where: { id: body.waybillId },
       data: {
         status: 'DELIVERED',
@@ -118,6 +126,25 @@ export class DriverPortalService {
         podRecipient: body.recipientName,
       },
     });
+
+    // ── Close the loop ───────────────────────────────────────────────────
+    // A field POD is a real DELIVERED event. Mirror the office delivery path:
+    // notify the customer, request a rating, and live-refresh the dispatch
+    // board. All best-effort — none of this can break the POD write itself.
+    void this.notifications.notifyWaybillStatus(updated as any);
+    void this.notifications.sendRatingRequest(updated as any);
+    try {
+      this.gateway.emitShipmentUpdate(updated.companyId, {
+        waybillId: updated.id,
+        trackingNumber: updated.trackingNumber,
+        status: 'DELIVERED',
+        source: 'driver-pod',
+      });
+    } catch (err: any) {
+      this.logger.warn(`POD realtime emit failed: ${err?.message ?? err}`);
+    }
+
+    return updated;
   }
 
   async getMessages(driverId: string, limit = 50, skip = 0) {

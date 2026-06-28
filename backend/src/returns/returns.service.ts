@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateReturnDto } from './dto/create-return.dto';
 import { UpdateReturnDto, ReturnTransitionDto } from './dto/update-return.dto';
 
@@ -17,7 +18,10 @@ const INCLUDE = {
 
 @Injectable()
 export class ReturnsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   // ── Reads ─────────────────────────────────────────────────────────────
 
@@ -255,7 +259,23 @@ export class ReturnsService {
         throw new BadRequestException(`Unknown return action: ${action}`);
     }
 
-    return this.prisma.return.update({ where: { id }, data, include: INCLUDE });
+    const updated = await this.prisma.return.update({ where: { id }, data, include: INCLUDE });
+
+    // ── Close the loop ───────────────────────────────────────────────────
+    // Surface the transition to staff (notification bell) and email the
+    // customer a branded update. Best-effort — never blocks the transition.
+    void this.notifications.notifyReturnStatus({
+      companyId,
+      rmaNumber: updated.rmaNumber,
+      trackingNumber: updated.trackingNumber,
+      customerName: updated.customerName,
+      customerEmail: updated.customerEmail,
+      status: updated.status,
+      resolution: updated.resolution,
+      refundAmount: updated.refundAmount,
+    });
+
+    return updated;
   }
 
   async remove(id: string, companyId: string) {

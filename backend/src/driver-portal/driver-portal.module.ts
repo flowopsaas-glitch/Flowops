@@ -4,10 +4,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DriverPortalController } from './driver-portal.controller';
 import { DriverPortalService } from './driver-portal.service';
 import { AuthService } from '../auth/auth.service';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
     ConfigModule,
+    NotificationsModule,
+    GatewayModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (cfg: ConfigService) => ({

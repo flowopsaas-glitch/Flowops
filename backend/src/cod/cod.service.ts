@@ -1,9 +1,17 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EventsGateway } from '../gateway/events.gateway';
 
 @Injectable()
 export class CodService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(CodService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+    private gateway: EventsGateway,
+  ) {}
 
   // ── Summary KPIs ───────────────────────────────────────────────────────────
 
@@ -211,6 +219,28 @@ export class CodService {
         data: { status: 'OUT_FOR_DELIVERY' },
       });
       triggered.push(waybill.trackingNumber);
+
+      // ── Close the loop ──────────────────────────────────────────────────
+      // OUT_FOR_DELIVERY is a customer-facing milestone: tell the recipient
+      // their parcel is arriving today and live-refresh the dispatch board.
+      // Best-effort — geofence auto-advance must never fail on a notify error.
+      void this.notifications.notifyWaybillStatus({
+        companyId: waybill.companyId,
+        trackingNumber: waybill.trackingNumber,
+        recipientName: waybill.recipientName,
+        recipientEmail: waybill.recipientEmail,
+        status: 'OUT_FOR_DELIVERY',
+      } as any);
+      try {
+        this.gateway.emitShipmentUpdate(waybill.companyId, {
+          waybillId: waybill.id,
+          trackingNumber: waybill.trackingNumber,
+          status: 'OUT_FOR_DELIVERY',
+          source: 'geofence',
+        });
+      } catch (err: any) {
+        this.logger.warn(`Geofence realtime emit failed: ${err?.message ?? err}`);
+      }
     }
 
     return { triggered, checkedShipments: shipments.length };
