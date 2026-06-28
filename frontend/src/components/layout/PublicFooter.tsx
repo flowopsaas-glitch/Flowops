@@ -12,7 +12,6 @@ const footerLinks = {
   ],
   Platform: [
     { label: "Login", to: "/login" },
-    { label: "Owner Console", to: "/owner/dashboard" },
     { label: "Driver Portal", href: "https://driver.flowop.work" },
   ],
   Legal: [

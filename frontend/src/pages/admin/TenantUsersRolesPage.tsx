@@ -302,10 +302,9 @@ export default function TenantUsersRolesPage() {
 
   const currentUser = getUser();
   const token = getToken();
-  const isOwner =
-    String(currentUser?.role || "").toUpperCase().includes("OWNER") ||
-    window.location.pathname.includes("/admin") ||
-    window.location.pathname.includes("/owner");
+  // Check the actual user role — never infer "owner" from the URL path, which
+  // can match tenant routes like /admin and break the page for tenant admins.
+  const isOwner = String(currentUser?.role || "").toUpperCase() === "OWNER";
 
   const selectedCompany = useMemo(
     () => companies.find((c) => Number(c.id) === Number(selectedCompanyId)),

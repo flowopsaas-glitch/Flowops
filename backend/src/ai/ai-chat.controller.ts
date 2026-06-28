@@ -1,14 +1,12 @@
 import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ClawService } from './claw.service';
-import { Public } from '../common/decorators/public.decorator';
 
 @Controller('ai/claw-chat')
-@Throttle({ default: { limit: 20, ttl: 60_000 } }) // public endpoint — tighter, IP-tracked
+@Throttle({ default: { limit: 20, ttl: 60_000 } })
 export class AiChatController {
   constructor(private readonly claw: ClawService) {}
 
-  @Public()
   @Post('query')
   async tenantInstruction(@Body() body: { command: string; companyId?: number }) {
     // 1. Validation: Matches the key 'command' being sent by the frontend
