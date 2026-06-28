@@ -51,6 +51,7 @@ const Observatory = lazy(() => import("./pages/Observatory"));
 const ForwardingConsole = lazy(() => import("./pages/forwarding/ForwardingConsole"));
 const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
+const SupportAgent = lazy(() => import("./pages/SupportAgent"));
 const SsoSettings = lazy(() => import("./pages/enterprise/SsoSettings"));
 const DepotsPage        = lazy(() => import("./pages/DepotsPage"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
@@ -263,6 +264,7 @@ export default function App() {
               <Route path="/ai-control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
               <Route path="/ask" element={<RequirePermission perm="copilot"><AskFlowOps /></RequirePermission>} />
               <Route path="/copilot" element={<RequirePermission perm="copilot"><AskFlowOps /></RequirePermission>} />
+              <Route path="/support" element={<SupportAgent />} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />

@@ -204,6 +204,7 @@ model Company {
   accountingConnections AccountingConnection[]
   accountingSyncLogs    AccountingSyncLog[]
   ssoConnection         SsoConnection?
+  supportTickets        SupportTicket[]
 
   @@map("companies")
 }
@@ -1936,4 +1937,36 @@ model ErrorEvent {
   @@index([resolved, lastSeenAt])
   @@index([source, level])
   @@map("error_events")
+}
+
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+// Raised when the AI Support Agent can't fully resolve a query (or the user
+// asks to escalate). Keeps an audit trail + the conversation that led to it so
+// nothing falls through the cracks.
+model SupportTicket {
+  id           String              @id @default(cuid())
+  companyId    String
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  subject      String
+  message      String              @db.Text
+  status       SupportTicketStatus @default(OPEN)
+  priority     String              @default("normal") // low | normal | high
+  category     String? // AI-classified topic (billing, drivers, waybills, …)
+  raisedById   String?
+  raisedByName String?
+  transcript   Json? // the agent conversation that led to escalation
+  aiSummary    String?             @db.Text
+  resolution   String?             @db.Text
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([companyId, status])
+  @@map("support_tickets")
 }
