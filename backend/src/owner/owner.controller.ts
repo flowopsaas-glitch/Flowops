@@ -163,6 +163,18 @@ export class OwnerController {
     return this.intel.setActionStatusAny(id, body?.status);
   }
 
+  /** CLAW Build Planner — turn an action item into a grounded, buildable spec + agent prompt. */
+  @Post('intel/actions/:id/build-plan')
+  intelBuildPlan(@Param('id') id: string, @Body() body: { force?: boolean }) {
+    return this.intel.generateBuildPlan(id, body?.force === true);
+  }
+
+  /** Stage 3 — open a real GitHub Issue in the FlowOps repo from the build plan. */
+  @Post('intel/actions/:id/create-issue')
+  intelCreateIssue(@Param('id') id: string) {
+    return this.intel.createGithubIssue(id);
+  }
+
   /** Run CLAW market-gap ideation → queue upgrade suggestions into Action items. */
   @Post('intel/suggest-upgrades')
   intelSuggestUpgrades() {

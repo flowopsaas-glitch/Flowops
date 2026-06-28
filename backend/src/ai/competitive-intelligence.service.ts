@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,6 +37,57 @@ export interface IntelligenceReport {
 const ACTIONABLE_TYPES = ['COMPETITOR_THREAT', 'PLATFORM_UPGRADE'];
 /** Owner console also sees platform integration-health alerts (CLAW Sentinel). */
 const OWNER_ACTIONABLE_TYPES = [...ACTIONABLE_TYPES, 'INTEGRATION_HEALTH'];
+
+/**
+ * Architecture map fed to the Build Planner so the generated spec is grounded
+ * in how FlowOps is actually built — not generic advice.
+ */
+const FLOWOPS_ARCHITECTURE = `FlowOps tech stack & conventions (target the plan at THIS, not generic advice):
+- Backend: NestJS 10 + TypeScript. A feature = a module folder backend/src/<feature>/ with
+  <feature>.module.ts, .controller.ts, .service.ts and dto/. Controllers gate with
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER) + @UseGuards(RolesGuard) and read
+  the tenant via @CurrentUser() u (u.companyId). Public routes use @Public(). Register the module in
+  backend/src/app.module.ts.
+- Data: Prisma + PostgreSQL, schema backend/prisma/schema.prisma, additive 'prisma db push'. Models are
+  company-scoped via a companyId column.
+- Entitlements: premium capability is gated with BillingService.hasFeature(companyId, '<flag>') and the
+  flag is declared in backend/src/billing/plan-entitlements.ts across tiers starter | professional | enterprise.
+  Hard limits use BillingService.assertCanCreate(companyId, '<resource>').
+- AI: Groq (model llama-3.3-70b-versatile) via GROQ_API_KEY.
+- Realtime: Socket.IO EventsGateway.broadcastToCompany(companyId, event, payload).
+- Frontend: React + Vite + TS. A page in frontend/src/pages/, an API module in frontend/src/api/ using the
+  shared 'api' client (responses unwrap as r.data ?? r), a lazy route in frontend/src/App.tsx wrapped in
+  <RequirePermission perm="..">, and a sidebar entry in frontend/src/components/layout/AppLayout.tsx.
+  UI uses glassCard styling, lucide-react icons, useToast.`;
+
+const BUILD_PLANNER_SYSTEM = `You are CLAW Build Planner, the engineering strategist for FlowOps (a South African
+courier & logistics SaaS). Turn a competitive Action Item into a precise, buildable implementation plan
+for the FlowOps codebase.
+
+${FLOWOPS_ARCHITECTURE}
+
+Respond with ONLY a JSON object (no prose, no markdown) of this exact shape:
+{
+  "title": "short feature name",
+  "summary": "1-2 sentence description of what gets built and why it counters the competitor",
+  "entitlementTier": "core | professional | enterprise",
+  "dataModelChanges": ["Prisma model/field additions, or 'none'"],
+  "backendModule": "backend/src/<folder>",
+  "backendChanges": ["concrete service/controller work items"],
+  "newEndpoints": ["METHOD /api/v1/... — purpose"],
+  "frontendChanges": ["page/component/api/route/nav work items"],
+  "navPlacement": "sidebar section + label + route path",
+  "acceptanceCriteria": ["testable done-conditions"],
+  "effort": "S | M | L",
+  "risks": ["delivery or product risks, incl. any needing external credentials"],
+  "suggestedBranch": "feat/...",
+  "suggestedPrTitle": "conventional-commit style PR title",
+  "implementationSteps": ["ordered, specific steps a developer would follow"],
+  "agentPrompt": "a single ready-to-paste instruction telling a coding agent to implement this end-to-end in the FlowOps repo, referencing the exact files/patterns above"
+}
+Be specific and realistic. If the capability needs an external integration/credential FlowOps may not have,
+say so honestly in risks. Keep arrays concise (max ~6 items each).`;
+
 
 @Injectable()
 export class CompetitiveIntelligenceService {
@@ -553,6 +604,194 @@ Return ONLY the JSON array, no other text.`;
         metadata:   JSON.stringify({ feature: clean, threatLevel: 'MEDIUM', kind: 'upgrade' }),
       },
     });
+  }
+
+  // ── CLAW Build Planner ────────────────────────────────────────────────────
+  //
+  // Bridges "recommendation" → "buildable spec". Turns an Action Item into a
+  // grounded, FlowOps-specific implementation plan plus a ready-to-paste prompt
+  // for a coding agent. CLAW plans; a human reviews and a coding agent (or dev)
+  // implements behind CI + PR review. It never writes or ships code itself.
+
+  async generateBuildPlan(id: string, force = false): Promise<any> {
+    const ev = await (this.prisma.aiEvent as any).findFirst({
+      where: { id, type: { in: OWNER_ACTIONABLE_TYPES } },
+      select: { id: true, title: true, body: true, type: true, sourceId: true, metadata: true },
+    });
+    if (!ev) throw new NotFoundException('Action item not found');
+
+    let meta: any = {};
+    try {
+      meta = typeof ev.metadata === 'string' ? JSON.parse(ev.metadata) : (ev.metadata || {});
+    } catch { meta = {}; }
+
+    // Return the cached plan unless a regeneration is explicitly requested.
+    if (meta.buildPlan && !force) return meta.buildPlan;
+
+    const groqKey = this.config.get<string>('GROQ_API_KEY');
+    if (!groqKey) {
+      throw new ServiceUnavailableException('GROQ_API_KEY not set — cannot generate a build plan.');
+    }
+
+    const competitor = meta.competitor || '';
+    const finding = meta.finding || ev.title;
+    const recommendation = meta.recommendation || ev.body || '';
+    const userMsg =
+      `Action item to convert into a concrete FlowOps build plan:\n` +
+      `Type: ${ev.type === 'PLATFORM_UPGRADE' ? 'internal upgrade idea' : 'competitor threat'}\n` +
+      (competitor ? `Competitor/source: ${competitor}\n` : '') +
+      `Finding: ${finding}\n` +
+      `Recommendation: ${recommendation}\n\nReturn ONLY the JSON object.`;
+
+    const plan = await this.callGroqJSON(groqKey, BUILD_PLANNER_SYSTEM, userMsg);
+    if (!plan) {
+      throw new ServiceUnavailableException('CLAW could not generate a build plan right now — try again.');
+    }
+
+    plan.generatedAt = new Date().toISOString();
+    meta.buildPlan = plan;
+    await (this.prisma.aiEvent as any)
+      .update({ where: { id }, data: { metadata: JSON.stringify(meta) } })
+      .catch(() => undefined); // persistence is best-effort; still return the plan
+    this.logger.log(`🛠️ CLAW Build Planner: generated plan for action item ${id}`);
+    return plan;
+  }
+
+  // ── Stage 3: one-click GitHub Issue from a build plan ─────────────────────
+  //
+  // Turns a generated build plan into a real, tracked engineering task in the
+  // FlowOps repo so a coding agent or dev can pick it up. Requires GITHUB_REPO
+  // (owner/name) and GITHUB_TOKEN (fine-grained PAT with issues:write). The
+  // token lives server-side only and is never returned to the client.
+
+  async createGithubIssue(id: string): Promise<any> {
+    const ev = await (this.prisma.aiEvent as any).findFirst({
+      where: { id, type: { in: OWNER_ACTIONABLE_TYPES } },
+      select: { id: true, title: true, metadata: true },
+    });
+    if (!ev) throw new NotFoundException('Action item not found');
+
+    let meta: any = {};
+    try {
+      meta = typeof ev.metadata === 'string' ? JSON.parse(ev.metadata) : (ev.metadata || {});
+    } catch { meta = {}; }
+
+    // Idempotent: if we already opened an issue for this item, return it.
+    if (meta.githubIssueUrl) {
+      return { url: meta.githubIssueUrl, number: meta.githubIssueNumber, existing: true };
+    }
+
+    const plan = meta.buildPlan;
+    if (!plan) throw new BadRequestException('Generate a build plan first, then create the issue.');
+
+    const repo = this.config.get<string>('GITHUB_REPO');
+    const token = this.config.get<string>('GITHUB_TOKEN');
+    if (!repo || !token) {
+      throw new ServiceUnavailableException(
+        'GitHub issue creation is not configured. Set GITHUB_REPO (owner/name) and GITHUB_TOKEN (fine-grained PAT with issues:write).',
+      );
+    }
+
+    const title = `[CLAW] ${plan.suggestedPrTitle || plan.title || ev.title}`.slice(0, 250);
+    const body = this.formatGithubIssueBody(plan, ev);
+
+    let res: Response;
+    try {
+      res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+          'User-Agent': 'FlowOps-CLAW',
+        },
+        body: JSON.stringify({ title, body, labels: ['claw-build-planner', 'competitive-intel'] }),
+      });
+    } catch (err: any) {
+      this.logger.error(`GitHub issue network error: ${err.message}`);
+      throw new ServiceUnavailableException('Could not reach GitHub to create the issue.');
+    }
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      this.logger.warn(`GitHub issue creation failed: ${res.status} ${txt.slice(0, 200)}`);
+      throw new ServiceUnavailableException(
+        `GitHub rejected the request (${res.status}). Check the token scope (issues:write) and GITHUB_REPO.`,
+      );
+    }
+
+    const data = (await res.json()) as any;
+    meta.githubIssueUrl = data.html_url;
+    meta.githubIssueNumber = data.number;
+    await (this.prisma.aiEvent as any)
+      .update({ where: { id }, data: { metadata: JSON.stringify(meta) } })
+      .catch(() => undefined);
+    this.logger.log(`📌 CLAW: opened GitHub issue #${data.number} for action item ${id}`);
+    return { url: data.html_url, number: data.number, existing: false };
+  }
+
+  /** Render a build plan as a GitHub-flavoured markdown issue body. */
+  private formatGithubIssueBody(plan: any, ev: any): string {
+    const list = (label: string, items?: string[]) =>
+      Array.isArray(items) && items.length
+        ? `\n### ${label}\n${items.map((i) => `- ${i}`).join('\n')}`
+        : '';
+    return [
+      '> Auto-drafted by **CLAW Build Planner** from a competitive Action Item. Review before implementing — CLAW plans, a human ships.',
+      '',
+      plan.summary ? `**Summary:** ${plan.summary}` : '',
+      `**Tier:** ${plan.entitlementTier || 'n/a'}  ·  **Effort:** ${plan.effort || 'n/a'}`,
+      plan.backendModule ? `**Backend module:** \`${plan.backendModule}\`` : '',
+      plan.navPlacement ? `**Nav placement:** ${plan.navPlacement}` : '',
+      list('Data model', plan.dataModelChanges),
+      list('Backend changes', plan.backendChanges),
+      list('New endpoints', plan.newEndpoints),
+      list('Frontend changes', plan.frontendChanges),
+      list('Acceptance criteria', plan.acceptanceCriteria),
+      list('Risks', plan.risks),
+      list('Implementation steps', plan.implementationSteps),
+      plan.agentPrompt ? `\n### Coding-agent prompt\n\`\`\`\n${plan.agentPrompt}\n\`\`\`` : '',
+      '',
+      '---',
+      `Source action item: ${ev.title}`,
+      plan.suggestedBranch ? `Suggested branch: \`${plan.suggestedBranch}\`` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  /** Call Groq expecting a single JSON object back. Returns null on any failure. */
+  private async callGroqJSON(apiKey: string, system: string, user: string): Promise<any | null> {    try {
+      const res = await fetch(this.GROQ, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          temperature: 0.3,
+          response_format: { type: 'json_object' },
+        }),
+      });
+      if (!res.ok) {
+        this.logger.warn(`Groq build-plan call failed: ${res.status}`);
+        return null;
+      }
+      const data = (await res.json()) as any;
+      const text = data?.choices?.[0]?.message?.content || '';
+      try {
+        return JSON.parse(text);
+      } catch {
+        const match = text.match(/\{[\s\S]*\}/);
+        return match ? JSON.parse(match[0]) : null;
+      }
+    } catch (err: any) {
+      this.logger.error(`Groq build-plan error: ${err.message}`);
+      return null;
+    }
   }
 
   // ── Public helper: latest report for dashboard ────────────────────────────
