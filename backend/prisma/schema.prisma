@@ -511,6 +511,7 @@ model ShipmentFile {
   documents  ShipmentDocument[]
   milestones ShipmentMilestone[]
   declarations CustomsDeclaration[]
+  disbursements Disbursement[]
 
   // Consolidation / co-load (Phase 3): house files grouped under a master file.
   isMaster     Boolean        @default(false)
@@ -756,6 +757,42 @@ model CarrierRate {
   @@index([companyId])
   @@index([carrierId])
   @@map("carrier_rates")
+}
+
+// ─── Disbursements (clearing-agent finance) ────────────────────────────────
+// Duties / VAT / port & line charges a forwarder pays to an authority ON BEHALF
+// of a client, then recovers. Tracks paid-out vs recovered for the import/export
+// finance desk. Scoped per tenant.
+enum DisbursementStatus {
+  OUTSTANDING // paid out to the authority, not yet recovered from the client
+  INVOICED    // billed to the client (recovery invoice raised)
+  RECOVERED   // client has reimbursed us
+  WRITTEN_OFF // unrecoverable
+}
+
+model Disbursement {
+  id          String             @id @default(cuid())
+  companyId   String
+  fileId      String?
+  file        ShipmentFile?      @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  clientName  String?
+  authority   String // SARS, port authority, shipping line, airline, etc.
+  category    String? // DUTY | VAT | PORT | LINE | STORAGE | OTHER
+  reference   String? // receipt / payment reference
+  description String?
+  amount      Float              @default(0) // amount paid out
+  currency    String             @default("ZAR")
+  status      DisbursementStatus @default(OUTSTANDING)
+  paidAt      DateTime           @default(now())
+  recoveredAt DateTime?
+  invoiceId   String? // optional link to the recovery invoice
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([fileId])
+  @@map("disbursements")
 }
 
 // ─── Waybills ─────────────────────────────────────────────────────────────
