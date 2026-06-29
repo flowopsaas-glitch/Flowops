@@ -25,20 +25,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { Zap, Loader2 } from "lucide-react";
 import { getEntitlements } from "../../api/billingApi";
-
-// Minimum plan that includes each gated feature — drives the upsell copy.
-// Anything not listed here is treated as a Professional feature.
-const ENTERPRISE_FEATURES = new Set<string>([
-  "whiteLabel",
-  "nativeApp",
-  "selfHost",
-  "dedicatedManager",
-  "clawAutopilot",
-  "sso",
-  "freightForwarding",
-  "aiSupportAgent",
-  "courierManagement",
-]);
+import { ENTERPRISE_FEATURES } from "../../lib/planMeta";
 
 const WA_NUMBER = "27814065725";
 

@@ -21,17 +21,7 @@ import {
   type TenantNavPermissionKey,
 } from "../../lib/tenantUserPermissions";
 import { getEntitlements, type Entitlements } from "../../api/billingApi";
-
-// Plan tiers a gated feature belongs to — drives the "PRO" / "ENTERPRISE"
-// teaser badge shown on locked sidebar items.
-const ENTERPRISE_FEATURES = new Set<string>([
-  "whiteLabel", "nativeApp", "selfHost", "dedicatedManager",
-  "clawAutopilot", "sso", "freightForwarding", "aiSupportAgent", "courierManagement",
-]);
-const featureTier = (feature?: string): "PRO" | "ENTERPRISE" | null => {
-  if (!feature) return null;
-  return ENTERPRISE_FEATURES.has(feature) ? "ENTERPRISE" : "PRO";
-};
+import { featureTier } from "../../lib/planMeta";
 
 type NavItem = {
   label: string;
