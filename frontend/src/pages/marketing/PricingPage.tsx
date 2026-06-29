@@ -2,86 +2,51 @@ import { Link } from "react-router-dom";
 import { CheckCircle2, ArrowRight, MessageCircle, Zap } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
+import { PLAN_CATALOG } from "../../lib/planCatalog";
 
 const WA_NUMBER = "27814065725";
 
-const plans = [
-  {
-    name: "Starter",
-    price: "Free",
-    period: "",
+// Feature bullets / names / prices come from the shared plan catalog so this
+// marketing page and the in-app Billing screen always match. Only the
+// marketing-specific presentation (badges, CTAs, trial notes) lives here.
+const PLAN_META: Record<
+  string,
+  { badge: string; badgeColor: string; cta: string; ctaTo: string | null; highlight: boolean; trialNote: string }
+> = {
+  starter: {
     badge: "Free forever",
     badgeColor: "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
-    description: "Everything you need to get your first couriers on the road.",
-    features: [
-      "Up to 100 waybills / month",
-      "3 driver accounts",
-      "3 team members",
-      "1 branch / depot",
-      "Waybill management & GPS tracking",
-      "Basic invoicing & rate cards",
-      "WhatsApp click-to-chat (full Hub on Pro)",
-      "Email support",
-    ],
     cta: "Start 14-day trial",
     ctaTo: "/signup?plan=starter",
     highlight: false,
     trialNote: "14-day full Pro access, then free Starter tier",
   },
-  {
-    name: "Professional",
-    price: "R 11,999",
-    period: "/month",
+  professional: {
     badge: "Most Popular",
     badgeColor: "border-sky-400/30 bg-sky-500/20 text-sky-300",
-    description: "The full platform for growing courier operations.",
-    features: [
-      "Unlimited waybills",
-      "25 driver accounts",
-      "50 team members",
-      "Multi-branch support",
-      "COD reconciliation + driver wallets",
-      "Returns / RMA management",
-      "Accounting suite + Pastel/Xero bridge + AI finance assistant",
-      "Multi-carrier rate shopping",
-      "AI Control Tower",
-      "Route optimisation",
-      "API keys & webhooks",
-      "Shopify / WooCommerce connector",
-      "Priority support",
-    ],
     cta: "Start 14-day trial",
     ctaTo: "/signup?plan=professional",
     highlight: true,
     trialNote: "14-day free trial — no card required",
   },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
+  enterprise: {
     badge: "Custom",
     badgeColor: "border-violet-400/20 bg-violet-500/10 text-violet-300",
-    description: "For large fleets, 3PLs, and multi-company platforms.",
-    features: [
-      "Everything in Professional",
-      "CLAW Autopilot — autonomous ops (auto-assign, SLA escalation, COD checks)",
-      "Freight Forwarding — import/export, containers, customs & last-mile",
-      "AI Support Agent — in-app help grounded in your live data",
-      "Courier Management — multi-carrier order orchestration",
-      "OIDC Single Sign-On (Okta, Azure AD, Google Workspace, Auth0)",
-      "Native iOS & Android driver apps",
-      "Self-hosted / on-premise deployment",
-      "White-label branding & custom domain",
-      "Unlimited users & drivers",
-      "Dedicated account manager + custom SLA",
-      "Custom integrations & onboarding",
-    ],
     cta: "Contact Sales",
     ctaTo: null,
     highlight: false,
     trialNote: "",
   },
-];
+};
+
+const plans = PLAN_CATALOG.map((p) => ({
+  name: p.name,
+  price: p.price,
+  period: p.period ?? "",
+  description: p.tagline,
+  features: p.features,
+  ...PLAN_META[p.key],
+}));
 
 const faqs = [
   {

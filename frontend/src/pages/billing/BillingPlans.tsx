@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from "../../api/client";
 import { getEntitlements, type Entitlements, type UsageMeter } from "../../api/billingApi";
+import { PLAN_CATALOG } from "../../lib/planCatalog";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -42,68 +43,23 @@ type Company = {
 };
 
 // ── Plan definitions ───────────────────────────────────────────────────────
+// Content (names, prices, feature bullets) comes from the shared plan catalog
+// so the in-app cards and the marketing Pricing page never drift. Only the
+// in-app visual styling lives here.
 
-const PLANS = [
-  {
-    key: "starter",
-    name: "Starter",
-    price: "Free",
-    color: "border-slate-500/30 bg-slate-500/8",
-    badge: "text-slate-300 bg-slate-500/15 border-slate-500/30",
-    features: [
-      "Up to 100 waybills/month",
-      "3 driver accounts",
-      "3 team members",
-      "1 branch / depot",
-      "Basic dashboard",
-      "Email support",
-    ],
-  },
-  {
-    key: "professional",
-    name: "Professional",
-    price: "R 11,999 / mo",
-    color: "border-sky-500/30 bg-sky-500/8",
-    badge: "text-sky-300 bg-sky-500/15 border-sky-500/30",
-    highlighted: true,
-    features: [
-      "Unlimited waybills",
-      "25 driver accounts",
-      "50 team members",
-      "Multi-branch support",
-      "AI Control Tower",
-      "Returns / RMA management",
-      "Accounting + Pastel/Xero bridge + AI finance assistant",
-      "Route optimisation",
-      "Multi-carrier rate shopping",
-      "WhatsApp & Email hub",
-      "COD reconciliation",
-      "Webhook & API access",
-      "Shopify / WooCommerce connector",
-      "Priority support",
-    ],
-  },
-  {
-    key: "enterprise",
-    name: "Enterprise",
-    price: "Custom",
-    color: "border-violet-500/30 bg-violet-500/8",
-    badge: "text-violet-300 bg-violet-500/15 border-violet-500/30",
-    features: [
-      "Everything in Pro",
-      "CLAW Autopilot — autonomous ops",
-      "Freight Forwarding — import/export",
-      "Single Sign-On (OIDC)",
-      "AI Support Agent",
-      "Courier Management orchestration",
-      "Native iOS & Android driver apps",
-      "Self-hosted / on-premise option",
-      "White-label portal & custom domain",
-      "Unlimited users & drivers",
-      "Dedicated account manager + custom SLA",
-    ],
-  },
-];
+const PLAN_STYLE: Record<string, { color: string; badge: string; highlighted?: boolean }> = {
+  starter:      { color: "border-slate-500/30 bg-slate-500/8",  badge: "text-slate-300 bg-slate-500/15 border-slate-500/30" },
+  professional: { color: "border-sky-500/30 bg-sky-500/8",      badge: "text-sky-300 bg-sky-500/15 border-sky-500/30", highlighted: true },
+  enterprise:   { color: "border-violet-500/30 bg-violet-500/8", badge: "text-violet-300 bg-violet-500/15 border-violet-500/30" },
+};
+
+const PLANS = PLAN_CATALOG.map((p) => ({
+  key: p.key,
+  name: p.name,
+  price: p.period ? `${p.price} ${p.period}` : p.price,
+  features: p.features,
+  ...PLAN_STYLE[p.key],
+}));
 
 // ── Plan codes (Paystack) ──────────────────────────────────────────────────
 const PLAN_CODES: Record<string, string> = {
