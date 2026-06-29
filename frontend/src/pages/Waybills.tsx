@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useToast } from "../components/ToastProvider";
+import { printWaybillLabel } from "../lib/labelPrint";
 import { api } from "../api/client";
 import {
   FileText, Plus, Save, Upload, ScanLine, Sparkles, AlertTriangle,
@@ -249,22 +250,7 @@ export default function Waybills() {
   async function printLabel(id: string) {
     setIsPrinting(true);
     try {
-      const blob = await api.get<Blob>(`/waybills/${id}/label`, {
-        responseType: "blob",
-      } as any);
-      const url = URL.createObjectURL(blob as unknown as Blob);
-      const win = window.open(url, "_blank");
-      if (!win) {
-        // Popup blocked — fall back to a direct download.
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `label-${id}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      // Revoke after a delay so the new tab has time to load the PDF.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await printWaybillLabel(id);
     } catch (err: any) {
       const msg =
         err?.response?.data?.message || err?.message || "Failed to generate label";
