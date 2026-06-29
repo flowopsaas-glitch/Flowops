@@ -13,9 +13,13 @@ import {
   Search,
   Truck,
   XCircle,
+  AlertTriangle,
+  Gauge,
+  Timer,
 } from "lucide-react";
 import { api } from "../api/client";
 import { exportCsv, csvFilename } from "../lib/exportCsv";
+import { TiltCard } from "../components/premium/TiltCard";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -41,6 +45,29 @@ type Shipment = {
     phone?: string | null;
     vehicleType?: string | null;
   } | null;
+};
+
+type ShipmentHealthData = {
+  statusCounts: Record<string, number>;
+  total: number;
+  inTransit: number;
+  etaBreaches: number;
+  stalled: number;
+  healthyInTransit: number;
+  avgTransitHours: number | null;
+  deliveredLast30: number;
+  stallHours: number;
+  watch: Array<{
+    id: string;
+    trackingNumber: string;
+    recipient: string;
+    driver?: string | null;
+    etaBreached: boolean;
+    stalled: boolean;
+    stalledHours: number;
+    ageHours: number;
+  }>;
+  note: string;
 };
 
 // ── Status config ──────────────────────────────────────────────────────────
@@ -110,6 +137,7 @@ function formatEta(ts?: string | null): string {
 
 export default function Shipments() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [health, setHealth] = useState<ShipmentHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useSearchParams();
@@ -121,6 +149,7 @@ export default function Shipments() {
       const res: any = await api.get("/shipments");
       const data = res?.data ?? res;
       setShipments(Array.isArray(data) ? data : []);
+      api.get("/shipments/health").then((r: any) => setHealth(r?.data ?? r)).catch(() => setHealth(null));
     } catch {
       setShipments([]);
     } finally {
@@ -266,6 +295,9 @@ export default function Shipments() {
           </button>
         ))}
       </div>
+
+      {/* Ops health */}
+      {health && health.inTransit > 0 && <ShipmentHealthPanel data={health} onFilter={() => statusFilter.set("status", "IN_TRANSIT")} />}
 
       {/* Table */}
       <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl fx-glass fx-reveal">
@@ -420,6 +452,80 @@ export default function Shipments() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+
+// ── Shipment ops-health panel ───────────────────────────────────────────────
+
+function fmtHrs(h: number | null): string {
+  if (h == null) return "—";
+  if (h < 24) return `${Math.round(h)}h`;
+  return `${(h / 24).toFixed(1)}d`;
+}
+
+function ShipmentHealthPanel({ data, onFilter }: { data: ShipmentHealthData; onFilter: () => void }) {
+  const atRisk = data.etaBreaches + data.stalled;
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl fx-glass fx-reveal">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div className="flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-cyan-300" />
+          <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">In-Transit Health</h2>
+        </div>
+        <button onClick={onFilter} className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/8 px-4 py-2 text-sm font-bold text-cyan-300 hover:bg-cyan-500/15 transition">
+          View in-transit <Truck className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <TiltCard>
+          <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.06] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-cyan-300">{data.inTransit}</div><Truck className="h-4 w-4 text-cyan-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">In transit</div>
+            <div className="text-[10px] text-emerald-300/70 mt-0.5">{data.healthyInTransit} on track</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-2xl border p-4 h-full ${data.etaBreaches > 0 ? "border-rose-500/30 bg-rose-500/[0.08]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${data.etaBreaches > 0 ? "text-rose-300" : "text-white"}`}>{data.etaBreaches}</div><AlertTriangle className="h-4 w-4 text-rose-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">ETA breached</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-2xl border p-4 h-full ${data.stalled > 0 ? "border-amber-500/30 bg-amber-500/[0.07]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${data.stalled > 0 ? "text-amber-300" : "text-white"}`}>{data.stalled}</div><Timer className="h-4 w-4 text-amber-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Stalled &gt;{data.stallHours}h</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-white">{fmtHrs(data.avgTransitHours)}</div><Clock className="h-4 w-4 text-white/25" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Avg transit (30d)</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{data.deliveredLast30} delivered</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {atRisk > 0 && (
+        <div className="mt-5">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">At-risk in transit — investigate first</p>
+          <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+            {data.watch.map((w) => (
+              <div key={w.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/25 px-3 py-2">
+                <span className="font-mono text-xs font-black text-cyan-300 shrink-0">{w.trackingNumber}</span>
+                <span className="min-w-0 flex-1 truncate text-[11px] text-white/55">{w.recipient}{w.driver ? ` · ${w.driver}` : ""}</span>
+                {w.etaBreached && <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-bold text-rose-300 shrink-0">ETA breached</span>}
+                {w.stalled && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300 shrink-0">stalled {fmtHrs(w.stalledHours)}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{data.note}</p>
     </div>
   );
 }

@@ -39,6 +39,92 @@ export class ShipmentsService {
     });
   }
 
+  /**
+   * Shipment ops-health — the movement view: status funnel, in-transit risk
+   * (ETA-breached + stalled with no update), and average transit time. Distinct
+   * from the dashboard's on-time KPI (delivery outcome) and the ops
+   * exception-SLA (failed/returned waybills) — this is about shipments still
+   * moving. Tenant-scoped, read-only.
+   */
+  async health(companyId: string) {
+    const now = Date.now();
+    const STALL_HOURS = 24;
+    const d30 = new Date(now - 30 * 86_400_000);
+
+    const [byStatus, inTransit, deliveredRecent] = await Promise.all([
+      this.prisma.shipment.groupBy({
+        by: ['status'],
+        where: { companyId },
+        _count: { _all: true },
+      }),
+      this.prisma.shipment.findMany({
+        where: { companyId, status: 'IN_TRANSIT' },
+        select: {
+          id: true, estimatedDelivery: true, updatedAt: true, createdAt: true,
+          waybill: { select: { trackingNumber: true, recipientName: true, recipientAddress: true } },
+          driver: { select: { name: true } },
+        },
+        orderBy: { updatedAt: 'asc' },
+        take: 500,
+      }),
+      this.prisma.shipment.findMany({
+        where: { companyId, status: 'DELIVERED', deliveredAt: { gte: d30 } },
+        select: { createdAt: true, deliveredAt: true },
+      }),
+    ]);
+
+    const statusCounts: Record<string, number> = { PENDING: 0, IN_TRANSIT: 0, DELIVERED: 0, FAILED: 0 };
+    for (const r of byStatus) statusCounts[r.status] = r._count._all;
+
+    let etaBreaches = 0;
+    let stalled = 0;
+    const watch: any[] = [];
+    for (const s of inTransit) {
+      const etaBreached = s.estimatedDelivery ? new Date(s.estimatedDelivery).getTime() < now : false;
+      const stallHours = (now - new Date(s.updatedAt).getTime()) / 3_600_000;
+      const isStalled = stallHours >= STALL_HOURS;
+      if (etaBreached) etaBreaches += 1;
+      if (isStalled) stalled += 1;
+      if (etaBreached || isStalled) {
+        watch.push({
+          id: s.id,
+          trackingNumber: s.waybill?.trackingNumber ?? '—',
+          recipient: s.waybill?.recipientName ?? s.waybill?.recipientAddress ?? '—',
+          driver: s.driver?.name ?? null,
+          etaBreached,
+          stalled: isStalled,
+          stalledHours: Math.round(stallHours * 10) / 10,
+          ageHours: Math.round(((now - new Date(s.createdAt).getTime()) / 3_600_000) * 10) / 10,
+        });
+      }
+    }
+    // Worst first: ETA breaches, then longest stalled.
+    watch.sort((a, b) => Number(b.etaBreached) - Number(a.etaBreached) || b.stalledHours - a.stalledHours);
+
+    let transitSum = 0;
+    for (const s of deliveredRecent) {
+      if (s.deliveredAt) transitSum += (new Date(s.deliveredAt).getTime() - new Date(s.createdAt).getTime()) / 3_600_000;
+    }
+    const avgTransitHours = deliveredRecent.length ? Math.round((transitSum / deliveredRecent.length) * 10) / 10 : null;
+
+    const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+
+    return {
+      statusCounts,
+      total,
+      inTransit: statusCounts.IN_TRANSIT,
+      etaBreaches,
+      stalled,
+      healthyInTransit: Math.max(0, statusCounts.IN_TRANSIT - watch.length),
+      avgTransitHours,
+      deliveredLast30: deliveredRecent.length,
+      stallHours: STALL_HOURS,
+      watch: watch.slice(0, 10),
+      note:
+        'Status funnel covers all shipments. In-transit risk flags ETA-breached or stalled (no update in 24h) shipments; average transit is over deliveries in the last 30 days.',
+    };
+  }
+
   async findOne(id: string, companyId: string) {
     const s = await this.prisma.shipment.findFirst({
       where: { id, companyId },
