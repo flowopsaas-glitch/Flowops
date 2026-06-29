@@ -6,10 +6,13 @@ import {
 import { useToast } from "../components/ToastProvider";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
+import { TiltCard } from "../components/premium/TiltCard";
 import {
   listReturns, getReturnStats, createReturn, transitionReturn, deleteReturn,
+  getReturnInsights,
   type ReturnRecord, type ReturnStats, type ReturnStatus, type ReturnReason,
   type ReturnResolution, type ReturnTransition, type CreateReturnPayload,
+  type ReturnInsights,
 } from "../api/returnsApi";
 
 const glassCard = (className?: string) =>
@@ -69,6 +72,7 @@ export default function Returns() {
   const { showToast } = useToast();
   const [rows, setRows] = useState<ReturnRecord[]>([]);
   const [stats, setStats] = useState<ReturnStats | null>(null);
+  const [insights, setInsights] = useState<ReturnInsights | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -88,6 +92,7 @@ export default function Returns() {
       ]);
       setRows(list);
       setStats(st);
+      getReturnInsights().then(setInsights).catch(() => setInsights(null));
     } catch (e: any) {
       showToast(e?.response?.data?.message || "Failed to load returns", "error");
     } finally {
@@ -166,6 +171,11 @@ export default function Returns() {
         <StatCard icon={CheckCircle2}  label="Completed"           value={stats?.completed ?? "—"}       accent="bg-emerald-500/15 text-emerald-300" />
         <StatCard icon={Banknote}      label="Refunds Paid"        value={money(stats?.refundsPaid)}     accent="bg-rose-500/15 text-rose-300" />
       </div>
+
+      {/* Returns intelligence */}
+      {insights && insights.reasonTotal > 0 && (
+        <ReturnsIntelligence data={insights} onFilterReason={(r) => setReasonFilter(r)} />
+      )}
 
       {/* Filters */}
       <div className={glassCard("p-3 flex flex-wrap items-center gap-3")}>
@@ -440,3 +450,95 @@ const Input = ({ value, onChange, placeholder }: { value: string; onChange: (v: 
     className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-sky-400/50"
   />
 );
+
+
+
+// ── Returns intelligence panel ──────────────────────────────────────────────
+
+const REASON_BAR = [
+  "bg-rose-400", "bg-amber-400", "bg-orange-400", "bg-sky-400",
+  "bg-indigo-400", "bg-violet-400", "bg-fuchsia-400", "bg-emerald-400", "bg-slate-400",
+];
+
+function ReturnsIntelligence({
+  data,
+  onFilterReason,
+}: {
+  data: ReturnInsights;
+  onFilterReason: (r: ReturnReason) => void;
+}) {
+  const maxCount = Math.max(1, ...data.reasonMix.map((r) => r.count));
+
+  return (
+    <div className={glassCard("p-5 fx-reveal")}>
+      <div className="flex items-center gap-2 mb-4">
+        <RotateCcw className="h-4 w-4 text-cyan-300" />
+        <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">Returns Intelligence</h2>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between">
+              <div className="text-2xl font-black text-white">{data.avgCycleDays != null ? `${data.avgCycleDays}d` : "—"}</div>
+              <Clock className="h-4 w-4 text-white/25" />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Avg cycle time</div>
+            <div className="text-[10px] text-white/35 mt-0.5">request → completed{data.completedCount ? ` · ${data.completedCount} done` : ""}</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-4 h-full">
+            <div className="flex items-center justify-between">
+              <div className="text-2xl font-black text-emerald-300">{data.restockRatePct}%</div>
+              <PackageCheck className="h-4 w-4 text-emerald-300" />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Restock rate</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{data.restockedCount} back into stock</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-2xl border p-4 h-full ${data.openRefundExposure > 0 ? "border-amber-400/20 bg-amber-500/[0.07]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between">
+              <div className={`text-xl font-black ${data.openRefundExposure > 0 ? "text-amber-300" : "text-white"}`}>{money(data.openRefundExposure)}</div>
+              <Banknote className="h-4 w-4 text-amber-300" />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Open refund exposure</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{data.openCount} in-flight return{data.openCount === 1 ? "" : "s"}</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-black text-white truncate">{data.topReason ? pretty(data.topReason) : "—"}</div>
+              <RotateCcw className="h-4 w-4 text-white/25" />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Top return reason</div>
+            <div className="text-[10px] text-white/35 mt-0.5">across {data.reasonTotal} returns</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {/* Reason mix */}
+      <div className="mt-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Why things come back — click a reason to filter</p>
+        <div className="space-y-1.5">
+          {data.reasonMix.map((r, i) => (
+            <button key={r.reason} onClick={() => onFilterReason(r.reason)}
+              className="w-full text-left flex items-center gap-3 rounded-xl bg-black/20 px-3 py-2 hover:bg-white/[0.06] transition">
+              <span className="w-32 shrink-0 text-xs font-bold text-white/75 truncate">{pretty(r.reason)}</span>
+              <span className="relative flex-1 h-2.5 rounded-full bg-white/5 overflow-hidden">
+                <span className={`absolute inset-y-0 left-0 rounded-full ${REASON_BAR[i % REASON_BAR.length]}`} style={{ width: `${(r.count / maxCount) * 100}%` }} />
+              </span>
+              <span className="w-10 shrink-0 text-right text-xs font-black text-white">{r.count}</span>
+              <span className="w-12 shrink-0 text-right text-[10px] text-white/40">{r.pct}%</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{data.note}</p>
+    </div>
+  );
+}
