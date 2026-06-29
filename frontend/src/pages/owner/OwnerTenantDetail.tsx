@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowLeft, Eye, Plus, CheckCircle, UserX, TrendingUp } from "lucide-react";
+import { ArrowLeft, Eye, Plus, CheckCircle, UserX, TrendingUp, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { startImpersonation } from "../../lib/impersonation";
 
@@ -165,6 +165,25 @@ export default function OwnerTenantDetail() {
     }, "Admin user created.");
   }
 
+  function deleteTenant() {
+    if (!d) return;
+    const typed = window.prompt(
+      `⚠️ PERMANENTLY DELETE "${d.tenant.name}"?\n\n` +
+      `This removes the tenant and ALL its data — users, waybills, collections, ` +
+      `shipments, invoices, drivers — and cannot be undone.\n\n` +
+      `Type the tenant name exactly to confirm:`,
+    );
+    if (typed == null) return; // cancelled
+    if (typed.trim() !== d.tenant.name) {
+      setError("Name did not match — deletion cancelled.");
+      return;
+    }
+    setBusy("delete"); setError(""); setSuccess("");
+    api.delete(`/owner/tenants/${d.tenant.id}`)
+      .then(() => navigate("/owner/tenants"))
+      .catch((err: any) => { setError(err?.message || "Delete failed."); setBusy(""); });
+  }
+
   const cur = d?.currency || "ZAR";
 
   return (
@@ -241,6 +260,10 @@ export default function OwnerTenantDetail() {
                   <button onClick={() => setShowCreateUser((v) => !v)}
                     className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20">
                     <Plus className="h-4 w-4" /> Add Admin
+                  </button>
+                  <button onClick={deleteTenant} disabled={busy === "delete"}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-sm font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-60">
+                    <Trash2 className="h-4 w-4" /> {busy === "delete" ? "Deleting…" : "Delete"}
                   </button>
                 </div>
               </div>

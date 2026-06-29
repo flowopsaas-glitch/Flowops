@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OwnerService } from './owner.service';
 import { AlertingService } from '../alerting/alerting.service';
@@ -73,6 +73,11 @@ export class OwnerController {
   @Post('tenants/:id/activate')
   activateTenant(@Param('id') id: string, @CurrentUser() owner: any) {
     return this.svc.activateTenant(id, owner);
+  }
+
+  @Delete('tenants/:id')
+  deleteTenant(@Param('id') id: string, @CurrentUser() owner: any) {
+    return this.svc.deleteTenant(id, owner);
   }
 
   @Patch('users/:userId/password')

@@ -9,6 +9,7 @@ import {
   Search,
   UserX,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { api } from "../../api/client";
 import { startImpersonation } from "../../lib/impersonation";
@@ -154,6 +155,18 @@ export default function OwnerTenants() {
     doAction(`plan-${id}`, async () => {
       await api.patch("/owner/plans", { tenantId: id, plan });
     }, `${name} → ${plan} plan updated.`);
+  }
+
+  function deleteTenant(id: string, name: string) {
+    const typed = window.prompt(
+      `⚠️ PERMANENTLY DELETE "${name}" and ALL its data (users, waybills, invoices…)?\n` +
+      `This cannot be undone.\n\nType the tenant name to confirm:`,
+    );
+    if (typed == null) return;
+    if (typed.trim() !== name) { window.alert("Name did not match — deletion cancelled."); return; }
+    doAction(`delete-${id}`, async () => {
+      await api.delete(`/owner/tenants/${id}`);
+    }, `${name} deleted.`);
   }
 
   async function viewAs(id: string, name: string) {
@@ -389,6 +402,11 @@ export default function OwnerTenants() {
                           → Pro
                         </button>
                       ) : null}
+                      {/* Delete */}
+                      <button disabled={busy === `delete-${t.id}`} onClick={(e) => { e.stopPropagation(); deleteTenant(t.id, t.name); }}
+                        className="inline-flex items-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-60">
+                        <Trash2 className="h-3 w-3" /> {busy === `delete-${t.id}` ? "…" : "Delete"}
+                      </button>
                     </div>
                   </td>
                 </tr>
