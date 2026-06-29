@@ -23,6 +23,94 @@ export class CollectionsService {
     return this.findAll(companyId);
   }
 
+  /**
+   * Collections scheduling efficiency — the dispatch-desk view: backlog &
+   * unassigned aging, time-to-collect, on-time pickup adherence and completion
+   * rate. Tenant-scoped, read-only.
+   */
+  async insights(companyId: string) {
+    const now = Date.now();
+    const d30 = new Date(now - 30 * 86_400_000);
+
+    const [byStatus, unassigned, collectedRecent] = await Promise.all([
+      this.prisma.collection.groupBy({
+        by: ['status'],
+        where: { companyId },
+        _count: { _all: true },
+      }),
+      this.prisma.collection.findMany({
+        where: { companyId, status: 'PENDING', driverId: null },
+        select: { id: true, clientName: true, pickupAddress: true, createdAt: true, scheduledAt: true },
+        orderBy: { createdAt: 'asc' },
+        take: 500,
+      }),
+      this.prisma.collection.findMany({
+        where: { companyId, status: 'COLLECTED', pickedUpAt: { gte: d30 } },
+        select: { createdAt: true, scheduledAt: true, pickedUpAt: true },
+      }),
+    ]);
+
+    const sc: Record<string, number> = { PENDING: 0, ASSIGNED: 0, IN_PROGRESS: 0, COLLECTED: 0, FAILED: 0, CANCELLED: 0 };
+    for (const r of byStatus) sc[r.status] = r._count._all;
+
+    const HOUR = 3_600_000;
+    const unassignedAging = { lt2h: 0, h2_8: 0, gt8: 0 };
+    let oldestUnassignedHours = 0;
+    const watch = unassigned.slice(0, 10).map((c) => {
+      const ageHours = (now - new Date(c.createdAt).getTime()) / HOUR;
+      if (ageHours < 2) unassignedAging.lt2h += 1;
+      else if (ageHours < 8) unassignedAging.h2_8 += 1;
+      else unassignedAging.gt8 += 1;
+      oldestUnassignedHours = Math.max(oldestUnassignedHours, ageHours);
+      return {
+        id: c.id,
+        clientName: c.clientName,
+        pickupAddress: c.pickupAddress,
+        ageHours: Math.round(ageHours * 10) / 10,
+      };
+    });
+    // Aging buckets should reflect ALL unassigned, not just the watch slice.
+    unassignedAging.lt2h = 0; unassignedAging.h2_8 = 0; unassignedAging.gt8 = 0;
+    for (const c of unassigned) {
+      const ageHours = (now - new Date(c.createdAt).getTime()) / HOUR;
+      if (ageHours < 2) unassignedAging.lt2h += 1;
+      else if (ageHours < 8) unassignedAging.h2_8 += 1;
+      else unassignedAging.gt8 += 1;
+      oldestUnassignedHours = Math.max(oldestUnassignedHours, ageHours);
+    }
+
+    let collectSum = 0, collectCount = 0;
+    let onTime = 0, scheduledCount = 0;
+    for (const c of collectedRecent) {
+      if (c.pickedUpAt) {
+        collectSum += (new Date(c.pickedUpAt).getTime() - new Date(c.createdAt).getTime()) / HOUR;
+        collectCount += 1;
+        if (c.scheduledAt) {
+          scheduledCount += 1;
+          if (new Date(c.pickedUpAt).getTime() <= new Date(c.scheduledAt).getTime()) onTime += 1;
+        }
+      }
+    }
+
+    const decided = sc.COLLECTED + sc.FAILED;
+    const round1 = (n: number) => Math.round(n * 10) / 10;
+
+    return {
+      statusCounts: sc,
+      backlog: sc.PENDING + sc.ASSIGNED + sc.IN_PROGRESS,
+      unassignedCount: unassigned.length,
+      unassignedAging,
+      oldestUnassignedHours: round1(oldestUnassignedHours),
+      avgTimeToCollectHours: collectCount ? round1(collectSum / collectCount) : null,
+      onTimePickupRatePct: scheduledCount ? Math.round((onTime / scheduledCount) * 1000) / 10 : null,
+      completionRatePct: decided ? Math.round((sc.COLLECTED / decided) * 1000) / 10 : 0,
+      collectedLast30: collectedRecent.length,
+      watch,
+      note:
+        'Unassigned = PENDING collections with no driver, aged from creation. Time-to-collect and on-time pickup are measured over collections picked up in the last 30 days.',
+    };
+  }
+
   async findOne(id: string, companyId: string) {
     const c = await this.prisma.collection.findFirst({
       where: { id, companyId },
