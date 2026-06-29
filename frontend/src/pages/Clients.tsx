@@ -9,8 +9,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeDollarSign, Building2, Edit2, Mail, Package, Phone, Plus, RefreshCw,
   Search, ShieldCheck, Trash2, User, X, AlertCircle,
+  CalendarClock, Wallet, TrendingUp, Users,
 } from "lucide-react";
 import api from "../api/client";
+import { TiltCard } from "../components/premium/TiltCard";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,6 +78,18 @@ function unwrap(res: any): any[] {
   const d = res?.data ?? res;
   return Array.isArray(d) ? d : [];
 }
+
+type ClientOverview = {
+  total: number;
+  byBillingType: { COD: number; PREPAID: number; CONTRACT: number; CASH: number };
+  contractCount: number;
+  totalCreditExtended: number;
+  newThisMonth: number;
+  avgContractTerms: number | null;
+  expiringContracts: { id: string; name: string; contractEnd: string; daysToEnd: number; expired: boolean }[];
+  expiringCount: number;
+  note: string;
+};
 
 // ── Client Form Modal ─────────────────────────────────────────────────────────
 
@@ -247,6 +261,7 @@ const inputCls = "w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
+  const [overview, setOverview] = useState<ClientOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [billingFilter, setBillingFilter] = useState<BillingType | "ALL">("ALL");
@@ -265,6 +280,7 @@ export default function ClientsPage() {
     try {
       const res = await api.get("/clients");
       setClients(unwrap(res));
+      api.get("/clients/overview").then((r: any) => setOverview(r?.data ?? r)).catch(() => setOverview(null));
     } finally {
       setLoading(false);
     }
@@ -350,6 +366,9 @@ export default function ClientsPage() {
           </div>
         </div>
       </div>
+
+      {/* Portfolio intelligence */}
+      {overview && overview.total > 0 && <ClientPortfolio o={overview} onFilterContracts={() => setBillingFilter("CONTRACT")} />}
 
       {/* Billing type filter strip */}
       <div className="flex flex-wrap gap-2">
@@ -498,6 +517,106 @@ export default function ClientsPage() {
           onClose={() => { setShowModal(false); setEditing(null); }}
         />
       )}
+    </div>
+  );
+}
+
+
+
+// ── Portfolio intelligence panel ────────────────────────────────────────────
+
+function clientMoney(v: number) {
+  return `R ${Math.round(v).toLocaleString("en-ZA")}`;
+}
+
+const MIX_META: { key: "COD" | "PREPAID" | "CONTRACT" | "CASH"; label: string; cls: string }[] = [
+  { key: "CONTRACT", label: "Contract", cls: "bg-sky-400" },
+  { key: "PREPAID", label: "Prepaid", cls: "bg-emerald-400" },
+  { key: "COD", label: "COD", cls: "bg-amber-400" },
+  { key: "CASH", label: "Cash", cls: "bg-slate-400" },
+];
+
+function ClientPortfolio({ o, onFilterContracts }: { o: ClientOverview; onFilterContracts: () => void }) {
+  const mixTotal = Math.max(1, o.byBillingType.COD + o.byBillingType.PREPAID + o.byBillingType.CONTRACT + o.byBillingType.CASH);
+
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 fx-glass fx-reveal">
+      <div className="flex items-center gap-2 mb-4">
+        <Users className="h-4 w-4 text-sky-300" />
+        <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">Portfolio Intelligence</h2>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <TiltCard>
+          <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-white">{o.total}</div><Building2 className="h-4 w-4 text-white/25" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Active clients</div>
+            {o.newThisMonth > 0 && <div className="text-[10px] text-emerald-300/80 mt-0.5">+{o.newThisMonth} this month</div>}
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <button onClick={onFilterContracts} className="w-full text-left rounded-[18px] border border-sky-400/20 bg-sky-500/[0.06] p-4 h-full hover:bg-sky-500/[0.12] transition">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-sky-300">{o.contractCount}</div><ShieldCheck className="h-4 w-4 text-sky-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Contract accounts</div>
+            {o.avgContractTerms != null && <div className="text-[10px] text-white/35 mt-0.5">avg {o.avgContractTerms}d terms</div>}
+          </button>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-[18px] border border-emerald-400/20 bg-emerald-500/[0.06] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-xl font-black text-emerald-300">{clientMoney(o.totalCreditExtended)}</div><Wallet className="h-4 w-4 text-emerald-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Credit extended</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-[18px] border p-4 h-full ${o.expiringCount > 0 ? "border-amber-400/25 bg-amber-500/[0.07]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${o.expiringCount > 0 ? "text-amber-300" : "text-white"}`}>{o.expiringCount}</div><CalendarClock className={`h-4 w-4 ${o.expiringCount > 0 ? "text-amber-300" : "text-white/25"}`} /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Contracts expiring</div>
+            <div className="text-[10px] text-white/35 mt-0.5">within 60 days</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      <div className="mt-5 grid lg:grid-cols-2 gap-5">
+        {/* Billing-type mix */}
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Billing-type mix</p>
+          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
+            {MIX_META.map((m) => o.byBillingType[m.key] > 0 && (
+              <div key={m.key} className={m.cls} style={{ width: `${(o.byBillingType[m.key] / mixTotal) * 100}%` }} title={`${m.label}: ${o.byBillingType[m.key]}`} />
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-white/45">
+            {MIX_META.map((m) => (
+              <span key={m.key} className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${m.cls}`} /> {m.label} {o.byBillingType[m.key]}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Renewal watch */}
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Contract renewal watch</p>
+          {o.expiringContracts.length === 0 ? (
+            <p className="text-xs text-white/30">No contracts expiring in the next 60 days.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {o.expiringContracts.map((c) => (
+                <div key={c.id} className="flex items-center gap-3 rounded-xl bg-black/20 px-3 py-2 text-sm">
+                  <CalendarClock className={`h-3.5 w-3.5 shrink-0 ${c.expired ? "text-rose-300" : "text-amber-300"}`} />
+                  <span className="min-w-0 flex-1 truncate font-bold text-white/80">{c.name}</span>
+                  {c.expired ? (
+                    <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-bold text-rose-300 shrink-0">lapsed {Math.abs(c.daysToEnd)}d</span>
+                  ) : (
+                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300 shrink-0">{c.daysToEnd}d left</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{o.note}</p>
     </div>
   );
 }
