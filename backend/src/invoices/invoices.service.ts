@@ -363,6 +363,66 @@ export class InvoicesService {
     });
   }
 
+  /**
+   * Billing coverage / revenue-leakage audit. Across DELIVERED, billable
+   * (totalAmount > 0) waybills: how many are on an invoice vs still unbilled,
+   * the unbilled value at risk, and how stale the unbilled ones are. This is the
+   * "are we billing everything we delivered?" check the batch desk needs.
+   * Tenant-scoped, read-only.
+   */
+  async getBillingCoverage(companyId: string) {
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const billableWhere = { companyId, status: 'DELIVERED' as const, totalAmount: { gt: 0 } };
+
+    const [billedCount, unbilledAgg, unbilledList] = await Promise.all([
+      this.prisma.waybill.count({ where: { ...billableWhere, invoiceItems: { some: {} } } }),
+      this.prisma.waybill.aggregate({
+        where: { ...billableWhere, invoiceItems: { none: {} } },
+        _count: { _all: true },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.waybill.findMany({
+        where: { ...billableWhere, invoiceItems: { none: {} } },
+        select: { id: true, trackingNumber: true, recipientName: true, totalAmount: true, updatedAt: true },
+        orderBy: { updatedAt: 'asc' }, // oldest unbilled first
+        take: 500,
+      }),
+    ]);
+
+    const unbilledCount = unbilledAgg._count._all;
+    const unbilledValue = Math.round(unbilledAgg._sum.totalAmount ?? 0);
+    const billable = billedCount + unbilledCount;
+    const coverageRatePct = billable ? Math.round((billedCount / billable) * 1000) / 10 : 100;
+
+    const aging = { lt7: 0, d7_30: 0, gt30: 0 };
+    const watch = unbilledList.map((w) => {
+      const ageDays = Math.floor((now - new Date(w.updatedAt).getTime()) / DAY);
+      if (ageDays < 7) aging.lt7 += 1;
+      else if (ageDays <= 30) aging.d7_30 += 1;
+      else aging.gt30 += 1;
+      return {
+        id: w.id,
+        trackingNumber: w.trackingNumber,
+        recipient: w.recipientName ?? '—',
+        amount: Math.round(w.totalAmount ?? 0),
+        ageDays,
+      };
+    }).slice(0, 10);
+
+    return {
+      billable,
+      billedCount,
+      unbilledCount,
+      unbilledValue,
+      coverageRatePct,
+      aging, // computed over the oldest unbilled (capped at 500)
+      watch,
+      note:
+        'Coverage is delivered, billable (priced) waybills already on an invoice vs still unbilled. Unbilled value is revenue delivered but not yet invoiced. Aging is from the delivery/last-update date.',
+    };
+  }
+
 
   // ── Auto monthly invoicing ────────────────────────────────────────────────
 
