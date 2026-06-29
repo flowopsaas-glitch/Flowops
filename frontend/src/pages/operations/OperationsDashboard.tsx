@@ -68,6 +68,27 @@ type OpsSummary = {
   trend: Array<{ date: string; count: number }>;
 };
 
+type ExceptionSla = {
+  slaHours: number;
+  openCount: number;
+  breached: number;
+  withinSla: number;
+  breachRatePct: number;
+  oldestHours: number;
+  buckets: { lt4: number; h4_12: number; h12_24: number; gt24: number };
+  watch: Array<{
+    id: string;
+    trackingNumber: string;
+    status: string;
+    recipientName?: string | null;
+    recipientAddress?: string | null;
+    riskLevel?: string | null;
+    ageHours: number;
+    breached: boolean;
+  }>;
+  note: string;
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function unwrap(raw: any): OpsSummary | null {
@@ -128,6 +149,7 @@ function Stat({
 export default function OperationsDashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState<OpsSummary | null>(null);
+  const [sla, setSla] = useState<ExceptionSla | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -140,6 +162,7 @@ export default function OperationsDashboard() {
     try {
       const raw: any = await api.get("/operations/summary");
       setData(unwrap(raw));
+      api.get("/operations/exception-sla").then((r: any) => setSla(r?.data ?? r)).catch(() => setSla(null));
       setLastRefresh(new Date());
     } catch (e: any) {
       setError(e?.message || "Failed to load operations data");
@@ -573,6 +596,11 @@ export default function OperationsDashboard() {
           </div>
         </div>
 
+        {/* ── Exception SLA tracker ── */}
+        {sla && sla.openCount > 0 && (
+          <ExceptionSlaPanel sla={sla} onView={() => navigate("/high-risk-queue")} />
+        )}
+
         {/* ── Unassigned collections ── */}
         {(data?.unassigned?.length ?? 0) > 0 && (
           <div className="rounded-[28px] border border-amber-500/20 bg-amber-500/5 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.3)]">
@@ -638,6 +666,102 @@ export default function OperationsDashboard() {
             </div>
           )}
       </div>
+    </div>
+  );
+}
+
+
+
+// ── Exception SLA tracker ────────────────────────────────────────────────────
+
+function fmtAge(h: number): string {
+  if (h < 1) return `${Math.round(h * 60)}m`;
+  if (h < 24) return `${Math.round(h)}h`;
+  return `${(h / 24).toFixed(1)}d`;
+}
+
+function ExceptionSlaPanel({ sla, onView }: { sla: ExceptionSla; onView: () => void }) {
+  const segs = [
+    { v: sla.buckets.lt4, cls: "bg-emerald-400", label: "<4h" },
+    { v: sla.buckets.h4_12, cls: "bg-sky-400", label: "4–12h" },
+    { v: sla.buckets.h12_24, cls: "bg-amber-400", label: "12–24h" },
+    { v: sla.buckets.gt24, cls: "bg-rose-500", label: ">24h" },
+  ];
+  const bucketTotal = Math.max(1, segs.reduce((s, b) => s + b.v, 0));
+
+  return (
+    <div className="rounded-[28px] border border-rose-500/20 bg-rose-500/[0.05] p-6 shadow-[0_18px_60px_rgba(0,0,0,0.3)] fx-reveal">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div className="flex items-center gap-3">
+          <div className="grid h-9 w-9 place-items-center rounded-xl bg-rose-500/15 ring-1 ring-rose-500/20">
+            <Clock className="h-4 w-4 text-rose-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-white">Exception SLA Tracker</h3>
+            <p className="text-[11px] text-white/40">Open failed / returned waybills aged against a {sla.slaHours}h actioning SLA</p>
+          </div>
+        </div>
+        <button onClick={onView} className="flex items-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-2 text-sm font-bold text-rose-300 hover:bg-rose-500/15 transition">
+          Work queue <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <div className="text-2xl font-black text-white">{sla.openCount}</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Open exceptions</div>
+        </div>
+        <div className={`rounded-2xl border p-4 ${sla.breached > 0 ? "border-rose-500/30 bg-rose-500/[0.08]" : "border-white/8 bg-white/[0.03]"}`}>
+          <div className={`text-2xl font-black ${sla.breached > 0 ? "text-rose-300" : "text-white"}`}>{sla.breached}</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">SLA breached</div>
+          <div className="text-[10px] text-white/35 mt-0.5">{sla.breachRatePct}% of open</div>
+        </div>
+        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-4">
+          <div className="text-2xl font-black text-emerald-300">{sla.withinSla}</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Within SLA</div>
+        </div>
+        <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4">
+          <div className="text-2xl font-black text-amber-300">{fmtAge(sla.oldestHours)}</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Oldest open</div>
+        </div>
+      </div>
+
+      {/* Aging spread */}
+      <div className="mt-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Aging spread</p>
+        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
+          {segs.map((s) => s.v > 0 && (
+            <div key={s.label} className={s.cls} style={{ width: `${(s.v / bucketTotal) * 100}%` }} title={`${s.label}: ${s.v}`} />
+          ))}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-white/45">
+          {segs.map((s) => (
+            <span key={s.label} className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${s.cls}`} /> {s.label} {s.v}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Oldest-first watch list */}
+      <div className="mt-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Oldest unactioned — work these first</p>
+        <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+          {sla.watch.map((w) => (
+            <div key={w.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/25 px-3 py-2">
+              <span className="font-mono text-xs font-black text-rose-300 shrink-0">{w.trackingNumber}</span>
+              <span className={`text-[9px] font-bold rounded-full px-2 py-0.5 border shrink-0 ${w.status === "FAILED_DELIVERY" ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
+                {w.status === "FAILED_DELIVERY" ? "Failed" : "Returned"}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[11px] text-white/55">{w.recipientName ?? w.recipientAddress ?? "—"}</span>
+              {w.breached
+                ? <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-bold text-rose-300 shrink-0">breached · {fmtAge(w.ageHours)}</span>
+                : <span className="text-[10px] text-white/40 shrink-0">{fmtAge(w.ageHours)}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{sla.note}</p>
     </div>
   );
 }

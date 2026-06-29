@@ -44,6 +44,11 @@ export class DashboardController {
     return this.svc.getOperationsSummary(u.companyId);
   }
 
+  @Get('operations/exception-sla')
+  getExceptionSla(@CurrentUser() u: any) {
+    return this.svc.getExceptionSla(u.companyId);
+  }
+
   @Get('collections-state-sync/dashboard')
   syncDashboard(@CurrentUser() u: any) {
     return this.svc.getCollectionsSyncDashboard(u.companyId);
