@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
-import { cn } from "../../lib/utils"; 
+import { cn } from "../../lib/utils";  
 import logo from "../../assets/logo.png";
 import { useTenant } from "../../contexts/TenantContext";
 import { useAuth } from "../../contexts/AuthContext";
@@ -20,6 +20,7 @@ import {
   normalizeTenantNavPermissions,
   type TenantNavPermissionKey,
 } from "../../lib/tenantUserPermissions";
+import { getEntitlements } from "../../api/billingApi";
 
 type NavItem = {
   label: string;
@@ -33,6 +34,8 @@ type NavItem = {
   perm?: TenantNavPermissionKey;
   /** Restrict to tenant-admin roles only (admin landing surfaces). */
   adminOnly?: boolean;
+  /** Hide unless the tenant's PLAN entitles this feature (plan-tier gate). */
+  entitlement?: string;
 };
 
 type DeferredInstallPrompt = Event & {
@@ -197,6 +200,15 @@ export default function AppLayout() {
       return next;
     });
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
+  // Plan-tier gate: null until loaded (we don't hide paid items before we know).
+  const [features, setFeatures] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getEntitlements()
+      .then((e) => { if (alive) setFeatures(e?.features ?? {}); })
+      .catch(() => { if (alive) setFeatures({}); });
+    return () => { alive = false; };
+  }, []);
   const location = useLocation();
   const navigate = useNavigate();
   const { branding } = useTenant();
@@ -228,7 +240,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Driver Home",         desc: "My jobs, pickups & portal",     to: "/driver-home",        icon: Truck,    perm: "podDeliveries" },
     { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "driverDispatch" },
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
-    { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck },
+    { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck, entitlement: "courierManagement" },
     { section: "OPS", label: "Carriers & Procurement", desc: "Lines, airlines & buy-rate contracts", to: "/carriers", icon: Ship, perm: "rateCards" },
     { section: "OPS", label: "Returns / RMA", desc: "Collect, inspect, refund, restock", to: "/returns", icon: RotateCcw, perm: "returns" },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
@@ -237,7 +249,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Fleet Maintenance", desc: "Vehicle service tracker", to: "/fleet", icon: Wrench, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
-    { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true },
+    { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email" },
@@ -255,14 +267,15 @@ export default function AppLayout() {
     { section: "BILLING", label: "Plans & Usage", desc: "Subscription, limits & upgrades", to: "/billing/plans", icon: Crown, perm: "invoices" },
     
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower"   },
-    { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower"   },
-    { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy },
+    { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot"          },
+    { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
+    { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy, entitlement: "aiSupportAgent" },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
     { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
     { section: "ADMIN", label: "Integrations", desc: "API keys & webhooks", to: "/settings/integrations", icon: Settings, perm: "settings" },
-    { section: "ADMIN", label: "Single Sign-On", desc: "OIDC SSO (Enterprise)", to: "/settings/sso", icon: ShieldCheck, adminOnly: true },
+    { section: "ADMIN", label: "Single Sign-On", desc: "OIDC SSO (Enterprise)", to: "/settings/sso", icon: ShieldCheck, adminOnly: true, entitlement: "sso" },
     { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings, perm: "settings" },
   ], []);
 
@@ -292,9 +305,13 @@ export default function AppLayout() {
       nav.filter((item) => {
         if (item.adminOnly && !isTenantAdmin) return false;
         if (item.perm && isAuthenticated && !perms[item.perm]) return false;
+        // Plan-tier gate: once entitlements are loaded, hide modules the tenant's
+        // plan doesn't include. Before load (features===null) we don't hide, to
+        // avoid a flash of missing nav for entitled users.
+        if (item.entitlement && features && !features[item.entitlement]) return false;
         return true;
       }),
-    [nav, perms, isTenantAdmin, isAuthenticated],
+    [nav, perms, isTenantAdmin, isAuthenticated, features],
   );
 
   const grouped = useMemo(() => ({
