@@ -724,6 +724,34 @@ export class OwnerService {
     return updated;
   }
 
+  /**
+   * Permanently delete a tenant and ALL its data. Destructive and irreversible —
+   * every child record (users, waybills, collections, shipments, invoices,
+   * drivers, etc.) is removed via DB cascade. Audited before the row disappears.
+   * The frontend requires the owner to type the tenant name to confirm.
+   */
+  async deleteTenant(tenantId: string, actor?: OwnerActor) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, plan: true, _count: { select: { users: true, waybills: true } } },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    // Record the intent first so the audit trail survives the cascade delete.
+    await this.audit.record({
+      action: 'tenant.delete',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: { plan: company.plan, users: company._count.users, waybills: company._count.waybills },
+    });
+
+    await this.prisma.company.delete({ where: { id: tenantId } });
+    return { deleted: true, id: tenantId, name: company.name };
+  }
+
   // ── AI alerts (critical events across all tenants) ────────────────────
   async getPlatformAlerts() {
     return this.prisma.aiEvent.findMany({
