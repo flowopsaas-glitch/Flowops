@@ -336,7 +336,7 @@ export default function Invoices() {
       )}
 
       {/* Header */}
-      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl fx-glass fx-reveal">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black tracking-tight text-white">Invoices</h1>
@@ -417,7 +417,7 @@ export default function Invoices() {
             <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-300/60">Collected</div>
             <div className="mt-2 text-3xl font-black text-emerald-300">{money(metrics.collected)}</div>
           </div>
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 fx-lift">
             <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Collection Rate</div>
             <div className="mt-2 text-3xl font-black text-white">
               {metrics.collectionRate.toFixed(1)}%
