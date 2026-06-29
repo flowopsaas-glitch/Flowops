@@ -80,7 +80,8 @@ export class LabelService {
     for (const wb of waybills) {
       doc.addPage({ size: [this.W, this.H], margin: 0 });
       // Pre-render images (async) before drawing the page synchronously.
-      const qrUrl = `${trackBase}/track-shipment?tn=${encodeURIComponent(wb.trackingNumber)}`;
+      // Tracking page route is /track/:trackingNumber (see frontend App routes).
+      const qrUrl = `${trackBase}/track/${encodeURIComponent(wb.trackingNumber)}`;
       const [qrBuf, barcodeBuf] = await Promise.all([
         QRCode.toBuffer(qrUrl, { margin: 0, width: 160 }),
         this.barcode(wb.trackingNumber),
