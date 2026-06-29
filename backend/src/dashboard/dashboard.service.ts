@@ -464,6 +464,64 @@ export class DashboardService {
   }
 
   /**
+   * Exception SLA tracker — open delivery exceptions (FAILED_DELIVERY /
+   * RETURNED waybills still in that state) aged by how long they've sat
+   * unactioned, against a 24h actioning SLA. Surfaces breach count, an aging
+   * spread and an oldest-first watch list so the ops desk works the worst
+   * first. Tenant-scoped, read-only.
+   */
+  async getExceptionSla(companyId: string) {
+    const SLA_HOURS = 24;
+    const now = Date.now();
+    const open = await this.prisma.waybill.findMany({
+      where: { companyId, status: { in: ['FAILED_DELIVERY', 'RETURNED'] } },
+      select: {
+        id: true, trackingNumber: true, status: true, updatedAt: true,
+        recipientName: true, recipientAddress: true, riskLevel: true,
+      },
+      orderBy: { updatedAt: 'asc' }, // oldest first
+      take: 500,
+    });
+
+    const buckets = { lt4: 0, h4_12: 0, h12_24: 0, gt24: 0 };
+    let breached = 0;
+    let oldestHours = 0;
+
+    const aged = open.map((w) => {
+      const ageHours = Math.max(0, (now - new Date(w.updatedAt).getTime()) / 3_600_000);
+      if (ageHours < 4) buckets.lt4 += 1;
+      else if (ageHours < 12) buckets.h4_12 += 1;
+      else if (ageHours < 24) buckets.h12_24 += 1;
+      else buckets.gt24 += 1;
+      if (ageHours >= SLA_HOURS) breached += 1;
+      oldestHours = Math.max(oldestHours, ageHours);
+      return {
+        id: w.id,
+        trackingNumber: w.trackingNumber,
+        status: w.status,
+        recipientName: w.recipientName,
+        recipientAddress: w.recipientAddress,
+        riskLevel: w.riskLevel,
+        ageHours: Math.round(ageHours * 10) / 10,
+        breached: ageHours >= SLA_HOURS,
+      };
+    });
+
+    return {
+      slaHours: SLA_HOURS,
+      openCount: open.length,
+      breached,
+      withinSla: open.length - breached,
+      breachRatePct: open.length ? Math.round((breached / open.length) * 1000) / 10 : 0,
+      oldestHours: Math.round(oldestHours * 10) / 10,
+      buckets,
+      watch: aged.slice(0, 10), // oldest first
+      note:
+        'Open exceptions are waybills still in FAILED_DELIVERY / RETURNED. Age is measured from the last status change; a 24h actioning SLA flags breaches.',
+    };
+  }
+
+  /**
    * Live ETA for every shipment currently IN_TRANSIT.
    * Uses haversine straight-line distance ÷ AVG_SPEED_KMH as a first-pass
    * estimate.  Values refresh every 30 s in the Dashboard so the map popup
