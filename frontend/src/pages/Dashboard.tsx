@@ -11,6 +11,7 @@ import { normalizeTenantNavPermissions } from "../lib/tenantUserPermissions";
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { ForwardingControlTower } from "../components/premium/ForwardingControlTower";
 import { TiltCard } from "../components/premium/TiltCard";
+import { PerformanceTrends } from "../components/premium/PerformanceTrends";
 import { getEntitlements } from "../api/billingApi";
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../api/client';
@@ -378,6 +379,9 @@ export default function Dashboard() {
         )}
       </div>
       )}
+
+      {/* Performance Trends — time-series volume & revenue (exec view) */}
+      {(canSeeOps || canSeeFinance) && <PerformanceTrends currency={currency} />}
 
       {/* Leaflet Real-time Transit Grid Block Container — operations personas only */}
       {canSeeMap && (

@@ -19,6 +19,11 @@ export class DashboardController {
     return this.svc.getKpis(u.companyId);
   }
 
+  @Get('dashboard/trends')
+  getTrends(@CurrentUser() u: any, @Query('days') days?: string) {
+    return this.svc.getTrends(u.companyId, days ? parseInt(days) : 30);
+  }
+
   @Get('dashboard/live-etas')
   getLiveEtas(@CurrentUser() u: any) {
     return this.svc.getLiveEtas(u.companyId);
