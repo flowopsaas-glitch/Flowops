@@ -14,6 +14,11 @@ export class CollectionsController {
     return this.svc.findAll(u.companyId, q);
   }
 
+  @Get('collections/insights')
+  insights(@CurrentUser() u: any) {
+    return this.svc.insights(u.companyId);
+  }
+
   @Post('collections')
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);

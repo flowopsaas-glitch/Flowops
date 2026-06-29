@@ -8,9 +8,15 @@ import {
   Search,
   Bot,
   Filter,
+  Clock,
+  AlertTriangle,
+  Timer,
+  Gauge,
+  CheckCircle2,
 } from "lucide-react";
 import { api } from '../api/client';
 import { exportCsv, csvFilename } from '../lib/exportCsv';
+import { TiltCard } from "../components/premium/TiltCard";
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -19,6 +25,20 @@ function cn(...classes: Array<string | false | null | undefined>) {
 // Real Prisma enum values
 type CollectionStatus = "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "COLLECTED" | "FAILED" | "CANCELLED";
 type StatusFilter = "ALL" | CollectionStatus;
+
+type CollectionInsights = {
+  statusCounts: Record<string, number>;
+  backlog: number;
+  unassignedCount: number;
+  unassignedAging: { lt2h: number; h2_8: number; gt8: number };
+  oldestUnassignedHours: number;
+  avgTimeToCollectHours: number | null;
+  onTimePickupRatePct: number | null;
+  completionRatePct: number;
+  collectedLast30: number;
+  watch: Array<{ id: string; clientName?: string | null; pickupAddress?: string | null; ageHours: number }>;
+  note: string;
+};
 
 // Matches the actual Prisma Collection model fields
 type CollectionRow = {
@@ -78,6 +98,7 @@ export default function Collections() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState<CollectionRow[]>([]);
+  const [insights, setInsights] = useState<CollectionInsights | null>(null);
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,6 +141,7 @@ export default function Collections() {
 
       setRows(collectionsData);
       setDrivers(driversData);
+      api.get("/collections/insights").then((r: any) => setInsights(r?.data ?? r)).catch(() => setInsights(null));
 
       // Auto-select first item if none is currently selected and we have data
       if (collectionsData.length > 0 && selectedId === null) {
@@ -267,6 +289,11 @@ export default function Collections() {
              <StatCard label="Available" value={stats.available} />
           </div>
         </div>
+
+        {/* SCHEDULING EFFICIENCY */}
+        {insights && (insights.backlog > 0 || insights.collectedLast30 > 0) && (
+          <CollectionsEfficiency data={insights} onFilterPending={() => setStatusFilter("PENDING")} />
+        )}
 
         {/* STATUS FILTER TABS */}
         <div className="flex flex-wrap gap-2">
@@ -500,6 +527,96 @@ function DriverAssignButton({ drivers, disabled, onAssign }: { drivers: any[], d
         {drivers.map(d => <option key={d.id} value={String(d.id)}>{d.name} — {d.vehicleType || 'No Vehicle'}</option>)}
       </select>
       <button disabled={disabled || !val} onClick={()=>{onAssign(val); setVal("");}} className="bg-blue-600 px-10 rounded-2xl font-black text-xs uppercase tracking-[0.2em] active:scale-95 transition-all hover:bg-blue-500 disabled:opacity-50">Assign</button>
+    </div>
+  );
+}
+
+
+
+// ── Scheduling efficiency panel ─────────────────────────────────────────────
+
+function fmtColHrs(h: number | null): string {
+  if (h == null) return "—";
+  if (h < 1) return `${Math.round(h * 60)}m`;
+  if (h < 24) return `${Math.round(h)}h`;
+  return `${(h / 24).toFixed(1)}d`;
+}
+
+function CollectionsEfficiency({ data, onFilterPending }: { data: CollectionInsights; onFilterPending: () => void }) {
+  const agingTotal = Math.max(1, data.unassignedAging.lt2h + data.unassignedAging.h2_8 + data.unassignedAging.gt8);
+  const segs = [
+    { v: data.unassignedAging.lt2h, cls: "bg-emerald-400", label: "<2h" },
+    { v: data.unassignedAging.h2_8, cls: "bg-amber-400", label: "2–8h" },
+    { v: data.unassignedAging.gt8, cls: "bg-rose-500", label: ">8h" },
+  ];
+  const onTime = data.onTimePickupRatePct;
+  const onTimeTone = onTime == null ? "text-white" : onTime >= 80 ? "text-emerald-300" : onTime >= 50 ? "text-amber-300" : "text-rose-300";
+
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl fx-glass fx-reveal">
+      <div className="flex items-center gap-2 mb-4">
+        <Gauge className="h-4 w-4 text-sky-300" />
+        <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">Scheduling Efficiency</h2>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <TiltCard>
+          <button onClick={onFilterPending} disabled={data.unassignedCount === 0}
+            className={`w-full text-left rounded-2xl border p-4 h-full transition ${data.unassignedCount > 0 ? "border-amber-400/25 bg-amber-500/[0.07] hover:bg-amber-500/[0.12]" : "border-white/8 bg-white/[0.03] cursor-default"}`}>
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${data.unassignedCount > 0 ? "text-amber-300" : "text-white"}`}>{data.unassignedCount}</div><AlertTriangle className="h-4 w-4 text-amber-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Unassigned</div>
+            <div className="text-[10px] text-white/35 mt-0.5">oldest {fmtColHrs(data.oldestUnassignedHours)}</div>
+          </button>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-white">{data.backlog}</div><Timer className="h-4 w-4 text-white/25" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Open backlog</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-white">{fmtColHrs(data.avgTimeToCollectHours)}</div><Clock className="h-4 w-4 text-white/25" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Avg time-to-collect</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{data.collectedLast30} in 30d</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-4 h-full">
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${onTimeTone}`}>{onTime == null ? "—" : `${onTime}%`}</div><CheckCircle2 className="h-4 w-4 text-emerald-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">On-time pickup</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{data.completionRatePct}% completion</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {data.unassignedCount > 0 && (
+        <div className="mt-5 grid lg:grid-cols-2 gap-5">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Unassigned aging</p>
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
+              {segs.map((s) => s.v > 0 && <div key={s.label} className={s.cls} style={{ width: `${(s.v / agingTotal) * 100}%` }} title={`${s.label}: ${s.v}`} />)}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-white/45">
+              {segs.map((s) => <span key={s.label} className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${s.cls}`} /> {s.label} {s.v}</span>)}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Oldest unassigned — assign a driver</p>
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+              {data.watch.map((w) => (
+                <div key={w.id} className="flex items-center gap-3 rounded-xl bg-black/25 px-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate font-bold text-white/80">{w.clientName || "—"}</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-white/40">{w.pickupAddress || "—"}</span>
+                  <span className={`shrink-0 text-[10px] font-bold ${w.ageHours >= 8 ? "text-rose-300" : "text-white/40"}`}>{fmtColHrs(w.ageHours)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{data.note}</p>
     </div>
   );
 }
