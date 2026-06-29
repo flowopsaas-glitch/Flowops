@@ -190,7 +190,7 @@ export default function ShipmentFilePage() {
 
 function Section({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
   return (
-    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-5">
+    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-5 fx-lift fx-reveal">
       <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white/55 mb-3 flex items-center gap-2"><Icon className="h-4 w-4 text-cyan-300" />{title}</h2>
       <div className="space-y-2">{children}</div>
     </div>

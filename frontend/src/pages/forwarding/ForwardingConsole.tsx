@@ -105,7 +105,7 @@ export default function ForwardingConsole() {
       <div className="mx-auto max-w-6xl space-y-5">
 
         {/* Header */}
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 backdrop-blur-xl shadow-[0_16px_50px_rgba(0,0,0,0.3)]">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 backdrop-blur-xl shadow-[0_16px_50px_rgba(0,0,0,0.3)] fx-reveal">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4">
               <div className="grid h-14 w-14 place-items-center rounded-2xl bg-cyan-500/20 ring-2 ring-cyan-500/30">
@@ -185,7 +185,7 @@ export default function ForwardingConsole() {
               const risk = f.aiRiskScore ?? 0;
               return (
                 <button key={f.id} onClick={() => navigate(`/forwarding/${f.id}`)}
-                  className="w-full text-left rounded-2xl border border-white/8 bg-white/[0.04] p-4 hover:bg-white/[0.07] transition flex items-center gap-4">
+                  className="w-full text-left rounded-2xl border border-white/8 bg-white/[0.04] p-4 hover:bg-white/[0.07] transition flex items-center gap-4 fx-lift">
                   <div className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-500/10 ring-1 ring-cyan-500/20 shrink-0">
                     <Icon className="h-5 w-5 text-cyan-300" />
                   </div>
@@ -222,7 +222,7 @@ export default function ForwardingConsole() {
 
 function Kpi({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4 fx-lift">
       <div className={`text-2xl font-black ${tone}`}>{value}</div>
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">{label}</div>
     </div>
