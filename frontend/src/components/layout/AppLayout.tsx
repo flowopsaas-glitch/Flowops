@@ -6,7 +6,7 @@ import {
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, ChevronDown,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -51,54 +51,64 @@ function SidebarSection(props: {
   currentPath: string;
   onNavigate: () => void;
   collapsed?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
 }) {
   if (!props.items || props.items.length === 0) return null;
-  const { collapsed } = props;
+  const { collapsed, open = true } = props;
 
   return (
-    <div className="mb-6">
+    <div className="mb-4">
       {!collapsed && (
-        <div className="mb-2 px-4 text-[10px] font-black uppercase tracking-[0.24em] text-white/40">
-          {props.title}
-        </div>
+        <button
+          onClick={props.onToggle}
+          aria-expanded={open}
+          aria-label={`${open ? "Collapse" : "Expand"} ${props.title} section`}
+          className="mb-2 flex w-full items-center justify-between rounded-lg px-4 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-white/40 transition hover:bg-white/[0.04] hover:text-white/70"
+        >
+          <span>{props.title}</span>
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", open ? "" : "-rotate-90")} />
+        </button>
       )}
 
-      <div className={cn("space-y-1.5", collapsed ? "px-2" : "px-2")}>
-        {props.items.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={props.onNavigate}
-              title={collapsed ? item.label : undefined}
-              aria-label={item.label}
-              className={({ isActive }) =>
-                cn(
-                  "group flex items-start gap-3 rounded-2xl border transition",
-                  collapsed ? "justify-center px-2 py-2.5" : "px-3 py-3",
-                  isActive
-                    ? "border-sky-300/20 bg-sky-300/10 text-white shadow-[0_0_15px_rgba(125,211,252,0.05)]"
-                    : "border-transparent bg-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
-                )
-              }
-            >
-              <div className="mt-0.5 rounded-xl border border-white/10 bg-white/[0.05] p-2">
-                <Icon className="h-4 w-4" />
-              </div>
-
-              {!collapsed && (
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold leading-5">{item.label}</div>
-                  <div className="mt-0.5 text-[11px] leading-4 text-white/45">
-                    {item.desc}
-                  </div>
+      {(collapsed || open) && (
+        <div className={cn("space-y-1.5 px-2", !collapsed && "fx-reveal")}>
+          {props.items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={props.onNavigate}
+                title={collapsed ? item.label : undefined}
+                aria-label={item.label}
+                className={({ isActive }) =>
+                  cn(
+                    "group flex items-start gap-3 rounded-2xl border transition",
+                    collapsed ? "justify-center px-2 py-2.5" : "px-3 py-3",
+                    isActive
+                      ? "border-sky-300/20 bg-sky-300/10 text-white shadow-[0_0_15px_rgba(125,211,252,0.05)]"
+                      : "border-transparent bg-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
+                  )
+                }
+              >
+                <div className="mt-0.5 rounded-xl border border-white/10 bg-white/[0.05] p-2">
+                  <Icon className="h-4 w-4" />
                 </div>
-              )}
-            </NavLink>
-          );
-        })}
-      </div>
+
+                {!collapsed && (
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold leading-5">{item.label}</div>
+                    <div className="mt-0.5 text-[11px] leading-4 text-white/45">
+                      {item.desc}
+                    </div>
+                  </div>
+                )}
+              </NavLink>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -117,6 +127,18 @@ function SidebarContent(props: {
   const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
     ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
   const { collapsed } = props;
+
+  // Accordion: which sections are open. Default open; a section is folded only
+  // when explicitly set false. Persisted across reloads.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem("flowops.sidebar.sections") || "{}"); } catch { return {}; }
+  });
+  const toggleSection = (s: string) =>
+    setOpenSections((prev) => {
+      const next = { ...prev, [s]: prev[s] === false ? true : false };
+      try { localStorage.setItem("flowops.sidebar.sections", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
 
   return (
     <div className="flex h-full flex-col bg-[#081120]">
@@ -150,6 +172,8 @@ function SidebarContent(props: {
             currentPath={props.currentPath} 
             onNavigate={props.onNavigate} 
             collapsed={collapsed}
+            open={openSections[sec] !== false}
+            onToggle={() => toggleSection(sec)}
           />
         ))}
       </div>
