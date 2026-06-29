@@ -68,7 +68,7 @@ export default function CarrierManagement() {
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.10),transparent_30%),linear-gradient(180deg,#07111f,#0b1530)] p-4 sm:p-6">
       <div className="mx-auto max-w-5xl space-y-5">
         {/* Header */}
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 fx-glass fx-reveal">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4">
               <div className="grid h-14 w-14 place-items-center rounded-2xl bg-indigo-500/20 ring-2 ring-indigo-500/30">
@@ -162,7 +162,7 @@ function CarrierRow({ carrier, onChange, busy, setBusy, onRemove }: {
   };
 
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
+    <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4 fx-lift">
       <div className="flex items-center gap-4">
         <div className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-500/10 ring-1 ring-indigo-500/20 shrink-0">
           <Icon className="h-5 w-5 text-indigo-300" />
