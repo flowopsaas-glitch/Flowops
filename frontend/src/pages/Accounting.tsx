@@ -23,7 +23,7 @@ import {
 } from "../api/accountingIntegrationsApi";
 
 const glassCard = (c?: string) =>
-  cn("rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-xl", c);
+  cn("rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-xl fx-lift", c);
 const money = (n?: number | null) =>
   `R${Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pretty = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());

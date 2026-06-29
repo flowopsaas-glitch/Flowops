@@ -131,7 +131,7 @@ export default function CODReconciliation() {
       )}
 
       {/* Header */}
-      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl fx-glass fx-reveal">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300">
@@ -155,7 +155,7 @@ export default function CODReconciliation() {
             { icon: CreditCard,    label: "Collected (All Time)",val: money(summary.collected),   tone: "text-sky-300",    sub: "cash received from recipients" },
             { icon: CheckCircle2,  label: "Settled (All Time)",  val: money(summary.settled),     tone: "text-emerald-300",sub: "remitted to company" },
           ].map(({ icon: Icon, label, val, tone, sub }) => (
-            <div key={label} className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
+            <div key={label} className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 fx-lift">
               <div className="flex items-center justify-between">
                 <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">{label}</div>
                 <Icon className="h-4 w-4 text-white/20" />
