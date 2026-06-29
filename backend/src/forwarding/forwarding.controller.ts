@@ -14,6 +14,7 @@ import { CustomsDeclarationService } from './customs-declaration.service';
 import { CustomsEdiCredentialService } from './customs-edi/customs-edi-credential.service';
 import { DemurrageService } from './demurrage.service';
 import { ConsolidationService } from './consolidation.service';
+import { ForwardingOverviewService } from './forwarding-overview.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
 import { UpdateShipmentFileDto } from './dto/update-shipment-file.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -37,7 +38,16 @@ export class ForwardingController {
     private readonly ediCredentials: CustomsEdiCredentialService,
     private readonly demurrage: DemurrageService,
     private readonly consolidation: ConsolidationService,
+    private readonly overviewSvc: ForwardingOverviewService,
   ) {}
+
+  // ── Command-centre overview ─────────────────────────────────────────────────
+
+  @Get('overview')
+  @ApiOperation({ summary: 'Clearing & Forwarding command centre: cross-file KPIs, arrivals, customs queue, exceptions' })
+  overview(@CurrentUser() u: any) {
+    return this.overviewSvc.overview(u.companyId);
+  }
 
   // ── Shipment files ─────────────────────────────────────────────────────────
 
