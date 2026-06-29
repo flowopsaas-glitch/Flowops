@@ -42,3 +42,42 @@ export const updateCarrier = async (id: string, dto: Partial<Carrier>): Promise<
 export const deleteCarrier = async (id: string): Promise<{ deleted: boolean }> => unwrap(await api.delete(`/carriers/${id}`));
 export const addCarrierRate = async (id: string, dto: Partial<CarrierRate>): Promise<CarrierRate> => unwrap(await api.post(`/carriers/${id}/rates`, dto));
 export const deleteCarrierRate = async (id: string, rateId: string): Promise<{ deleted: boolean }> => unwrap(await api.delete(`/carriers/${id}/rates/${rateId}`));
+
+
+// ── Lane Rate Explorer (buy-side benchmarking) ─────────────────────────────
+
+export interface LaneQuote {
+  carrierId: string;
+  carrierName: string;
+  buyRate: number;
+  rateId: string;
+  active: boolean;
+}
+
+export interface LaneAnalysisRow {
+  lane: string;
+  containerType?: string | null;
+  mode?: string | null;
+  currency: string;
+  carrierCount: number;
+  quoteCount: number;
+  best: { carrierId: string; carrierName: string; buyRate: number; active: boolean };
+  worstRate: number;
+  avgRate: number;
+  savings: number;
+  savingsPct: number;
+  quotes: LaneQuote[];
+}
+
+export interface LaneAnalysis {
+  lanes: LaneAnalysisRow[];
+  summary: {
+    lanes: number;
+    competitiveLanes: number;
+    soleSourceLanes: number;
+    totalSavings: Record<string, number>;
+  };
+  note: string;
+}
+
+export const laneAnalysis = async (): Promise<LaneAnalysis> => unwrap(await api.get("/carriers/lane-analysis"));

@@ -22,6 +22,12 @@ export class CarriersController {
     return this.carriers.metrics(u.companyId);
   }
 
+  @Get('lane-analysis')
+  @ApiOperation({ summary: 'Lane Rate Explorer: best buy-rate, spread & savings per lane' })
+  laneAnalysis(@CurrentUser() u: any) {
+    return this.carriers.laneAnalysis(u.companyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List carriers (with buy-rates)' })
   list(@CurrentUser() u: any, @Query() query: any) {
