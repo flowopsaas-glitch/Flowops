@@ -77,3 +77,22 @@
     transform: none !important;
   }
 }
+
+
+/* Page transition — every route change flips/reveals in (keyed remount). */
+@keyframes fx-page-in {
+  from { opacity: 0; transform: perspective(1200px) rotateX(4deg) translateY(16px); }
+  to   { opacity: 1; transform: perspective(1200px) rotateX(0) translateY(0); }
+}
+.fx-page {
+  animation: fx-page-in .42s cubic-bezier(.2, .7, .2, 1) both;
+  transform-origin: top center;
+}
+
+/* Collapsible sidebar width transition. */
+.fx-sidebar { transition: width .28s cubic-bezier(.2, .7, .2, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-page { animation: none !important; transform: none !important; }
+  .fx-sidebar { transition: none !important; }
+}

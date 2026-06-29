@@ -6,10 +6,11 @@ import {
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
+  PanelLeftClose, PanelLeftOpen, ChevronDown,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
-import { cn } from "../../lib/utils"; 
+import { cn } from "../../lib/utils";  
 import logo from "../../assets/logo.png";
 import { useTenant } from "../../contexts/TenantContext";
 import { useAuth } from "../../contexts/AuthContext";
@@ -19,6 +20,7 @@ import {
   normalizeTenantNavPermissions,
   type TenantNavPermissionKey,
 } from "../../lib/tenantUserPermissions";
+import { getEntitlements } from "../../api/billingApi";
 
 type NavItem = {
   label: string;
@@ -32,6 +34,8 @@ type NavItem = {
   perm?: TenantNavPermissionKey;
   /** Restrict to tenant-admin roles only (admin landing surfaces). */
   adminOnly?: boolean;
+  /** Hide unless the tenant's PLAN entitles this feature (plan-tier gate). */
+  entitlement?: string;
 };
 
 type DeferredInstallPrompt = Event & {
@@ -46,46 +50,65 @@ function SidebarSection(props: {
   items: NavItem[];
   currentPath: string;
   onNavigate: () => void;
+  collapsed?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
 }) {
   if (!props.items || props.items.length === 0) return null;
+  const { collapsed, open = true } = props;
 
   return (
-    <div className="mb-6">
-      <div className="mb-2 px-4 text-[10px] font-black uppercase tracking-[0.24em] text-white/40">
-        {props.title}
-      </div>
+    <div className="mb-4">
+      {!collapsed && (
+        <button
+          onClick={props.onToggle}
+          aria-expanded={open}
+          aria-label={`${open ? "Collapse" : "Expand"} ${props.title} section`}
+          className="mb-2 flex w-full items-center justify-between rounded-lg px-4 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-white/40 transition hover:bg-white/[0.04] hover:text-white/70"
+        >
+          <span>{props.title}</span>
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", open ? "" : "-rotate-90")} />
+        </button>
+      )}
 
-      <div className="space-y-1.5 px-2">
-        {props.items.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={props.onNavigate}
-              className={({ isActive }) =>
-                cn(
-                  "group flex items-start gap-3 rounded-2xl border px-3 py-3 transition",
-                  isActive
-                    ? "border-sky-300/20 bg-sky-300/10 text-white shadow-[0_0_15px_rgba(125,211,252,0.05)]"
-                    : "border-transparent bg-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
-                )
-              }
-            >
-              <div className="mt-0.5 rounded-xl border border-white/10 bg-white/[0.05] p-2">
-                <Icon className="h-4 w-4" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold leading-5">{item.label}</div>
-                <div className="mt-0.5 text-[11px] leading-4 text-white/45">
-                  {item.desc}
+      {(collapsed || open) && (
+        <div className={cn("space-y-1.5 px-2", !collapsed && "fx-reveal")}>
+          {props.items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={props.onNavigate}
+                title={collapsed ? item.label : undefined}
+                aria-label={item.label}
+                className={({ isActive }) =>
+                  cn(
+                    "group flex items-start gap-3 rounded-2xl border transition",
+                    collapsed ? "justify-center px-2 py-2.5" : "px-3 py-3",
+                    isActive
+                      ? "border-sky-300/20 bg-sky-300/10 text-white shadow-[0_0_15px_rgba(125,211,252,0.05)]"
+                      : "border-transparent bg-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
+                  )
+                }
+              >
+                <div className="mt-0.5 rounded-xl border border-white/10 bg-white/[0.05] p-2">
+                  <Icon className="h-4 w-4" />
                 </div>
-              </div>
-            </NavLink>
-          );
-        })}
-      </div>
+
+                {!collapsed && (
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold leading-5">{item.label}</div>
+                    <div className="mt-0.5 text-[11px] leading-4 text-white/45">
+                      {item.desc}
+                    </div>
+                  </div>
+                )}
+              </NavLink>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -99,28 +122,44 @@ function SidebarContent(props: {
   onLogout: () => void;
   brandName: string;
   brandLogoUrl: string | null;
+  collapsed?: boolean;
 }) {
   const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
     ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
+  const { collapsed } = props;
+
+  // Accordion: which sections are open. Default open; a section is folded only
+  // when explicitly set false. Persisted across reloads.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem("flowops.sidebar.sections") || "{}"); } catch { return {}; }
+  });
+  const toggleSection = (s: string) =>
+    setOpenSections((prev) => {
+      const next = { ...prev, [s]: prev[s] === false ? true : false };
+      try { localStorage.setItem("flowops.sidebar.sections", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
 
   return (
     <div className="flex h-full flex-col bg-[#081120]">
-      <div className="shrink-0 border-b border-white/10 px-5 py-5">
-        <div className="flex items-center gap-3">
+      <div className={cn("shrink-0 border-b border-white/10 py-5", collapsed ? "px-3" : "px-5")}>
+        <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
           <img 
             src={props.brandLogoUrl ?? logo} 
             alt={`${props.brandName} logo`} 
-            className="h-12 w-12 rounded-2xl border border-white/10 bg-white/5 object-cover" 
+            className="h-12 w-12 rounded-2xl border border-white/10 bg-white/5 object-cover shrink-0" 
             onError={(e) => { (e.target as HTMLImageElement).src = logo; }}
           />
-          <div className="min-w-0">
-            <div className="text-lg font-black tracking-tight text-white uppercase italic">
-              {props.brandName}
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="text-lg font-black tracking-tight text-white uppercase italic">
+                {props.brandName}
+              </div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/50">
+                Tactical OS v1.8.2
+              </div>
             </div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/50">
-              Tactical OS v1.8.2
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -132,30 +171,39 @@ function SidebarContent(props: {
             items={props.grouped[sec] || []} 
             currentPath={props.currentPath} 
             onNavigate={props.onNavigate} 
+            collapsed={collapsed}
+            open={openSections[sec] !== false}
+            onToggle={() => toggleSection(sec)}
           />
         ))}
       </div>
 
-      <div className="shrink-0 border-t border-white/10 p-4 space-y-2 bg-[#081120]">
+      <div className={cn("shrink-0 border-t border-white/10 space-y-2 bg-[#081120]", collapsed ? "p-2" : "p-4")}>
         <button 
           onClick={props.onInstall}
           aria-label="Install application"
+          title={collapsed ? "Install application" : undefined}
           disabled={!props.canInstall} 
           className={cn(
-            "flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold transition", 
+            "flex w-full items-center justify-center gap-2 rounded-2xl border text-xs font-bold transition", 
+            collapsed ? "px-2 py-2.5" : "px-4 py-3",
             props.canInstall 
               ? "border-sky-300/20 bg-sky-300/10 text-sky-100 cursor-pointer hover:bg-sky-300/20" 
               : "border-white/5 bg-white/[0.02] text-white/20 cursor-not-allowed"
           )}
         >
-          <Download className="h-4 w-4" /> Install Application
+          <Download className="h-4 w-4" /> {!collapsed && "Install Application"}
         </button>
         <button 
           onClick={props.onLogout}
           aria-label="Log out"
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/10 bg-red-500/5 px-4 py-3 text-xs font-bold text-red-400/80 transition hover:bg-red-500/10"
+          title={collapsed ? "Terminate session" : undefined}
+          className={cn(
+            "flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/10 bg-red-500/5 text-xs font-bold text-red-400/80 transition hover:bg-red-500/10",
+            collapsed ? "px-2 py-2.5" : "px-4 py-3"
+          )}
         >
-          <LogOut className="h-4 w-4" /> Terminate Session
+          <LogOut className="h-4 w-4" /> {!collapsed && "Terminate Session"}
         </button>
       </div>
     </div>
@@ -166,7 +214,25 @@ function SidebarContent(props: {
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("flowops.sidebar.collapsed") === "1"; } catch { return false; }
+  });
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem("flowops.sidebar.collapsed", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
+  // Plan-tier gate: null until loaded (we don't hide paid items before we know).
+  const [features, setFeatures] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getEntitlements()
+      .then((e) => { if (alive) setFeatures(e?.features ?? {}); })
+      .catch(() => { if (alive) setFeatures({}); });
+    return () => { alive = false; };
+  }, []);
   const location = useLocation();
   const navigate = useNavigate();
   const { branding } = useTenant();
@@ -198,7 +264,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Driver Home",         desc: "My jobs, pickups & portal",     to: "/driver-home",        icon: Truck,    perm: "podDeliveries" },
     { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "driverDispatch" },
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
-    { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck },
+    { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck, entitlement: "courierManagement" },
     { section: "OPS", label: "Carriers & Procurement", desc: "Lines, airlines & buy-rate contracts", to: "/carriers", icon: Ship, perm: "rateCards" },
     { section: "OPS", label: "Returns / RMA", desc: "Collect, inspect, refund, restock", to: "/returns", icon: RotateCcw, perm: "returns" },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
@@ -207,7 +273,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Fleet Maintenance", desc: "Vehicle service tracker", to: "/fleet", icon: Wrench, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
-    { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true },
+    { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email" },
@@ -225,14 +291,15 @@ export default function AppLayout() {
     { section: "BILLING", label: "Plans & Usage", desc: "Subscription, limits & upgrades", to: "/billing/plans", icon: Crown, perm: "invoices" },
     
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower"   },
-    { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower"   },
-    { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy },
+    { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot"          },
+    { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
+    { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy, entitlement: "aiSupportAgent" },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
     { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
     { section: "ADMIN", label: "Integrations", desc: "API keys & webhooks", to: "/settings/integrations", icon: Settings, perm: "settings" },
-    { section: "ADMIN", label: "Single Sign-On", desc: "OIDC SSO (Enterprise)", to: "/settings/sso", icon: ShieldCheck, adminOnly: true },
+    { section: "ADMIN", label: "Single Sign-On", desc: "OIDC SSO (Enterprise)", to: "/settings/sso", icon: ShieldCheck, adminOnly: true, entitlement: "sso" },
     { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings, perm: "settings" },
   ], []);
 
@@ -262,9 +329,13 @@ export default function AppLayout() {
       nav.filter((item) => {
         if (item.adminOnly && !isTenantAdmin) return false;
         if (item.perm && isAuthenticated && !perms[item.perm]) return false;
+        // Plan-tier gate: once entitlements are loaded, hide modules the tenant's
+        // plan doesn't include. Before load (features===null) we don't hide, to
+        // avoid a flash of missing nav for entitled users.
+        if (item.entitlement && features && !features[item.entitlement]) return false;
         return true;
       }),
-    [nav, perms, isTenantAdmin, isAuthenticated],
+    [nav, perms, isTenantAdmin, isAuthenticated, features],
   );
 
   const grouped = useMemo(() => ({
@@ -296,7 +367,7 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen bg-[#07111f] text-white overflow-hidden font-sans lm-main">
       {/* Desktop Sidebar */}
-      <aside className="hidden w-[300px] shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col">
+      <aside className={cn("hidden shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col fx-sidebar", collapsed ? "w-[84px]" : "w-[300px]")}>
         <SidebarContent 
           grouped={grouped} 
           currentPath={location.pathname} 
@@ -306,6 +377,7 @@ export default function AppLayout() {
           onLogout={handleLogout}
           brandName={branding.brandName}
           brandLogoUrl={branding.logoUrl}
+          collapsed={collapsed}
         />
       </aside>
 
@@ -329,6 +401,9 @@ export default function AppLayout() {
         ) : null}
         <header className="z-30 border-b border-white/5 bg-[#081120]/80 backdrop-blur-md px-6 py-4 flex justify-between items-center shrink-0 lm-header">
           <div className="flex items-center gap-4">
+            <button onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} className="hidden xl:flex p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400 hover:bg-white/10 transition">
+              {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+            </button>
             <button onClick={() => setMobileOpen(true)} className="xl:hidden p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400">
               <Menu className="h-5 w-5" />
             </button>
@@ -401,7 +476,9 @@ export default function AppLayout() {
           })()}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(56,189,248,0.03),transparent)] pointer-events-none" />
           <div className="relative z-10 p-6">
-            <Outlet />
+            <div key={location.pathname} className="fx-page">
+              <Outlet />
+            </div>
           </div>
         </main>
       </div>
