@@ -89,6 +89,11 @@ export class InvoicesController {
     return this.svc.getUnbilledWaybills(u.companyId);
   }
 
+  @Get('invoices/billing-coverage')
+  getBillingCoverage(@CurrentUser() u: any) {
+    return this.svc.getBillingCoverage(u.companyId);
+  }
+
   @Get('invoices/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);
