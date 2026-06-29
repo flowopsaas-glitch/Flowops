@@ -3,11 +3,12 @@ import { api } from '../api/client';
 import { 
   ScanLine, Box, RefreshCcw,
   Zap, Info, Trash2, UploadCloud, Banknote, 
-  User, MapPin, Phone, Building2, Hash, ZoomIn, Package, Images, FileText
+  User, MapPin, Phone, Building2, Hash, ZoomIn, Package, Images, FileText, Printer
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { usePremiumWebSocket } from "../hooks/usePremiumWebSocket";
 import { useToast } from "../components/ToastProvider";
+import { printWaybillLabel } from "../lib/labelPrint";
 import { FLOWOPS_HTTP_ORIGIN } from "../lib/env";
 
 const RATE_PER_KG = 700; 
@@ -148,10 +149,22 @@ export default function WaybillInbox() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleApprove = async () => {
+  const handleApprove = async (opts?: { print?: boolean }) => {
     if (!selectedItem) return;
     try {
-      await api.post(`/waybills/inbox/${selectedItem.id}/commit`, editForm);
+      const res: any = await api.post(`/waybills/inbox/${selectedItem.id}/commit`, editForm);
+      const wb = res?.data ?? res;
+      const tn = wb?.trackingNumber ? ` ${wb.trackingNumber}` : "";
+      if (opts?.print && wb?.id) {
+        showToast(`Committed${tn} — opening label…`, "success");
+        try {
+          await printWaybillLabel(wb.id);
+        } catch {
+          showToast("Committed, but the label could not be generated. Print it later from Shipments.", "error");
+        }
+      } else {
+        showToast(`Committed${tn}.`, "success");
+      }
       setSelectedId(null);
       fetchData();
     } catch (err) { showToast("Commit failed.", "error"); }
@@ -196,7 +209,8 @@ export default function WaybillInbox() {
 
               <div className="flex gap-3">
                 <button onClick={() => { if(window.confirm("Reject document?")) api.delete(`/waybills/inbox/${selectedItem.id}`).then(() => fetchData()) }} className="bg-red-500/10 text-red-500 p-4 rounded-2xl border border-red-500/20"><Trash2 size={18} /></button>
-                <button onClick={handleApprove} className="bg-sky-500 hover:bg-sky-400 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase shadow-2xl transition-all">Approve & Commit</button>
+                <button onClick={() => void handleApprove()} className="bg-white/5 hover:bg-white/10 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase border border-white/10 transition-all">Commit</button>
+                <button onClick={() => void handleApprove({ print: true })} className="bg-sky-500 hover:bg-sky-400 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-2xl transition-all inline-flex items-center gap-2"><Printer size={16} /> Commit &amp; Print</button>
               </div>
             </div>
             

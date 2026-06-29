@@ -16,10 +16,14 @@ import {
   AlertTriangle,
   Gauge,
   Timer,
+  Printer,
+  Loader2,
 } from "lucide-react";
 import { api } from "../api/client";
 import { exportCsv, csvFilename } from "../lib/exportCsv";
+import { printWaybillLabels } from "../lib/labelPrint";
 import { TiltCard } from "../components/premium/TiltCard";
+import { useToast } from "../components/ToastProvider";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -27,6 +31,7 @@ type ShipmentStatus = "PENDING" | "IN_TRANSIT" | "DELIVERED" | "FAILED";
 
 type Shipment = {
   id: string;
+  waybillId?: string | null;
   status: ShipmentStatus;
   currentLat?: number | null;
   currentLng?: number | null;
@@ -140,6 +145,10 @@ export default function Shipments() {
   const [health, setHealth] = useState<ShipmentHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const { showToast } = useToast();
+  // Bulk parcel-label printing — set of selected waybill ids.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isPrinting, setIsPrinting] = useState(false);
   const [statusFilter, setStatusFilter] = useSearchParams();
   const activeStatusFilter = (statusFilter.get("status") || "").toUpperCase() as ShipmentStatus | "";
 
@@ -190,6 +199,52 @@ export default function Shipments() {
     return list;
   }, [shipments, activeStatusFilter, search]);
 
+  // ── Bulk label printing ──────────────────────────────────────────────────
+  // Only shipments that carry a waybill can be label-printed.
+  const selectableVisible = useMemo(
+    () => visible.filter((s) => !!s.waybillId),
+    [visible],
+  );
+  const allVisibleSelected =
+    selectableVisible.length > 0 &&
+    selectableVisible.every((s) => selected.has(s.waybillId as string));
+
+  const toggleOne = (waybillId?: string | null) => {
+    if (!waybillId) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(waybillId) ? next.delete(waybillId) : next.add(waybillId);
+      return next;
+    });
+  };
+
+  const toggleAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        selectableVisible.forEach((s) => next.delete(s.waybillId as string));
+      } else {
+        selectableVisible.forEach((s) => next.add(s.waybillId as string));
+      }
+      return next;
+    });
+  };
+
+  async function printSelectedLabels() {
+    if (selected.size === 0) return;
+    setIsPrinting(true);
+    try {
+      const n = await printWaybillLabels([...selected]);
+      showToast(`Generated ${n} label${n === 1 ? "" : "s"}.`, "success");
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message || err?.message || "Failed to generate labels";
+      showToast(msg, "error");
+    } finally {
+      setIsPrinting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -221,6 +276,15 @@ export default function Shipments() {
               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10"
             >
               <RefreshCw className="h-4 w-4" /> Refresh
+            </button>
+            <button
+              onClick={() => void printSelectedLabels()}
+              disabled={selected.size === 0 || isPrinting}
+              title={selected.size === 0 ? "Select shipments to print parcel labels" : `Print ${selected.size} parcel label(s)`}
+              className="inline-flex items-center gap-2 rounded-2xl border border-sky-400/30 bg-sky-500/15 px-4 py-2.5 text-sm font-bold text-sky-200 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {isPrinting ? "Preparing…" : `Print Labels${selected.size ? ` (${selected.size})` : ""}`}
             </button>
             <button
               onClick={() => exportCsv(
@@ -319,6 +383,16 @@ export default function Shipments() {
           <table className="w-full min-w-[820px] text-left text-sm">
             <thead>
               <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-white/40">
+                <th className="px-5 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible shipments"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    disabled={selectableVisible.length === 0}
+                    className="h-4 w-4 cursor-pointer accent-sky-500 disabled:opacity-30"
+                  />
+                </th>
                 <th className="px-5 py-3">Tracking</th>
                 <th className="px-5 py-3">Recipient</th>
                 <th className="px-5 py-3">Driver</th>
@@ -332,7 +406,7 @@ export default function Shipments() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b border-white/5">
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <td key={j} className="px-5 py-4">
                         <div className="h-3 animate-pulse rounded-full bg-white/5" />
                       </td>
@@ -341,7 +415,7 @@ export default function Shipments() {
                 ))
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center">
+                  <td colSpan={8} className="px-5 py-16 text-center">
                     <Package className="mx-auto h-10 w-10 text-white/10 mb-3" />
                     <div className="text-white/40 font-bold">
                       {shipments.length === 0
@@ -356,6 +430,19 @@ export default function Shipments() {
                     key={s.id}
                     className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
                   >
+                    {/* Select */}
+                    <td className="px-5 py-4">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${s.waybill?.trackingNumber ?? "shipment"} for label printing`}
+                        checked={!!s.waybillId && selected.has(s.waybillId)}
+                        onChange={() => toggleOne(s.waybillId)}
+                        disabled={!s.waybillId}
+                        title={s.waybillId ? "Select for label printing" : "No waybill linked"}
+                        className="h-4 w-4 cursor-pointer accent-sky-500 disabled:opacity-30"
+                      />
+                    </td>
+
                     {/* Tracking */}
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
