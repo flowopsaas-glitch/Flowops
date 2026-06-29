@@ -8,6 +8,17 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
+      includeAssets: [
+        'favicon.ico', 'favicon-32.png', 'apple-touch-icon.png',
+        'icon-192.png', 'icon-512.png', 'icon-192-maskable.png', 'icon-512-maskable.png',
+      ],
+      workbox: {
+        // Take control immediately and purge stale precache from older builds so
+        // an already-installed desktop app heals itself on the next load.
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
+      },
       manifest: {
         name: 'FlowOps Platform',
         short_name: 'FlowOps',

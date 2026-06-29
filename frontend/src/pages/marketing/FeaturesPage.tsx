@@ -3,7 +3,7 @@ import {
   Package, Truck, BarChart3, MessageCircle, Shield,
   MapPin, FileText, Scan, Wallet, Route, Bell, Users,
   CheckCircle2, ArrowRight, Zap, Bot, ShieldCheck, Ship, Mail, RotateCcw,
-  Activity, TrendingUp, Target,
+  Activity, TrendingUp, Target, LifeBuoy, PackageCheck,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
@@ -261,6 +261,26 @@ const sections = [
           "Just-in-time user provisioning on first login",
           "Domain restriction and default-role mapping",
           "Centralised identity for your whole team",
+        ],
+      },
+      {
+        icon: LifeBuoy,
+        title: "AI Support Agent",
+        points: [
+          "In-app product help grounded in your live operational data",
+          "Answers “where is my shipment / invoice / driver” instantly",
+          "Guides staff through workflows without leaving the app",
+          "Escalates to a human with full context when needed",
+        ],
+      },
+      {
+        icon: PackageCheck,
+        title: "Courier Management",
+        points: [
+          "Orchestrate client orders across your courier network",
+          "AI-assisted allocation and exception handling",
+          "Unified view of orders, statuses and SLAs",
+          "Built for 3PLs and multi-carrier operations",
         ],
       },
     ],

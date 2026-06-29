@@ -6,7 +6,7 @@ import {
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
-  PanelLeftClose, PanelLeftOpen, ChevronDown,
+  PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -20,7 +20,8 @@ import {
   normalizeTenantNavPermissions,
   type TenantNavPermissionKey,
 } from "../../lib/tenantUserPermissions";
-import { getEntitlements } from "../../api/billingApi";
+import { getEntitlements, type Entitlements } from "../../api/billingApi";
+import { featureTier } from "../../lib/planMeta";
 
 type NavItem = {
   label: string;
@@ -36,6 +37,11 @@ type NavItem = {
   adminOnly?: boolean;
   /** Hide unless the tenant's PLAN entitles this feature (plan-tier gate). */
   entitlement?: string;
+  /** Computed at render time: plan doesn't include this feature → show as a
+   *  locked upsell teaser instead of hiding it. */
+  locked?: boolean;
+  /** Computed at render time: which tier unlocks this item (PRO/ENTERPRISE). */
+  tier?: "PRO" | "ENTERPRISE" | null;
 };
 
 type DeferredInstallPrompt = Event & {
@@ -80,29 +86,55 @@ function SidebarSection(props: {
                 key={item.to}
                 to={item.to}
                 onClick={props.onNavigate}
-                title={collapsed ? item.label : undefined}
-                aria-label={item.label}
+                title={collapsed ? (item.locked ? `${item.label} — ${item.tier} plan` : item.label) : undefined}
+                aria-label={item.locked ? `${item.label} (locked — ${item.tier} plan)` : item.label}
                 className={({ isActive }) =>
                   cn(
                     "group flex items-start gap-3 rounded-2xl border transition",
                     collapsed ? "justify-center px-2 py-2.5" : "px-3 py-3",
-                    isActive
+                    item.locked
+                      ? "border-transparent bg-transparent text-white/35 hover:border-amber-300/20 hover:bg-amber-300/[0.04] hover:text-white/60"
+                      : isActive
                       ? "border-sky-300/20 bg-sky-300/10 text-white shadow-[0_0_15px_rgba(125,211,252,0.05)]"
                       : "border-transparent bg-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
                   )
                 }
               >
-                <div className="mt-0.5 rounded-xl border border-white/10 bg-white/[0.05] p-2">
+                <div className={cn(
+                  "relative mt-0.5 rounded-xl border p-2",
+                  item.locked ? "border-amber-300/15 bg-amber-300/[0.04]" : "border-white/10 bg-white/[0.05]"
+                )}>
                   <Icon className="h-4 w-4" />
+                  {item.locked && collapsed && (
+                    <span className="absolute -right-1 -top-1 grid h-3.5 w-3.5 place-items-center rounded-full bg-amber-500 ring-2 ring-[#081120]">
+                      <Lock className="h-2 w-2 text-slate-950" />
+                    </span>
+                  )}
                 </div>
 
                 {!collapsed && (
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold leading-5">{item.label}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-bold leading-5">{item.label}</span>
+                      {item.locked && item.tier && (
+                        <span className={cn(
+                          "shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider",
+                          item.tier === "ENTERPRISE"
+                            ? "bg-violet-500/20 text-violet-300 ring-1 ring-violet-400/30"
+                            : "bg-amber-500/20 text-amber-300 ring-1 ring-amber-400/30"
+                        )}>
+                          {item.tier === "ENTERPRISE" ? "ENT" : "PRO"}
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-0.5 text-[11px] leading-4 text-white/45">
-                      {item.desc}
+                      {item.locked ? "Upgrade to unlock" : item.desc}
                     </div>
                   </div>
+                )}
+
+                {!collapsed && item.locked && (
+                  <Lock className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-300/70" />
                 )}
               </NavLink>
             );
@@ -123,6 +155,7 @@ function SidebarContent(props: {
   brandName: string;
   brandLogoUrl: string | null;
   collapsed?: boolean;
+  ent?: Entitlements | null;
 }) {
   const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
     ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
@@ -179,6 +212,51 @@ function SidebarContent(props: {
       </div>
 
       <div className={cn("shrink-0 border-t border-white/10 space-y-2 bg-[#081120]", collapsed ? "p-2" : "p-4")}>
+        {/* ── Plan status chip + upgrade CTA ── */}
+        {props.ent && (
+          collapsed ? (
+            <NavLink
+              to="/billing/plans"
+              onClick={props.onNavigate}
+              title={`${props.ent.planName} plan`}
+              aria-label={`${props.ent.planName} plan — manage subscription`}
+              className="flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-2 py-2.5 text-sky-300 transition hover:bg-white/10"
+            >
+              <Crown className="h-4 w-4" />
+            </NavLink>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-sky-400/10 ring-1 ring-sky-400/20">
+                    <Crown className="h-3.5 w-3.5 text-sky-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-black text-white">{props.ent.planName} plan</div>
+                    <div className="truncate text-[10px] font-bold text-white/40">
+                      {props.ent.onTrial
+                        ? `Trial · ${props.ent.trialDaysLeft} day${props.ent.trialDaysLeft !== 1 ? "s" : ""} left`
+                        : props.ent.plan === "enterprise"
+                        ? "All features unlocked"
+                        : "Manage subscription"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {props.ent.plan !== "enterprise" && (
+                <NavLink
+                  to="/billing/plans"
+                  onClick={props.onNavigate}
+                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500/20 to-violet-500/20 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-sky-200 ring-1 ring-sky-400/30 transition hover:from-sky-500/30 hover:to-violet-500/30"
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  {props.ent.onTrial ? "Choose a plan" : "Upgrade"}
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </NavLink>
+              )}
+            </div>
+          )
+        )}
         <button 
           onClick={props.onInstall}
           aria-label="Install application"
@@ -224,15 +302,16 @@ export default function AppLayout() {
       return next;
     });
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
-  // Plan-tier gate: null until loaded (we don't hide paid items before we know).
-  const [features, setFeatures] = useState<Record<string, boolean> | null>(null);
+  // Plan-tier gate: null until loaded (we don't lock paid items before we know).
+  const [ent, setEnt] = useState<Entitlements | null>(null);
   useEffect(() => {
     let alive = true;
     getEntitlements()
-      .then((e) => { if (alive) setFeatures(e?.features ?? {}); })
-      .catch(() => { if (alive) setFeatures({}); });
+      .then((e) => { if (alive) setEnt(e ?? null); })
+      .catch(() => { if (alive) setEnt(null); });
     return () => { alive = false; };
   }, []);
+  const features = ent?.features ?? null;
   const location = useLocation();
   const navigate = useNavigate();
   const { branding } = useTenant();
@@ -266,32 +345,32 @@ export default function AppLayout() {
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
     { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck, entitlement: "courierManagement" },
     { section: "OPS", label: "Carriers & Procurement", desc: "Lines, airlines & buy-rate contracts", to: "/carriers", icon: Ship, perm: "rateCards" },
-    { section: "OPS", label: "Returns / RMA", desc: "Collect, inspect, refund, restock", to: "/returns", icon: RotateCcw, perm: "returns" },
+    { section: "OPS", label: "Returns / RMA", desc: "Collect, inspect, refund, restock", to: "/returns", icon: RotateCcw, perm: "returns", entitlement: "returns" },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },
-    { section: "OPS", label: "Route Optimizer", desc: "AI stop sequencing", to: "/routes", icon: Route, perm: "driverDispatch" },
+    { section: "OPS", label: "Route Optimizer", desc: "AI stop sequencing", to: "/routes", icon: Route, perm: "driverDispatch", entitlement: "routeOptimization" },
     { section: "OPS", label: "Fleet Maintenance", desc: "Vehicle service tracker", to: "/fleet", icon: Wrench, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     
-    { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp" },
-    { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email" },
+    { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
+    { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
     
     { section: "BILLING", label: "Finance Home", desc: "Revenue, AR aging, clients", to: "/finance", icon: BarChart2, perm: "invoices" },
     { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
-    { section: "BILLING", label: "Rate Shopping", desc: "Compare carrier quotes", to: "/rate-shopping", icon: Gauge, perm: "rateCards" },
+    { section: "BILLING", label: "Rate Shopping", desc: "Compare carrier quotes", to: "/rate-shopping", icon: Gauge, perm: "rateCards", entitlement: "rateShopping" },
     { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText, perm: "billingBatches" },
     { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt, perm: "invoices" },
     { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText, perm: "quotes" },
     { section: "BILLING", label: "Credit Control", desc: "Arrears management", to: "/credit-control", icon: ShieldAlert, perm: "creditControl" },
-    { section: "BILLING", label: "COD Reconciliation", desc: "Cash on delivery tracking", to: "/cod", icon: Wallet, perm: "billingBatches" },
-    { section: "BILLING", label: "Accounting", desc: "Notes, statements & Pastel export — AI assisted", to: "/accounting", icon: Calculator, perm: "accounting" },
-    { section: "BILLING", label: "Disbursements", desc: "Duties paid for clients & recovery", to: "/disbursements", icon: Wallet, perm: "accounting" },
+    { section: "BILLING", label: "COD Reconciliation", desc: "Cash on delivery tracking", to: "/cod", icon: Wallet, perm: "billingBatches", entitlement: "codReconciliation" },
+    { section: "BILLING", label: "Accounting", desc: "Notes, statements & Pastel export — AI assisted", to: "/accounting", icon: Calculator, perm: "accounting", entitlement: "accounting" },
+    { section: "BILLING", label: "Disbursements", desc: "Duties paid for clients & recovery", to: "/disbursements", icon: Wallet, perm: "accounting", entitlement: "accounting" },
     { section: "BILLING", label: "Plans & Usage", desc: "Subscription, limits & upgrades", to: "/billing/plans", icon: Crown, perm: "invoices" },
     
-    { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower"   },
-    { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot"          },
+    { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower", entitlement: "aiControlTower"   },
+    { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
     { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
     { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy, entitlement: "aiSupportAgent" },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
@@ -326,15 +405,20 @@ export default function AppLayout() {
 
   const visibleNav = useMemo(
     () =>
-      nav.filter((item) => {
-        if (item.adminOnly && !isTenantAdmin) return false;
-        if (item.perm && isAuthenticated && !perms[item.perm]) return false;
-        // Plan-tier gate: once entitlements are loaded, hide modules the tenant's
-        // plan doesn't include. Before load (features===null) we don't hide, to
-        // avoid a flash of missing nav for entitled users.
-        if (item.entitlement && features && !features[item.entitlement]) return false;
-        return true;
-      }),
+      nav
+        .filter((item) => {
+          if (item.adminOnly && !isTenantAdmin) return false;
+          if (item.perm && isAuthenticated && !perms[item.perm]) return false;
+          return true;
+        })
+        // Plan-tier gate: rather than hiding modules the tenant's plan doesn't
+        // include, surface them as locked upsell teasers (world-class discovery
+        // pattern). Role/admin gating above still hides what a user may never
+        // access. Before entitlements load (features===null) nothing is locked.
+        .map((item): NavItem => {
+          const locked = Boolean(item.entitlement && features && !features[item.entitlement]);
+          return locked ? { ...item, locked, tier: featureTier(item.entitlement) } : item;
+        }),
     [nav, perms, isTenantAdmin, isAuthenticated, features],
   );
 
@@ -378,6 +462,7 @@ export default function AppLayout() {
           brandName={branding.brandName}
           brandLogoUrl={branding.logoUrl}
           collapsed={collapsed}
+          ent={ent}
         />
       </aside>
 
@@ -500,6 +585,7 @@ export default function AppLayout() {
               onLogout={handleLogout}
               brandName={branding.brandName}
               brandLogoUrl={branding.logoUrl}
+              ent={ent}
             />
           </aside>
         </div>

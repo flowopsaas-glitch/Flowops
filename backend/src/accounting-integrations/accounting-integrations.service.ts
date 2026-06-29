@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
 import { XeroProvider } from './providers/xero.provider';
 import { SageProvider } from './providers/sage.provider';
 import { PastelProvider } from './providers/pastel.provider';
@@ -21,12 +22,30 @@ export class AccountingIntegrationsService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private billing: BillingService,
     private xero: XeroProvider,
     private sage: SageProvider,
     private pastel: PastelProvider,
   ) {
     this.secret = config.get<string>('JWT_SECRET', 'flowops-state');
     this.appUrl = config.get<string>('APP_URL', 'https://app.flowop.work');
+  }
+
+  /**
+   * The AI Accounting Bridge (connect/sync/reconcile/export) is a paid feature
+   * (Professional+). Gate every entry point that reads or writes ledger data so
+   * a Starter tenant can't drive the bridge lifecycle. The OAuth callback is
+   * intentionally NOT gated here — it's a public browser redirect with no JWT,
+   * and it can only complete a flow that getAuthUrl() already authorised.
+   */
+  private async assertBridge(companyId: string): Promise<void> {
+    const ok = await this.billing.hasFeature(companyId, 'accountingBridge');
+    if (!ok) {
+      throw new ForbiddenException(
+        'The Accounting Bridge (Xero / Sage / Pastel sync + AI reconciliation) is a ' +
+          'Professional feature. Upgrade your plan to connect your ledger and keep your books in sync.',
+      );
+    }
   }
 
   private adapter(key: ProviderKey): AccountingProviderAdapter {
@@ -39,6 +58,7 @@ export class AccountingIntegrationsService {
   // ── Connection management ───────────────────────────────────────────────
 
   async listConnections(companyId: string) {
+    await this.assertBridge(companyId);
     const rows = await this.prisma.accountingConnection.findMany({ where: { companyId } });
     const providers = (['XERO', 'SAGE', 'PASTEL'] as ProviderKey[]).map((key) => {
       const a = this.adapter(key);
@@ -60,6 +80,7 @@ export class AccountingIntegrationsService {
 
   /** Build the OAuth authorize URL (Xero/Sage) with a signed state. */
   async getAuthUrl(companyId: string, key: ProviderKey): Promise<{ url: string }> {
+    await this.assertBridge(companyId);
     const a = this.adapter(key);
     if (!a.usesOAuth || !a.getAuthUrl) {
       throw new BadRequestException(`${a.name} is file-based — use "Connect" then export, no OAuth.`);
@@ -72,6 +93,7 @@ export class AccountingIntegrationsService {
 
   /** Pastel has no OAuth — connecting just records intent so docs get batched. */
   async connectPastel(companyId: string) {
+    await this.assertBridge(companyId);
     return this.prisma.accountingConnection.upsert({
       where: { companyId_provider: { companyId, provider: 'PASTEL' } },
       create: { companyId, provider: 'PASTEL', status: 'CONNECTED', externalTenantName: 'Pastel import file' },
@@ -111,6 +133,7 @@ export class AccountingIntegrationsService {
   }
 
   async disconnect(id: string, companyId: string) {
+    await this.assertBridge(companyId);
     const conn = await this.prisma.accountingConnection.findFirst({ where: { id, companyId } });
     if (!conn) throw new NotFoundException('Connection not found');
     await this.prisma.accountingConnection.update({
@@ -123,6 +146,7 @@ export class AccountingIntegrationsService {
   // ── Sync ────────────────────────────────────────────────────────────────
 
   async syncInvoice(companyId: string, invoiceId: string) {
+    await this.assertBridge(companyId);
     const inv = await this.prisma.invoice.findFirst({ where: { id: invoiceId, companyId }, include: { items: true } });
     if (!inv) throw new NotFoundException('Invoice not found');
     const doc = this.invoiceToDoc(inv);
@@ -130,6 +154,7 @@ export class AccountingIntegrationsService {
   }
 
   async syncCreditNote(companyId: string, creditNoteId: string) {
+    await this.assertBridge(companyId);
     const cn = await this.prisma.creditNote.findFirst({ where: { id: creditNoteId, companyId }, include: { items: true } });
     if (!cn) throw new NotFoundException('Credit note not found');
     const doc = this.creditNoteToDoc(cn);
@@ -185,12 +210,14 @@ export class AccountingIntegrationsService {
   }
 
   async listLogs(companyId: string, limit = 100) {
+    await this.assertBridge(companyId);
     return this.prisma.accountingSyncLog.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' }, take: limit });
   }
 
   // ── Pastel export (file-based) ────────────────────────────────────────────
 
   async exportPastel(companyId: string, q: any = {}): Promise<{ filename: string; csv: string }> {
+    await this.assertBridge(companyId);
     const from = q.from ? new Date(q.from) : new Date(new Date().getFullYear(), 0, 1);
     const to = q.to ? new Date(q.to) : new Date();
     to.setHours(23, 59, 59, 999);
@@ -216,6 +243,7 @@ export class AccountingIntegrationsService {
    * ledger account mapping per provider. No external AI key required.
    */
   async reconcile(companyId: string) {
+    await this.assertBridge(companyId);
     const [invoices, creditNotes, logs, conns] = await Promise.all([
       this.prisma.invoice.findMany({
         where: { companyId, status: { in: ['SENT', 'PAID', 'OVERDUE'] } },

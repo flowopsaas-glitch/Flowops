@@ -10,6 +10,7 @@ import OwnerLayout from "./components/layout/OwnerLayout";
 import OwnerRoute from "./components/owner/OwnerRoute";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import RequirePermission from "./components/auth/RequirePermission";
+import RequireFeature from "./components/auth/RequireFeature";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import PageLoader from "./components/PageLoader";
 
@@ -223,7 +224,7 @@ export default function App() {
               <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
               <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />
               <Route path="/collections" element={<RequirePermission perm="collections"><Collections /></RequirePermission>} />
-              <Route path="/returns" element={<RequirePermission perm="returns"><Returns /></RequirePermission>} />
+              <Route path="/returns" element={<RequirePermission perm="returns"><RequireFeature feature="returns" name="Returns / RMA"><Returns /></RequireFeature></RequirePermission>} />
               <Route path="/operations" element={<RequirePermission perm="driverDispatch"><OperationsDashboard /></RequirePermission>} />
               <Route path="/warehouse"  element={<RequirePermission perm="waybillInbox"><WarehouseHubPage /></RequirePermission>} />
               <Route path="/driver-chat" element={<RequirePermission perm="driverDispatch"><DriverChatPage /></RequirePermission>} />
@@ -234,44 +235,44 @@ export default function App() {
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/manifests" element={<RequirePermission perm="waybillInbox"><ManifestsPage /></RequirePermission>} />
-              <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
-              <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RouteOptimizer /></RequirePermission>} />
+              <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
+              <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
               <Route path="/fleet" element={<RequirePermission perm="driverDispatch"><FleetMaintenance /></RequirePermission>} />
               <Route path="/high-risk-queue" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/security/high-risk" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/user-roles" element={<RequirePermission perm="usersRoles"><UserRolesPage /></RequirePermission>} />
               <Route path="/settings/roles" element={<RequirePermission perm="usersRoles"><TenantUsersRolesPage /></RequirePermission>} />
-              <Route path="/whatsapp" element={<RequirePermission perm="whatsapp"><WhatsAppHub /></RequirePermission>} />
-              <Route path="/communications/whatsapp" element={<RequirePermission perm="whatsapp"><WhatsAppHub /></RequirePermission>} />
-              <Route path="/email" element={<RequirePermission perm="email"><EmailHub /></RequirePermission>} />
-              <Route path="/communications/email" element={<RequirePermission perm="email"><EmailHub /></RequirePermission>} />
+              <Route path="/whatsapp" element={<RequirePermission perm="whatsapp"><RequireFeature feature="whatsapp" name="WhatsApp Hub"><WhatsAppHub /></RequireFeature></RequirePermission>} />
+              <Route path="/communications/whatsapp" element={<RequirePermission perm="whatsapp"><RequireFeature feature="whatsapp" name="WhatsApp Hub"><WhatsAppHub /></RequireFeature></RequirePermission>} />
+              <Route path="/email" element={<RequirePermission perm="email"><RequireFeature feature="emailHub" name="Email Hub"><EmailHub /></RequireFeature></RequirePermission>} />
+              <Route path="/communications/email" element={<RequirePermission perm="email"><RequireFeature feature="emailHub" name="Email Hub"><EmailHub /></RequireFeature></RequirePermission>} />
               <Route path="/communications/client-queries" element={<RequirePermission perm="clientQueries"><ClientQueries /></RequirePermission>} />
               <Route path="/rate-cards" element={<RequirePermission perm="rateCards"><RateCards /></RequirePermission>} />
               <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
-              <Route path="/forwarding" element={<ForwardingConsole />} />
-              <Route path="/forwarding/:id" element={<ShipmentFilePage />} />
-              <Route path="/autopilot" element={<AutopilotConsole />} />
-              <Route path="/settings/sso" element={<SsoSettings />} />
+              <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
+              <Route path="/forwarding/:id" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ShipmentFilePage /></RequireFeature></RequirePermission>} />
+              <Route path="/autopilot" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="clawAutopilot" name="CLAW Autopilot"><AutopilotConsole /></RequireFeature></RequirePermission>} />
+              <Route path="/settings/sso" element={<RequirePermission adminOnly><RequireFeature feature="sso" name="Single Sign-On"><SsoSettings /></RequireFeature></RequirePermission>} />
               <Route path="/finance" element={<RequirePermission perm="invoices"><FinanceDashboard /></RequirePermission>} />
               <Route path="/invoice-drafts" element={<RequirePermission perm="invoiceDrafts"><InvoiceDraftsPage /></RequirePermission>} />
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
-              <Route path="/accounting" element={<RequirePermission perm="accounting"><Accounting /></RequirePermission>} />
-              <Route path="/disbursements" element={<RequirePermission perm="accounting"><Disbursements /></RequirePermission>} />
+              <Route path="/accounting" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Accounting"><Accounting /></RequireFeature></RequirePermission>} />
+              <Route path="/disbursements" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Disbursements"><Disbursements /></RequireFeature></RequirePermission>} />
               <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
               <Route path="/credit-control" element={<RequirePermission perm="creditControl"><CreditControl /></RequirePermission>} />
-              <Route path="/cod" element={<RequirePermission perm="billingBatches"><CODReconciliation /></RequirePermission>} />
-              <Route path="/cod/wallets/:driverId" element={<RequirePermission perm="billingBatches"><DriverWalletPage /></RequirePermission>} />
-              <Route path="/rate-shopping" element={<RequirePermission perm="rateCards"><RateShopping /></RequirePermission>} />
+              <Route path="/cod" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><CODReconciliation /></RequireFeature></RequirePermission>} />
+              <Route path="/cod/wallets/:driverId" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><DriverWalletPage /></RequireFeature></RequirePermission>} />
+              <Route path="/rate-shopping" element={<RequirePermission perm="rateCards"><RequireFeature feature="rateShopping" name="Rate Shopping"><RateShopping /></RequireFeature></RequirePermission>} />
               <Route path="/quotes" element={<RequirePermission perm="quotes"><QuotesPage /></RequirePermission>} />
-              <Route path="/ai-control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
-              <Route path="/ask" element={<RequirePermission perm="copilot"><AskFlowOps /></RequirePermission>} />
-              <Route path="/copilot" element={<RequirePermission perm="copilot"><AskFlowOps /></RequirePermission>} />
-              <Route path="/support" element={<SupportAgent />} />
-              <Route path="/couriers" element={<CourierManagement />} />
+              <Route path="/ai-control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
+              <Route path="/ask" element={<RequirePermission perm="copilot"><RequireFeature feature="copilot" name="Ask FlowOps"><AskFlowOps /></RequireFeature></RequirePermission>} />
+              <Route path="/copilot" element={<RequirePermission perm="copilot"><RequireFeature feature="copilot" name="Ask FlowOps"><AskFlowOps /></RequireFeature></RequirePermission>} />
+              <Route path="/support" element={<RequireFeature feature="aiSupportAgent" name="AI Support Agent"><SupportAgent /></RequireFeature>} />
+              <Route path="/couriers" element={<RequireFeature feature="courierManagement" name="Courier Management"><CourierManagement /></RequireFeature>} />
               <Route path="/carriers" element={<RequirePermission perm="rateCards"><CarrierManagement /></RequirePermission>} />
-              <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><AIControlTower /></RequirePermission>} />
+              <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />
               <Route path="/settings/branding" element={<RequirePermission perm="settings"><BrandingSettings /></RequirePermission>} />
