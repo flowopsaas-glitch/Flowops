@@ -113,6 +113,81 @@ export class ReturnsService {
     };
   }
 
+  /**
+   * Returns intelligence — the "why are things coming back, how long does it
+   * take, and how much do we recover?" view that the headline stats don't show.
+   * - reasonMix: returns grouped by reason (the lever to actually reduce returns)
+   * - avgCycleDays: request → completion turnaround
+   * - restockRatePct: share of completed returns put back into sellable stock
+   * - openRefundExposure: refund liability still owed on in-flight returns
+   * All tenant-scoped, read-only.
+   */
+  async insights(companyId: string) {
+    const [byReason, completed, openAgg] = await Promise.all([
+      this.prisma.return.groupBy({
+        by: ['reason'],
+        where: { companyId },
+        _count: { _all: true },
+        _sum: { refundAmount: true },
+      }),
+      this.prisma.return.findMany({
+        where: { companyId, status: ReturnStatus.COMPLETED },
+        select: { createdAt: true, resolvedAt: true, receivedAt: true, restocked: true },
+      }),
+      this.prisma.return.aggregate({
+        where: {
+          companyId,
+          status: { notIn: [ReturnStatus.COMPLETED, ReturnStatus.CANCELLED, ReturnStatus.REJECTED] },
+        },
+        _sum: { refundAmount: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const reasonTotal = byReason.reduce((s, r) => s + r._count._all, 0);
+    const reasonMix = byReason
+      .map((r) => ({
+        reason: r.reason,
+        count: r._count._all,
+        pct: reasonTotal ? Math.round((r._count._all / reasonTotal) * 1000) / 10 : 0,
+        refundValue: Math.round(r._sum.refundAmount ?? 0),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const DAY = 86_400_000;
+    let cycleSum = 0, cycleCount = 0;
+    let inspectSum = 0, inspectCount = 0;
+    let restocked = 0;
+    for (const r of completed) {
+      if (r.resolvedAt) {
+        cycleSum += (new Date(r.resolvedAt).getTime() - new Date(r.createdAt).getTime()) / DAY;
+        cycleCount += 1;
+        if (r.receivedAt) {
+          inspectSum += (new Date(r.resolvedAt).getTime() - new Date(r.receivedAt).getTime()) / DAY;
+          inspectCount += 1;
+        }
+      }
+      if (r.restocked) restocked += 1;
+    }
+
+    const round1 = (n: number) => Math.round(n * 10) / 10;
+
+    return {
+      reasonMix,
+      reasonTotal,
+      topReason: reasonMix[0]?.reason ?? null,
+      avgCycleDays: cycleCount ? round1(cycleSum / cycleCount) : null,
+      avgInspectToResolveDays: inspectCount ? round1(inspectSum / inspectCount) : null,
+      completedCount: completed.length,
+      restockRatePct: completed.length ? Math.round((restocked / completed.length) * 1000) / 10 : 0,
+      restockedCount: restocked,
+      openRefundExposure: Math.round(openAgg._sum.refundAmount ?? 0),
+      openCount: openAgg._count._all,
+      note:
+        'Reason mix spans all returns; cycle time and restock rate are measured over completed returns; open refund exposure is the refund still owed on in-flight returns.',
+    };
+  }
+
   // ── Writes ────────────────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateReturnDto) {

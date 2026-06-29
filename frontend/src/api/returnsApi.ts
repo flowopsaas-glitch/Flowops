@@ -128,6 +128,25 @@ export async function getReturnStats(): Promise<ReturnStats> {
   return res?.data ?? res;
 }
 
+export type ReturnInsights = {
+  reasonMix: { reason: ReturnReason; count: number; pct: number; refundValue: number }[];
+  reasonTotal: number;
+  topReason: ReturnReason | null;
+  avgCycleDays: number | null;
+  avgInspectToResolveDays: number | null;
+  completedCount: number;
+  restockRatePct: number;
+  restockedCount: number;
+  openRefundExposure: number;
+  openCount: number;
+  note: string;
+};
+
+export async function getReturnInsights(): Promise<ReturnInsights> {
+  const res: any = await api.get("/returns/insights");
+  return res?.data ?? res;
+}
+
 export async function getReturn(id: string): Promise<ReturnRecord> {
   const res: any = await api.get(`/returns/${id}`);
   return res?.data ?? res;

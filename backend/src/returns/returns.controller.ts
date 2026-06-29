@@ -25,6 +25,11 @@ export class ReturnsController {
     return this.svc.stats(u.companyId);
   }
 
+  @Get('returns/insights')
+  insights(@CurrentUser() u: any) {
+    return this.svc.insights(u.companyId);
+  }
+
   @Get('returns/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);
