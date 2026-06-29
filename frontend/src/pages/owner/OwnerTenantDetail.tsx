@@ -59,6 +59,7 @@ export default function OwnerTenantDetail() {
   const [showPlan, setShowPlan] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newPlan, setNewPlan] = useState("professional");
+  const [plans, setPlans] = useState<Array<{ id: string; name: string; price: number; currency?: string; interval?: string | null }>>([]);
   const [newUser, setNewUser] = useState({ name: "", email: "", password: "" });
 
   async function load() {
@@ -78,6 +79,22 @@ export default function OwnerTenantDetail() {
   useEffect(() => {
     void load();
   }, [id]);
+
+  // Plan price book (single source of truth = GET /owner/plans → plan-entitlements).
+  useEffect(() => {
+    api.get("/owner/plans")
+      .then((r: any) => setPlans((r?.data ?? r) as any[]))
+      .catch(() => setPlans([]));
+  }, []);
+
+  const planPrice = (planId?: string | null): number => {
+    const p = plans.find((x) => x.id === (planId || "").toLowerCase());
+    return p?.price ?? 0;
+  };
+  const planLabel = (planId?: string | null): string => {
+    const p = plans.find((x) => x.id === (planId || "").toLowerCase());
+    return p?.name ?? (planId ? planId[0].toUpperCase() + planId.slice(1) : "—");
+  };
 
   async function doAction(key: string, fn: () => Promise<void>, msg: string) {
     setBusy(key); setError(""); setSuccess("");
@@ -207,20 +224,56 @@ export default function OwnerTenantDetail() {
 
             {/* Inline: plan change */}
             {showPlan ? (
-              <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-400/10 bg-blue-500/5 px-4 py-3">
-                <select value={newPlan} onChange={(e) => setNewPlan(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400">
-                  <option value="starter">Starter (Free)</option>
-                  <option value="professional">Professional</option>
-                  <option value="enterprise">Enterprise</option>
-                </select>
-                <button disabled={busy === "plan"} onClick={changePlan}
-                  className="rounded-xl bg-gradient-to-r from-blue-400 to-indigo-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">
-                  {busy === "plan" ? "Saving…" : "Save Plan"}
-                </button>
-                <button onClick={() => setShowPlan(false)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white">Cancel</button>
-              </div>
+              (() => {
+                const curPrice = planPrice(d.tenant.plan);
+                const tgtPrice = planPrice(newPlan);
+                const delta = tgtPrice - curPrice;
+                const isChange = newPlan.toLowerCase() !== (d.tenant.plan || "").toLowerCase();
+                return (
+                  <div className="mt-5 rounded-2xl border border-blue-400/10 bg-blue-500/5 px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <select value={newPlan} onChange={(e) => setNewPlan(e.target.value)}
+                        className="rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400">
+                        <option value="starter">Starter (Free)</option>
+                        <option value="professional">Professional</option>
+                        <option value="enterprise">Enterprise</option>
+                      </select>
+                      <button disabled={busy === "plan" || !isChange} onClick={changePlan}
+                        className="rounded-xl bg-gradient-to-r from-blue-400 to-indigo-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">
+                        {busy === "plan" ? "Saving…" : isChange ? `Switch to ${planLabel(newPlan)}` : "Save Plan"}
+                      </button>
+                      <button onClick={() => setShowPlan(false)}
+                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white">Cancel</button>
+                    </div>
+
+                    {/* Cost impact — owner sees the billing consequence before applying */}
+                    <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                      <span className="text-white/50">
+                        Current: <span className="font-bold text-white/80">{planLabel(d.tenant.plan)}</span>{" "}
+                        <span className="text-white/40">{curPrice > 0 ? `${money(curPrice, cur)}/mo` : "Free"}</span>
+                      </span>
+                      <span className="text-white/40">→</span>
+                      <span className="text-white/50">
+                        New: <span className="font-bold text-white/90">{planLabel(newPlan)}</span>{" "}
+                        <span className={tgtPrice > 0 ? "font-bold text-blue-200" : "text-white/40"}>
+                          {tgtPrice > 0 ? `${money(tgtPrice, cur)}/mo` : "Free"}
+                        </span>
+                      </span>
+                      {isChange && delta !== 0 ? (
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-black ${
+                          delta > 0 ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300" : "border-amber-400/20 bg-amber-500/10 text-amber-300"
+                        }`}>
+                          {delta > 0 ? `+${money(delta, cur)}/mo MRR` : `${money(delta, cur)}/mo MRR`}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-[11px] leading-snug text-white/35">
+                      Switching to a paid tier bills this tenant at the {planLabel(newPlan)} rate
+                      {tgtPrice > 0 ? ` (${money(tgtPrice, cur)}/mo)` : ""}. The change is recorded to the owner audit trail.
+                    </p>
+                  </div>
+                );
+              })()
             ) : null}
 
             {/* Inline: create admin */}
