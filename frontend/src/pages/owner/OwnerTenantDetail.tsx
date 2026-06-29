@@ -19,6 +19,7 @@ type TenantAnalytics = {
     id: string; name: string; tradingName?: string | null; email?: string | null;
     phone?: string | null; plan: string; isActive: boolean; createdAt: string;
     country?: string | null; city?: string | null; slaBreachMinutes?: number; slaWarningMinutes?: number;
+    priceOverrideZar?: number | null; featureOverrides?: Record<string, boolean>;
   };
   usage: { users: number; waybillsTotal: number; waybills30: number; collections: number; drivers: number; invoices: number };
   revenue: { mrr: number; collectedTotal: number; collected30: number };
@@ -60,7 +61,20 @@ export default function OwnerTenantDetail() {
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newPlan, setNewPlan] = useState("professional");
   const [plans, setPlans] = useState<Array<{ id: string; name: string; price: number; currency?: string; interval?: string | null }>>([]);
+  const [catalog, setCatalog] = useState<Array<{ key: string; label: string; includedIn: { starter: boolean; professional: boolean; enterprise: boolean } }>>([]);
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [customPrice, setCustomPrice] = useState<string>(""); // blank = use plan price
   const [newUser, setNewUser] = useState({ name: "", email: "", password: "" });
+
+  // Seed the subscription editor from the loaded tenant.
+  function openSubscription() {
+    if (d) {
+      setNewPlan((d.tenant.plan || "starter").toLowerCase());
+      setOverrides({ ...(d.tenant.featureOverrides ?? {}) });
+      setCustomPrice(d.tenant.priceOverrideZar != null ? String(d.tenant.priceOverrideZar) : "");
+    }
+    setShowPlan((v) => !v);
+  }
 
   async function load() {
     if (!id) return;
@@ -85,6 +99,9 @@ export default function OwnerTenantDetail() {
     api.get("/owner/plans")
       .then((r: any) => setPlans((r?.data ?? r) as any[]))
       .catch(() => setPlans([]));
+    api.get("/owner/feature-catalog")
+      .then((r: any) => setCatalog((r?.data ?? r) as any[]))
+      .catch(() => setCatalog([]));
   }, []);
 
   const planPrice = (planId?: string | null): number => {
@@ -124,12 +141,19 @@ export default function OwnerTenantDetail() {
     doAction("suspend", () => api.patch(`/owner/tenants/${d.tenant.id}/action`, { action: "suspend" }) as any, `${d.tenant.name} suspended.`);
   }
 
-  function changePlan() {
+  function saveSubscription() {
     if (!d) return;
+    const priceTrim = customPrice.trim();
+    const priceOverrideZar = priceTrim === "" ? null : Math.max(0, Number(priceTrim) || 0);
     doAction("plan", async () => {
-      await api.patch("/owner/plans", { tenantId: d.tenant.id, plan: newPlan });
+      await api.patch("/owner/subscription", {
+        tenantId: d.tenant.id,
+        plan: newPlan,
+        featureOverrides: overrides,
+        priceOverrideZar,
+      });
       setShowPlan(false);
-    }, `Plan updated to ${newPlan}.`);
+    }, "Subscription updated.");
   }
 
   function createUser() {
@@ -210,9 +234,9 @@ export default function OwnerTenantDetail() {
                       <CheckCircle className="h-4 w-4" /> {busy === "activate" ? "Activating…" : "Activate"}
                     </button>
                   )}
-                  <button onClick={() => setShowPlan((v) => !v)}
+                  <button onClick={openSubscription}
                     className="inline-flex items-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-2.5 text-sm font-bold text-blue-200 hover:bg-blue-500/20">
-                    <TrendingUp className="h-4 w-4" /> Plan
+                    <TrendingUp className="h-4 w-4" /> Edit Subscription
                   </button>
                   <button onClick={() => setShowCreateUser((v) => !v)}
                     className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20">
@@ -222,54 +246,92 @@ export default function OwnerTenantDetail() {
               </div>
             </div>
 
-            {/* Inline: plan change */}
+            {/* Inline: edit subscription */}
             {showPlan ? (
               (() => {
-                const curPrice = planPrice(d.tenant.plan);
-                const tgtPrice = planPrice(newPlan);
-                const delta = tgtPrice - curPrice;
-                const isChange = newPlan.toLowerCase() !== (d.tenant.plan || "").toLowerCase();
+                const planList = planPrice(newPlan);
+                const eff = customPrice.trim() === "" ? planList : Math.max(0, Number(customPrice) || 0);
+                const tier = (newPlan || "starter").toLowerCase() as "starter" | "professional" | "enterprise";
+                // Add-ons = features the selected plan tier does NOT already include.
+                const addons = catalog.filter((f) => !f.includedIn[tier]);
+                const enabledCount = addons.filter((f) => overrides[f.key]).length;
+                const toggle = (k: string) => setOverrides((o) => ({ ...o, [k]: !o[k] }));
                 return (
-                  <div className="mt-5 rounded-2xl border border-blue-400/10 bg-blue-500/5 px-4 py-3">
+                  <div className="mt-5 rounded-2xl border border-blue-400/15 bg-blue-500/5 p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="text-sm font-black text-blue-100">Edit Subscription</div>
+                      <div className="flex items-center gap-2">
+                        <button disabled={busy === "plan"} onClick={saveSubscription}
+                          className="rounded-xl bg-gradient-to-r from-blue-400 to-indigo-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">
+                          {busy === "plan" ? "Saving…" : "Save subscription"}
+                        </button>
+                        <button onClick={() => setShowPlan(false)}
+                          className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white">Cancel</button>
+                      </div>
+                    </div>
+
+                    {/* Plan tier */}
                     <div className="flex flex-wrap items-center gap-3">
+                      <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Plan tier</label>
                       <select value={newPlan} onChange={(e) => setNewPlan(e.target.value)}
                         className="rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400">
                         <option value="starter">Starter (Free)</option>
                         <option value="professional">Professional</option>
                         <option value="enterprise">Enterprise</option>
                       </select>
-                      <button disabled={busy === "plan" || !isChange} onClick={changePlan}
-                        className="rounded-xl bg-gradient-to-r from-blue-400 to-indigo-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">
-                        {busy === "plan" ? "Saving…" : isChange ? `Switch to ${planLabel(newPlan)}` : "Save Plan"}
-                      </button>
-                      <button onClick={() => setShowPlan(false)}
-                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white">Cancel</button>
+                      <span className="text-xs text-white/40">list price {planList > 0 ? `${money(planList, cur)}/mo` : "Free"}</span>
                     </div>
 
-                    {/* Cost impact — owner sees the billing consequence before applying */}
-                    <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                      <span className="text-white/50">
-                        Current: <span className="font-bold text-white/80">{planLabel(d.tenant.plan)}</span>{" "}
-                        <span className="text-white/40">{curPrice > 0 ? `${money(curPrice, cur)}/mo` : "Free"}</span>
-                      </span>
-                      <span className="text-white/40">→</span>
-                      <span className="text-white/50">
-                        New: <span className="font-bold text-white/90">{planLabel(newPlan)}</span>{" "}
-                        <span className={tgtPrice > 0 ? "font-bold text-blue-200" : "text-white/40"}>
-                          {tgtPrice > 0 ? `${money(tgtPrice, cur)}/mo` : "Free"}
-                        </span>
-                      </span>
-                      {isChange && delta !== 0 ? (
-                        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-black ${
-                          delta > 0 ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300" : "border-amber-400/20 bg-amber-500/10 text-amber-300"
-                        }`}>
-                          {delta > 0 ? `+${money(delta, cur)}/mo MRR` : `${money(delta, cur)}/mo MRR`}
-                        </span>
-                      ) : null}
+                    {/* Feature add-ons (grant features above the plan tier) */}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">
+                          Feature add-ons {enabledCount > 0 ? <span className="text-blue-300">· {enabledCount} on</span> : null}
+                        </label>
+                        <span className="text-[11px] text-white/35">granted on top of {planLabel(newPlan)}</span>
+                      </div>
+                      {addons.length === 0 ? (
+                        <p className="mt-2 text-xs text-white/40">This tier already includes every feature — nothing to add.</p>
+                      ) : (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {addons.map((f) => {
+                            const on = !!overrides[f.key];
+                            return (
+                              <button key={f.key} type="button" onClick={() => toggle(f.key)}
+                                className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold transition ${
+                                  on ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-black/20 text-white/55 hover:bg-white/5"
+                                }`}>
+                                <span className="truncate">{f.label}</span>
+                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] uppercase tracking-wider ${on ? "bg-emerald-400/20 text-emerald-200" : "bg-white/10 text-white/40"}`}>
+                                  {on ? "On" : "Off"}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <p className="mt-2 text-[11px] leading-snug text-white/35">
-                      Switching to a paid tier bills this tenant at the {planLabel(newPlan)} rate
-                      {tgtPrice > 0 ? ` (${money(tgtPrice, cur)}/mo)` : ""}. The change is recorded to the owner audit trail.
+
+                    {/* Custom price + effective cost */}
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div>
+                        <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Custom price (ZAR/mo)</label>
+                        <input type="number" min={0} value={customPrice} onChange={(e) => setCustomPrice(e.target.value)}
+                          placeholder={`${planList} (plan price)`}
+                          className="mt-1 w-44 rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400" />
+                        <div className="mt-1 text-[10px] text-white/35">Blank = bill at the {planLabel(newPlan)} list price.</div>
+                      </div>
+                      <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-2.5">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/50">Effective billing</div>
+                        <div className="text-xl font-black text-blue-100">{eff > 0 ? `${money(eff, cur)}/mo` : "Free"}</div>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] leading-snug text-white/40">
+                      Add-ons grant the selected features to this tenant on top of their plan (e.g. give a
+                      Professional client Freight Forwarding without a full Enterprise upgrade). Set a custom
+                      price to bill the negotiated amount — it overrides the list price for MRR. All changes are
+                      recorded to the owner audit trail.
                     </p>
                   </div>
                 );
