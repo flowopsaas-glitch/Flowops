@@ -14,6 +14,11 @@ export class QuotesController {
     return this.svc.findAll(u.companyId);
   }
 
+  @Get('metrics')
+  metrics(@CurrentUser() u: any) {
+    return this.svc.metrics(u.companyId);
+  }
+
   @Post()
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);
