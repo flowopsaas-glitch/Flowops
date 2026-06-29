@@ -76,7 +76,7 @@ export default function ShipmentFilePage() {
             <FileText className="h-4 w-4" /> Generate invoice
           </button>
           {(file.status === "CUSTOMS_CLEARED" || file.status === "ARRIVED") && (
-            <button onClick={() => run("deliv", async () => { const r = await fwd.createDelivery(id); showToast("Domestic delivery created", "success"); }, undefined)} disabled={!!busy}
+            <button onClick={() => run("deliv", async () => { const r: any = await fwd.createDelivery(id); showToast("Domestic delivery created", "success"); if (r?.collectionId) navigate(`/collections?collectionId=${r.collectionId}`); }, undefined)} disabled={!!busy}
               className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-2 text-sm font-bold text-amber-200 hover:bg-amber-500/25 disabled:opacity-50">
               <Truck className="h-4 w-4" /> Create domestic delivery
             </button>
