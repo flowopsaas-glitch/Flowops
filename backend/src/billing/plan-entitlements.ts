@@ -80,3 +80,35 @@ export function normalizePlan(plan?: string | null): PlanId {
   const p = String(plan || 'starter').toLowerCase();
   return (p === 'professional' || p === 'enterprise') ? p : 'starter';
 }
+
+
+// Human-readable labels for the owner subscription editor (feature add-on catalog).
+export const FEATURE_LABELS: Record<string, string> = {
+  waybills: 'Waybill management',
+  collections: 'Collections',
+  tracking: 'Customer tracking',
+  pod: 'Proof of delivery',
+  manifests: 'Manifests',
+  rateCards: 'Rate cards',
+  codReconciliation: 'COD reconciliation',
+  returns: 'Returns / RMA',
+  routeOptimization: 'Route optimisation',
+  rateShopping: 'Rate shopping',
+  whatsapp: 'WhatsApp hub',
+  emailHub: 'Email hub',
+  accounting: 'Accounting',
+  accountingBridge: 'Accounting bridge (Pastel/Xero)',
+  aiControlTower: 'AI Control Tower',
+  copilot: 'Ask FlowOps copilot',
+  api: 'Public API & webhooks',
+  ecommerce: 'E-commerce connectors',
+  whiteLabel: 'White-label branding',
+  nativeApp: 'Native mobile app',
+  selfHost: 'Self-host option',
+  dedicatedManager: 'Dedicated account manager',
+  clawAutopilot: 'CLAW Autopilot (autonomous ops)',
+  sso: 'Single Sign-On (OIDC)',
+  freightForwarding: 'Freight Forwarding (import/export)',
+  aiSupportAgent: 'AI Support Agent',
+  courierManagement: 'Courier Management (orchestration)',
+};

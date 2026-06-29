@@ -219,9 +219,22 @@ export class OwnerController {
     return this.svc.getPlans();
   }
 
+  @Get('feature-catalog')
+  getFeatureCatalog() {
+    return this.svc.getFeatureCatalog();
+  }
+
   @Patch('plans')
   updatePlan(@Body() body: { tenantId: string; plan: string }, @CurrentUser() owner: any) {
     return this.svc.updateTenantPlan(body.tenantId, body.plan, owner);
+  }
+
+  @Patch('subscription')
+  updateSubscription(
+    @Body() body: { tenantId: string; plan?: string; featureOverrides?: Record<string, boolean>; priceOverrideZar?: number | null },
+    @CurrentUser() owner: any,
+  ) {
+    return this.svc.updateTenantSubscription(body.tenantId, body, owner);
   }
 
   @Get('approval-requests')

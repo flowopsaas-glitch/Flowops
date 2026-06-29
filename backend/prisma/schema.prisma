@@ -160,6 +160,15 @@ model Company {
   trialEndsAt   DateTime?
   isActive      Boolean  @default(true)
 
+  // ── Owner-managed subscription overrides ──────────────────────────────
+  // Per-tenant feature add-ons granted beyond the plan tier (key -> true),
+  // e.g. give a Professional tenant `freightForwarding` without a full upgrade.
+  // Merged on top of the plan's feature flags by BillingService.
+  featureOverrides Json?
+  // Custom monthly price (ZAR) the owner negotiated for this tenant. When set,
+  // it overrides the plan list price for MRR + billing display. Null = use plan.
+  priceOverrideZar Float?
+
   // CLAW Autopilot for Operations (Enterprise) — when enabled, the autonomy
   // engine may auto-execute safe ops actions (reassign stalled pickups,
   // escalate SLA pre-breaches / COD mismatches). Aggression overrides the

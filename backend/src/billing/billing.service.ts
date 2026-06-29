@@ -36,11 +36,14 @@ export class BillingService {
   async getEntitlements(companyId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { plan: true, trialEndsAt: true },
+      select: { plan: true, trialEndsAt: true, featureOverrides: true, priceOverrideZar: true },
     });
     const planId = normalizePlan(company?.plan);
     const effective = this.effectivePlan(company?.plan ?? null, company?.trialEndsAt ?? null);
     const ent = PLAN_ENTITLEMENTS[effective];
+    const overrides = (company?.featureOverrides ?? {}) as Record<string, boolean>;
+    // Plan features OR'd with owner-granted per-tenant add-ons.
+    const features = this.mergeFeatures(ent.features, overrides);
     const usage = await this.usage(companyId);
     const onTrial = !!company?.trialEndsAt && new Date(company.trialEndsAt).getTime() > Date.now();
     const trialDaysLeft = onTrial
@@ -60,7 +63,9 @@ export class BillingService {
       onTrial,
       trialEndsAt: company?.trialEndsAt ?? null,
       trialDaysLeft,
-      features: ent.features,
+      features,
+      featureOverrides: overrides,
+      priceOverrideZar: company?.priceOverrideZar ?? null,
       limits: ent.limits,
       usage: {
         waybillsThisMonth: mk(usage.waybillsThisMonth, ent.limits.waybillsPerMonth),
@@ -71,13 +76,29 @@ export class BillingService {
     };
   }
 
-  /** True if the effective plan includes a feature (for soft-gating / upsell). */
+  /** Plan features with owner-granted add-ons layered on top (override=true grants). */
+  private mergeFeatures(
+    planFeatures: Record<string, boolean>,
+    overrides: Record<string, boolean> | null | undefined,
+  ): Record<string, boolean> {
+    const merged: Record<string, boolean> = { ...planFeatures };
+    if (overrides) {
+      for (const [key, on] of Object.entries(overrides)) {
+        if (on) merged[key] = true; // grant-only: never strip a plan-included feature
+      }
+    }
+    return merged;
+  }
+
+  /** True if the effective plan (incl. owner add-ons) includes a feature. */
   async hasFeature(companyId: string, feature: string): Promise<boolean> {
     const company = await this.prisma.company.findUnique({
-      where: { id: companyId }, select: { plan: true, trialEndsAt: true },
+      where: { id: companyId }, select: { plan: true, trialEndsAt: true, featureOverrides: true },
     });
     const ent = PLAN_ENTITLEMENTS[this.effectivePlan(company?.plan ?? null, company?.trialEndsAt ?? null)];
-    return Boolean(ent.features[feature]);
+    if (ent.features[feature]) return true;
+    const overrides = (company?.featureOverrides ?? {}) as Record<string, boolean>;
+    return Boolean(overrides[feature]);
   }
 
   /**

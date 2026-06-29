@@ -7,7 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
-import { PLAN_ENTITLEMENTS } from '../billing/plan-entitlements';
+import { PLAN_ENTITLEMENTS, FEATURE_KEYS, FEATURE_LABELS } from '../billing/plan-entitlements';
 
 type OwnerActor = { id?: string; email?: string } | null | undefined;
 
@@ -236,6 +236,11 @@ export class OwnerService {
     return OwnerService.PLAN_PRICE_ZAR[(plan || 'starter').toLowerCase()] ?? 0;
   }
 
+  /** Effective monthly price: a per-tenant custom price wins over the plan list price. */
+  private effPrice(c: { plan?: string | null; priceOverrideZar?: number | null }): number {
+    return c.priceOverrideZar != null ? c.priceOverrideZar : this.planPrice(c.plan);
+  }
+
   async platformAnalytics() {
     const now = new Date();
     const d30 = new Date(now); d30.setDate(d30.getDate() - 30);
@@ -245,18 +250,18 @@ export class OwnerService {
 
     const companies = await this.prisma.company.findMany({
       select: {
-        id: true, name: true, plan: true, isActive: true, createdAt: true, country: true,
+        id: true, name: true, plan: true, priceOverrideZar: true, isActive: true, createdAt: true, country: true,
         _count: { select: { users: true, waybills: true } },
       },
     });
     const active = companies.filter((c) => c.isActive);
 
     // ── Revenue (MRR/ARR/ARPA) from active subscriptions ──
-    const mrr = active.reduce((s, c) => s + this.planPrice(c.plan), 0);
+    const mrr = active.reduce((s, c) => s + this.effPrice(c), 0);
     const mrrPrev = companies
       .filter((c) => c.isActive && c.createdAt <= d30)
-      .reduce((s, c) => s + this.planPrice(c.plan), 0);
-    const payingTenants = active.filter((c) => this.planPrice(c.plan) > 0).length;
+      .reduce((s, c) => s + this.effPrice(c), 0);
+    const payingTenants = active.filter((c) => this.effPrice(c) > 0).length;
     const arpa = payingTenants ? mrr / payingTenants : 0;
 
     // ── Tenant growth + churn (window approximation) ──
@@ -275,7 +280,7 @@ export class OwnerService {
       count: active.filter((c) => (c.plan || 'starter').toLowerCase() === p).length,
       mrr: active
         .filter((c) => (c.plan || 'starter').toLowerCase() === p)
-        .reduce((s, c) => s + this.planPrice(c.plan), 0),
+        .reduce((s, c) => s + this.effPrice(c), 0),
     }));
 
     // ── 6-month tenant growth series (new + cumulative) ──
@@ -337,7 +342,7 @@ export class OwnerService {
         const vol30 = recentVolume.get(c.id) ?? 0;
         const usersScore = (Math.min(c._count.users, 10) / 10) * 25;
         const volumeScore = (Math.min(vol30, 100) / 100) * 45;
-        const planScore = this.planPrice(c.plan) > 0 ? 30 : 8;
+        const planScore = this.effPrice(c) > 0 ? 30 : 8;
         const score = Math.round(usersScore + volumeScore + planScore);
         const risk = score >= 70 ? 'healthy' : score >= 40 ? 'watch' : 'at_risk';
         return {
@@ -463,7 +468,8 @@ export class OwnerService {
       where: { id: tenantId },
       select: {
         id: true, name: true, tradingName: true, email: true, phone: true,
-        plan: true, isActive: true, createdAt: true, country: true, city: true,
+        plan: true, priceOverrideZar: true, featureOverrides: true,
+        isActive: true, createdAt: true, country: true, city: true,
         slaBreachMinutes: true, slaWarningMinutes: true,
         _count: { select: { users: true, waybills: true, collections: true, drivers: true, invoices: true } },
       },
@@ -519,7 +525,7 @@ export class OwnerService {
     // Health score (same composite as the platform leaderboard)
     const usersScore = (Math.min(company._count.users, 10) / 10) * 25;
     const volumeScore = (Math.min(waybills30, 100) / 100) * 45;
-    const planScore = this.planPrice(company.plan) > 0 ? 30 : 8;
+    const planScore = this.effPrice(company) > 0 ? 30 : 8;
     const score = Math.round(usersScore + volumeScore + planScore);
 
     return {
@@ -528,6 +534,8 @@ export class OwnerService {
       tenant: {
         id: company.id, name: company.name, tradingName: company.tradingName,
         email: company.email, phone: company.phone, plan: company.plan ?? 'starter',
+        priceOverrideZar: company.priceOverrideZar ?? null,
+        featureOverrides: (company.featureOverrides ?? {}) as Record<string, boolean>,
         isActive: company.isActive, createdAt: company.createdAt,
         country: company.country, city: company.city,
         slaBreachMinutes: company.slaBreachMinutes, slaWarningMinutes: company.slaWarningMinutes,
@@ -541,7 +549,7 @@ export class OwnerService {
         invoices: company._count.invoices,
       },
       revenue: {
-        mrr: this.planPrice(company.plan),
+        mrr: this.effPrice(company),
         collectedTotal: revAll._sum.amount ?? 0,
         collected30: rev30._sum.amount ?? 0,
       },
@@ -563,13 +571,13 @@ export class OwnerService {
   async captureMrrSnapshot() {
     const companies = await this.prisma.company.findMany({
       where: { isActive: true },
-      select: { id: true, plan: true },
+      select: { id: true, plan: true, priceOverrideZar: true },
     });
     const perTenant: Record<string, number> = {};
     let mrr = 0;
     let paying = 0;
     for (const c of companies) {
-      const price = this.planPrice(c.plan);
+      const price = this.effPrice(c);
       perTenant[c.id] = price;
       mrr += price;
       if (price > 0) paying += 1;
@@ -821,6 +829,83 @@ export class OwnerService {
       metadata: { from: before?.plan ?? null, to: plan },
     });
     return updated;
+  }
+
+  /**
+   * Feature catalog for the owner subscription editor: every feature key with a
+   * human label and which plan tiers include it by default. The owner toggles
+   * these as per-tenant add-ons (granted on top of the tenant's plan).
+   */
+  getFeatureCatalog() {
+    return FEATURE_KEYS.map((key) => ({
+      key,
+      label: FEATURE_LABELS[key] ?? key,
+      includedIn: {
+        starter: Boolean(PLAN_ENTITLEMENTS.starter.features[key]),
+        professional: Boolean(PLAN_ENTITLEMENTS.professional.features[key]),
+        enterprise: Boolean(PLAN_ENTITLEMENTS.enterprise.features[key]),
+      },
+    }));
+  }
+
+  /**
+   * Owner edits a tenant's full subscription in one call: plan tier, per-tenant
+   * feature add-ons (grant Enterprise features to a Professional tenant without a
+   * full upgrade), and a custom negotiated price. Any field omitted is left as-is.
+   * Audit-logged with a before/after diff.
+   */
+  async updateTenantSubscription(
+    tenantId: string,
+    body: { plan?: string; featureOverrides?: Record<string, boolean>; priceOverrideZar?: number | null },
+    actor?: OwnerActor,
+  ) {
+    const before = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { name: true, plan: true, featureOverrides: true, priceOverrideZar: true },
+    });
+    if (!before) throw new NotFoundException('Tenant not found');
+
+    const data: any = {};
+    if (body.plan !== undefined) {
+      const allowed = ['starter', 'professional', 'enterprise'];
+      const plan = String(body.plan).toLowerCase();
+      if (!allowed.includes(plan)) throw new BadRequestException(`Invalid plan. Use: ${allowed.join(', ')}`);
+      data.plan = plan;
+    }
+    if (body.featureOverrides !== undefined) {
+      // Keep only known feature keys set to true — a clean grant-map.
+      const clean: Record<string, boolean> = {};
+      for (const k of FEATURE_KEYS) if (body.featureOverrides?.[k]) clean[k] = true;
+      data.featureOverrides = clean;
+    }
+    if (body.priceOverrideZar !== undefined) {
+      data.priceOverrideZar =
+        body.priceOverrideZar === null || Number.isNaN(Number(body.priceOverrideZar))
+          ? null
+          : Math.max(0, Number(body.priceOverrideZar));
+    }
+
+    const updated = await this.prisma.company.update({ where: { id: tenantId }, data });
+
+    await this.audit.record({
+      action: 'tenant.subscription_change',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: before.name,
+      metadata: {
+        from: { plan: before.plan, featureOverrides: before.featureOverrides, priceOverrideZar: before.priceOverrideZar },
+        to: { plan: data.plan ?? before.plan, featureOverrides: data.featureOverrides ?? before.featureOverrides, priceOverrideZar: data.priceOverrideZar ?? before.priceOverrideZar },
+      },
+    });
+
+    return {
+      id: updated.id,
+      plan: updated.plan,
+      featureOverrides: (updated.featureOverrides ?? {}) as Record<string, boolean>,
+      priceOverrideZar: updated.priceOverrideZar ?? null,
+    };
   }
 
   // ── Approval requests ─────────────────────────────────────────────────
