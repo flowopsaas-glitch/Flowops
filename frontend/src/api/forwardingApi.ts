@@ -205,3 +205,54 @@ export async function downloadDoc(id: string, type: ForwardingDocType): Promise<
   window.open(url, "_blank");
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+
+// ── Command-centre overview ────────────────────────────────────────────────
+
+export type ForwardingExceptionKind =
+  | "RISK" | "DEMURRAGE" | "CUSTOMS_QUERY" | "CUSTOMS_REJECTED" | "DOCS";
+
+export interface ForwardingException {
+  fileId: string;
+  fileNumber: string;
+  kind: ForwardingExceptionKind;
+  label: string;
+  detail: string;
+  severity: "high" | "medium" | "low";
+}
+
+export interface ForwardingArrival {
+  id: string;
+  fileNumber: string;
+  direction: FreightDirection;
+  mode: FreightMode;
+  status: ShipmentStatus;
+  eta?: string | null;
+  consigneeName?: string | null;
+  pol?: string | null;
+  pod?: string | null;
+  vesselVoyage?: string | null;
+  aiRiskScore: number;
+  overdue: boolean;
+}
+
+export interface ForwardingOverview {
+  kpis: {
+    openFiles: number;
+    totalFiles: number;
+    arriving7d: number;
+    atRisk: number;
+    customsPending: number;
+    demurrageExposure: number;
+    demurrageAccruingCount: number;
+    disbursementOutstanding: number;
+    exceptions: number;
+  };
+  arrivals: ForwardingArrival[];
+  customsQueue: { DRAFT: number; SUBMITTED: number; QUERY: number; RELEASED: number; REJECTED: number };
+  exceptions: ForwardingException[];
+  note: string;
+}
+
+export const getForwardingOverview = async (): Promise<ForwardingOverview> =>
+  unwrap(await api.get(`/forwarding/overview`));

@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Ship, Plane, Truck, Plus, Loader2, Crown, Search, AlertTriangle,
-  ArrowRight, Anchor, Package, KeyRound,
+  ArrowRight, Anchor, Package, KeyRound, Stamp, Timer, Wallet, ShieldAlert,
+  FileWarning, Activity, Gauge,
 } from "lucide-react";
-import { listFiles, createFile, type ShipmentFile } from "../../api/forwardingApi";
+import {
+  listFiles, createFile, getForwardingOverview,
+  type ShipmentFile, type ForwardingOverview, type ForwardingException,
+} from "../../api/forwardingApi";
 import { getEntitlements } from "../../api/billingApi";
 import { useToast } from "../../components/ToastProvider";
+import { TiltCard } from "../../components/premium/TiltCard";
 import SarsEdiSetup from "./SarsEdiSetup";
 
 const MODE_ICON: Record<string, any> = { OCEAN: Ship, AIR: Plane, ROAD: Truck };
@@ -32,6 +37,7 @@ export default function ForwardingConsole() {
   const { showToast } = useToast();
   const [entitled, setEntitled] = useState<boolean | null>(null);
   const [files, setFiles] = useState<ShipmentFile[]>([]);
+  const [overview, setOverview] = useState<ForwardingOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<{ direction?: string; status?: string; q?: string }>({});
   const [creating, setCreating] = useState(false);
@@ -45,7 +51,14 @@ export default function ForwardingConsole() {
         const ent = await getEntitlements().catch(() => null);
         const ok = !!ent?.features?.freightForwarding;
         setEntitled(ok);
-        if (ok) setFiles(await listFiles());
+        if (ok) {
+          const [f, ov] = await Promise.all([
+            listFiles(),
+            getForwardingOverview().catch(() => null),
+          ]);
+          setFiles(f);
+          setOverview(ov);
+        }
       } catch {
         setEntitled(false);
       } finally {
@@ -63,6 +76,18 @@ export default function ForwardingConsole() {
     const atRisk = files.filter((f) => (f.aiRiskScore ?? 0) >= 50).length;
     return { open, arriving, atRisk, total: files.length };
   }, [files]);
+
+  // Prefer the server roll-up (covers all files + customs/demurrage/disbursement
+  // exposure); fall back to what we can derive from the loaded list.
+  const ovKpis = useMemo(() => ({
+    openFiles: overview?.kpis.openFiles ?? kpis.open,
+    arriving7d: overview?.kpis.arriving7d ?? kpis.arriving,
+    atRisk: overview?.kpis.atRisk ?? kpis.atRisk,
+    customsPending: overview?.kpis.customsPending ?? 0,
+    demurrageExposure: overview?.kpis.demurrageExposure ?? 0,
+    demurrageAccruingCount: overview?.kpis.demurrageAccruingCount ?? 0,
+    disbursementOutstanding: overview?.kpis.disbursementOutstanding ?? 0,
+  }), [overview, kpis]);
 
   const submitNew = async () => {
     setCreating(true);
@@ -126,12 +151,14 @@ export default function ForwardingConsole() {
             </button>
           </div>
 
-          {/* KPIs */}
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Kpi label="Open files" value={kpis.open} tone="text-white" />
-            <Kpi label="Arriving (7d)" value={kpis.arriving} tone="text-amber-300" />
-            <Kpi label="At risk" value={kpis.atRisk} tone="text-rose-300" />
-            <Kpi label="Total" value={kpis.total} tone="text-white/70" />
+          {/* Exposure KPIs — the desk's live risk & money picture */}
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+            <TiltCard><Kpi icon={Package} label="Open files" value={ovKpis.openFiles} tone="text-white" /></TiltCard>
+            <TiltCard><Kpi icon={Activity} label="Arriving (7d)" value={ovKpis.arriving7d} tone="text-amber-300" /></TiltCard>
+            <TiltCard><Kpi icon={Stamp} label="Customs pending" value={ovKpis.customsPending} tone="text-sky-300" /></TiltCard>
+            <TiltCard><Kpi icon={Timer} label="Demurrage est." value={fmtMoney(ovKpis.demurrageExposure)} tone="text-rose-300" sub={ovKpis.demurrageAccruingCount ? `${ovKpis.demurrageAccruingCount} accruing` : undefined} /></TiltCard>
+            <TiltCard><Kpi icon={Wallet} label="Disbursed out" value={fmtMoney(ovKpis.disbursementOutstanding)} tone="text-emerald-300" /></TiltCard>
+            <TiltCard><Kpi icon={ShieldAlert} label="At risk" value={ovKpis.atRisk} tone="text-rose-300" /></TiltCard>
           </div>
 
           {/* New file form */}
@@ -154,6 +181,72 @@ export default function ForwardingConsole() {
 
         {/* SARS EDI transmission setup */}
         {showEdi && <SarsEdiSetup />}
+
+        {/* ── Command centre: needs attention ─────────────────────────────── */}
+        {overview && overview.exceptions.length > 0 && (
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 fx-glass fx-reveal">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-4 w-4 text-amber-300" />
+              <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white/55">Needs attention</h2>
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">{overview.exceptions.length}</span>
+            </div>
+            <div className="space-y-2">
+              {overview.exceptions.map((x, i) => (
+                <ExceptionRow key={`${x.fileId}-${x.kind}-${i}`} x={x} onClick={() => navigate(`/forwarding/${x.fileId}`)} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Command centre: arrivals board + customs queue ──────────────── */}
+        {overview && (overview.arrivals.length > 0 || ovKpis.customsPending > 0) && (
+          <div className="grid lg:grid-cols-3 gap-4">
+            {/* Arrivals board */}
+            <div className="lg:col-span-2 rounded-[28px] border border-white/10 bg-white/[0.05] p-5 fx-glass fx-reveal">
+              <div className="flex items-center gap-2 mb-3">
+                <Anchor className="h-4 w-4 text-cyan-300" />
+                <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white/55">Arrivals board</h2>
+                <span className="text-[10px] text-white/30">soonest ETA first</span>
+              </div>
+              {overview.arrivals.length === 0 ? (
+                <p className="text-xs text-white/30 py-4">No files with an ETA yet — set ETAs on your open files to populate the board.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {overview.arrivals.map((a) => {
+                    const Icon = MODE_ICON[a.mode] || Ship;
+                    return (
+                      <button key={a.id} onClick={() => navigate(`/forwarding/${a.id}`)}
+                        className="w-full text-left flex items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2 hover:bg-white/[0.06] transition fx-lift">
+                        <Icon className="h-4 w-4 text-cyan-300 shrink-0" />
+                        <span className="font-mono text-xs font-bold text-white/85 shrink-0">{a.fileNumber}</span>
+                        <span className="text-[11px] text-white/45 truncate flex-1">{a.pol || "?"}→{a.pod || "?"}{a.consigneeName ? ` · ${a.consigneeName}` : ""}</span>
+                        {a.aiRiskScore >= 50 && <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[9px] font-bold text-rose-300 shrink-0">risk {a.aiRiskScore}</span>}
+                        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0 ${STATUS_CLS[a.status] ?? STATUS_CLS.DRAFT}`}>{a.status.replace(/_/g, " ")}</span>
+                        <span className={`text-[10px] shrink-0 ${a.overdue ? "text-rose-300 font-bold" : "text-white/40"}`}>{a.overdue ? "overdue " : "ETA "}{fmtDate(a.eta)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Customs queue */}
+            <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 fx-glass fx-reveal">
+              <div className="flex items-center gap-2 mb-3">
+                <Stamp className="h-4 w-4 text-sky-300" />
+                <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white/55">Customs queue</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <QueueChip label="Draft" value={overview.customsQueue.DRAFT} tone="text-white/60" />
+                <QueueChip label="Submitted" value={overview.customsQueue.SUBMITTED} tone="text-sky-300" />
+                <QueueChip label="Query" value={overview.customsQueue.QUERY} tone="text-amber-300" />
+                <QueueChip label="Rejected" value={overview.customsQueue.REJECTED} tone="text-rose-300" />
+                <QueueChip label="Released" value={overview.customsQueue.RELEASED} tone="text-emerald-300" full />
+              </div>
+              <p className="mt-3 text-[10px] leading-snug text-white/30">{overview.note}</p>
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -220,11 +313,57 @@ export default function ForwardingConsole() {
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: number; tone: string }) {
+function fmtMoney(n: number) {
+  return `R ${Math.round(n).toLocaleString("en-ZA")}`;
+}
+
+function Kpi({ label, value, tone, icon: Icon, sub }: { label: string; value: number | string; tone: string; icon?: any; sub?: string }) {
   return (
-    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4 fx-lift">
-      <div className={`text-2xl font-black ${tone}`}>{value}</div>
+    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4 fx-lift h-full">
+      <div className="flex items-center justify-between">
+        <div className={`text-2xl font-black ${tone}`}>{value}</div>
+        {Icon && <Icon className="h-4 w-4 text-white/25" />}
+      </div>
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">{label}</div>
+      {sub && <div className="text-[10px] text-rose-300/70 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+const EXC_META: Record<string, { tone: string; icon: any }> = {
+  CUSTOMS_QUERY: { tone: "amber", icon: Stamp },
+  CUSTOMS_REJECTED: { tone: "rose", icon: FileWarning },
+  DEMURRAGE: { tone: "rose", icon: Timer },
+  RISK: { tone: "amber", icon: Gauge },
+  DOCS: { tone: "sky", icon: FileWarning },
+};
+const SEV_DOT: Record<string, string> = { high: "bg-rose-400", medium: "bg-amber-400", low: "bg-white/40" };
+
+function ExceptionRow({ x, onClick }: { x: ForwardingException; onClick: () => void }) {
+  const meta = EXC_META[x.kind] ?? { tone: "amber", icon: AlertTriangle };
+  const Icon = meta.icon;
+  return (
+    <button onClick={onClick}
+      className="w-full text-left flex items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5 hover:bg-white/[0.06] transition fx-lift">
+      <span className={`h-2 w-2 rounded-full shrink-0 ${SEV_DOT[x.severity] ?? SEV_DOT.low}`} />
+      <Icon className="h-4 w-4 text-white/45 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-xs font-bold text-white/85">{x.fileNumber}</span>
+          <span className="text-[11px] font-bold text-white/70">{x.label}</span>
+        </div>
+        <div className="text-[11px] text-white/45 truncate">{x.detail}</div>
+      </div>
+      <ArrowRight className="h-4 w-4 text-white/20 shrink-0" />
+    </button>
+  );
+}
+
+function QueueChip({ label, value, tone, full }: { label: string; value: number; tone: string; full?: boolean }) {
+  return (
+    <div className={`rounded-xl border border-white/8 bg-black/20 px-3 py-2 fx-lift ${full ? "col-span-2" : ""}`}>
+      <div className={`text-xl font-black ${tone}`}>{value}</div>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-white/40">{label}</div>
     </div>
   );
 }
