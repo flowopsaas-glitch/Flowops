@@ -126,4 +126,72 @@ export class DisbursementsService {
       },
     };
   }
+
+  /**
+   * Recovery cockpit — the "are we getting our money back?" view.
+   *
+   * Rolls every disbursement up into: a recovery rate (recovered vs everything
+   * paid out), client-level exposure (worst offenders, oldest age, 90d+ flag),
+   * a "needs recovery invoice" prompt (paid out but not yet billed) and an
+   * exposure-by-category split. All tenant-scoped, all from captured ledger data.
+   */
+  async recoveryCockpit(companyId: string) {
+    const now = Date.now();
+    const day = 86_400_000;
+    const all = await this.prisma.disbursement.findMany({
+      where: { companyId },
+      select: { clientName: true, amount: true, status: true, paidAt: true, category: true },
+    });
+
+    let recovered = 0, writtenOff = 0, openAmount = 0;
+    let needsInvoiceAmount = 0, needsInvoiceCount = 0;
+    const clientMap = new Map<string, { client: string; outstanding: number; count: number; oldestAgeDays: number; overdue90: boolean }>();
+    const catMap = new Map<string, number>();
+
+    for (const d of all) {
+      const amt = d.amount || 0;
+      if (d.status === 'RECOVERED') { recovered += amt; continue; }
+      if (d.status === 'WRITTEN_OFF') { writtenOff += amt; continue; }
+
+      // OUTSTANDING | INVOICED = still open (money out, not yet back).
+      openAmount += amt;
+      const age = Math.floor((now - new Date(d.paidAt).getTime()) / day);
+      const key = d.clientName?.trim() || 'Unattributed';
+      const c = clientMap.get(key) ?? { client: key, outstanding: 0, count: 0, oldestAgeDays: 0, overdue90: false };
+      c.outstanding += amt;
+      c.count += 1;
+      c.oldestAgeDays = Math.max(c.oldestAgeDays, age);
+      if (age > 90) c.overdue90 = true;
+      clientMap.set(key, c);
+
+      const cat = d.category?.toUpperCase().trim() || 'OTHER';
+      catMap.set(cat, (catMap.get(cat) ?? 0) + amt);
+
+      if (d.status === 'OUTSTANDING') { needsInvoiceAmount += amt; needsInvoiceCount += 1; }
+    }
+
+    const denom = recovered + writtenOff + openAmount;
+    const recoveryRatePct = denom > 0 ? +((recovered / denom) * 100).toFixed(1) : 0;
+
+    const clients = [...clientMap.values()]
+      .map((c) => ({ ...c, outstanding: Math.round(c.outstanding) }))
+      .sort((a, b) => b.outstanding - a.outstanding)
+      .slice(0, 12);
+
+    const byCategory = [...catMap.entries()]
+      .map(([category, amount]) => ({ category, amount: Math.round(amount) }))
+      .sort((a, b) => b.amount - a.amount);
+
+    return {
+      recoveryRatePct,
+      recovered: Math.round(recovered),
+      writtenOff: Math.round(writtenOff),
+      openAmount: Math.round(openAmount),
+      needsInvoice: { count: needsInvoiceCount, amount: Math.round(needsInvoiceAmount) },
+      clients,
+      byCategory,
+      note:
+        'Recovery rate is recovered value vs everything paid out (recovered + open + written-off). Client exposure covers un-recovered (outstanding + invoiced) disbursements. Amounts are summed in the ledger currency as captured.',
+    };
+  }
 }

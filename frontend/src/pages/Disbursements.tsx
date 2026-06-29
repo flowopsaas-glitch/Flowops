@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Landmark, Plus, Loader2, Search, CheckCircle2, Trash2, Wallet, Clock, AlertTriangle, TrendingUp,
+  Users, Receipt, Target, Layers,
 } from "lucide-react";
 import * as api from "../api/disbursementApi";
 import { useToast } from "../components/ToastProvider";
+import { TiltCard } from "../components/premium/TiltCard";
 
 const input = "rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder-white/25";
 const money = (v: number) => `R${(v ?? 0).toLocaleString("en-ZA")}`;
@@ -20,6 +22,7 @@ export default function Disbursements() {
   const { showToast } = useToast();
   const [rows, setRows] = useState<api.Disbursement[]>([]);
   const [metrics, setMetrics] = useState<api.DisbursementMetrics | null>(null);
+  const [cockpit, setCockpit] = useState<api.RecoveryCockpit | null>(null);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -36,6 +39,8 @@ export default function Disbursements() {
       ]);
       setRows(r);
       setMetrics(m);
+      // Cockpit is global (not status-filtered); refresh alongside so it stays live.
+      api.recoveryCockpit().then(setCockpit).catch(() => setCockpit(null));
     } catch (e: any) {
       showToast(e?.message ?? "Could not load disbursements", "error");
     } finally { setLoading(false); }
@@ -143,6 +148,11 @@ export default function Disbursements() {
           )}
         </div>
 
+        {/* Recovery cockpit */}
+        {cockpit && (cockpit.clients.length > 0 || cockpit.needsInvoice.count > 0 || cockpit.recovered > 0) && (
+          <RecoveryCockpit data={cockpit} onFilterOutstanding={() => setStatusFilter("OUTSTANDING")} />
+        )}
+
         {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[180px]">
@@ -204,6 +214,104 @@ export default function Disbursements() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function RecoveryCockpit({ data, onFilterOutstanding }: { data: api.RecoveryCockpit; onFilterOutstanding: () => void }) {
+  const rate = data.recoveryRatePct;
+  const rateTone = rate >= 80 ? "text-emerald-300" : rate >= 50 ? "text-amber-300" : "text-rose-300";
+  const rateBar = rate >= 80 ? "bg-emerald-400" : rate >= 50 ? "bg-amber-400" : "bg-rose-400";
+  const catTotal = data.byCategory.reduce((s, c) => s + c.amount, 0);
+  const CAT_CLS = ["bg-emerald-400", "bg-sky-400", "bg-indigo-400", "bg-amber-400", "bg-rose-400", "bg-white/40"];
+
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 fx-glass fx-reveal">
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <Target className="h-4 w-4 text-emerald-300" />
+        <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white/55">Recovery cockpit</h2>
+        <span className="text-[10px] text-white/30">are we getting the money back?</span>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-4">
+        {/* Recovery rate + needs-invoice */}
+        <div className="space-y-3">
+          <TiltCard>
+            <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4 h-full">
+              <div className="flex items-center justify-between">
+                <div className={`text-3xl font-black ${rateTone}`}>{rate}%</div>
+                <TrendingUp className={`h-4 w-4 ${rateTone}`} />
+              </div>
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">Recovery rate</div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
+                <div className={`h-full ${rateBar}`} style={{ width: `${Math.min(100, rate)}%` }} />
+              </div>
+              <div className="mt-2 text-[10px] text-white/35">{money(data.recovered)} recovered · {money(data.openAmount)} still out</div>
+            </div>
+          </TiltCard>
+
+          <button onClick={onFilterOutstanding} disabled={data.needsInvoice.count === 0}
+            className={`w-full text-left rounded-[18px] border p-4 transition fx-lift ${data.needsInvoice.count > 0 ? "border-amber-500/30 bg-amber-500/[0.07] hover:bg-amber-500/[0.12]" : "border-white/8 bg-white/[0.03] opacity-70 cursor-default"}`}>
+            <div className="flex items-center justify-between">
+              <div className="text-2xl font-black text-amber-200">{money(data.needsInvoice.amount)}</div>
+              <Receipt className="h-4 w-4 text-amber-300" />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">Needs recovery invoice</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{data.needsInvoice.count} paid-out, not yet billed{data.needsInvoice.count > 0 ? " — tap to review" : ""}</div>
+          </button>
+        </div>
+
+        {/* Client exposure — worst offenders */}
+        <div className="lg:col-span-2 rounded-[18px] border border-white/8 bg-black/20 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Users className="h-4 w-4 text-white/45" />
+            <h3 className="text-[11px] font-black uppercase tracking-wider text-white/50">Client exposure</h3>
+            <span className="text-[10px] text-white/30">un-recovered, largest first</span>
+          </div>
+          {data.clients.length === 0 ? (
+            <p className="text-xs text-white/30 py-3">Nothing outstanding — every disbursement has been recovered or written off. 🎉</p>
+          ) : (
+            <div className="space-y-1.5">
+              {data.clients.map((c) => (
+                <div key={c.client} className="flex items-center gap-3 rounded-xl bg-black/30 px-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate font-bold text-white/80">{c.client}</span>
+                  <span className="text-[10px] text-white/35 shrink-0">{c.count} item{c.count === 1 ? "" : "s"}</span>
+                  {c.overdue90 ? (
+                    <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-bold text-rose-300 shrink-0">{c.oldestAgeDays}d overdue</span>
+                  ) : (
+                    <span className="text-[10px] text-white/35 shrink-0">oldest {c.oldestAgeDays}d</span>
+                  )}
+                  <span className="font-mono font-black text-amber-200 shrink-0 w-24 text-right">{money(c.outstanding)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Exposure by category */}
+          {data.byCategory.length > 0 && catTotal > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Layers className="h-3.5 w-3.5 text-white/35" />
+                <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Exposure by category</span>
+              </div>
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-white/5">
+                {data.byCategory.map((c, i) => c.amount > 0 && (
+                  <div key={c.category} className={CAT_CLS[i % CAT_CLS.length]} style={{ width: `${(c.amount / catTotal) * 100}%` }} title={`${c.category}: ${money(c.amount)}`} />
+                ))}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-2.5 text-[10px] text-white/45">
+                {data.byCategory.map((c, i) => (
+                  <span key={c.category} className="inline-flex items-center gap-1">
+                    <span className={`h-2 w-2 rounded-full ${CAT_CLS[i % CAT_CLS.length]}`} /> {c.category} {money(c.amount)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{data.note}</p>
     </div>
   );
 }

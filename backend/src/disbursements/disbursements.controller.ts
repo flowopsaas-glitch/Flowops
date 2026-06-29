@@ -22,6 +22,12 @@ export class DisbursementsController {
     return this.disbursements.metrics(u.companyId);
   }
 
+  @Get('recovery-cockpit')
+  @ApiOperation({ summary: 'Recovery cockpit: recovery rate, client exposure, needs-invoice & category split' })
+  recoveryCockpit(@CurrentUser() u: any) {
+    return this.disbursements.recoveryCockpit(u.companyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List disbursements' })
   list(@CurrentUser() u: any, @Query() query: any) {
