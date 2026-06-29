@@ -103,6 +103,67 @@ export class WaybillsService {
     });
   }
 
+  /**
+   * Delivery quality — the post-delivery scorecard the platform collected but
+   * never surfaced: customer CSAT (delivery ratings), delivery success rate,
+   * and COD cash still uncollected. Tenant-scoped, read-only.
+   */
+  async deliveryQuality(companyId: string) {
+    const [byStatus, ratingAgg, byRating, requestedCount, codAgg] = await Promise.all([
+      this.prisma.waybill.groupBy({
+        by: ['status'],
+        where: { companyId },
+        _count: { _all: true },
+      }),
+      this.prisma.waybill.aggregate({
+        where: { companyId, customerRating: { not: null } },
+        _avg: { customerRating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.waybill.groupBy({
+        by: ['customerRating'],
+        where: { companyId, customerRating: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.waybill.count({ where: { companyId, ratingRequestedAt: { not: null } } }),
+      this.prisma.waybill.aggregate({
+        where: { companyId, codAmount: { gt: 0 }, codCollected: false },
+        _sum: { codAmount: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const sc: Record<string, number> = {};
+    for (const r of byStatus) sc[r.status] = r._count._all;
+    const delivered = sc.DELIVERED ?? 0;
+    const failed = (sc.FAILED_DELIVERY ?? 0) + (sc.RETURNED ?? 0);
+    const decided = delivered + failed;
+
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<number, number>;
+    for (const r of byRating) {
+      const star = r.customerRating as number | null;
+      if (star && star >= 1 && star <= 5) distribution[star] = r._count._all;
+    }
+
+    const ratedCount = ratingAgg._count._all;
+    const avgRating = ratingAgg._avg.customerRating ?? null;
+
+    return {
+      statusCounts: sc,
+      delivered,
+      deliverySuccessRatePct: decided ? Math.round((delivered / decided) * 1000) / 10 : 0,
+      csat: avgRating != null ? Math.round(avgRating * 100) / 100 : null,
+      ratedCount,
+      ratingRequested: requestedCount,
+      ratingResponseRatePct: requestedCount ? Math.round((ratedCount / requestedCount) * 1000) / 10 : null,
+      distribution,
+      codOutstanding: Math.round(codAgg._sum.codAmount ?? 0),
+      codOutstandingCount: codAgg._count._all,
+      note:
+        'CSAT is the average of customer delivery ratings (1\u20135). Response rate is ratings received vs requested. COD outstanding is cash on delivered parcels the driver has not yet settled.',
+    };
+  }
+
   async findOne(id: string, companyId: string) {
     const w = await this.prisma.waybill.findFirst({
       where: { id, companyId },
