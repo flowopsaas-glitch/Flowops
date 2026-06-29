@@ -173,7 +173,7 @@ export default function WaybillInbox() {
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {items.map((item) => (
-            <button key={item.id} onClick={() => { setSelectedId(item.id); setActiveTab('DOCUMENT'); }} className={`w-full p-5 rounded-[28px] border text-left transition-all ${selectedId === item.id ? 'bg-sky-600 border-sky-400 shadow-xl' : 'bg-slate-900/40 border-white/5'}`}>
+            <button key={item.id} onClick={() => { setSelectedId(item.id); setActiveTab('DOCUMENT'); }} className={`w-full p-5 rounded-[28px] border text-left transition-all fx-lift ${selectedId === item.id ? 'bg-sky-600 border-sky-400 shadow-xl' : 'bg-slate-900/40 border-white/5'}`}>
               <div className="text-[9px] font-black uppercase text-white/30 mb-1">Entry #{item.id}</div>
               <div className="font-bold text-white truncate text-sm">{item.waybillNumber || "Unidentified Job"}</div>
             </button>

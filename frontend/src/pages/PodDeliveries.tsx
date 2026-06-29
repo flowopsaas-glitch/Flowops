@@ -28,7 +28,7 @@ function Tile(props: {
   return (
     <div 
       onClick={props.onClick}
-      className={`group rounded-[26px] border border-white/10 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition-all cursor-pointer 
+      className={`group rounded-[26px] border border-white/10 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition-all cursor-pointer fx-lift 
       ${props.active ? 'bg-blue-500/10 border-blue-500/50' : 'bg-white/5 hover:bg-white/10'}`}
     >
       <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/10 group-hover:ring-blue-500/30 transition-all">

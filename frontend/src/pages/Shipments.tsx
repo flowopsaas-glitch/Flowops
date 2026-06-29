@@ -164,7 +164,7 @@ export default function Shipments() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl fx-glass fx-reveal">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-400">
@@ -238,7 +238,7 @@ export default function Shipments() {
             { key: "delivered", label: "Delivered", icon: <CheckCircle2 className="h-5 w-5" />, tone: "text-emerald-300" },
             { key: "failed", label: "Failed", icon: <AlertCircle className="h-5 w-5" />, tone: "text-rose-300" },
           ] as const
-        ).map(({ key, label, icon, tone }) => (
+        ).map(({ key, label, icon, tone }, i) => (
           <button
             key={key}
             onClick={() =>
@@ -247,7 +247,7 @@ export default function Shipments() {
                 key === "inTransit" ? "IN_TRANSIT" : key.toUpperCase()
               )
             }
-            className={`rounded-[24px] border border-white/10 bg-white/[0.05] p-5 text-left shadow-xl transition-colors hover:bg-white/[0.08] ${
+            className={`rounded-[24px] border border-white/10 bg-white/[0.05] p-5 text-left shadow-xl fx-lift fx-reveal fx-reveal-${i + 1} transition-colors hover:bg-white/[0.08] ${
               activeStatusFilter ===
               (key === "inTransit" ? "IN_TRANSIT" : key.toUpperCase())
                 ? "ring-2 ring-blue-400/40"
@@ -268,7 +268,7 @@ export default function Shipments() {
       </div>
 
       {/* Table */}
-      <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl">
+      <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl fx-glass fx-reveal">
         {/* Search */}
         <div className="border-b border-white/10 p-4 flex items-center gap-3">
           <Search className="h-4 w-4 text-white/30 shrink-0" />

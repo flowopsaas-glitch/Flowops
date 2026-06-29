@@ -30,7 +30,7 @@ const driverIcon = new L.Icon({
 });
 
 // --- STYLING ---
-const softCard = "rounded-[26px] border border-white/10 bg-white/[0.04] shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl";
+const softCard = "rounded-[26px] border border-white/10 bg-white/[0.04] shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl fx-lift";
 
 function StatCard({ label, value, hint }: { label: string; value: number | string; hint: string }) {
   return (
