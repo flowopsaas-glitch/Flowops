@@ -106,6 +106,99 @@ export class DashboardService {
     };
   }
 
+  /**
+   * Daily performance trend series for the exec dashboard. Returns one point
+   * per day over the requested window (7–90 days) with shipment volume created,
+   * deliveries completed, exceptions (failed/returned) and invoiced revenue —
+   * the time-series view the point-in-time KPI cards can't show. All derived
+   * from live tenant data; `delivered`/`exceptions` are bucketed by the day the
+   * waybill reached that status (updatedAt), consistent with the KPI window.
+   */
+  async getTrends(companyId: string, days = 30) {
+    const n = Math.min(90, Math.max(7, Math.floor(days) || 30));
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(today);
+    start.setDate(today.getDate() - (n - 1));
+
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+    // Seed an ordered bucket map so every day appears even with zero activity.
+    const buckets = new Map<string, { date: string; created: number; delivered: number; exceptions: number; revenue: number }>();
+    for (let i = 0; i < n; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      buckets.set(dayKey(d), { date: dayKey(d), created: 0, delivered: 0, exceptions: 0, revenue: 0 });
+    }
+
+    const [created, statusChanged, invoices] = await Promise.all([
+      this.prisma.waybill.findMany({
+        where: { companyId, createdAt: { gte: start } },
+        select: { createdAt: true },
+      }),
+      this.prisma.waybill.findMany({
+        where: {
+          companyId,
+          updatedAt: { gte: start },
+          status: { in: ['DELIVERED', 'FAILED_DELIVERY', 'RETURNED'] },
+        },
+        select: { status: true, updatedAt: true },
+      }),
+      this.prisma.invoice.findMany({
+        where: { companyId, createdAt: { gte: start } },
+        select: { total: true, createdAt: true },
+      }),
+    ]);
+
+    for (const w of created) {
+      const b = buckets.get(dayKey(w.createdAt));
+      if (b) b.created += 1;
+    }
+    for (const w of statusChanged) {
+      const b = buckets.get(dayKey(w.updatedAt));
+      if (!b) continue;
+      if (w.status === 'DELIVERED') b.delivered += 1;
+      else b.exceptions += 1;
+    }
+    for (const inv of invoices) {
+      const b = buckets.get(dayKey(inv.createdAt));
+      if (b) b.revenue += inv.total || 0;
+    }
+
+    const series = [...buckets.values()].map((b) => ({ ...b, revenue: Math.round(b.revenue) }));
+    const totals = series.reduce(
+      (acc, b) => {
+        acc.created += b.created;
+        acc.delivered += b.delivered;
+        acc.exceptions += b.exceptions;
+        acc.revenue += b.revenue;
+        return acc;
+      },
+      { created: 0, delivered: 0, exceptions: 0, revenue: 0 },
+    );
+
+    // Momentum: compare the most recent half of the window to the prior half.
+    const half = Math.floor(n / 2);
+    const recent = series.slice(n - half);
+    const prior = series.slice(n - 2 * half, n - half);
+    const sum = (arr: typeof series, k: 'created' | 'delivered' | 'exceptions' | 'revenue') =>
+      arr.reduce((s, b) => s + (b[k] as number), 0);
+    const pctDelta = (a: number, b: number) => (b > 0 ? Math.round(((a - b) / b) * 1000) / 10 : null);
+
+    return {
+      days: n,
+      series,
+      totals,
+      momentum: {
+        created: pctDelta(sum(recent, 'created'), sum(prior, 'created')),
+        delivered: pctDelta(sum(recent, 'delivered'), sum(prior, 'delivered')),
+        revenue: pctDelta(sum(recent, 'revenue'), sum(prior, 'revenue')),
+      },
+      note:
+        'Live tenant data. Deliveries and exceptions are bucketed by the day the waybill reached that status; revenue is invoiced value by invoice date.',
+    };
+  }
+
   /** Computes the KPI inputs for a single [start, end) window. */
   private async windowMetrics(companyId: string, start: Date, end: Date) {
     const [shipments, delivered, failed, returned, invoiceAgg, waybillCount] =
