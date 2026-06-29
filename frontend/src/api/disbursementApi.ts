@@ -39,3 +39,27 @@ export const updateDisbursement = async (id: string, dto: Partial<Disbursement>)
 export const recoverDisbursement = async (id: string, invoiceId?: string): Promise<Disbursement> => unwrap(await api.post(`/disbursements/${id}/recover`, { invoiceId }));
 export const setDisbursementStatus = async (id: string, status: string): Promise<Disbursement> => unwrap(await api.patch(`/disbursements/${id}/status`, { status }));
 export const deleteDisbursement = async (id: string): Promise<{ deleted: boolean }> => unwrap(await api.delete(`/disbursements/${id}`));
+
+
+// ── Recovery cockpit ───────────────────────────────────────────────────────
+
+export interface ClientExposure {
+  client: string;
+  outstanding: number;
+  count: number;
+  oldestAgeDays: number;
+  overdue90: boolean;
+}
+
+export interface RecoveryCockpit {
+  recoveryRatePct: number;
+  recovered: number;
+  writtenOff: number;
+  openAmount: number;
+  needsInvoice: { count: number; amount: number };
+  clients: ClientExposure[];
+  byCategory: { category: string; amount: number }[];
+  note: string;
+}
+
+export const recoveryCockpit = async (): Promise<RecoveryCockpit> => unwrap(await api.get("/disbursements/recovery-cockpit"));
