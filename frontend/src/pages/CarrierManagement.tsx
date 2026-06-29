@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Ship, Plane, Truck, Package, Building2, Plus, Loader2, Trash2, Anchor, Search,
+  TrendingDown, Award, ChevronDown, Route, Sparkles,
 } from "lucide-react";
 import * as carrierApi from "../api/carrierApi";
 import { useToast } from "../components/ToastProvider";
+import { TiltCard } from "../components/premium/TiltCard";
 
 const TYPE_META: Record<carrierApi.CarrierType, { label: string; icon: any }> = {
   OCEAN_LINE: { label: "Ocean line", icon: Ship },
@@ -20,6 +22,7 @@ export default function CarrierManagement() {
   const { showToast } = useToast();
   const [carriers, setCarriers] = useState<carrierApi.Carrier[]>([]);
   const [metrics, setMetrics] = useState<carrierApi.CarrierMetrics | null>(null);
+  const [lanes, setLanes] = useState<carrierApi.LaneAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -29,9 +32,14 @@ export default function CarrierManagement() {
   const load = async () => {
     setLoading(true);
     try {
-      const [c, m] = await Promise.all([carrierApi.listCarriers(), carrierApi.carrierMetrics().catch(() => null)]);
+      const [c, m, l] = await Promise.all([
+        carrierApi.listCarriers(),
+        carrierApi.carrierMetrics().catch(() => null),
+        carrierApi.laneAnalysis().catch(() => null),
+      ]);
       setCarriers(c);
       setMetrics(m);
+      setLanes(l);
     } catch (e: any) {
       showToast(e?.message ?? "Could not load carriers", "error");
     } finally { setLoading(false); }
@@ -105,6 +113,9 @@ export default function CarrierManagement() {
             </div>
           )}
         </div>
+
+        {/* Lane Rate Explorer */}
+        {lanes && lanes.lanes.length > 0 && <LaneExplorer data={lanes} />}
 
         {/* Search */}
         <div className="relative">
@@ -217,9 +228,107 @@ function CarrierRow({ carrier, onChange, busy, setBusy, onRemove }: {
   );
 }
 
+function fmtRate(currency: string, n: number) {
+  return `${currency} ${n.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function LaneExplorer({ data }: { data: carrierApi.LaneAnalysis }) {
+  const savingsEntries = Object.entries(data.summary.totalSavings).filter(([, v]) => v > 0);
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 fx-glass fx-reveal">
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <Route className="h-4 w-4 text-emerald-300" />
+        <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white/55">Lane rate explorer</h2>
+        <span className="text-[10px] text-white/30">cheapest buy-rate &amp; savings per lane</span>
+      </div>
+
+      {/* Summary KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <TiltCard><Kpi label="Lanes" value={data.summary.lanes} /></TiltCard>
+        <TiltCard><Kpi label="Competitive" value={data.summary.competitiveLanes} tone="text-emerald-300" /></TiltCard>
+        <TiltCard><Kpi label="Sole-source" value={data.summary.soleSourceLanes} tone="text-amber-300" /></TiltCard>
+        <TiltCard>
+          <div className="rounded-[18px] border border-emerald-500/20 bg-emerald-500/[0.06] p-4 h-full">
+            <div className="flex items-center gap-1 text-emerald-300">
+              <TrendingDown className="h-4 w-4" />
+              <span className="text-[15px] font-black leading-tight">
+                {savingsEntries.length === 0 ? "—" : savingsEntries.map(([c, v]) => fmtRate(c, v)).join(" · ")}
+              </span>
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">Saving available</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {/* Per-lane rows */}
+      <div className="mt-4 space-y-2">
+        {data.lanes.map((l, i) => <LaneRow key={`${l.lane}-${l.containerType}-${l.currency}-${i}`} l={l} />)}
+      </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{data.note}</p>
+    </div>
+  );
+}
+
+function LaneRow({ l }: { l: carrierApi.LaneAnalysisRow }) {
+  const [open, setOpen] = useState(false);
+  const competitive = l.carrierCount > 1;
+  return (
+    <div className="rounded-2xl border border-white/8 bg-black/20 fx-lift">
+      <button onClick={() => competitive && setOpen((v) => !v)}
+        className={`w-full text-left flex items-center gap-3 px-4 py-3 ${competitive ? "hover:bg-white/[0.04]" : "cursor-default"} transition rounded-2xl`}>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm font-black text-white">{l.lane}</span>
+            {l.containerType && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/50">{l.containerType}</span>}
+            {l.mode && <span className="text-[10px] text-white/35">{l.mode}</span>}
+            {competitive ? (
+              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold text-emerald-300">{l.carrierCount} carriers</span>
+            ) : (
+              <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300">sole-source</span>
+            )}
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-white/45">
+            <Award className="h-3.5 w-3.5 text-emerald-300" />
+            <span className="text-emerald-200 font-bold">{fmtRate(l.currency, l.best.buyRate)}</span>
+            <span className="text-white/35">· {l.best.carrierName}{!l.best.active ? " (inactive)" : ""}</span>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          {competitive ? (
+            <>
+              <div className="flex items-center justify-end gap-1 text-emerald-300 font-black text-sm">
+                <TrendingDown className="h-3.5 w-3.5" /> save {fmtRate(l.currency, l.savings)}
+              </div>
+              <div className="text-[10px] text-white/35">{l.savingsPct}% vs dearest · avg {fmtRate(l.currency, l.avgRate)}</div>
+            </>
+          ) : (
+            <div className="text-[10px] text-white/35">add another quote to benchmark</div>
+          )}
+        </div>
+        {competitive && <ChevronDown className={`h-4 w-4 text-white/30 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />}
+      </button>
+
+      {open && competitive && (
+        <div className="px-4 pb-3 space-y-1">
+          {l.quotes.map((q, idx) => (
+            <div key={q.rateId} className="flex items-center gap-2 rounded-lg bg-black/30 px-3 py-1.5 text-[11px]">
+              {idx === 0 ? <Sparkles className="h-3.5 w-3.5 text-emerald-300" /> : <span className="h-3.5 w-3.5 shrink-0" />}
+              <span className={`font-bold ${idx === 0 ? "text-emerald-200" : "text-white/70"}`}>{q.carrierName}</span>
+              {!q.active && <span className="text-[9px] text-rose-300">inactive</span>}
+              <span className="ml-auto font-mono text-white/60">{fmtRate(l.currency, q.buyRate)}</span>
+              {idx > 0 && <span className="text-[10px] text-rose-300/70">+{fmtRate(l.currency, +(q.buyRate - l.best.buyRate).toFixed(2))}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Kpi({ label, value, tone = "text-white" }: { label: string; value: number; tone?: string }) {
   return (
-    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4 h-full">
       <div className={`text-2xl font-black ${tone}`}>{value}</div>
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">{label}</div>
     </div>
