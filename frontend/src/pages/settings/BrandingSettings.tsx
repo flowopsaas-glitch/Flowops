@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Check, Image as ImageIcon, Loader2, Palette, RefreshCw } from "lucide-react";
+import { ArrowLeft, Check, Image as ImageIcon, Loader2, Palette, RefreshCw, Upload, Trash2 } from "lucide-react";
 import {
   updateMyCompanyBranding,
   type UpdateMyCompanyBrandingPayload,
@@ -18,6 +18,10 @@ type FormState = {
 };
 
 const HEX_COLOR_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+// Max size for a manually-uploaded (inline data-URL) logo. Larger logos should
+// be hosted and referenced by URL to keep the company row lean.
+const MAX_LOGO_BYTES = 512 * 1024;
 
 function buildInitialForm(
   tenant: ReturnType<typeof useTenant>["tenant"],
@@ -82,6 +86,35 @@ export default function BrandingSettings() {
       setValidationError(null);
     };
 
+  // Manual logo upload: embed the chosen image as a data URL straight into the
+  // logoUrl field, so a tenant admin can set a logo without hosting it anywhere.
+  // Saved through the same branding form (PATCH /companies/my-company).
+  const handleLogoFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-picking the same file later
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setValidationError("Logo must be an image file (PNG, SVG, JPG, WebP).");
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setValidationError("Logo must be 512KB or smaller — for a larger image, host it and paste the URL above.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm((prev) => ({ ...prev, logoUrl: String(reader.result || "") }));
+      setValidationError(null);
+    };
+    reader.onerror = () => setValidationError("Could not read that image. Please try another file.");
+    reader.readAsDataURL(file);
+  };
+
+  const clearLogo = () => {
+    setForm((prev) => ({ ...prev, logoUrl: "" }));
+    setValidationError(null);
+  };
+
   const validate = (): string | null => {
     const colours: Array<[string, string]> = [
       ["primary", form.primaryColor],
@@ -93,8 +126,8 @@ export default function BrandingSettings() {
         return `${label} colour must be a hex string like #3b82f6`;
       }
     }
-    if (form.logoUrl && !/^(\/|https?:\/\/)/i.test(form.logoUrl.trim())) {
-      return "Logo URL must be absolute (https://...) or start with `/`";
+    if (form.logoUrl && !/^(\/|https?:\/\/|data:image\/)/i.test(form.logoUrl.trim())) {
+      return "Logo must be an absolute URL (https://...), a path starting with `/`, or an uploaded image";
     }
     return null;
   };
@@ -205,13 +238,63 @@ export default function BrandingSettings() {
               hint="Absolute URL (https://...) or a backend path like /uploads/logo.png. PNG/SVG recommended."
             >
               <input
-                type="url"
+                type="text"
                 value={form.logoUrl}
                 onChange={handleChange("logoUrl")}
                 placeholder="https://cdn.example.com/logo.png"
                 className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none focus:border-blue-400/60"
               />
             </Field>
+
+            {/* Manual upload — for admins without a hosted image */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">or upload manually</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+              <div className="flex items-center gap-4 rounded-2xl border border-dashed border-white/15 bg-black/20 p-4">
+                <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                  {form.logoUrl ? (
+                    <img
+                      src={form.logoUrl}
+                      alt="Logo preview"
+                      className="h-full w-full object-contain"
+                      onError={(e) => { (e.currentTarget.style.display = "none"); }}
+                    />
+                  ) : (
+                    <ImageIcon size={22} className="text-white/30" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-blue-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-400">
+                      <Upload size={14} />
+                      Choose image
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                        onChange={handleLogoFile}
+                        className="hidden"
+                      />
+                    </label>
+                    {form.logoUrl ? (
+                      <button
+                        type="button"
+                        onClick={clearLogo}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/60 transition hover:bg-white/10 hover:text-white"
+                      >
+                        <Trash2 size={14} />
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-[11px] text-white/40">
+                    PNG, SVG, JPG or WebP up to 512KB. The image is embedded directly and applied when you save.
+                  </p>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="space-y-4 border-t border-white/5 pt-6">

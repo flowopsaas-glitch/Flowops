@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FLOWOPS_API_URL } from "../../lib/env";
 import { getAccessToken, getStoredUser } from "../../lib/session";
+import {
+  ALL_TENANT_NAV_PERMISSION_KEYS,
+  TENANT_NAV_PERMISSION_LABELS,
+  normalizeTenantNavPermissions,
+  buildRoleDefaultTenantNavPermissions,
+} from "../../lib/tenantUserPermissions";
 
 type UserRow = {
   id: number;
@@ -24,116 +30,12 @@ type CompanyRow = {
 
 const API_BASE = FLOWOPS_API_URL;
 
-const PERMISSION_KEYS = [
-  "dashboard",
-  "collections",
-  "dispatch",
-  "drivers",
-  "clients",
-  "invoices",
-  "billing",
-  "quotes",
-  "whatsapp",
-  "emailhub",
-  "settings",
-  "reports",
-  "aitools",
-] as const;
+// Canonical nav-permission keys — these MUST match what the sidebar (AppLayout)
+// and route guards (RequirePermission) read, otherwise saved toggles are
+// silently ignored. Sourced from lib/tenantUserPermissions (single source).
+const PERMISSION_KEYS = ALL_TENANT_NAV_PERMISSION_KEYS;
 
-type PermissionKey = (typeof PERMISSION_KEYS)[number];
-
-const DEFAULT_ROLE_PRESETS: Record<string, Record<string, boolean>> = {
-  COMPANY_ADMIN: {
-    dashboard: true,
-    collections: true,
-    dispatch: true,
-    drivers: true,
-    clients: true,
-    invoices: true,
-    billing: true,
-    quotes: true,
-    whatsapp: true,
-    emailhub: true,
-    settings: true,
-    reports: true,
-    aitools: true,
-  },
-  COMPANY_USER: {
-    dashboard: true,
-    collections: true,
-    dispatch: false,
-    drivers: false,
-    clients: true,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: false,
-    aitools: false,
-  },
-  OPERATIONS: {
-    dashboard: true,
-    collections: true,
-    dispatch: true,
-    drivers: true,
-    clients: true,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: true,
-    aitools: false,
-  },
-  DISPATCH: {
-    dashboard: true,
-    collections: true,
-    dispatch: true,
-    drivers: true,
-    clients: false,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: false,
-    aitools: false,
-  },
-  ACCOUNTS: {
-    dashboard: true,
-    collections: false,
-    dispatch: false,
-    drivers: false,
-    clients: true,
-    invoices: true,
-    billing: true,
-    quotes: true,
-    whatsapp: false,
-    emailhub: true,
-    settings: false,
-    reports: true,
-    aitools: false,
-  },
-  VIEW_ONLY: {
-    dashboard: true,
-    collections: false,
-    dispatch: false,
-    drivers: false,
-    clients: false,
-    invoices: false,
-    billing: false,
-    quotes: false,
-    whatsapp: false,
-    emailhub: false,
-    settings: false,
-    reports: false,
-    aitools: false,
-  },
-};
+type PermissionKey = (typeof ALL_TENANT_NAV_PERMISSION_KEYS)[number];
 
 const pageWrap: React.CSSProperties = {
   minHeight: "100vh",
@@ -273,12 +175,9 @@ async function readJson(response: Response) {
 }
 
 function normalizePermissions(input: any, role?: string): Record<string, boolean> {
-  const preset = DEFAULT_ROLE_PRESETS[String(role || "").toUpperCase()] || {};
-  const out: Record<string, boolean> = {};
-  for (const key of PERMISSION_KEYS) {
-    out[key] = Boolean(input?.[key] ?? preset[key] ?? false);
-  }
-  return out;
+  // Delegate to the single source of truth so role defaults + per-user overrides
+  // resolve exactly the same way the sidebar and route guards resolve them.
+  return normalizeTenantNavPermissions(input, role) as unknown as Record<string, boolean>;
 }
 
 export default function TenantUsersRolesPage() {
@@ -574,7 +473,7 @@ export default function TenantUsersRolesPage() {
   function applyRolePreset(nextRole: string) {
     const normalized = String(nextRole || "COMPANY_USER").toUpperCase();
     setRole(normalized);
-    setPermissionDraft(normalizePermissions({}, normalized));
+    setPermissionDraft(buildRoleDefaultTenantNavPermissions(normalized) as unknown as Record<string, boolean>);
   }
 
   function updatePermission(key: PermissionKey, value: boolean) {
@@ -877,8 +776,8 @@ export default function TenantUsersRolesPage() {
                     Access Area
                   </div>
 
-                  <div style={{ fontWeight: 900, fontSize: 18, marginTop: 8, marginBottom: 12 }}>
-                    {key}
+                  <div style={{ fontWeight: 900, fontSize: 16, marginTop: 8, marginBottom: 12 }}>
+                    {TENANT_NAV_PERMISSION_LABELS[key as keyof typeof TENANT_NAV_PERMISSION_LABELS] ?? key}
                   </div>
 
                   <button
