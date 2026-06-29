@@ -27,6 +27,25 @@ const updateSW = registerSW({
   },
 });
 
+// One-time self-heal: older builds shipped a hand-rolled `/service-worker.js`
+// that cached a stale app shell (and a non-existent /manifest.json), which left
+// installed desktop apps showing a blank icon. Unregister that legacy worker and
+// drop its caches so the vite-plugin-pwa worker (with correct icons) takes over.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations?.().then((regs) => {
+    regs.forEach((r) => {
+      if ((r.active?.scriptURL || '').endsWith('/service-worker.js')) {
+        r.unregister();
+      }
+    });
+  }).catch(() => undefined);
+  if ('caches' in window) {
+    caches.keys().then((keys) =>
+      keys.filter((k) => k.startsWith('flowops-v')).forEach((k) => caches.delete(k)),
+    ).catch(() => undefined);
+  }
+}
+
 initSentry();
 initObservatory();
 initIntegrityTripwire();
