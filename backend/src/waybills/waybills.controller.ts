@@ -90,6 +90,11 @@ export class WaybillsController {
     return this.svc.findRecent(u.companyId);
   }
 
+  @Get('waybills/quality')
+  deliveryQuality(@CurrentUser() u: any) {
+    return this.svc.deliveryQuality(u.companyId);
+  }
+
   @Post('waybills')
   @HttpCode(HttpStatus.CREATED)
   create(@CurrentUser() u: any, @Body() body: any) {
