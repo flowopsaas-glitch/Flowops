@@ -31,6 +31,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('Account is inactive or company suspended');
     }
 
+    // Single active session: a token is only valid for the most recent login.
+    // (Tokens minted before this feature shipped carry no sid — allow them to
+    // ride out their short lifetime; the next login/refresh attaches a sid.)
+    if (payload.sid && user.activeSessionId && payload.sid !== user.activeSessionId) {
+      throw new UnauthorizedException('Your account was signed in on another device');
+    }
+
     return user;
   }
 }

@@ -246,6 +246,16 @@ model User {
   resetToken       String?
   resetTokenExpiry DateTime?
 
+  // ── Single active session + login audit ───────────────────────────────
+  // Only one device may hold a live session at a time. Each login mints a new
+  // sessionId (also embedded in the access token as `sid`); the JWT strategy
+  // rejects any token whose sid != activeSessionId, so a new login elsewhere
+  // immediately invalidates every other device.
+  activeSessionId    String?
+  lastLoginAt        DateTime?
+  lastLoginIp        String?
+  lastLoginUserAgent String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -386,6 +396,14 @@ model Driver {
 
   // Driver portal auth (phone + hashed 4-digit PIN)
   driverPin String?
+
+  // ── Single active session + login audit (driver portal) ───────────────
+  // Mirrors the User model: one device per driver. driver-login mints a new
+  // sessionId embedded in the driver token as `sid`.
+  activeSessionId    String?
+  lastLoginAt        DateTime?
+  lastLoginIp        String?
+  lastLoginUserAgent String?
 
   // Optional link to a User account — enables role-scoped job delivery
   userId    String? @unique

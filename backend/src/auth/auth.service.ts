@@ -19,6 +19,9 @@ import { JwtPayload, OwnerJwtPayload } from './types/jwt-payload';
 
 const BCRYPT_ROUNDS = 12;
 
+/** Request context captured for login audit + session binding. */
+type LoginCtx = { ip?: string; userAgent?: string };
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -32,7 +35,7 @@ export class AuthService {
 
   // ── Tenant login ──────────────────────────────────────────────────────
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ctx?: LoginCtx) {
     // Find user by email across all active companies
     const user = await this.prisma.user.findFirst({
       where: { email: dto.email.toLowerCase(), isActive: true },
@@ -46,7 +49,9 @@ export class AuthService {
     const passwordOk = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
 
-    const tokens = await this.issueTokenPair(user);
+    // Single active session: this mints a fresh sid, revokes every other
+    // device's refresh token, and records the login for audit.
+    const tokens = await this.startSession(user, ctx);
 
     return {
       access_token: tokens.accessToken,
@@ -57,7 +62,7 @@ export class AuthService {
 
   // ── Driver portal login (phone + 4-digit PIN) ────────────────────────
 
-  async driverLogin(phone: string, pin: string) {
+  async driverLogin(phone: string, pin: string, ctx?: LoginCtx) {
     // Normalize phone: remove spaces, ensure +27 prefix
     const normalised = phone.replace(/\s/g, '');
 
@@ -75,6 +80,20 @@ export class AuthService {
     const pinOk = await bcrypt.compare(pin, (driver as any).driverPin);
     if (!pinOk) throw new UnauthorizedException('Invalid phone number or PIN');
 
+    // Single active session: a new login supersedes any other device. The sid
+    // is embedded in the token and stored on the driver; stale tokens (sid
+    // mismatch) are rejected wherever the driver token is validated.
+    const sid = uuid();
+    await this.prisma.driver.update({
+      where: { id: driver.id },
+      data: {
+        activeSessionId: sid,
+        lastLoginAt: new Date(),
+        lastLoginIp: ctx?.ip ?? null,
+        lastLoginUserAgent: ctx?.userAgent ?? null,
+      } as any,
+    });
+
     // Issue a short-lived JWT scoped to this driver
     const payload = {
       sub:       driver.id,
@@ -82,6 +101,7 @@ export class AuthService {
       companyId: driver.companyId,
       type:      'driver',
       name:      driver.name,
+      sid,
     };
     const accessToken = this.jwt.sign(payload, {
       secret:    this.config.get<string>('JWT_SECRET'),
@@ -168,7 +188,19 @@ export class AuthService {
       throw new UnauthorizedException('Account is inactive');
     }
 
-    const tokens = await this.issueTokenPair(stored.user);
+    // Continue the SAME session: keep the sid the active session holds so the
+    // refreshed access token still matches User.activeSessionId. (Legacy
+    // sessions with no sid adopt a fresh one here.)
+    let sid = (stored.user as any).activeSessionId as string | null;
+    if (!sid) {
+      sid = uuid();
+      await this.prisma.user.update({
+        where: { id: stored.user.id },
+        data: { activeSessionId: sid } as any,
+      });
+    }
+
+    const tokens = await this.issueTokenPair(stored.user, sid);
     return { access_token: tokens.accessToken, refresh_token: tokens.refreshToken };
   }
 
@@ -225,8 +257,12 @@ export class AuthService {
         where: { token: refreshToken, userId },
       });
     } else {
-      // Revoke all refresh tokens for this user
+      // Revoke all refresh tokens AND rotate the session id so any still-live
+      // access token is rejected immediately (not just at its 15-min expiry).
       await this.prisma.refreshToken.deleteMany({ where: { userId } });
+      await this.prisma.user
+        .update({ where: { id: userId }, data: { activeSessionId: uuid() } as any })
+        .catch(() => undefined);
     }
     return { message: 'Logged out successfully' };
   }
@@ -384,7 +420,9 @@ export class AuthService {
         passwordHash,
         resetToken: null,
         resetTokenExpiry: null,
-      },
+        // Kill every existing session — force a fresh login everywhere.
+        activeSessionId: uuid(),
+      } as any,
     });
 
     // Revoke all existing refresh tokens for security
@@ -418,8 +456,8 @@ export class AuthService {
    * The user is resolved/provisioned by SsoService; this just mints tokens
    * using the same path as a normal password login.
    */
-  async issueTokensForUser(user: any) {
-    const tokens = await this.issueTokenPair(user);
+  async issueTokensForUser(user: any, ctx?: LoginCtx) {
+    const tokens = await this.startSession(user, ctx);
     return {
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
@@ -442,13 +480,35 @@ export class AuthService {
     await this.email.sendVerificationEmail(user.email, token, user.name);
   }
 
-  private async issueTokenPair(user: any) {
+  /**
+   * Begin a NEW session for a user (password login or SSO). Mints a fresh
+   * session id, revokes every other device's refresh token (single active
+   * session), records the login for audit, then issues the token pair.
+   */
+  private async startSession(user: any, ctx?: LoginCtx) {
+    const sid = uuid();
+    // Single active session — drop all other devices' refresh tokens.
+    await this.prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        activeSessionId: sid,
+        lastLoginAt: new Date(),
+        lastLoginIp: ctx?.ip ?? null,
+        lastLoginUserAgent: ctx?.userAgent ?? null,
+      } as any,
+    });
+    return this.issueTokenPair(user, sid);
+  }
+
+  private async issueTokenPair(user: any, sid: string) {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       companyId: user.companyId,
       role: user.role,
       type: 'tenant',
+      sid,
     };
 
     const accessToken = this.jwt.sign(payload, {
@@ -478,7 +538,7 @@ export class AuthService {
   }
 
   private safeUser(user: any) {
-    const { passwordHash, verifyToken, resetToken, ...safe } = user;
+    const { passwordHash, verifyToken, resetToken, activeSessionId, ...safe } = user;
     return safe;
   }
 }

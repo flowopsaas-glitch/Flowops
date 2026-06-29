@@ -22,8 +22,11 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Tenant login' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  login(@Body() dto: LoginDto, @Req() req: any) {
+    return this.authService.login(dto, {
+      ip: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   /** POST /api/v1/auth/register  — request a new tenant workspace */
@@ -70,8 +73,11 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('driver-portal/login')
-  driverPortalLogin(@Body() body: { phone: string; pin: string }) {
-    return this.authService.driverLogin(body.phone, body.pin);
+  driverPortalLogin(@Body() body: { phone: string; pin: string }, @Req() req: any) {
+    return this.authService.driverLogin(body.phone, body.pin, {
+      ip: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   /**
@@ -80,8 +86,11 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('driver-login')
-  driverLogin(@Body() dto: { phone: string; pin: string }) {
-    return this.authService.driverLogin(dto.phone, dto.pin);
+  driverLogin(@Body() dto: { phone: string; pin: string }, @Req() req: any) {
+    return this.authService.driverLogin(dto.phone, dto.pin, {
+      ip: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   /**
