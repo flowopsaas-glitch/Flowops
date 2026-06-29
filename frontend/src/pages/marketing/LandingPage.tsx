@@ -16,6 +16,8 @@ import {
   X,
   ZoomIn,
   Star,
+  Ship,
+  Activity,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
@@ -199,12 +201,27 @@ function Features() {
       desc: "Public REST API, HMAC-signed webhooks, and a Shopify connector to auto-create waybills from ecommerce orders.",
       tag: "Integrations",
     },
+    {
+      icon: Ship,
+      color: "cyan",
+      title: "Freight Forwarding",
+      desc: "Import/export shipment files across ocean, air & road — containers, customs (SA duty/VAT + AI HS codes), SAD500/B-L docs and demurrage, bridged to the domestic last mile.",
+      tag: "Enterprise",
+    },
+    {
+      icon: Activity,
+      color: "rose",
+      title: "Decision Intelligence",
+      desc: "Command centres on every department — arrivals & customs queues, in-transit health, quote win-rate, carrier lane savings, billing-coverage leakage and recovery cockpits. All from your live data.",
+      tag: "Analytics",
+    },
   ];
 
   const colorMap: Record<string, string> = {
     sky:     "border-sky-400/20     bg-sky-400/10     text-sky-300",
     indigo:  "border-indigo-400/20  bg-indigo-400/10  text-indigo-300",
     violet:  "border-violet-400/20  bg-violet-400/10  text-violet-300",
+    cyan:    "border-cyan-400/20    bg-cyan-400/10    text-cyan-300",
     emerald: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
     amber:   "border-amber-400/20   bg-amber-400/10   text-amber-300",
     rose:    "border-rose-400/20    bg-rose-400/10    text-rose-300",
@@ -219,6 +236,7 @@ function Features() {
     Enterprise:   "border-rose-400/20    bg-rose-400/10    text-rose-400",
     Customer:     "border-sky-400/20     bg-sky-400/10     text-sky-400",
     Integrations: "border-indigo-400/20  bg-indigo-400/10  text-indigo-400",
+    Analytics:    "border-cyan-400/20    bg-cyan-400/10    text-cyan-400",
   };
 
   return (

@@ -3,6 +3,7 @@ import {
   Package, Truck, BarChart3, MessageCircle, Shield,
   MapPin, FileText, Scan, Wallet, Route, Bell, Users,
   CheckCircle2, ArrowRight, Zap, Bot, ShieldCheck, Ship, Mail, RotateCcw,
+  Activity, TrendingUp, Target,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
@@ -150,7 +151,44 @@ const sections = [
           "On-time delivery %, delivery success rate",
           "Average delivery time and exception rate",
           "Revenue per waybill with 30-day trend deltas",
+          "Time-series trend charts (7 / 30 / 90-day) for volume & revenue",
           "Outstanding AR aging buckets",
+        ],
+      },
+    ],
+  },
+  {
+    label: "Decision Intelligence",
+    color: "rose",
+    features: [
+      {
+        icon: Activity,
+        title: "Department Command Centres",
+        points: [
+          "Freight-forwarding control tower — arrivals board, customs queue, exceptions-as-tasks",
+          "Ops exception-SLA tracker — aged failed/returned waybills vs a 24h SLA",
+          "In-transit shipment health — ETA breaches, stalled shipments & dwell time",
+          "Every exception deep-links straight to the record to action",
+        ],
+      },
+      {
+        icon: TrendingUp,
+        title: "Revenue & Finance Intelligence",
+        points: [
+          "Billing coverage audit — catches delivered-but-unbilled revenue leakage",
+          "Disbursement recovery cockpit — recovery rate, client exposure & ageing",
+          "Quote conversion pipeline — win rate, open pipeline & won/lost value",
+          "Carrier lane rate explorer — cheapest buy-rate per lane + savings available",
+        ],
+      },
+      {
+        icon: Target,
+        title: "Customer & Returns Intelligence",
+        points: [
+          "Client portfolio — billing mix, credit exposure & contract-renewal watch",
+          "Returns intelligence — reason mix, cycle time & restock recovery",
+          "Collections scheduling efficiency — unassigned ageing & on-time pickup",
+          "All from your own live data — no fabricated benchmarks",
         ],
       },
     ],
@@ -236,6 +274,7 @@ const colorMap: Record<string, { badge: string; icon: string; dot: string }> = {
   violet:  { badge: "border-violet-400/20 bg-violet-400/10 text-violet-300",   icon: "border-violet-400/20 bg-violet-400/10 text-violet-300",   dot: "bg-violet-400" },
   amber:   { badge: "border-amber-400/20 bg-amber-400/10 text-amber-300",     icon: "border-amber-400/20 bg-amber-400/10 text-amber-300",     dot: "bg-amber-400" },
   cyan:    { badge: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",        icon: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",        dot: "bg-cyan-400" },
+  rose:    { badge: "border-rose-400/20 bg-rose-400/10 text-rose-300",        icon: "border-rose-400/20 bg-rose-400/10 text-rose-300",        dot: "bg-rose-400" },
 };
 
 export default function FeaturesPage() {
@@ -250,8 +289,9 @@ export default function FeaturesPage() {
           Everything your team needs
         </h1>
         <p className="text-lg text-white/50 max-w-xl mx-auto">
-          Built for South African courier operations — from waybill to invoice,
-          driver to depot, cash to reconciliation.
+          Built for South African courier and freight-forwarding operations —
+          from waybill to invoice, driver to depot, cash to reconciliation, with
+          decision intelligence on every department.
         </p>
       </div>
 
