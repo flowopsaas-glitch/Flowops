@@ -1,16 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Truck, Package, MapPin, LogOut, RefreshCw, Navigation, Inbox,
-  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight,
+  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight, ScanLine,
 } from 'lucide-react';
 import api from '../services/api';
 import { clearSession, getStoredDriver } from '../services/auth';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { cacheJobs, getCachedJobs } from '../services/offlineDB';
 
+// Heavy, occasionally-used panels (leaflet maps, zxing camera scanner) are
+// code-split so the dashboard loads fast on mobile data; they fetch on demand.
+const DeliveryMap = lazy(() => import('../components/DeliveryMap'));
+const Analytics = lazy(() => import('../components/Analytics'));
+const RouteOptimizer = lazy(() => import('../components/RouteOptimizer'));
+const QRScanner = lazy(() => import('../components/QRScanner'));
+
+const PanelLoader = (
+  <div className="text-center py-12 text-gray-400">
+    <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto" />
+  </div>
+);
+
 type Job = Record<string, any> & { id: string; status: string; type?: string };
-type Tab = 'all' | 'collections' | 'deliveries';
+type Tab = 'all' | 'collections' | 'deliveries' | 'map' | 'route' | 'analytics';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -19,7 +32,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('all');
   const [online, setOnline] = useState(navigator.onLine);
+  const [scanning, setScanning] = useState(false);
   const geo = useGeolocation(true, 30000);
+
+  const userLocation = geo.latitude != null && geo.longitude != null
+    ? { lat: geo.latitude, lng: geo.longitude }
+    : null;
 
   useEffect(() => {
     if (!driver) { navigate('/login', { replace: true }); return; }
@@ -35,7 +53,6 @@ export default function Dashboard() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  // Push GPS fixes to dispatch.
   useEffect(() => {
     if (geo.latitude != null && geo.longitude != null) {
       api.post('/driver-portal/gps', { lat: geo.latitude, lng: geo.longitude, speed: geo.speed ?? 0 }).catch(() => undefined);
@@ -62,16 +79,35 @@ export default function Dashboard() {
     navigate('/login', { replace: true });
   }
 
+  function handleScan(tn: string) {
+    setScanning(false);
+    const match = jobs.find(
+      (j) => [j.trackingNumber, j.waybillNumber, j.id].filter(Boolean).some((v) => String(v).toLowerCase() === tn.toLowerCase()),
+    );
+    if (match) navigate(`/delivery/${match.id}`, { state: match });
+    else alert(`Waybill "${tn}" is not in your assigned jobs.`);
+  }
+
   const collections = useMemo(() => jobs.filter((j) => j.status === 'PENDING'), [jobs]);
   const deliveries = useMemo(() => jobs.filter((j) => j.status !== 'PENDING'), [jobs]);
   const delivered = useMemo(() => jobs.filter((j) => j.status === 'DELIVERED').length, [jobs]);
   const visible = tab === 'collections' ? collections : tab === 'deliveries' ? deliveries : jobs;
+  const isListTab = tab === 'all' || tab === 'collections' || tab === 'deliveries';
 
   const statusColor = (s: string) =>
     s === 'PENDING' ? 'from-yellow-500 to-orange-500'
     : s === 'IN_TRANSIT' ? 'from-blue-500 to-cyan-500'
     : s === 'DELIVERED' ? 'from-green-500 to-emerald-500'
     : 'from-gray-500 to-gray-600';
+
+  const TABS: { key: Tab; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'collections', label: `Collections (${collections.length})` },
+    { key: 'deliveries', label: `Deliveries (${deliveries.length})` },
+    { key: 'map', label: 'Map' },
+    { key: 'route', label: 'Route' },
+    { key: 'analytics', label: 'Stats' },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 safe-area-top safe-area-bottom text-white">
@@ -88,6 +124,9 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setScanning(true)} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Scan waybill">
+              <ScanLine className="w-5 h-5 text-emerald-300" />
+            </button>
             <button onClick={() => navigate('/chat')} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Chat with dispatch">
               <MessageCircle className="w-5 h-5 text-blue-300" />
             </button>
@@ -119,66 +158,78 @@ export default function Dashboard() {
 
       {/* Tabs */}
       <div className="px-4 mb-3">
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-1 flex gap-1">
-          {(['all', 'collections', 'deliveries'] as Tab[]).map((t) => (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-1 flex gap-1 overflow-x-auto">
+          {TABS.map((t) => (
             <button
-              key={t} onClick={() => setTab(t)}
-              className={`flex-1 py-2.5 rounded-xl text-xs font-semibold capitalize transition ${tab === t ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+              key={t.key} onClick={() => setTab(t.key)}
+              className={`flex-1 whitespace-nowrap py-2.5 px-3 rounded-xl text-xs font-semibold transition ${tab === t.key ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
             >
-              {t}{t === 'collections' ? ` (${collections.length})` : t === 'deliveries' ? ` (${deliveries.length})` : ''}
+              {t.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* List */}
+      {/* Content */}
       <div className="px-4 pb-8 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold">{tab === 'collections' ? 'Collections' : tab === 'deliveries' ? 'Deliveries' : 'All Jobs'}</h2>
-          <button onClick={load} className="p-2 rounded-xl border border-white/10 hover:bg-white/10">
-            <RefreshCw className={`w-4 h-4 text-gray-300 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-
-        {loading && jobs.length === 0 ? (
-          <div className="text-center py-10 text-gray-400">
-            <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto mb-2"></div>
-            Loading…
-          </div>
-        ) : visible.length === 0 ? (
-          <div className="text-center py-10 bg-white/5 border border-white/10 rounded-2xl">
-            <Package className="w-12 h-12 text-gray-500 mx-auto mb-2" />
-            <p className="text-gray-400">No jobs assigned</p>
-          </div>
+        {tab === 'map' ? (
+          <Suspense fallback={PanelLoader}><DeliveryMap jobs={jobs} userLocation={userLocation} /></Suspense>
+        ) : tab === 'route' ? (
+          <Suspense fallback={PanelLoader}><RouteOptimizer jobs={jobs} userLocation={userLocation} /></Suspense>
+        ) : tab === 'analytics' ? (
+          <Suspense fallback={PanelLoader}><Analytics jobs={jobs} /></Suspense>
         ) : (
-          visible.map((j) => (
-            <button
-              key={j.id} onClick={() => navigate(`/delivery/${j.id}`, { state: j })}
-              className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 transition flex items-center gap-3"
-            >
-              <div className={`w-1.5 self-stretch rounded-full bg-gradient-to-b ${statusColor(j.status)}`} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold truncate">{j.trackingNumber ?? j.waybillNumber ?? j.id}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-gray-400">{j.status}</span>
-                </div>
-                <div className="text-sm text-gray-300 truncate mt-0.5">{j.recipientName ?? j.receiverName ?? '—'}</div>
-                {(j.recipientAddress ?? j.destination) && (
-                  <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
-                    <MapPin className="w-3 h-3" /> <span className="truncate">{j.recipientAddress ?? j.destination}</span>
-                  </div>
-                )}
-                {Number(j.codAmount) > 0 && (
-                  <div className="mt-1 inline-block text-[11px] font-bold text-red-300 bg-red-500/15 border border-red-500/30 rounded-md px-2 py-0.5">
-                    COD R{Number(j.codAmount).toFixed(2)}
-                  </div>
-                )}
+          <>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold">{tab === 'collections' ? 'Collections' : tab === 'deliveries' ? 'Deliveries' : 'All Jobs'}</h2>
+              <button onClick={load} className="p-2 rounded-xl border border-white/10 hover:bg-white/10">
+                <RefreshCw className={`w-4 h-4 text-gray-300 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {loading && jobs.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">
+                <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto mb-2"></div>
+                Loading…
               </div>
-              <ChevronRight className="w-5 h-5 text-gray-500 shrink-0" />
-            </button>
-          ))
+            ) : visible.length === 0 ? (
+              <div className="text-center py-10 bg-white/5 border border-white/10 rounded-2xl">
+                <Package className="w-12 h-12 text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-400">No jobs assigned</p>
+              </div>
+            ) : (
+              visible.map((j) => (
+                <button
+                  key={j.id} onClick={() => navigate(`/delivery/${j.id}`, { state: j })}
+                  className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 transition flex items-center gap-3"
+                >
+                  <div className={`w-1.5 self-stretch rounded-full bg-gradient-to-b ${statusColor(j.status)}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold truncate">{j.trackingNumber ?? j.waybillNumber ?? j.id}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-gray-400">{j.status}</span>
+                    </div>
+                    <div className="text-sm text-gray-300 truncate mt-0.5">{j.recipientName ?? j.receiverName ?? '—'}</div>
+                    {(j.recipientAddress ?? j.destination) && (
+                      <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
+                        <MapPin className="w-3 h-3" /> <span className="truncate">{j.recipientAddress ?? j.destination}</span>
+                      </div>
+                    )}
+                    {Number(j.codAmount) > 0 && (
+                      <div className="mt-1 inline-block text-[11px] font-bold text-red-300 bg-red-500/15 border border-red-500/30 rounded-md px-2 py-0.5">
+                        COD R{Number(j.codAmount).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-500 shrink-0" />
+                </button>
+              ))
+            )}
+          </>
         )}
       </div>
+
+      {scanning && <Suspense fallback={null}><QRScanner onScan={handleScan} onClose={() => setScanning(false)} /></Suspense>}
     </div>
   );
 }
