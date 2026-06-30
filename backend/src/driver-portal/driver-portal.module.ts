@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DriverPortalController } from './driver-portal.controller';
 import { DriverPortalService } from './driver-portal.service';
+import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GatewayModule } from '../gateway/gateway.module';
@@ -22,6 +23,6 @@ import { GatewayModule } from '../gateway/gateway.module';
     }),
   ],
   controllers: [DriverPortalController],
-  providers: [DriverPortalService, AuthService],
+  providers: [DriverPortalService, AuthService, DriverAuthGuard],
 })
 export class DriverPortalModule {}

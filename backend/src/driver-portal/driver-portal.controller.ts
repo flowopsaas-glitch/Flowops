@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res, UnauthorizedException } from '@nestjs/common';
-import { Response } from 'express';
+import {
+  Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards, UnauthorizedException,
+} from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { DriverPortalService } from './driver-portal.service';
 import { AuthService } from '../auth/auth.service';
 
@@ -12,96 +14,122 @@ export class DriverPortalController {
     private readonly auth: AuthService,
   ) {}
 
-  /**
-   * POST /driver-portal/login
-   * Authenticates a driver using phone number and 4-digit PIN.
-   */
+  // ── Auth (public) ────────────────────────────────────────────────────────────
+
+  /** POST /driver-portal/login — phone + 4-digit PIN. Returns { access_token, driver }. */
   @Public()
   @Post('login')
-  async login(@Body() body: { phone: string; pin: string }) {
+  async login(@Body() body: { phone: string; pin: string }, @Req() req: any) {
     if (!body.phone || !body.pin) throw new UnauthorizedException('Phone and PIN are required');
-    return this.auth.driverLogin(body.phone, String(body.pin));
+    return this.auth.driverLogin(body.phone, String(body.pin), {
+      ip: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
-  /**
-   * GET /driver-portal/deliveries/:driverId
-   * Returns a PLAIN ARRAY (bypasses TransformInterceptor) for the driver PWA.
-   */
+  // ── Driver-facing (token-authenticated; single active session enforced) ───────
+  // All routes are @Public() so the global tenant guard is skipped, then the
+  // DriverAuthGuard validates the driver token + session and sets req.driver.
+  // The driver identity ALWAYS comes from the token (req.driver.id) — never a
+  // client-supplied id — closing the old spoofable-driverId hole.
+
+  /** GET /driver-portal/me — validate the session (used on app load / focus). */
   @Public()
-  @Get('deliveries/:driverId')
-  async getDeliveries(@Param('driverId') driverId: string, @Res() res: Response) {
-    const jobs = await this.svc.getDriverJobs(driverId);
-    res.json(jobs);
+  @UseGuards(DriverAuthGuard)
+  @Get('me')
+  me(@Req() req: any) {
+    const d = req.driver;
+    return {
+      id: d.id, driverId: d.id, name: d.name, phone: d.phone,
+      vehicleType: d.vehicleType, vehicleReg: d.vehicleReg,
+      status: d.status, companyId: d.companyId,
+    };
   }
 
-  /** POST /driver-portal/gps */
+  /** GET /driver-portal/deliveries — this driver's jobs (collections + deliveries). */
   @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('deliveries')
+  getDeliveries(@Req() req: any) {
+    return this.svc.getDriverJobs(req.driver.id);
+  }
+
+  /** POST /driver-portal/gps — live position ping. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
   @Post('gps')
-  async updateGps(@Body() body: { driverId: string; lat: number; lng: number; speed?: number }) {
-    await this.svc.updateGps(body.driverId, body.lat, body.lng);
+  async updateGps(@Req() req: any, @Body() body: { lat: number; lng: number; speed?: number }) {
+    await this.svc.updateGps(req.driver.id, body.lat, body.lng);
     return { ok: true };
   }
 
-  /** POST /driver-portal/pod */
+  /** POST /driver-portal/pod — capture proof of delivery. */
   @Public()
+  @UseGuards(DriverAuthGuard)
   @Post('pod')
-  async uploadPod(@Body() body: { waybillId: string; signatureUrl?: string; imageUrl?: string; recipientName?: string; notes?: string }) {
-    return this.svc.recordPod(body);
-  }
-
-  // ── Chat: driver-facing (public — driver uses PIN auth token, not JWT) ────────
-
-  /** GET /driver-portal/chat/messages/:driverId */
-  @Public()
-  @Get('chat/messages/:driverId')
-  async getMessages(
-    @Param('driverId') driverId: string,
-    @Query('limit') limit?: string,
-    @Query('skip') skip?: string,
+  uploadPod(
+    @Req() req: any,
+    @Body() body: { waybillId: string; signatureUrl?: string; imageUrl?: string; recipientName?: string; notes?: string },
   ) {
-    return this.svc.getMessages(driverId, Number(limit) || 50, Number(skip) || 0);
+    return this.svc.recordPod({ ...body, driverId: req.driver.id, companyId: req.driver.companyId } as any);
   }
 
-  /** POST /driver-portal/chat/send */
+  // ── Chat: driver side ──────────────────────────────────────────────────────────
+
+  /** GET /driver-portal/chat/messages — this driver's thread with dispatch. */
   @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('chat/messages')
+  getMessages(@Req() req: any, @Query('limit') limit?: string, @Query('skip') skip?: string) {
+    return this.svc.getMessages(req.driver.id, Number(limit) || 50, Number(skip) || 0);
+  }
+
+  /** POST /driver-portal/chat/send — driver sends to dispatch. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
   @Post('chat/send')
-  async sendMessage(@Body() body: { driverId: string; message: string; senderType?: string; attachmentUrl?: string; attachmentType?: string }) {
-    // We need companyId — look it up from driverId
-    const driver = await this.svc['prisma'].driver.findFirst({ where: { id: body.driverId }, select: { companyId: true } });
-    if (!driver) return { ok: false };
-    return this.svc.sendMessage(body.driverId, driver.companyId, body.message, body.senderType || 'driver', body.attachmentUrl, body.attachmentType);
+  sendMessage(
+    @Req() req: any,
+    @Body() body: { message: string; attachmentUrl?: string; attachmentType?: string },
+  ) {
+    return this.svc.sendMessage(
+      req.driver.id, req.driver.companyId, body.message, 'driver', body.attachmentUrl, body.attachmentType,
+    );
   }
 
-  /** PATCH /driver-portal/chat/read/:id */
+  /** POST /driver-portal/chat/read — bulk-mark dispatch messages read. */
   @Public()
-  @Patch('chat/read/:id')
-  markRead(@Param('id') id: string) {
-    return this.svc.markRead(id);
+  @UseGuards(DriverAuthGuard)
+  @Post('chat/read')
+  markRead(@Req() req: any) {
+    return this.svc.markRead(req.driver.id);
   }
 
-  /** POST /driver-portal/chat/typing/:driverId */
+  /** POST /driver-portal/chat/typing — driver typing indicator. */
   @Public()
-  @Post('chat/typing/:driverId')
-  setTyping(@Param('driverId') driverId: string, @Body() body: { isTyping: boolean }) {
-    return this.svc.setTyping(driverId, body.isTyping ?? false);
+  @UseGuards(DriverAuthGuard)
+  @Post('chat/typing')
+  setTyping(@Req() req: any, @Body() body: { isTyping: boolean }) {
+    return this.svc.setTyping(req.driver.id, body.isTyping ?? false);
   }
 
-  /** GET /driver-portal/chat/typing/:driverId */
+  /** GET /driver-portal/chat/typing — dispatch typing indicator for this driver. */
   @Public()
-  @Get('chat/typing/:driverId')
-  getTyping(@Param('driverId') driverId: string) {
-    return this.svc.getTypingStatus(driverId);
+  @UseGuards(DriverAuthGuard)
+  @Get('chat/typing')
+  getTyping(@Req() req: any) {
+    return this.svc.getTypingStatus(req.driver.id);
   }
 
-  // ── Dispatch-facing (JWT required) ───────────────────────────────────────────
+  // ── Dispatch-facing (tenant JWT required — unchanged) ─────────────────────────
 
-  /** GET /driver-portal/dispatch/conversations — list drivers with unread counts */
+  /** GET /driver-portal/dispatch/conversations — drivers with unread counts. */
   @Get('dispatch/conversations')
   getConversations(@CurrentUser() u: any) {
     return this.svc.getDriverConversations(u.companyId);
   }
 
-  /** GET /driver-portal/dispatch/messages/:driverId — thread with a specific driver */
+  /** GET /driver-portal/dispatch/messages/:driverId — thread with a specific driver. */
   @Get('dispatch/messages/:driverId')
   getDriverThread(
     @Param('driverId') driverId: string,
@@ -111,7 +139,7 @@ export class DriverPortalController {
     return this.svc.getMessages(driverId, Number(limit) || 50, Number(skip) || 0);
   }
 
-  /** POST /driver-portal/dispatch/messages/:driverId — dispatch sends to driver */
+  /** POST /driver-portal/dispatch/messages/:driverId — dispatch sends to driver. */
   @Post('dispatch/messages/:driverId')
   dispatchSend(
     @Param('driverId') driverId: string,
