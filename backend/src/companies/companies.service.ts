@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { BillingService } from '../billing/billing.service';
@@ -69,16 +69,23 @@ export class CompaniesService {
     // Create user with ADMIN role in this company
     const bcrypt = await import('bcrypt');
     const passwordHash = await bcrypt.hash(dto.password || uuid(), 12);
-    return this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        passwordHash,
-        name: dto.name,
-        phone: dto.phone,
-        role: 'ADMIN',
-        companyId,
-      },
-    });
+    try {
+      return await this.prisma.user.create({
+        data: {
+          email: dto.email.toLowerCase(),
+          passwordHash,
+          name: dto.name,
+          phone: dto.phone,
+          role: 'ADMIN',
+          companyId,
+        },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new ConflictException('A user with this email already exists in this company.');
+      }
+      throw e;
+    }
   }
 
   // ── Owner-level: all companies ──────────────────────────────────────

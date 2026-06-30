@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -697,16 +697,24 @@ export class OwnerService {
   async createTenantAdmin(tenantId: string, dto: { name: string; email: string; password: string }, actor?: OwnerActor) {
     const company = await this.prisma.company.findUnique({ where: { id: tenantId }, select: { name: true } });
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        name: dto.name,
-        passwordHash,
-        role: 'ADMIN',
-        companyId: tenantId,
-      },
-      select: { id: true, email: true, name: true },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email.toLowerCase(),
+          name: dto.name,
+          passwordHash,
+          role: 'ADMIN',
+          companyId: tenantId,
+        },
+        select: { id: true, email: true, name: true },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new ConflictException('A user with this email already exists in this tenant.');
+      }
+      throw e;
+    }
     await this.audit.record({
       action: 'user.create',
       actorId: actor?.id ?? null,
@@ -955,9 +963,18 @@ export class OwnerService {
     const company = await this.prisma.company.create({
       data: { name: req.company, email: req.email, isActive: true, plan: 'starter', trialEndsAt },
     });
-    await this.prisma.user.create({
-      data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id },
-    });
+    try {
+      await this.prisma.user.create({
+        data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        // Roll back the just-created company so a retry/approve is clean.
+        await this.prisma.company.delete({ where: { id: company.id } }).catch(() => undefined);
+        throw new ConflictException('A user with this email already exists. This request may have already been approved.');
+      }
+      throw e;
+    }
     await this.prisma.approvalRequest.update({
       where: { id: requestId },
       data: { status: 'APPROVED', companyId: company.id },
