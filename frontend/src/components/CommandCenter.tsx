@@ -68,8 +68,6 @@ export default function CommandCenter() {
 
       // Drivers
       { key: "DriverApp", label: "Driver App", keywords: ["driver", "mobile", "app"], group: "Drivers" },
-      { key: "DriverAssistant", label: "Driver Assistant", keywords: ["driver", "assistant", "ai"], group: "Drivers" },
-      { key: "driver/DriverAssistant", label: "Driver â€¢ Assistant", keywords: ["driver", "assistant"], group: "Drivers" },
       { key: "Drivers", label: "Drivers", keywords: ["drivers", "people"], group: "Drivers" },
       { key: "Routes", label: "Routes", keywords: ["routes", "route"], group: "Drivers" },
 
