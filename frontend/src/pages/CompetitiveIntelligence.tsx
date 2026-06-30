@@ -310,7 +310,14 @@ export default function CompetitiveIntelligencePage() {
       const res: any = await api.post(`/owner/intel/actions/${id}/create-issue`, {});
       const d = res?.data ?? res;
       if (d?.url) setIssues(prev => ({ ...prev, [id]: d.url }));
-    } catch { /* toast handled globally (e.g. GitHub not configured) */ }
+      else { setPlanError("Issue request returned no URL — check the API logs."); setTimeout(() => setPlanError(null), 6000); }
+    } catch (e: any) {
+      setPlanError(
+        e?.message ||
+        "Couldn't create the GitHub issue. Set GITHUB_REPO (owner/name) + GITHUB_TOKEN (issues:write) in the root .env.",
+      );
+      setTimeout(() => setPlanError(null), 8000);
+    }
     finally { setIssuingId(null); }
   };
 
