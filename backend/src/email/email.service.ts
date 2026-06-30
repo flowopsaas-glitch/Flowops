@@ -56,8 +56,11 @@ export class EmailService {
           from: { email: this.fromEmail, name: this.fromName },
           subject: params.subject,
           content: [
-            { type: 'text/html', value: params.html },
+            // SendGrid requires text/plain to appear BEFORE text/html in the
+            // content array — otherwise it rejects the request with
+            // "text/plain must be first, followed by text/html".
             ...(params.text ? [{ type: 'text/plain', value: params.text }] : []),
+            { type: 'text/html', value: params.html },
           ],
           ...(params.attachments?.length
             ? {
