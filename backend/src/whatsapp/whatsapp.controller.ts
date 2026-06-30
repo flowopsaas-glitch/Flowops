@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Body, Param, Query, Req, Res, RawBodyRequest, HttpCode,
+  Controller, Get, Post, Body, Param, Query, Req, Res, RawBodyRequest, HttpCode, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -7,9 +7,13 @@ import { Request, Response } from 'express';
 import { WhatsAppService } from './whatsapp.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('WhatsApp')
 @ApiBearerAuth()
+@UseGuards(FeatureGuard)
+@RequireFeature('whatsapp')
 @Controller('whatsapp')
 export class WhatsAppController {
   constructor(private readonly svc: WhatsAppService) {}

@@ -8,14 +8,19 @@ import {
   Query,
   UploadedFiles,
   UseInterceptors,
+  UseGuards,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { EmailHubService, UploadedFile } from './email-hub.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 const MAX_FILES = 10;
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB
 
+@UseGuards(FeatureGuard)
+@RequireFeature('emailHub')
 @Controller('email-hub')
 export class EmailHubController {
   constructor(private readonly svc: EmailHubService) {}

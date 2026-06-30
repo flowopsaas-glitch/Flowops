@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, Res,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, Res, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -8,9 +8,13 @@ import { CreateNoteDto, UpdateNoteDto, ApplyCreditNoteDto } from './dto/note.dto
 import { CreateSalespersonDto, UpdateSalespersonDto, GenerateCommissionDto } from './dto/commission.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Accounting')
 @ApiBearerAuth()
+@UseGuards(FeatureGuard)
+@RequireFeature('accounting')
 @Controller()
 export class AccountingController {
   constructor(private readonly svc: AccountingService) {}
