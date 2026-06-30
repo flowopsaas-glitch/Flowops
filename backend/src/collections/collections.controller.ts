@@ -44,9 +44,14 @@ export class CollectionsController {
     return this.svc.autoSuggest(id, u.companyId);
   }
 
-  /** GET /companies/:companyId/collections — company-scoped collection list */
+  /**
+   * GET /companies/:companyId/collections — company-scoped collection list.
+   * SECURITY: the :companyId path segment is IGNORED for tenant users — we only
+   * ever return the authenticated caller's own company, so no one can read
+   * another tenant's collections by editing the URL.
+   */
   @Get('companies/:companyId/collections')
-  findByCompany(@Param('companyId') companyId: string) {
-    return this.svc.findByCompany(companyId);
+  findByCompany(@Param('companyId') _companyId: string, @CurrentUser() u: any) {
+    return this.svc.findByCompany(u.companyId);
   }
 }

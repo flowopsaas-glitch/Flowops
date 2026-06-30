@@ -29,10 +29,14 @@ export class AiController {
   @ApiOperation({ summary: 'Terminal Interface for Admin Commands' })
   @Post('claw-chat/query') // 💡 Patched: Resolves cleanly to /api/ai/claw-chat/query matching the React client
   
-  async adminInstruction(@Request() req: any, @Body() body: { command: string; companyId?: number; context?: any }) {
+  async adminInstruction(@Request() req: any, @Body() body: { command: string; context?: any }) {
     const user = req.user;
-    const companyId = body.companyId ? Number(body.companyId) : (user?.companyId || 1);
-    
+    // SECURITY: derive the tenant from the JWT only — never from the request body.
+    const companyId = user?.companyId;
+
+    if (!companyId) {
+      throw new BadRequestException('Authenticated company context is required');
+    }
     if (!body?.command) {
       throw new BadRequestException('Instruction protocol payload required');
     }

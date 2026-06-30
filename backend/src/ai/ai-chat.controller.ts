@@ -1,6 +1,7 @@
 import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ClawService } from './claw.service';
+import { CurrentUser } from '../common/decorators/user.decorator';
 
 @Controller('ai/claw-chat')
 @Throttle({ default: { limit: 20, ttl: 60_000 } })
@@ -8,24 +9,23 @@ export class AiChatController {
   constructor(private readonly claw: ClawService) {}
 
   @Post('query')
-  async tenantInstruction(@Body() body: { command: string; companyId?: number }) {
-    // 1. Validation: Matches the key 'command' being sent by the frontend
+  async tenantInstruction(
+    @CurrentUser() u: any,
+    @Body() body: { command: string },
+  ) {
     if (!body.command) {
       throw new BadRequestException('Message command is required for the Claw reasoning engine.');
     }
 
-    /**
-     * 2. Context Injection:
-     * Extract the companyId. Default to 1 for testing stability.
-     */
-    const companyId = body.companyId || 1;
+    // SECURITY: the tenant is ALWAYS the authenticated user's company. We never
+    // trust a client-supplied companyId (that was a cross-tenant hole + it
+    // defaulted to "1", which never matches a real cuid company id anyway).
+    if (!u?.companyId) {
+      throw new BadRequestException('Authenticated company context is required.');
+    }
 
-    /**
-     * 3. Execution:
-     * Passes the 'command' text and companyId into the Claw reasoning engine.
-     */
     try {
-      return await this.claw.processTenantQuery(body.command, Number(companyId));
+      return await this.claw.processTenantQuery(body.command, u.companyId);
     } catch (error) {
       console.error('CLAW_ENGINE_FAULT:', error);
       throw new BadRequestException('The Claw engine encountered a reasoning error.');

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class InvoicesService {
@@ -10,6 +11,7 @@ export class InvoicesService {
   constructor(
     private prisma: PrismaService,
     private gateway: EventsGateway,
+    private email: EmailService,
   ) {}
 
   /** Realtime emits are best-effort — they must never break invoicing. */
@@ -161,19 +163,33 @@ export class InvoicesService {
     const money = (v?: number | null) =>
       `ZAR ${(v ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`;
 
-    // Update sentAt to track the reminder
+    const subject = `Payment Reminder — ${inv.invoiceNumber} (${daysPast > 0 ? `${daysPast} days overdue` : 'due soon'})`;
+    const text = `Dear ${inv.clientName}, invoice ${inv.invoiceNumber} for ${money(inv.total)} was due on ${fmt(inv.dueDate)}. Please arrange payment at your earliest convenience.`;
+    const html =
+      `<p>Dear ${inv.clientName ?? 'Customer'},</p>` +
+      `<p>This is a friendly reminder that invoice <strong>${inv.invoiceNumber}</strong> for ` +
+      `<strong>${money(inv.total)}</strong> was due on <strong>${fmt(inv.dueDate)}</strong>` +
+      `${daysPast > 0 ? ` — now <strong>${daysPast} day(s) overdue</strong>` : ''}.</p>` +
+      `<p>Please arrange payment at your earliest convenience. If you have already paid, kindly disregard this message.</p>` +
+      `<p>Thank you.</p>`;
+
+    // Send via SendGrid (EmailService). Degrades gracefully if SendGrid isn't
+    // configured — the service logs the email instead of throwing.
+    const sent = await this.email.send({ to: inv.clientEmail, subject, html, text });
+
+    // Track the reminder timestamp regardless (so the UI reflects the attempt).
     await this.prisma.invoice.update({
       where: { id },
       data: { sentAt: new Date() },
     });
 
-    // TODO: wire to EmailService when SENDGRID_API_KEY is configured
-    // For now, return the payload that would be sent
     return {
-      sent: true,
+      sent,
       to: inv.clientEmail,
-      subject: `Payment Reminder — ${inv.invoiceNumber} (${daysPast > 0 ? `${daysPast} days overdue` : 'due soon'})`,
-      message: `Dear ${inv.clientName}, invoice ${inv.invoiceNumber} for ${money(inv.total)} was due on ${fmt(inv.dueDate)}. Please arrange payment at your earliest convenience.`,
+      subject,
+      message: sent
+        ? `Reminder emailed to ${inv.clientEmail}.`
+        : 'Email not sent — configure SENDGRID_API_KEY to enable delivery. Reminder logged.',
       daysPastDue: daysPast,
     };
   }

@@ -310,7 +310,10 @@ export default function CompetitiveIntelligencePage() {
       const res: any = await api.post(`/owner/intel/actions/${id}/create-issue`, {});
       const d = res?.data ?? res;
       if (d?.url) setIssues(prev => ({ ...prev, [id]: d.url }));
-    } catch { /* toast handled globally (e.g. GitHub not configured) */ }
+    } catch (e: any) {
+      setPlanError(e?.message || "Could not create the GitHub issue — check the GitHub integration is configured.");
+      setTimeout(() => setPlanError(null), 6000);
+    }
     finally { setIssuingId(null); }
   };
 
@@ -320,7 +323,10 @@ export default function CompetitiveIntelligencePage() {
       const d = (res as any)?.data ?? res;
       setReport(d as Report);
       await load();
-    } catch { /* toast handled globally */ }
+    } catch (e: any) {
+      setPlanError(e?.message || "Competitor sweep failed. Please try again.");
+      setTimeout(() => setPlanError(null), 6000);
+    }
     finally { setSweeping(false); }
   };
 
@@ -329,7 +335,10 @@ export default function CompetitiveIntelligencePage() {
     try {
       await api.post("/owner/intel/suggest-upgrades", {});
       await load(); // new upgrade ideas land in the Action items queue
-    } catch { /* toast handled globally */ }
+    } catch (e: any) {
+      setPlanError(e?.message || "Could not generate upgrade suggestions. Please try again.");
+      setTimeout(() => setPlanError(null), 6000);
+    }
     finally { setSuggesting(false); }
   };
 
@@ -340,7 +349,10 @@ export default function CompetitiveIntelligencePage() {
       const d = res?.data ?? res;
       setIntegrations(Array.isArray(d?.checks) ? d.checks : []);
       await load(); // any failing integration also shows up in Action items
-    } catch { /* toast handled globally */ }
+    } catch (e: any) {
+      setPlanError(e?.message || "Integration health check failed. Please try again.");
+      setTimeout(() => setPlanError(null), 6000);
+    }
     finally { setCheckingHealth(false); }
   };
 
