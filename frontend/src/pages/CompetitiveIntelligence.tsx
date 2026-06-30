@@ -235,6 +235,7 @@ export default function CompetitiveIntelligencePage() {
   const [copiedId,   setCopiedId]   = useState<string | null>(null);
   const [issues,     setIssues]     = useState<Record<string, string>>({});
   const [issuingId,  setIssuingId]  = useState<string | null>(null);
+  const [planError,  setPlanError]  = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -286,7 +287,10 @@ export default function CompetitiveIntelligencePage() {
       const d = res?.data ?? res;
       setPlans(prev => ({ ...prev, [id]: d }));
       setOpenPlanId(id);
-    } catch { /* toast handled globally */ }
+    } catch (e: any) {
+      setPlanError(e?.message || "Could not generate a build plan. Please try again.");
+      setTimeout(() => setPlanError(null), 6000);
+    }
     finally { setPlanningId(null); }
   };
 
@@ -371,6 +375,11 @@ export default function CompetitiveIntelligencePage() {
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(30,80,140,0.12),transparent_30%),linear-gradient(180deg,#07111f,#0b1530)] p-4 sm:p-6">
+      {planError && (
+        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-rose-500/30 bg-rose-500/15 px-5 py-3 text-sm font-semibold text-rose-100 shadow-2xl backdrop-blur-xl">
+          {planError}
+        </div>
+      )}
       <div className="mx-auto max-w-5xl space-y-5">
 
         {/* Header */}

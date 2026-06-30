@@ -658,24 +658,27 @@ Return ONLY the JSON array, no other text.`;
     // Return the cached plan unless a regeneration is explicitly requested.
     if (meta.buildPlan && !force) return meta.buildPlan;
 
-    const groqKey = this.config.get<string>('GROQ_API_KEY');
-    if (!groqKey) {
-      throw new ServiceUnavailableException('GROQ_API_KEY not set — cannot generate a build plan.');
-    }
-
     const competitor = meta.competitor || '';
     const finding = meta.finding || ev.title;
     const recommendation = meta.recommendation || ev.body || '';
-    const userMsg =
-      `Action item to convert into a concrete FlowOps build plan:\n` +
-      `Type: ${ev.type === 'PLATFORM_UPGRADE' ? 'internal upgrade idea' : 'competitor threat'}\n` +
-      (competitor ? `Competitor/source: ${competitor}\n` : '') +
-      `Finding: ${finding}\n` +
-      `Recommendation: ${recommendation}\n\nReturn ONLY the JSON object.`;
 
-    const plan = await this.callGroqJSON(groqKey, BUILD_PLANNER_SYSTEM, userMsg);
+    const groqKey = this.config.get<string>('GROQ_API_KEY');
+    let plan: any = null;
+
+    if (groqKey) {
+      const userMsg =
+        `Action item to convert into a concrete FlowOps build plan:\n` +
+        `Type: ${ev.type === 'PLATFORM_UPGRADE' ? 'internal upgrade idea' : 'competitor threat'}\n` +
+        (competitor ? `Competitor/source: ${competitor}\n` : '') +
+        `Finding: ${finding}\n` +
+        `Recommendation: ${recommendation}\n\nReturn ONLY the JSON object.`;
+      plan = await this.callGroqJSON(groqKey, BUILD_PLANNER_SYSTEM, userMsg);
+    }
+
+    // No Groq key (self-host without an AI provider) or the AI call failed:
+    // fall back to a deterministic template plan so "Plan build" always works.
     if (!plan) {
-      throw new ServiceUnavailableException('CLAW could not generate a build plan right now — try again.');
+      plan = this.buildFallbackPlan(ev, { finding, recommendation });
     }
 
     plan.generatedAt = new Date().toISOString();
@@ -683,8 +686,100 @@ Return ONLY the JSON array, no other text.`;
     await (this.prisma.aiEvent as any)
       .update({ where: { id }, data: { metadata: JSON.stringify(meta) } })
       .catch(() => undefined); // persistence is best-effort; still return the plan
-    this.logger.log(`🛠️ CLAW Build Planner: generated plan for action item ${id}`);
+    this.logger.log(`🛠️ CLAW Build Planner: generated ${plan.generator || 'ai'} plan for action item ${id}`);
     return plan;
+  }
+
+  /**
+   * Deterministic build plan used when no AI provider is configured (or the AI
+   * call fails). For integration/config action items it produces concrete
+   * configuration steps; for upgrade ideas / competitor threats it produces a
+   * sensible engineering scaffold. Same shape the UI + GitHub-issue formatter
+   * expect, flagged `generator: 'template'` so it's clear it isn't AI-authored.
+   */
+  private buildFallbackPlan(ev: any, ctx: { finding: string; recommendation: string }): any {
+    const envVar = (`${ev.title} ${ev.body || ''}`.match(/[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*(?:_KEY|_SECRET|_TOKEN|_URL|_ID)/) || [])[0];
+    const base = {
+      title: ev.title,
+      suggestedPrTitle: ev.title,
+      summary: ctx.recommendation || ctx.finding || ev.title,
+      entitlementTier: 'n/a',
+      navPlacement: '',
+      backendModule: '',
+      dataModelChanges: [] as string[],
+      newEndpoints: [] as string[],
+      generator: 'template',
+      generatedAt: new Date().toISOString(),
+    };
+
+    if (envVar) {
+      // Configuration / integration item — no code, just wiring + verify.
+      return {
+        ...base,
+        effort: 'S',
+        backendModule: 'config (.env)',
+        backendChanges: [
+          `Set \`${envVar}\` in backend/.env (see backend/.env.example for the expected value/format).`,
+          `The consuming service already reads \`${envVar}\` — no code change is required.`,
+        ],
+        frontendChanges: [],
+        implementationSteps: [
+          `Obtain the value for \`${envVar}\` from the provider.`,
+          `Add \`${envVar}=<value>\` to backend/.env (never commit it to git).`,
+          `Rebuild & restart the API: \`docker compose build api && docker compose up -d --force-recreate api\`.`,
+          `Verify the integration reports healthy (Owner → Audit / the integration health check) and exercise the feature end-to-end.`,
+        ],
+        acceptanceCriteria: [
+          `\`${envVar}\` is present in the API environment.`,
+          `The related integration health check passes and the feature works with live data.`,
+        ],
+        risks: [
+          'Keep the secret out of version control and rotate it if it has ever been exposed.',
+          'This is a CLAW template plan — set GROQ_API_KEY for an AI-tailored plan.',
+        ],
+        suggestedBranch: `chore/configure-${envVar.toLowerCase().replace(/_/g, '-')}`,
+        agentPrompt:
+          `Configuration task (no code change expected): ensure the FlowOps backend reads \`${envVar}\`. ` +
+          `Confirm where it is consumed, document it in backend/.env.example if missing, and verify the dependent feature works once the value is set.`,
+      };
+    }
+
+    // Build/upgrade item — generic engineering scaffold.
+    return {
+      ...base,
+      effort: 'M',
+      entitlementTier: 'professional',
+      backendChanges: [
+        'Add/extend the relevant NestJS module (controller + service) for this capability.',
+        'Enforce the correct plan entitlement server-side (BillingService.hasFeature) if it is a paid feature.',
+      ],
+      frontendChanges: [
+        'Add the page/UI and a sidebar entry (gated by role + entitlement where applicable).',
+        'Wire it to the new endpoint(s) with loading/empty/error states.',
+      ],
+      newEndpoints: ['Define the REST endpoint(s) this feature needs under /api/v1.'],
+      implementationSteps: [
+        `Scope the capability from the finding: "${ctx.finding}".`,
+        'Design the data model + Prisma changes (additive; applied via prisma db push).',
+        'Build the backend service + endpoints, with entitlement/role guards.',
+        'Build the frontend page + navigation entry.',
+        'Add tests, verify build (nest build + tsc/vite), and ship behind the right tier.',
+      ],
+      acceptanceCriteria: [
+        'The capability is reachable only from the intended plan tier/role.',
+        'Backend enforces the entitlement; the UI reflects locked/available state.',
+        ctx.recommendation ? `Addresses the recommendation: "${ctx.recommendation}".` : 'Addresses the action item.',
+      ],
+      risks: [
+        'Scope creep — keep the first version minimal and iterate.',
+        'This is a CLAW template plan — set GROQ_API_KEY for an AI-tailored plan.',
+      ],
+      suggestedBranch: 'feat/' + String(ev.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40),
+      agentPrompt:
+        `Implement this FlowOps capability end-to-end in the repo. Finding: "${ctx.finding}". ` +
+        `Recommendation: "${ctx.recommendation}". Follow existing patterns: a NestJS module under backend/src, ` +
+        `entitlement/role guards, a React page under frontend/src/pages with a sidebar entry, and keep schema changes additive.`,
+    };
   }
 
   // ── Stage 3: one-click GitHub Issue from a build plan ─────────────────────
