@@ -29,7 +29,7 @@ export class AiService implements OnModuleInit {
     this.logger.log('🚀 FlowOps 6-Claw Mesh: Connected to Cloudflare Workers AI');
   }
 
-  async processInstruction(command: string, context: any, companyId: number): Promise<any> {
+  async processInstruction(command: string, context: any, companyId: string): Promise<any> {
     let pastTokens = 0;
     
     try {
@@ -135,7 +135,7 @@ export class AiService implements OnModuleInit {
     return this.callCloudflareAI(this.CLAW_MODELS.ARCHITECT, messages);
   }
 
-  async processIncomingMessage(sender: string, message: string, companyId: number): Promise<string> {
+  async processIncomingMessage(sender: string, message: string, companyId: string): Promise<string> {
     const safetyCheck = await this.callCloudflareAI(this.CLAW_MODELS.SHIELD, [{ role: 'user', content: message }]);
     if (safetyCheck.toLowerCase().includes('unsafe')) return "Blocked by Security Claw.";
 
@@ -160,12 +160,12 @@ export class AiService implements OnModuleInit {
     return aiResponse;
   }
 
-  async getDashboardStats(companyId: number) {
+  async getDashboardStats(companyId: string) {
     const [pending, inTransit, drivers, exceptions] = await Promise.all([
-      this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.PENDING } }),
-      this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.IN_TRANSIT } }),
-      this.prisma.driver.count({ where: { companyId: String(companyId), status: 'AVAILABLE' } }),
-      this.prisma.waybill.count({ where: { companyId: String(companyId), status: WaybillStatus.FAILED_DELIVERY } }), 
+      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.PENDING } }),
+      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.IN_TRANSIT } }),
+      this.prisma.driver.count({ where: { companyId, status: 'AVAILABLE' } }),
+      this.prisma.waybill.count({ where: { companyId, status: WaybillStatus.FAILED_DELIVERY } }), 
     ]);
 
     return { 
@@ -203,9 +203,9 @@ export class AiService implements OnModuleInit {
     }
   }
 
-  private async getCurrentContext(companyId: number): Promise<string> {
+  private async getCurrentContext(companyId: string): Promise<string> {
     try {
-      const drivers = await this.prisma.driver.findMany({ where: { companyId: String(companyId) }, take: 3 });
+      const drivers = await this.prisma.driver.findMany({ where: { companyId }, take: 3 });
       if (!drivers || drivers.length === 0) return "No active operational delivery assets currently registered in the grid.";
       return `Drivers: ${drivers.map(d => d.name).join(', ')}`;
     } catch (dbErr) {

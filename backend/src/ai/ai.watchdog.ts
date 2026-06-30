@@ -77,21 +77,22 @@ export class AiWatchdog {
 
   /**
    * 🔑 Credential Sanitization
-   * Ensures logistics flow (Nodemailer/Groq) isn't interrupted by auth failures.
+   * Surfaces missing AI/email credentials as low-noise warnings (not hard errors)
+   * so they don't masquerade as failures in the logs.
    */
   private async auditCredentials(): Promise<void> {
     if (!process.env.GROQ_API_KEY) {
-      this.logger.error('Intellect Failure: GROQ_API_KEY is missing from runtime environmental configurations.');
+      this.logger.warn('GROQ_API_KEY is not set — AI copilot/Plan-build features will use deterministic fallbacks.');
     }
-    
-    // Verifies the 16-character App Password requirement for SMTP integration tunnels
-    const mailPassword = process.env.EMAIL_APP_PASSWORD || '';
-    const sanitizedPassword = mailPassword.replace(/\s+/g, ''); // Strip spacing blocks
-    
-    if (!sanitizedPassword || sanitizedPassword.length !== 16) {
-      this.logger.error(`⚠️ Security Warning: EMAIL_APP_PASSWORD is invalid or does not match the 16-character Google/Office365 format specification.`);
+
+    // Email is delivered via SendGrid (EmailService), NOT SMTP app passwords.
+    // Only warn when SendGrid isn't configured; never error on the legacy
+    // EMAIL_APP_PASSWORD, which this platform does not use.
+    const sendgridKey = process.env.SENDGRID_API_KEY || '';
+    if (!sendgridKey || sendgridKey === 'SG.CHANGE_ME') {
+      this.logger.warn('SENDGRID_API_KEY is not set — outbound email (verification, password reset, invoice reminders) is disabled until configured.');
     } else {
-      this.logger.log('🔐 Communication channel app credentials verified successfully.');
+      this.logger.log('🔐 Email (SendGrid) credentials present.');
     }
   }
 }

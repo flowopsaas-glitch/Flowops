@@ -27,7 +27,7 @@ export class AccountingIntegrationsService {
     private sage: SageProvider,
     private pastel: PastelProvider,
   ) {
-    this.secret = config.get<string>('JWT_SECRET', 'flowops-state');
+    this.secret = config.get<string>('JWT_SECRET') || '';
     this.appUrl = config.get<string>('APP_URL', 'https://app.flowop.work');
   }
 

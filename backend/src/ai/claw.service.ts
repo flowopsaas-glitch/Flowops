@@ -16,7 +16,7 @@ export class ClawService {
    * Orchestrates multi-tenant command requests.
    * Matches the validation parameters required by the frontend layout blocks.
    */
-  async processTenantQuery(command: string, companyId: number): Promise<any> {
+  async processTenantQuery(command: string, companyId: string): Promise<any> {
     if (!command) {
       return { reply: "Message command is required for the Claw reasoning engine." };
     }
@@ -34,7 +34,7 @@ export class ClawService {
 
     // 📍 SPATIAL NAVIGATION: Physical movement to the Collections view
     if (lowerCommand.match(/(collection|table|active collection|show me collections)/)) {
-      const pending = await this.prisma.collection.count({ where: { status: 'PENDING' } });
+      const pending = await this.prisma.collection.count({ where: { status: 'PENDING', companyId } });
       return {
         reply: `I'm shifting your view to the Collections workspace. We have ${pending} active collections in flight. What specifically should I investigate in the table?`,
         redirect: '/dashboard/collections'
@@ -45,7 +45,7 @@ export class ClawService {
     return this.generateGroqResponse(command, companyId);
   }
 
-  private async generateGroqResponse(command: string, companyId: number): Promise<any> {
+  private async generateGroqResponse(command: string, companyId: string): Promise<any> {
     const systemPrompt = `
       You are Gemini, the intellectual core of the FlowOps Claw. 
       You are an authentic, adaptive collaborator with a touch of wit.

@@ -61,6 +61,7 @@ export default function Observatory() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"open" | "resolved" | "all">("open");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,7 +88,10 @@ export default function Observatory() {
     try {
       await api.patch(`/owner/observatory/errors/${id}/resolve`, { resolved });
       await load();
-    } catch { /* toast handled globally */ }
+    } catch (e: any) {
+      setActionError(e?.message || "Could not update this error. Please try again.");
+      setTimeout(() => setActionError(null), 6000);
+    }
     finally { setBusyId(null); }
   };
 
@@ -96,13 +100,21 @@ export default function Observatory() {
     try {
       await api.post(`/owner/observatory/errors/${id}/retriage`, {});
       await load();
-    } catch { /* toast handled globally */ }
+    } catch (e: any) {
+      setActionError(e?.message || "Re-triage failed. Please try again.");
+      setTimeout(() => setActionError(null), 6000);
+    }
     finally { setBusyId(null); }
   };
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(120,80,200,0.12),transparent_30%),linear-gradient(180deg,#07111f,#0b1530)] p-4 sm:p-6">
       <div className="mx-auto max-w-5xl space-y-5">
+        {actionError && (
+          <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+            {actionError}
+          </div>
+        )}
 
         {/* Header */}
         <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 backdrop-blur-xl shadow-[0_16px_50px_rgba(0,0,0,0.3)]">

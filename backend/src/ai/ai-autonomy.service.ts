@@ -55,8 +55,10 @@ export class AiAutonomyService {
         this.logger.warn(`Detected ${data.results.length} code pattern discrepancies via Semgrep. Dispatched to threat analyzer...`);
         await this.discovery.analyzeSecurityThreats('SEMGREP', data.results);
       }
-    } catch (e: any) { 
-      this.logger.error(`Semgrep scan lifecycle dropped or no configuration file located: ${e.message}`); 
+    } catch (e: any) {
+      // semgrep is an OPTIONAL dev tool, not bundled in the production image.
+      // Its absence (spawn ENOENT) is expected — log at debug, never as an error.
+      this.logger.debug(`Semgrep scan skipped (tool not available): ${e.message}`);
     }
   }
 
@@ -81,8 +83,9 @@ export class AiAutonomyService {
         // Executes verified auto-repair via proxy mapping paths inside AiDevOpsService
         await this.devops.executeAutoRepair('package.json', 'Security patch: Vulnerable dependencies detected');
       }
-    } catch (e: any) { 
-      this.logger.error(`Trivy tracking layer execution failed: ${e.message}`); 
+    } catch (e: any) {
+      // trivy is an OPTIONAL dev tool, not bundled in the production image.
+      this.logger.debug(`Trivy scan skipped (tool not available): ${e.message}`);
     }
   }
 
@@ -98,7 +101,9 @@ export class AiAutonomyService {
         this.logger.warn(`Detected ${slowTraces.length} infrastructure performance traces exceeding >2s execution thresholds.`);
       }
     } catch (err: any) {
-      this.logger.error(`Failed to interface with SigNoz tracing tables: ${err.message}`);
+      // SigNoz tracing tables only exist when a SigNoz/ClickHouse stack is
+      // attached. Without it this query is expected to fail — debug, not error.
+      this.logger.debug(`SigNoz metrics sync skipped (tracing backend not attached): ${err.message}`);
     }
   }
 

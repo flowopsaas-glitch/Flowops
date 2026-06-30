@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { CurrentUser } from '../common/decorators/user.decorator';
 
 @UseGuards(FeatureGuard)
 @RequireFeature('aiControlTower')
@@ -10,9 +11,10 @@ export class AiOpsController {
   constructor(private readonly aiService: AiService) {}
 
   @Get('supervisor/overview')
-  async getOverview(@Query('companyId') companyId: string) {
-    const stats = await this.aiService.getDashboardStats(parseInt(companyId) || 1);
-    
+  async getOverview(@CurrentUser() u: any) {
+    // SECURITY: stats are always for the authenticated tenant (was @Query companyId — cross-tenant + defaulted to "1").
+    const stats = await this.aiService.getDashboardStats(u.companyId);
+
     return {
       status: 'OPERATIONAL',
       generatedAt: new Date().toISOString(),
@@ -26,8 +28,8 @@ export class AiOpsController {
   }
 
   @Post('assist')
-  async askCopilot(@Body() body: { query: string; companyId: number }) {
-    const reply = await this.aiService.processIncomingMessage('USER', body.query, body.companyId || 1);
+  async askCopilot(@CurrentUser() u: any, @Body() body: { query: string }) {
+    const reply = await this.aiService.processIncomingMessage('USER', body.query, u.companyId);
     return { success: true, data: { reply } };
   }
 }
