@@ -452,6 +452,8 @@ export default function AppLayout() {
 
   return (
     <div className="flex h-screen bg-[#07111f] text-white overflow-hidden font-sans lm-main">
+      {/* Skip to main content — first keyboard tab stop for screen-reader/keyboard users */}
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       {/* Desktop Sidebar */}
       <aside className={cn("hidden shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col fx-sidebar", collapsed ? "w-[84px]" : "w-[300px]")}>
         <SidebarContent 
@@ -491,7 +493,7 @@ export default function AppLayout() {
             <button onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} className="hidden xl:flex p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400 hover:bg-white/10 transition">
               {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
             </button>
-            <button onClick={() => setMobileOpen(true)} className="xl:hidden p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400">
+            <button onClick={() => setMobileOpen(true)} aria-label="Open navigation menu" aria-expanded={mobileOpen} className="xl:hidden p-2 rounded-xl border border-white/10 bg-white/5 text-sky-400">
               <Menu className="h-5 w-5" />
             </button>
             <div>
@@ -513,7 +515,7 @@ export default function AppLayout() {
           </button>
         </header>
 
-        <main role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar fx-ambient fx-grid">
+        <main id="main-content" tabIndex={-1} role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar fx-ambient fx-grid">
           {/* ── Trial Banner ── */}
           {(() => {
             const co = user?.company as any;
@@ -572,10 +574,10 @@ export default function AppLayout() {
 
       {/* Mobile Drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex xl:hidden">
+        <div className="fixed inset-0 z-50 flex xl:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside className="relative w-[300px] border-r border-white/10 bg-[#081120] shadow-2xl">
-            <button onClick={() => setMobileOpen(false)} className="absolute right-4 top-4 z-50 p-2 text-white/20 hover:text-white transition">
+            <button onClick={() => setMobileOpen(false)} aria-label="Close navigation menu" className="absolute right-4 top-4 z-50 p-2 text-white/20 hover:text-white transition">
               <X className="h-6 w-6" />
             </button>
             <SidebarContent 
