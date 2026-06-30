@@ -36,7 +36,10 @@ const BillingBatches = lazy(() => import("./pages/BillingBatches"));
 const FinanceDashboard = lazy(() => import("./pages/FinanceDashboard"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const Invoices = lazy(() => import("./pages/Invoices"));
-const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
+// Client Portal Links is hidden until its booking-portal backend exists.
+// The page calls /booking-portal/companies/:id/links, which has no backend
+// controller yet — re-enable this import + route once those endpoints ship.
+// const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
 const CreditControl     = lazy(() => import("./pages/CreditControl"));
 const CODReconciliation = lazy(() => import("./pages/billing/CODReconciliation"));
 const DriverWalletPage  = lazy(() => import("./pages/billing/DriverWalletPage"));
@@ -260,7 +263,8 @@ export default function App() {
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
               <Route path="/accounting" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Accounting"><Accounting /></RequireFeature></RequirePermission>} />
               <Route path="/disbursements" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Disbursements"><Disbursements /></RequireFeature></RequirePermission>} />
-              <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
+              {/* Hidden until the booking-portal backend exists (no /booking-portal endpoints yet). */}
+              {/* <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} /> */}
               <Route path="/credit-control" element={<RequirePermission perm="creditControl"><CreditControl /></RequirePermission>} />
               <Route path="/cod" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><CODReconciliation /></RequireFeature></RequirePermission>} />
               <Route path="/cod/wallets/:driverId" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><DriverWalletPage /></RequireFeature></RequirePermission>} />
