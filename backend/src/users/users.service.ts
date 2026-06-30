@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
@@ -32,17 +32,25 @@ export class UsersService {
   async create(companyId: string, dto: any) {
     await this.billing.assertCanCreate(companyId, 'user');
     const passwordHash = await bcrypt.hash(dto.password ?? uuid(), 12);
-    const user = await this.prisma.user.create({
-      data: {
-        email: String(dto.email).toLowerCase(),
-        name: dto.name ?? String(dto.email).split('@')[0],
-        phone: dto.phone ?? null,
-        role: dto.role ?? 'USER',
-        permissions: dto.permissions ?? undefined,
-        passwordHash,
-        companyId,
-      },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: String(dto.email).toLowerCase(),
+          name: dto.name ?? String(dto.email).split('@')[0],
+          phone: dto.phone ?? null,
+          role: dto.role ?? 'USER',
+          permissions: dto.permissions ?? undefined,
+          passwordHash,
+          companyId,
+        },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new ConflictException('A user with this email already exists in your company.');
+      }
+      throw e;
+    }
     const { passwordHash: _, ...safe } = user;
     return safe;
   }
