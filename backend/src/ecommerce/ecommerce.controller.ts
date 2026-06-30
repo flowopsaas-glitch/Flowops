@@ -38,7 +38,7 @@ export class EcommerceController {
     const companyId = await this.svc.resolveCompanyByShop(shop);
     if (!companyId) throw new UnauthorizedException('Unknown Shopify shop domain');
 
-    if (!this.svc.verifyShopifySignature(req.rawBody ?? Buffer.alloc(0), signature, companyId)) {
+    if (!(await this.svc.verifyShopifySignature(req.rawBody ?? Buffer.alloc(0), signature, companyId))) {
       throw new UnauthorizedException('Invalid Shopify webhook signature');
     }
 
@@ -56,19 +56,10 @@ export class EcommerceController {
     const companyId = await this.svc.resolveCompanyBySource(source);
     if (!companyId) throw new UnauthorizedException('Unknown WooCommerce source');
 
-    if (!this.svc.verifyWooCommerceSignature(req.rawBody ?? Buffer.alloc(0), signature, companyId)) {
+    if (!(await this.svc.verifyWooCommerceSignature(req.rawBody ?? Buffer.alloc(0), signature, companyId))) {
       throw new UnauthorizedException('Invalid WooCommerce webhook signature');
     }
 
     return this.svc.processWooCommerceOrder(body, companyId);
-  }
-
-  /** GET /ecommerce/status — returns connection status for configured stores */
-  @Post('shopify/connect')
-  async connectShopify(
-    @Body() body: { shopDomain: string; webhookSecret: string },
-    // @CurrentUser() u: any,  // would normally gate this
-  ) {
-    return { shopDomain: body.shopDomain, connected: true, message: 'Store config saved' };
   }
 }

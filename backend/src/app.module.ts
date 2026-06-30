@@ -37,6 +37,7 @@ import { GeocodingModule } from './geocoding/geocoding.module';
 import { RoutingModule } from './routing/routing.module';
 import { EcommerceModule } from './ecommerce/ecommerce.module';
 import { RateShoppingModule } from './rate-shopping/rate-shopping.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
@@ -105,6 +106,8 @@ import { CourierManagementModule } from './courier-management/courier-management
     ApiModule,
     EcommerceModule,
     RateShoppingModule,
+    // Per-tenant integration credentials (WhatsApp / Shopify / WooCommerce)
+    IntegrationsModule,
 
     // Platform audit trail (global)
     AuditModule,

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   Activity, Check, CheckCircle2, Copy, Loader2, Plus, RefreshCw,
   Trash2, Webhook, KeyRound, AlertTriangle, Clock, XCircle, ShoppingBag,
+  MessageCircle, ShieldCheck, Save,
 } from "lucide-react";
 import { api } from "../../api/client";
 
@@ -39,7 +40,7 @@ const DELIVERY_STATUS_CFG: Record<DeliveryStatus, { cls: string; icon: React.Com
   EXHAUSTED: { cls: "border-rose-600/30 bg-rose-700/10 text-rose-300",       icon: AlertTriangle },
 };
 
-type Tab = "keys" | "webhooks" | "log" | "stores";
+type Tab = "keys" | "webhooks" | "log" | "stores" | "whatsapp";
 
 export default function Integrations() {
   const [tab, setTab] = useState<Tab>("keys");
@@ -136,6 +137,7 @@ export default function Integrations() {
           { k: "keys",    label: "API Keys",      icon: KeyRound },
           { k: "webhooks",label: "Webhooks",       icon: Webhook },
           { k: "log",     label: `Delivery Log${logStats.failed > 0 ? ` (${logStats.failed} failed)` : ""}`, icon: Activity },
+          { k: "whatsapp",label: "WhatsApp",       icon: MessageCircle },
           { k: "stores",  label: "Stores",         icon: ShoppingBag },
         ] as const).map(({ k, label, icon: Icon }) => (
           <button key={k} onClick={() => setTab(k as Tab)}
@@ -350,59 +352,318 @@ export default function Integrations() {
         </section>
       )}
 
+      {/* ── WHATSAPP ── */}
+      {tab === "whatsapp" && <WhatsAppTab />}
+
       {/* ── STORES (Shopify / WooCommerce) ── */}
       {tab === "stores" && <StoresTab />}
     </div>
   );
 }
 
-// ── Stores Tab ────────────────────────────────────────────────────────────────
+// ── Connection credential form (shared by WhatsApp + Stores) ────────────────
 
-function StoreCard({
-  logo, name, color, webhookPath, secretEnvHint, docUrl,
+type FieldDef = {
+  key: string;
+  label: string;
+  secret?: boolean;
+  placeholder?: string;
+  help?: string;
+};
+
+type MaskedConnection = {
+  provider: string;
+  connected: boolean;
+  status: string;
+  config: Record<string, string | null>;
+  secretsSet: Record<string, boolean>;
+  lastVerifiedAt: string | null;
+};
+
+function ConnectionForm({
+  provider,
+  fields,
+  webhookPath,
+  cta = "Save connection",
+  fixedValues,
 }: {
-  logo: string; name: string; color: string;
-  webhookPath: string; secretEnvHint: string; docUrl: string;
+  provider: string;
+  fields: FieldDef[];
+  webhookPath?: string;
+  cta?: string;
+  fixedValues?: Record<string, string>;
 }) {
-  const base = (window as any).__VITE_API_BASE__ ?? window.location.origin;
-  const endpoint = `${base}/api/v1${webhookPath}`;
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [conn, setConn] = useState<MaskedConnection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
-  const copy = () => {
+
+  const base = (window as any).__VITE_API_BASE__ ?? window.location.origin;
+  const endpoint = webhookPath ? `${base}/api/v1${webhookPath}` : null;
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r: any = await api.get(`/integrations/connections/${provider}`);
+      const c = (r?.data ?? r) as MaskedConnection;
+      setConn(c);
+      const seed: Record<string, string> = {};
+      for (const f of fields) {
+        if (!f.secret && c?.config?.[f.key]) seed[f.key] = String(c.config[f.key]);
+      }
+      setValues(seed);
+    } catch {
+      setMsg({ kind: "err", text: "Could not load this connection." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider]);
+
+  const save = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      // Only send fields the user actually filled in (blank secrets keep stored value).
+      const payload: Record<string, string> = { ...(fixedValues ?? {}) };
+      for (const f of fields) {
+        const v = (values[f.key] ?? "").trim();
+        if (v) payload[f.key] = v;
+      }
+      await api.put(`/integrations/connections/${provider}`, payload);
+      setMsg({ kind: "ok", text: "Connection saved." });
+      // Clear secret inputs after save; reload masked status.
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const f of fields) if (f.secret) delete next[f.key];
+        return next;
+      });
+      await load();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Could not save this connection." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const disconnect = async () => {
+    setSaving(true);
+    try {
+      await api.delete(`/integrations/connections/${provider}`);
+      setValues({});
+      setMsg({ kind: "ok", text: "Disconnected." });
+      await load();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Could not disconnect." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const copyEndpoint = () => {
+    if (!endpoint) return;
     navigator.clipboard.writeText(endpoint);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+
   return (
     <div className="rounded-[24px] border border-white/10 bg-slate-900/50 p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className={`text-2xl font-black ${color}`}>{logo}</div>
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/40">Connection</div>
+        {conn?.connected ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-200">
+            <CheckCircle2 className="h-3 w-3" /> Connected
+          </span>
+        ) : (
+          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] font-bold text-white/40">
+            Not connected
+          </span>
+        )}
+      </div>
+
+      {endpoint && (
         <div>
-          <div className="font-black text-white text-lg">{name}</div>
-          <a href={docUrl} target="_blank" rel="noreferrer" className="text-xs text-sky-400 hover:underline">
-            Setup guide →
-          </a>
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50 mb-1.5">
+            Webhook Endpoint URL — paste this into your store
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+            <code className="flex-1 text-xs text-sky-200 break-all">{endpoint}</code>
+            <button onClick={copyEndpoint} className="shrink-0 rounded-lg bg-white/10 p-1.5 text-white/60 hover:text-white">
+              {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-white/40 py-4">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {fields.map((f) => {
+            const isSet = f.secret && conn?.secretsSet?.[f.key];
+            return (
+              <div key={f.key}>
+                <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/50">
+                  {f.label}{f.secret && <span className="ml-1 text-white/30">(secret)</span>}
+                </label>
+                <input
+                  type={f.secret ? "password" : "text"}
+                  value={values[f.key] ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                  placeholder={isSet ? "•••••••• (saved — leave blank to keep)" : f.placeholder}
+                  autoComplete="off"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm outline-none focus:border-sky-400/40"
+                />
+                {f.help && <div className="mt-1 text-[11px] text-white/35">{f.help}</div>}
+              </div>
+            );
+          })}
+
+          {msg && (
+            <div className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+              msg.kind === "ok"
+                ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
+                : "border-rose-400/20 bg-rose-500/10 text-rose-200"
+            }`}>
+              {msg.text}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={save} disabled={saving}
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-500 text-slate-950 px-4 py-2.5 text-sm font-black disabled:opacity-50">
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {cta}
+            </button>
+            {conn?.connected && (
+              <button onClick={disconnect} disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-sm font-bold text-rose-300 disabled:opacity-50">
+                <Trash2 size={14} /> Disconnect
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── WhatsApp Tab ────────────────────────────────────────────────────────────
+
+const WA_META_FIELDS: FieldDef[] = [
+  { key: "phoneNumberId", label: "Phone number ID", placeholder: "e.g. 123456789012345",
+    help: "Meta's ID for your WhatsApp number — also used to route inbound replies to your inbox." },
+  { key: "accessToken", label: "Access token", secret: true, placeholder: "EAAG… permanent token",
+    help: "A permanent system-user token with whatsapp_business_messaging permission." },
+  { key: "businessAccountId", label: "WhatsApp Business Account ID", placeholder: "(optional) for message templates" },
+  { key: "webhookVerifyToken", label: "Webhook verify token", secret: true,
+    placeholder: "any string you set in Meta → Webhooks",
+    help: "Must match the verify token you enter when subscribing the webhook URL above in Meta." },
+  { key: "appSecret", label: "App secret", secret: true, placeholder: "Meta app secret",
+    help: "Used to verify inbound webhook signatures. Strongly recommended." },
+];
+
+const WA_TELESIGN_FIELDS: FieldDef[] = [
+  { key: "telesignCustomerId", label: "Telesign Customer ID", placeholder: "FFFFFFFF-EEEE-DDDD-1234-AB1234567890",
+    help: "From your Telesign portal (the account Customer ID / SID)." },
+  { key: "telesignApiKey", label: "Telesign API key", secret: true, placeholder: "your Telesign API key",
+    help: "Used with Basic auth against Telesign's omnichannel endpoint." },
+  { key: "telesignSenderId", label: "Sender ID", placeholder: "(optional) approved sender ID" },
+  { key: "telesignTemplate", label: "Default WhatsApp template name", placeholder: "(optional) approved template name",
+    help: "Telesign requires pre-approved WhatsApp templates for business-initiated messages." },
+];
+
+function WhatsAppTab() {
+  const [gateway, setGateway] = useState<"meta" | "telesign">("meta");
+  const [ready, setReady] = useState(false);
+
+  // Read the saved gateway once so the toggle reflects the current connection.
+  useEffect(() => {
+    let alive = true;
+    api.get("/integrations/connections/whatsapp")
+      .then((r: any) => {
+        const g = (r?.data ?? r)?.config?.gateway;
+        if (alive && (g === "meta" || g === "telesign")) setGateway(g);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (alive) setReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-[24px] border border-white/10 bg-slate-900/50 p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <MessageCircle size={18} className="text-emerald-400" />
+          <h2 className="text-lg font-black">WhatsApp Business Connection</h2>
+        </div>
+        <p className="text-sm text-white/50">
+          Connect <span className="text-white/80 font-semibold">your own</span> WhatsApp Business number so your
+          team sends and receives from it — no shared platform number. Choose your gateway below.
+        </p>
+
+        {/* Gateway selector */}
+        <div className="mt-4 inline-flex rounded-2xl border border-white/10 bg-white/5 p-1">
+          {([
+            { k: "meta", label: "Meta Cloud API" },
+            { k: "telesign", label: "Telesign" },
+          ] as const).map(({ k, label }) => (
+            <button key={k} onClick={() => setGateway(k)}
+              className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+                gateway === k ? "bg-white/15 text-white border border-white/20" : "text-white/50 hover:text-white"
+              }`}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
-      <div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50 mb-1.5">
-          Webhook Endpoint URL
-        </div>
-        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-          <code className="flex-1 text-xs text-sky-200 break-all">{endpoint}</code>
-          <button onClick={copy} className="shrink-0 rounded-lg bg-white/10 p-1.5 text-white/60 hover:text-white">
-            {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
-          </button>
-        </div>
-      </div>
-      <div className="rounded-xl border border-amber-400/20 bg-amber-500/8 px-4 py-3 text-xs text-amber-200/80 leading-relaxed">
-        <span className="font-bold">Secret env var: </span>
-        <code className="font-mono">{secretEnvHint}</code>
-        <br />
-        Set this to the webhook secret from your {name} admin. Every inbound order will become a FlowOps waybill automatically.
+
+      {ready && gateway === "meta" && (
+        <ConnectionForm
+          key="wa-meta"
+          provider="whatsapp"
+          webhookPath="/whatsapp/webhook"
+          cta="Save WhatsApp (Meta)"
+          fixedValues={{ gateway: "meta" }}
+          fields={WA_META_FIELDS}
+        />
+      )}
+
+      {ready && gateway === "telesign" && (
+        <ConnectionForm
+          key="wa-telesign"
+          provider="whatsapp"
+          cta="Save WhatsApp (Telesign)"
+          fixedValues={{ gateway: "telesign" }}
+          fields={WA_TELESIGN_FIELDS}
+        />
+      )}
+
+      <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-xs text-white/45 leading-relaxed">
+        <div className="font-bold text-white/60 mb-1 flex items-center gap-1.5"><ShieldCheck size={13} /> Click-to-chat still works without this</div>
+        If you don't connect a gateway, the WhatsApp Hub falls back to click-to-chat links from your company
+        mobile number (set under Settings → Company). Connecting here unlocks programmatic sending.
+        {gateway === "telesign" && (
+          <span className="block mt-2 text-amber-200/70">
+            Telesign sends via its omnichannel API. Business-initiated WhatsApp messages generally require a
+            pre-approved template — set the template name above, and check the delivery log / server logs for
+            Telesign's response when validating.
+          </span>
+        )}
       </div>
     </div>
   );
 }
+
+// ── Stores Tab (Shopify / WooCommerce) ──────────────────────────────────────
 
 function StoresTab() {
   return (
@@ -413,36 +674,69 @@ function StoresTab() {
           <h2 className="text-lg font-black">E-commerce Store Connections</h2>
         </div>
         <p className="text-sm text-white/50">
-          Connect your Shopify or WooCommerce store to automatically create waybills
-          whenever an order is placed. No polling — FlowOps receives a signed webhook
-          from your store the instant an order comes in.
+          Connect your Shopify or WooCommerce store to automatically create waybills whenever an order is
+          placed. Paste the webhook URL into your store, then enter the matching webhook secret here — FlowOps
+          verifies every inbound order against it.
         </p>
       </div>
+
       <div className="grid gap-5 md:grid-cols-2">
-        <StoreCard
-          logo="🛍"
-          name="Shopify"
-          color="text-emerald-400"
-          webhookPath="/ecommerce/shopify/webhook"
-          secretEnvHint={`SHOPIFY_SECRET_<YOUR_COMPANY_ID>`}
-          docUrl="https://shopify.dev/docs/apps/build/webhooks/configure/https"
-        />
-        <StoreCard
-          logo="🛒"
-          name="WooCommerce"
-          color="text-purple-400"
-          webhookPath="/ecommerce/woocommerce/webhook"
-          secretEnvHint={`WC_SECRET_<YOUR_COMPANY_ID>`}
-          docUrl="https://woo.com/document/webhooks/"
-        />
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl font-black text-emerald-400">🛍</div>
+            <div>
+              <div className="font-black text-white text-lg">Shopify</div>
+              <a href="https://shopify.dev/docs/apps/build/webhooks/configure/https" target="_blank" rel="noreferrer"
+                className="text-xs text-sky-400 hover:underline">Setup guide →</a>
+            </div>
+          </div>
+          <ConnectionForm
+            provider="shopify"
+            webhookPath="/ecommerce/shopify/webhook"
+            cta="Save Shopify store"
+            fields={[
+              { key: "shopDomain", label: "Shop domain", placeholder: "mystore.myshopify.com",
+                help: "The x-shopify-shop-domain your store sends — used to match orders to your account." },
+              { key: "webhookSecret", label: "Webhook signing secret", secret: true,
+                placeholder: "from Shopify → Notifications → Webhooks",
+                help: "Required — inbound orders are rejected if the signature doesn't match." },
+              { key: "accessToken", label: "Admin API access token", secret: true,
+                placeholder: "(optional) shpat_… for delivery status push-back" },
+            ]}
+          />
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl font-black text-purple-400">🛒</div>
+            <div>
+              <div className="font-black text-white text-lg">WooCommerce</div>
+              <a href="https://woo.com/document/webhooks/" target="_blank" rel="noreferrer"
+                className="text-xs text-sky-400 hover:underline">Setup guide →</a>
+            </div>
+          </div>
+          <ConnectionForm
+            provider="woocommerce"
+            webhookPath="/ecommerce/woocommerce/webhook"
+            cta="Save WooCommerce store"
+            fields={[
+              { key: "sourceUrl", label: "Store URL", placeholder: "https://mystore.com",
+                help: "The x-wc-webhook-source your store sends — used to match orders to your account." },
+              { key: "webhookSecret", label: "Webhook secret", secret: true,
+                placeholder: "from WooCommerce → Webhooks",
+                help: "Required — inbound orders are rejected if the signature doesn't match." },
+            ]}
+          />
+        </div>
       </div>
+
       <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-xs text-white/40 space-y-1">
         <div className="font-bold text-white/60">How it works</div>
         <ol className="list-decimal pl-4 space-y-1">
-          <li>Copy the webhook endpoint URL above into your store's webhook settings.</li>
-          <li>Set the secret as an environment variable on your backend server.</li>
-          <li>Also set <code className="font-mono">SHOPIFY_DOMAIN_&lt;id&gt;</code> or <code className="font-mono">WC_SOURCE_&lt;id&gt;</code> to link your store to your company.</li>
-          <li>Every new order will instantly create a FlowOps waybill with the recipient details.</li>
+          <li>Copy the webhook endpoint URL into your store's webhook settings (topic: order created).</li>
+          <li>Enter the same webhook secret here so FlowOps can verify each order.</li>
+          <li>Enter your shop domain / store URL so inbound orders are matched to your company.</li>
+          <li>Every new order instantly creates a FlowOps waybill with the recipient details.</li>
         </ol>
       </div>
     </div>

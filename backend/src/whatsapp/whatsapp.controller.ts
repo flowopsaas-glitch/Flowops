@@ -77,13 +77,13 @@ export class WhatsAppController {
   @SkipThrottle() // Meta verification challenge
   @Get('webhook')
   @ApiOperation({ summary: 'Meta webhook verification challenge' })
-  verifyWebhook(
+  async verifyWebhook(
     @Query('hub.mode') mode: string,
     @Query('hub.verify_token') token: string,
     @Query('hub.challenge') challenge: string,
     @Res() res: Response,
   ) {
-    const challengeResponse = this.svc.verifyWebhook(mode, token, challenge);
+    const challengeResponse = await this.svc.verifyWebhook(mode, token, challenge);
     // Must return plain text integer for Meta to accept
     res.set('Content-Type', 'text/plain').send(challengeResponse);
   }
