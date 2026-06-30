@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -8,9 +8,13 @@ import { CreateReturnDto } from './dto/create-return.dto';
 import { UpdateReturnDto, ReturnTransitionDto } from './dto/update-return.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Returns')
 @ApiBearerAuth()
+@UseGuards(FeatureGuard)
+@RequireFeature('returns')
 @Controller()
 export class ReturnsController {
   constructor(private readonly svc: ReturnsService) {}

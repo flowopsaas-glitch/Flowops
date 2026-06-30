@@ -1,6 +1,10 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { AiService } from './ai.service';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
+@UseGuards(FeatureGuard)
+@RequireFeature('aiControlTower')
 @Controller('ai-ops')
 export class AiOpsController {
   constructor(private readonly aiService: AiService) {}

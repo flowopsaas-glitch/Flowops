@@ -1,10 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { WebhooksService } from './webhooks.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Webhooks')
 @ApiBearerAuth()
+@UseGuards(FeatureGuard)
+@RequireFeature('api')
 @Controller('integrations/webhooks')
 export class WebhooksController {
   constructor(private readonly svc: WebhooksService) {}

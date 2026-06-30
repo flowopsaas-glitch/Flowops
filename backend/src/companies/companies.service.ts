@@ -1,13 +1,28 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { BillingService } from '../billing/billing.service';
 import { v4 as uuid } from 'uuid';
+
+/**
+ * Customer-facing white-label fields. Re-branding the public booking/tracking
+ * portal (custom subdomain, brand name, logo, colours — i.e. removing FlowOps
+ * identity from customer touchpoints) is an Enterprise capability. Basic in-app
+ * branding (logoUrl, primaryColor, brandName) stays available to every tier.
+ */
+const WHITE_LABEL_FIELDS = [
+  'portalSubdomain',
+  'portalBrandName',
+  'portalLogoUrl',
+  'portalPrimaryColor',
+] as const;
 
 @Injectable()
 export class CompaniesService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private billing: BillingService,
   ) {}
 
   // ── Current tenant company ──────────────────────────────────────────
@@ -19,6 +34,18 @@ export class CompaniesService {
   async updateMyCompany(companyId: string, data: any) {
     // Strip write-protected fields
     const { id, createdAt, updatedAt, ...safe } = data;
+
+    // Enforce white-label entitlement: block portal re-branding on plans that
+    // don't include it (frontend also hides this, but it fails open on error).
+    const touchesWhiteLabel = WHITE_LABEL_FIELDS.some(
+      (f) => safe[f] !== undefined && safe[f] !== null && safe[f] !== '',
+    );
+    if (touchesWhiteLabel && !(await this.billing.hasFeature(companyId, 'whiteLabel'))) {
+      throw new ForbiddenException(
+        'White-label branding (custom portal domain & branding) is available on the Enterprise plan. Upgrade to unlock it.',
+      );
+    }
+
     return this.prisma.company.update({ where: { id: companyId }, data: safe });
   }
 

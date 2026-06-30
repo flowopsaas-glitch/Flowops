@@ -356,12 +356,14 @@ export default function AppLayout() {
     
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
+    { section: "COMMUNICATIONS", label: "Client Queries", desc: "Customer questions & tickets", to: "/communications/client-queries", icon: MessageCircle, perm: "clientQueries" },
     
     { section: "BILLING", label: "Finance Home", desc: "Revenue, AR aging, clients", to: "/finance", icon: BarChart2, perm: "invoices" },
     { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
     { section: "BILLING", label: "Rate Shopping", desc: "Compare carrier quotes", to: "/rate-shopping", icon: Gauge, perm: "rateCards", entitlement: "rateShopping" },
     { section: "BILLING", label: "Billing Batches", desc: "Audit & Recon", to: "/billing-batches", icon: FileText, perm: "billingBatches" },
     { section: "BILLING", label: "Invoices", desc: "Revenue tracking", to: "/invoices", icon: Receipt, perm: "invoices" },
+    { section: "BILLING", label: "Invoice Drafts", desc: "Review & approve before issue", to: "/invoice-drafts", icon: FileText, perm: "invoiceDrafts" },
     { section: "BILLING", label: "Quotes", desc: "Conversion engine", to: "/quotes", icon: ScrollText, perm: "quotes" },
     { section: "BILLING", label: "Credit Control", desc: "Arrears management", to: "/credit-control", icon: ShieldAlert, perm: "creditControl" },
     { section: "BILLING", label: "COD Reconciliation", desc: "Cash on delivery tracking", to: "/cod", icon: Wallet, perm: "billingBatches", entitlement: "codReconciliation" },
@@ -377,7 +379,7 @@ export default function AppLayout() {
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
     { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
-    { section: "ADMIN", label: "Integrations", desc: "API keys & webhooks", to: "/settings/integrations", icon: Settings, perm: "settings" },
+    { section: "ADMIN", label: "Integrations", desc: "API keys, webhooks & store connectors", to: "/settings/integrations", icon: Settings, perm: "settings", entitlement: "api" },
     { section: "ADMIN", label: "Single Sign-On", desc: "OIDC SSO (Enterprise)", to: "/settings/sso", icon: ShieldCheck, adminOnly: true, entitlement: "sso" },
     { section: "ADMIN", label: "Settings", desc: "System configuration", to: "/settings", icon: Settings, perm: "settings" },
   ], []);
