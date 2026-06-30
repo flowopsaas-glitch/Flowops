@@ -2,19 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { BillingService } from '../billing/billing.service';
+import { IntegrationCredentialService } from '../integrations/integration-credential.service';
 
 /**
  * Converts e-commerce orders from Shopify / WooCommerce into FlowOps waybills.
  *
- * Store connection is configured via environment variables per company:
- *
- *   SHOPIFY_SECRET_<COMPANY_ID>   = the webhook secret set in Shopify admin
- *   SHOPIFY_DOMAIN_<COMPANY_ID>   = e.g. mystore.myshopify.com
- *   WC_SECRET_<COMPANY_ID>        = the webhook secret from WooCommerce settings
- *   WC_SOURCE_<COMPANY_ID>        = the source URL of the WooCommerce store
- *
- * These can also be stored in the Company record's metadata column once a
- * proper store-settings UI is wired up.
+ * Store connections are tenant self-service: each company saves its own store
+ * domain + webhook secret (plus an optional Shopify access token for status
+ * push-back) in Settings -> Integrations, stored AES-256-GCM encrypted via the
+ * integration credential store. Legacy per-install env vars (the SHOPIFY and WC
+ * variables keyed by company id) are still honoured as a fallback so existing
+ * deployments keep working.
  */
 @Injectable()
 export class EcommerceService {
@@ -23,13 +22,18 @@ export class EcommerceService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private billing: BillingService,
+    private creds: IntegrationCredentialService,
   ) {}
 
   // ── Company resolution ────────────────────────────────────────────────────
 
   async resolveCompanyByShop(shopDomain: string): Promise<string | null> {
     if (!shopDomain) return null;
-    // Env-based lookup: iterate active companies, compare SHOPIFY_DOMAIN_<id>
+    // 1) Tenant self-service credential (single indexed lookup).
+    const viaDb = await this.creds.resolveCompanyByRef('shopify', shopDomain);
+    if (viaDb) return viaDb;
+    // 2) Legacy env fallback: compare SHOPIFY_DOMAIN_<id> across companies.
     const companies = await this.prisma.company.findMany({
       where: { isActive: true },
       select: { id: true },
@@ -43,6 +47,10 @@ export class EcommerceService {
 
   async resolveCompanyBySource(source: string): Promise<string | null> {
     if (!source) return null;
+    // 1) Tenant self-service credential.
+    const viaDb = await this.creds.resolveCompanyByRef('woocommerce', source);
+    if (viaDb) return viaDb;
+    // 2) Legacy env fallback.
     const companies = await this.prisma.company.findMany({
       where: { isActive: true },
       select: { id: true },
@@ -56,31 +64,55 @@ export class EcommerceService {
 
   // ── Signature verification ────────────────────────────────────────────────
 
-  verifyShopifySignature(rawBody: Buffer, signature: string, companyId: string): boolean {
+  async verifyShopifySignature(rawBody: Buffer, signature: string, companyId: string): Promise<boolean> {
     if (!signature) return false;
-    const secret = this.config.get<string>(`SHOPIFY_SECRET_${companyId}`);
+    const cred = await this.creds.getDecrypted(companyId, 'shopify');
+    const secret =
+      cred?.secrets?.webhookSecret || this.config.get<string>(`SHOPIFY_SECRET_${companyId}`);
     if (!secret) {
-      this.logger.warn(`SHOPIFY_SECRET_${companyId} not configured — skipping sig check`);
-      return true; // Allow through; ops team must configure secret
+      // FAIL CLOSED: no configured secret means we cannot trust the payload.
+      this.logger.warn(`No Shopify webhook secret for company ${companyId} — rejecting webhook.`);
+      return false;
     }
     const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    return this.safeEqual(expected, signature);
   }
 
-  verifyWooCommerceSignature(rawBody: Buffer, signature: string, companyId: string): boolean {
+  async verifyWooCommerceSignature(rawBody: Buffer, signature: string, companyId: string): Promise<boolean> {
     if (!signature) return false;
-    const secret = this.config.get<string>(`WC_SECRET_${companyId}`);
+    const cred = await this.creds.getDecrypted(companyId, 'woocommerce');
+    const secret =
+      cred?.secrets?.webhookSecret || this.config.get<string>(`WC_SECRET_${companyId}`);
     if (!secret) {
-      this.logger.warn(`WC_SECRET_${companyId} not configured — skipping sig check`);
-      return true;
+      this.logger.warn(`No WooCommerce webhook secret for company ${companyId} — rejecting webhook.`);
+      return false;
     }
     const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    return this.safeEqual(expected, signature);
+  }
+
+  /** Constant-time compare that won't throw on length mismatch. */
+  private safeEqual(a: string, b: string): boolean {
+    const ba = Buffer.from(a);
+    const bb = Buffer.from(b);
+    if (ba.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ba, bb);
+  }
+
+  /** True only if the company's plan currently includes e-commerce connectors. */
+  private async ecommerceEnabled(companyId: string): Promise<boolean> {
+    const ok = await this.billing.hasFeature(companyId, 'ecommerce');
+    if (!ok) {
+      this.logger.warn(`E-commerce order ignored — company ${companyId} has no e-commerce entitlement.`);
+    }
+    return ok;
   }
 
   // ── Shopify order → waybill ───────────────────────────────────────────────
 
   async processShopifyOrder(order: any, companyId: string) {
+    if (!(await this.ecommerceEnabled(companyId))) return { status: 'feature_disabled' };
+
     const shipping = order.shipping_address ?? order.billing_address ?? {};
     const customer = order.customer ?? {};
 
@@ -124,6 +156,8 @@ export class EcommerceService {
   // ── WooCommerce order → waybill ───────────────────────────────────────────
 
   async processWooCommerceOrder(order: any, companyId: string) {
+    if (!(await this.ecommerceEnabled(companyId))) return { status: 'feature_disabled' };
+
     const shipping = order.shipping ?? {};
     const billing  = order.billing  ?? {};
 
@@ -192,8 +226,12 @@ export class EcommerceService {
     if (!match) return;
     const orderId = match[1];
 
-    const domain       = this.config.get<string>(`SHOPIFY_DOMAIN_${waybill.companyId}`);
-    const accessToken  = this.config.get<string>(`SHOPIFY_ACCESS_TOKEN_${waybill.companyId}`);
+    // Tenant self-service credential first, then legacy env fallback.
+    const cred = await this.creds.getDecrypted(waybill.companyId, 'shopify');
+    const domain =
+      cred?.config?.shopDomain || this.config.get<string>(`SHOPIFY_DOMAIN_${waybill.companyId}`);
+    const accessToken =
+      cred?.secrets?.accessToken || this.config.get<string>(`SHOPIFY_ACCESS_TOKEN_${waybill.companyId}`);
     if (!domain || !accessToken) return; // not configured — skip silently
 
     const apiVersion = '2024-01';

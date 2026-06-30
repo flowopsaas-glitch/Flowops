@@ -215,8 +215,37 @@ model Company {
   ssoConnection         SsoConnection?
   supportTickets        SupportTicket[]
   courierOrders         CourierOrder[]
+  integrationCredentials IntegrationCredential[]
 
   @@map("companies")
+}
+
+// ─── Integration credentials (per-tenant, encrypted) ────────────────────────
+// Tenant-owned connection secrets for external providers (WhatsApp Business API,
+// Shopify, WooCommerce). Secret material is AES-256-GCM encrypted at rest and
+// NEVER returned to any client. `externalRef` is the inbound-routing key
+// (WhatsApp phone_number_id, Shopify shop domain, WooCommerce source URL) so a
+// webhook can be matched to its owning company with a single indexed lookup.
+model IntegrationCredential {
+  id               String    @id @default(cuid())
+  companyId        String
+  provider         String    // 'whatsapp' | 'shopify' | 'woocommerce'
+  config           Json?     // non-secret fields (phoneNumberId, shopDomain, ...)
+  externalRef      String?   // inbound-routing key (lowercased/normalised)
+  secretCiphertext String?
+  secretIv         String?
+  secretAuthTag    String?
+  status           String    @default("UNVERIFIED")
+  lastVerifiedAt   DateTime?
+  createdBy        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider])
+  @@index([provider, externalRef])
+  @@map("integration_credentials")
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────
