@@ -49,6 +49,16 @@ export class AuthService {
     const passwordOk = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
 
+    // Email must be verified before access is granted. Users created via SSO
+    // JIT-provisioning are marked verified at creation (identity asserted by IdP).
+    // Users created by the owner console are also pre-verified. Only self-
+    // registered users who haven't clicked their verification link are blocked.
+    if (!user.emailVerified) {
+      throw new UnauthorizedException(
+        'Please verify your email address before signing in. Check your inbox for the verification link, or request a new one.',
+      );
+    }
+
     // Single active session: this mints a fresh sid, revokes every other
     // device's refresh token, and records the login for audit.
     const tokens = await this.startSession(user, ctx);
