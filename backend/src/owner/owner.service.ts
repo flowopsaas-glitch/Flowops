@@ -96,6 +96,7 @@ export class OwnerService {
             phone: req.phone,
             role: 'ADMIN',
             companyId: tenantId,
+            emailVerified: true, // owner-approved accounts are pre-verified
           },
         });
         await this.prisma.approvalRequest.update({
@@ -708,6 +709,7 @@ export class OwnerService {
           passwordHash,
           role: 'ADMIN',
           companyId: tenantId,
+          emailVerified: true, // owner-created admins are pre-verified
         },
         select: { id: true, email: true, name: true },
       });
@@ -958,8 +960,18 @@ export class OwnerService {
   async approveRequest(requestId: string, actor?: OwnerActor) {
     const req = await this.prisma.approvalRequest.findUniqueOrThrow({ where: { id: requestId } });
     // Create company + user
+    // Use the dedicated passwordHash column set during registration.
+    // The legacy path that read from JSON.parse(req.notes) was always wrong —
+    // notes never contained a passwordHash; only the dedicated column does.
+    // Fall back to a forced-change password only for truly ancient requests
+    // that predate the column (i.e. passwordHash is genuinely null/undefined).
     let passwordHash: string;
-    try { passwordHash = JSON.parse(req.notes ?? '{}').passwordHash; } catch { passwordHash = await bcrypt.hash('ChangeMe123!', 12); }
+    if (req.passwordHash) {
+      passwordHash = req.passwordHash;
+    } else {
+      passwordHash = await bcrypt.hash('ChangeMe123!', 12);
+      this.logger.warn(`approveRequest: no passwordHash on request ${requestId} — tenant must reset password on first login.`);
+    }
 
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14-day trial
     const company = await this.prisma.company.create({
@@ -967,7 +979,7 @@ export class OwnerService {
     });
     try {
       await this.prisma.user.create({
-        data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id },
+        data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id, emailVerified: true },
       });
     } catch (e: any) {
       if (e?.code === 'P2002') {
