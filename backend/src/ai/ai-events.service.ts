@@ -30,26 +30,39 @@ export class AiEventsService {
 
   /**
    * CORE: Dual-Claw Event Creation
-   * Maps unverified payload maps to structured fields to ensure strict data validation type safety.
+   * Writes directly to the AiEvent schema columns: type, title, body, severity,
+   * sourceType, sourceId, metadata. The old `summary`, `payload`, and
+   * `emailHubItemId` keys do not exist on the schema — they were silently
+   * dropped or caused runtime errors. All callers now use `body` + `metadata`.
    */
   async create(data: any, initiator: 'CLAW_1' | 'CLAW_2' = 'CLAW_1') {
     this.logger.debug(`[${initiator}] Creating AI Event: ${data.title || 'Untitled'}`);
-    
-    // Explicit properties map safely to the actual Prisma generated Client payload schema
-    return (this.prisma.aiEvent as any).create({ 
+
+    // Normalise: accept both `body` and legacy `summary` from older callers.
+    const body = data.body || data.summary || '';
+    // Merge any extra payload fields into metadata so nothing is lost.
+    const metadata = {
+      ...(data.metadata && typeof data.metadata === 'object' ? data.metadata : {}),
+      ...(data.payload  && typeof data.payload  === 'object' ? data.payload  : {}),
+      // Preserve emailHubItem reference in metadata if provided.
+      ...(data.emailHubItemId ? { emailHubItemId: data.emailHubItemId } : {}),
+      initiator,
+      systemVersion: '2.0-dual-claw',
+    };
+
+    return this.prisma.aiEvent.create({
       data: {
-        companyId: data.companyId,
-        type: data.type || 'LOGISTICS_EVENT',
-        title: data.title || 'Untitled Operational Event',
-        summary: data.summary || '',
-        severity: data.severity || 'MEDIUM',
-        emailHubItemId: data.emailHubItemId || null,
-        payload: {
-          ...(data.payload || {}),
-          initiator,
-          systemVersion: '2.0-dual-claw',
-        }
-      }
+        companyId: String(data.companyId),
+        type:      data.type     || 'LOGISTICS_EVENT',
+        title:     data.title    || 'Untitled Operational Event',
+        body,
+        severity:  data.severity || 'info',
+        sourceType: data.sourceType || null,
+        sourceId:   data.sourceId   || null,
+        resolved:   false,
+        dismissed:  false,
+        metadata:   metadata as any,
+      },
     });
   }
 
@@ -70,7 +83,7 @@ export class AiEventsService {
       companyId,
       type: 'COLLABORATIVE_REVIEW',
       title: `REVIEW REQ: ${originalEvent.title}`,
-      summary: `Claw 2 requested to audit logic for original event #${eventId}`,
+      body: `Claw 2 requested to audit logic for original event #${eventId}`,
       payload: { originalEventId: eventId, status: 'PENDING_AUDIT' },
       severity: 'HIGH',
     }, 'CLAW_2');
@@ -92,10 +105,43 @@ export class AiEventsService {
 
   /**
    * POD Compliance Scan (Claw 1 Primary Task)
+   * Checks each delivered waybill for the four required POD fields and returns
+   * a real compliance summary. No more hardcoded "SCAN_COMPLETED" stub.
    */
   async verifyCompliance(companyId: number) {
     this.logger.log(`[Claw 1] POD Compliance Scan for Company ${companyId}`);
-    return { status: 'success', actionTaken: 'SCAN_COMPLETED' };
+
+    const delivered = await this.prisma.waybill.findMany({
+      where: { companyId: String(companyId), status: 'DELIVERED' },
+      select: {
+        id: true, trackingNumber: true,
+        podSignatureUrl: true, podRecipient: true,
+        podImageUrl: true, podDeliveredAt: true,
+      },
+      take: 500,
+    });
+
+    let compliant = 0;
+    const issues: Array<{ trackingNumber: string; missing: string[] }> = [];
+
+    for (const w of delivered) {
+      const missing: string[] = [];
+      if (!w.podSignatureUrl) missing.push('signature');
+      if (!w.podRecipient)    missing.push('recipient name');
+      if (!w.podDeliveredAt)  missing.push('delivery timestamp');
+      if (missing.length === 0) { compliant++; } else { issues.push({ trackingNumber: w.trackingNumber, missing }); }
+    }
+
+    const total = delivered.length;
+    return {
+      status: issues.length === 0 ? 'compliant' : 'issues_found',
+      actionTaken: 'SCAN_COMPLETED',
+      total,
+      compliant,
+      nonCompliant: issues.length,
+      complianceRatePct: total > 0 ? Math.round((compliant / total) * 1000) / 10 : 100,
+      issues: issues.slice(0, 20),
+    };
   }
 
   /**
@@ -117,7 +163,7 @@ export class AiEventsService {
       companyId: dto.companyId,
       type: dto.type,
       title: `LOGIC_FIX: ${dto.type}`,
-      summary: dto.suggestedResolution,
+      body: dto.suggestedResolution,
       payload: { 
         error: dto.errorContext, 
         fix: dto.newValue,
@@ -164,7 +210,7 @@ export class AiEventsService {
     const extractionModel = this.config.get('EXTRACTION_MODEL', 'gpt-4-turbo');
     return this.create({
       title: `Extraction: ${item.subject || 'No Subject'}`,
-      summary: `Extracted via ${extractionModel}`,
+      body: `Extracted via ${extractionModel}`,
       type: 'LOGISTICS_EXTRACTION',
       payload: { 
         automated: this.aggressionLevel === 'HIGH',
@@ -182,24 +228,27 @@ export class AiEventsService {
   }
 
   async resolve(id: number, companyId: number, resolutionNote: string) {
-    // Fetch original event payload structure dynamically before writing update execution calls
-    const currentEvent = await (this.prisma.aiEvent as any).findUnique({
-      where: { id, companyId }
+    // Fetch the current metadata so we can merge without losing existing fields.
+    const current = await this.prisma.aiEvent.findFirst({
+      where: { id: String(id), companyId: String(companyId) },
+      select: { metadata: true },
     });
 
-    const currentPayload = currentEvent?.payload && typeof currentEvent.payload === 'object' 
-      ? currentEvent.payload 
-      : {};
+    const currentMeta =
+      current?.metadata && typeof current.metadata === 'object'
+        ? (current.metadata as Record<string, any>)
+        : {};
 
-    return (this.prisma.aiEvent as any).update({
-      where: { id, companyId },
-      data: { 
-        payload: { 
-          ...currentPayload,
-          resolutionNote, 
-          resolvedAt: new Date().toISOString(),
-          resolvedBy: 'DUAL_CLAW_SYSTEM'
-        } 
+    return this.prisma.aiEvent.update({
+      where: { id: String(id) },
+      data: {
+        resolved: true,
+        resolvedAt: new Date(),
+        metadata: {
+          ...currentMeta,
+          resolutionNote,
+          resolvedBy: 'DUAL_CLAW_SYSTEM',
+        } as any,
       },
     });
   }

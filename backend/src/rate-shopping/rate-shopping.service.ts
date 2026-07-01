@@ -219,7 +219,11 @@ async function fetchDHLRate(
     const products: any[] = data?.products ?? [];
 
     return products.slice(0, 2).map((p: any) => {
-      const total = p?.totalPrice?.[0]?.price ?? p?.pricingDate ? 0 : 0;
+      // Bug fix: the old expression `p?.totalPrice?.[0]?.price ?? p?.pricingDate ? 0 : 0`
+      // had operator-precedence issues — the ternary consumed the entire nullish-coalesce
+      // expression, so `total` was always 0 and every DHL live rate was discarded.
+      // Correct: extract the price directly with proper grouping.
+      const total: number = p?.totalPrice?.[0]?.price ?? 0;
       if (!total) return null;
       const net = Math.round(total / (1 + VAT_PCT) * 100) / 100;
       const vat = Math.round((total - net) * 100) / 100;
