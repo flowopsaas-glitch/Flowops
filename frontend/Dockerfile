@@ -40,12 +40,13 @@ WORKDIR /app
 
 # Copy only the lockfile + manifest first so this layer caches across source
 # edits. The lockfile is tracked in this repo (root .gitignore was patched in
-# PR #2 to stop ignoring it).
-COPY package.json package-lock.json ./
+# PR #2 to stop ignoring it). .npmrc carries legacy-peer-deps (eslint-plugin-jsx-a11y's
+# peer range lags ESLint 10) so the install resolves the same as locally.
+COPY package.json package-lock.json .npmrc ./
 
 # BuildKit cache mount → repeated builds reuse npm's content-addressable cache.
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund
+    npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─────────────────────────────────────────────────────────────────────────
 # 2. Build — compiles the SPA. Build-time env vars get baked into the bundle.
