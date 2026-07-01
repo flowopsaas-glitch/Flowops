@@ -11,6 +11,7 @@ import OwnerRoute from "./components/owner/OwnerRoute";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import RequirePermission from "./components/auth/RequirePermission";
 import RequireFeature from "./components/auth/RequireFeature";
+import RootRoute from "./components/auth/RootRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import PageLoader from "./components/PageLoader";
 
@@ -36,10 +37,8 @@ const BillingBatches = lazy(() => import("./pages/BillingBatches"));
 const FinanceDashboard = lazy(() => import("./pages/FinanceDashboard"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const Invoices = lazy(() => import("./pages/Invoices"));
-// Client Portal Links is hidden until its booking-portal backend exists.
-// The page calls /booking-portal/companies/:id/links, which has no backend
-// controller yet — re-enable this import + route once those endpoints ship.
-// const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
+// Stub page — renders "coming soon" until the booking-portal backend ships.
+const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
 const CreditControl     = lazy(() => import("./pages/CreditControl"));
 const CODReconciliation = lazy(() => import("./pages/billing/CODReconciliation"));
 const DriverWalletPage  = lazy(() => import("./pages/billing/DriverWalletPage"));
@@ -102,6 +101,7 @@ const RatingPage   = lazy(() => import("./pages/RatingPage"));
 const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
 const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
 const PricingPage   = lazy(() => import("./pages/marketing/PricingPage"));
+const NotFoundPage  = lazy(() => import("./pages/NotFoundPage"));
 
 export default function App() {
   useEffect(() => {
@@ -159,6 +159,7 @@ export default function App() {
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
+          <Route path="/" element={<RootRoute />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -175,8 +176,8 @@ export default function App() {
           {/* Marketing pages — public, no auth required */}
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/pricing" element={<PricingPage />} />
-
-          {/* Driver portal — redirect to the dedicated standalone PWA at driver.flowop.work */}
+          {/* Marketing root — shown to visitors going to /home explicitly */}
+          <Route path="/home" element={<LandingPage />} />
           <Route
             path="/driver/portal"
             element={
@@ -263,8 +264,8 @@ export default function App() {
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
               <Route path="/accounting" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Accounting"><Accounting /></RequireFeature></RequirePermission>} />
               <Route path="/disbursements" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Disbursements"><Disbursements /></RequireFeature></RequirePermission>} />
-              {/* Hidden until the booking-portal backend exists (no /booking-portal endpoints yet). */}
-              {/* <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} /> */}
+              {/* Client Portal Links — stub page shown until booking-portal backend ships */}
+              <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
               <Route path="/credit-control" element={<RequirePermission perm="creditControl"><CreditControl /></RequirePermission>} />
               <Route path="/cod" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><CODReconciliation /></RequireFeature></RequirePermission>} />
               <Route path="/cod/wallets/:driverId" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><DriverWalletPage /></RequireFeature></RequirePermission>} />
@@ -291,9 +292,7 @@ export default function App() {
             </Route>
           </Route>
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          {/* Public marketing root — shown to unauthenticated visitors going to / */}
-          <Route path="/home" element={<LandingPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>
     </ErrorBoundary>

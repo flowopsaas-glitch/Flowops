@@ -6,7 +6,7 @@ import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
 
 type DraftAlert = {
-  type: 'churn' | 'sla_spike' | 'payment_failure';
+  type: 'churn' | 'sla_spike' | 'payment_failure' | 'integration_token_expiry';
   severity: 'info' | 'warning' | 'critical';
   title: string;
   message: string;
@@ -48,6 +48,7 @@ export class AlertingService {
       ...(await this.slaSpikeRule()),
       ...(await this.paymentFailureRule()),
       ...(await this.trialExpiryWarningRule()),
+      ...(await this.integrationTokenExpiryRule()),
     ];
 
     let created = 0;
@@ -367,5 +368,100 @@ export class AlertingService {
       dedupeKey: `payment_failure:${p.id}`,
       metadata: { amount: p.amount, currency: p.currency, reference: p.reference },
     }));
+  }
+
+  /**
+   * Integration token health check.
+   *
+   * WhatsApp Business Cloud API tokens don't expire on a fixed schedule, but
+   * they can be revoked (app secret rotation, Meta policy enforcement) or go
+   * stale (company switches number, Business Manager changes). We detect a
+   * stale integration by checking:
+   *
+   *   1. Credentials exist (connected) but `lastVerifiedAt` is null (never
+   *      tested) OR hasn't been updated in > 7 days → warn with "test your
+   *      integration" prompt.
+   *
+   *   2. Status is explicitly 'ERROR' (set by WhatsApp/Shopify service after
+   *      a failed outbound call) → alert as critical.
+   *
+   * The WhatsApp service and ecommerce service should call
+   * `IntegrationCredentialService.setStatus(companyId, provider, 'ERROR')`
+   * when they receive an auth error from the provider. This rule then surfaces
+   * that to the owner within 6 hours.
+   */
+  private async integrationTokenExpiryRule(): Promise<DraftAlert[]> {
+    const alerts: DraftAlert[] = [];
+    const today = new Date().toISOString().slice(0, 10);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+
+    // Find all integration credentials that are either in ERROR state or
+    // haven't been verified in the last 7 days (or never verified).
+    const stale = await (this.prisma as any).integrationCredential.findMany({
+      where: {
+        OR: [
+          { status: 'ERROR' },
+          { lastVerifiedAt: null },
+          { lastVerifiedAt: { lt: sevenDaysAgo } },
+        ],
+      },
+      include: {
+        company: { select: { id: true, name: true, isActive: true } },
+      },
+    });
+
+    for (const cred of stale) {
+      if (!cred.company?.isActive) continue; // skip suspended tenants
+
+      const isError = cred.status === 'ERROR';
+      const neverVerified = !cred.lastVerifiedAt;
+      const providerLabel = String(cred.provider).charAt(0).toUpperCase() + String(cred.provider).slice(1);
+      const companyName = cred.company?.name ?? cred.companyId;
+
+      if (isError) {
+        alerts.push({
+          type: 'integration_token_expiry',
+          severity: 'critical',
+          title: `🔴 ${providerLabel} integration broken: ${companyName}`,
+          message:
+            `The ${providerLabel} integration for "${companyName}" is in ERROR state. ` +
+            `Outbound messages/webhooks are failing. The tenant should reconnect their ` +
+            `${providerLabel} credentials under Settings → Integrations.`,
+          tenantId: cred.companyId,
+          tenantName: companyName,
+          dedupeKey: `integration_error:${cred.companyId}:${cred.provider}:${today}`,
+          metadata: {
+            provider: cred.provider,
+            status: cred.status,
+            lastVerifiedAt: cred.lastVerifiedAt,
+          },
+        });
+      } else {
+        // Stale / never verified — advisory warning, not critical
+        alerts.push({
+          type: 'integration_token_expiry',
+          severity: 'warning',
+          title: `⚠️ ${providerLabel} integration unverified: ${companyName}`,
+          message:
+            `The ${providerLabel} integration for "${companyName}" has not been verified ` +
+            `${neverVerified ? 'since it was connected' : `in ${Math.floor((Date.now() - new Date(cred.lastVerifiedAt).getTime()) / 86_400_000)} days`}. ` +
+            `The tenant should test the connection under Settings → Integrations to confirm it's still active.`,
+          tenantId: cred.companyId,
+          tenantName: companyName,
+          dedupeKey: `integration_stale:${cred.companyId}:${cred.provider}:${today}`,
+          metadata: {
+            provider: cred.provider,
+            status: cred.status,
+            lastVerifiedAt: cred.lastVerifiedAt ?? null,
+          },
+        });
+      }
+    }
+
+    if (alerts.length > 0) {
+      this.logger.warn(`Integration token check: ${alerts.length} stale/broken credential(s) found`);
+    }
+
+    return alerts;
   }
 }

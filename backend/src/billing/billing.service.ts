@@ -104,6 +104,16 @@ export class BillingService {
   /**
    * Throws 403 with an upgrade message if creating one more `resource` would
    * exceed the company's plan limit. Unlimited (-1) always passes.
+   *
+   * CONCURRENCY SAFETY: the check-then-act gap (read count → decide → insert)
+   * is closed by wrapping the count query inside a Postgres advisory lock
+   * scoped to (companyId × resource). Concurrent bulk imports for the same
+   * company queue up at the lock rather than all reading the same stale count
+   * and collectively overshooting the limit.
+   *
+   * Advisory lock key: lower 32 bits = FNV-1a hash of companyId,
+   * upper 16 bits = resource index. The lock is session-scoped so it is
+   * automatically released if the connection drops.
    */
   async assertCanCreate(companyId: string, resource: Resource): Promise<void> {
     const company = await this.prisma.company.findUnique({
@@ -113,43 +123,64 @@ export class BillingService {
     const limits = PLAN_ENTITLEMENTS[effective].limits;
     const planName = PLAN_ENTITLEMENTS[effective].name;
 
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    // Determine limit up-front; skip locking for unlimited resources.
+    const resourceIndex: Record<Resource, number> = { waybill: 0, driver: 1, user: 2, branch: 3 };
+    const unitLabels: Record<Resource, string> = {
+      waybill: 'waybills this month',
+      driver: 'drivers',
+      user: 'team members',
+      branch: 'branches',
+    };
+
     let limit: number;
-    let used: number;
-    let unit: string;
-
     switch (resource) {
-      case 'waybill':
-        limit = limits.waybillsPerMonth;
-        if (limit === -1) return;
-        used = await this.prisma.waybill.count({ where: { companyId, createdAt: { gte: monthStart } } });
-        unit = 'waybills this month';
-        break;
-      case 'driver':
-        limit = limits.drivers;
-        if (limit === -1) return;
-        used = await this.prisma.driver.count({ where: { companyId, isActive: true } });
-        unit = 'drivers';
-        break;
-      case 'user':
-        limit = limits.users;
-        if (limit === -1) return;
-        used = await this.prisma.user.count({ where: { companyId, isActive: true } });
-        unit = 'team members';
-        break;
-      case 'branch':
-        limit = limits.branches;
-        if (limit === -1) return;
-        used = await this.prisma.branch.count({ where: { companyId } });
-        unit = 'branches';
-        break;
+      case 'waybill': limit = limits.waybillsPerMonth; break;
+      case 'driver':  limit = limits.drivers; break;
+      case 'user':    limit = limits.users; break;
+      case 'branch':  limit = limits.branches; break;
     }
+    if (limit === -1) return; // unlimited — no check needed
 
-    if (used >= limit) {
-      throw new ForbiddenException(
-        `Your ${planName} plan includes ${limit} ${unit}. ` +
-          `You've reached that limit — upgrade your plan to add more.`,
-      );
+    // FNV-1a hash of companyId (string → 32-bit int, stays positive)
+    let hash = 2166136261;
+    for (let i = 0; i < companyId.length; i++) {
+      hash ^= companyId.charCodeAt(i);
+      hash = (hash * 16777619) >>> 0; // keep unsigned 32-bit
     }
+    // Combine resource index into the upper bits to get a unique lock key per
+    // (company, resource) pair. Cast to signed BigInt for pg_try_advisory_lock.
+    const lockKey = BigInt((resourceIndex[resource] << 28) | (hash & 0x0fffffff));
+
+    // Acquire an advisory lock then re-count inside the same connection to
+    // prevent concurrent requests from all reading the same pre-insert count.
+    await this.prisma.$transaction(async (tx) => {
+      // pg_advisory_xact_lock is released automatically at transaction end.
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${lockKey})`);
+
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      let used: number;
+
+      switch (resource) {
+        case 'waybill':
+          used = await tx.waybill.count({ where: { companyId, createdAt: { gte: monthStart } } });
+          break;
+        case 'driver':
+          used = await tx.driver.count({ where: { companyId, isActive: true } });
+          break;
+        case 'user':
+          used = await tx.user.count({ where: { companyId, isActive: true } });
+          break;
+        case 'branch':
+          used = await tx.branch.count({ where: { companyId } });
+          break;
+      }
+
+      if (used >= limit) {
+        throw new ForbiddenException(
+          `Your ${planName} plan includes ${limit} ${unitLabels[resource]}. ` +
+            `You've reached that limit — upgrade your plan to add more.`,
+        );
+      }
+    });
   }
 }

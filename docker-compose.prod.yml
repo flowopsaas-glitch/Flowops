@@ -29,9 +29,6 @@ services:
     ports: []
     environment:
       NODE_ENV: production
-      # CORS_ORIGINS / APP_URL / API_PUBLIC_URL are inherited from the base
-      # compose, which reads them from .env — so a new instance on a different
-      # domain just sets them in .env (no edit to this file needed).
 
   postgres:
     restart: always
@@ -41,3 +38,47 @@ services:
   redis:
     restart: always
     ports: []
+
+  # ── Automated database backup ──────────────────────────────────────────
+  # Runs pg_dump every 6 hours, keeps 28 files (7 days × 4/day) locally in
+  # the `postgres-backups` named volume. For off-site durability, mount that
+  # volume to an rclone/S3 destination or rsync it to a remote server.
+  #
+  # To list backups:
+  #   docker compose exec postgres-backup ls -lh /backups
+  #
+  # To restore from a backup:
+  #   docker compose exec -T postgres \
+  #     sh -c 'gunzip -c /backups/<file>.sql.gz | psql -U $POSTGRES_USER $POSTGRES_DB'
+  postgres-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [flowops-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - postgres-backups:/backups
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-flowops}
+      POSTGRES_DB: ${POSTGRES_DB:-flowops}
+    # Dump every 6 hours; retain last 28 files (7 days × 4/day).
+    command: >
+      sh -c '
+        set -e
+        echo "Backup service started. Dumping every 6h, retaining 28 files."
+        while true; do
+          FILE="/backups/flowops_$$(date +%Y%m%d_%H%M%S).sql.gz"
+          echo "Dumping to $$FILE ..."
+          pg_dump -h postgres -U $$POSTGRES_USER $$POSTGRES_DB | gzip > "$$FILE"
+          echo "Dump complete: $$(du -sh $$FILE | cut -f1)"
+          ls -t /backups/*.sql.gz 2>/dev/null | tail -n +29 | xargs -r rm -v
+          echo "Sleeping 6h..."
+          sleep 21600
+        done
+      '
+
+volumes:
+  postgres-backups:
+    driver: local

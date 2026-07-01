@@ -16,7 +16,7 @@ export class DriverPortalController {
 
   // ── Auth (public) ────────────────────────────────────────────────────────────
 
-  /** POST /driver-portal/login — phone + 4-digit PIN. Returns { access_token, driver }. */
+  /** POST /driver-portal/login — phone + 4-digit PIN. Returns { access_token, refresh_token, driver }. */
   @Public()
   @Post('login')
   async login(@Body() body: { phone: string; pin: string }, @Req() req: any) {
@@ -25,6 +25,20 @@ export class DriverPortalController {
       ip: req?.ip,
       userAgent: req?.headers?.['user-agent'],
     });
+  }
+
+  /**
+   * POST /driver-portal/refresh — silent token rotation.
+   * Pass the refresh_token received at login to get a new access_token + refresh_token pair.
+   * The old refresh token is consumed (rotation). Call this when the driver app
+   * receives a 401 on any request — the driver stays logged in mid-shift without
+   * re-entering their PIN.
+   */
+  @Public()
+  @Post('refresh')
+  async refresh(@Body() body: { refreshToken: string }) {
+    if (!body.refreshToken) throw new UnauthorizedException('refreshToken is required');
+    return this.auth.driverRefresh(body.refreshToken);
   }
 
   // ── Driver-facing (token-authenticated; single active session enforced) ───────

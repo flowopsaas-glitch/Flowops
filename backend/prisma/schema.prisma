@@ -355,6 +355,12 @@ model ApprovalRequest {
   company  String
   notes    String?
 
+  // Dedicated field for the bcrypt password hash — never stored in notes/JSON.
+  // Set during registration; consumed and cleared after the admin account is
+  // created on approval. Kept separate so it is never exposed in approval
+  // request listings.
+  passwordHash String?
+
   // Linked once approved
   companyId     String?  @unique
   tenantCompany Company? @relation(fields: [companyId], references: [id])
@@ -455,14 +461,28 @@ model Driver {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  collections Collection[]
-  shipments   Shipment[]
-  manifests   Manifest[]
-  wallet      DriverWallet?
-  services    VehicleService[]
-  returns     Return[]
+  collections     Collection[]
+  shipments       Shipment[]
+  manifests       Manifest[]
+  wallet          DriverWallet?
+  services        VehicleService[]
+  returns         Return[]
+  refreshTokens   DriverRefreshToken[]
 
   @@map("drivers")
+}
+
+// Driver refresh tokens — enables silent token rotation (4h access / 7d refresh)
+// so drivers don't get kicked out mid-shift when their short-lived access token expires.
+model DriverRefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("driver_refresh_tokens")
 }
 
 // ─── Branches ─────────────────────────────────────────────────────────────

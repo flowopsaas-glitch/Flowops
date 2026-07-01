@@ -24,6 +24,29 @@ async function bootstrap() {
   app.set('trust proxy', 1);
 
   const config = app.get(ConfigService);
+
+  // ── Security: validate secrets at startup ────────────────────────────
+  const jwtSecret = config.get<string>('JWT_SECRET', '');
+  const jwtRefreshSecret = config.get<string>('JWT_REFRESH_SECRET', '');
+
+  if (!jwtSecret) {
+    Logger.error('JWT_SECRET is not set — refusing to start', 'Bootstrap');
+    process.exit(1);
+  }
+  if (!jwtRefreshSecret) {
+    Logger.error('JWT_REFRESH_SECRET is not set — refusing to start', 'Bootstrap');
+    process.exit(1);
+  }
+  if (jwtSecret === jwtRefreshSecret) {
+    Logger.error(
+      'JWT_SECRET and JWT_REFRESH_SECRET must be different values. ' +
+      'A shared secret means a stolen access token can also forge refresh tokens. ' +
+      'Generate a new secret with: openssl rand -hex 32',
+      'Bootstrap',
+    );
+    process.exit(1);
+  }
+
   const port = config.get<number>('PORT', 3000);
   const nodeEnv = config.get<string>('NODE_ENV', 'development');
   const corsOrigins = config

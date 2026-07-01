@@ -115,7 +115,10 @@ services:
 
       # ── Auth ──────────────────────────────────────────────────────────
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-${JWT_SECRET}}
+      # JWT_REFRESH_SECRET MUST be different from JWT_SECRET.
+      # A shared secret means a leaked access token also compromises refresh tokens.
+      # Generate with: openssl rand -hex 32
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env (must differ from JWT_SECRET)}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
 

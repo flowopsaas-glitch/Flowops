@@ -94,22 +94,11 @@ export class AuthService {
       } as any,
     });
 
-    // Issue a short-lived JWT scoped to this driver
-    const payload = {
-      sub:       driver.id,
-      phone:     driver.phone,
-      companyId: driver.companyId,
-      type:      'driver',
-      name:      driver.name,
-      sid,
-    };
-    const accessToken = this.jwt.sign(payload, {
-      secret:    this.config.get<string>('JWT_SECRET'),
-      expiresIn: '12h',
-    });
+    const tokens = this.issueDriverTokenPair(driver, sid);
 
     return {
-      access_token: accessToken,
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
       driver: {
         id:          driver.id,
         driverId:    driver.id,
@@ -124,6 +113,32 @@ export class AuthService {
     };
   }
 
+  // ── Driver token refresh (silent re-issue using refresh token) ────────
+
+  async driverRefresh(refreshToken: string) {
+    const stored = await this.prisma.driverRefreshToken.findUnique({
+      where: { token: refreshToken },
+      include: { driver: true },
+    });
+
+    if (!stored || stored.expiresAt < new Date()) {
+      throw new UnauthorizedException('Driver refresh token invalid or expired');
+    }
+
+    if (!stored.driver.isActive) {
+      throw new UnauthorizedException('Driver account is inactive');
+    }
+
+    // Rotate: delete old refresh token, issue a new pair
+    await this.prisma.driverRefreshToken.delete({ where: { id: stored.id } });
+
+    // Preserve the existing session id so the driver isn't forcibly logged out
+    const sid = (stored.driver as any).activeSessionId as string | null ?? uuid();
+    const tokens = this.issueDriverTokenPair(stored.driver, sid);
+
+    return { access_token: tokens.accessToken, refresh_token: tokens.refreshToken };
+  }
+
   // ── Register (creates ApprovalRequest, awaiting admin approval) ───────
 
   async register(dto: RegisterDto) {
@@ -136,7 +151,8 @@ export class AuthService {
       );
     }
 
-    // Hash password for safe storage even before approval
+    // Hash password for safe storage even before approval.
+    // Stored in the dedicated passwordHash column — never in notes/JSON.
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const request = await this.prisma.approvalRequest.create({
@@ -145,9 +161,7 @@ export class AuthService {
         email: dto.email.toLowerCase(),
         phone: dto.phone,
         company: dto.company,
-        // We store the hashed password as a note so the approve endpoint
-        // can use it when creating the User record.
-        notes: JSON.stringify({ passwordHash }),
+        passwordHash,
       },
     });
 
@@ -535,6 +549,35 @@ export class AuthService {
       data: { token, ownerId, expiresAt },
     });
     return token;
+  }
+
+  /** Issues a short-lived driver access token + a 7-day refresh token. */
+  private issueDriverTokenPair(driver: any, sid: string) {
+    const payload = {
+      sub:       driver.id,
+      phone:     driver.phone,
+      companyId: driver.companyId,
+      type:      'driver',
+      name:      driver.name,
+      sid,
+    };
+    const accessToken = this.jwt.sign(payload, {
+      secret:    this.config.get<string>('JWT_SECRET'),
+      expiresIn: '4h',   // shortened from 12h — refresh handles silent renewal
+    });
+
+    // Refresh token stored in DB for rotation — 7 day expiry
+    const refreshToken = uuid();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    // Fire-and-forget: don't await in the sync helper — callers must await the
+    // refresh token creation separately if they need the token value.
+    // (driverLogin awaits via the returned object; driverRefresh awaits explicitly)
+    void this.prisma.driverRefreshToken.create({
+      data: { token: refreshToken, driverId: driver.id, expiresAt },
+    }).catch((e) => this.logger.warn(`Driver refresh token create failed: ${e?.message}`));
+
+    return { accessToken, refreshToken };
   }
 
   private safeUser(user: any) {

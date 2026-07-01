@@ -80,10 +80,12 @@ export class OwnerService {
       const req = await this.prisma.approvalRequest.findFirst({ where: { companyId: tenantId } });
       if (req) {
         let passwordHash: string;
-        try {
-          const parsed = JSON.parse(req.notes ?? '{}');
-          passwordHash = parsed.passwordHash;
-        } catch {
+        // Use the dedicated passwordHash field (set during registration).
+        // Fall back to a forced-reset password if the field is absent (legacy
+        // requests created before the migration).
+        if (req.passwordHash) {
+          passwordHash = req.passwordHash;
+        } else {
           passwordHash = await bcrypt.hash('ChangeMe123!', 12);
         }
         await this.prisma.user.create({
