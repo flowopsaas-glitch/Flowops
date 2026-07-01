@@ -124,7 +124,25 @@ export class AiAutonomyService {
         if (!item.body) continue;
 
         const result = await this.discovery.extractLogisticsData(item.body);
-        
+
+        // Guard: reject the AI fallback error-object. The extractor returns a
+        // sentinel value when parsing fails — { referenceNumber: 'ERROR-PARSING', ... }.
+        // We must never write that to the database as a real waybill.
+        if (!result) continue;
+        if (result.referenceNumber === 'ERROR-PARSING') {
+          this.logger.warn(`EmailHubItem ${item.id}: extraction returned error sentinel — skipping waybill creation.`);
+          continue;
+        }
+        // All required fields must be present and non-placeholder before promotion.
+        const requiredFields: (keyof typeof result)[] = ['referenceNumber', 'pickupAddress', 'receiverCity'];
+        const hasPlaceholders = requiredFields.some(
+          (f) => !result[f] || result[f] === 'Unknown',
+        );
+        if (hasPlaceholders) {
+          this.logger.warn(`EmailHubItem ${item.id}: extraction result has missing/unknown fields — skipping promotion. Fields: ${JSON.stringify(result)}`);
+          continue;
+        }
+
         if (result) {
           // Automatically promote unstructured email payloads directly into verified system Waybills
           await this.prisma.waybill.create({ 

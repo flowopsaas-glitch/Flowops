@@ -46,10 +46,24 @@ export class ClawService {
   }
 
   private async generateGroqResponse(command: string, companyId: string): Promise<any> {
+    // Build real tenant context from live data so the AI gives accurate advice,
+    // not fabricated numbers that happen to be wrong for every single tenant.
+    let contextLine = 'Context: No live data available yet.';
+    try {
+      const [driverCount, collectionCount, waybillCount] = await Promise.all([
+        this.prisma.driver.count({ where: { companyId, isActive: true, status: { in: ['AVAILABLE', 'ON_ROUTE'] } } }),
+        this.prisma.collection.count({ where: { companyId, status: { notIn: ['CANCELLED', 'COLLECTED'] } } }),
+        this.prisma.waybill.count({ where: { companyId, status: { in: ['PENDING', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'] } } }),
+      ]);
+      contextLine = `Context: ${driverCount} active driver(s), ${collectionCount} open collection(s), ${waybillCount} in-flight waybill(s).`;
+    } catch (e: any) {
+      this.logger.warn(`Could not load live context for CLAW chat: ${e.message}`);
+    }
+
     const systemPrompt = `
       You are Gemini, the intellectual core of the FlowOps Claw. 
       You are an authentic, adaptive collaborator with a touch of wit.
-      Context: You manage 28 active drivers and 345 total collections.
+      ${contextLine}
       Guidelines:
       - Speak as a helpful peer, not a robot.
       - If asked "how are you," mention system uptime or data flow efficiency.
