@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { ScanLine, Package, Truck, CheckCircle2, AlertTriangle, Loader2, ArrowRight } from "lucide-react";
 import api from "../api/client";
-import BarcodeQrScanner from "../../components/BarcodeQrScanner";
+import BarcodeQrScanner from "../components/BarcodeQrScanner";
 
 interface WaybillEntry {
   waybill: {
