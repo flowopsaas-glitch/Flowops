@@ -57,6 +57,8 @@ import { ObservabilityModule } from './observability/observability.module';
 import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { SupportModule } from './support/support.module';
+import { SlaModule } from './sla/sla.module';
+import { EsgModule } from './esg/esg.module';
 import { CourierManagementModule } from './courier-management/courier-management.module';
 
 @Module({
@@ -121,6 +123,8 @@ import { CourierManagementModule } from './courier-management/courier-management
     SsoModule,
     ObservabilityModule,
     SupportModule,
+    SlaModule,
+    EsgModule,
     CourierManagementModule,
 
     // Domain modules

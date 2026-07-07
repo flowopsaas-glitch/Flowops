@@ -90,6 +90,8 @@ const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 const StatusPage = lazy(() => import('./pages/Status'));
 const TrackingPage = lazy(() => import('./pages/TrackingPage'));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
+const OnboardingWizard = lazy(() => import("./pages/OnboardingWizard"));
+const EsgDashboard = lazy(() => import("./pages/EsgDashboard"));
 const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
 const DriverHomePage   = lazy(() => import("./pages/driver/DriverHomePage"));
 const SignupPage = lazy(() => import("./pages/Signup"));
@@ -279,6 +281,8 @@ export default function App() {
               <Route path="/carriers" element={<RequirePermission perm="rateCards"><CarrierManagement /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
+              <Route path="/onboarding" element={<OnboardingWizard />} />
+              <Route path="/esg" element={<EsgDashboard />} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />
               <Route path="/settings/branding" element={<RequirePermission perm="settings"><BrandingSettings /></RequirePermission>} />
               <Route

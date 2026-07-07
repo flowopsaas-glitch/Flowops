@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
 export class NotificationsService {
@@ -13,6 +14,7 @@ export class NotificationsService {
     private email: EmailService,
     private config: ConfigService,
     private webhooks: WebhooksService,
+    private whatsapp: WhatsAppService,
   ) {}
 
   async findAll(userId: string, companyId: string, query?: any) {
@@ -179,6 +181,17 @@ export class NotificationsService {
           `,
         })
         .catch((err) => this.logger.warn(`Status email failed: ${err?.message ?? err}`));
+    }
+
+    // 3) Auto-send WhatsApp notification (when Business API is connected).
+    if (waybill.recipientPhone) {
+      const message = `Hi ${name}, your parcel ${waybill.trackingNumber} ${copy.line}. Track: ${trackUrl}`;
+      try {
+        await this.whatsapp.sendMessage(waybill.companyId, waybill.recipientPhone, message);
+      } catch (err: any) {
+        // WhatsApp send is best-effort — fails silently when not configured
+        this.logger.debug(`WhatsApp auto-notify skipped/failed: ${err?.message ?? err}`);
+      }
     }
   }
 

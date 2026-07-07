@@ -1159,6 +1159,7 @@ model RateCard {
   maxWeight  Float?
   basePrice  Float
   pricePerKg Float   @default(0)
+  currency   String  @default("ZAR")  // ISO 4217 (ZAR, USD, EUR, GBP, etc.)
   isActive   Boolean @default(true)
 
   companyId String
@@ -1177,6 +1178,7 @@ model Quote {
   clientName  String?   // optional — who the quote is for
   weight      Float
   price       Float
+  currency    String  @default("ZAR")  // ISO 4217
   breakdown   Json?
   accepted    Boolean   @default(false)
   expiresAt   DateTime?
@@ -2255,4 +2257,48 @@ model CourierOrder {
 
   @@index([companyId, status])
   @@map("courier_orders")
+}
+
+
+
+// ─── ESG / Carbon Reporting (fleet emissions) ────────────────────────────────
+// Tracks CO2 emissions per delivery period per company. Computed from total km
+// driven (via route optimizer data / shipment distances) × vehicle emission factors.
+// Powers the ESG dashboard and DHL subcontractor compliance reports.
+
+model CarbonReport {
+  id        String   @id @default(cuid())
+  companyId String
+  period    String   // YYYY-MM
+
+  // Distance metrics
+  totalKmDriven    Float   @default(0)
+  totalDeliveries  Int     @default(0)
+  avgKmPerDelivery Float?
+
+  // Emissions (kg CO2)
+  totalCo2Kg       Float   @default(0)  // total emissions this period
+  co2PerDelivery   Float?               // avg per delivery
+  co2PerKm         Float?               // emission factor used
+
+  // Fleet composition
+  petrolVehicles   Int     @default(0)
+  dieselVehicles   Int     @default(0)
+  electricVehicles Int     @default(0)
+  motorbikeCount   Int     @default(0)
+
+  // Offsets / reductions
+  offsetKg         Float   @default(0)
+  netEmissionsKg   Float   @default(0)  // total - offset
+
+  // Comparison
+  prevPeriodCo2Kg  Float?
+  changePercent    Float?  // vs previous period
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period])
+  @@index([companyId])
+  @@map("carbon_reports")
 }
