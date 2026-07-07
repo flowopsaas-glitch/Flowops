@@ -104,6 +104,7 @@ const RatingPage   = lazy(() => import("./pages/RatingPage"));
 const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
 const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
 const PricingPage   = lazy(() => import("./pages/marketing/PricingPage"));
+const SubcontractorPage = lazy(() => import("./pages/marketing/SubcontractorPage"));
 const NotFoundPage  = lazy(() => import("./pages/NotFoundPage"));
 
 export default function App() {
@@ -179,6 +180,9 @@ export default function App() {
           {/* Marketing pages — public, no auth required */}
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/last-mile" element={<SubcontractorPage />} />
+          <Route path="/subcontractors" element={<SubcontractorPage />} />
+          <Route path="/transport-operators" element={<SubcontractorPage />} />
           {/* Marketing root — shown to visitors going to /home explicitly */}
           <Route path="/home" element={<LandingPage />} />
           <Route
