@@ -13,6 +13,8 @@ type OwnerActor = { id?: string; email?: string } | null | undefined;
 
 @Injectable()
 export class OwnerService {
+  private readonly logger = new Logger(OwnerService.name);
+
   constructor(
     private prisma: PrismaService,
     private email: EmailService,
