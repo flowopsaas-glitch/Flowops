@@ -1159,6 +1159,7 @@ model RateCard {
   maxWeight  Float?
   basePrice  Float
   pricePerKg Float   @default(0)
+  currency   String  @default("ZAR")  // ISO 4217 (ZAR, USD, EUR, GBP, etc.)
   isActive   Boolean @default(true)
 
   companyId String
@@ -1177,6 +1178,7 @@ model Quote {
   clientName  String?   // optional — who the quote is for
   weight      Float
   price       Float
+  currency    String  @default("ZAR")  // ISO 4217
   breakdown   Json?
   accepted    Boolean   @default(false)
   expiresAt   DateTime?
@@ -2259,47 +2261,44 @@ model CourierOrder {
 
 
 
-// ─── Logistics Analytics (Enterprise — premium insights) ─────────────────────
-// Stores computed analytics snapshots per company per period. AI-generated
-// insights (Groq) are cached here so the frontend can display them without
-// repeated inference calls. Recalculated daily or on-demand.
+// ─── ESG / Carbon Reporting (fleet emissions) ────────────────────────────────
+// Tracks CO2 emissions per delivery period per company. Computed from total km
+// driven (via route optimizer data / shipment distances) × vehicle emission factors.
+// Powers the ESG dashboard and DHL subcontractor compliance reports.
 
-model LogisticsAnalytics {
+model CarbonReport {
   id        String   @id @default(cuid())
   companyId String
-  period    String   // YYYY-MM or YYYY-WW (month or ISO week)
+  period    String   // YYYY-MM
 
-  // ── Volume KPIs ───────────────────────────────────────────────────────
-  totalDeliveries    Int      @default(0)
-  deliveredOnTime    Int      @default(0)
-  failedDeliveries   Int      @default(0)
-  returnedParcels    Int      @default(0)
-  totalCollections   Int      @default(0)
+  // Distance metrics
+  totalKmDriven    Float   @default(0)
+  totalDeliveries  Int     @default(0)
+  avgKmPerDelivery Float?
 
-  // ── Performance KPIs ──────────────────────────────────────────────────
-  onTimePercentage   Float    @default(0) // 0–100
-  avgDeliveryMinutes Float?              // average time from dispatch → POD
-  slaBreaches        Int      @default(0)
-  customerRatingAvg  Float?              // 1–5 average from delivery ratings
+  // Emissions (kg CO2)
+  totalCo2Kg       Float   @default(0)  // total emissions this period
+  co2PerDelivery   Float?               // avg per delivery
+  co2PerKm         Float?               // emission factor used
 
-  // ── Financial KPIs ────────────────────────────────────────────────────
-  revenue            Float    @default(0) // total invoiced (ZAR)
-  costPerDelivery    Float?              // avg operational cost per parcel
-  codCollected       Float    @default(0) // total COD cash collected
+  // Fleet composition
+  petrolVehicles   Int     @default(0)
+  dieselVehicles   Int     @default(0)
+  electricVehicles Int     @default(0)
+  motorbikeCount   Int     @default(0)
 
-  // ── Fleet KPIs ────────────────────────────────────────────────────────
-  activeDrivers      Int      @default(0)
-  avgDriverUtilPct   Float?              // average driver utilisation %
-  topDriverId        String?             // best-performing driver this period
+  // Offsets / reductions
+  offsetKg         Float   @default(0)
+  netEmissionsKg   Float   @default(0)  // total - offset
 
-  // ── AI-generated insights (Groq) ──────────────────────────────────────
-  aiInsights         Json?    // structured AI narrative: { summary, trends[], recommendations[] }
-  aiGeneratedAt      DateTime?
+  // Comparison
+  prevPeriodCo2Kg  Float?
+  changePercent    Float?  // vs previous period
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([companyId, period])
   @@index([companyId])
-  @@map("logistics_analytics")
+  @@map("carbon_reports")
 }
