@@ -58,6 +58,7 @@ import { ReturnsModule } from './returns/returns.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { SupportModule } from './support/support.module';
 import { CourierManagementModule } from './courier-management/courier-management.module';
+import { CustomerPortalModule } from './customer-portal/customer-portal.module';
 
 @Module({
   imports: [
@@ -122,6 +123,7 @@ import { CourierManagementModule } from './courier-management/courier-management
     ObservabilityModule,
     SupportModule,
     CourierManagementModule,
+    CustomerPortalModule,
 
     // Domain modules
     AuthModule,
