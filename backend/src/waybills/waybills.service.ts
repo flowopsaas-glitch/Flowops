@@ -543,4 +543,141 @@ export class WaybillsService {
     const seq = String(count + 1).padStart(6, '0');
     return `FO${year}${seq}`;
   }
+
+  /**
+   * Bulk import waybills from a CSV file.
+   * Expected columns: senderName, senderPhone, senderAddress, recipientName,
+   * recipientPhone, recipientAddress, recipientEmail, weight, description,
+   * codAmount, totalAmount
+   */
+  async bulkImportCsv(companyId: string, file: Express.Multer.File) {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('No CSV file uploaded');
+    }
+
+    const content = file.buffer.toString('utf-8');
+    const lines = content.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) {
+      throw new BadRequestException('CSV must have a header row and at least one data row');
+    }
+
+    const headers = this.parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase().replace(/\s+/g, ''));
+    const results: Array<{
+      row: number;
+      status: 'created' | 'failed' | 'duplicate';
+      trackingNumber?: string;
+      error?: string;
+      recipientName?: string;
+    }> = [];
+
+    // Map common header variations
+    const colMap = this.buildColumnMap(headers);
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = this.parseCsvLine(lines[i]);
+      if (values.every((v) => !v.trim())) continue; // skip empty rows
+
+      try {
+        const dto = this.mapRowToWaybill(values, colMap);
+
+        // Validate required fields
+        if (!dto.senderName || !dto.senderPhone || !dto.senderAddress) {
+          results.push({ row: i + 1, status: 'failed', error: 'Missing sender details (name, phone, address)', recipientName: dto.recipientName });
+          continue;
+        }
+        if (!dto.recipientName || !dto.recipientPhone || !dto.recipientAddress) {
+          results.push({ row: i + 1, status: 'failed', error: 'Missing recipient details (name, phone, address)', recipientName: dto.recipientName });
+          continue;
+        }
+
+        // Check plan limits
+        await this.billing.assertCanCreate(companyId, 'waybill');
+
+        const trackingNumber = await this.generateTrackingNumber(companyId);
+        await this.prisma.waybill.create({
+          data: { ...dto, trackingNumber, companyId },
+        });
+
+        results.push({ row: i + 1, status: 'created', trackingNumber, recipientName: dto.recipientName });
+      } catch (err: any) {
+        const msg = err?.message || 'Unknown error';
+        if (msg.includes('Unique constraint') || msg.includes('already exists')) {
+          results.push({ row: i + 1, status: 'duplicate', error: 'Duplicate entry', recipientName: values[colMap.recipientname ?? 0] });
+        } else {
+          results.push({ row: i + 1, status: 'failed', error: msg, recipientName: values[colMap.recipientname ?? 0] });
+        }
+      }
+    }
+
+    return {
+      totalRows: lines.length - 1,
+      created: results.filter((r) => r.status === 'created').length,
+      failed: results.filter((r) => r.status === 'failed').length,
+      duplicates: results.filter((r) => r.status === 'duplicate').length,
+      results,
+    };
+  }
+
+  private parseCsvLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (const char of line) {
+      if (char === '"') { inQuotes = !inQuotes; continue; }
+      if (char === ',' && !inQuotes) { result.push(current.trim()); current = ''; continue; }
+      current += char;
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  private buildColumnMap(headers: string[]): Record<string, number> {
+    const map: Record<string, number> = {};
+    const aliases: Record<string, string[]> = {
+      sendername: ['sendername', 'sender', 'from', 'fromname', 'sender_name'],
+      senderphone: ['senderphone', 'sendertel', 'sender_phone', 'fromphone'],
+      senderaddress: ['senderaddress', 'sender_address', 'fromaddress', 'pickup', 'pickupaddress'],
+      recipientname: ['recipientname', 'recipient', 'to', 'toname', 'receiver', 'recipient_name'],
+      recipientphone: ['recipientphone', 'recipienttel', 'recipient_phone', 'tophone', 'receiverphone'],
+      recipientaddress: ['recipientaddress', 'recipient_address', 'toaddress', 'delivery', 'deliveryaddress', 'dropoff'],
+      recipientemail: ['recipientemail', 'recipient_email', 'toemail', 'email'],
+      weight: ['weight', 'kg', 'weightkg', 'mass'],
+      description: ['description', 'desc', 'contents', 'items', 'parcel'],
+      codamount: ['codamount', 'cod', 'cashondelivery', 'cod_amount', 'codvalue'],
+      totalamount: ['totalamount', 'total', 'amount', 'value', 'total_amount'],
+      dimensions: ['dimensions', 'dims', 'size'],
+    };
+
+    for (const [field, names] of Object.entries(aliases)) {
+      const idx = headers.findIndex((h) => names.includes(h));
+      if (idx !== -1) map[field] = idx;
+    }
+    return map;
+  }
+
+  private mapRowToWaybill(values: string[], colMap: Record<string, number>): any {
+    const get = (key: string) => {
+      const idx = colMap[key];
+      return idx !== undefined && idx < values.length ? values[idx] || undefined : undefined;
+    };
+    const num = (key: string) => {
+      const v = get(key);
+      return v ? parseFloat(v) || undefined : undefined;
+    };
+
+    return {
+      senderName: get('sendername') || '',
+      senderPhone: get('senderphone') || '',
+      senderAddress: get('senderaddress') || '',
+      recipientName: get('recipientname') || '',
+      recipientPhone: get('recipientphone') || '',
+      recipientAddress: get('recipientaddress') || '',
+      recipientEmail: get('recipientemail'),
+      weight: num('weight'),
+      description: get('description'),
+      codAmount: num('codamount'),
+      totalAmount: num('totalamount'),
+      dimensions: get('dimensions'),
+    };
+  }
 }

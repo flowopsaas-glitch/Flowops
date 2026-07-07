@@ -142,6 +142,73 @@ function Stats() {
   );
 }
 
+/* ── E-commerce Opportunity ────────────────────────────────────── */
+function EcommerceOpportunity() {
+  const stats = [
+    { value: "R100B+", label: "SA e-commerce by 2026", icon: "🛒" },
+    { value: "60–70%", label: "of couriers still use paper", icon: "📄" },
+    { value: "3×", label: "growth in online orders since 2020", icon: "📈" },
+  ];
+
+  return (
+    <section className="py-28 border-t border-white/5">
+      <div className="mx-auto max-w-7xl px-6">
+        {/* Header */}
+        <div className="text-center mb-14">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-sky-300">
+            Market Opportunity
+          </div>
+          <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
+            South Africa's e-commerce boom needs
+            <br />
+            <span className="bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent">
+              delivery infrastructure
+            </span>
+          </h2>
+          <p className="text-lg text-white/50 max-w-2xl mx-auto">
+            The SA e-commerce market is racing toward R100 billion by 2026, but
+            most courier companies still run on paper, phone calls, and
+            spreadsheets. That gap is your opportunity.
+          </p>
+        </div>
+
+        {/* Stats cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          {stats.map((s) => (
+            <div
+              key={s.label}
+              className="rounded-[24px] border border-white/10 bg-white/[0.03] backdrop-blur-md p-8 text-center hover:border-sky-400/20 hover:bg-white/[0.05] transition-all duration-200"
+            >
+              <div className="text-3xl mb-3">{s.icon}</div>
+              <div className="text-4xl font-black text-white mb-2 tracking-tight bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent">
+                {s.value}
+              </div>
+              <div className="text-sm font-medium text-white/50">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Positioning card */}
+        <div className="rounded-[32px] border border-sky-400/15 bg-gradient-to-br from-sky-500/8 via-indigo-500/5 to-transparent backdrop-blur-md p-10 text-center">
+          <p className="text-lg text-white/70 leading-relaxed max-w-3xl mx-auto mb-8">
+            Online retailers need courier partners who can offer real-time
+            tracking, automated waybill creation, and instant proof of delivery.
+            FlowOps gives you the platform to plug into this R100 billion
+            ecosystem — without building tech from scratch.
+          </p>
+          <Link
+            to="/signup"
+            className="inline-flex items-center gap-2 rounded-2xl bg-sky-500 px-8 py-4 text-base font-black text-white shadow-xl shadow-sky-500/25 hover:bg-sky-400 transition-colors"
+          >
+            Digitise your operations
+            <ArrowRight className="h-5 w-5" />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Features ─────────────────────────────────────────────────── */
 function Features() {
   const features = [
@@ -644,6 +711,104 @@ function HowItWorks() {
   );
 }
 
+/* ── Digitisation CTA ─────────────────────────────────────────── */
+function DigitisationCTA() {
+  const painPoints = [
+    {
+      paper: "Lost waybills & manual registers",
+      digital: "OCR scanning & digital waybill register",
+      icon: "📋",
+    },
+    {
+      paper: "No real-time tracking",
+      digital: "Live GPS tracking for every delivery",
+      icon: "📍",
+    },
+    {
+      paper: "Manual invoicing & billing errors",
+      digital: "Auto-invoicing from delivered waybills",
+      icon: "🧾",
+    },
+    {
+      paper: "COD cash leakage & disputes",
+      digital: "Driver wallet reconciliation per delivery",
+      icon: "💸",
+    },
+  ];
+
+  return (
+    <section className="py-28 border-t border-white/5">
+      <div className="mx-auto max-w-7xl px-6">
+        {/* Header */}
+        <div className="text-center mb-14">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-400/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-amber-300">
+            Time to digitise
+          </div>
+          <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
+            Still running on paper?
+            <br />
+            <span className="bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">
+              You're leaving money on the table.
+            </span>
+          </h2>
+          <p className="text-lg text-white/50 max-w-2xl mx-auto">
+            60–70% of emerging market couriers still rely on paper processes.
+            Every lost waybill, every untracked delivery, every manual invoice
+            is revenue leaking out of your business.
+          </p>
+        </div>
+
+        {/* Paper vs Digital grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-12">
+          {painPoints.map((p) => (
+            <div
+              key={p.paper}
+              className="group rounded-[24px] border border-white/10 bg-white/[0.03] backdrop-blur-md p-6 hover:border-sky-400/20 hover:bg-white/[0.05] transition-all duration-200"
+            >
+              <div className="flex items-start gap-4">
+                <div className="text-2xl shrink-0 mt-1">{p.icon}</div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-rose-400/80" />
+                    <span className="text-sm font-bold text-rose-300/80 line-through decoration-rose-400/40">
+                      {p.paper}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400/80" />
+                    <span className="text-sm font-bold text-emerald-300">
+                      {p.digital}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <div className="rounded-[32px] border border-sky-400/15 bg-gradient-to-br from-sky-500/8 via-indigo-500/5 to-transparent backdrop-blur-md p-10 text-center">
+          <p className="text-lg text-white/70 leading-relaxed max-w-2xl mx-auto mb-8">
+            FlowOps replaces your clipboards, carbon copies, and cash envelopes
+            with a single platform your drivers, dispatchers, and accountants
+            all work from — live and in sync.
+          </p>
+          <Link
+            to="/signup"
+            className="inline-flex items-center gap-2 rounded-2xl bg-sky-500 px-8 py-4 text-base font-black text-white shadow-xl shadow-sky-500/25 hover:bg-sky-400 transition-colors"
+          >
+            Start your digital transformation
+            <ArrowRight className="h-5 w-5" />
+          </Link>
+          <p className="mt-4 text-xs text-white/30">
+            Most teams are fully digital within 48 hours · No IT project needed
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Social proof ─────────────────────────────────────────────── */
 function SocialProof() {
   const testimonials = [
@@ -757,9 +922,11 @@ export default function LandingPage() {
       <PublicNav />
       <Hero />
       <Stats />
+      <EcommerceOpportunity />
       <Features />
       <VisualGallery />
       <HowItWorks />
+      <DigitisationCTA />
       <SocialProof />
       <CTABand />
       <PublicFooter />

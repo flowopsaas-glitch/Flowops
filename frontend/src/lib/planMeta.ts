@@ -20,6 +20,7 @@ export const ENTERPRISE_FEATURES = new Set<string>([
   "freightForwarding",
   "aiSupportAgent",
   "courierManagement",
+  "logisticsAnalytics",
 ]);
 
 /** Which tier unlocks a given feature flag (drives the PRO / ENTERPRISE badge). */

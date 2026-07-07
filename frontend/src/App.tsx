@@ -57,6 +57,7 @@ const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
 const SupportAgent = lazy(() => import("./pages/SupportAgent"));
 const CourierManagement = lazy(() => import("./pages/CourierManagement"));
+const LogisticsAnalytics = lazy(() => import("./pages/LogisticsAnalytics"));
 const CarrierManagement = lazy(() => import("./pages/CarrierManagement"));
 const SsoSettings = lazy(() => import("./pages/enterprise/SsoSettings"));
 const DepotsPage        = lazy(() => import("./pages/DepotsPage"));
@@ -77,18 +78,22 @@ const OwnerTenantDetail = lazy(() => import("./pages/owner/OwnerTenantDetail"));
 const OwnerOpsMap = lazy(() => import("./pages/owner/OwnerOpsMap"));
 const WaybillCapture = lazy(() => import("./pages/WaybillCapture"));
 const BatchScan      = lazy(() => import("./pages/BatchScan"));
+const BulkImport     = lazy(() => import("./pages/BulkImport"));
 const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
 const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
 const ManifestsPage = lazy(() => import("./pages/ManifestsPage"));
+const LoadScan = lazy(() => import("./pages/LoadScan"));
 const RouteOptimizer = lazy(() => import("./pages/RouteOptimizer"));
 const FleetMaintenance = lazy(() => import("./pages/FleetMaintenance"));
+const DriverLeaderboard = lazy(() => import("./pages/DriverLeaderboard"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
 const UserRolesPage = lazy(() => import("./pages/UsersRoles"));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 const StatusPage = lazy(() => import('./pages/Status'));
 const TrackingPage = lazy(() => import('./pages/TrackingPage'));
+const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const OnboardingWizard = lazy(() => import("./pages/OnboardingWizard"));
 const EsgDashboard = lazy(() => import("./pages/EsgDashboard"));
@@ -103,6 +108,7 @@ const RatingPage   = lazy(() => import("./pages/RatingPage"));
 const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
 const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
 const PricingPage   = lazy(() => import("./pages/marketing/PricingPage"));
+const SubcontractorPage = lazy(() => import("./pages/marketing/SubcontractorPage"));
 const NotFoundPage  = lazy(() => import("./pages/NotFoundPage"));
 
 export default function App() {
@@ -172,12 +178,16 @@ export default function App() {
           <Route path="/status" element={<StatusPage />} />
           <Route path="/track" element={<TrackingPage />} />
           <Route path="/track/:trackingNumber" element={<TrackingPage />} />
+          <Route path="/portal/:companyId" element={<CustomerPortal />} />
           <Route path="/rate/:token" element={<RatingPage />} />
           <Route path="/sso/finish" element={<SsoFinish />} />
           <Route path="/setup" element={<CompanySetupPage />} />
           {/* Marketing pages — public, no auth required */}
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/last-mile" element={<SubcontractorPage />} />
+          <Route path="/subcontractors" element={<SubcontractorPage />} />
+          <Route path="/transport-operators" element={<SubcontractorPage />} />
           {/* Marketing root — shown to visitors going to /home explicitly */}
           <Route path="/home" element={<LandingPage />} />
           <Route
@@ -226,6 +236,7 @@ export default function App() {
               <Route path="/waybills/inbox" element={<RequirePermission perm="waybillInbox"><WaybillInbox /></RequirePermission>} />
               <Route path="/waybills/scan" element={<RequirePermission perm="waybillInbox"><WaybillCapture /></RequirePermission>} />
               <Route path="/waybills/batch-scan" element={<RequirePermission perm="waybillInbox"><BatchScan /></RequirePermission>} />
+              <Route path="/waybills/bulk-import" element={<RequirePermission perm="waybillInbox"><BulkImport /></RequirePermission>} />
               <Route path="/waybills" element={<RequirePermission perm="waybills"><Waybills /></RequirePermission>} />
               <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
               <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />
@@ -241,9 +252,11 @@ export default function App() {
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/manifests" element={<RequirePermission perm="waybillInbox"><ManifestsPage /></RequirePermission>} />
+              <Route path="/manifests/:id/load-scan" element={<RequirePermission perm="waybillInbox"><LoadScan /></RequirePermission>} />
               <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
               <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
               <Route path="/fleet" element={<RequirePermission perm="driverDispatch"><FleetMaintenance /></RequirePermission>} />
+              <Route path="/driver-leaderboard" element={<RequirePermission perm="driverDispatch"><DriverLeaderboard /></RequirePermission>} />
               <Route path="/high-risk-queue" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/security/high-risk" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/user-roles" element={<RequirePermission perm="usersRoles"><UserRolesPage /></RequirePermission>} />
@@ -278,6 +291,7 @@ export default function App() {
               <Route path="/copilot" element={<RequirePermission perm="copilot"><RequireFeature feature="copilot" name="Ask FlowOps"><AskFlowOps /></RequireFeature></RequirePermission>} />
               <Route path="/support" element={<RequireFeature feature="aiSupportAgent" name="AI Support Agent"><SupportAgent /></RequireFeature>} />
               <Route path="/couriers" element={<RequireFeature feature="courierManagement" name="Courier Management"><CourierManagement /></RequireFeature>} />
+              <Route path="/logistics-analytics" element={<RequireFeature feature="logisticsAnalytics" name="Logistics Analytics"><LogisticsAnalytics /></RequireFeature>} />
               <Route path="/carriers" element={<RequirePermission perm="rateCards"><CarrierManagement /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />

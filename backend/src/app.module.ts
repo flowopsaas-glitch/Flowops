@@ -60,6 +60,7 @@ import { SupportModule } from './support/support.module';
 import { SlaModule } from './sla/sla.module';
 import { EsgModule } from './esg/esg.module';
 import { CourierManagementModule } from './courier-management/courier-management.module';
+import { CustomerPortalModule } from './customer-portal/customer-portal.module';
 
 @Module({
   imports: [
@@ -126,6 +127,7 @@ import { CourierManagementModule } from './courier-management/courier-management
     SlaModule,
     EsgModule,
     CourierManagementModule,
+    CustomerPortalModule,
 
     // Domain modules
     AuthModule,

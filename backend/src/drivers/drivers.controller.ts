@@ -1,13 +1,17 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DriversService } from './drivers.service';
+import { LeaderboardService } from './leaderboard.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 
 @ApiTags('Drivers')
 @ApiBearerAuth()
 @Controller('drivers')
 export class DriversController {
-  constructor(private readonly svc: DriversService) {}
+  constructor(
+    private readonly svc: DriversService,
+    private readonly leaderboard: LeaderboardService,
+  ) {}
 
   @Get()
   findAll(@CurrentUser() u: any, @Query() q: any) {
@@ -29,6 +33,11 @@ export class DriversController {
   @Get('fleet/dashboard')
   fleetDashboard(@CurrentUser() u: any) {
     return this.svc.fleetDashboard(u.companyId);
+  }
+
+  @Get('leaderboard')
+  getLeaderboard(@CurrentUser() u: any, @Query('period') period?: string) {
+    return this.leaderboard.getLeaderboard(u.companyId, period);
   }
 
   // ── Param routes ─────────────────────────────────────────────────────────────
