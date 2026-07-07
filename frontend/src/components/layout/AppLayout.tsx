@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
+  Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, BarChart3, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight,
 } from "lucide-react";
@@ -28,7 +28,7 @@ type NavItem = {
   desc: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN";
+  section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN";
   /** Gate visibility/access against the tenant nav-permission matrix. Items
    *  without a key are always visible (e.g. operational pages without a
    *  dedicated permission flag). */
@@ -157,8 +157,8 @@ function SidebarContent(props: {
   collapsed?: boolean;
   ent?: Entitlements | null;
 }) {
-  const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
-    ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
+  const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN")[] = 
+    ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "INSIGHTS", "AI", "ADMIN"];
   const { collapsed } = props;
 
   // Accordion: which sections are open. Default open; a section is folded only
@@ -371,6 +371,8 @@ export default function AppLayout() {
     { section: "BILLING", label: "Disbursements", desc: "Duties paid for clients & recovery", to: "/disbursements", icon: Wallet, perm: "accounting", entitlement: "accounting" },
     { section: "BILLING", label: "Plans & Usage", desc: "Subscription, limits & upgrades", to: "/billing/plans", icon: Crown, perm: "invoices" },
     
+    { section: "INSIGHTS", label: "Logistics Analytics", desc: "AI-powered delivery insights (Enterprise)", to: "/logistics-analytics", icon: BarChart3, entitlement: "logisticsAnalytics" },
+    
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower", entitlement: "aiControlTower"   },
     { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
     { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
@@ -429,6 +431,7 @@ export default function AppLayout() {
     OPS: visibleNav.filter(i => i.section === "OPS"),
     COMMUNICATIONS: visibleNav.filter(i => i.section === "COMMUNICATIONS"),
     BILLING: visibleNav.filter(i => i.section === "BILLING"),
+    INSIGHTS: visibleNav.filter(i => i.section === "INSIGHTS"),
     AI: visibleNav.filter(i => i.section === "AI"),
     ADMIN: visibleNav.filter(i => i.section === "ADMIN"),
   }), [visibleNav]);
