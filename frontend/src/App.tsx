@@ -82,6 +82,7 @@ const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
 const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
 const ManifestsPage = lazy(() => import("./pages/ManifestsPage"));
+const LoadScan = lazy(() => import("./pages/LoadScan"));
 const RouteOptimizer = lazy(() => import("./pages/RouteOptimizer"));
 const FleetMaintenance = lazy(() => import("./pages/FleetMaintenance"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
@@ -240,6 +241,7 @@ export default function App() {
               <Route path="/driver-dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/dispatch" element={<RequirePermission perm="driverDispatch"><DriverDispatch /></RequirePermission>} />
               <Route path="/manifests" element={<RequirePermission perm="waybillInbox"><ManifestsPage /></RequirePermission>} />
+              <Route path="/manifests/:id/load-scan" element={<RequirePermission perm="waybillInbox"><LoadScan /></RequirePermission>} />
               <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
               <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
               <Route path="/fleet" element={<RequirePermission perm="driverDispatch"><FleetMaintenance /></RequirePermission>} />
