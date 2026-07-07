@@ -333,6 +333,7 @@ export default function AppLayout() {
     { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search, perm: "waybillInbox" },
     { section: "CORE", label: "Scan Capture", desc: "Barcode & OCR intake", to: "/waybills/scan", icon: ScanLine, perm: "waybillInbox" },
     { section: "CORE", label: "Batch Scan", desc: "Bulk status at hub", to: "/waybills/batch-scan", icon: ScanLine, perm: "waybillInbox" },
+    { section: "CORE", label: "Bulk Import", desc: "CSV waybill upload", to: "/waybills/bulk-import", icon: ClipboardList, perm: "waybillInbox" },
     { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList, perm: "waybills" },
     { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
     

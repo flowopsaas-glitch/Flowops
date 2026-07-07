@@ -77,6 +77,7 @@ const OwnerTenantDetail = lazy(() => import("./pages/owner/OwnerTenantDetail"));
 const OwnerOpsMap = lazy(() => import("./pages/owner/OwnerOpsMap"));
 const WaybillCapture = lazy(() => import("./pages/WaybillCapture"));
 const BatchScan      = lazy(() => import("./pages/BatchScan"));
+const BulkImport     = lazy(() => import("./pages/BulkImport"));
 const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
 const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
@@ -224,6 +225,7 @@ export default function App() {
               <Route path="/waybills/inbox" element={<RequirePermission perm="waybillInbox"><WaybillInbox /></RequirePermission>} />
               <Route path="/waybills/scan" element={<RequirePermission perm="waybillInbox"><WaybillCapture /></RequirePermission>} />
               <Route path="/waybills/batch-scan" element={<RequirePermission perm="waybillInbox"><BatchScan /></RequirePermission>} />
+              <Route path="/waybills/bulk-import" element={<RequirePermission perm="waybillInbox"><BulkImport /></RequirePermission>} />
               <Route path="/waybills" element={<RequirePermission perm="waybills"><Waybills /></RequirePermission>} />
               <Route path="/clients" element={<RequirePermission perm="clients"><Clients /></RequirePermission>} />
               <Route path="/notifications" element={<RequirePermission perm="notifications"><Notifications /></RequirePermission>} />

@@ -114,6 +114,22 @@ export class WaybillsController {
     return this.svc.batchScan(u.companyId, body.trackingNumbers, body.targetStatus);
   }
 
+  /**
+   * POST /waybills/bulk-import
+   * Accepts a CSV file and creates waybills in bulk.
+   * Returns per-row results (created, failed, duplicate).
+   */
+  @Post('waybills/bulk-import')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  bulkImport(
+    @CurrentUser() u: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.svc.bulkImportCsv(u.companyId, file);
+  }
+
   @Get('waybills/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);
