@@ -28,6 +28,7 @@ export const FEATURE_KEYS = [
   'aiControlTower', 'copilot', 'api', 'ecommerce',
   'whiteLabel', 'nativeApp', 'selfHost', 'dedicatedManager',
   'clawAutopilot', 'sso', 'freightForwarding', 'aiSupportAgent', 'courierManagement',
+  'logisticsAnalytics',
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -47,6 +48,7 @@ const ENTERPRISE: Partial<Record<FeatureKey, boolean>> = {
   ...PRO,
   whiteLabel: true, nativeApp: true, selfHost: true, dedicatedManager: true,
   clawAutopilot: true, sso: true, freightForwarding: true, aiSupportAgent: true, courierManagement: true,
+  logisticsAnalytics: true,
 };
 
 const fill = (on: Partial<Record<FeatureKey, boolean>>): Record<string, boolean> =>
@@ -111,4 +113,5 @@ export const FEATURE_LABELS: Record<string, string> = {
   freightForwarding: 'Freight Forwarding (import/export)',
   aiSupportAgent: 'AI Support Agent',
   courierManagement: 'Courier Management (orchestration)',
+  logisticsAnalytics: 'Logistics Analytics (premium insights)',
 };

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
-  Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, Activity, Box, Globe, Building2,
+  Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, BarChart3, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight,
 } from "lucide-react";
@@ -28,7 +28,7 @@ type NavItem = {
   desc: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN";
+  section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN";
   /** Gate visibility/access against the tenant nav-permission matrix. Items
    *  without a key are always visible (e.g. operational pages without a
    *  dedicated permission flag). */
@@ -157,8 +157,8 @@ function SidebarContent(props: {
   collapsed?: boolean;
   ent?: Entitlements | null;
 }) {
-  const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "AI" | "ADMIN")[] = 
-    ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "AI", "ADMIN"];
+  const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN")[] = 
+    ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "INSIGHTS", "AI", "ADMIN"];
   const { collapsed } = props;
 
   // Accordion: which sections are open. Default open; a section is folded only
@@ -333,6 +333,7 @@ export default function AppLayout() {
     { section: "CORE", label: "Waybill Inbox", desc: "OCR Verification", to: "/waybills/inbox", icon: Search, perm: "waybillInbox" },
     { section: "CORE", label: "Scan Capture", desc: "Barcode & OCR intake", to: "/waybills/scan", icon: ScanLine, perm: "waybillInbox" },
     { section: "CORE", label: "Batch Scan", desc: "Bulk status at hub", to: "/waybills/batch-scan", icon: ScanLine, perm: "waybillInbox" },
+    { section: "CORE", label: "Bulk Import", desc: "CSV waybill upload", to: "/waybills/bulk-import", icon: ClipboardList, perm: "waybillInbox" },
     { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList, perm: "waybills" },
     { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
     
@@ -350,6 +351,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },
     { section: "OPS", label: "Route Optimizer", desc: "AI stop sequencing", to: "/routes", icon: Route, perm: "driverDispatch", entitlement: "routeOptimization" },
     { section: "OPS", label: "Fleet Maintenance", desc: "Vehicle service tracker", to: "/fleet", icon: Wrench, perm: "driverDispatch" },
+    { section: "OPS", label: "Driver Leaderboard", desc: "Performance rankings & gamification", to: "/driver-leaderboard", icon: Activity, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
@@ -370,6 +372,8 @@ export default function AppLayout() {
     { section: "BILLING", label: "Accounting", desc: "Notes, statements & Pastel export — AI assisted", to: "/accounting", icon: Calculator, perm: "accounting", entitlement: "accounting" },
     { section: "BILLING", label: "Disbursements", desc: "Duties paid for clients & recovery", to: "/disbursements", icon: Wallet, perm: "accounting", entitlement: "accounting" },
     { section: "BILLING", label: "Plans & Usage", desc: "Subscription, limits & upgrades", to: "/billing/plans", icon: Crown, perm: "invoices" },
+    
+    { section: "INSIGHTS", label: "Logistics Analytics", desc: "AI-powered delivery insights (Enterprise)", to: "/logistics-analytics", icon: BarChart3, entitlement: "logisticsAnalytics" },
     
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower", entitlement: "aiControlTower"   },
     { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
@@ -429,6 +433,7 @@ export default function AppLayout() {
     OPS: visibleNav.filter(i => i.section === "OPS"),
     COMMUNICATIONS: visibleNav.filter(i => i.section === "COMMUNICATIONS"),
     BILLING: visibleNav.filter(i => i.section === "BILLING"),
+    INSIGHTS: visibleNav.filter(i => i.section === "INSIGHTS"),
     AI: visibleNav.filter(i => i.section === "AI"),
     ADMIN: visibleNav.filter(i => i.section === "ADMIN"),
   }), [visibleNav]);
