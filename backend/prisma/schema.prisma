@@ -2261,6 +2261,52 @@ model CourierOrder {
 
 
 
+// ─── Logistics Analytics (per-tenant monthly KPI snapshots) ──────────────────
+// Computed analytics snapshot per company per period (YYYY-MM). Powers the
+// analytics dashboard with volume, performance, financial, and fleet KPIs.
+// AI insights are generated best-effort via Groq and cached here.
+
+model LogisticsAnalytics {
+  id        String @id @default(cuid())
+  companyId String
+  period    String // YYYY-MM
+
+  // Volume KPIs
+  totalDeliveries  Int   @default(0)
+  deliveredOnTime  Int   @default(0)
+  failedDeliveries Int   @default(0)
+  returnedParcels  Int   @default(0)
+  totalCollections Int   @default(0)
+
+  // Performance KPIs
+  onTimePercentage    Float  @default(0)
+  avgDeliveryMinutes  Float? // average time from dispatch to POD
+  slaBreaches         Int    @default(0)
+  customerRatingAvg   Float?
+
+  // Financial KPIs
+  revenue         Float  @default(0)
+  costPerDelivery Float?
+  codCollected    Float  @default(0)
+
+  // Fleet KPIs
+  activeDrivers    Int    @default(0)
+  avgDriverUtilPct Float?
+  topDriverId      String?
+
+  // AI-generated insights (JSON: { summary, trends[], recommendations[] })
+  aiInsights    Json?
+  aiGeneratedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period])
+  @@index([companyId])
+  @@map("logistics_analytics")
+}
+
+
 // ─── ESG / Carbon Reporting (fleet emissions) ────────────────────────────────
 // Tracks CO2 emissions per delivery period per company. Computed from total km
 // driven (via route optimizer data / shipment distances) × vehicle emission factors.
