@@ -233,8 +233,8 @@ export class OwnerService {
 
   private static readonly PLAN_PRICE_ZAR: Record<string, number> = {
     starter: 0,
-    professional: 11999,
-    enterprise: 29999,
+    professional: 19999,
+    enterprise: 100000,
   };
 
   private planPrice(plan?: string | null): number {
@@ -801,8 +801,8 @@ export class OwnerService {
    * FlowOps billing plans — synced from Paystack (Flowops Holdings, ID: 1839930).
    *
    *   Starter:      FREE   (no Paystack plan — instant activation, no billing)
-   *   Professional: ZAR 11,999 / month  PLN_l3kobthzahnkpf3
-   *   Enterprise:   ZAR 29,999 / month  PLN_9at9kn2ra8jtae0
+   *   Professional: ZAR 19,999 / month  PLN_l3kobthzahnkpf3
+   *   Enterprise:   ZAR 100,000 / month  PLN_9at9kn2ra8jtae0 (custom/contact sales)
    *
    *   NOTE: the Professional Paystack plan amount must be updated in the
    *   Paystack dashboard (or a new plan code issued) to charge R11,999.

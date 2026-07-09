@@ -66,14 +66,14 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlement> = {
   professional: {
     id: 'professional',
     name: 'Professional',
-    priceZar: 11999,
+    priceZar: 19999,
     limits: { waybillsPerMonth: -1, drivers: 25, users: 50, branches: -1 },
     features: fill(PRO),
   },
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
-    priceZar: 29999,
+    priceZar: 100000,
     limits: { waybillsPerMonth: -1, drivers: -1, users: -1, branches: -1 },
     features: fill(ENTERPRISE),
   },
