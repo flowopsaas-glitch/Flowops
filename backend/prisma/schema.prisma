@@ -2261,6 +2261,292 @@ model CourierOrder {
 
 
 
+// ─── Commercial Analytics Suite ──────────────────────────────────────────────
+// World-class pricing analysis, profitability metrics, client intelligence, and
+// revenue forecasting. Powers strategic decision-making for logistics operators.
+
+// Per-delivery cost model — enables true margin calculation per waybill.
+// Costs are estimated from distance × per-km rate, driver hourly cost, and
+// fixed overheads. Updated by the cost-allocation engine or set manually.
+model DeliveryCostAllocation {
+  id        String @id @default(cuid())
+  companyId String
+  waybillId String @unique
+  period    String // YYYY-MM
+
+  // Revenue (from waybill.totalAmount)
+  revenue       Float @default(0)
+
+  // Cost breakdown
+  fuelCost      Float @default(0)
+  labourCost    Float @default(0)  // driver time × hourly rate
+  vehicleCost   Float @default(0)  // depreciation + maintenance allocation
+  overheadCost  Float @default(0)  // warehousing, admin, insurance
+  tollsCost     Float @default(0)
+  totalCost     Float @default(0)
+
+  // Derived
+  grossMargin     Float @default(0) // revenue - totalCost
+  marginPercent   Float @default(0) // (grossMargin / revenue) × 100
+
+  // Route metadata (for lane analysis)
+  fromZone     String?
+  toZone       String?
+  distanceKm   Float?
+  driverId     String?
+  clientName   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, period])
+  @@index([companyId, clientName])
+  @@index([companyId, fromZone, toZone])
+  @@map("delivery_cost_allocations")
+}
+
+// Periodic lane profitability snapshot (aggregated per zone-pair per month).
+// Enables "which routes make money, which lose" analysis.
+model LaneProfitability {
+  id        String @id @default(cuid())
+  companyId String
+  period    String // YYYY-MM
+
+  fromZone     String
+  toZone       String
+
+  // Volume
+  totalDeliveries  Int   @default(0)
+  successRate      Float @default(0)
+
+  // Revenue
+  totalRevenue     Float @default(0)
+  avgRevenuePerDel Float @default(0)
+
+  // Cost
+  totalCost        Float @default(0)
+  avgCostPerDel    Float @default(0)
+
+  // Profitability
+  grossProfit      Float @default(0)
+  marginPercent    Float @default(0)
+
+  // Trend (vs previous period)
+  revenueDelta     Float? // % change from prior period
+  volumeDelta      Float? // % change in deliveries
+  marginDelta      Float? // absolute change in margin %
+
+  // AI recommendation
+  pricingSignal    String? // UNDERPRICED | OPTIMAL | OVERPRICED | LOW_VOLUME
+  aiRecommendation String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period, fromZone, toZone])
+  @@index([companyId, period])
+  @@map("lane_profitability")
+}
+
+// Client profitability scoring — per-client per-period commercial intelligence.
+// Combines revenue, cost-to-serve, payment behaviour, and growth trajectory.
+model ClientProfitability {
+  id        String @id @default(cuid())
+  companyId String
+  period    String // YYYY-MM
+  clientName String
+
+  // Revenue metrics
+  revenue          Float @default(0)
+  revenueGrowthPct Float? // vs prior period
+  deliveryCount    Int   @default(0)
+  avgRevenuePerDel Float @default(0)
+
+  // Cost metrics
+  totalCost        Float @default(0)
+  costToServePct   Float @default(0) // totalCost / revenue × 100
+
+  // Profitability
+  grossProfit      Float @default(0)
+  marginPercent    Float @default(0)
+  profitRank       Int?  // rank within company (1 = most profitable)
+
+  // Payment behaviour
+  avgDaysToPay     Float?
+  collectionRate   Float @default(0)
+  overdueAmount    Float @default(0)
+
+  // Customer Lifetime Value
+  clv              Float? // predicted 12-month future value
+  clvTier          String? // PLATINUM | GOLD | SILVER | BRONZE | AT_RISK
+
+  // Churn signals
+  churnRisk        Float? // 0-100 probability
+  churnSignals     Json?  // array of risk factors
+
+  // Engagement
+  monthsActive     Int   @default(0)
+  lastDeliveryAt   DateTime?
+  volumeTrend      String? // GROWING | STABLE | DECLINING | NEW | DORMANT
+
+  // AI insights
+  aiInsights       Json?
+  aiGeneratedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period, clientName])
+  @@index([companyId, period])
+  @@index([companyId, clientName])
+  @@map("client_profitability")
+}
+
+// AI-generated pricing recommendations — stored per lane/client for review.
+model PricingRecommendation {
+  id        String @id @default(cuid())
+  companyId String
+  type      String // LANE | CLIENT | RATE_CARD | GENERAL
+
+  // What it applies to
+  fromZone    String?
+  toZone      String?
+  clientName  String?
+  rateCardId  String?
+
+  // Current state
+  currentPrice    Float?
+  currentMargin   Float?
+  currentVolume   Int?
+
+  // Recommendation
+  recommendedPrice  Float?
+  expectedMargin    Float?
+  expectedImpact    String? @db.Text // "Increase revenue by ~R12,000/month"
+  confidence        Float?  // 0-100
+
+  // Reasoning
+  reasoning     String? @db.Text
+  dataPoints    Json?   // supporting evidence
+  signal        String  // INCREASE | DECREASE | HOLD | REVIEW
+
+  // Lifecycle
+  status     String @default("PENDING") // PENDING | ACCEPTED | REJECTED | EXPIRED
+  reviewedAt DateTime?
+  reviewedBy String?
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@index([companyId, status])
+  @@index([companyId, type])
+  @@map("pricing_recommendations")
+}
+
+// Revenue forecast snapshots — ML-predicted future revenue with confidence bands.
+model RevenueForecast {
+  id        String @id @default(cuid())
+  companyId String
+  generatedAt DateTime @default(now())
+
+  // Forecast horizon
+  forecastPeriod  String // YYYY-MM (the month being predicted)
+  forecastType    String @default("MONTHLY") // MONTHLY | QUARTERLY
+
+  // Prediction
+  predictedRevenue   Float
+  lowerBound         Float  // 80% confidence interval
+  upperBound         Float
+  confidence         Float  // 0-100
+
+  // Basis
+  historicalAvg      Float?
+  trend              Float? // monthly growth rate used
+  seasonalFactor     Float? // seasonal multiplier applied
+  pipelineValue      Float? // value of accepted quotes not yet invoiced
+
+  // Comparison (filled after period ends)
+  actualRevenue      Float?
+  accuracy           Float? // |actual - predicted| / actual × 100
+
+  @@unique([companyId, forecastPeriod, forecastType])
+  @@index([companyId])
+  @@map("revenue_forecasts")
+}
+
+// Commercial analytics configuration — per-tenant cost model parameters.
+model CommercialConfig {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  // Cost model inputs (per-km rates, hourly costs, etc.)
+  fuelCostPerKm      Float @default(2.50)  // ZAR per km
+  driverHourlyCost   Float @default(45.0)  // ZAR per hour
+  vehicleCostPerKm   Float @default(1.80)  // depreciation + maintenance
+  overheadPerDelivery Float @default(15.0)  // fixed overhead allocation
+  avgDeliveryMinutes  Float @default(25.0)  // assumed time per stop
+  avgKmPerDelivery    Float @default(12.0)  // assumed distance when no GPS
+
+  // Pricing targets
+  targetMarginPct    Float @default(35.0) // desired gross margin %
+  minMarginPct       Float @default(15.0) // alarm threshold
+
+  // Forecast model parameters
+  seasonalityEnabled Boolean @default(true)
+  forecastMonths     Int     @default(3)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("commercial_configs")
+}
+
+
+// ─── Logistics Analytics (per-tenant monthly KPI snapshots) ──────────────────
+// Computed analytics snapshot per company per period (YYYY-MM). Powers the
+// analytics dashboard with volume, performance, financial, and fleet KPIs.
+// AI insights are generated best-effort via Groq and cached here.
+
+model LogisticsAnalytics {
+  id        String @id @default(cuid())
+  companyId String
+  period    String // YYYY-MM
+
+  // Volume KPIs
+  totalDeliveries  Int   @default(0)
+  deliveredOnTime  Int   @default(0)
+  failedDeliveries Int   @default(0)
+  returnedParcels  Int   @default(0)
+  totalCollections Int   @default(0)
+
+  // Performance KPIs
+  onTimePercentage    Float  @default(0)
+  avgDeliveryMinutes  Float? // average time from dispatch to POD
+  slaBreaches         Int    @default(0)
+  customerRatingAvg   Float?
+
+  // Financial KPIs
+  revenue         Float  @default(0)
+  costPerDelivery Float?
+  codCollected    Float  @default(0)
+
+  // Fleet KPIs
+  activeDrivers    Int    @default(0)
+  avgDriverUtilPct Float?
+  topDriverId      String?
+
+  // AI-generated insights (JSON: { summary, trends[], recommendations[] })
+  aiInsights    Json?
+  aiGeneratedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period])
+  @@index([companyId])
+  @@map("logistics_analytics")
+}
+
+
 // ─── ESG / Carbon Reporting (fleet emissions) ────────────────────────────────
 // Tracks CO2 emissions per delivery period per company. Computed from total km
 // driven (via route optimizer data / shipment distances) × vehicle emission factors.

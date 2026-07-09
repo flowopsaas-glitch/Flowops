@@ -34,7 +34,7 @@ ingress:
   # ── Main web app (app.flowop.work) ────────────────────────────────────
   # Routes to frontend nginx which serves the SPA and proxies /api/ + /socket.io/
   - hostname: app.flowop.work
-    service: http://localhost:8080
+    service: http://frontend:80
     originRequest:
       noTLSVerify: true
       connectTimeout: 30s
@@ -43,7 +43,7 @@ ingress:
   # Routes directly to the NestJS backend for webhook callbacks, OAuth, etc.
   # Webhooks (Paystack, WhatsApp, Meta) hit this directly.
   - hostname: api.flowop.work
-    service: http://localhost:8080
+    service: http://frontend:80
     originRequest:
       noTLSVerify: true
       connectTimeout: 30s
@@ -53,7 +53,7 @@ ingress:
   # ── Driver Portal (driver.flowop.work) ─────────────────────────────────
   # Standalone PWA for drivers — phone + PIN auth
   - hostname: driver.flowop.work
-    service: http://localhost:8081
+    service: http://driver-portal:80
     originRequest:
       noTLSVerify: true
       connectTimeout: 30s
@@ -61,19 +61,19 @@ ingress:
   # ── Root domain + www ──────────────────────────────────────────────────
   # Redirect to the main app (or serve a landing page in future)
   - hostname: flowop.work
-    service: http://localhost:8080
+    service: http://frontend:80
     originRequest:
       noTLSVerify: true
 
   - hostname: www.flowop.work
-    service: http://localhost:8080
+    service: http://frontend:80
     originRequest:
       noTLSVerify: true
 
   # ── Platform admin (platform.flowop.work) ──────────────────────────────
   # Same frontend — the SPA handles admin routing internally
   - hostname: platform.flowop.work
-    service: http://localhost:8080
+    service: http://frontend:80
     originRequest:
       noTLSVerify: true
 

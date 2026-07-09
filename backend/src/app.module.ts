@@ -61,6 +61,8 @@ import { SlaModule } from './sla/sla.module';
 import { EsgModule } from './esg/esg.module';
 import { CourierManagementModule } from './courier-management/courier-management.module';
 import { CustomerPortalModule } from './customer-portal/customer-portal.module';
+import { LogisticsAnalyticsModule } from './logistics-analytics/logistics-analytics.module';
+import { CommercialAnalyticsModule } from './commercial-analytics/commercial-analytics.module';
 
 @Module({
   imports: [
@@ -128,6 +130,8 @@ import { CustomerPortalModule } from './customer-portal/customer-portal.module';
     EsgModule,
     CourierManagementModule,
     CustomerPortalModule,
+    LogisticsAnalyticsModule,
+    CommercialAnalyticsModule,
 
     // Domain modules
     AuthModule,

@@ -15,8 +15,10 @@ name: flowops
 services:
   frontend:
     restart: always
-    ports:
-      - "127.0.0.1:8080:80"
+    # No host port binding — cloudflared reaches frontend via Docker network.
+    # This avoids the docker-proxy port binding bug on Ubuntu 26.04 kernels.
+    # For local debugging: docker compose exec frontend curl localhost:80/healthz
+    ports: []
     deploy:
       resources:
         limits:
@@ -26,8 +28,7 @@ services:
 
   driver-portal:
     restart: always
-    ports:
-      - "127.0.0.1:8081:80"
+    ports: []
     deploy:
       resources:
         limits:
@@ -87,10 +88,12 @@ services:
   # ── Cloudflare Tunnel ────────────────────────────────────────────────────
   # Routes traffic from Cloudflare edge to local services without exposing ports.
   # Requires: /etc/cloudflared/config.yml + credentials JSON on the host.
+  # Uses Docker service names (frontend:80, driver-portal:80) since we no longer
+  # expose host ports — cloudflared talks to containers over the Docker network.
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: always
-    command: tunnel run
+    command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
       - /etc/cloudflared:/etc/cloudflared:ro
     networks: [flowops-net]

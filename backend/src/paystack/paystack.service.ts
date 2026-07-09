@@ -245,8 +245,8 @@ export class PaystackService {
    * Subscribe a customer to a recurring Paystack plan.
    *
    * Active plans (Flowops Holdings, Test Mode):
-   *   professional → PLN_l3kobthzahnkpf3 (ZAR 11,999 / month)
-   *   enterprise   → PLN_9at9kn2ra8jtae0 (ZAR 29,999 / month)
+   *   professional → PLN_l3kobthzahnkpf3 (ZAR 19,999 / month)
+   *   enterprise   → PLN_9at9kn2ra8jtae0 (ZAR 100,000 / month — custom/contact sales)
    *
    * For the free Starter plan use activateStarterPlan() instead.
    *
