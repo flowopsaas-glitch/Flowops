@@ -7,8 +7,8 @@
  *
  * IMPORTANT — keep this in sync with the backend enforcement source of truth
  * (backend/src/billing/plan-entitlements.ts):
- *   • `price` here must match that file's `priceZar` (Professional = R11,999,
- *     Enterprise is contact-sales / "Custom").
+ *   • `price` here must match that file's `priceZar` (Professional = R19,999,
+ *     Enterprise is contact-sales / "Custom" — asking R100,000).
  *   • A feature only belongs on a tier's bullet list if that tier actually
  *     grants it in PLAN_ENTITLEMENTS. The backend remains the authority for
  *     what's enforced; this file is the authority for what's *displayed*.
@@ -51,7 +51,7 @@ export const PLAN_CATALOG: PlanCatalogEntry[] = [
   {
     key: "professional",
     name: "Professional",
-    price: "R 11,999",
+    price: "R 19,999",
     period: "/month",
     popular: true,
     tagline: "The full platform for growing courier operations.",
