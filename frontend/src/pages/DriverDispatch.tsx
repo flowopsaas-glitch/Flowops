@@ -533,7 +533,7 @@ export default function DriverDispatch() {
         ) : (
           /* 🚀 MAP VIEW MODE */
           <div className="w-full h-[75vh] rounded-[32px] overflow-hidden border border-white/10 shadow-2xl relative animate-in fade-in zoom-in-95 duration-300">
-            <MapContainer center={branchCenter} zoom={12} style={{ height: '100%', width: '100%', background: '#0b1a2b' }} zoomControl={false}>
+            <MapContainer center={branchCenter} zoom={12} style={{ height: '100%', width: '100%', background: '#0b1a2b' }} zoomControl={false} attributionControl={false}>
               <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
               <ChangeView center={selectedJob ? [selectedJob.lat, selectedJob.lng] : branchCenter} />
               
