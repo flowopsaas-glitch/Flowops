@@ -255,10 +255,10 @@ export default function TrackingPage() {
                   zoom={12}
                   style={{ height: 280, width: "100%" }}
                   scrollWheelZoom={false}
+                  attributionControl={false}
                 >
                   <TileLayer
                     url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                    attribution='&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
                   />
                   {data.current && (
                     <Marker position={[data.current.lat, data.current.lng]} icon={pin("#3b82f6", "🚚")}>
