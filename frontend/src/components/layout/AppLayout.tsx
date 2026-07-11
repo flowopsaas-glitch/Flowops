@@ -79,7 +79,7 @@ function SidebarSection(props: {
 
       {(collapsed || open) && (
         <div className={cn("space-y-1.5 px-2", !collapsed && "fx-reveal")}>
-          {props.items.map((item) => {
+          {props.items.filter(Boolean).map((item) => {
             const Icon = item.icon;
             return (
               <NavLink
@@ -444,7 +444,7 @@ export default function AppLayout() {
   }), [visibleNav]);
 
   const currentLabel = useMemo(() => {
-    const found = [...nav].sort((a,b) => b.to.length - a.to.length).find(i => location.pathname.startsWith(i.to));
+    const found = [...nav].filter(Boolean).sort((a,b) => b.to.length - a.to.length).find(i => location.pathname.startsWith(i.to));
     return found?.label ?? "FlowOps";
   }, [location.pathname, nav]);
 
