@@ -355,6 +355,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
+    { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
     
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
@@ -372,6 +373,7 @@ export default function AppLayout() {
     { section: "BILLING", label: "Accounting", desc: "Notes, statements & Pastel export — AI assisted", to: "/accounting", icon: Calculator, perm: "accounting", entitlement: "accounting" },
     { section: "BILLING", label: "Disbursements", desc: "Duties paid for clients & recovery", to: "/disbursements", icon: Wallet, perm: "accounting", entitlement: "accounting" },
     { section: "BILLING", label: "Plans & Usage", desc: "Subscription, limits & upgrades", to: "/billing/plans", icon: Crown, perm: "invoices" },
+    { section: "BILLING", label: "Client Portal Links", desc: "Customer booking portal access", to: "/billing/client-portal-links", icon: Globe, perm: "creditControl" },
     
     { section: "INSIGHTS", label: "Logistics Analytics", desc: "AI-powered delivery insights (Enterprise)", to: "/logistics-analytics", icon: BarChart3, entitlement: "logisticsAnalytics" },
     { section: "INSIGHTS", label: "Commercial Analytics", desc: "Pricing, profitability & revenue intelligence", to: "/commercial-analytics", icon: PieChart, entitlement: "commercialAnalytics" },
@@ -384,6 +386,7 @@ export default function AppLayout() {
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
+    { section: "ADMIN", label: "Admin Approvals", desc: "Signup approval queue", to: "/admin/approvals", icon: ShieldCheck, adminOnly: true },
     { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
     { section: "ADMIN", label: "Integrations", desc: "API keys, webhooks & store connectors", to: "/settings/integrations", icon: Settings, perm: "settings", entitlement: "api" },
     { section: "ADMIN", label: "Single Sign-On", desc: "OIDC SSO (Enterprise)", to: "/settings/sso", icon: ShieldCheck, adminOnly: true, entitlement: "sso" },
