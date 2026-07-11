@@ -37,7 +37,6 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toast": "^1.2.15",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "@react-google-maps/api": "^2.20.8",
     "@sentry/react": "^10.53.1",
     "@zxing/library": "^0.23.0",
     "axios": "^1.8.4",

@@ -353,7 +353,7 @@ export default function FieldDeliveryPage() {
               )}
             </div>
             <div style={{ height: 480 }}>
-              <MapContainer center={mapCenter} zoom={7} style={{ width: "100%", height: "100%" }}>
+              <MapContainer center={mapCenter} zoom={7} style={{ width: "100%", height: "100%" }} attributionControl={false}>
                 <TileLayer
                   url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                   attribution='&copy; <a href="https://carto.com">CartoDB</a>'
