@@ -10,6 +10,10 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+// ── Standardised dark tile source (CartoDB Dark Matter) ──
+const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const DARK_TILE_ATTR = '&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>';
+
 import { api } from '../api/client';
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { useToast } from "../components/ToastProvider";
