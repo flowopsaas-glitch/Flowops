@@ -295,7 +295,7 @@ export default function App() {
               <Route path="/couriers" element={<RequireFeature feature="courierManagement" name="Courier Management"><CourierManagement /></RequireFeature>} />
               <Route path="/logistics-analytics" element={<RequireFeature feature="logisticsAnalytics" name="Logistics Analytics"><LogisticsAnalytics /></RequireFeature>} />
               <Route path="/commercial-analytics" element={<RequireFeature feature="commercialAnalytics" name="Commercial Analytics"><CommercialAnalytics /></RequireFeature>} />
-              <Route path="/warehouse" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
+              <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
               <Route path="/carriers" element={<RequirePermission perm="rateCards"><CarrierManagement /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
