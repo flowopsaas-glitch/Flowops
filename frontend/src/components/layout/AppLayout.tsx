@@ -375,6 +375,7 @@ export default function AppLayout() {
     
     { section: "INSIGHTS", label: "Logistics Analytics", desc: "AI-powered delivery insights (Enterprise)", to: "/logistics-analytics", icon: BarChart3, entitlement: "logisticsAnalytics" },
     { section: "INSIGHTS", label: "Commercial Analytics", desc: "Pricing, profitability & revenue intelligence", to: "/commercial-analytics", icon: PieChart, entitlement: "commercialAnalytics" },
+    { section: "INSIGHTS", label: "Warehouse Management", desc: "Inventory, pick/pack & AI optimization", to: "/warehouse", icon: Layers, entitlement: "warehouseManagement" },
     
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower", entitlement: "aiControlTower"   },
     { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
