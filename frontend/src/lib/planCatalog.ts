@@ -65,6 +65,7 @@ export const PLAN_CATALOG: PlanCatalogEntry[] = [
       "Accounting suite + Pastel/Xero bridge + AI finance assistant",
       "Multi-carrier rate shopping",
       "AI Control Tower",
+      "Commercial Analytics — profitability, pricing intelligence & revenue forecasting",
       "Route optimisation",
       "API keys & webhooks",
       "Shopify / WooCommerce connector",
@@ -78,6 +79,7 @@ export const PLAN_CATALOG: PlanCatalogEntry[] = [
     tagline: "For large fleets, 3PLs, and multi-company platforms.",
     features: [
       "Everything in Professional",
+      "Warehouse Management System — inventory, bins, pick/pack, cycle count, AI put-away",
       "CLAW Autopilot — autonomous ops (auto-assign, SLA escalation, COD checks)",
       "Freight Forwarding — import/export, containers, customs & last-mile",
       "AI Support Agent — in-app help grounded in your live data",

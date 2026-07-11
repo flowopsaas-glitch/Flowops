@@ -95,6 +95,45 @@ const sections = [
     ],
   },
   {
+    label: "Warehousing & Fulfilment",
+    color: "amber",
+    features: [
+      {
+        icon: PackageCheck,
+        title: "Warehouse Management System (WMS)",
+        points: [
+          "Multi-warehouse support with zone hierarchy (Receiving, Bulk, Pick, Dispatch, Cold, Hazmat)",
+          "Bin locations with rack/level/position addressing",
+          "Full goods receipt workflow — expected, arrived, inspected, put-away",
+          "AI-powered put-away suggestions (consolidation + capacity-aware)",
+          "SKU-level inventory with batch, lot & expiry tracking",
+        ],
+      },
+      {
+        icon: Scan,
+        title: "Pick, Pack & Dispatch",
+        points: [
+          "Order-driven pick lists with AI-optimized FEFO bin selection",
+          "Barcode scan verification at load-out",
+          "Shortest-path pick sequencing through warehouse",
+          "Pack confirmation with shipment linking",
+          "Dock scheduling for inbound & outbound vehicles",
+        ],
+      },
+      {
+        icon: Activity,
+        title: "Inventory Intelligence",
+        points: [
+          "Scheduled cycle counts (Full, ABC, Zone, SKU-based)",
+          "Variance tracking with auto-adjustment posting",
+          "AI replenishment engine (bulk → pick face auto-trigger)",
+          "Stock transfer, adjustments & full movement audit trail",
+          "Real-time KPIs: throughput, accuracy, utilisation, dwell time",
+        ],
+      },
+    ],
+  },
+  {
     label: "Communications",
     color: "emerald",
     features: [
