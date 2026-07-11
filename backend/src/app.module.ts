@@ -63,6 +63,7 @@ import { CourierManagementModule } from './courier-management/courier-management
 import { CustomerPortalModule } from './customer-portal/customer-portal.module';
 import { LogisticsAnalyticsModule } from './logistics-analytics/logistics-analytics.module';
 import { CommercialAnalyticsModule } from './commercial-analytics/commercial-analytics.module';
+import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module';
 
 @Module({
   imports: [
@@ -132,6 +133,7 @@ import { CommercialAnalyticsModule } from './commercial-analytics/commercial-ana
     CustomerPortalModule,
     LogisticsAnalyticsModule,
     CommercialAnalyticsModule,
+    WarehouseManagementModule,
 
     // Domain modules
     AuthModule,

@@ -28,7 +28,7 @@ export const FEATURE_KEYS = [
   'aiControlTower', 'copilot', 'api', 'ecommerce',
   'whiteLabel', 'nativeApp', 'selfHost', 'dedicatedManager',
   'clawAutopilot', 'sso', 'freightForwarding', 'aiSupportAgent', 'courierManagement',
-  'logisticsAnalytics', 'commercialAnalytics',
+  'logisticsAnalytics', 'commercialAnalytics', 'warehouseManagement',
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -49,7 +49,7 @@ const ENTERPRISE: Partial<Record<FeatureKey, boolean>> = {
   ...PRO,
   whiteLabel: true, nativeApp: true, selfHost: true, dedicatedManager: true,
   clawAutopilot: true, sso: true, freightForwarding: true, aiSupportAgent: true, courierManagement: true,
-  logisticsAnalytics: true, commercialAnalytics: true,
+  logisticsAnalytics: true, commercialAnalytics: true, warehouseManagement: true,
 };
 
 const fill = (on: Partial<Record<FeatureKey, boolean>>): Record<string, boolean> =>
