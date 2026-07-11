@@ -24,6 +24,7 @@ import { Claw6SentinelService }              from './claw-6-sentinel.service';
 import { ClawLogicEngine }                   from './claw-logic.engine';
 import { CompetitiveIntelligenceService }    from './competitive-intelligence.service';
 import { IntegrationSentinelService }        from './integration-sentinel.service';
+import { PlatformProtectionService }         from './platform-protection.service';
 
 // ── External modules ─────────────────────────────────────────────────────────
 import { PrismaModule }   from '../prisma/prisma.module';
@@ -72,6 +73,7 @@ import { ConfigService }  from '@nestjs/config';
     ClawLogicEngine,
     CompetitiveIntelligenceService,
     IntegrationSentinelService,
+    PlatformProtectionService,
   ],
   exports: [
     AiService,
@@ -81,6 +83,7 @@ import { ConfigService }  from '@nestjs/config';
     ClawService,
     CompetitiveIntelligenceService,
     IntegrationSentinelService,
+    PlatformProtectionService,
   ],
 })
 export class AiModule {}
