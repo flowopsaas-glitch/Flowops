@@ -161,8 +161,8 @@ export default function OwnerOpsMap() {
           <div className="h-[520px] w-full">
             <MapContainer center={ZA_CENTER} zoom={6} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
               <TileLayer
-                attribution='&copy; OpenStreetMap contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
+                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
               />
               {exceptions.map((e) => (
                 <CircleMarker key={`x-${e.id}`} center={[e.lat, e.lng]} radius={10}

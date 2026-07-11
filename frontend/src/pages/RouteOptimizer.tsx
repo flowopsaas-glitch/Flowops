@@ -229,8 +229,8 @@ export default function RouteOptimizer() {
         <div className="rounded-[24px] border border-white/10 bg-slate-900/50 overflow-hidden h-[640px]">
           <MapContainer center={center} zoom={6} style={{ height: "100%", width: "100%" }}>
             <TileLayer
-              attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
             {polyline.length > 1 && (
               <Polyline positions={polyline} pathOptions={{ color: "#10b981", weight: 4, opacity: 0.8 }} />
