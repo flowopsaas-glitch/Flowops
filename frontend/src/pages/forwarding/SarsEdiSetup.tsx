@@ -81,7 +81,7 @@ export default function SarsEdiSetup() {
     } finally { setBusy(null); }
   };
 
-  const active = PATHS.find((p) => p.id === path)!;
+  const active = PATHS.find((p) => p.id === path) ?? PATHS[0];
 
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5 space-y-4">
