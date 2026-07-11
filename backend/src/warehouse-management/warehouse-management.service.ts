@@ -365,7 +365,6 @@ export class WarehouseManagementService {
             quantityOnHand: newQty,
             quantityAllocated: Math.max(0, item.quantityAllocated - pick.pickedQty),
             quantityAvailable: newQty - Math.max(0, item.quantityAllocated - pick.pickedQty),
-            isEmpty: newQty === 0 ? undefined : undefined,
             lastMovedAt: new Date(),
           },
         });
