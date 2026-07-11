@@ -56,9 +56,9 @@ function Hero() {
           </h1>
 
           <p className="text-xl text-white/60 leading-relaxed max-w-2xl mb-10">
-            Waybills, dispatch, driver tracking, invoicing, COD reconciliation,
-            and AI oversight — all in a single platform designed for SA courier
-            and freight companies.
+            Waybills, dispatch, driver tracking, warehousing, invoicing, COD reconciliation,
+            and AI oversight — all in a single platform designed for SA courier,
+            freight, and 3PL companies.
           </p>
 
           {/* CTAs */}

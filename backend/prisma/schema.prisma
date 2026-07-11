@@ -2261,6 +2261,519 @@ model CourierOrder {
 
 
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── WAREHOUSE MANAGEMENT SYSTEM (WMS) ───────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// World-class WMS: zone/bin hierarchy, inventory tracking, goods receipt,
+// put-away, pick/pack, cycle count, stock movements, dock scheduling, and
+// AI-powered warehouse analytics. Designed for 3PL operations at scale.
+
+enum WarehouseZoneType {
+  RECEIVING    // Inbound dock / goods-in area
+  BULK         // Long-term / pallet storage
+  PICK         // Active pick face
+  PACKING      // Pack & label station
+  DISPATCH     // Outbound staging / dock
+  RETURNS      // RMA inspection & processing
+  COLD         // Temperature-controlled
+  HAZMAT       // Dangerous goods (ADR/SANS)
+  QUARANTINE   // Held stock (damaged/pending QA)
+  CROSSDOCK    // Pass-through (no storage)
+}
+
+enum StockMovementType {
+  RECEIPT      // Goods received from supplier/transfer
+  PUT_AWAY     // Moved from receiving to storage bin
+  PICK         // Picked for an order
+  PACK         // Packed into shipment
+  TRANSFER     // Moved between bins
+  ADJUSTMENT   // Manual correction (write-off, found, damage)
+  RETURN_IN    // Returned goods received
+  DISPATCH     // Shipped out
+  CYCLE_COUNT  // Adjustment from count variance
+  REPLENISH    // Moved from bulk to pick face
+}
+
+enum PickOrderStatus {
+  PENDING      // Created, not yet assigned
+  ASSIGNED     // Picker allocated
+  IN_PROGRESS  // Picking started
+  PICKED       // All items picked
+  PACKED       // Packed and ready for dispatch
+  DISPATCHED   // Handed to driver / shipped
+  CANCELLED    // Order cancelled
+}
+
+enum GoodsReceiptStatus {
+  EXPECTED     // ASN received, goods not yet arrived
+  ARRIVED      // Vehicle at dock, unloading
+  INSPECTING   // QA check in progress
+  COMPLETED    // Received & put away
+  REJECTED     // Failed inspection, returned to sender
+}
+
+enum CycleCountStatus {
+  SCHEDULED    // Planned but not started
+  IN_PROGRESS  // Counters actively counting
+  COMPLETED    // Count finished, variances recorded
+  APPROVED     // Variances approved and adjustments posted
+}
+
+// ── Warehouse (physical site) ────────────────────────────────────────────────
+// Extends the existing Branch model with warehouse-specific attributes.
+// A company can have multiple warehouses; each has zones → bins.
+model Warehouse {
+  id        String @id @default(cuid())
+  companyId String
+  branchId  String? // Optional link to existing Branch
+
+  name           String
+  code           String? // Short code (e.g. "JHB-01", "CPT-MAIN")
+  address        String?
+  city           String?
+  lat            Float?
+  lng            Float?
+
+  // Capacity
+  totalAreaSqm      Float?
+  usableAreaSqm     Float?
+  totalBinLocations Int    @default(0)
+  maxPalletCapacity Int?
+
+  // Operations config
+  operatingHoursStart String? // "06:00"
+  operatingHoursEnd   String? // "22:00"
+  timezone            String  @default("Africa/Johannesburg")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  zones          WarehouseZone[]
+  goodsReceipts  GoodsReceipt[]
+  pickOrders     PickOrder[]
+  cycleCounts    CycleCount[]
+  dockSlots      DockSlot[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("warehouses")
+}
+
+// ── Zone (logical area within a warehouse) ───────────────────────────────────
+model WarehouseZone {
+  id          String        @id @default(cuid())
+  warehouseId String
+  warehouse   Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  name        String        // "Zone A - Bulk Storage"
+  code        String        // "A", "PICK-1", "COLD-01"
+  type        WarehouseZoneType @default(BULK)
+
+  // Physical
+  areaSqm     Float?
+  temperature Float?        // °C (for cold chain)
+  maxWeight   Float?        // kg capacity
+
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  binLocations BinLocation[]
+
+  @@index([warehouseId])
+  @@map("warehouse_zones")
+}
+
+// ── Bin Location (smallest addressable storage unit) ─────────────────────────
+// Address format: ZONE-AISLE-RACK-LEVEL-POSITION (e.g. "A-01-03-02-001")
+model BinLocation {
+  id     String        @id @default(cuid())
+  zoneId String
+  zone   WarehouseZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  // Hierarchical address
+  code       String   // Full address: "A-01-03-02-001"
+  aisle      String?  // "01"
+  rack       String?  // "03"
+  level      String?  // "02" (shelf level)
+  position   String?  // "001" (position on shelf)
+
+  // Capacity & constraints
+  maxWeightKg   Float?
+  maxVolumeCbm  Float?
+  widthCm       Float?
+  heightCm      Float?
+  depthCm       Float?
+  binType       String  @default("SHELF") // SHELF | PALLET | FLOOR | TOTE | DRAWER
+
+  // State
+  isEmpty       Boolean @default(true)
+  isBlocked     Boolean @default(false) // Temporarily unavailable
+  blockReason   String?
+
+  // Pick priority (lower = picked first for FIFO/FEFO)
+  pickSequence  Int     @default(0)
+
+  inventory     InventoryItem[]
+  movements     StockMovement[]
+
+  @@unique([zoneId, code])
+  @@index([zoneId])
+  @@map("bin_locations")
+}
+
+// ── Inventory Item (stock at a specific bin) ─────────────────────────────────
+// Each row = one SKU in one bin. Multiple rows for same SKU across bins.
+model InventoryItem {
+  id        String @id @default(cuid())
+  companyId String
+
+  binId     String
+  bin       BinLocation @relation(fields: [binId], references: [id], onDelete: Cascade)
+
+  // Product identification
+  sku           String        // Stock Keeping Unit
+  barcode       String?       // EAN/UPC barcode
+  description   String
+  category      String?       // Product category
+
+  // Quantities
+  quantityOnHand    Int   @default(0) // Physical stock in this bin
+  quantityAllocated Int   @default(0) // Reserved for pick orders
+  quantityAvailable Int   @default(0) // onHand - allocated (computed)
+
+  // Batch/lot tracking
+  batchNumber   String?
+  lotNumber     String?
+  serialNumber  String?
+  expiryDate    DateTime?     // For FEFO (First Expired First Out)
+  manufacturedDate DateTime?
+
+  // Value
+  unitCost      Float?        // Cost per unit (for inventory valuation)
+  currency      String @default("ZAR")
+
+  // Physical
+  weightKg      Float?
+  volumeCbm     Float?
+
+  // Replenishment
+  reorderPoint    Int?        // Trigger replenishment when qty drops below
+  reorderQuantity Int?        // How much to reorder/replenish
+  maxQuantity     Int?        // Max stock for this bin
+
+  // Status
+  status    String @default("AVAILABLE") // AVAILABLE | ALLOCATED | HELD | DAMAGED | EXPIRED
+  lastCountedAt DateTime?
+  lastMovedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, sku])
+  @@index([binId])
+  @@index([companyId, status])
+  @@index([expiryDate])
+  @@map("inventory_items")
+}
+
+// ── Stock Movement (every movement creates an audit trail) ───────────────────
+model StockMovement {
+  id        String @id @default(cuid())
+  companyId String
+
+  type      StockMovementType
+  sku       String
+  quantity  Int               // Positive = in, Negative = out
+  reference String?           // PO number, pick order, manifest code, etc.
+
+  // Location
+  fromBinId String?
+  fromBin   BinLocation? @relation(fields: [fromBinId], references: [id])
+  toBinId   String?
+
+  // Context
+  goodsReceiptId String?
+  pickOrderId    String?
+  cycleCountId   String?
+  reason         String?       // For adjustments: "damaged", "found", "write-off"
+
+  // Audit
+  performedBy    String?       // User ID who executed
+  performedAt    DateTime @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, sku])
+  @@index([companyId, type])
+  @@index([companyId, performedAt])
+  @@map("stock_movements")
+}
+
+// ── Goods Receipt (inbound receiving workflow) ───────────────────────────────
+model GoodsReceipt {
+  id          String @id @default(cuid())
+  companyId   String
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  // Reference
+  receiptNumber String          // "GR-2026-00001"
+  poNumber      String?         // Purchase order reference
+  supplierName  String?
+  carrierName   String?
+
+  status        GoodsReceiptStatus @default(EXPECTED)
+
+  // Expected vs Actual
+  expectedDate  DateTime?
+  arrivedAt     DateTime?
+  completedAt   DateTime?
+
+  // Dock assignment
+  dockSlotId    String?
+
+  // Totals
+  expectedLines   Int   @default(0)
+  receivedLines   Int   @default(0)
+  expectedQty     Int   @default(0)
+  receivedQty     Int   @default(0)
+  damagedQty      Int   @default(0)
+  rejectedQty     Int   @default(0)
+
+  // Notes
+  notes           String? @db.Text
+  inspectionNotes String? @db.Text
+
+  // Audit
+  receivedBy    String?
+  completedBy   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines GoodsReceiptLine[]
+
+  @@unique([companyId, receiptNumber])
+  @@index([companyId, status])
+  @@index([warehouseId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id             String       @id @default(cuid())
+  goodsReceiptId String
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+
+  sku             String
+  description     String?
+  expectedQty     Int     @default(0)
+  receivedQty     Int     @default(0)
+  damagedQty      Int     @default(0)
+
+  // Put-away
+  putAwayBinId    String? // Where it was stored
+  putAwayComplete Boolean @default(false)
+
+  // Batch
+  batchNumber     String?
+  expiryDate      DateTime?
+  unitCost        Float?
+
+  @@index([goodsReceiptId])
+  @@map("goods_receipt_lines")
+}
+
+// ── Pick Order (outbound fulfilment workflow) ─────────────────────────────────
+model PickOrder {
+  id          String @id @default(cuid())
+  companyId   String
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  orderNumber   String          // "PO-2026-00001"
+  status        PickOrderStatus @default(PENDING)
+  priority      Int     @default(0) // Higher = more urgent
+
+  // Source (what triggered this pick)
+  sourceType    String? // WAYBILL | MANIFEST | SALES_ORDER | TRANSFER
+  sourceId      String? // waybillId, manifestId, etc.
+  clientName    String?
+
+  // Assignment
+  assignedTo    String? // Picker user ID
+  assignedAt    DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  packedAt      DateTime?
+  dispatchedAt  DateTime?
+
+  // Totals
+  totalLines    Int   @default(0)
+  pickedLines   Int   @default(0)
+  totalQty      Int   @default(0)
+  pickedQty     Int   @default(0)
+
+  // Shipping
+  shipToName    String?
+  shipToAddress String?
+  trackingNumber String? // Links back to waybill
+
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines PickOrderLine[]
+
+  @@unique([companyId, orderNumber])
+  @@index([companyId, status])
+  @@index([warehouseId])
+  @@index([assignedTo, status])
+  @@map("pick_orders")
+}
+
+model PickOrderLine {
+  id          String    @id @default(cuid())
+  pickOrderId String
+  pickOrder   PickOrder @relation(fields: [pickOrderId], references: [id], onDelete: Cascade)
+
+  sku           String
+  description   String?
+  requestedQty  Int
+  pickedQty     Int     @default(0)
+  shortQty      Int     @default(0) // qty that couldn't be fulfilled
+
+  // Directed pick: which bin to pick from
+  suggestedBinId String?
+  actualBinId    String?  // Where it was actually picked from
+
+  // Status
+  picked    Boolean @default(false)
+  pickedAt  DateTime?
+  pickedBy  String?
+
+  @@index([pickOrderId])
+  @@map("pick_order_lines")
+}
+
+// ── Cycle Count (inventory accuracy) ─────────────────────────────────────────
+model CycleCount {
+  id          String @id @default(cuid())
+  companyId   String
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  countNumber   String            // "CC-2026-00001"
+  status        CycleCountStatus  @default(SCHEDULED)
+  countType     String @default("FULL") // FULL | ABC | ZONE | SKU | RANDOM
+
+  // Schedule
+  scheduledDate DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  approvedAt    DateTime?
+  approvedBy    String?
+
+  // Scope
+  zoneFilter    String?   // Only count specific zone(s)
+  skuFilter     String?   // Only count specific SKU(s)
+  abcClass      String?   // A | B | C (for ABC counting)
+
+  // Results
+  totalBins       Int @default(0)
+  countedBins     Int @default(0)
+  totalVariances  Int @default(0)
+  varianceValue   Float @default(0) // ZAR value of discrepancies
+
+  // Accuracy
+  accuracyRate    Float? // % of bins with zero variance
+
+  notes           String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines CycleCountLine[]
+
+  @@unique([companyId, countNumber])
+  @@index([companyId, status])
+  @@map("cycle_counts")
+}
+
+model CycleCountLine {
+  id           String     @id @default(cuid())
+  cycleCountId String
+  cycleCount   CycleCount @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
+
+  binCode      String
+  sku          String
+  description  String?
+
+  // Expected vs Actual
+  systemQty    Int           // What the system says
+  countedQty   Int?          // What was physically counted
+  variance     Int?          // countedQty - systemQty
+
+  // Resolution
+  resolved     Boolean @default(false)
+  adjustmentPosted Boolean @default(false)
+  resolvedBy   String?
+  resolvedAt   DateTime?
+  notes        String?
+
+  @@index([cycleCountId])
+  @@map("cycle_count_lines")
+}
+
+// ── Dock Slot (inbound/outbound dock scheduling) ─────────────────────────────
+model DockSlot {
+  id          String    @id @default(cuid())
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  name        String    // "Dock 1", "Bay A"
+  type        String    @default("BOTH") // INBOUND | OUTBOUND | BOTH
+  isActive    Boolean   @default(true)
+
+  appointments DockAppointment[]
+
+  @@index([warehouseId])
+  @@map("dock_slots")
+}
+
+model DockAppointment {
+  id         String   @id @default(cuid())
+  companyId  String
+  dockSlotId String
+  dockSlot   DockSlot @relation(fields: [dockSlotId], references: [id], onDelete: Cascade)
+
+  // Scheduling
+  type          String    // INBOUND | OUTBOUND
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  actualArrival  DateTime?
+  actualDepart   DateTime?
+
+  // Reference
+  carrierName    String?
+  vehicleReg     String?
+  reference      String?  // PO, manifest, GR number
+  goodsReceiptId String?
+
+  // Status
+  status    String @default("SCHEDULED") // SCHEDULED | ARRIVED | IN_PROGRESS | COMPLETED | CANCELLED | NO_SHOW
+
+  notes     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([dockSlotId, scheduledStart])
+  @@index([companyId, status])
+  @@map("dock_appointments")
+}
+
+
 // ─── Commercial Analytics Suite ──────────────────────────────────────────────
 // World-class pricing analysis, profitability metrics, client intelligence, and
 // revenue forecasting. Powers strategic decision-making for logistics operators.
