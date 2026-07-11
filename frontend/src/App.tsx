@@ -99,7 +99,6 @@ const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const OnboardingWizard = lazy(() => import("./pages/OnboardingWizard"));
 const EsgDashboard = lazy(() => import("./pages/EsgDashboard"));
-const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
 const DriverHomePage   = lazy(() => import("./pages/driver/DriverHomePage"));
 const SignupPage = lazy(() => import("./pages/Signup"));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
@@ -111,6 +110,8 @@ const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
 const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
 const PricingPage   = lazy(() => import("./pages/marketing/PricingPage"));
 const SubcontractorPage = lazy(() => import("./pages/marketing/SubcontractorPage"));
+const AdminApprovalDashboard = lazy(() => import("./pages/AdminApprovalDashboard"));
+const SarsEdiSetup  = lazy(() => import("./pages/forwarding/SarsEdiSetup"));
 const NotFoundPage  = lazy(() => import("./pages/NotFoundPage"));
 
 export default function App() {
@@ -301,6 +302,8 @@ export default function App() {
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
               <Route path="/onboarding" element={<OnboardingWizard />} />
               <Route path="/esg" element={<EsgDashboard />} />
+              <Route path="/admin/approvals" element={<RequirePermission adminOnly><AdminApprovalDashboard /></RequirePermission>} />
+              <Route path="/forwarding/sars-edi" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="SARS EDI Setup"><SarsEdiSetup /></RequireFeature></RequirePermission>} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />
               <Route path="/settings/branding" element={<RequirePermission perm="settings"><BrandingSettings /></RequirePermission>} />
               <Route
