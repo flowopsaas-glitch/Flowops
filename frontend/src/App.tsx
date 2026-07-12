@@ -102,6 +102,7 @@ const EsgDashboard = lazy(() => import("./pages/EsgDashboard"));
 const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
 const DriverHomePage   = lazy(() => import("./pages/driver/DriverHomePage"));
 const SignupPage = lazy(() => import("./pages/Signup"));
+const SignupMobilePage = lazy(() => import("./pages/SignupMobile"));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPassword'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
@@ -171,7 +172,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RootRoute />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/signup" element={<SignupMobilePage />} />
+          <Route path="/signup/classic" element={<SignupPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
