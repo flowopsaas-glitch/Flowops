@@ -35,15 +35,19 @@ export class OtpService {
     return Array.from({ length: OTP_LENGTH }, () => Math.floor(Math.random() * 10)).join('');
   }
 
-  /** Normalize phone: remove spaces, ensure starts with country code. */
+  /** Normalize phone: remove spaces, ensure starts with country code (27). */
   private normalizePhone(phone: string): string {
     let p = phone.replace(/[\s\-()]/g, '');
-    // South African: 0XX → +27XX
+    // Remove leading +
+    if (p.startsWith('+')) p = p.slice(1);
+    // South African: 0XX → 27XX
     if (p.startsWith('0') && p.length === 10) {
       p = '27' + p.slice(1);
     }
-    // Remove leading +
-    if (p.startsWith('+')) p = p.slice(1);
+    // If still no country code (just 9 digits like 606592875), prepend 27
+    if (p.length === 9 && !p.startsWith('27')) {
+      p = '27' + p;
+    }
     return p;
   }
 
