@@ -155,12 +155,10 @@ export default function App() {
       }
     });
 
-    socket.on("system-ui-heal", (payload: { action: string; reason: string }) => {
-      console.error(`SYSTEM DISCREPANCY DETECTED BY WATCHDOG: ${payload.reason}`);
-      if (payload.action === "HOT_RELOAD_MODULES") {
-        window.location.reload();
-      }
-    });
+    // system-ui-heal listener REMOVED — it triggered unwanted full page reloads
+    // whenever a backend cron perceived a "discrepancy". The reload caused UI
+    // jumping and degraded user experience. If a real hot-reload is ever needed,
+    // implement it via the PWA service-worker update prompt (already in place).
 
     return () => {
       socket.disconnect();

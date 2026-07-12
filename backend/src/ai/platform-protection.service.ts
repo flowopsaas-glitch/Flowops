@@ -71,9 +71,9 @@ export class PlatformProtectionService {
         );
       }
 
-      // Check for orphaned inventory (items in bins that don't exist)
+      // Check for orphaned inventory (items without a bin assignment)
       const orphanedItems = await this.prisma.inventoryItem.count({
-        where: { bin: null as any },
+        where: { binId: null },
       });
 
       if (orphanedItems > 0) {
