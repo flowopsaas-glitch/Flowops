@@ -62,17 +62,15 @@ export class AiWatchdog {
 
   /**
    * 🔍 Anomaly Detection Logic
+   * Narrowed to only trigger on genuine code-level crashes — not normal
+   * Prisma validation errors or missing-data scenarios which are expected.
    */
   private isCodeInfection(err: any): boolean {
     const message = err?.message?.toLowerCase() || '';
-    const stack = err?.stack?.toLowerCase() || '';
-    
-    return message.includes('is not a function') || 
-           message.includes('undefined') || 
-           message.includes('blank') ||
-           message.includes('bridge') ||
-           stack.includes('render') ||
-           stack.includes('component');
+    // Only flag catastrophic runtime failures, not everyday query errors
+    return message.includes('is not a function') ||
+           message.includes('cannot read properties of null') ||
+           message.includes('maximum call stack');
   }
 
   /**
