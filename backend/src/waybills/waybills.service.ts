@@ -190,6 +190,26 @@ export class WaybillsService {
     if (dto.status && dto.status !== existing.status) {
       void this.notifications.notifyWaybillStatus(updated);
       void this.ecommerce.pushStatusToShopify(updated);
+
+      // ── Keep Shipment in sync with Waybill status ─────────────────────
+      // The Shipment model has its own status field. When the waybill
+      // transitions to DELIVERED, the linked shipment must also advance.
+      if (dto.status === 'DELIVERED') {
+        await this.prisma.shipment.updateMany({
+          where: { waybillId: id },
+          data: { status: 'DELIVERED', deliveredAt: new Date() },
+        });
+      } else if (dto.status === 'IN_TRANSIT') {
+        await this.prisma.shipment.updateMany({
+          where: { waybillId: id },
+          data: { status: 'IN_TRANSIT' },
+        });
+      } else if (dto.status === 'FAILED_DELIVERY') {
+        await this.prisma.shipment.updateMany({
+          where: { waybillId: id },
+          data: { status: 'FAILED' },
+        });
+      }
     }
     return updated;
   }
@@ -224,10 +244,12 @@ export class WaybillsService {
           });
 
       // Advance the waybill so it leaves the pending/unassigned queue
-      if (waybill.status === 'PENDING') {
+      // For same-day couriers, assignment = pickup = in transit
+      const newStatus = waybill.status === 'PENDING' ? 'IN_TRANSIT' : waybill.status;
+      if (newStatus !== waybill.status) {
         await tx.waybill.update({
           where: { id: waybillId },
-          data: { status: 'COLLECTED' },
+          data: { status: newStatus },
         });
       }
 

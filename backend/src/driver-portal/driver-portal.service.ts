@@ -127,6 +127,14 @@ export class DriverPortalService {
       },
     });
 
+    // ── Update the linked Shipment to DELIVERED ─────────────────────────
+    // The Shipment model has its own status field. Without this update, the
+    // Shipments page keeps showing IN_TRANSIT even after POD is captured.
+    await this.prisma.shipment.updateMany({
+      where: { waybillId: body.waybillId },
+      data: { status: 'DELIVERED', deliveredAt: new Date() },
+    });
+
     // ── Close the loop ───────────────────────────────────────────────────
     // A field POD is a real DELIVERED event. Mirror the office delivery path:
     // notify the customer, request a rating, and live-refresh the dispatch
