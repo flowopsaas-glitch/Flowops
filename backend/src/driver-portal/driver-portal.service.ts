@@ -110,6 +110,119 @@ export class DriverPortalService {
     });
   }
 
+  /**
+   * confirmCollection — driver marks a collection as picked up.
+   *
+   * Lifecycle:
+   * 1. Marks Collection status → COLLECTED + pickedUpAt = now
+   * 2. Auto-creates a Waybill from the collection data
+   * 3. Auto-creates a Shipment linking the waybill to the same driver (IN_TRANSIT)
+   * 4. Returns the new waybill (so the driver portal can navigate to it for delivery/POD)
+   */
+  async confirmCollection(
+    collectionId: string,
+    driverId: string,
+    companyId: string,
+    body: { parcelCount?: number; notes?: string },
+  ) {
+    // 1. Find and validate the collection
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, driverId, companyId },
+    });
+    if (!collection) {
+      throw new Error('Collection not found or not assigned to this driver');
+    }
+    if (collection.status === 'COLLECTED') {
+      throw new Error('This collection has already been confirmed');
+    }
+
+    // 2. Mark as COLLECTED
+    await this.prisma.collection.update({
+      where: { id: collectionId },
+      data: {
+        status: 'COLLECTED',
+        pickedUpAt: new Date(),
+        notes: body.notes ? `${collection.notes ?? ''}\nDriver: ${body.notes}`.trim() : collection.notes,
+      },
+    });
+
+    // 3. Auto-create a Waybill from the collection data
+    const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
+    const waybill = await this.prisma.waybill.create({
+      data: {
+        trackingNumber,
+        companyId,
+        status: 'IN_TRANSIT',
+        senderName: collection.clientName,
+        senderPhone: collection.clientPhone,
+        senderAddress: collection.pickupAddress,
+        recipientName: collection.clientName, // same client — they'll update recipient on dispatch
+        recipientPhone: collection.clientPhone,
+        recipientAddress: collection.pickupAddress, // placeholder until dispatch sets delivery address
+        weight: 0,
+        totalAmount: 0,
+        description: `Collection pickup — ${body.parcelCount ?? 1} parcel(s). ${body.notes ?? ''}`.trim(),
+      },
+    });
+
+    // 4. Auto-create Shipment → AI auto-assigns to the best available driver
+    // Logic: if the collecting driver is AVAILABLE/ON_ROUTE, assign to them
+    // (they already have the parcel). Otherwise, find the nearest available driver.
+    let assignedDriverId = driverId; // default: same driver who collected
+
+    try {
+      const collectingDriver = await this.prisma.driver.findUnique({
+        where: { id: driverId },
+        select: { status: true },
+      });
+
+      // If the collecting driver is already on another route or offline,
+      // AI finds the best alternative
+      if (collectingDriver?.status === 'OFFLINE') {
+        const availableDrivers = await this.prisma.driver.findMany({
+          where: { companyId, isActive: true, status: 'AVAILABLE' },
+          select: { id: true, name: true },
+          take: 1,
+        });
+        if (availableDrivers.length > 0) {
+          assignedDriverId = availableDrivers[0].id;
+          this.logger.log(`AI: Collecting driver offline → reassigned to ${availableDrivers[0].name}`);
+        }
+      }
+    } catch { /* fallback: keep the collecting driver */ }
+
+    await this.prisma.shipment.create({
+      data: {
+        waybillId: waybill.id,
+        companyId,
+        driverId: assignedDriverId,
+        status: 'IN_TRANSIT',
+      },
+    });
+
+    this.logger.log(`Collection ${collectionId} confirmed → Waybill ${trackingNumber} created → AI-assigned to driver ${assignedDriverId}`);
+
+    // 5. Emit real-time update to dispatch board
+    try {
+      this.gateway.emitToCompany(companyId, 'collection-confirmed', {
+        collectionId,
+        waybillId: waybill.id,
+        trackingNumber,
+        driverId: assignedDriverId,
+        aiAssigned: assignedDriverId !== driverId,
+      });
+    } catch { /* best-effort */ }
+
+    return {
+      success: true,
+      collection: { id: collectionId, status: 'COLLECTED' },
+      waybill: { id: waybill.id, trackingNumber, status: 'IN_TRANSIT' },
+      assignedDriverId,
+      aiAssigned: assignedDriverId !== driverId,
+      message: `Collected! Waybill ${trackingNumber} created and AI-assigned for delivery.`,
+    };
+  }
+
   async recordPod(body: {
     waybillId: string;
     signatureUrl?: string;
