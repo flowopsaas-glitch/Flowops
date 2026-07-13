@@ -39,6 +39,20 @@ export class CollectionsController {
     return this.svc.cancel(id, u.companyId);
   }
 
+  /**
+   * POST /collections/:id/confirm-collected
+   * Office/dispatch marks a collection as COLLECTED → auto-creates Waybill + Shipment.
+   * Same flow as the driver endpoint, but triggered from the dispatch desk.
+   */
+  @Post('collections/:id/confirm-collected')
+  confirmCollected(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Body() body: { parcelCount?: number; deliveryAddress?: string; recipientName?: string; recipientPhone?: string; notes?: string },
+  ) {
+    return this.svc.confirmCollected(id, u.companyId, body);
+  }
+
   @Get('collections/:id/auto-suggest')
   autoSuggest(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.autoSuggest(id, u.companyId);
