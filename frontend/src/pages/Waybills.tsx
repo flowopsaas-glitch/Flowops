@@ -35,11 +35,13 @@ type WaybillDraft = {
   senderName: string;
   senderCompany: string;
   senderPhone: string;
+  senderEmail: string;
   senderAddress1: string;
   senderCity: string;
   receiverName: string;
   receiverCompany: string;
   receiverPhone: string;
+  receiverEmail: string;
   receiverAddress1: string;
   receiverCity: string;
   reference: string;
@@ -125,7 +127,7 @@ const NumInput = ({ value, onChange, placeholder }: any) => (
   />
 );
 
-const PartyCard = ({ title, name, company, phone, address, city, onChange, payerActive }: any) => (
+const PartyCard = ({ title, name, company, phone, email, address, city, onChange, payerActive }: any) => (
   <div className={cn(
     "rounded-2xl border p-5 transition-all",
     payerActive ? "border-sky-400/30 bg-sky-400/5 shadow-[0_0_20px_rgba(56,189,248,0.05)]" : "border-white/10 bg-white/5"
@@ -141,6 +143,7 @@ const PartyCard = ({ title, name, company, phone, address, city, onChange, payer
       <input className={glassInput()} placeholder="Full Name" value={name} onChange={e => onChange({ name: e.target.value })} />
       <input className={glassInput()} placeholder="Company Name" value={company} onChange={e => onChange({ company: e.target.value })} />
       <input className={glassInput()} placeholder="Phone Number" value={phone} onChange={e => onChange({ phone: e.target.value })} />
+      <input className={glassInput()} type="email" placeholder="Email (for tracking notifications)" value={email} onChange={e => onChange({ email: e.target.value })} />
       <input className={glassInput()} placeholder="Street Address" value={address} onChange={e => onChange({ address: e.target.value })} />
       <input className={glassInput()} placeholder="City" value={city} onChange={e => onChange({ city: e.target.value })} />
     </div>
@@ -168,8 +171,8 @@ export default function Waybills() {
     codAmount: 0,
     chargeSide: "SENDER",
     clientContractCode: "",
-    senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "",
-    receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "",
+    senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "", senderEmail: "",
+    receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "", receiverEmail: "",
     reference: "", notes: "",
     parcels: [{ id: uid(), qty: 1, weightKg: 2.5, lengthCm: 30, widthCm: 20, heightCm: 15 }],
   }));
@@ -205,6 +208,7 @@ export default function Waybills() {
         senderAddress:    senderAddress || "N/A",
         recipientName:    draft.receiverName,
         recipientPhone:   draft.receiverPhone,
+        recipientEmail:   draft.receiverEmail || undefined,
         recipientAddress: recipientAddress || "N/A",
         weight:           parseFloat(t.chargeKg.toFixed(3)),
         description:      draft.notes || undefined,
@@ -338,8 +342,8 @@ export default function Waybills() {
 
         {step === "PARTIES" && (
           <div className="grid md:grid-cols-2 gap-6">
-            <PartyCard title="Sender" payerActive={draft.chargeSide === "SENDER"} {...draft} onChange={(p: any) => setDraft(d => ({...d, senderName: p.name ?? d.senderName, senderCity: p.city ?? d.senderCity, senderPhone: p.phone ?? d.senderPhone, senderAddress1: p.address ?? d.senderAddress1, senderCompany: p.company ?? d.senderCompany}))} />
-            <PartyCard title="Receiver" payerActive={draft.chargeSide === "RECEIVER"} {...draft} onChange={(p: any) => setDraft(d => ({...d, receiverName: p.name ?? d.receiverName, receiverCity: p.city ?? d.receiverCity, receiverPhone: p.phone ?? d.receiverPhone, receiverAddress1: p.address ?? d.receiverAddress1, receiverCompany: p.company ?? d.receiverCompany}))} />
+            <PartyCard title="Sender" payerActive={draft.chargeSide === "SENDER"} name={draft.senderName} company={draft.senderCompany} phone={draft.senderPhone} email={draft.senderEmail} address={draft.senderAddress1} city={draft.senderCity} onChange={(p: any) => setDraft(d => ({...d, senderName: p.name ?? d.senderName, senderCity: p.city ?? d.senderCity, senderPhone: p.phone ?? d.senderPhone, senderEmail: p.email ?? d.senderEmail, senderAddress1: p.address ?? d.senderAddress1, senderCompany: p.company ?? d.senderCompany}))} />
+            <PartyCard title="Receiver" payerActive={draft.chargeSide === "RECEIVER"} name={draft.receiverName} company={draft.receiverCompany} phone={draft.receiverPhone} email={draft.receiverEmail} address={draft.receiverAddress1} city={draft.receiverCity} onChange={(p: any) => setDraft(d => ({...d, receiverName: p.name ?? d.receiverName, receiverCity: p.city ?? d.receiverCity, receiverPhone: p.phone ?? d.receiverPhone, receiverEmail: p.email ?? d.receiverEmail, receiverAddress1: p.address ?? d.receiverAddress1, receiverCompany: p.company ?? d.receiverCompany}))} />
           </div>
         )}
 
