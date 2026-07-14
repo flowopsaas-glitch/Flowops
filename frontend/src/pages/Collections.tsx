@@ -126,6 +126,8 @@ export default function Collections() {
   const [clientPhone, setClientPhone] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientCity, setRecipientCity] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [paymentType, setPaymentType] = useState<"PREPAID" | "COD" | "ACCOUNT">("PREPAID");
   const [codAmount, setCodAmount] = useState("");
@@ -383,6 +385,10 @@ export default function Collections() {
                   <Field label="Recipient Name"><input value={recipientName} onChange={e=>setRecipientName(e.target.value)} placeholder="Sipho Ndlovu" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
                   <Field label="Recipient Phone"><input value={recipientPhone} onChange={e=>setRecipientPhone(e.target.value)} placeholder="072 845 3210" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Recipient Email (for tracking link)"><input type="email" value={recipientEmail} onChange={e=>setRecipientEmail(e.target.value)} placeholder="sipho@gmail.com" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                  <Field label="Recipient City"><input value={recipientCity} onChange={e=>setRecipientCity(e.target.value)} placeholder="Johannesburg" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                </div>
                 <Field label="Delivery Address"><textarea value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="14 Main Road, Braamfontein, Johannesburg" className="min-h-[60px] w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none resize-none" /></Field>
               </div>
 
@@ -431,15 +437,16 @@ export default function Collections() {
                         weightKg && `Weight: ${weightKg}kg`,
                         `Service: ${serviceLevel}`,
                         `Payment: ${paymentType}${paymentType === 'COD' && codAmount ? ` R${codAmount}` : ''}`,
-                        deliveryAddress && `Deliver to: ${recipientName || 'TBC'}, ${deliveryAddress}`,
+                        deliveryAddress && `Deliver to: ${recipientName || 'TBC'}, ${deliveryAddress}${recipientCity ? `, ${recipientCity}` : ''}`,
                         recipientPhone && `Recipient ph: ${recipientPhone}`,
+                        recipientEmail && `Recipient email: ${recipientEmail}`,
                         specialInstructions && `Instructions: ${specialInstructions}`,
                       ].filter(Boolean).join(' | '),
                     });
                     setSuccess("Collection created ✅ — assign a driver to dispatch.");
                     setName(""); setClientPhone(""); setCollectionAddress(""); setReferenceNo(""); setCompanyName("");
                     setParcelCount("1"); setPalletCount("0"); setWeightKg(""); setScheduledTime("");
-                    setRecipientName(""); setRecipientPhone(""); setDeliveryAddress("");
+                    setRecipientName(""); setRecipientPhone(""); setRecipientEmail(""); setRecipientCity(""); setDeliveryAddress("");
                     setPaymentType("PREPAID"); setCodAmount(""); setSpecialInstructions("");
                     setServiceLevel("SAME_DAY");
                     loadAll("refresh");
