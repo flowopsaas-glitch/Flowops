@@ -181,9 +181,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.emitToCompany(companyId, 'auto-invoice-completed', invoice);
   }
 
-  emitSystemHeal(companyId: string, reason: string) {
-    this.emitToCompany(companyId, 'system-ui-heal', { reason });
-  }
+  // emitSystemHeal REMOVED — this dead-code path allowed any backend service
+  // to force a full browser reload on all connected clients of a company,
+  // causing severe UX degradation (page "jumping"). The frontend listener
+  // has also been removed. If a real hot-update mechanism is ever needed,
+  // use the PWA service-worker update flow instead.
 
   /**
    * broadcastToCompany — called by the 6-Claw AI services.

@@ -16,7 +16,7 @@ export class ClawWorkerService {
    * Orchestrates the multi-tenant logistics sweep.
    * Runs every 5 minutes based on project specifications.
    */
-  @Cron('*/5 * * * *') 
+  @Cron('*/30 * * * *') 
   async handleScheduledExtraction() {
     this.logger.log('🤖 AI Claw: Initiating multi-tenant logistics sweep...');
 

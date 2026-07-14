@@ -23,25 +23,41 @@ export interface SendEmailParams {
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
+  private readonly provider: 'resend' | 'sendgrid';
   private readonly apiKey: string;
   private readonly fromEmail: string;
   private readonly fromName: string;
 
   constructor(private config: ConfigService) {
-    this.apiKey = config.get<string>('SENDGRID_API_KEY', '');
-    this.fromEmail = config.get<string>('SENDGRID_FROM_EMAIL', 'noreply@flowops.local');
-    this.fromName = config.get<string>('SENDGRID_FROM_NAME', 'FlowOps');
+    // Resend takes priority over SendGrid when both are configured.
+    const resendKey = config.get<string>('RESEND_API_KEY', '');
+    const sendgridKey = config.get<string>('SENDGRID_API_KEY', '');
+
+    if (resendKey && resendKey !== 'CHANGE_ME') {
+      this.provider = 'resend';
+      this.apiKey = resendKey;
+    } else {
+      this.provider = 'sendgrid';
+      this.apiKey = sendgridKey;
+    }
+
+    this.fromEmail = config.get<string>('EMAIL_FROM', '') ||
+      config.get<string>('RESEND_FROM_EMAIL', '') ||
+      config.get<string>('SENDGRID_FROM_EMAIL', 'noreply@flowops.local');
+    this.fromName = config.get<string>('EMAIL_FROM_NAME', '') ||
+      config.get<string>('RESEND_FROM_NAME', '') ||
+      config.get<string>('SENDGRID_FROM_NAME', 'FlowOps');
   }
 
   get isConfigured(): boolean {
+    if (this.provider === 'resend') return Boolean(this.apiKey);
     return Boolean(this.apiKey && this.apiKey !== 'SG.CHANGE_ME');
   }
 
   async send(params: SendEmailParams): Promise<boolean> {
     if (!this.isConfigured) {
-      // Development fallback — log the email so you can see what would be sent
       this.logger.warn(
-        `[EMAIL NOT SENT — SendGrid not configured]\n` +
+        `[EMAIL NOT SENT — ${this.provider} not configured]\n` +
         `To: ${params.to}\nSubject: ${params.subject}\n` +
         `Body preview: ${params.text ?? params.html.replace(/<[^>]+>/g, '').slice(0, 200)}`,
       );
@@ -49,45 +65,79 @@ export class EmailService {
     }
 
     try {
-      await axios.post(
-        'https://api.sendgrid.com/v3/mail/send',
-        {
-          personalizations: [{ to: [{ email: params.to }] }],
-          from: { email: this.fromEmail, name: this.fromName },
-          subject: params.subject,
-          content: [
-            // SendGrid requires text/plain to appear BEFORE text/html in the
-            // content array — otherwise it rejects the request with
-            // "text/plain must be first, followed by text/html".
-            ...(params.text ? [{ type: 'text/plain', value: params.text }] : []),
-            { type: 'text/html', value: params.html },
-          ],
-          ...(params.attachments?.length
-            ? {
-                attachments: params.attachments.map((a) => ({
-                  content: a.content,
-                  filename: a.filename,
-                  type: a.type || 'application/octet-stream',
-                  disposition: a.disposition || 'attachment',
-                  ...(a.contentId ? { content_id: a.contentId } : {}),
-                })),
-              }
-            : {}),
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-      this.logger.log(`Email sent → ${params.to}: ${params.subject}`);
-      return true;
+      if (this.provider === 'resend') {
+        return await this.sendViaResend(params);
+      } else {
+        return await this.sendViaSendGrid(params);
+      }
     } catch (err: any) {
-      const detail = err?.response?.data?.errors?.[0]?.message ?? err.message;
+      const detail = err?.response?.data?.message ?? err?.response?.data?.errors?.[0]?.message ?? err.message;
       this.logger.error(`Email failed → ${params.to}: ${detail}`);
       return false;
     }
+  }
+
+  private async sendViaResend(params: SendEmailParams): Promise<boolean> {
+    await axios.post(
+      'https://api.resend.com/emails',
+      {
+        from: `${this.fromName} <${this.fromEmail}>`,
+        to: [params.to],
+        subject: params.subject,
+        html: params.html,
+        ...(params.text ? { text: params.text } : {}),
+        ...(params.attachments?.length
+          ? {
+              attachments: params.attachments.map((a) => ({
+                content: a.content,
+                filename: a.filename,
+              })),
+            }
+          : {}),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    this.logger.log(`Email sent (Resend) → ${params.to}: ${params.subject}`);
+    return true;
+  }
+
+  private async sendViaSendGrid(params: SendEmailParams): Promise<boolean> {
+    await axios.post(
+      'https://api.sendgrid.com/v3/mail/send',
+      {
+        personalizations: [{ to: [{ email: params.to }] }],
+        from: { email: this.fromEmail, name: this.fromName },
+        subject: params.subject,
+        content: [
+          ...(params.text ? [{ type: 'text/plain', value: params.text }] : []),
+          { type: 'text/html', value: params.html },
+        ],
+        ...(params.attachments?.length
+          ? {
+              attachments: params.attachments.map((a) => ({
+                content: a.content,
+                filename: a.filename,
+                type: a.type || 'application/octet-stream',
+                disposition: a.disposition || 'attachment',
+                ...(a.contentId ? { content_id: a.contentId } : {}),
+              })),
+            }
+          : {}),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    this.logger.log(`Email sent (SendGrid) → ${params.to}: ${params.subject}`);
+    return true;
   }
 
   // ── Branded templates ──────────────────────────────────────────────────
