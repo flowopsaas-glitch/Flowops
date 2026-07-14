@@ -119,10 +119,13 @@ export default function Collections() {
   const [referenceNo, setReferenceNo] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [collectionAddress, setCollectionAddress] = useState("");
-  const [parcelCount, setParcelCount] = useState("0");
+  const [parcelCount, setParcelCount] = useState("1");
   const [palletCount, setPalletCount] = useState("0");
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
 
   async function loadAll(mode: "initial" | "refresh" = "initial") {
     try {
@@ -336,7 +339,17 @@ export default function Collections() {
                  <Field label="Reference No"><input value={referenceNo} onChange={e=>setReferenceNo(e.target.value)} placeholder="COL-2026-001" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
                  <Field label="Company Name"><input value={companyName} onChange={e=>setCompanyName(e.target.value)} placeholder="GoGet Couriers" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
               </div>
-              <Field label="Collection Address"><textarea value={collectionAddress} onChange={e=>setCollectionAddress(e.target.value)} className="min-h-[90px] w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+              <Field label="Collection Address (pickup from)"><textarea value={collectionAddress} onChange={e=>setCollectionAddress(e.target.value)} placeholder="28 Wrench Road, Isando, Johannesburg" className="min-h-[70px] w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+              <div className="grid grid-cols-2 gap-4">
+                 <Field label="Number of Parcels"><input type="number" min="1" value={parcelCount} onChange={e=>setParcelCount(e.target.value)} placeholder="1" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+                 <Field label="Pallets (optional)"><input type="number" min="0" value={palletCount} onChange={e=>setPalletCount(e.target.value)} placeholder="0" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+              </div>
+              <div className="border-t border-white/10 pt-4 mt-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-3">Delivery Destination (where parcels go after pickup)</p>
+              </div>
+              <Field label="Recipient Name"><input value={recipientName} onChange={e=>setRecipientName(e.target.value)} placeholder="Sipho Ndlovu" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+              <Field label="Recipient Phone"><input value={recipientPhone} onChange={e=>setRecipientPhone(e.target.value)} placeholder="072 845 3210" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+              <Field label="Delivery Address"><textarea value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="14 Main Road, Braamfontein, Johannesburg" className="min-h-[70px] w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
               <button
                 disabled={saving}
                 onClick={async () => {
@@ -350,10 +363,12 @@ export default function Collections() {
                       clientName:    name,
                       clientPhone:   driverPhone || "N/A",
                       pickupAddress: collectionAddress,
-                      notes:         referenceNo || undefined,
+                      notes:         [referenceNo, companyName, `Parcels: ${parcelCount || 1}`, palletCount !== "0" ? `Pallets: ${palletCount}` : '', deliveryAddress ? `Deliver to: ${recipientName || 'TBC'}, ${deliveryAddress}` : '', recipientPhone ? `Recipient ph: ${recipientPhone}` : ''].filter(Boolean).join(' | '),
                     });
                     setSuccess("Collection created.");
                     setName(""); setCollectionAddress(""); setReferenceNo(""); setCompanyName("");
+                    setParcelCount("1"); setPalletCount("0");
+                    setRecipientName(""); setRecipientPhone(""); setDeliveryAddress("");
                     loadAll("refresh");
                   } catch (err: any) {
                     setError(err?.message || "Failed to create collection.");
