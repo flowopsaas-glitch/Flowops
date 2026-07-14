@@ -83,14 +83,16 @@ export class AiWatchdog {
       this.logger.warn('GROQ_API_KEY is not set — AI copilot/Plan-build features will use deterministic fallbacks.');
     }
 
-    // Email is delivered via SendGrid (EmailService), NOT SMTP app passwords.
-    // Only warn when SendGrid isn't configured; never error on the legacy
-    // EMAIL_APP_PASSWORD, which this platform does not use.
+    // Email is delivered via Resend (preferred) or SendGrid.
+    // Only warn when NEITHER is configured.
+    const resendKey = process.env.RESEND_API_KEY || '';
     const sendgridKey = process.env.SENDGRID_API_KEY || '';
-    if (!sendgridKey || sendgridKey === 'SG.CHANGE_ME') {
-      this.logger.warn('SENDGRID_API_KEY is not set — outbound email (verification, password reset, invoice reminders) is disabled until configured.');
-    } else {
+    if (resendKey) {
+      this.logger.log('🔐 Email (Resend) credentials present.');
+    } else if (sendgridKey && sendgridKey !== 'SG.CHANGE_ME') {
       this.logger.log('🔐 Email (SendGrid) credentials present.');
+    } else {
+      this.logger.warn('No email provider configured (RESEND_API_KEY or SENDGRID_API_KEY) — outbound email disabled.');
     }
   }
 }
