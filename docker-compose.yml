@@ -154,6 +154,11 @@ services:
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-noreply@flowops.local}
       SENDGRID_FROM_NAME: ${SENDGRID_FROM_NAME:-FlowOps}
 
+      # ── Email (Resend — preferred, takes priority over SendGrid) ──────
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      RESEND_FROM_NAME: ${RESEND_FROM_NAME:-}
+
       # ── AI providers ──────────────────────────────────────────────────
       # Groq powers Ask FlowOps, CLAW chat, competitive intel, the AI Support
       # Agent, Courier orchestration, Observatory triage and the Build Planner.
