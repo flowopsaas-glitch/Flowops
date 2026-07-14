@@ -63,6 +63,7 @@ import { CourierManagementModule } from './courier-management/courier-management
 import { CustomerPortalModule } from './customer-portal/customer-portal.module';
 import { LogisticsAnalyticsModule } from './logistics-analytics/logistics-analytics.module';
 import { CommercialAnalyticsModule } from './commercial-analytics/commercial-analytics.module';
+import { OtpModule } from './otp/otp.module';
 import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module';
 
 @Module({
@@ -134,6 +135,7 @@ import { WarehouseManagementModule } from './warehouse-management/warehouse-mana
     LogisticsAnalyticsModule,
     CommercialAnalyticsModule,
     WarehouseManagementModule,
+    OtpModule,
 
     // Domain modules
     AuthModule,

@@ -259,7 +259,7 @@ jobs:
           load: true
           tags: flowops-frontend:smoke-test
           build-args: |
-            VITE_API_URL=/api
+            VITE_API_URL=/api/v1
             VITE_APP_ENV=${{ github.ref_type == 'tag' && 'production' || 'staging' }}
             VITE_APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
             VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
@@ -367,7 +367,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VITE_API_URL=/api
+            VITE_API_URL=/api/v1
             VITE_APP_ENV=${{ github.ref_type == 'tag' && 'production' || 'staging' }}
             VITE_APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
             VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}

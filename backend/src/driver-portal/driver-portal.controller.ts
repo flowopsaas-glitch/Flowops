@@ -88,6 +88,22 @@ export class DriverPortalController {
     return this.svc.recordPod({ ...body, driverId: req.driver.id, companyId: req.driver.companyId } as any);
   }
 
+  /**
+   * POST /driver-portal/collect/:id — driver confirms pickup of a collection.
+   * Marks the collection as COLLECTED, auto-creates a Waybill from the
+   * collection data, and assigns it to the same driver for delivery.
+   */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('collect/:id')
+  confirmCollection(
+    @Req() req: any,
+    @Param('id') collectionId: string,
+    @Body() body: { parcelCount?: number; notes?: string },
+  ) {
+    return this.svc.confirmCollection(collectionId, req.driver.id, req.driver.companyId, body);
+  }
+
   // ── Chat: driver side ──────────────────────────────────────────────────────────
 
   /** GET /driver-portal/chat/messages — this driver's thread with dispatch. */
