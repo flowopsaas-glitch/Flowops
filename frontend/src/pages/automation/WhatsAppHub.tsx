@@ -162,6 +162,23 @@ export default function WhatsAppHub() {
     }
   };
 
+  // ── Create Collection from a WhatsApp message ──────────────────────────
+  const handleCreateCollectionFromMessage = async (messageText: string) => {
+    if (!selectedPhone) return;
+    const thread = threads.find(t => t.phone === selectedPhone);
+    try {
+      await api.post("/collections", {
+        clientName: thread?.name ?? `WhatsApp ${selectedPhone}`,
+        clientPhone: selectedPhone.startsWith("+") ? selectedPhone : `+${selectedPhone}`,
+        pickupAddress: "To be confirmed (from WhatsApp message)",
+        notes: `WhatsApp message: "${messageText.slice(0, 200)}"`,
+      });
+      toast({ title: "Collection created from message! Assign a driver in Collections." });
+    } catch (e: any) {
+      toast({ title: "Failed to create collection", description: e?.message, variant: "destructive" });
+    }
+  };
+
   const startNewChat = () => {
     const digits = newChatNumber.replace(/[^\d]/g, "");
     if (!digits) return;
@@ -292,6 +309,15 @@ export default function WhatsAppHub() {
                           <div className="mt-1 text-[9px] uppercase tracking-widest text-white/60">
                             {statusLabel(msg.status)}
                           </div>
+                        )}
+                        {!outbound && msg.content.length > 15 && (
+                          <button
+                            onClick={() => handleCreateCollectionFromMessage(msg.content)}
+                            className="mt-3 flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-[10px] font-bold text-sky-300 hover:bg-sky-500/20 transition"
+                            title="Create a collection from this message"
+                          >
+                            <Plus size={12} /> Create Collection
+                          </button>
                         )}
                       </div>
                     </div>
