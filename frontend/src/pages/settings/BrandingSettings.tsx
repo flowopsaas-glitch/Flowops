@@ -439,14 +439,14 @@ function BrandingPreview({
             <img
               src={branding.logoUrl}
               alt={`${branding.brandName} logo`}
-              className="h-10 w-10 rounded-xl border border-white/30 bg-white/10 object-cover"
+              className="h-12 w-12 rounded-xl border border-white/30 bg-white object-contain p-1"
             />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/30 bg-white/10 text-white/70">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/30 bg-white/10 text-white/70">
               <ImageIcon size={18} />
             </div>
           )}
-          <div className="text-base font-black tracking-tight text-white">
+          <div className="text-base font-black tracking-tight text-white truncate">
             {branding.brandName}
           </div>
         </div>
