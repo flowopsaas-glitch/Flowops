@@ -4,7 +4,7 @@ Run: python3 /tmp/patch_pricing.py  (from ~/FlowOps-Logistics/flowops-web)
 """
 import pathlib, sys
 
-WA = "27814065725"
+WA = "27606592875"
 p = pathlib.Path('/home/kakes/FlowOps-Logistics/flowops-web/client/src/pages/Pricing.tsx')
 if not p.exists():
     sys.exit('Not found: ' + str(p))

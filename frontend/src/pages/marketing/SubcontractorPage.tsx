@@ -7,7 +7,7 @@ import {
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
 
-const WA_NUMBER = "27814065725";
+const WA_NUMBER = "27606592875";
 
 /* ── Hero ─────────────────────────────────────────────────────── */
 function Hero() {

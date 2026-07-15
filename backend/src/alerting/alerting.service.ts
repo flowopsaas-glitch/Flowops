@@ -178,7 +178,7 @@ export class AlertingService {
   async processTrials() {
     const now = new Date();
     const ownerEmail = this.config.get<string>('OWNER_SEED_EMAIL');
-    const ownerWa    = '27814065725';
+    const ownerWa    = '27606592875';
     let warned = 0, expired = 0, subWarned = 0, subSuspended = 0;
 
     // ── 1. STARTER — free trial expiry ─────────────────────────────────

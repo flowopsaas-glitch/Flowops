@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
 
-const WA_NUMBER = "27814065725";
+const WA_NUMBER = "27606592875";
 
 const footerLinks = {
   Product: [
