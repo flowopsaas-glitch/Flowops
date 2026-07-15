@@ -168,4 +168,78 @@ export class CollectionsService {
     });
     return { drivers, suggestedDriver: drivers[0] ?? null };
   }
+
+  /**
+   * confirmCollected — dispatch confirms a collection is picked up.
+   * Auto-creates a Waybill and AI-assigns the best driver for delivery.
+   *
+   * Flow:
+   * 1. Collection → COLLECTED
+   * 2. Waybill auto-created from collection data + optional delivery address
+   * 3. Shipment created → AI picks the best available driver
+   */
+  async confirmCollected(
+    id: string,
+    companyId: string,
+    body: { parcelCount?: number; deliveryAddress?: string; recipientName?: string; recipientPhone?: string; notes?: string },
+  ) {
+    const collection = await this.findOne(id, companyId);
+    if (collection.status === 'COLLECTED') {
+      return { success: false, message: 'Already collected' };
+    }
+
+    // 1. Mark as COLLECTED
+    await this.prisma.collection.update({
+      where: { id },
+      data: { status: 'COLLECTED', pickedUpAt: new Date() },
+    });
+
+    // 2. Generate tracking number and create Waybill
+    const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
+    const waybill = await this.prisma.waybill.create({
+      data: {
+        trackingNumber,
+        companyId,
+        status: 'IN_TRANSIT',
+        senderName: collection.clientName,
+        senderPhone: collection.clientPhone,
+        senderAddress: collection.pickupAddress,
+        recipientName: body.recipientName ?? collection.clientName,
+        recipientPhone: body.recipientPhone ?? collection.clientPhone,
+        recipientAddress: body.deliveryAddress ?? collection.pickupAddress,
+        weight: 0,
+        totalAmount: 0,
+        description: `Collection pickup — ${body.parcelCount ?? 1} parcel(s). ${body.notes ?? ''}`.trim(),
+      },
+    });
+
+    // 3. AI-assign best driver: prefer collection's assigned driver, then find available
+    let assignedDriverId = collection.driverId;
+    if (!assignedDriverId) {
+      const available = await this.prisma.driver.findMany({
+        where: { companyId, isActive: true, status: 'AVAILABLE' },
+        take: 1,
+      });
+      assignedDriverId = available[0]?.id ?? null;
+    }
+
+    if (assignedDriverId) {
+      await this.prisma.shipment.create({
+        data: {
+          waybillId: waybill.id,
+          companyId,
+          driverId: assignedDriverId,
+          status: 'IN_TRANSIT',
+        },
+      });
+    }
+
+    return {
+      success: true,
+      collection: { id, status: 'COLLECTED' },
+      waybill: { id: waybill.id, trackingNumber, status: 'IN_TRANSIT' },
+      assignedDriverId,
+      message: `Collected! Waybill ${trackingNumber} created and ${assignedDriverId ? 'AI-assigned for delivery' : 'awaiting driver assignment'}.`,
+    };
+  }
 }

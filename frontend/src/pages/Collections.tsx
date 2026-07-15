@@ -119,10 +119,22 @@ export default function Collections() {
   const [referenceNo, setReferenceNo] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [collectionAddress, setCollectionAddress] = useState("");
-  const [parcelCount, setParcelCount] = useState("0");
+  const [parcelCount, setParcelCount] = useState("1");
   const [palletCount, setPalletCount] = useState("0");
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientCity, setRecipientCity] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [paymentType, setPaymentType] = useState<"PREPAID" | "COD" | "ACCOUNT">("PREPAID");
+  const [codAmount, setCodAmount] = useState("");
+  const [weightKg, setWeightKg] = useState("");
+  const [serviceLevel, setServiceLevel] = useState<"SAME_DAY" | "NEXT_DAY" | "ECONOMY">("SAME_DAY");
+  const [scheduledTime, setScheduledTime] = useState("");
+  const [specialInstructions, setSpecialInstructions] = useState("");
 
   async function loadAll(mode: "initial" | "refresh" = "initial") {
     try {
@@ -329,14 +341,76 @@ export default function Collections() {
         {/* FORMS */}
         <div className="grid gap-6 xl:grid-cols-2">
           <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-xl">
-            <h3 className="text-lg font-black mb-5">Create Collection</h3>
+            <h3 className="text-lg font-black mb-1">Create Collection</h3>
+            <p className="text-[11px] text-white/40 mb-5">Standard SA logistics procedure — pickup → verify → dispatch → deliver</p>
             <div className="grid gap-4">
-              <Field label="Collection Name"><input value={name} onChange={e=>setName(e.target.value)} placeholder="GoGet Johannesburg Pickup" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none focus:border-blue-400/40" /></Field>
-              <div className="grid grid-cols-2 gap-4">
-                 <Field label="Reference No"><input value={referenceNo} onChange={e=>setReferenceNo(e.target.value)} placeholder="COL-2026-001" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
-                 <Field label="Company Name"><input value={companyName} onChange={e=>setCompanyName(e.target.value)} placeholder="GoGet Couriers" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+
+              {/* ── SECTION 1: Pickup Info ── */}
+              <div className="rounded-2xl border border-sky-500/15 bg-sky-500/5 p-4 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-300/70">① Pickup Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Client / Sender Name *"><input value={name} onChange={e=>setName(e.target.value)} placeholder="GoGet Couriers" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none focus:border-sky-400/40" /></Field>
+                  <Field label="Client Phone *"><input value={clientPhone} onChange={e=>setClientPhone(e.target.value)} placeholder="081 234 5678" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                </div>
+                <Field label="Pickup Address *"><textarea value={collectionAddress} onChange={e=>setCollectionAddress(e.target.value)} placeholder="28 Wrench Road, Isando, Johannesburg" className="min-h-[60px] w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none resize-none" /></Field>
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="Reference"><input value={referenceNo} onChange={e=>setReferenceNo(e.target.value)} placeholder="COL-001" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                  <Field label="Company"><input value={companyName} onChange={e=>setCompanyName(e.target.value)} placeholder="GoGet Couriers" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                  <Field label="Collect by"><input type="time" value={scheduledTime} onChange={e=>setScheduledTime(e.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                </div>
               </div>
-              <Field label="Collection Address"><textarea value={collectionAddress} onChange={e=>setCollectionAddress(e.target.value)} className="min-h-[90px] w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
+
+              {/* ── SECTION 2: Parcel Info ── */}
+              <div className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300/70">② Parcel Info</p>
+                <div className="grid grid-cols-4 gap-3">
+                  <Field label="Parcels *"><input type="number" min="1" value={parcelCount} onChange={e=>setParcelCount(e.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none text-center" /></Field>
+                  <Field label="Pallets"><input type="number" min="0" value={palletCount} onChange={e=>setPalletCount(e.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none text-center" /></Field>
+                  <Field label="Weight (kg)"><input type="number" min="0" step="0.5" value={weightKg} onChange={e=>setWeightKg(e.target.value)} placeholder="0" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none text-center" /></Field>
+                  <Field label="Service Level">
+                    <select value={serviceLevel} onChange={e=>setServiceLevel(e.target.value as any)} className="w-full rounded-xl border border-white/10 bg-[#1a1f2e] p-3 text-sm outline-none">
+                      <option value="SAME_DAY">Same Day</option>
+                      <option value="NEXT_DAY">Next Day</option>
+                      <option value="ECONOMY">Economy</option>
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Special Instructions"><input value={specialInstructions} onChange={e=>setSpecialInstructions(e.target.value)} placeholder="Ring bell twice, ask for John at reception, fragile items..." className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+              </div>
+
+              {/* ── SECTION 3: Delivery Destination ── */}
+              <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300/70">③ Delivery Destination</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Recipient Name"><input value={recipientName} onChange={e=>setRecipientName(e.target.value)} placeholder="Sipho Ndlovu" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                  <Field label="Recipient Phone"><input value={recipientPhone} onChange={e=>setRecipientPhone(e.target.value)} placeholder="072 845 3210" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Recipient Email (for tracking link)"><input type="email" value={recipientEmail} onChange={e=>setRecipientEmail(e.target.value)} placeholder="sipho@gmail.com" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                  <Field label="Recipient City"><input value={recipientCity} onChange={e=>setRecipientCity(e.target.value)} placeholder="Johannesburg" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                </div>
+                <Field label="Delivery Address"><textarea value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="14 Main Road, Braamfontein, Johannesburg" className="min-h-[60px] w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none resize-none" /></Field>
+              </div>
+
+              {/* ── SECTION 4: Payment ── */}
+              <div className="rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300/70">④ Who's Paying?</p>
+                <div className="flex gap-2">
+                  {(["PREPAID", "COD", "ACCOUNT"] as const).map(t => (
+                    <button key={t} type="button" onClick={() => setPaymentType(t)}
+                      className={cn("flex-1 rounded-xl border py-2.5 text-xs font-black uppercase tracking-wider transition",
+                        paymentType === t ? "border-violet-400/50 bg-violet-400/20 text-white" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10"
+                      )}>
+                      {t === "PREPAID" ? "Sender Pays" : t === "COD" ? "Cash on Delivery" : "On Account"}
+                    </button>
+                  ))}
+                </div>
+                {paymentType === "COD" && (
+                  <Field label="COD Amount (R)"><input type="number" min="0" value={codAmount} onChange={e=>setCodAmount(e.target.value)} placeholder="0.00" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
+                )}
+              </div>
+
+              {/* ── CREATE BUTTON ── */}
               <button
                 disabled={saving}
                 onClick={async () => {
@@ -344,28 +418,48 @@ export default function Collections() {
                     setError("Client name and pickup address are required.");
                     return;
                   }
+                  if (!clientPhone.trim()) {
+                    setError("Client phone number is required (driver needs to call on arrival).");
+                    return;
+                  }
                   setSaving(true); setError(""); setSuccess("");
                   try {
                     await api.post("/collections", {
                       clientName:    name,
-                      clientPhone:   driverPhone || "N/A",
+                      clientPhone:   clientPhone,
                       pickupAddress: collectionAddress,
-                      notes:         referenceNo || undefined,
+                      scheduledAt:   scheduledTime ? new Date(`${new Date().toISOString().split('T')[0]}T${scheduledTime}:00`).toISOString() : undefined,
+                      notes:         [
+                        referenceNo && `Ref: ${referenceNo}`,
+                        companyName && `Company: ${companyName}`,
+                        `Parcels: ${parcelCount || 1}`,
+                        palletCount !== "0" && `Pallets: ${palletCount}`,
+                        weightKg && `Weight: ${weightKg}kg`,
+                        `Service: ${serviceLevel}`,
+                        `Payment: ${paymentType}${paymentType === 'COD' && codAmount ? ` R${codAmount}` : ''}`,
+                        deliveryAddress && `Deliver to: ${recipientName || 'TBC'}, ${deliveryAddress}${recipientCity ? `, ${recipientCity}` : ''}`,
+                        recipientPhone && `Recipient ph: ${recipientPhone}`,
+                        recipientEmail && `Recipient email: ${recipientEmail}`,
+                        specialInstructions && `Instructions: ${specialInstructions}`,
+                      ].filter(Boolean).join(' | '),
                     });
-                    setSuccess("Collection created.");
-                    setName(""); setCollectionAddress(""); setReferenceNo(""); setCompanyName("");
+                    setSuccess("Collection created ✅ — assign a driver to dispatch.");
+                    setName(""); setClientPhone(""); setCollectionAddress(""); setReferenceNo(""); setCompanyName("");
+                    setParcelCount("1"); setPalletCount("0"); setWeightKg(""); setScheduledTime("");
+                    setRecipientName(""); setRecipientPhone(""); setRecipientEmail(""); setRecipientCity(""); setDeliveryAddress("");
+                    setPaymentType("PREPAID"); setCodAmount(""); setSpecialInstructions("");
+                    setServiceLevel("SAME_DAY");
                     loadAll("refresh");
                   } catch (err: any) {
                     setError(err?.message || "Failed to create collection.");
                   } finally { setSaving(false); }
                 }}
-                className="bg-blue-600 p-4 rounded-2xl font-bold flex justify-center gap-2 hover:bg-blue-500 transition-colors disabled:opacity-60"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 rounded-2xl font-black flex justify-center gap-2 hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-60 text-sm uppercase tracking-wider"
               >
                 <Save className="h-5 w-5"/> {saving ? "Creating…" : "Create Collection"}
               </button>
             </div>
           </div>
-
           <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-xl">
             <h3 className="text-lg font-black mb-5">Tenant Driver Fleet + Tracking</h3>
             <div className="grid gap-4">

@@ -26,6 +26,11 @@ type Company = {
   currency?: string | null;
   whatsappNumber?: string | null;
   vatNumber?: string | null;
+  bankName?: string | null;
+  bankAccountHolder?: string | null;
+  bankAccountNumber?: string | null;
+  bankBranchCode?: string | null;
+  bankAccountType?: string | null;
 };
 
 function unwrap(raw: any): any {
@@ -94,6 +99,11 @@ export default function Settings() {
         country:          draft.country,
         vatNumber:        draft.vatNumber,
         whatsappNumber:   draft.whatsappNumber,
+        bankName:         draft.bankName,
+        bankAccountHolder: draft.bankAccountHolder,
+        bankAccountNumber: draft.bankAccountNumber,
+        bankBranchCode:   draft.bankBranchCode,
+        bankAccountType:  draft.bankAccountType,
         brandName:        draft.brandName,
       };
       const raw: any = await api.patch('/companies/my-company', payload);

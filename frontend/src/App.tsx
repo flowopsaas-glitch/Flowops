@@ -99,9 +99,9 @@ const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const OnboardingWizard = lazy(() => import("./pages/OnboardingWizard"));
 const EsgDashboard = lazy(() => import("./pages/EsgDashboard"));
-const DriverPortalPage = lazy(() => import("./pages/driver/DriverPortalPage"));
 const DriverHomePage   = lazy(() => import("./pages/driver/DriverHomePage"));
 const SignupPage = lazy(() => import("./pages/Signup"));
+const SignupMobilePage = lazy(() => import("./pages/SignupMobile"));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPassword'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword'));
@@ -111,6 +111,8 @@ const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
 const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
 const PricingPage   = lazy(() => import("./pages/marketing/PricingPage"));
 const SubcontractorPage = lazy(() => import("./pages/marketing/SubcontractorPage"));
+const AdminApprovalDashboard = lazy(() => import("./pages/AdminApprovalDashboard"));
+const SarsEdiSetup  = lazy(() => import("./pages/forwarding/SarsEdiSetup"));
 const NotFoundPage  = lazy(() => import("./pages/NotFoundPage"));
 
 export default function App() {
@@ -153,12 +155,10 @@ export default function App() {
       }
     });
 
-    socket.on("system-ui-heal", (payload: { action: string; reason: string }) => {
-      console.error(`SYSTEM DISCREPANCY DETECTED BY WATCHDOG: ${payload.reason}`);
-      if (payload.action === "HOT_RELOAD_MODULES") {
-        window.location.reload();
-      }
-    });
+    // system-ui-heal listener REMOVED — it triggered unwanted full page reloads
+    // whenever a backend cron perceived a "discrepancy". The reload caused UI
+    // jumping and degraded user experience. If a real hot-reload is ever needed,
+    // implement it via the PWA service-worker update prompt (already in place).
 
     return () => {
       socket.disconnect();
@@ -171,7 +171,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RootRoute />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/signup" element={<SignupMobilePage />} />
+          <Route path="/signup/classic" element={<SignupPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -301,6 +302,8 @@ export default function App() {
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
               <Route path="/onboarding" element={<OnboardingWizard />} />
               <Route path="/esg" element={<EsgDashboard />} />
+              <Route path="/admin/approvals" element={<RequirePermission adminOnly><AdminApprovalDashboard /></RequirePermission>} />
+              <Route path="/forwarding/sars-edi" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="SARS EDI Setup"><SarsEdiSetup /></RequireFeature></RequirePermission>} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />
               <Route path="/settings/branding" element={<RequirePermission perm="settings"><BrandingSettings /></RequirePermission>} />
               <Route

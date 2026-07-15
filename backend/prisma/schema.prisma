@@ -136,6 +136,13 @@ model Company {
   // No Business API token needed; agents send from this number via WhatsApp Web/app.
   whatsappNumber String?
 
+  // Banking details — appears on invoices so clients know where to pay.
+  bankName       String?
+  bankAccountHolder String?
+  bankAccountNumber String?
+  bankBranchCode String?
+  bankAccountType String?  // "Cheque" | "Savings" | "Current"
+
   // Branding
   logoUrl            String?
   brandName          String?

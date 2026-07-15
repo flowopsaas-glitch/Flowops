@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import { spawn } from 'child_process';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiDiscoveryService } from './ai-discovery.service';
@@ -13,6 +14,7 @@ export class AiAutonomyService {
     private readonly prisma: PrismaService,
     private readonly discovery: AiDiscoveryService,
     private readonly devops: AiDevOpsService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -89,22 +91,15 @@ export class AiAutonomyService {
     }
   }
 
-  /** 📊 SIGNOZ: Direct query for performance latency spikes */
+  /**
+   * 📊 SIGNOZ: Placeholder — only runs when a SigNoz/ClickHouse tracing
+   * backend is attached (OTEL_EXPORTER_OTLP_ENDPOINT is set). Without it,
+   * this is a no-op rather than a guaranteed-to-fail raw query every sweep.
+   */
   private async syncSigNozMetrics(): Promise<void> {
-    try {
-      // Safe casting bypasses over query parameters to track slow execution queries cleanly
-      const slowTraces = await this.prisma.$queryRawUnsafe(
-        `SELECT * FROM signoz_traces.distributed_signoz_index_v2 WHERE durationNano > 2000000000 LIMIT 10`
-      );
-      
-      if (slowTraces && Array.isArray(slowTraces) && slowTraces.length > 0) {
-        this.logger.warn(`Detected ${slowTraces.length} infrastructure performance traces exceeding >2s execution thresholds.`);
-      }
-    } catch (err: any) {
-      // SigNoz tracing tables only exist when a SigNoz/ClickHouse stack is
-      // attached. Without it this query is expected to fail — debug, not error.
-      this.logger.debug(`SigNoz metrics sync skipped (tracing backend not attached): ${err.message}`);
-    }
+    const otelEndpoint = this.config?.get?.('OTEL_EXPORTER_OTLP_ENDPOINT') ?? '';
+    if (!otelEndpoint) return; // No tracing backend — skip entirely
+    // Future: query SigNoz ClickHouse for slow traces when infra is attached.
   }
 
   /** 📦 EMAIL HUB: Processes logistics data extraction and promotion */

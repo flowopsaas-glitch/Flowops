@@ -35,11 +35,13 @@ type WaybillDraft = {
   senderName: string;
   senderCompany: string;
   senderPhone: string;
+  senderEmail: string;
   senderAddress1: string;
   senderCity: string;
   receiverName: string;
   receiverCompany: string;
   receiverPhone: string;
+  receiverEmail: string;
   receiverAddress1: string;
   receiverCity: string;
   reference: string;
@@ -125,7 +127,7 @@ const NumInput = ({ value, onChange, placeholder }: any) => (
   />
 );
 
-const PartyCard = ({ title, name, company, phone, address, city, onChange, payerActive }: any) => (
+const PartyCard = ({ title, name, company, phone, email, address, city, onChange, payerActive }: any) => (
   <div className={cn(
     "rounded-2xl border p-5 transition-all",
     payerActive ? "border-sky-400/30 bg-sky-400/5 shadow-[0_0_20px_rgba(56,189,248,0.05)]" : "border-white/10 bg-white/5"
@@ -141,6 +143,7 @@ const PartyCard = ({ title, name, company, phone, address, city, onChange, payer
       <input className={glassInput()} placeholder="Full Name" value={name} onChange={e => onChange({ name: e.target.value })} />
       <input className={glassInput()} placeholder="Company Name" value={company} onChange={e => onChange({ company: e.target.value })} />
       <input className={glassInput()} placeholder="Phone Number" value={phone} onChange={e => onChange({ phone: e.target.value })} />
+      <input className={glassInput()} type="email" placeholder="Email (for tracking notifications)" value={email} onChange={e => onChange({ email: e.target.value })} />
       <input className={glassInput()} placeholder="Street Address" value={address} onChange={e => onChange({ address: e.target.value })} />
       <input className={glassInput()} placeholder="City" value={city} onChange={e => onChange({ city: e.target.value })} />
     </div>
@@ -168,8 +171,8 @@ export default function Waybills() {
     codAmount: 0,
     chargeSide: "SENDER",
     clientContractCode: "",
-    senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "",
-    receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "",
+    senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "", senderEmail: "",
+    receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "", receiverEmail: "",
     reference: "", notes: "",
     parcels: [{ id: uid(), qty: 1, weightKg: 2.5, lengthCm: 30, widthCm: 20, heightCm: 15 }],
   }));
@@ -205,6 +208,7 @@ export default function Waybills() {
         senderAddress:    senderAddress || "N/A",
         recipientName:    draft.receiverName,
         recipientPhone:   draft.receiverPhone,
+        recipientEmail:   draft.receiverEmail || undefined,
         recipientAddress: recipientAddress || "N/A",
         weight:           parseFloat(t.chargeKg.toFixed(3)),
         description:      draft.notes || undefined,
@@ -327,19 +331,30 @@ export default function Waybills() {
                   <option>Next Day</option><option>Same Day</option><option>Economy</option>
                 </select>
               </Field>
+              <Field label="Payment Type">
+                <div className="flex gap-2">
+                  <PillButton text="Prepaid" icon={CreditCard} active={draft.paymentType === "PREPAID"} onClick={() => set("paymentType", "PREPAID")}/>
+                  <PillButton text="Cash on Delivery" icon={Truck} active={draft.paymentType === "COD"} onClick={() => set("paymentType", "COD")}/>
+                </div>
+              </Field>
+              {draft.paymentType === "COD" && (
+                <Field label="COD Amount (R)">
+                  <input type="number" className={glassInput()} placeholder="e.g. 3499.00" value={draft.codAmount || ""} onChange={e => set("codAmount", nnum(e.target.value))}/>
+                </Field>
+              )}
               <Field label="Payer Account"><div className="flex gap-2">
                 <PillButton text="Sender" active={draft.chargeSide === "SENDER"} onClick={() => set("chargeSide", "SENDER")}/>
                 <PillButton text="Receiver" active={draft.chargeSide === "RECEIVER"} onClick={() => set("chargeSide", "RECEIVER")}/>
               </div></Field>
-              <Field label="Contract Code"><input className={glassInput()} placeholder="e.g. Q94" value={draft.clientContractCode} onChange={e => set("clientContractCode", e.target.value.toUpperCase())}/></Field>
-              <Field label="Ref Number"><input className={glassInput()} value={draft.reference} onChange={e => set("reference", e.target.value)}/></Field>
+              <Field label="Client Contract Code (optional)"><input className={glassInput()} placeholder="Leave blank if no contract" value={draft.clientContractCode} onChange={e => set("clientContractCode", e.target.value.toUpperCase())}/></Field>
+              <Field label="Ref Number"><input className={glassInput()} placeholder="Your internal reference" value={draft.reference} onChange={e => set("reference", e.target.value)}/></Field>
            </div>
         )}
 
         {step === "PARTIES" && (
           <div className="grid md:grid-cols-2 gap-6">
-            <PartyCard title="Sender" payerActive={draft.chargeSide === "SENDER"} {...draft} onChange={(p: any) => setDraft(d => ({...d, senderName: p.name ?? d.senderName, senderCity: p.city ?? d.senderCity, senderPhone: p.phone ?? d.senderPhone, senderAddress1: p.address ?? d.senderAddress1, senderCompany: p.company ?? d.senderCompany}))} />
-            <PartyCard title="Receiver" payerActive={draft.chargeSide === "RECEIVER"} {...draft} onChange={(p: any) => setDraft(d => ({...d, receiverName: p.name ?? d.receiverName, receiverCity: p.city ?? d.receiverCity, receiverPhone: p.phone ?? d.receiverPhone, receiverAddress1: p.address ?? d.receiverAddress1, receiverCompany: p.company ?? d.receiverCompany}))} />
+            <PartyCard title="Sender" payerActive={draft.chargeSide === "SENDER"} name={draft.senderName} company={draft.senderCompany} phone={draft.senderPhone} email={draft.senderEmail} address={draft.senderAddress1} city={draft.senderCity} onChange={(p: any) => setDraft(d => ({...d, senderName: p.name ?? d.senderName, senderCity: p.city ?? d.senderCity, senderPhone: p.phone ?? d.senderPhone, senderEmail: p.email ?? d.senderEmail, senderAddress1: p.address ?? d.senderAddress1, senderCompany: p.company ?? d.senderCompany}))} />
+            <PartyCard title="Receiver" payerActive={draft.chargeSide === "RECEIVER"} name={draft.receiverName} company={draft.receiverCompany} phone={draft.receiverPhone} email={draft.receiverEmail} address={draft.receiverAddress1} city={draft.receiverCity} onChange={(p: any) => setDraft(d => ({...d, receiverName: p.name ?? d.receiverName, receiverCity: p.city ?? d.receiverCity, receiverPhone: p.phone ?? d.receiverPhone, receiverEmail: p.email ?? d.receiverEmail, receiverAddress1: p.address ?? d.receiverAddress1, receiverCompany: p.company ?? d.receiverCompany}))} />
           </div>
         )}
 
@@ -374,17 +389,36 @@ export default function Waybills() {
             <div className={cn(glassCard(), "md:col-span-2 p-6")}>
               <h3 className="text-lg font-bold mb-4">Cost Breakdown</h3>
               <div className="space-y-3">
+                <div className="flex justify-between text-sm text-white/60"><span>Payment Type</span><span className="font-bold text-white">{draft.paymentType === "COD" ? "Cash on Delivery" : "Prepaid"}</span></div>
+                {draft.paymentType === "COD" && draft.codAmount > 0 && (
+                  <div className="flex justify-between text-sm text-white/60"><span>COD Amount (collect from recipient)</span><span className="font-bold text-amber-300">{moneyZAR(draft.codAmount)}</span></div>
+                )}
+                <div className="flex justify-between text-sm text-white/60"><span>Payer</span><span>{draft.chargeSide === "SENDER" ? "Sender pays" : "Receiver pays"}</span></div>
                 <div className="flex justify-between text-sm text-white/60"><span>Total Parcels</span><span>{t.parcelsCount}</span></div>
-                <div className="flex justify-between text-sm text-white/60"><span>Chargeable Weight</span><span>{t.chargeKg.toFixed(2)} kg</span></div>
+                <div className="flex justify-between text-sm text-white/60"><span>Actual Weight</span><span>{t.actualKg.toFixed(2)} kg</span></div>
+                <div className="flex justify-between text-sm text-white/60"><span>Volumetric Weight</span><span>{t.volKg.toFixed(2)} kg</span></div>
+                <div className="flex justify-between text-sm text-white/60"><span>Chargeable Weight (higher of actual/vol)</span><span className="font-bold text-white">{t.chargeKg.toFixed(2)} kg</span></div>
                 <div className="border-t border-white/10 pt-3 flex justify-between text-xl font-black text-sky-400">
-                  <span>Estimated Total</span><span>{moneyZAR(t.chargeKg * 15.5)}</span>
+                  <span>Delivery Charge</span><span>{moneyZAR(t.chargeKg * 15.5)}</span>
                 </div>
+                {draft.paymentType === "COD" && draft.codAmount > 0 && (
+                  <div className="flex justify-between text-sm text-amber-300/70 border-t border-amber-400/10 pt-2"><span>+ COD to collect at door</span><span className="font-bold">{moneyZAR(draft.codAmount)}</span></div>
+                )}
+              </div>
+              <div className="mt-4">
+                <Field label="Notes / Special Instructions">
+                  <input className={glassInput()} placeholder="e.g. Call before delivery, fragile, gate code 1234" value={draft.notes} onChange={e => set("notes", e.target.value)}/>
+                </Field>
               </div>
             </div>
             <div className={cn(glassCard(), "p-6 border-amber-400/20 bg-amber-400/5")}>
               <div className="flex items-center gap-2 text-amber-400 font-bold mb-3"><Sparkles className="h-4 w-4"/> AI Auditor</div>
               <p className="text-xs leading-relaxed text-amber-200/70">
-                Ensure "Contract Code" is correct for month-end billing. Large volumetric weight detected for Parcel 1.
+                {draft.paymentType === "COD" && draft.codAmount <= 0 && "⚠️ COD selected but no amount set. Driver won't know how much to collect."}
+                {draft.paymentType === "COD" && draft.codAmount > 0 && `✅ COD ${moneyZAR(draft.codAmount)} will be collected from ${draft.receiverName || "recipient"} at delivery.`}
+                {draft.paymentType === "PREPAID" && "✅ Prepaid — no cash collection at door. Invoice will be generated for the sender."}
+                {!draft.receiverName && " ⚠️ Receiver name missing — go back to Parties tab."}
+                {t.volKg > t.actualKg * 1.5 && " ℹ️ Volumetric weight exceeds actual by 50%+ — verify dimensions."}
               </p>
             </div>
           </div>
