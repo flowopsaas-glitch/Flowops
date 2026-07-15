@@ -539,7 +539,7 @@ export default function AppLayout() {
                   <span><strong>Your 14-day free trial has expired.</strong> Upgrade to keep access to all features.</span>
                 </div>
                 <button
-                  onClick={() => window.open(`https://wa.me/27814065725?text=${encodeURIComponent('Hi! My FlowOps trial has expired. I\'d like to upgrade to Professional.')}`, '_blank')}
+                  onClick={() => window.open(`https://wa.me/27606592875?text=${encodeURIComponent('Hi! My FlowOps trial has expired. I\'d like to upgrade to Professional.')}`, '_blank')}
                   className="flex items-center gap-1.5 shrink-0 rounded-xl bg-red-500 text-white px-4 py-1.5 text-xs font-black hover:bg-red-400 transition"
                 >
                   <Zap className="h-3.5 w-3.5" /> Upgrade Now
@@ -553,7 +553,7 @@ export default function AppLayout() {
                   <span><strong>{days} day{days !== 1 ? 's' : ''} left in your free trial.</strong> Upgrade before it expires to keep all your data and features.</span>
                 </div>
                 <button
-                  onClick={() => window.open(`https://wa.me/27814065725?text=${encodeURIComponent(`Hi! My FlowOps trial expires in ${days} days. I'd like to upgrade to Professional.`)}`, '_blank')}
+                  onClick={() => window.open(`https://wa.me/27606592875?text=${encodeURIComponent(`Hi! My FlowOps trial expires in ${days} days. I'd like to upgrade to Professional.`)}`, '_blank')}
                   className="flex items-center gap-1.5 shrink-0 rounded-xl bg-amber-500 text-slate-950 px-4 py-1.5 text-xs font-black hover:bg-amber-400 transition"
                 >
                   <Zap className="h-3.5 w-3.5" /> Upgrade Now
@@ -565,7 +565,7 @@ export default function AppLayout() {
               <div className="flex items-center justify-between gap-3 bg-sky-500/8 px-6 py-2 text-xs text-sky-300/70 border-b border-sky-500/10">
                 <span>🎉 Free trial active — <strong>{days} days remaining</strong>. You have full access to all Professional features.</span>
                 <button
-                  onClick={() => window.open(`https://wa.me/27814065725?text=${encodeURIComponent('Hi! I want to upgrade my FlowOps account to Professional.')}`, '_blank')}
+                  onClick={() => window.open(`https://wa.me/27606592875?text=${encodeURIComponent('Hi! I want to upgrade my FlowOps account to Professional.')}`, '_blank')}
                   className="shrink-0 text-sky-400 hover:text-sky-300 font-bold underline underline-offset-2 transition"
                 >
                   Upgrade early →

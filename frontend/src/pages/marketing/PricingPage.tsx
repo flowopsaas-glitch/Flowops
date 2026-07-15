@@ -4,7 +4,7 @@ import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
 import { PLAN_CATALOG } from "../../lib/planCatalog";
 
-const WA_NUMBER = "27814065725";
+const WA_NUMBER = "27606592875";
 
 // Feature bullets / names / prices come from the shared plan catalog so this
 // marketing page and the in-app Billing screen always match. Only the

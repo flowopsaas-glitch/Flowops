@@ -27,7 +27,7 @@ import { Zap, Loader2 } from "lucide-react";
 import { getEntitlements } from "../../api/billingApi";
 import { ENTERPRISE_FEATURES } from "../../lib/planMeta";
 
-const WA_NUMBER = "27814065725";
+const WA_NUMBER = "27606592875";
 
 export default function RequireFeature({
   feature,

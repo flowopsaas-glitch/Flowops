@@ -66,7 +66,7 @@ export default function RequirePlan({ requiredPlan, children, featureName }: Pro
         </div>
         <button
           onClick={() => window.open(
-            `https://wa.me/27814065725?text=${encodeURIComponent(upgradeMsg)}`,
+            `https://wa.me/27606592875?text=${encodeURIComponent(upgradeMsg)}`,
             "_blank"
           )}
           className="flex items-center gap-2 rounded-2xl bg-amber-500 text-slate-950 px-6 py-3 text-sm font-black hover:bg-amber-400 transition"
