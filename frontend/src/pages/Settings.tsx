@@ -26,6 +26,11 @@ type Company = {
   currency?: string | null;
   whatsappNumber?: string | null;
   vatNumber?: string | null;
+  bankName?: string | null;
+  bankAccountHolder?: string | null;
+  bankAccountNumber?: string | null;
+  bankBranchCode?: string | null;
+  bankAccountType?: string | null;
 };
 
 function unwrap(raw: any): any {
@@ -94,6 +99,11 @@ export default function Settings() {
         country:          draft.country,
         vatNumber:        draft.vatNumber,
         whatsappNumber:   draft.whatsappNumber,
+        bankName:         draft.bankName,
+        bankAccountHolder: draft.bankAccountHolder,
+        bankAccountNumber: draft.bankAccountNumber,
+        bankBranchCode:   draft.bankBranchCode,
+        bankAccountType:  draft.bankAccountType,
         brandName:        draft.brandName,
       };
       const raw: any = await api.patch('/companies/my-company', payload);
@@ -249,6 +259,38 @@ export default function Settings() {
                 value={draft.whatsappNumber} editing={editing}
                 onChange={v => setDraft(d => ({ ...d, whatsappNumber: v }))}
               />
+            </div>
+
+            {/* Banking Details */}
+            <div className="mt-6 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300/70 mb-4">Banking Details (appears on invoices)</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ProfileField
+                  icon={Building2} label="Bank Name"
+                  value={draft.bankName} editing={editing}
+                  onChange={v => setDraft(d => ({ ...d, bankName: v }))}
+                />
+                <ProfileField
+                  icon={Building2} label="Account Holder"
+                  value={draft.bankAccountHolder} editing={editing}
+                  onChange={v => setDraft(d => ({ ...d, bankAccountHolder: v }))}
+                />
+                <ProfileField
+                  icon={Building2} label="Account Number"
+                  value={draft.bankAccountNumber} editing={editing}
+                  onChange={v => setDraft(d => ({ ...d, bankAccountNumber: v }))}
+                />
+                <ProfileField
+                  icon={Building2} label="Branch Code"
+                  value={draft.bankBranchCode} editing={editing}
+                  onChange={v => setDraft(d => ({ ...d, bankBranchCode: v }))}
+                />
+                <ProfileField
+                  icon={Building2} label="Account Type"
+                  value={draft.bankAccountType} editing={editing}
+                  onChange={v => setDraft(d => ({ ...d, bankAccountType: v }))}
+                />
+              </div>
             </div>
           )}
 

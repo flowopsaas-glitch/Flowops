@@ -250,7 +250,7 @@ export class InvoicesService {
     const inv = await this.findOne(id, companyId);
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { name: true, tradingName: true, email: true, phone: true, address: true, city: true, vatNumber: true, logoUrl: true, primaryColor: true },
+      select: { name: true, tradingName: true, email: true, phone: true, address: true, city: true, vatNumber: true, logoUrl: true, primaryColor: true, bankName: true, bankAccountHolder: true, bankAccountNumber: true, bankBranchCode: true, bankAccountType: true },
     });
 
     const fmt = (v?: number | null) =>
@@ -341,6 +341,18 @@ export class InvoicesService {
   </table>
 
   <div class="footer">
+    ${(company as any)?.bankName ? `
+    <div style="margin-bottom:16px;text-align:left;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:8px">Payment Details</div>
+      <div style="font-size:13px;color:#111827;line-height:1.8">
+        <strong>Bank:</strong> ${(company as any).bankName}<br/>
+        ${(company as any).bankAccountHolder ? `<strong>Account Holder:</strong> ${(company as any).bankAccountHolder}<br/>` : ''}
+        <strong>Account No:</strong> ${(company as any).bankAccountNumber ?? '—'}<br/>
+        <strong>Branch Code:</strong> ${(company as any).bankBranchCode ?? '—'}<br/>
+        ${(company as any).bankAccountType ? `<strong>Account Type:</strong> ${(company as any).bankAccountType}<br/>` : ''}
+      </div>
+    </div>
+    ` : ''}
     Thank you for your business. Please reference <strong>${inv.invoiceNumber}</strong> when making payment.
   </div>
 
