@@ -889,6 +889,7 @@ model Waybill {
   // Parties
   senderName       String
   senderPhone      String
+  senderEmail      String?
   senderAddress    String
   recipientName    String
   recipientPhone   String

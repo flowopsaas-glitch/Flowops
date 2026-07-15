@@ -205,6 +205,7 @@ export default function Waybills() {
         trackingNumber:   draft.waybillNo,
         senderName:       draft.senderName,
         senderPhone:      draft.senderPhone,
+        senderEmail:      draft.senderEmail || undefined,
         senderAddress:    senderAddress || "N/A",
         recipientName:    draft.receiverName,
         recipientPhone:   draft.receiverPhone,
@@ -236,8 +237,8 @@ export default function Waybills() {
         codAmount: 0,
         chargeSide: "SENDER",
         clientContractCode: "",
-        senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "",
-        receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "",
+        senderName: "", senderCompany: "", senderPhone: "", senderAddress1: "", senderCity: "", senderEmail: "",
+        receiverName: "", receiverCompany: "", receiverPhone: "", receiverAddress1: "", receiverCity: "", receiverEmail: "",
         reference: "", notes: "",
         parcels: [{ id: uid(), qty: 1, weightKg: 2.5, lengthCm: 30, widthCm: 20, heightCm: 15 }],
       });

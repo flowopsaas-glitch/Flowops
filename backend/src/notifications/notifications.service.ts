@@ -119,29 +119,36 @@ export class NotificationsService {
 
   /**
    * Fired when a waybill's status changes. Logs an internal notification for
-   * the tenant and (when the recipient email + SendGrid are available) emails
-   * the customer a branded update with a live tracking link.
+   * the tenant and emails BOTH the sender and receiver with a branded,
+   * world-class status update including live tracking link and POD details.
    *
-   * When the waybill has a recipientPhone, also prepares a pre-built WhatsApp
-   * click-to-chat URL — the operator sees a "Send WhatsApp" link in the
-   * notification feed and can forward it to the customer in one tap.
+   * When the waybill has a recipientPhone, also sends a WhatsApp notification
+   * via the Business API (or prepares a click-to-chat link as fallback).
    */
   async notifyWaybillStatus(waybill: {
     companyId: string;
     trackingNumber: string;
+    senderName?: string | null;
+    senderEmail?: string | null;
+    senderPhone?: string | null;
     recipientName?: string | null;
     recipientEmail?: string | null;
     recipientPhone?: string | null;
+    podImageUrl?: string | null;
+    podSignatureUrl?: string | null;
+    podRecipient?: string | null;
+    podDeliveredAt?: Date | string | null;
     status: string;
   }) {
     const copy = NotificationsService.CUSTOMER_STATUS_COPY[waybill.status];
     if (!copy) return; // not a customer-facing status
 
     const trackUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/track/${waybill.trackingNumber}`;
-    const name = (waybill.recipientName || 'there').split(/\s+/)[0];
+    const recipientFirst = (waybill.recipientName || 'there').split(/\s+/)[0];
+    const senderFirst = (waybill.senderName || 'there').split(/\s+/)[0];
 
     // Build a WhatsApp click-to-chat URL when we have the recipient's phone.
-    const waLink = this.buildWaLink(waybill.recipientPhone, name, waybill.trackingNumber, copy.line, trackUrl);
+    const waLink = this.buildWaLink(waybill.recipientPhone, recipientFirst, waybill.trackingNumber, copy.line, trackUrl);
 
     // 0) Webhook event for tenant integrations.
     void this.webhooks.dispatch(waybill.companyId, 'waybill.status_changed', {
@@ -166,26 +173,94 @@ export class NotificationsService {
       this.logger.warn(`Failed to log status notification: ${err?.message ?? err}`);
     }
 
-    // 2) Customer email.
+    // 2) Customer email — send to BOTH sender AND receiver.
+    const deliveredAt = waybill.podDeliveredAt
+      ? new Date(waybill.podDeliveredAt).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
+      : new Date().toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' });
+
+    const podBlock = waybill.status === 'DELIVERED' ? `
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+        <tr><td style="background:#f0fdf4;padding:16px 20px;">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#16a34a;">✓ Proof of Delivery</p>
+          <p style="margin:0;font-size:14px;color:#1e293b;"><strong>Received by:</strong> ${waybill.podRecipient || waybill.recipientName || '—'}</p>
+          <p style="margin:4px 0 0;font-size:13px;color:#475569;"><strong>Date &amp; Time:</strong> ${deliveredAt}</p>
+          ${waybill.podImageUrl ? `<p style="margin:10px 0 0;"><a href="${waybill.podImageUrl}" style="color:#2563eb;font-size:13px;font-weight:600;">📷 View POD Photo</a></p>` : ''}
+          ${waybill.podSignatureUrl ? `<p style="margin:6px 0 0;"><a href="${waybill.podSignatureUrl}" style="color:#2563eb;font-size:13px;font-weight:600;">✍️ View Signature</a></p>` : ''}
+        </td></tr>
+      </table>
+    ` : '';
+
+    const buildEmailHtml = (greeting: string, role: 'sender' | 'receiver') => `
+      <!DOCTYPE html>
+      <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+      <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:40px 20px;">
+          <tr><td align="center">
+            <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+              <!-- Header -->
+              <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;text-align:center;">
+                <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">${copy.title}</h1>
+                <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Tracking: ${waybill.trackingNumber}</p>
+              </td></tr>
+              <!-- Body -->
+              <tr><td style="padding:32px;">
+                <p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">
+                  ${greeting}, ${role === 'receiver' ? 'your' : 'the'} parcel <strong style="color:#0f172a;">${waybill.trackingNumber}</strong> ${copy.line}.
+                </p>
+                ${podBlock}
+                <!-- CTA Button -->
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+                  <tr><td align="center">
+                    <a href="${trackUrl}" style="display:inline-block;padding:14px 32px;background:#10b981;color:#ffffff;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:0.3px;">
+                      Track ${role === 'receiver' ? 'Your' : 'This'} Delivery →
+                    </a>
+                  </td></tr>
+                </table>
+                ${waLink ? `<p style="margin-top:16px;text-align:center;font-size:12px;color:#64748b;">Or reply on <a href="${waLink}" style="color:#25D366;font-weight:600;">WhatsApp</a></p>` : ''}
+              </td></tr>
+              <!-- Footer -->
+              <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+                <p style="margin:0;font-size:11px;color:#94a3b8;">
+                  Powered by FlowOps • Parcel tracking and logistics management<br/>
+                  <a href="${trackUrl}" style="color:#64748b;">Track online</a>
+                </p>
+              </td></tr>
+            </table>
+          </td></tr>
+        </table>
+      </body></html>
+    `;
+
+    // Send to RECEIVER
     if (waybill.recipientEmail) {
       await this.email
         .send({
           to: waybill.recipientEmail,
           subject: `${copy.title} — ${waybill.trackingNumber}`,
-          text: `Hi ${name}, your parcel ${waybill.trackingNumber} ${copy.line}. Track it live: ${trackUrl}`,
-          html: `
-            <h2 style="margin-top:0;color:#1e3a5f;">${copy.title}</h2>
-            <p>Hi ${name}, your parcel <strong>${waybill.trackingNumber}</strong> ${copy.line}.</p>
-            <a href="${trackUrl}" style="display:inline-block;margin-top:12px;padding:10px 20px;background:#10b981;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Track your delivery</a>
-            ${waLink ? `<p style="margin-top:12px;font-size:12px;color:#888;">Reply on WhatsApp: <a href="${waLink}">${waLink}</a></p>` : ''}
-          `,
+          text: `Hi ${recipientFirst}, your parcel ${waybill.trackingNumber} ${copy.line}. Track it live: ${trackUrl}`,
+          html: buildEmailHtml(`Hi ${recipientFirst}`, 'receiver'),
         })
-        .catch((err) => this.logger.warn(`Status email failed: ${err?.message ?? err}`));
+        .catch((err) => this.logger.warn(`Recipient email failed: ${err?.message ?? err}`));
+    }
+
+    // Send to SENDER (confirmation that their shipment status changed)
+    if (waybill.senderEmail) {
+      const senderSubject = waybill.status === 'DELIVERED'
+        ? `Delivered ✓ — ${waybill.trackingNumber} (to ${waybill.recipientName || 'recipient'})`
+        : `${copy.title} — ${waybill.trackingNumber}`;
+      await this.email
+        .send({
+          to: waybill.senderEmail,
+          subject: senderSubject,
+          text: `Hi ${senderFirst}, the parcel ${waybill.trackingNumber} (to ${waybill.recipientName || 'recipient'}) ${copy.line}. Track: ${trackUrl}`,
+          html: buildEmailHtml(`Hi ${senderFirst}`, 'sender'),
+        })
+        .catch((err) => this.logger.warn(`Sender email failed: ${err?.message ?? err}`));
     }
 
     // 3) Auto-send WhatsApp notification (when Business API is connected).
     if (waybill.recipientPhone) {
-      const message = `Hi ${name}, your parcel ${waybill.trackingNumber} ${copy.line}. Track: ${trackUrl}`;
+      const message = `Hi ${recipientFirst}, your parcel ${waybill.trackingNumber} ${copy.line}. Track: ${trackUrl}`;
       try {
         await this.whatsapp.sendMessage(waybill.companyId, waybill.recipientPhone, message);
       } catch (err: any) {
