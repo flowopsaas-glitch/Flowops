@@ -203,6 +203,7 @@ export class CollectionsService {
         status: 'IN_TRANSIT',
         senderName: collection.clientName,
         senderPhone: collection.clientPhone,
+        senderEmail: collection.clientEmail ?? undefined,
         senderAddress: collection.pickupAddress,
         recipientName: body.recipientName ?? collection.clientName,
         recipientPhone: body.recipientPhone ?? collection.clientPhone,

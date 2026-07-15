@@ -124,6 +124,7 @@ export default function Collections() {
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
@@ -352,6 +353,7 @@ export default function Collections() {
                   <Field label="Client / Sender Name *"><input value={name} onChange={e=>setName(e.target.value)} placeholder="GoGet Couriers" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none focus:border-sky-400/40" /></Field>
                   <Field label="Client Phone *"><input value={clientPhone} onChange={e=>setClientPhone(e.target.value)} placeholder="081 234 5678" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
                 </div>
+                <Field label="Client / Sender Email (receives POD notifications)"><input type="email" value={clientEmail} onChange={e=>setClientEmail(e.target.value)} placeholder="goget@example.com" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none focus:border-sky-400/40" /></Field>
                 <Field label="Pickup Address *"><textarea value={collectionAddress} onChange={e=>setCollectionAddress(e.target.value)} placeholder="28 Wrench Road, Isando, Johannesburg" className="min-h-[60px] w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none resize-none" /></Field>
                 <div className="grid grid-cols-3 gap-3">
                   <Field label="Reference"><input value={referenceNo} onChange={e=>setReferenceNo(e.target.value)} placeholder="COL-001" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none" /></Field>
@@ -427,6 +429,7 @@ export default function Collections() {
                     await api.post("/collections", {
                       clientName:    name,
                       clientPhone:   clientPhone,
+                      clientEmail:   clientEmail || undefined,
                       pickupAddress: collectionAddress,
                       scheduledAt:   scheduledTime ? new Date(`${new Date().toISOString().split('T')[0]}T${scheduledTime}:00`).toISOString() : undefined,
                       notes:         [
@@ -444,7 +447,7 @@ export default function Collections() {
                       ].filter(Boolean).join(' | '),
                     });
                     setSuccess("Collection created ✅ — assign a driver to dispatch.");
-                    setName(""); setClientPhone(""); setCollectionAddress(""); setReferenceNo(""); setCompanyName("");
+                    setName(""); setClientPhone(""); setClientEmail(""); setCollectionAddress(""); setReferenceNo(""); setCompanyName("");
                     setParcelCount("1"); setPalletCount("0"); setWeightKg(""); setScheduledTime("");
                     setRecipientName(""); setRecipientPhone(""); setRecipientEmail(""); setRecipientCity(""); setDeliveryAddress("");
                     setPaymentType("PREPAID"); setCodAmount(""); setSpecialInstructions("");
