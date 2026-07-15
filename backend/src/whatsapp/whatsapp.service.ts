@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { IntegrationCredentialService } from '../integrations/integration-credential.service';
+import { WhatsAppInboxAiService } from './whatsapp-inbox-ai.service';
 
 /** Resolved per-company WhatsApp Business API configuration. */
 interface WaConfig {
@@ -29,6 +30,7 @@ export class WhatsAppService {
     private prisma: PrismaService,
     private config: ConfigService,
     private creds: IntegrationCredentialService,
+    private inboxAi: WhatsAppInboxAiService,
   ) {}
 
   /**
@@ -562,6 +564,43 @@ export class WhatsAppService {
     });
 
     this.logger.log(`Inbound WhatsApp → company ${companyId} from ${phone}: ${body.slice(0, 50)}`);
+
+    // ── AI Inbox: detect collection requests and auto-create ──────────────
+    // Only process text messages (not media) and only if the message is long
+    // enough to potentially contain logistics info (>10 chars).
+    if (msg.type === 'text' && body.length > 10 && this.inboxAi) {
+      try {
+        const analysis = await this.inboxAi.analyzeMessage(body, phone, msg.profile?.name);
+
+        if (analysis.isCollectionRequest && analysis.confidence >= 60) {
+          // Auto-create collection from the WhatsApp message
+          const collection = await this.inboxAi.autoCreateCollection(
+            companyId, analysis, phone, msg.profile?.name,
+          );
+
+          // Auto-reply with confirmation
+          const reply = this.inboxAi.buildConfirmationReply(collection.id, analysis);
+          await this.sendMessage(companyId, phone, reply).catch((err) => {
+            this.logger.warn(`Auto-reply failed (non-blocking): ${err?.message ?? err}`);
+          });
+
+          // Log a notification for the dispatch desk
+          await this.prisma.notification.create({
+            data: {
+              companyId,
+              title: `New collection from WhatsApp`,
+              body: `${msg.profile?.name ?? phone} requested a pickup${analysis.pickupAddress ? ` from ${analysis.pickupAddress}` : ''}. Auto-created — assign a driver.`,
+              type: 'STATUS_UPDATE',
+            },
+          }).catch(() => { /* best-effort */ });
+
+          this.logger.log(`AI Inbox: Auto-created collection from WhatsApp message (confidence: ${analysis.confidence}%)`);
+        }
+      } catch (err: any) {
+        // AI extraction is best-effort — never breaks the inbound message flow
+        this.logger.debug(`AI Inbox extraction skipped: ${err?.message ?? err}`);
+      }
+    }
   }
 
   private async handleStatusUpdate(status: any) {
