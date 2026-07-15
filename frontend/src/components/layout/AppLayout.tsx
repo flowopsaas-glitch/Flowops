@@ -180,7 +180,7 @@ function SidebarContent(props: {
           <img 
             src={props.brandLogoUrl ?? logo} 
             alt={`${props.brandName} logo`} 
-            className="h-12 w-12 rounded-2xl border border-white/10 bg-white/5 object-cover shrink-0" 
+            className="h-12 w-12 rounded-2xl border border-white/10 bg-white object-contain p-1 shrink-0" 
             onError={(e) => { (e.target as HTMLImageElement).src = logo; }}
           />
           {!collapsed && (
