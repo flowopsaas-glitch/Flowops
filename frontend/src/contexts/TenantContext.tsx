@@ -74,6 +74,7 @@ function resolveLogoUrl(raw: string | null | undefined): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^data:image\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith("/")) return `${FLOWOPS_HTTP_ORIGIN}${trimmed}`;
   return `${FLOWOPS_HTTP_ORIGIN}/${trimmed}`;
 }
