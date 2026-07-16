@@ -6,7 +6,7 @@ import {
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, BarChart3, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
-  PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight, PieChart,
+  PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight, PieChart, Brain,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -383,6 +383,7 @@ export default function AppLayout() {
     { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
     { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
     { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy, entitlement: "aiSupportAgent" },
+    { section: "AI", label: "Fleet Intelligence",        desc: "Network balancing & demand AI",  to: "/fleet-intelligence", icon: Brain },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
