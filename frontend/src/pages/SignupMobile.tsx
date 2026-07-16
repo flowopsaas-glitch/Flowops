@@ -252,37 +252,6 @@ export default function SignupMobile() {
             </button>
           </div>
         )}
-                  +27
-                </span>
-                <input
-                  type="tel"
-                  placeholder="81 234 5678"
-                  value={phone}
-                  onChange={(e) => { setPhone(e.target.value); setError(""); }}
-                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/25 focus:border-sky-500/40 focus:outline-none focus:ring-1 focus:ring-sky-500/20"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            {error && <p className="text-sm text-red-400 text-center">{error}</p>}
-
-            <button
-              onClick={handleSendOtp}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 text-sm font-black uppercase tracking-wider text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-              Next
-            </button>
-
-            <p className="text-[11px] text-white/25 text-center leading-relaxed">
-              By proceeding you agree to our{" "}
-              <a href="/legal/terms" className="underline text-white/40">Terms</a> and{" "}
-              <a href="/legal/privacy" className="underline text-white/40">Privacy Policy</a>
-            </p>
-          </div>
-        )}
 
         {/* ─── STEP 2: OTP Verification ─── */}
         {step === "otp" && (
@@ -291,7 +260,9 @@ export default function SignupMobile() {
               <h2 className="text-lg font-black text-white">Enter verification code</h2>
               <p className="text-sm text-white/50 mt-1">
                 We sent a 6-digit code to<br />
-                <span className="font-bold text-white/70">+27 {phone}</span> via WhatsApp
+                <span className="font-bold text-white/70">
+                  {method === "whatsapp" ? `+27 ${phone}` : emailAddr}
+                </span> via {method === "whatsapp" ? "WhatsApp" : "email"}
               </p>
             </div>
 
