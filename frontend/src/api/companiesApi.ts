@@ -56,6 +56,11 @@ export type CompanyRecord = {
   /** Optional secondary display name. Some tenants prefer this over `name` / `legalName` for headers. */
   tradingName?: string | null;
 
+  /** ISO 4217 currency code (ZAR, USD, GBP, etc.). Drives all money formatting. */
+  currency?: string | null;
+  /** ISO 3166-1 alpha-2 country code (ZA, ZW, KE, etc.). Drives map centering + locale. */
+  country?: string | null;
+
   /**
    * Registered hardware devices (scanners, printers, workstations). Loose
    * shape because the backend representation is still in flux and the

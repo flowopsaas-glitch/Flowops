@@ -5,8 +5,9 @@ import { useToast } from '../components/ToastProvider';
 import {
   Building2, Palette, Bell, Users, CreditCard, Plug, Shield,
   ChevronRight, RefreshCw, CheckCircle2, AlertTriangle, Clock,
-  Globe, Phone, Mail, MapPin, Gauge, Save, Pencil, X
+  Globe, Phone, Mail, MapPin, Gauge, Save, Pencil, X, DollarSign
 } from 'lucide-react';
+import { SUPPORTED_CURRENCIES, SUPPORTED_COUNTRIES } from '../lib/currency';
 
 type Company = {
   id: string;
@@ -97,6 +98,7 @@ export default function Settings() {
         address:          draft.address,
         city:             draft.city,
         country:          draft.country,
+        currency:         draft.currency,
         vatNumber:        draft.vatNumber,
         whatsappNumber:   draft.whatsappNumber,
         bankName:         draft.bankName,
@@ -244,11 +246,54 @@ export default function Settings() {
                 onChange={v => setDraft(d => ({ ...d, address: v }))}
               />
               <ProfileField
-                icon={Globe} label="City / Country"
-                value={[draft.city, draft.country].filter(Boolean).join(', ')}
-                editing={false}
-                onChange={() => {}}
+                icon={Globe} label="City"
+                value={draft.city} editing={editing}
+                onChange={v => setDraft(d => ({ ...d, city: v }))}
               />
+              {editing ? (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-white/50">
+                    <Globe className="h-3.5 w-3.5" /> Country
+                  </div>
+                  <select
+                    value={draft.country || 'ZA'}
+                    onChange={e => setDraft(d => ({ ...d, country: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-sky-400/50"
+                  >
+                    {SUPPORTED_COUNTRIES.map(c => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <ProfileField
+                  icon={Globe} label="Country"
+                  value={SUPPORTED_COUNTRIES.find(c => c.code === draft.country)?.name || draft.country || 'South Africa'}
+                  editing={false} onChange={() => {}}
+                />
+              )}
+              {editing ? (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-white/50">
+                    <DollarSign className="h-3.5 w-3.5" /> Currency
+                  </div>
+                  <select
+                    value={draft.currency || 'ZAR'}
+                    onChange={e => setDraft(d => ({ ...d, currency: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-sky-400/50"
+                  >
+                    {SUPPORTED_CURRENCIES.map(c => (
+                      <option key={c.code} value={c.code}>{c.symbol} — {c.name} ({c.code})</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <ProfileField
+                  icon={DollarSign} label="Currency"
+                  value={`${SUPPORTED_CURRENCIES.find(c => c.code === draft.currency)?.symbol || 'R'} — ${SUPPORTED_CURRENCIES.find(c => c.code === draft.currency)?.name || 'South African Rand'} (${draft.currency || 'ZAR'})`}
+                  editing={false} onChange={() => {}}
+                />
+              )}
               <ProfileField
                 icon={Shield} label="VAT Number"
                 value={draft.vatNumber} editing={editing}

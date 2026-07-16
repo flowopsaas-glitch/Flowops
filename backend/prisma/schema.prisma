@@ -130,6 +130,7 @@ model Company {
   address     String?
   city        String?
   country     String  @default("ZA")
+  currency    String  @default("ZAR")
   vatNumber   String?
 
   // WhatsApp — tenant's own mobile number used for click-to-chat (wa.me) links.

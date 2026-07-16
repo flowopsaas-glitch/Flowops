@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api } from "../api/client";
 import { TiltCard } from "../components/premium/TiltCard";
+import { formatMoney } from "../lib/currency";
 
 // ── Types matching the real Invoice schema ──────────────────────────────────
 type Invoice = {
@@ -61,7 +62,9 @@ const STATUS: Record<string, { cls: string; label: string }> = {
 };
 
 function money(v?: number | null) {
-  return `ZAR ${(v ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Uses tenant currency when available via the global formatMoney import.
+  // Falls back to ZAR if no tenant context (e.g. in modals rendered before context loads).
+  return formatMoney(v ?? 0, (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR');
 }
 
 // ── Generate Invoice Modal ─────────────────────────────────────────────────
