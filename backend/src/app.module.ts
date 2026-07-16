@@ -65,6 +65,7 @@ import { LogisticsAnalyticsModule } from './logistics-analytics/logistics-analyt
 import { CommercialAnalyticsModule } from './commercial-analytics/commercial-analytics.module';
 import { OtpModule } from './otp/otp.module';
 import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module';
+import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence.module';
 
 @Module({
   imports: [
@@ -135,6 +136,7 @@ import { WarehouseManagementModule } from './warehouse-management/warehouse-mana
     LogisticsAnalyticsModule,
     CommercialAnalyticsModule,
     WarehouseManagementModule,
+    FleetIntelligenceModule,
     OtpModule,
 
     // Domain modules
