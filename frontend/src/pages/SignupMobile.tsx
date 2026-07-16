@@ -1,21 +1,27 @@
 /**
- * Mobile-first multi-step signup with WhatsApp OTP verification.
- * Flow: Phone → OTP verify → Name + Company → Done (registration submitted)
+ * Mobile-first multi-step signup with DUAL verification:
+ *   - WhatsApp OTP (primary)
+ *   - Email OTP (fallback — works even when Meta WhatsApp is pending)
+ *
+ * Flow: Choose Method → Enter Phone/Email → OTP verify → Name + Company → Done
  *
  * Styled like WhatsApp's own onboarding — clean, minimal, step-by-step.
  */
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, ArrowRight, CheckCircle2, MessageCircle, Shield, User, Building2 } from "lucide-react";
+import { Loader2, ArrowRight, CheckCircle2, MessageCircle, Shield, User, Building2, Mail } from "lucide-react";
 import { api } from "../api/client";
 
-type Step = "phone" | "otp" | "profile" | "done";
+type Step = "method" | "phone" | "otp" | "profile" | "done";
+type VerifyMethod = "whatsapp" | "email";
 
 export default function SignupMobile() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("phone");
+  const [step, setStep] = useState<Step>("method");
+  const [method, setMethod] = useState<VerifyMethod>("email");
   const [phone, setPhone] = useState("");
+  const [emailAddr, setEmailAddr] = useState("");
   const [otp, setOtp] = useState("");
   const [fullName, setFullName] = useState("");
   const [company, setCompany] = useState("");
@@ -36,20 +42,29 @@ export default function SignupMobile() {
     }, 1000);
   }
 
-  // Step 1: Send OTP
+  // Step 1: Send OTP (WhatsApp or Email)
   async function handleSendOtp() {
-    if (!phone.trim() || phone.replace(/\D/g, "").length < 9) {
+    if (method === "whatsapp" && (!phone.trim() || phone.replace(/\D/g, "").length < 9)) {
       setError("Please enter a valid phone number.");
+      return;
+    }
+    if (method === "email" && (!emailAddr.trim() || !emailAddr.includes("@"))) {
+      setError("Please enter a valid email address.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      await api.post("/auth/send-otp", { phone });
-      setStep("otp");
+      if (method === "whatsapp") {
+        await api.post("/auth/send-otp", { phone });
+      } else {
+        await api.post("/auth/send-email-otp", { email: emailAddr });
+      }
       startCountdown();
-    } catch (e: any) {
-      setError(e?.message || "Could not send verification code.");
+      setStep("otp");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Could not send verification code. Please check and try again.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -61,10 +76,16 @@ export default function SignupMobile() {
     setLoading(true);
     setError("");
     try {
-      await api.post("/auth/verify-otp", { phone, code: otp });
+      if (method === "whatsapp") {
+        await api.post("/auth/verify-otp", { phone, code: otp });
+      } else {
+        await api.post("/auth/verify-email-otp", { email: emailAddr, code: otp });
+      }
       setStep("profile");
-    } catch (e: any) {
-      setError(e?.message || "Invalid code. Try again.");
+      // Pre-fill email if verified via email
+      if (method === "email") setEmail(emailAddr);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || "Invalid code.");
     } finally {
       setLoading(false);
     }
@@ -100,7 +121,11 @@ export default function SignupMobile() {
     setLoading(true);
     setError("");
     try {
-      await api.post("/auth/send-otp", { phone });
+      if (method === "whatsapp") {
+        await api.post("/auth/send-otp", { phone });
+      } else {
+        await api.post("/auth/send-email-otp", { email: emailAddr });
+      }
       startCountdown();
     } catch (e: any) {
       setError(e?.message || "Could not resend code.");
@@ -122,22 +147,111 @@ export default function SignupMobile() {
           <p className="text-xs text-white/40 mt-1">Logistics, Evolved</p>
         </div>
 
-        {/* ─── STEP 1: Phone Number ─── */}
+        {/* ─── STEP 0: Choose Verification Method ─── */}
+        {step === "method" && (
+          <div className="space-y-5">
+            <div className="text-center">
+              <h2 className="text-lg font-black text-white">Verify your identity</h2>
+              <p className="text-sm text-white/50 mt-1">Choose how you'd like to receive your verification code</p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => { setMethod("email"); setStep("phone"); }}
+                className="w-full flex items-center gap-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-left hover:bg-emerald-500/10 transition"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20">
+                  <Mail className="h-6 w-6 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="font-bold text-white">Email Verification</div>
+                  <div className="text-xs text-white/50">Receive a 6-digit code via email</div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-white/30 ml-auto" />
+              </button>
+
+              <button
+                onClick={() => { setMethod("whatsapp"); setStep("phone"); }}
+                className="w-full flex items-center gap-4 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 text-left hover:bg-sky-500/10 transition"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/20">
+                  <MessageCircle className="h-6 w-6 text-sky-400" />
+                </div>
+                <div>
+                  <div className="font-bold text-white">WhatsApp Verification</div>
+                  <div className="text-xs text-white/50">Receive a 6-digit code via WhatsApp</div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-white/30 ml-auto" />
+              </button>
+            </div>
+
+            <p className="text-center text-[11px] text-white/30">
+              Already have an account?{" "}
+              <button onClick={() => navigate("/login")} className="text-sky-400 hover:text-sky-300 font-bold">Log in</button>
+            </p>
+          </div>
+        )}
+
+        {/* ─── STEP 1: Phone Number OR Email ─── */}
         {step === "phone" && (
           <div className="space-y-5">
             <div className="text-center">
-              <h2 className="text-lg font-black text-white">Verify your phone number</h2>
+              <h2 className="text-lg font-black text-white">
+                {method === "whatsapp" ? "Verify your phone number" : "Verify your email"}
+              </h2>
               <p className="text-sm text-white/50 mt-1">
-                FlowOps will send a verification code via WhatsApp
+                {method === "whatsapp"
+                  ? "FlowOps will send a verification code via WhatsApp"
+                  : "FlowOps will send a verification code to your email"}
               </p>
             </div>
 
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block">
-                Phone number
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-bold text-white/60">
+            {method === "whatsapp" ? (
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block">Phone number</label>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-bold text-white/60">+27</span>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => { setPhone(e.target.value); setError(""); }}
+                    placeholder="60 659 2875"
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none focus:border-sky-400/50 placeholder:text-white/25"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block">Email address</label>
+                <input
+                  type="email"
+                  value={emailAddr}
+                  onChange={(e) => { setEmailAddr(e.target.value); setError(""); }}
+                  placeholder="you@company.com"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400/50 placeholder:text-white/25"
+                />
+              </div>
+            )}
+
+            {error && <p className="text-xs text-rose-400 text-center">{error}</p>}
+
+            <button
+              onClick={handleSendOtp}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-500/20 disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+              {loading ? "Sending..." : "Send verification code"}
+            </button>
+
+            <button
+              onClick={() => setStep("method")}
+              className="w-full text-center text-xs text-white/40 hover:text-white/60"
+            >
+              ← Choose a different method
+            </button>
+          </div>
+        )}
                   +27
                 </span>
                 <input

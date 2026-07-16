@@ -1,10 +1,15 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { EmailService } from '../email/email.service';
 
 /**
- * OTP Service — generates, stores (in-memory TTL map), sends via WhatsApp,
- * and verifies one-time PINs for phone-number verification during signup.
+ * OTP Service — generates, stores (in-memory TTL map), sends via WhatsApp OR Email,
+ * and verifies one-time PINs for phone/email verification during signup.
+ *
+ * Supports DUAL verification:
+ *   - WhatsApp (primary) — via Meta Cloud API
+ *   - Email (fallback) — via Resend/SendGrid
  *
  * Storage: simple in-memory Map with TTL. For a single-instance VPS deployment
  * this is sufficient. If FlowOps scales horizontally, move to Redis.
@@ -28,7 +33,10 @@ export class OtpService {
   private readonly store = new Map<string, OtpEntry>();
   private readonly lastSent = new Map<string, number>();
 
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private email: EmailService,
+  ) {}
 
   /** Generate a random numeric OTP code. */
   private generateCode(): string {
@@ -153,5 +161,100 @@ export class OtpService {
     for (const [key, entry] of this.store.entries()) {
       if (now > entry.expiresAt) this.store.delete(key);
     }
+  }
+
+  // ── Email OTP ─────────────────────────────────────────────────────────────
+
+  /**
+   * Send an OTP to an email address via Resend/SendGrid.
+   * Uses the same in-memory store as WhatsApp OTP.
+   */
+  async sendEmailOtp(rawEmail: string): Promise<{ success: boolean; message: string }> {
+    const email = rawEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      throw new BadRequestException('A valid email address is required.');
+    }
+
+    // Rate limit: max 1 OTP per email per 60 seconds
+    const key = `email:${email}`;
+    const lastTime = this.lastSent.get(key);
+    if (lastTime && Date.now() - lastTime < RATE_LIMIT_MS) {
+      const wait = Math.ceil((RATE_LIMIT_MS - (Date.now() - lastTime)) / 1000);
+      throw new BadRequestException(`Please wait ${wait}s before requesting another code.`);
+    }
+
+    const code = this.generateCode();
+
+    // Store in memory with TTL
+    this.store.set(key, {
+      code,
+      phone: email, // reusing the phone field for email identifier
+      expiresAt: Date.now() + OTP_TTL_MS,
+      attempts: 0,
+    });
+    this.lastSent.set(key, Date.now());
+
+    // Send via email
+    const sent = await this.email.send({
+      to: email,
+      subject: `Your FlowOps verification code: ${code}`,
+      text: `Your FlowOps verification code is: ${code}\n\nThis code expires in 5 minutes. Do not share it with anyone.`,
+      html: `
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:40px 20px;">
+          <div style="text-align:center;margin-bottom:32px;">
+            <h1 style="margin:0;font-size:24px;font-weight:800;color:#0f172a;">FlowOps</h1>
+            <p style="margin:8px 0 0;font-size:14px;color:#64748b;">Logistics, Evolved</p>
+          </div>
+          <div style="background:#f8fafc;border-radius:16px;padding:32px;text-align:center;border:1px solid #e2e8f0;">
+            <p style="margin:0 0 8px;font-size:14px;color:#475569;">Your verification code is:</p>
+            <div style="font-size:36px;font-weight:900;letter-spacing:8px;color:#0f172a;margin:16px 0;">${code}</div>
+            <p style="margin:16px 0 0;font-size:13px;color:#94a3b8;">Expires in 5 minutes. Do not share this code.</p>
+          </div>
+          <p style="margin:24px 0 0;text-align:center;font-size:12px;color:#94a3b8;">
+            If you didn't request this code, you can safely ignore this email.
+          </p>
+        </div>
+      `,
+    });
+
+    if (!sent) {
+      throw new BadRequestException('Could not send verification email. Please try again or use WhatsApp verification.');
+    }
+
+    this.logger.log(`Email OTP sent to ${email.slice(0, 3)}***@${email.split('@')[1]}`);
+    return { success: true, message: 'Verification code sent to your email.' };
+  }
+
+  /**
+   * Verify an OTP code for an email address.
+   */
+  verifyEmailOtp(rawEmail: string, code: string): { verified: boolean } {
+    const email = rawEmail.trim().toLowerCase();
+    const key = `email:${email}`;
+    const entry = this.store.get(key);
+
+    if (!entry) {
+      throw new BadRequestException('No verification code found. Please request a new one.');
+    }
+
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      throw new BadRequestException('Verification code expired. Please request a new one.');
+    }
+
+    if (entry.attempts >= MAX_ATTEMPTS) {
+      this.store.delete(key);
+      throw new BadRequestException('Too many attempts. Please request a new code.');
+    }
+
+    if (entry.code !== code.trim()) {
+      entry.attempts++;
+      throw new BadRequestException(`Incorrect code. ${MAX_ATTEMPTS - entry.attempts} attempts remaining.`);
+    }
+
+    // Success — clean up
+    this.store.delete(key);
+    this.lastSent.delete(key);
+    return { verified: true };
   }
 }

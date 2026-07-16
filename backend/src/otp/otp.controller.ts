@@ -40,4 +40,36 @@ export class OtpController {
     }
     return this.otp.verifyOtp(body.phone, body.code);
   }
+
+  /**
+   * POST /api/v1/auth/send-email-otp
+   * Sends a 6-digit verification code to the given email address.
+   */
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('send-email-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send Email OTP for email verification' })
+  sendEmailOtp(@Body() body: { email: string }) {
+    if (!body.email?.trim()) {
+      throw new Error('Email address is required');
+    }
+    return this.otp.sendEmailOtp(body.email);
+  }
+
+  /**
+   * POST /api/v1/auth/verify-email-otp
+   * Verifies the 6-digit code sent to an email. Returns { verified: true } on success.
+   */
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('verify-email-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify Email OTP code' })
+  verifyEmailOtp(@Body() body: { email: string; code: string }) {
+    if (!body.email?.trim() || !body.code?.trim()) {
+      throw new Error('Email and code are required');
+    }
+    return this.otp.verifyEmailOtp(body.email, body.code);
+  }
 }
