@@ -53,7 +53,11 @@ type WaybillDraft = {
 const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
 const todayISO = () => new Date().toISOString().split('T')[0];
 const nnum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-const moneyZAR = (v: any) => `R${nnum(v).toFixed(2)}`;
+const moneyZAR = (v: any) => {
+  const code = (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
+  const sym = { ZAR: 'R', USD: '$', GBP: '£', EUR: '€', ZIG: 'ZiG', KES: 'KSh', NGN: '₦', BWP: 'P' }[code] ?? code;
+  return `${sym}${nnum(v).toFixed(2)}`;
+};
 const VOL_DIVISOR = 5000;
 
 function volumetricKg(p: ParcelLine) {

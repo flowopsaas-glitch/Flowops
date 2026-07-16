@@ -4,15 +4,16 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { io, Socket } from 'socket.io-client';
 import { FLOWOPS_WS_ORIGIN } from '../lib/env';
+import { getMapCenter } from '../lib/currency';
 
-// ── South Africa dark-themed tile configuration ──────────────────────────────
+// ── Dark-themed tile configuration ──────────────────────────────────────────
 // CartoDB Dark Matter — matches FlowOps dark UI perfectly.
-// Free, no API key required, excellent SA coverage.
+// Free, no API key required, excellent global coverage.
 const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 const TILE_ATTRIBUTION = '&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>';
 
-// Johannesburg, Gauteng — default center for SA logistics hub
-const JHB_CENTER: [number, number] = [-26.2041, 28.0473];
+// Default center — resolved dynamically per tenant country
+const DEFAULT_CENTER: [number, number] = [-26.2041, 28.0473]; // Fallback: Johannesburg
 
 interface DriverTelemetry {
   driverId: number;
@@ -53,8 +54,9 @@ function FitBounds({ markers }: { markers: Map<number, [number, number]> }) {
   return null;
 }
 
-export const TrackingMap: React.FC<{ companyId: number }> = ({ companyId }) => {
+export const TrackingMap: React.FC<{ companyId: number; countryCode?: string }> = ({ companyId, countryCode }) => {
   const socketRef = useRef<Socket | null>(null);
+  const mapRegion = getMapCenter(countryCode);
   const [connectionStatus, setConnectionStatus] = useState<string>('Initializing Telemetry Stream...');
   const [drivers, setDrivers] = useState<Map<number, DriverTelemetry>>(new Map());
 
@@ -110,8 +112,8 @@ export const TrackingMap: React.FC<{ companyId: number }> = ({ companyId }) => {
       </div>
 
       <MapContainer
-        center={JHB_CENTER}
-        zoom={10}
+        center={mapRegion.center}
+        zoom={mapRegion.zoom}
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
       >

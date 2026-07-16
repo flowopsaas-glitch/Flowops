@@ -159,7 +159,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   // mount with defaults too, so the tokens are always present.
   useEffect(() => {
     applyBrandingToRoot(branding);
-  }, [branding]);
+    // Expose tenant currency globally so page-level money() helpers can read it
+    // without needing the hook (backward-compat for existing inline formatters).
+    (window as any).__FLOWOPS_CURRENCY__ = tenant?.currency ?? 'ZAR';
+    (window as any).__FLOWOPS_COUNTRY__ = tenant?.country ?? 'ZA';
+  }, [branding, tenant?.currency, tenant?.country]);
 
   const value = useMemo<TenantContextValue>(
     () => ({ tenant, branding, isLoading, error, refresh: load }),
