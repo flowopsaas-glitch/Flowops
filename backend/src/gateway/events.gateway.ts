@@ -166,6 +166,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.emitToCompany(companyId, 'shipment-status-changed', shipment);
   }
 
+  /** Emit to a specific driver (if they have a socket connected via driver portal). */
+  emitToDriver(driverId: string, event: string, data: any) {
+    this.server.to(`driver:${driverId}`).emit(event, data);
+  }
+
   emitDispatchAssigned(companyId: string, data: any) {
     this.emitToCompany(companyId, 'dispatch-assigned', data);
   }

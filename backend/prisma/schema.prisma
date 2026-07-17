@@ -3110,3 +3110,91 @@ model CarbonReport {
   @@index([companyId])
   @@map("carbon_reports")
 }
+
+
+
+// ─── Driver Safety Zones (Crime Hotspot Detection) ────────────────────────────
+// AI-powered real-time driver safety alerts. When a driver's GPS enters a
+// designated safety zone (crime hotspot, hijacking area, high-risk corridor),
+// the system immediately alerts the driver, dispatch, and tenant admin.
+// No competitor in Africa offers this level of driver protection.
+
+enum SafetyZoneRiskLevel {
+  LOW        // Awareness — minor risk (e.g. poor lighting area)
+  MEDIUM     // Caution — moderate risk (occasional incidents)
+  HIGH       // Alert — known problem area (regular theft/hijack)
+  CRITICAL   // Danger — active threat zone (avoid if possible)
+}
+
+model SafetyZone {
+  id        String              @id @default(cuid())
+  companyId String
+  name      String              // "Alexandra", "N1 Johannesburg Off-ramp", "Diepsloot"
+  description String?           // "High hijacking area. Avoid stopping. Lock doors."
+
+  // Geographic center + radius (circle geofence)
+  lat       Float
+  lng       Float
+  radiusM   Int     @default(1000) // radius in metres
+
+  riskLevel SafetyZoneRiskLevel @default(HIGH)
+
+  // Alert configuration
+  alertMessage String?          // Custom alert shown to driver (e.g. "Lock doors. Do not stop.")
+  notifyDriver Boolean @default(true)
+  notifyDispatch Boolean @default(true)
+  notifyAdmin  Boolean @default(true)
+
+  // Source / metadata
+  source    String?             // "SAPS_STATS" | "MANUAL" | "AI_DETECTED" | "COMMUNITY"
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  alerts SafetyAlert[]
+
+  @@index([companyId, isActive])
+  @@index([lat, lng])
+  @@map("safety_zones")
+}
+
+model SafetyAlert {
+  id        String @id @default(cuid())
+  companyId String
+
+  // Who was alerted
+  driverId  String
+  driverName String?
+
+  // Which zone triggered it
+  zoneId    String
+  zone      SafetyZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneName  String?
+  riskLevel SafetyZoneRiskLevel
+
+  // GPS position when alert fired
+  lat       Float
+  lng       Float
+  speed     Float?  // km/h at time of alert
+
+  // Alert delivery status
+  driverNotified   Boolean @default(false)
+  dispatchNotified Boolean @default(false)
+  adminNotified    Boolean @default(false)
+
+  // Response
+  acknowledged Boolean   @default(false) // driver tapped "OK"
+  acknowledgedAt DateTime?
+  exitedZoneAt   DateTime? // when driver left the zone
+
+  // Audit
+  metadata  Json?   // any extra context (waybill being delivered, etc.)
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([driverId, createdAt])
+  @@index([zoneId])
+  @@map("safety_alerts")
+}
