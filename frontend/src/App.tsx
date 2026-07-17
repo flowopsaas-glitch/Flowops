@@ -60,6 +60,7 @@ const CourierManagement = lazy(() => import("./pages/CourierManagement"));
 const LogisticsAnalytics = lazy(() => import("./pages/LogisticsAnalytics"));
 const CommercialAnalytics = lazy(() => import("./pages/CommercialAnalytics"));
 const FleetIntelligence = lazy(() => import("./pages/FleetIntelligence"));
+const SafetyZones = lazy(() => import("./pages/SafetyZones"));
 const WarehouseManagement = lazy(() => import("./pages/WarehouseManagement"));
 const CarrierManagement = lazy(() => import("./pages/CarrierManagement"));
 const SsoSettings = lazy(() => import("./pages/enterprise/SsoSettings"));
@@ -300,6 +301,7 @@ export default function App() {
               <Route path="/logistics-analytics" element={<RequireFeature feature="logisticsAnalytics" name="Logistics Analytics"><LogisticsAnalytics /></RequireFeature>} />
               <Route path="/commercial-analytics" element={<RequireFeature feature="commercialAnalytics" name="Commercial Analytics"><CommercialAnalytics /></RequireFeature>} />
               <Route path="/fleet-intelligence" element={<FleetIntelligence />} />
+              <Route path="/safety-zones" element={<SafetyZones />} />
               <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
               <Route path="/carriers" element={<RequirePermission perm="rateCards"><CarrierManagement /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
