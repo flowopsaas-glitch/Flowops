@@ -94,8 +94,9 @@ export default function Dashboard() {
   const visible = tab === 'collections' ? collections : tab === 'deliveries' ? deliveries : jobs;
   const isListTab = tab === 'all' || tab === 'collections' || tab === 'deliveries';
 
-  const statusColor = (s: string) =>
-    s === 'PENDING' ? 'from-yellow-500 to-orange-500'
+  const statusColor = (s: string, type?: string) =>
+    type === 'linehaul' ? 'from-purple-500 to-violet-500'
+    : s === 'PENDING' ? 'from-yellow-500 to-orange-500'
     : s === 'IN_TRANSIT' ? 'from-blue-500 to-cyan-500'
     : s === 'DELIVERED' ? 'from-green-500 to-emerald-500'
     : 'from-gray-500 to-gray-600';
@@ -203,16 +204,29 @@ export default function Dashboard() {
                   key={j.id} onClick={() => navigate(`/delivery/${j.id}`, { state: j })}
                   className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 transition flex items-center gap-3"
                 >
-                  <div className={`w-1.5 self-stretch rounded-full bg-gradient-to-b ${statusColor(j.status)}`} />
+                  <div className={`w-1.5 self-stretch rounded-full bg-gradient-to-b ${statusColor(j.status, j.type)}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-bold truncate">{j.trackingNumber ?? j.waybillNumber ?? j.id}</span>
-                      <span className="text-[10px] uppercase tracking-wider text-gray-400">{j.status}</span>
+                      {j.type === 'linehaul' ? (
+                        <span className="text-[10px] uppercase tracking-wider text-purple-300 bg-purple-500/20 border border-purple-500/30 rounded-md px-1.5 py-0.5 flex items-center gap-1">
+                          <Truck className="w-3 h-3" /> LINEHAUL
+                        </span>
+                      ) : (
+                        <span className="text-[10px] uppercase tracking-wider text-gray-400">{j.status}</span>
+                      )}
                     </div>
-                    <div className="text-sm text-gray-300 truncate mt-0.5">{j.recipientName ?? j.receiverName ?? '—'}</div>
+                    <div className="text-sm text-gray-300 truncate mt-0.5">
+                      {j.type === 'linehaul' ? `→ ${j.destinationBranch ?? j.recipientName}` : (j.recipientName ?? j.receiverName ?? '—')}
+                    </div>
                     {(j.recipientAddress ?? j.destination) && (
                       <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
                         <MapPin className="w-3 h-3" /> <span className="truncate">{j.recipientAddress ?? j.destination}</span>
+                      </div>
+                    )}
+                    {j.type === 'linehaul' && j.parcelCount && (
+                      <div className="mt-1 inline-block text-[11px] font-bold text-purple-300 bg-purple-500/15 border border-purple-500/30 rounded-md px-2 py-0.5">
+                        {j.parcelCount} parcel{j.parcelCount > 1 ? 's' : ''} in manifest
                       </div>
                     )}
                     {Number(j.codAmount) > 0 && (

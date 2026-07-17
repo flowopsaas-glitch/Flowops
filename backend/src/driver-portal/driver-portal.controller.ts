@@ -104,6 +104,20 @@ export class DriverPortalController {
     return this.svc.confirmCollection(collectionId, req.driver.id, req.driver.companyId, body);
   }
 
+  /**
+   * POST /driver-portal/manifest/:id/deliver — driver confirms linehaul
+   * arrival at destination branch. All waybills in manifest → COLLECTED.
+   */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('manifest/:id/deliver')
+  confirmLinehaulDelivery(
+    @Req() req: any,
+    @Param('id') manifestId: string,
+  ) {
+    return this.svc.confirmLinehaulDelivery(manifestId, req.driver.id, req.driver.companyId);
+  }
+
   // ── Chat: driver side ──────────────────────────────────────────────────────────
 
   /** GET /driver-portal/chat/messages — this driver's thread with dispatch. */

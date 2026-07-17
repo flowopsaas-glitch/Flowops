@@ -40,4 +40,14 @@ export class ManifestsController {
   createLinehaul(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.createLinehaul(u.companyId, body);
   }
+
+  /**
+   * GET /branches/inbound — manifests en route TO the caller's branch.
+   * Destination depots see incoming shipments with parcel count, driver info,
+   * and estimated arrival so they can prepare receiving operations.
+   */
+  @Get('branches/inbound')
+  getInboundManifests(@CurrentUser() u: any) {
+    return this.svc.getInboundManifests(u.companyId, u.branchId);
+  }
 }

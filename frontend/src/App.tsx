@@ -90,6 +90,7 @@ const LoadScan = lazy(() => import("./pages/LoadScan"));
 const RouteOptimizer = lazy(() => import("./pages/RouteOptimizer"));
 const FleetMaintenance = lazy(() => import("./pages/FleetMaintenance"));
 const DriverLeaderboard = lazy(() => import("./pages/DriverLeaderboard"));
+const DriversManagement = lazy(() => import("./pages/DriversManagement"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
 const UserRolesPage = lazy(() => import("./pages/UsersRoles"));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
@@ -261,6 +262,7 @@ export default function App() {
               <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
               <Route path="/fleet" element={<RequirePermission perm="driverDispatch"><FleetMaintenance /></RequirePermission>} />
               <Route path="/driver-leaderboard" element={<RequirePermission perm="driverDispatch"><DriverLeaderboard /></RequirePermission>} />
+              <Route path="/drivers" element={<RequirePermission perm="driverDispatch"><DriversManagement /></RequirePermission>} />
               <Route path="/high-risk-queue" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/security/high-risk" element={<RequirePermission perm="risksExceptions"><HighRiskQueuePage /></RequirePermission>} />
               <Route path="/user-roles" element={<RequirePermission perm="usersRoles"><UserRolesPage /></RequirePermission>} />
