@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { CopilotService } from '../copilot/copilot.service';
 import { AskSupportDto } from './dto/ask.dto';
+import { AI_SECURITY_PREAMBLE, sanitizeAiInput } from '../common/ai-security.util';
 import { CreateTicketDto, UpdateTicketDto } from './dto/create-ticket.dto';
 
 interface KbArticle {
@@ -107,7 +108,8 @@ export class SupportService {
 
     const planName = await this.planName(companyId);
     const system =
-      `You are the FlowOps AI Support Agent — friendly, concise, accurate. FlowOps is a South African courier & ` +
+      `${AI_SECURITY_PREAMBLE}\n\n` +
+      `ROLE: You are the FlowOps AI Support Agent — friendly, concise, accurate. FlowOps is a South African courier & ` +
       `logistics SaaS. Help the user use the product and answer questions about their account/operation.\n` +
       `Use ONLY the knowledge base and live data provided; if the answer isn't covered, say so honestly and set ` +
       `shouldEscalate=true with a low confidence. Never invent features, prices, or steps. Currency is ZAR (R).\n\n` +
@@ -117,9 +119,15 @@ export class SupportService {
       `Respond with ONLY a JSON object: {"answer": string, "confidence": 0-100, "category": string, ` +
       `"shouldEscalate": boolean, "suggestedFollowUps": string[], "relatedHelp": string[] (KB ids you used)}.`;
 
+    // Sanitize user question for injection patterns
+    const inputCheck = sanitizeAiInput(question, 1500);
+    if (inputCheck.riskScore >= 75) {
+      return { answer: 'I can help with logistics and delivery questions. Could you rephrase your question?', confidence: 50, category: 'general', shouldEscalate: false, suggestedFollowUps: [], relatedHelp: [] };
+    }
+
     const messages: any[] = [{ role: 'system', content: system }];
-    for (const t of (dto.history || []).slice(-6)) messages.push({ role: t.role, content: t.content });
-    messages.push({ role: 'user', content: question });
+    for (const t of (dto.history || []).slice(-6)) messages.push({ role: t.role, content: sanitizeAiInput(t.content, 500).sanitized });
+    messages.push({ role: 'user', content: inputCheck.sanitized });
 
     const parsed = await this.callGroqJSON(groqKey, messages);
     if (!parsed) return this.fallback(question, kb, live);
