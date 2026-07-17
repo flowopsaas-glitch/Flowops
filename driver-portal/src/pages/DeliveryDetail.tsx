@@ -20,6 +20,7 @@ export default function DeliveryDetail() {
   const [error, setError] = useState('');
 
   const isDelivery = !!job.waybillId && job.type !== 'collection';
+  const isLinehaul = job.type === 'linehaul';
   const phone: string | undefined = job.recipientPhone ?? job.receiverPhone;
   const address: string | undefined = job.recipientAddress ?? job.destination;
 
@@ -116,6 +117,31 @@ export default function DeliveryDetail() {
               className="w-full bg-gradient-to-r from-green-600 to-emerald-600 py-4 rounded-xl font-bold text-lg disabled:opacity-50 transition shadow-lg flex items-center justify-center gap-2"
             >
               <CheckCircle2 className="w-5 h-5" /> {saving ? 'Saving…' : 'Mark Delivered'}
+            </button>
+          </div>
+        ) : isLinehaul ? (
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+            <div className="flex items-center gap-2 font-semibold text-purple-200"><Package className="w-4 h-4 text-purple-300" /> Linehaul Delivery</div>
+            <div className="text-sm text-gray-300 space-y-1">
+              <p>Deliver this manifest to: <strong className="text-white">{job.destinationBranch ?? job.recipientName}</strong></p>
+              {job.parcelCount && <p>Parcels in manifest: <strong className="text-white">{job.parcelCount}</strong></p>}
+              <p className="text-xs text-gray-400 mt-2">Once you arrive at the destination branch, confirm delivery below. All waybills will be marked as received.</p>
+            </div>
+            {error && <div className="bg-red-500/20 border border-red-500/30 text-red-200 p-3 rounded-xl text-sm">{error}</div>}
+            <button
+              onClick={async () => {
+                setError(''); setSaving(true);
+                try {
+                  await api.post(`/driver-portal/manifest/${job.manifestId ?? job.id}/deliver`);
+                  setDone(true);
+                  setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
+                } catch (err: any) { setError(err?.message || 'Could not confirm linehaul delivery'); }
+                finally { setSaving(false); }
+              }}
+              disabled={saving}
+              className="w-full bg-gradient-to-r from-purple-600 to-violet-600 py-4 rounded-xl font-bold text-lg disabled:opacity-50 transition shadow-lg flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 className="w-5 h-5" /> {saving ? 'Confirming…' : 'Confirm Linehaul Delivered'}
             </button>
           </div>
         ) : (

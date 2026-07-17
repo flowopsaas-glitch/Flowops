@@ -100,7 +100,89 @@ export class DriverPortalService {
       };
     });
 
-    return [...collectionJobs, ...deliveryJobs];
+    // ── Linehaul manifests assigned to this driver ──────────────────────────
+    const manifests = await this.prisma.manifest.findMany({
+      where: { driverId, dispatched: false },
+      include: {
+        branch: { select: { name: true, address: true } },
+        _count: { select: { waybills: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const linehaulJobs = manifests.map(m => ({
+      id: m.id,
+      type: 'linehaul',
+      status: 'IN_TRANSIT',
+      trackingNumber: m.code,
+      recipientName: m.branch?.name ?? 'Destination Hub',
+      recipientPhone: null,
+      recipientAddress: m.branch?.address ?? 'Inter-branch transfer',
+      recipientLat: null,
+      recipientLng: null,
+      senderName: 'FlowOps Hub',
+      senderAddress: null,
+      weight: null,
+      totalAmount: null,
+      codAmount: null,
+      codCollected: false,
+      waybillId: null,
+      manifestId: m.id,
+      manifestCode: m.code,
+      parcelCount: m._count.waybills,
+      destinationBranch: m.branch?.name ?? 'Unknown Branch',
+      createdAt: m.createdAt,
+      // Backward-compatible aliases
+      waybillNumber: m.code,
+      receiverName: m.branch?.name ?? 'Destination Hub',
+      receiverPhone: null,
+      destination: m.branch?.address ?? 'Inter-branch transfer',
+    }));
+
+    return [...collectionJobs, ...deliveryJobs, ...linehaulJobs];
+  }
+
+  /**
+   * POST /driver-portal/manifest/:id/deliver — driver confirms linehaul arrival
+   * at the destination branch. Marks manifest as dispatched and updates all
+   * waybills to COLLECTED (received at destination hub, ready for last-mile).
+   */
+  async confirmLinehaulDelivery(manifestId: string, driverId: string, companyId: string) {
+    const manifest = await this.prisma.manifest.findFirst({
+      where: { id: manifestId, driverId, dispatched: false },
+      include: { waybills: true, branch: { select: { name: true } } },
+    });
+
+    if (!manifest) {
+      throw new Error('Manifest not found, already delivered, or not assigned to you');
+    }
+
+    // Mark manifest as delivered
+    await this.prisma.manifest.update({
+      where: { id: manifestId },
+      data: { dispatched: true, dispatchedAt: new Date() },
+    });
+
+    // Update all waybills in the manifest to COLLECTED at destination branch
+    const waybillIds = manifest.waybills.map((mw: any) => mw.waybillId);
+    if (waybillIds.length > 0) {
+      await this.prisma.waybill.updateMany({
+        where: { id: { in: waybillIds } },
+        data: { status: 'COLLECTED' },
+      });
+    }
+
+    this.logger.log(
+      `Linehaul ${manifest.code} delivered by driver ${driverId} to branch ${manifest.branch?.name ?? manifestId}. ` +
+      `${waybillIds.length} waybills marked COLLECTED.`,
+    );
+
+    return {
+      success: true,
+      manifestCode: manifest.code,
+      destinationBranch: manifest.branch?.name ?? 'Unknown',
+      waybillsDelivered: waybillIds.length,
+    };
   }
 
   async updateGps(driverId: string, lat: number, lng: number) {
