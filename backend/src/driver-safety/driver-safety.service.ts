@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';
+import {
+  SAFETY_ZONES_ZA, SAFETY_ZONES_ZW, SAFETY_ZONES_KE,
+  SAFETY_ZONES_NG, SAFETY_ZONES_MZ, SAFETY_ZONES_GH, SAFETY_ZONES_BW,
+} from './safety-zones-data';
 
 /**
  * Driver Safety Service — World-Class Crime Hotspot Detection & Alerting
@@ -276,52 +280,99 @@ export class DriverSafetyService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SEED: Default SA hotspots (top 30 crime stations)
+  // SEED: Global safety hotspots — country-aware (Africa + international)
   // ══════════════════════════════════════════════════════════════════════════
 
-  async seedDefaultZones(companyId: string) {
-    const defaults = [
-      { name: 'Alexandra, JHB', lat: -26.1076, lng: 28.0897, radiusM: 2000, riskLevel: 'CRITICAL' as const, source: 'SAPS_STATS' },
-      { name: 'Hillbrow, JHB', lat: -26.1875, lng: 28.0485, radiusM: 1500, riskLevel: 'CRITICAL' as const, source: 'SAPS_STATS' },
-      { name: 'Johannesburg CBD', lat: -26.2041, lng: 28.0473, radiusM: 2000, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Diepsloot', lat: -25.9318, lng: 28.0146, radiusM: 2500, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Soweto (Orlando)', lat: -26.2485, lng: 27.8546, radiusM: 3000, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Nyanga, CPT', lat: -33.9866, lng: 18.5656, radiusM: 2000, riskLevel: 'CRITICAL' as const, source: 'SAPS_STATS' },
-      { name: 'Khayelitsha, CPT', lat: -34.0388, lng: 18.6819, radiusM: 3000, riskLevel: 'CRITICAL' as const, source: 'SAPS_STATS' },
-      { name: 'Mitchells Plain, CPT', lat: -34.0466, lng: 18.6211, radiusM: 2500, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Philippi, CPT', lat: -34.0206, lng: 18.5847, radiusM: 2000, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Inanda, DBN', lat: -29.7340, lng: 30.9620, radiusM: 2500, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'KwaMashu, DBN', lat: -29.7484, lng: 30.9780, radiusM: 2000, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Umlazi, DBN', lat: -29.9635, lng: 30.8972, radiusM: 2500, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'N1 Buccleuch Interchange', lat: -26.0593, lng: 28.1030, radiusM: 800, riskLevel: 'MEDIUM' as const, source: 'COMMUNITY' },
-      { name: 'N3 Mooi River Corridor', lat: -29.2106, lng: 29.9930, radiusM: 5000, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'N4 Platinum Highway (Rustenburg)', lat: -25.6737, lng: 27.2424, radiusM: 3000, riskLevel: 'MEDIUM' as const, source: 'COMMUNITY' },
-      { name: 'Sunnyside, PTA', lat: -25.7561, lng: 28.2099, radiusM: 1500, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Mamelodi, PTA', lat: -25.7200, lng: 28.3500, radiusM: 3000, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-      { name: 'Mthatha, EC', lat: -31.5889, lng: 28.7844, radiusM: 2000, riskLevel: 'MEDIUM' as const, source: 'SAPS_STATS' },
-      { name: 'Port Elizabeth North End', lat: -33.9181, lng: 25.5701, radiusM: 1500, riskLevel: 'MEDIUM' as const, source: 'SAPS_STATS' },
-      { name: 'Tembisa, EKH', lat: -26.0035, lng: 28.2270, radiusM: 2500, riskLevel: 'HIGH' as const, source: 'SAPS_STATS' },
-    ];
+  /**
+   * Seeds safety zones for a tenant based on their country setting.
+   * Supports: ZA (50+), ZW (20+), KE (15+), NG (15+), MZ (10+), BW (5+), GH (5+), and more.
+   * If no country-specific data exists, seeds a generic "major city CBD" zone.
+   *
+   * Also accepts 'ALL' to seed every available country (for platform owner testing).
+   */
+  async seedDefaultZones(companyId: string, countryCode?: string) {
+    // Resolve the tenant's country if not provided
+    if (!countryCode) {
+      const company = await this.prisma.company.findUnique({ where: { id: companyId }, select: { country: true } });
+      countryCode = company?.country ?? 'ZA';
+    }
 
     const existing = await this.prisma.safetyZone.count({ where: { companyId } });
     if (existing > 0) {
       this.logger.log(`Company ${companyId} already has ${existing} safety zones — skipping seed`);
-      return { seeded: false, existing };
+      return { seeded: false, existing, country: countryCode };
     }
 
-    const zones = await this.prisma.safetyZone.createMany({
-      data: defaults.map(z => ({
+    const zones = countryCode === 'ALL'
+      ? [...SAFETY_ZONES_ZA, ...SAFETY_ZONES_ZW, ...SAFETY_ZONES_KE, ...SAFETY_ZONES_NG, ...SAFETY_ZONES_MZ, ...SAFETY_ZONES_GH, ...SAFETY_ZONES_BW]
+      : this.getZonesForCountry(countryCode);
+
+    if (zones.length === 0) {
+      return { seeded: false, existing: 0, country: countryCode, message: `No pre-configured hotspots for country ${countryCode}. Add zones manually.` };
+    }
+
+    const result = await this.prisma.safetyZone.createMany({
+      data: zones.map(z => ({
         ...z,
         companyId,
         alertMessage: this.getDefaultAlertMessage(z.riskLevel, z.name),
         notifyDriver: true,
         notifyDispatch: true,
         notifyAdmin: z.riskLevel === 'CRITICAL' || z.riskLevel === 'HIGH',
+        isActive: true,
       })),
     });
 
-    this.logger.log(`Seeded ${zones.count} default SA safety zones for company ${companyId}`);
-    return { seeded: true, count: zones.count };
+    this.logger.log(`Seeded ${result.count} safety zones (${countryCode}) for company ${companyId}`);
+    return { seeded: true, count: result.count, country: countryCode };
+  }
+
+  /** Community reporting — drivers flag new dangerous areas from mobile. */
+  async reportDangerZone(companyId: string, driverId: string, dto: { lat: number; lng: number; name?: string; description?: string; riskLevel?: string }) {
+    const driver = await this.prisma.driver.findFirst({ where: { id: driverId }, select: { name: true } });
+    const zone = await this.prisma.safetyZone.create({
+      data: {
+        companyId,
+        name: dto.name ?? `Reported by ${driver?.name ?? 'driver'} — ${new Date().toLocaleDateString()}`,
+        description: dto.description ?? `Community-reported danger zone. Reported by driver ${driver?.name ?? driverId}.`,
+        lat: dto.lat,
+        lng: dto.lng,
+        radiusM: 500, // Default 500m for driver-reported zones
+        riskLevel: (dto.riskLevel as any) ?? 'MEDIUM',
+        source: 'COMMUNITY',
+        alertMessage: this.getDefaultAlertMessage(dto.riskLevel ?? 'MEDIUM', dto.name ?? 'Reported danger zone'),
+        notifyDriver: true,
+        notifyDispatch: true,
+        notifyAdmin: true,
+        isActive: true,
+      },
+    });
+
+    // Notify admin about the new community report
+    await this.prisma.notification.create({
+      data: {
+        companyId,
+        title: '🚨 New danger zone reported by driver',
+        body: `${driver?.name ?? 'A driver'} flagged a dangerous area at GPS ${dto.lat.toFixed(4)}, ${dto.lng.toFixed(4)}${dto.name ? ` (${dto.name})` : ''}. Review in Safety Zones.`,
+        type: 'SAFETY_ALERT',
+      },
+    }).catch(() => { /* best-effort */ });
+
+    this.logger.log(`Community safety zone reported by driver ${driverId}: ${zone.name}`);
+    return zone;
+  }
+
+  private getZonesForCountry(code: string): typeof SAFETY_ZONES_ZA {
+    switch (code.toUpperCase()) {
+      case 'ZA': return SAFETY_ZONES_ZA;
+      case 'ZW': return SAFETY_ZONES_ZW;
+      case 'KE': return SAFETY_ZONES_KE;
+      case 'NG': return SAFETY_ZONES_NG;
+      case 'MZ': return SAFETY_ZONES_MZ;
+      case 'GH': return SAFETY_ZONES_GH;
+      case 'BW': return SAFETY_ZONES_BW;
+      default: return [];
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════

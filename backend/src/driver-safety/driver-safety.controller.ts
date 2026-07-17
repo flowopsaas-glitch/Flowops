@@ -35,10 +35,19 @@ export class DriverSafetyController {
     return this.svc.deleteZone(id, u.companyId);
   }
 
-  /** POST /safety/zones/seed — seed default SA hotspots for this tenant */
+  /** POST /safety/zones/seed — seed hotspots for this tenant's country (or specify ?country=ZW) */
   @Post('zones/seed')
-  seedZones(@CurrentUser() u: any) {
-    return this.svc.seedDefaultZones(u.companyId);
+  seedZones(@CurrentUser() u: any, @Query('country') country?: string) {
+    return this.svc.seedDefaultZones(u.companyId, country);
+  }
+
+  /** POST /safety/zones/report — driver reports a new danger zone from mobile */
+  @Post('zones/report')
+  reportDangerZone(
+    @CurrentUser() u: any,
+    @Body() body: { driverId: string; lat: number; lng: number; name?: string; description?: string; riskLevel?: string },
+  ) {
+    return this.svc.reportDangerZone(u.companyId, body.driverId, body);
   }
 
   // ── Alert History ───────────────────────────────────────────────────────
