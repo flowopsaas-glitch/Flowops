@@ -464,38 +464,11 @@ export default function Collections() {
             </div>
           </div>
           <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-xl">
-            <h3 className="text-lg font-black mb-5">Tenant Driver Fleet + Tracking</h3>
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                 <Field label="Driver Name"><input value={driverName} onChange={e=>setDriverName(e.target.value)} placeholder="Sipho Dlamini" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none focus:border-emerald-400/40" /></Field>
-                 <Field label="Phone"><input value={driverPhone} onChange={e=>setDriverPhone(e.target.value)} placeholder="0821234567" className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 outline-none" /></Field>
-              </div>
-              <button
-                disabled={saving || !driverName.trim()}
-                onClick={async () => {
-                  if (!driverName.trim()) {
-                    setError("Driver name is required.");
-                    return;
-                  }
-                  setSaving(true); setError(""); setSuccess("");
-                  try {
-                    await api.post("/drivers", {
-                      name:  driverName.trim(),
-                      phone: driverPhone.trim() || undefined,
-                      status: "AVAILABLE",
-                    });
-                    setSuccess("Driver added to fleet.");
-                    setDriverName(""); setDriverPhone("");
-                    loadAll("refresh");
-                  } catch (err: any) {
-                    setError(err?.message || "Failed to add driver.");
-                  } finally { setSaving(false); }
-                }}
-                className="bg-emerald-600 p-4 rounded-2xl font-bold flex justify-center gap-2 mt-4 hover:bg-emerald-500 transition-colors disabled:opacity-60"
-              >
-                <Save className="h-5 w-5"/> {saving ? "Adding…" : "Add Driver"}
-              </button>
-            </div>
+            <h3 className="text-lg font-black mb-4">Driver Fleet</h3>
+            <p className="text-sm text-white/40 mb-4">Manage your drivers, set PINs, and track performance from the dedicated Drivers page.</p>
+            <a href="/drivers" className="inline-flex items-center gap-2 rounded-2xl bg-sky-600/20 border border-sky-500/30 px-5 py-3 text-sm font-bold text-sky-200 hover:bg-sky-600/30 transition">
+              <Truck className="h-4 w-4" /> Go to Drivers Management →
+            </a>
           </div>
         </div>
 

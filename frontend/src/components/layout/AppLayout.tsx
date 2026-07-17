@@ -342,6 +342,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Client Hub",          desc: "Quotes, pickups & comms",       to: "/customer-service",   icon: Users,    perm: "quotes"        },
     { section: "OPS", label: "Driver Chat",          desc: "Message drivers in the field",  to: "/driver-chat",        icon: MessageCircle, perm: "driverDispatch" },
     { section: "OPS", label: "Driver Home",         desc: "My jobs, pickups & portal",     to: "/driver-home",        icon: Truck,    perm: "podDeliveries" },
+    { section: "OPS", label: "Drivers",             desc: "Add drivers, PINs & fleet",     to: "/drivers",            icon: Users,    perm: "driverDispatch" },
     { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "driverDispatch" },
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
     { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck, entitlement: "courierManagement" },
