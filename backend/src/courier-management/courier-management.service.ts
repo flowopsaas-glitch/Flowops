@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { ApplyPlanDto, CreateCourierOrderDto, UpdateCourierOrderDto } from './dto/courier-order.dto';
+import { AI_INTERNAL_PREAMBLE } from '../common/ai-security.util';
 
 const PRIORITY_RANK: Record<string, number> = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
 
@@ -172,13 +173,14 @@ export class CourierManagementService {
     const driverLines = drivers.map((d) => `${d.id} | ${d.name} | ${d.status}`).join('\n');
 
     const system =
+      `${AI_INTERNAL_PREAMBLE}\n` +
       `You are FlowOps' AI delivery orchestrator for a South African courier operation. Assign each pending ` +
       `order to the most suitable available driver and put each driver's orders in an efficient run sequence. ` +
       `Rules: prefer drivers with status AVAILABLE; group geographically-close drop-offs to the same driver; ` +
       `schedule URGENT/HIGH first and respect delivery windows; balance load so no driver is overloaded. If an ` +
       `order can't be assigned, list it as unassigned. Respond with ONLY JSON: ` +
       `{"assignments":[{"driverId":string,"driverName":string,"orderIds":[string in run order],"reasoning":string}],` +
-      `"unassigned":[string],"summary":string}.`;
+      `"unassigned":[string],"summary":string}. NEVER include text outside this JSON schema.`;
     const user = `DRIVERS (id | name | status):\n${driverLines}\n\nPENDING ORDERS (id | ref | priority | route | meta):\n${orderLines}`;
 
     try {
