@@ -386,6 +386,7 @@ export default function AppLayout() {
     { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
     { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy, entitlement: "aiSupportAgent" },
     { section: "AI", label: "Fleet Intelligence",        desc: "Network balancing & demand AI",  to: "/fleet-intelligence", icon: Brain },
+    { section: "AI", label: "Safety Zones",             desc: "Crime hotspot alerts for drivers", to: "/safety-zones", icon: ShieldAlert },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
     
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
