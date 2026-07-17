@@ -165,13 +165,29 @@ export class DriverPortalService {
       data: { dispatched: true, dispatchedAt: new Date() },
     });
 
-    // Update all waybills in the manifest to COLLECTED at destination branch
+    // Update all waybills in the manifest to AT_DESTINATION_HUB (arrived at receiving branch)
     const waybillIds = manifest.waybills.map((mw: any) => mw.waybillId);
     if (waybillIds.length > 0) {
       await this.prisma.waybill.updateMany({
         where: { id: { in: waybillIds } },
-        data: { status: 'COLLECTED' },
+        data: { status: 'AT_DESTINATION_HUB' },
       });
+
+      // Auto-reassign each waybill to the nearest available driver at the destination branch
+      for (const wbId of waybillIds) {
+        const availableDriver = await this.prisma.driver.findFirst({
+          where: { companyId, isActive: true, status: 'AVAILABLE', id: { not: driverId } },
+          orderBy: { lastSeen: 'desc' },
+        });
+        if (availableDriver) {
+          const existingShipment = await this.prisma.shipment.findFirst({ where: { waybillId: wbId, companyId } });
+          if (existingShipment) {
+            await this.prisma.shipment.update({ where: { id: existingShipment.id }, data: { driverId: availableDriver.id, status: 'PENDING' } });
+          } else {
+            await this.prisma.shipment.create({ data: { waybillId: wbId, companyId, driverId: availableDriver.id, status: 'PENDING' } });
+          }
+        }
+      }
     }
 
     this.logger.log(

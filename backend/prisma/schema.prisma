@@ -24,7 +24,9 @@ enum UserRole {
 enum WaybillStatus {
   PENDING
   COLLECTED
+  AT_ORIGIN_HUB
   IN_TRANSIT
+  AT_DESTINATION_HUB
   OUT_FOR_DELIVERY
   DELIVERED
   FAILED_DELIVERY
@@ -924,11 +926,26 @@ model Waybill {
   riskScore Float?
   riskNotes String?
 
-  // Proof of delivery
+  // Proof of delivery (RECEIVER signature at delivery — Leg 7)
   podSignatureUrl String?
   podImageUrl     String?
   podRecipient    String?
   podDeliveredAt  DateTime?
+
+  // Proof of collection (SENDER + DRIVER signatures at pickup — Leg 1)
+  // Complete chain of custody: sender confirms handover → driver acknowledges receipt
+  pocSenderSignatureUrl    String?  // Sender signed on driver's phone at collection
+  pocSenderName            String?  // Who signed at collection (sender side)
+  pocDriverSignatureUrl    String?  // Driver signed to acknowledge receipt
+  pocCollectionPhotoUrl    String?  // Photo of parcels at collection (condition evidence)
+  pocCollectedAt           DateTime? // Timestamp of collection signatures
+
+  // Delivery attempts (3x retry before return-to-sender)
+  attemptCount    Int       @default(0)   // Number of delivery attempts made
+  maxAttempts     Int       @default(3)   // Max attempts before return (configurable)
+  nextAttemptAt   DateTime?               // Scheduled next attempt (auto-set on failure)
+  lastAttemptNote String?                 // Reason for last failed attempt
+  returnToSender  Boolean   @default(false) // True when max attempts exhausted
 
   // Uploaded scan file (Cloudflare R2 key)
   fileUrl String?
@@ -3197,4 +3214,74 @@ model SafetyAlert {
   @@index([driverId, createdAt])
   @@index([zoneId])
   @@map("safety_alerts")
+}
+
+
+
+// ─── Address Book (saved sender/receiver addresses for quick-fill) ────────────
+// Tenants save frequently-used addresses to avoid retyping on every waybill.
+// Each entry can be marked as SENDER, RECEIVER, or BOTH.
+
+model AddressBookEntry {
+  id        String @id @default(cuid())
+  companyId String
+
+  label       String   // "Takealot JHB", "Head Office", "John's Home"
+  type        String   @default("BOTH") // SENDER | RECEIVER | BOTH
+  name        String
+  company     String?
+  phone       String?
+  email       String?
+  address     String
+  city        String?
+  postalCode  String?
+  country     String   @default("ZA")
+  lat         Float?
+  lng         Float?
+
+  // Usage tracking (for smart suggestions)
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
+
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, type])
+  @@index([companyId, usageCount])
+  @@map("address_book_entries")
+}
+
+// ─── Tracking Timeline Events (multi-leg journey visibility) ──────────────────
+// Every status change, scan, signature, or location update creates an event.
+// Powers the customer-facing tracking page with granular journey visibility.
+
+model TrackingEvent {
+  id        String @id @default(cuid())
+  waybillId String
+  companyId String
+
+  // What happened
+  event       String   // COLLECTED | SCANNED_IN | SORTED | LOADED | IN_TRANSIT | ARRIVED | OUT_FOR_DELIVERY | DELIVERED | FAILED | RETURNED
+  status      String?  // The WaybillStatus this event corresponds to
+  description String   // Human-readable: "Parcel collected from sender by Sipho"
+
+  // Where it happened
+  location    String?  // "Johannesburg Hub", "N1 Highway", "Pretoria Branch"
+  lat         Float?
+  lng         Float?
+
+  // Who did it
+  actorType   String?  // DRIVER | WAREHOUSE | SYSTEM | DISPATCH
+  actorId     String?
+  actorName   String?
+
+  // Metadata
+  metadata    Json?    // Extra context: { manifestCode, branchName, attemptNumber, signatureUrl }
+
+  createdAt   DateTime @default(now())
+
+  @@index([waybillId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("tracking_events")
 }
