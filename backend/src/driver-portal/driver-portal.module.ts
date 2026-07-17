@@ -7,12 +7,14 @@ import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GatewayModule } from '../gateway/gateway.module';
+import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
 
 @Module({
   imports: [
     ConfigModule,
     NotificationsModule,
     GatewayModule,
+    DriverSafetyModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (cfg: ConfigService) => ({

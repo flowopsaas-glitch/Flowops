@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
+import { DriverSafetyService } from '../driver-safety/driver-safety.service';
 
 @Injectable()
 export class DriverPortalService {
@@ -11,6 +12,7 @@ export class DriverPortalService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private gateway: EventsGateway,
+    private safety: DriverSafetyService,
   ) {}
 
   /**
@@ -185,11 +187,21 @@ export class DriverPortalService {
     };
   }
 
-  async updateGps(driverId: string, lat: number, lng: number) {
-    return this.prisma.driver.update({
+  async updateGps(driverId: string, lat: number, lng: number, speed?: number) {
+    const driver = await this.prisma.driver.update({
       where: { id: driverId },
       data: { lastLat: lat, lastLng: lng, lastSeen: new Date() },
     });
+
+    // ── AI SAFETY SUPERVISOR: Check crime hotspots on every GPS update ────
+    // Non-blocking — safety alerts fire asynchronously without slowing GPS response.
+    void this.safety.checkPosition(
+      driverId, driver.companyId, lat, lng, speed, driver.name,
+    ).catch((err) => {
+      this.logger.warn(`Safety check failed (non-blocking): ${err?.message}`);
+    });
+
+    return driver;
   }
 
   /**

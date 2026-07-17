@@ -66,6 +66,7 @@ import { CommercialAnalyticsModule } from './commercial-analytics/commercial-ana
 import { OtpModule } from './otp/otp.module';
 import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module';
 import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence.module';
+import { DriverSafetyModule } from './driver-safety/driver-safety.module';
 
 @Module({
   imports: [
@@ -137,6 +138,7 @@ import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence
     CommercialAnalyticsModule,
     WarehouseManagementModule,
     FleetIntelligenceModule,
+    DriverSafetyModule,
     OtpModule,
 
     // Domain modules
