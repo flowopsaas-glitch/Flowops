@@ -11,6 +11,8 @@ import {
   Sparkles,
   Plus,
   Trash2,
+  Truck,
+  Package,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -62,6 +64,7 @@ const ROLES: TeamRole[] = ["ADMIN", "MANAGER", "DISPATCH", "AGENT", "DRIVER"];
 
 const STEPS = [
   { label: "Company Details", icon: Building2 },
+  { label: "Add First Driver", icon: Truck },
   { label: "Branding", icon: Palette },
   { label: "Rate Cards", icon: CreditCard },
   { label: "Invite Team", icon: Users },

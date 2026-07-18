@@ -181,7 +181,7 @@ export class OwnerService {
       },
       {
         secret: this.config.get<string>('JWT_SECRET'),
-        expiresIn: '30m',
+        expiresIn: '8h',
       },
     );
 
@@ -197,7 +197,7 @@ export class OwnerService {
 
     return {
       access_token: accessToken,
-      expiresInMinutes: 30,
+      expiresInMinutes: 480,
       tenant: { id: company.id, name: company.name },
       impersonatedUser: { id: target.id, email: target.email, role: target.role },
     };
