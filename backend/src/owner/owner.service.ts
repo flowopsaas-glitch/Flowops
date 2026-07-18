@@ -108,6 +108,14 @@ export class OwnerService {
 
         // Send welcome email to the newly approved admin user
         await this.email.sendWelcomeEmail(req.email, req.fullName, req.company);
+
+        // Send trial started email to inform about the 14-day trial lifecycle
+        const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+        await this.email.sendTrialStartedEmail(req.email, {
+          name: req.fullName,
+          companyName: req.company,
+          trialEndsAt: trialEnd,
+        });
       }
       const updated = await this.prisma.company.update({
         where: { id: tenantId },
@@ -1004,6 +1012,15 @@ export class OwnerService {
       targetName: company.name,
       metadata: { requestId, email: req.email },
     });
+
+    // Send welcome + trial started emails to the new tenant admin
+    await this.email.sendWelcomeEmail(req.email, req.fullName, req.company);
+    await this.email.sendTrialStartedEmail(req.email, {
+      name: req.fullName,
+      companyName: req.company,
+      trialEndsAt,
+    });
+
     return { company, message: 'Approved and onboarded' };
   }
 

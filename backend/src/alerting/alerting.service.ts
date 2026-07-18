@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
@@ -199,6 +200,39 @@ export class AlertingService {
           tenantId: co.id, tenantName: co.name,
           metadata: { daysLeft, plan: 'starter', email: co.email },
         }, ownerEmail);
+
+        // ── TENANT EMAIL: warn the tenant directly ──
+        if (co.email) {
+          const adminUser = await this.prisma.user.findFirst({
+            where: { companyId: co.id, role: 'ADMIN' },
+            select: { firstName: true, phone: true },
+          });
+          await this.email.sendTrialExpiryWarningEmail(co.email, {
+            name: adminUser?.firstName || 'there',
+            companyName: co.name,
+            daysLeft,
+            trialEndsAt: new Date(co.trialEndsAt),
+          });
+
+          // ── TENANT WHATSAPP: send warning via platform WhatsApp ──
+          const adminPhone = adminUser?.phone;
+          if (adminPhone) {
+            const urgencyEmoji = daysLeft === 1 ? '🚨' : daysLeft === 3 ? '⚠️' : '⏳';
+            const urgencyText = daysLeft === 1
+              ? 'This is your *LAST DAY*! Your account will be locked tomorrow.'
+              : `You have *${daysLeft} days* left before your account is locked.`;
+            await this._sendPlatformWhatsApp(adminPhone,
+              `${urgencyEmoji} Hi ${adminUser?.firstName || 'there'},\n\n` +
+              `Your *${co.name}* FlowOps trial is ending soon!\n\n` +
+              `${urgencyText}\n\n` +
+              `Upgrade now to keep your access:\n` +
+              `${this.config.get('APP_URL', 'https://app.flowop.work')}/settings/billing\n\n` +
+              `• *Professional* — R19,999/month\n` +
+              `• *Enterprise* — Custom pricing\n\n` +
+              `All your data will be preserved when you upgrade. Reply here if you need help! 💪`,
+            );
+          }
+        }
         warned++;
       }
 
@@ -301,6 +335,34 @@ export class AlertingService {
       title, message, tenantId: co.id, tenantName: co.name,
       metadata: { reason, adminEmail: co.email, suspendedAt: new Date().toISOString() } }, ownerEmail);
 
+    // ── TENANT EMAIL: notify tenant their trial ended & account is locked ──
+    if (co.email) {
+      const adminUser = await this.prisma.user.findFirst({
+        where: { companyId: co.id, role: 'ADMIN' },
+        select: { firstName: true, phone: true },
+      });
+      await this.email.sendTrialExpiredEmail(co.email, {
+        name: adminUser?.firstName || 'there',
+        companyName: co.name,
+      });
+      this.logger.log(`Trial expired email sent → ${co.email} (${co.name})`);
+
+      // ── TENANT WHATSAPP: send expiry notification via platform WhatsApp ──
+      const adminPhone = adminUser?.phone;
+      if (adminPhone) {
+        await this._sendPlatformWhatsApp(adminPhone,
+          `Hi ${adminUser?.firstName || 'there'} 👋\n\n` +
+          `Your *${co.name}* FlowOps trial has ended and your account is now *locked*.\n\n` +
+          `Don't worry — all your data is safe! 🔒\n\n` +
+          `To restore access, upgrade to:\n` +
+          `• *Professional* — R19,999/month\n` +
+          `• *Enterprise* — Custom pricing\n\n` +
+          `Upgrade here: ${this.config.get('APP_URL', 'https://app.flowop.work')}/settings/billing\n\n` +
+          `Questions? Reply to this message — we'll help you get back up and running! 🚀`,
+        );
+      }
+    }
+
     if (ownerWa) {
       const waMsg = encodeURIComponent(`FlowOps: ${co.name} SUSPENDED (${reason}). Contact: ${co.email ?? 'N/A'}`);
       this.logger.warn(`[ACTION REQUIRED] WhatsApp owner: https://wa.me/${ownerWa}?text=${waMsg}`);
@@ -308,6 +370,56 @@ export class AlertingService {
     await this.audit.record({ action: 'subscription.suspended', actorType: 'system',
       targetType: 'company', targetId: co.id, targetName: co.name,
       metadata: { reason, suspendedAt: new Date().toISOString() } });
+  }
+
+  // ── Platform-level WhatsApp (sends from FlowOps number to any phone) ───
+
+  /**
+   * Send a WhatsApp message using the platform's own Business API credentials.
+   * Used for trial lifecycle notifications to tenant admins.
+   * Gracefully no-ops if WhatsApp is not configured.
+   */
+  private async _sendPlatformWhatsApp(to: string, message: string): Promise<boolean> {
+    const phoneNumberId = this.config.get<string>('WHATSAPP_PHONE_NUMBER_ID', '');
+    const accessToken = this.config.get<string>('WHATSAPP_ACCESS_TOKEN', '');
+    const apiVersion = this.config.get<string>('WHATSAPP_API_VERSION', 'v21.0');
+
+    if (!phoneNumberId || !accessToken) {
+      this.logger.warn(`[WhatsApp not configured] Cannot send trial notification to ${to}`);
+      return false;
+    }
+
+    // Normalize phone (remove + and spaces, keep digits only)
+    const phone = to.replace(/^\+/, '').replace(/\s/g, '').replace(/[^0-9]/g, '');
+    if (phone.length < 10) {
+      this.logger.warn(`[WhatsApp] Invalid phone: ${to} — skipping`);
+      return false;
+    }
+
+    try {
+      await axios.post(
+        `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: phone,
+          type: 'text',
+          text: { preview_url: true, body: message },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      this.logger.log(`Platform WhatsApp sent → ${phone.slice(0, 4)}****${phone.slice(-3)}`);
+      return true;
+    } catch (err: any) {
+      const detail = err?.response?.data?.error?.message ?? err.message;
+      this.logger.warn(`Platform WhatsApp failed to ${phone}: ${detail}`);
+      return false;
+    }
   }
 
   /** Active tenants whose 24h delivery exception rate spikes above 25% (>=5 outcomes). */

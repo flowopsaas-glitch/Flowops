@@ -254,6 +254,184 @@ export class EmailService {
     });
   }
 
+  // ── Trial lifecycle emails (tenant-facing) ──────────────────────────────
+
+  /** Sent to tenant admin when their company first starts the 14-day trial. */
+  async sendTrialStartedEmail(
+    email: string,
+    tenant: { name: string; companyName: string; trialEndsAt: Date },
+  ): Promise<boolean> {
+    const billingUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/settings/billing`;
+    const endDate = new Date(tenant.trialEndsAt).toLocaleDateString('en-ZA', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    return this.send({
+      to: email,
+      subject: `Your 14-day free trial has started — ${tenant.companyName}`,
+      text: `Hi ${tenant.name},\n\nYour FlowOps 14-day free trial is active! You have full Professional access until ${endDate}.\n\nUpgrade anytime at: ${billingUrl}`,
+      html: this.wrap(`
+        <h2 style="margin-top:0;color:#1e3a5f;">Your free trial is live!</h2>
+        <p>Hi ${tenant.name},</p>
+        <p>Welcome to <strong>FlowOps</strong>! Your <strong>${tenant.companyName}</strong> workspace now has
+        full <strong>Professional-tier access</strong> for 14 days — completely free.</p>
+
+        <div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:16px 20px;border-radius:8px;margin:20px 0;">
+          <p style="margin:0;font-weight:700;color:#166534;">What you get during your trial:</p>
+          <ul style="margin:8px 0 0;padding-left:20px;color:#374151;">
+            <li>Unlimited waybills & shipments</li>
+            <li>Unlimited drivers & team members</li>
+            <li>WhatsApp notifications & live tracking</li>
+            <li>AI-powered route optimization</li>
+            <li>Full analytics & reporting</li>
+            <li>Real-time driver GPS tracking</li>
+          </ul>
+        </div>
+
+        <div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:16px 20px;border-radius:8px;margin:20px 0;">
+          <p style="margin:0;">
+            <strong>Trial ends:</strong> ${endDate}<br/>
+            <span style="color:#6b7280;font-size:13px;">After your trial, you'll need to upgrade to Professional or Enterprise to continue.</span>
+          </p>
+        </div>
+
+        <a href="${billingUrl}" class="btn" style="background:#22c55e;">Start exploring FlowOps</a>
+        <p style="color:#94a3b8;font-size:13px;">
+          Questions? Reply to this email — we're here to help you succeed.
+        </p>
+      `),
+    });
+  }
+
+  /** Sent to tenant admin X days before trial expires (7, 3, 1 days). */
+  async sendTrialExpiryWarningEmail(
+    email: string,
+    tenant: { name: string; companyName: string; daysLeft: number; trialEndsAt: Date },
+  ): Promise<boolean> {
+    const billingUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/settings/billing`;
+    const endDate = new Date(tenant.trialEndsAt).toLocaleDateString('en-ZA', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    const urgency = tenant.daysLeft === 1 ? 'FINAL DAY' : tenant.daysLeft === 3 ? 'Almost over' : 'Ending soon';
+    const urgencyColor = tenant.daysLeft === 1 ? '#dc2626' : tenant.daysLeft === 3 ? '#f59e0b' : '#3b82f6';
+
+    return this.send({
+      to: email,
+      subject: `${urgency}: Your FlowOps trial expires ${tenant.daysLeft === 1 ? 'TOMORROW' : `in ${tenant.daysLeft} days`} — ${tenant.companyName}`,
+      text: `Hi ${tenant.name},\n\nYour FlowOps trial expires in ${tenant.daysLeft} day(s) on ${endDate}.\n\nUpgrade now to keep your data and access: ${billingUrl}\n\nAfter expiry, your account will be locked until you choose a plan.`,
+      html: this.wrap(`
+        <h2 style="margin-top:0;color:${urgencyColor};">
+          ${tenant.daysLeft === 1 ? 'FINAL DAY' : `${tenant.daysLeft} days left`} on your trial
+        </h2>
+        <p>Hi ${tenant.name},</p>
+        <p>Your <strong>${tenant.companyName}</strong> free trial ${tenant.daysLeft === 1 ? 'expires <strong>tomorrow</strong>' : `ends in <strong>${tenant.daysLeft} days</strong>`} on <strong>${endDate}</strong>.</p>
+
+        <div style="background:#fef2f2;border-left:4px solid ${urgencyColor};padding:16px 20px;border-radius:8px;margin:20px 0;">
+          <p style="margin:0;font-weight:700;color:#991b1b;">What happens when your trial ends:</p>
+          <ul style="margin:8px 0 0;padding-left:20px;color:#374151;">
+            <li>Your account will be <strong>locked</strong></li>
+            <li>You won't be able to create waybills, track shipments, or manage drivers</li>
+            <li>Your data is safe — it's preserved when you upgrade</li>
+            <li>Upgrade anytime to instantly restore full access</li>
+          </ul>
+        </div>
+
+        <div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:16px 20px;border-radius:8px;margin:20px 0;">
+          <p style="margin:0;font-weight:700;color:#166534;">Choose your plan:</p>
+          <table style="width:100%;margin:12px 0 0;border-collapse:collapse;">
+            <tr>
+              <td style="padding:8px 0;"><strong>Professional</strong></td>
+              <td style="padding:8px 0;text-align:right;color:#1e3a5f;font-weight:700;">R19,999/month</td>
+            </tr>
+            <tr style="border-top:1px solid #e5e7eb;">
+              <td style="padding:8px 0;"><strong>Enterprise</strong></td>
+              <td style="padding:8px 0;text-align:right;color:#1e3a5f;font-weight:700;">Custom pricing</td>
+            </tr>
+          </table>
+        </div>
+
+        <a href="${billingUrl}" class="btn" style="background:${urgencyColor};">
+          ${tenant.daysLeft === 1 ? 'Upgrade NOW — last chance' : 'Upgrade to keep your access'}
+        </a>
+        <p style="color:#94a3b8;font-size:13px;">
+          Need help choosing? Reply to this email and we'll get back to you within an hour.
+        </p>
+      `),
+    });
+  }
+
+  /** Sent to tenant admin when trial has officially expired and account is locked. */
+  async sendTrialExpiredEmail(
+    email: string,
+    tenant: { name: string; companyName: string },
+  ): Promise<boolean> {
+    const billingUrl = `${this.config.get('APP_URL', 'http://localhost:8080')}/settings/billing`;
+    return this.send({
+      to: email,
+      subject: `Your FlowOps trial has ended — upgrade to continue (${tenant.companyName})`,
+      text: `Hi ${tenant.name},\n\nYour 14-day FlowOps trial has ended and your ${tenant.companyName} account is now locked.\n\nAll your data is safe. Upgrade to Professional (R19,999/month) or Enterprise to instantly restore access.\n\nUpgrade: ${billingUrl}`,
+      html: this.wrap(`
+        <h2 style="margin-top:0;color:#dc2626;">Your trial has ended</h2>
+        <p>Hi ${tenant.name},</p>
+        <p>Your 14-day free trial for <strong>${tenant.companyName}</strong> has expired.
+        Your account is now <strong>locked</strong> — but don't worry, all your data is safe and waiting for you.</p>
+
+        <div style="background:#fef2f2;border:2px solid #fecaca;padding:20px 24px;border-radius:12px;margin:24px 0;text-align:center;">
+          <p style="margin:0 0 4px;font-size:14px;color:#991b1b;font-weight:700;">ACCOUNT STATUS</p>
+          <p style="margin:0;font-size:24px;font-weight:800;color:#dc2626;">LOCKED</p>
+          <p style="margin:8px 0 0;color:#6b7280;font-size:13px;">Upgrade to restore access instantly</p>
+        </div>
+
+        <div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:16px 20px;border-radius:8px;margin:20px 0;">
+          <p style="margin:0 0 8px;font-weight:700;color:#166534;">What's included when you upgrade:</p>
+          <ul style="margin:0;padding-left:20px;color:#374151;">
+            <li>All your waybills, drivers & data restored instantly</li>
+            <li>Unlimited operations — no caps on waybills or drivers</li>
+            <li>WhatsApp notifications & real-time tracking</li>
+            <li>AI route optimization & fleet intelligence</li>
+            <li>Priority support with dedicated onboarding</li>
+          </ul>
+        </div>
+
+        <div style="background:#eff6ff;border-radius:12px;padding:20px 24px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="padding:12px 0;border-bottom:1px solid #dbeafe;">
+                <strong style="font-size:16px;">Professional</strong><br/>
+                <span style="color:#6b7280;font-size:13px;">Everything you need to scale</span>
+              </td>
+              <td style="padding:12px 0;text-align:right;border-bottom:1px solid #dbeafe;">
+                <strong style="font-size:18px;color:#1e3a5f;">R19,999</strong><span style="color:#6b7280;">/month</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:12px 0;">
+                <strong style="font-size:16px;">Enterprise</strong><br/>
+                <span style="color:#6b7280;font-size:13px;">Custom-built for large operations</span>
+              </td>
+              <td style="padding:12px 0;text-align:right;">
+                <strong style="font-size:18px;color:#1e3a5f;">Custom</strong><span style="color:#6b7280;"> pricing</span>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="text-align:center;">
+          <a href="${billingUrl}" class="btn" style="background:#dc2626;font-size:17px;padding:16px 40px;">
+            Upgrade Now — Restore Access
+          </a>
+        </div>
+
+        <p style="color:#6b7280;font-size:13px;margin-top:24px;">
+          <strong>Your data is preserved.</strong> When you upgrade, everything picks up right where you left off —
+          waybills, drivers, clients, invoices. Nothing is deleted.
+        </p>
+        <p style="color:#94a3b8;font-size:13px;">
+          Questions about pricing? Need an Enterprise quote? Reply to this email and our team will respond within an hour.
+        </p>
+      `),
+    });
+  }
+
   /** Generic platform-owner alert (churn, SLA spike, payment failure, etc.). */
   async sendOwnerAlert(
     ownerEmail: string,
