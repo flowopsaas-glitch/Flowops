@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CollectionsService {
   constructor(
     private prisma: PrismaService,
     private geo: GeocodingService,
+    private notifications: NotificationsService,
   ) {}
 
   async findAll(companyId: string, query?: any) {
@@ -135,7 +137,19 @@ export class CollectionsService {
         data.pickupLng = point.lng;
       }
     }
-    return this.prisma.collection.create({ data });
+    const collection = await this.prisma.collection.create({ data });
+
+    // ── COLLECTION SCHEDULED — notify client via WhatsApp + email ──
+    void this.notifications.notifyCollectionScheduled(companyId, {
+      clientName: collection.clientName,
+      clientPhone: collection.clientPhone,
+      clientEmail: collection.clientEmail,
+      pickupAddress: collection.pickupAddress,
+      scheduledAt: collection.scheduledAt,
+      driverName: null, // driver not assigned yet at creation
+    });
+
+    return collection;
   }
 
   async update(id: string, companyId: string, dto: any) {

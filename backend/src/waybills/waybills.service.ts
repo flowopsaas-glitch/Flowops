@@ -179,9 +179,14 @@ export class WaybillsService {
   async create(companyId: string, dto: any) {
     await this.billing.assertCanCreate(companyId, 'waybill');
     const trackingNumber = await this.generateTrackingNumber(companyId);
-    return this.prisma.waybill.create({
+    const waybill = await this.prisma.waybill.create({
       data: { ...dto, trackingNumber, companyId },
     });
+
+    // ── BOOKING CONFIRMATION — notify recipient their parcel is on the way ──
+    void this.notifications.notifyWaybillStatus(waybill);
+
+    return waybill;
   }
 
   async update(id: string, companyId: string, dto: any) {
@@ -228,6 +233,12 @@ export class WaybillsService {
     });
     if (!waybill) throw new NotFoundException('Waybill not found');
 
+    // Get driver details for the dispatch notification
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { name: true, phone: true, vehicleType: true, vehicleReg: true },
+    });
+
     return this.prisma.$transaction(async (tx) => {
       // Upsert the linked shipment
       const existing = await tx.shipment.findFirst({
@@ -252,6 +263,9 @@ export class WaybillsService {
           data: { status: newStatus },
         });
       }
+
+      // ── DISPATCH NOTIFICATION — notify recipient a driver is on the way ──
+      void this.notifications.notifyDriverDispatched(waybill, driver);
 
       return { success: true, shipmentId: shipment.id };
     });
