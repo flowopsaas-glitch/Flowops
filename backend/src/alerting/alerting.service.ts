@@ -205,10 +205,10 @@ export class AlertingService {
         if (co.email) {
           const adminUser = await this.prisma.user.findFirst({
             where: { companyId: co.id, role: 'ADMIN' },
-            select: { firstName: true, phone: true },
+            select: { name: true, phone: true },
           });
           await this.email.sendTrialExpiryWarningEmail(co.email, {
-            name: adminUser?.firstName || 'there',
+            name: adminUser?.name?.split(/\s+/)[0] || 'there',
             companyName: co.name,
             daysLeft,
             trialEndsAt: new Date(co.trialEndsAt),
@@ -222,7 +222,7 @@ export class AlertingService {
               ? 'This is your *LAST DAY*! Your account will be locked tomorrow.'
               : `You have *${daysLeft} days* left before your account is locked.`;
             await this._sendPlatformWhatsApp(adminPhone,
-              `${urgencyEmoji} Hi ${adminUser?.firstName || 'there'},\n\n` +
+              `${urgencyEmoji} Hi ${adminUser?.name?.split(/\s+/)[0] || 'there'},\n\n` +
               `Your *${co.name}* FlowOps trial is ending soon!\n\n` +
               `${urgencyText}\n\n` +
               `Upgrade now to keep your access:\n` +
@@ -339,10 +339,10 @@ export class AlertingService {
     if (co.email) {
       const adminUser = await this.prisma.user.findFirst({
         where: { companyId: co.id, role: 'ADMIN' },
-        select: { firstName: true, phone: true },
+        select: { name: true, phone: true },
       });
       await this.email.sendTrialExpiredEmail(co.email, {
-        name: adminUser?.firstName || 'there',
+        name: adminUser?.name?.split(/\s+/)[0] || 'there',
         companyName: co.name,
       });
       this.logger.log(`Trial expired email sent → ${co.email} (${co.name})`);
@@ -351,7 +351,7 @@ export class AlertingService {
       const adminPhone = adminUser?.phone;
       if (adminPhone) {
         await this._sendPlatformWhatsApp(adminPhone,
-          `Hi ${adminUser?.firstName || 'there'} 👋\n\n` +
+          `Hi ${adminUser?.name?.split(/\s+/)[0] || 'there'} 👋\n\n` +
           `Your *${co.name}* FlowOps trial has ended and your account is now *locked*.\n\n` +
           `Don't worry — all your data is safe! 🔒\n\n` +
           `To restore access, upgrade to:\n` +
