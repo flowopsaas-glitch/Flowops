@@ -107,14 +107,15 @@ export class NotificationsService {
 
   private static readonly CUSTOMER_STATUS_COPY: Record<
     string,
-    { title: string; line: string }
+    { title: string; line: string; emoji: string }
   > = {
-    COLLECTED: { title: 'Parcel collected', line: 'has been collected and is entering our network' },
-    IN_TRANSIT: { title: 'On its way', line: 'is now in transit' },
-    OUT_FOR_DELIVERY: { title: 'Out for delivery', line: 'is out for delivery today' },
-    DELIVERED: { title: 'Delivered', line: 'has been delivered' },
-    FAILED_DELIVERY: { title: 'Delivery attempt failed', line: 'could not be delivered — we will retry' },
-    RETURNED: { title: 'Returned to sender', line: 'is being returned to the sender' },
+    PENDING: { title: 'Booking confirmed', line: 'has been booked and is awaiting pickup', emoji: '📦' },
+    COLLECTED: { title: 'Parcel collected', line: 'has been collected and is entering our network', emoji: '✅' },
+    IN_TRANSIT: { title: 'On its way', line: 'is now in transit', emoji: '🚚' },
+    OUT_FOR_DELIVERY: { title: 'Out for delivery', line: 'is out for delivery today', emoji: '🏃' },
+    DELIVERED: { title: 'Delivered', line: 'has been delivered', emoji: '🎉' },
+    FAILED_DELIVERY: { title: 'Delivery attempt failed', line: 'could not be delivered — we will retry', emoji: '⚠️' },
+    RETURNED: { title: 'Returned to sender', line: 'is being returned to the sender', emoji: '↩️' },
   };
 
   /**
@@ -122,8 +123,17 @@ export class NotificationsService {
    * the tenant and emails BOTH the sender and receiver with a branded,
    * world-class status update including live tracking link and POD details.
    *
-   * When the waybill has a recipientPhone, also sends a WhatsApp notification
-   * via the Business API (or prepares a click-to-chat link as fallback).
+   * Also sends a WhatsApp notification to the recipient via the Business API.
+   * Falls back to generating a click-to-chat link if WhatsApp is not configured.
+   *
+   * FULL LOGISTICS LIFECYCLE:
+   *   PENDING → Booking confirmation ("your parcel has been booked")
+   *   COLLECTED → "picked up and entering our network"
+   *   IN_TRANSIT → "on its way"
+   *   OUT_FOR_DELIVERY → "out for delivery today"
+   *   DELIVERED → POD confirmation + rating request
+   *   FAILED_DELIVERY → "could not be delivered — we will retry"
+   *   RETURNED → "being returned to sender"
    */
   async notifyWaybillStatus(waybill: {
     companyId: string;
@@ -162,7 +172,7 @@ export class NotificationsService {
       await this.prisma.notification.create({
         data: {
           companyId: waybill.companyId,
-          title: `${copy.title} · ${waybill.trackingNumber}`,
+          title: `${copy.emoji} ${copy.title} · ${waybill.trackingNumber}`,
           body: waLink
             ? `${waybill.trackingNumber} ${copy.line}. [WhatsApp: ${waLink}]`
             : `Parcel ${waybill.trackingNumber} ${copy.line}.`,
@@ -199,7 +209,7 @@ export class NotificationsService {
             <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
               <!-- Header -->
               <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;text-align:center;">
-                <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">${copy.title}</h1>
+                <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">${copy.emoji} ${copy.title}</h1>
                 <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Tracking: ${waybill.trackingNumber}</p>
               </td></tr>
               <!-- Body -->
@@ -216,7 +226,6 @@ export class NotificationsService {
                     </a>
                   </td></tr>
                 </table>
-                ${waLink ? `<p style="margin-top:16px;text-align:center;font-size:12px;color:#64748b;">Or reply on <a href="${waLink}" style="color:#25D366;font-weight:600;">WhatsApp</a></p>` : ''}
               </td></tr>
               <!-- Footer -->
               <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;text-align:center;">
@@ -236,7 +245,7 @@ export class NotificationsService {
       await this.email
         .send({
           to: waybill.recipientEmail,
-          subject: `${copy.title} — ${waybill.trackingNumber}`,
+          subject: `${copy.emoji} ${copy.title} — ${waybill.trackingNumber}`,
           text: `Hi ${recipientFirst}, your parcel ${waybill.trackingNumber} ${copy.line}. Track it live: ${trackUrl}`,
           html: buildEmailHtml(`Hi ${recipientFirst}`, 'receiver'),
         })
@@ -246,8 +255,8 @@ export class NotificationsService {
     // Send to SENDER (confirmation that their shipment status changed)
     if (waybill.senderEmail) {
       const senderSubject = waybill.status === 'DELIVERED'
-        ? `Delivered ✓ — ${waybill.trackingNumber} (to ${waybill.recipientName || 'recipient'})`
-        : `${copy.title} — ${waybill.trackingNumber}`;
+        ? `✅ Delivered — ${waybill.trackingNumber} (to ${waybill.recipientName || 'recipient'})`
+        : `${copy.emoji} ${copy.title} — ${waybill.trackingNumber}`;
       await this.email
         .send({
           to: waybill.senderEmail,
@@ -258,14 +267,26 @@ export class NotificationsService {
         .catch((err) => this.logger.warn(`Sender email failed: ${err?.message ?? err}`));
     }
 
-    // 3) Auto-send WhatsApp notification (when Business API is connected).
+    // 3) WhatsApp auto-send to RECIPIENT via Business API.
     if (waybill.recipientPhone) {
-      const message = `Hi ${recipientFirst}, your parcel ${waybill.trackingNumber} ${copy.line}. Track: ${trackUrl}`;
+      const waMessage = `${copy.emoji} Hi ${recipientFirst}, your parcel *${waybill.trackingNumber}* ${copy.line}.\n\n` +
+        `📍 Track live: ${trackUrl}`;
       try {
-        await this.whatsapp.sendMessage(waybill.companyId, waybill.recipientPhone, message);
+        await this.whatsapp.sendMessage(waybill.companyId, waybill.recipientPhone, waMessage);
       } catch (err: any) {
         // WhatsApp send is best-effort — fails silently when not configured
         this.logger.debug(`WhatsApp auto-notify skipped/failed: ${err?.message ?? err}`);
+      }
+    }
+
+    // 4) WhatsApp auto-send to SENDER (they want to know their parcel is moving).
+    if (waybill.senderPhone && waybill.status !== 'PENDING') {
+      const senderWaMessage = `${copy.emoji} Hi ${senderFirst}, your shipment *${waybill.trackingNumber}* (to ${waybill.recipientName || 'recipient'}) ${copy.line}.\n\n` +
+        `📍 Track: ${trackUrl}`;
+      try {
+        await this.whatsapp.sendMessage(waybill.companyId, waybill.senderPhone, senderWaMessage);
+      } catch (err: any) {
+        this.logger.debug(`WhatsApp sender notify skipped/failed: ${err?.message ?? err}`);
       }
     }
   }
@@ -311,8 +332,8 @@ export class NotificationsService {
       await this.prisma.notification.create({
         data: {
           companyId: waybill.companyId,
-          title: `ETA alert sent · ${waybill.trackingNumber}`,
-          body: `${stopsText} — ETA${etaText}. Customer notified.`,
+          title: `🚚 ETA alert sent · ${waybill.trackingNumber}`,
+          body: `${stopsText} — ETA${etaText}. Customer notified via WhatsApp + email.`,
           type: 'ETA_ALERT',
         },
       });
@@ -322,17 +343,58 @@ export class NotificationsService {
     if (waybill.recipientEmail) {
       await this.email.send({
         to: waybill.recipientEmail,
-        subject: `Your delivery is ${stopsText} — ${waybill.trackingNumber}`,
+        subject: `🚚 Your delivery is ${stopsText} — ${waybill.trackingNumber}`,
         text: message,
         html: `
-          <h2 style="margin-top:0;color:#1e3a5f;">🚚 Your delivery is almost here!</h2>
-          <p>Hi ${name}, your parcel <strong>${waybill.trackingNumber}</strong> is <strong>${stopsText}</strong>${etaText}.</p>
-          <a href="${trackUrl}" style="display:inline-block;margin-top:12px;padding:10px 20px;background:#3b82f6;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Track your delivery live →</a>
+          <!DOCTYPE html>
+          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:40px 20px;">
+              <tr><td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+                  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;text-align:center;">
+                    <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">🚚 Almost there!</h1>
+                    <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Tracking: ${waybill.trackingNumber}</p>
+                  </td></tr>
+                  <tr><td style="padding:32px;">
+                    <p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">
+                      Hi ${name}, your delivery is <strong style="color:#10b981;">${stopsText}</strong>${etaText}!
+                    </p>
+                    <div style="background:#f0fdf4;border-left:4px solid #10b981;padding:16px 20px;border-radius:8px;margin:20px 0;">
+                      <p style="margin:0;font-size:24px;font-weight:800;color:#166534;">${stopsAhead <= 1 ? '🎯 Next stop!' : `${stopsAhead} stops away`}</p>
+                      ${etaMinutes ? `<p style="margin:4px 0 0;font-size:14px;color:#374151;">Arriving in ~<strong>${etaMinutes} minutes</strong></p>` : ''}
+                    </div>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+                      <tr><td align="center">
+                        <a href="${trackUrl}" style="display:inline-block;padding:14px 32px;background:#10b981;color:#ffffff;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;">
+                          Track Your Delivery Live →
+                        </a>
+                      </td></tr>
+                    </table>
+                  </td></tr>
+                  <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+                    <p style="margin:0;font-size:11px;color:#94a3b8;">Powered by FlowOps • <a href="${trackUrl}" style="color:#64748b;">Track online</a></p>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </body></html>
         `,
       }).catch((e) => this.logger.warn(`ETA email failed: ${e?.message}`));
     }
 
-    // WhatsApp link
+    // WhatsApp auto-send (Business API — not just a link!)
+    if (waybill.recipientPhone) {
+      const waMessage = `🚚 Hi ${name}, your delivery (*${waybill.trackingNumber}*) is *${stopsText}*${etaText}!\n\n` +
+        `📍 Track live: ${trackUrl}\n\n` +
+        `Please be ready to receive your parcel. 🙏`;
+      try {
+        await this.whatsapp.sendMessage(waybill.companyId, waybill.recipientPhone, waMessage);
+      } catch (err: any) {
+        this.logger.debug(`ETA WhatsApp auto-send failed: ${err?.message ?? err}`);
+      }
+    }
+
     const waLink = this.buildWaLink(waybill.recipientPhone, name, waybill.trackingNumber, `is ${stopsText}${etaText}`, trackUrl);
     return { waLink, message };
   }
@@ -352,34 +414,255 @@ export class NotificationsService {
     if (waybill.recipientEmail) {
       await this.email.send({
         to: waybill.recipientEmail,
-        subject: `How was your delivery? — ${waybill.trackingNumber}`,
+        subject: `⭐ How was your delivery? — ${waybill.trackingNumber}`,
         text: `Hi ${name}, your FlowOps delivery ${waybill.trackingNumber} is complete. Rate your experience: ${rateUrl}`,
         html: `
-          <h2 style="margin-top:0;color:#1e3a5f;">How was your delivery?</h2>
-          <p>Hi ${name}, your parcel <strong>${waybill.trackingNumber}</strong> has been delivered. We'd love your feedback!</p>
-          <a href="${rateUrl}" style="display:inline-block;margin-top:12px;padding:12px 24px;background:#f59e0b;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Rate your experience ★</a>
-          <p style="margin-top:12px;font-size:12px;color:#888;">This link expires in 7 days.</p>
+          <!DOCTYPE html>
+          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:40px 20px;">
+              <tr><td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+                  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;text-align:center;">
+                    <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">⭐ Rate Your Delivery</h1>
+                    <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Tracking: ${waybill.trackingNumber}</p>
+                  </td></tr>
+                  <tr><td style="padding:32px;text-align:center;">
+                    <p style="margin:0 0 8px;font-size:15px;color:#334155;">Hi ${name}, your delivery is complete!</p>
+                    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">We'd love to hear about your experience.</p>
+                    <p style="margin:0;font-size:36px;">⭐⭐⭐⭐⭐</p>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+                      <tr><td align="center">
+                        <a href="${rateUrl}" style="display:inline-block;padding:14px 32px;background:#f59e0b;color:#ffffff;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;">
+                          Rate Your Experience →
+                        </a>
+                      </td></tr>
+                    </table>
+                    <p style="margin-top:16px;font-size:12px;color:#94a3b8;">Takes less than 10 seconds. Your feedback helps us improve!</p>
+                  </td></tr>
+                  <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+                    <p style="margin:0;font-size:11px;color:#94a3b8;">Powered by FlowOps</p>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </body></html>
         `,
       }).catch((e) => this.logger.warn(`Rating email failed: ${e?.message}`));
     }
 
-    // WhatsApp
-    const digits = (waybill.recipientPhone || '').replace(/\D/g, '');
-    if (digits.length >= 9) {
-      const intl = digits.startsWith('0') ? `27${digits.slice(1)}` : digits;
-      const text = `Hi ${name}, your FlowOps delivery (${waybill.trackingNumber}) is complete! Rate your experience here: ${rateUrl}`;
-      const waLink = `https://wa.me/${intl}?text=${encodeURIComponent(text)}`;
+    // WhatsApp auto-send rating request via Business API
+    if (waybill.recipientPhone) {
+      const waMessage = `⭐ Hi ${name}, your delivery (*${waybill.trackingNumber}*) is complete!\n\n` +
+        `How was your experience? Rate it here (takes 10 seconds):\n${rateUrl}\n\n` +
+        `Your feedback helps us deliver better every time. Thank you! 🙏`;
       try {
-        await this.prisma.notification.create({
-          data: {
-            companyId: waybill.companyId,
-            title: `Rating request sent · ${waybill.trackingNumber}`,
-            body: `[WhatsApp rating link: ${waLink}]`,
-            type: 'RATING_REQUEST',
-          },
-        });
-      } catch {}
+        await this.whatsapp.sendMessage(waybill.companyId, waybill.recipientPhone, waMessage);
+      } catch (err: any) {
+        this.logger.debug(`Rating WhatsApp auto-send failed: ${err?.message ?? err}`);
+      }
     }
+
+    // Log internal notification
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId: waybill.companyId,
+          title: `⭐ Rating request sent · ${waybill.trackingNumber}`,
+          body: `Customer ${name} notified via ${waybill.recipientEmail ? 'email' : ''}${waybill.recipientEmail && waybill.recipientPhone ? ' + ' : ''}${waybill.recipientPhone ? 'WhatsApp' : ''}.`,
+          type: 'RATING_REQUEST',
+        },
+      });
+    } catch {}
+  }
+
+  }
+
+  // ── Driver Dispatched notification (WhatsApp + email) ───────────────
+
+  /**
+   * Fired when a driver is assigned to a waybill. Notifies the recipient
+   * that a driver is on the way with driver details + tracking link.
+   * This is a PROPER logistics procedure — clients should always know
+   * who is coming and when.
+   */
+  async notifyDriverDispatched(
+    waybill: { companyId: string; trackingNumber: string; recipientName?: string | null; recipientEmail?: string | null; recipientPhone?: string | null },
+    driver: { name: string; phone?: string | null; vehicleType?: string | null; vehicleReg?: string | null } | null,
+  ) {
+    const appUrl = this.config.get('APP_URL', 'http://localhost:8080');
+    const trackUrl = `${appUrl}/track/${waybill.trackingNumber}`;
+    const name = (waybill.recipientName || 'there').split(/\s+/)[0];
+    const driverName = driver?.name?.split(/\s+/)[0] || 'Your driver';
+    const vehicleInfo = driver?.vehicleType
+      ? `${driver.vehicleType}${driver.vehicleReg ? ` (${driver.vehicleReg})` : ''}`
+      : '';
+
+    // Internal notification
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId: waybill.companyId,
+          title: `🚗 Driver dispatched · ${waybill.trackingNumber}`,
+          body: `${driverName} assigned to ${waybill.trackingNumber}. Customer notified.`,
+          type: 'DISPATCH',
+        },
+      });
+    } catch {}
+
+    // WhatsApp auto-send to recipient
+    if (waybill.recipientPhone) {
+      const waMessage = `🚗 Hi ${name}, a driver has been assigned to your delivery!\n\n` +
+        `📦 Tracking: *${waybill.trackingNumber}*\n` +
+        `👤 Driver: *${driverName}*\n` +
+        (vehicleInfo ? `🚐 Vehicle: ${vehicleInfo}\n` : '') +
+        `\n📍 Track live: ${trackUrl}\n\n` +
+        `You'll receive another message when your parcel is on its way. 🙌`;
+      try {
+        await this.whatsapp.sendMessage(waybill.companyId, waybill.recipientPhone, waMessage);
+      } catch (err: any) {
+        this.logger.debug(`Dispatch WhatsApp failed: ${err?.message ?? err}`);
+      }
+    }
+
+    // Email to recipient
+    if (waybill.recipientEmail) {
+      await this.email.send({
+        to: waybill.recipientEmail,
+        subject: `🚗 Driver assigned — ${waybill.trackingNumber}`,
+        text: `Hi ${name}, driver ${driverName} has been assigned to your delivery ${waybill.trackingNumber}. Track: ${trackUrl}`,
+        html: `
+          <!DOCTYPE html>
+          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:40px 20px;">
+              <tr><td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+                  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;text-align:center;">
+                    <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">🚗 Driver on the way!</h1>
+                    <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Tracking: ${waybill.trackingNumber}</p>
+                  </td></tr>
+                  <tr><td style="padding:32px;">
+                    <p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">
+                      Hi ${name}, a driver has been assigned to your delivery!
+                    </p>
+                    <div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:16px 20px;border-radius:8px;margin:20px 0;">
+                      <table style="width:100%;border-collapse:collapse;">
+                        <tr><td style="color:#6b7280;padding:6px 0;width:100px;">Driver</td><td style="font-weight:700;color:#1e3a5f;">${driverName}</td></tr>
+                        ${vehicleInfo ? `<tr><td style="color:#6b7280;padding:6px 0;">Vehicle</td><td style="color:#374151;">${vehicleInfo}</td></tr>` : ''}
+                        <tr><td style="color:#6b7280;padding:6px 0;">Tracking</td><td style="font-weight:700;color:#1e3a5f;">${waybill.trackingNumber}</td></tr>
+                      </table>
+                    </div>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+                      <tr><td align="center">
+                        <a href="${trackUrl}" style="display:inline-block;padding:14px 32px;background:#10b981;color:#ffffff;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;">
+                          Track Your Delivery →
+                        </a>
+                      </td></tr>
+                    </table>
+                  </td></tr>
+                  <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+                    <p style="margin:0;font-size:11px;color:#94a3b8;">Powered by FlowOps • <a href="${trackUrl}" style="color:#64748b;">Track online</a></p>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </body></html>
+        `,
+      }).catch((e) => this.logger.warn(`Dispatch email failed: ${e?.message}`));
+    }
+  }
+
+  // ── Collection Scheduled notification (WhatsApp + email to sender) ────
+
+  /**
+   * Notify the sender/client that their collection pickup has been scheduled.
+   * Proper logistics procedure — sender should know exactly when to expect the driver.
+   */
+  async notifyCollectionScheduled(
+    companyId: string,
+    collection: {
+      clientName?: string | null;
+      clientPhone?: string | null;
+      clientEmail?: string | null;
+      pickupAddress?: string | null;
+      scheduledAt?: Date | string | null;
+      driverName?: string | null;
+    },
+  ) {
+    const name = (collection.clientName || 'there').split(/\s+/)[0];
+    const scheduledDate = collection.scheduledAt
+      ? new Date(collection.scheduledAt).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
+      : 'shortly';
+    const driverText = collection.driverName ? `Driver: *${collection.driverName}*` : '';
+
+    // WhatsApp auto-send to sender
+    if (collection.clientPhone) {
+      const waMessage = `📋 Hi ${name}, your collection has been scheduled!\n\n` +
+        `📍 Pickup: ${collection.pickupAddress || 'your address'}\n` +
+        `🕐 When: ${scheduledDate}\n` +
+        (driverText ? `👤 ${driverText}\n` : '') +
+        `\nPlease have your parcels ready for pickup. The driver will contact you when nearby. 📞`;
+      try {
+        await this.whatsapp.sendMessage(companyId, collection.clientPhone, waMessage);
+      } catch (err: any) {
+        this.logger.debug(`Collection scheduled WhatsApp failed: ${err?.message ?? err}`);
+      }
+    }
+
+    // Email to sender
+    if (collection.clientEmail) {
+      await this.email.send({
+        to: collection.clientEmail,
+        subject: `📋 Collection scheduled — ${scheduledDate}`,
+        text: `Hi ${name}, your collection has been scheduled for ${scheduledDate} at ${collection.pickupAddress || 'your address'}.${collection.driverName ? ` Driver: ${collection.driverName}` : ''} Please have your parcels ready.`,
+        html: `
+          <!DOCTYPE html>
+          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:40px 20px;">
+              <tr><td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+                  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;text-align:center;">
+                    <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">📋 Collection Scheduled</h1>
+                  </td></tr>
+                  <tr><td style="padding:32px;">
+                    <p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">
+                      Hi ${name}, your pickup has been scheduled!
+                    </p>
+                    <div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:16px 20px;border-radius:8px;margin:20px 0;">
+                      <table style="width:100%;border-collapse:collapse;">
+                        <tr><td style="color:#6b7280;padding:6px 0;width:100px;">When</td><td style="font-weight:700;color:#166534;">${scheduledDate}</td></tr>
+                        <tr><td style="color:#6b7280;padding:6px 0;">Pickup at</td><td style="color:#374151;">${collection.pickupAddress || 'your address'}</td></tr>
+                        ${collection.driverName ? `<tr><td style="color:#6b7280;padding:6px 0;">Driver</td><td style="font-weight:700;color:#1e3a5f;">${collection.driverName}</td></tr>` : ''}
+                      </table>
+                    </div>
+                    <p style="margin:16px 0 0;font-size:14px;color:#6b7280;background:#fefce8;padding:12px 16px;border-radius:8px;">
+                      💡 <strong>Please have your parcels packed and ready.</strong> The driver will contact you when they are nearby.
+                    </p>
+                  </td></tr>
+                  <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+                    <p style="margin:0;font-size:11px;color:#94a3b8;">Powered by FlowOps • Logistics operations platform</p>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </body></html>
+        `,
+      }).catch((e) => this.logger.warn(`Collection scheduled email failed: ${e?.message}`));
+    }
+
+    // Internal notification
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId,
+          title: `📋 Collection scheduled · ${name}`,
+          body: `${collection.pickupAddress || 'Address'} — ${scheduledDate}. Customer notified via WhatsApp + email.`,
+          type: 'COLLECTION_SCHEDULED',
+        },
+      });
+    } catch {}
   }
 
   // ── Returns (RMA) status notifications ───────────────────────────────
@@ -409,6 +692,7 @@ export class NotificationsService {
     trackingNumber?: string | null;
     customerName?: string | null;
     customerEmail?: string | null;
+    customerPhone?: string | null;
     status: string;
     resolution?: string | null;
     refundAmount?: number | null;
@@ -454,11 +738,42 @@ export class NotificationsService {
           subject: `${copy.title} — ${ref}`,
           text: `Hi ${name}, your return ${ref} ${copy.line}.${refundLine}`,
           html: `
-            <h2 style="margin-top:0;color:#1e3a5f;">${copy.title}</h2>
-            <p>Hi ${name}, your return <strong>${ref}</strong> ${copy.line}.${refundLine}</p>
+            <!DOCTYPE html>
+            <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+            <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:40px 20px;">
+                <tr><td align="center">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+                    <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;text-align:center;">
+                      <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">↩️ ${copy.title}</h1>
+                      <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Reference: ${ref}</p>
+                    </td></tr>
+                    <tr><td style="padding:32px;">
+                      <p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">
+                        Hi ${name}, your return <strong>${ref}</strong> ${copy.line}.${refundLine}
+                      </p>
+                    </td></tr>
+                    <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+                      <p style="margin:0;font-size:11px;color:#94a3b8;">Powered by FlowOps</p>
+                    </td></tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body></html>
           `,
         })
         .catch((err) => this.logger.warn(`Return status email failed: ${err?.message ?? err}`));
+    }
+
+    // 3) WhatsApp auto-send to customer (Business API)
+    if (ret.customerPhone) {
+      const waMessage = `↩️ Hi ${name}, your return (*${ref}*) ${copy.line}.${refundLine}\n\n` +
+        `Questions? Reply to this message and we'll help. 🤝`;
+      try {
+        await this.whatsapp.sendMessage(ret.companyId, ret.customerPhone, waMessage);
+      } catch (err: any) {
+        this.logger.debug(`Return WhatsApp auto-send failed: ${err?.message ?? err}`);
+      }
     }
   }
 
