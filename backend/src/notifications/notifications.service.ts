@@ -476,8 +476,6 @@ export class NotificationsService {
     } catch {}
   }
 
-  }
-
   // ── Driver Dispatched notification (WhatsApp + email) ───────────────
 
   /**
