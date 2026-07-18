@@ -10,15 +10,23 @@ export class BillingService {
 
   /**
    * Effective plan: during the 14-day trial a company gets full Professional
-   * entitlements; once the trial ends it falls back to its actual plan.
+   * entitlements; once the trial ends, the tenant MUST have upgraded to a paid
+   * plan. If they're still on 'starter' after trial → account is EXPIRED
+   * (locked until payment). No free tier exists post-trial.
    */
-  private effectivePlan(plan: string | null, trialEndsAt: Date | null): PlanId {
+  private effectivePlan(plan: string | null, trialEndsAt: Date | null): PlanId | 'expired' {
     const onTrial = !!trialEndsAt && new Date(trialEndsAt).getTime() > Date.now();
     if (onTrial) {
       const base = normalizePlan(plan);
       return base === 'enterprise' ? 'enterprise' : 'professional';
     }
-    return normalizePlan(plan);
+    // Trial has ended (or never existed)
+    const base = normalizePlan(plan);
+    // If they're still on 'starter' AND had a trial → expired (must pay)
+    if (base === 'starter' && trialEndsAt) {
+      return 'expired';
+    }
+    return base;
   }
 
   private async usage(companyId: string) {
@@ -40,6 +48,32 @@ export class BillingService {
     });
     const planId = normalizePlan(company?.plan);
     const effective = this.effectivePlan(company?.plan ?? null, company?.trialEndsAt ?? null);
+
+    // EXPIRED: trial ended, no payment — lock the account
+    if (effective === 'expired') {
+      const usage = await this.usage(companyId);
+      return {
+        plan: planId,
+        effectivePlan: 'expired',
+        planName: 'Trial Expired',
+        onTrial: false,
+        trialExpired: true,
+        trialEndsAt: company?.trialEndsAt ?? null,
+        trialDaysLeft: 0,
+        features: {} as Record<string, boolean>, // No features — account locked
+        featureOverrides: {} as Record<string, boolean>,
+        priceOverrideZar: company?.priceOverrideZar ?? null,
+        limits: { waybillsPerMonth: 0, drivers: 0, users: 0, branches: 0 },
+        usage: {
+          waybillsThisMonth: { used: usage.waybillsThisMonth, limit: 0, unlimited: false, remaining: 0, atLimit: true },
+          drivers: { used: usage.drivers, limit: 0, unlimited: false, remaining: 0, atLimit: true },
+          users: { used: usage.users, limit: 0, unlimited: false, remaining: 0, atLimit: true },
+          branches: { used: usage.branches, limit: 0, unlimited: false, remaining: 0, atLimit: true },
+        },
+        message: 'Your 14-day trial has expired. Please upgrade to Professional or Enterprise to continue using FlowOps.',
+      };
+    }
+
     const ent = PLAN_ENTITLEMENTS[effective];
     const overrides = (company?.featureOverrides ?? {}) as Record<string, boolean>;
     // Plan features OR'd with owner-granted per-tenant add-ons.
@@ -95,7 +129,10 @@ export class BillingService {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId }, select: { plan: true, trialEndsAt: true, featureOverrides: true },
     });
-    const ent = PLAN_ENTITLEMENTS[this.effectivePlan(company?.plan ?? null, company?.trialEndsAt ?? null)];
+    const effective = this.effectivePlan(company?.plan ?? null, company?.trialEndsAt ?? null);
+    // Expired accounts have NO features — forces upgrade
+    if (effective === 'expired') return false;
+    const ent = PLAN_ENTITLEMENTS[effective];
     if (ent.features[feature]) return true;
     const overrides = (company?.featureOverrides ?? {}) as Record<string, boolean>;
     return Boolean(overrides[feature]);
@@ -120,6 +157,15 @@ export class BillingService {
       where: { id: companyId }, select: { plan: true, trialEndsAt: true },
     });
     const effective = this.effectivePlan(company?.plan ?? null, company?.trialEndsAt ?? null);
+
+    // EXPIRED: trial ended without upgrading → block ALL resource creation
+    if (effective === 'expired') {
+      throw new ForbiddenException(
+        'Your 14-day trial has expired. Please upgrade to Professional (R19,999/month) or Enterprise to continue using FlowOps. ' +
+        'Go to Settings → Billing to choose your plan.',
+      );
+    }
+
     const limits = PLAN_ENTITLEMENTS[effective].limits;
     const planName = PLAN_ENTITLEMENTS[effective].name;
 
