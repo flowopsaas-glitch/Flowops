@@ -4,7 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DriverPortalController } from './driver-portal.controller';
 import { DriverPortalService } from './driver-portal.service';
 import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
-import { AuthService } from '../auth/auth.service';
+import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GatewayModule } from '../gateway/gateway.module';
 import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
@@ -12,6 +12,7 @@ import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
 @Module({
   imports: [
     ConfigModule,
+    AuthModule,
     NotificationsModule,
     GatewayModule,
     DriverSafetyModule,
@@ -25,6 +26,6 @@ import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
     }),
   ],
   controllers: [DriverPortalController],
-  providers: [DriverPortalService, AuthService, DriverAuthGuard],
+  providers: [DriverPortalService, DriverAuthGuard],
 })
 export class DriverPortalModule {}
