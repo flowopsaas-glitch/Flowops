@@ -21,6 +21,7 @@ import {
   type TenantNavPermissionKey,
 } from "../../lib/tenantUserPermissions";
 import { getEntitlements, type Entitlements } from "../../api/billingApi";
+import { api } from "../../api/client";
 import { featureTier } from "../../lib/planMeta";
 
 type NavItem = {
@@ -311,6 +312,27 @@ export default function AppLayout() {
       .catch(() => { if (alive) setEnt(null); });
     return () => { alive = false; };
   }, []);
+
+  // ── Onboarding auto-redirect for first-time tenants ────────────────────
+  // If the company has never onboarded (0 waybills, 0 drivers, not dismissed),
+  // redirect them to the guided setup wizard on first login.
+  useEffect(() => {
+    // Only trigger for authenticated tenants on the dashboard (not if already on /onboarding)
+    if (!isAuthenticated || location.pathname === '/onboarding') return;
+    // Only check on dashboard load (don't interrupt navigation to other pages)
+    if (location.pathname !== '/dashboard') return;
+
+    let alive = true;
+    api.get('/companies/onboarding-status')
+      .then((res: any) => {
+        const data = res?.data ?? res;
+        if (alive && data?.shouldShowOnboarding) {
+          navigate('/onboarding', { replace: true });
+        }
+      })
+      .catch(() => { /* silently fail — don't block the app */ });
+    return () => { alive = false; };
+  }, [isAuthenticated, location.pathname, navigate]);
   const features = ent?.features ?? null;
   const location = useLocation();
   const navigate = useNavigate();
