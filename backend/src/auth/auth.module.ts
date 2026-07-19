@@ -21,7 +21,7 @@ import { AccountLockoutService } from '../common/guards/account-lockout.service'
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtOwnerStrategy, AccountLockoutService],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, JwtModule, AccountLockoutService],
 })
 export class AuthModule implements OnModuleInit {
   constructor(private readonly authService: AuthService) {}
