@@ -10,9 +10,10 @@ export type UsageMeter = {
 
 export type Entitlements = {
   plan: "starter" | "professional" | "enterprise";
-  effectivePlan: "starter" | "professional" | "enterprise";
+  effectivePlan: "starter" | "professional" | "enterprise" | "expired";
   planName: string;
   onTrial: boolean;
+  trialExpired?: boolean;
   trialEndsAt: string | null;
   trialDaysLeft: number;
   features: Record<string, boolean>;
@@ -23,6 +24,7 @@ export type Entitlements = {
     users: UsageMeter;
     branches: UsageMeter;
   };
+  message?: string;
 };
 
 export async function getEntitlements(): Promise<Entitlements> {
