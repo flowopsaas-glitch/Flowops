@@ -58,6 +58,47 @@ export class PaystackController {
   // ── Subscriptions ─────────────────────────────────────────────────────
 
   /**
+   * POST /api/v1/paystack/checkout
+   *
+   * The PRIMARY upgrade flow for tenants. Creates a Paystack transaction that
+   * also sets up a recurring subscription. Tenant is redirected to Paystack's
+   * hosted checkout page. On success → plan is activated via webhook +
+   * callback verification.
+   *
+   * Body:
+   *   { planCode: 'PLN_l3kobthzahnkpf3' }   ← Professional
+   *   { planCode: 'PLN_9at9kn2ra8jtae0' }   ← Enterprise
+   */
+  @Post('checkout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Start subscription checkout (redirect to Paystack)' })
+  checkout(
+    @CurrentUser() u: any,
+    @Body() body: { planCode: string; callbackUrl?: string },
+  ) {
+    const appUrl = process.env.APP_URL || 'https://app.flowop.work';
+    const callbackUrl = body.callbackUrl || `${appUrl}/billing/callback`;
+    return this.svc.initializeSubscriptionCheckout({
+      email: u.email,
+      companyId: u.companyId,
+      planCode: body.planCode,
+      callbackUrl,
+    });
+  }
+
+  /**
+   * GET /api/v1/paystack/verify-subscription/:reference
+   *
+   * Called by the frontend callback page after Paystack redirects back.
+   * Verifies the transaction, activates the plan, and returns result for the UI.
+   */
+  @Get('verify-subscription/:reference')
+  @ApiOperation({ summary: 'Verify subscription payment and activate plan' })
+  verifySubscription(@Param('reference') reference: string) {
+    return this.svc.verifyAndActivateSubscription(reference);
+  }
+
+  /**
    * POST /api/v1/paystack/subscribe
    *
    * Handles all plan activations — both free and paid:

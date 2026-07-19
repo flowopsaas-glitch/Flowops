@@ -198,8 +198,8 @@ export default function BillingPlans() {
   const onTrial = trialDaysLeft !== null && trialDaysLeft > 0;
 
   const handleUpgrade = async (plan: typeof PLANS[0]) => {
-    const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "";
-    const waBase  = ownerWa ? `https://wa.me/${ownerWa}` : "https://wa.me";
+    const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "27606592875";
+    const waBase  = `https://wa.me/${ownerWa}`;
 
     if (plan.key === "enterprise") {
       const msg = encodeURIComponent(
@@ -211,45 +211,33 @@ export default function BillingPlans() {
     }
 
     if (plan.key === "starter") {
-      // Downgrade to free Starter (no Paystack)
-      setUpgrading("starter");
-      try {
-        await api.post("/paystack/subscribe", { planId: "starter" });
-        const cRaw = await api.get("/companies/my-company");
-        setCompany(unwrap(cRaw));
-      } catch {
-        // fallback to WhatsApp
-        const msg = encodeURIComponent(
-          `Hi! 👋 I'd like to downgrade *${company?.name}* to the free Starter plan.`
-        );
-        window.open(`${waBase}?text=${msg}`, "_blank");
-      } finally { setUpgrading(null); }
+      // Can't downgrade to starter post-trial — no free tier
       return;
     }
 
     // Professional — initialize a Paystack subscription checkout
     const planCode = PLAN_CODES[plan.key];
+    if (!planCode) return;
+
     setUpgrading(plan.key);
     try {
-      const res: any = await api.post("/paystack/initialize", {
-        plan: plan.key,
-        planCode,      // backend embeds this as Paystack's plan param → sets up recurring billing
-      });
+      const res: any = await api.post("/paystack/checkout", { planCode });
       const raw = unwrap(res);
-      const url = raw?.authorizationUrl ?? raw?.authorization_url ?? raw?.data?.authorization_url;
+      const url = raw?.authorizationUrl ?? raw?.authorization_url;
       if (url) {
-        window.open(url, "_blank");
-      } else {
+        // Redirect to Paystack hosted checkout
+        window.location.href = url;
+      } else if (raw?.configured === false) {
         // Paystack not configured — WhatsApp fallback
         const msg = encodeURIComponent(
           `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-          `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\nPlease send a payment link. 🙏`
+          `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (R19,999/mo).\n\nPlease send a payment link or activate our account. 🙏`
         );
         window.open(`${waBase}?text=${msg}`, "_blank");
       }
     } catch {
       const msg = encodeURIComponent(
-        `Hi! 👋 *${company?.name}* would like to upgrade to *FlowOps ${plan.name}* (${plan.price}/mo). Please send a payment link. 🙏`
+        `Hi! 👋 *${company?.name}* would like to upgrade to *FlowOps ${plan.name}* (R19,999/mo). Please send a payment link. 🙏`
       );
       window.open(`${waBase}?text=${msg}`, "_blank");
     } finally { setUpgrading(null); }
@@ -295,15 +283,41 @@ export default function BillingPlans() {
                   14-day Pro trial — <span className="text-amber-300">{trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} remaining</span>
                 </p>
                 <p className="text-xs text-amber-300/60 mt-0.5">
-                  After the trial your account stays on the free Starter plan unless you upgrade.
+                  After the trial your account will be locked. Upgrade to Professional or Enterprise to keep access.
                 </p>
               </div>
             </div>
             <button
               onClick={() => handleUpgrade(PLANS.find(p => p.key === "professional")!)}
-              className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-xs font-black text-amber-200 hover:bg-amber-500/30 transition"
+              disabled={!!upgrading}
+              className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-xs font-black text-amber-200 hover:bg-amber-500/30 transition disabled:opacity-50"
             >
-              Upgrade to Pro →
+              {upgrading === "professional" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upgrade to Pro →"}
+            </button>
+          </div>
+        )}
+
+        {/* ── Trial EXPIRED banner (account locked) ── */}
+        {!onTrial && entitlements?.trialExpired && (
+          <div className="rounded-[20px] border-2 border-rose-500/40 bg-rose-500/10 px-5 py-5 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-6 w-6 text-rose-400 shrink-0" />
+              <div>
+                <p className="text-base font-black text-rose-200">
+                  Your trial has expired — account is locked
+                </p>
+                <p className="text-sm text-rose-300/70 mt-1">
+                  Upgrade to Professional (R19,999/mo) or Enterprise to restore full access.
+                  All your data is safe and waiting.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleUpgrade(PLANS.find(p => p.key === "professional")!)}
+              disabled={!!upgrading}
+              className="shrink-0 rounded-xl bg-rose-500 px-5 py-3 text-sm font-black text-white hover:bg-rose-600 transition shadow-lg shadow-rose-500/20 disabled:opacity-50"
+            >
+              {upgrading === "professional" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upgrade Now — Restore Access"}
             </button>
           </div>
         )}

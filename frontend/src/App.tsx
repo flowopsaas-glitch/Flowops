@@ -48,6 +48,7 @@ const DriverChatPage    = lazy(() => import("./pages/DriverChatPage"));
 const CustomerServiceHub = lazy(() => import("./pages/CustomerServiceHub"));
 const WarehouseHubPage  = lazy(() => import("./pages/WarehouseHubPage"));
 const BillingPlans      = lazy(() => import("./pages/billing/BillingPlans"));
+const BillingCallback   = lazy(() => import("./pages/billing/BillingCallback"));
 const QuotesPage = lazy(() => import("./pages/QuotesPage"));
 const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const CompetitiveIntelligence = lazy(() => import("./pages/CompetitiveIntelligence"));
@@ -277,6 +278,8 @@ export default function App() {
               <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
+              <Route path="/billing/callback" element={<BillingCallback />} />
+              <Route path="/settings/billing" element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
               <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/:id" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ShipmentFilePage /></RequireFeature></RequirePermission>} />
               <Route path="/autopilot" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="clawAutopilot" name="CLAW Autopilot"><AutopilotConsole /></RequireFeature></RequirePermission>} />
