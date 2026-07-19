@@ -63,11 +63,61 @@ export class AuthService {
     // device's refresh token, and records the login for audit.
     const tokens = await this.startSession(user, ctx);
 
+    // ── Owner notification: WhatsApp alert when tenant logs in ──────────
+    // Fire-and-forget — never block or fail the login. Gives the platform
+    // owner real-time visibility into tenant activity.
+    void this.notifyOwnerOfLogin(user, ctx).catch(() => {});
+
     return {
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
       user: this.safeUser(user),
     };
+  }
+
+  /**
+   * Sends the platform owner a WhatsApp message when a tenant logs in.
+   * Best-effort, non-blocking, no error propagation.
+   */
+  private async notifyOwnerOfLogin(user: any, ctx?: LoginCtx) {
+    const ownerWa = this.config.get<string>('OWNER_WHATSAPP', '27606592875');
+    const phoneNumberId = this.config.get<string>('WHATSAPP_PHONE_NUMBER_ID', '');
+    const accessToken = this.config.get<string>('WHATSAPP_ACCESS_TOKEN', '');
+    const apiVersion = this.config.get<string>('WHATSAPP_API_VERSION', 'v21.0');
+
+    if (!phoneNumberId || !accessToken || !ownerWa) return;
+
+    const companyName = user.company?.name || 'Unknown';
+    const userName = user.name || user.email;
+    const role = user.role || 'USER';
+    const time = new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
+
+    const message =
+      `🟢 *Tenant Login*\n\n` +
+      `👤 ${userName}\n` +
+      `🏢 ${companyName}\n` +
+      `🔑 Role: ${role}\n` +
+      `🕐 ${time}\n` +
+      (ctx?.ip ? `📍 IP: ${ctx.ip}\n` : '') +
+      `\n_FlowOps Activity Monitor_`;
+
+    try {
+      const axios = (await import('axios')).default;
+      await axios.post(
+        `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: ownerWa,
+          type: 'text',
+          text: { preview_url: false, body: message },
+        },
+        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } },
+      );
+      this.logger.log(`Owner login alert sent: ${userName} @ ${companyName}`);
+    } catch (err: any) {
+      this.logger.debug(`Owner login WhatsApp failed (non-blocking): ${err?.message}`);
+    }
   }
 
   // ── Driver portal login (phone + 4-digit PIN) ────────────────────────

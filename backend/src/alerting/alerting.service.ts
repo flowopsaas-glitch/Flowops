@@ -576,4 +576,143 @@ export class AlertingService {
 
     return alerts;
   }
+
+  // ── Incomplete Collection Reminders (CRON every 4 hours) ──────────────
+  //
+  // World-class logistics procedures: no collection should sit stale for
+  // more than 4 hours without action. This CRON detects stale PENDING and
+  // IN_PROGRESS collections and sends the tenant admin a WhatsApp + email
+  // reminder with AI-generated action recommendations.
+
+  @Cron('0 6,10,14,18 * * *') // 06:00, 10:00, 14:00, 18:00 daily
+  async scheduledCollectionReminders() {
+    try { await this.processStaleCollections(); }
+    catch (err) { this.logger.warn(`Collection reminders failed: ${err}`); }
+  }
+
+  /**
+   * Find collections that have been PENDING > 2 hours or IN_PROGRESS > 4 hours
+   * without completion. Send the tenant admin a WhatsApp + email reminder.
+   */
+  async processStaleCollections() {
+    const now = new Date();
+    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+
+    // Find stale collections across all active companies
+    const staleCollections = await this.prisma.collection.findMany({
+      where: {
+        OR: [
+          { status: 'PENDING', createdAt: { lt: twoHoursAgo } },
+          { status: 'IN_PROGRESS', updatedAt: { lt: fourHoursAgo } },
+        ],
+        company: { isActive: true },
+      },
+      include: {
+        company: { select: { id: true, name: true, email: true } },
+        driver: { select: { name: true, phone: true } },
+      },
+      take: 100,
+    });
+
+    if (staleCollections.length === 0) return { reminded: 0 };
+
+    // Group by company
+    const byCompany = new Map<string, typeof staleCollections>();
+    for (const col of staleCollections) {
+      const key = col.companyId;
+      if (!byCompany.has(key)) byCompany.set(key, []);
+      byCompany.get(key)!.push(col);
+    }
+
+    let reminded = 0;
+
+    for (const [companyId, collections] of byCompany) {
+      const company = collections[0].company;
+      if (!company?.email) continue;
+
+      // Get admin user for personalization
+      const admin = await this.prisma.user.findFirst({
+        where: { companyId, role: 'ADMIN' },
+        select: { name: true, phone: true, email: true },
+      });
+
+      const pendingCount = collections.filter(c => c.status === 'PENDING').length;
+      const inProgressCount = collections.filter(c => c.status === 'IN_PROGRESS').length;
+      const totalStale = collections.length;
+      const adminName = admin?.name?.split(/\s+/)[0] || 'there';
+
+      // Build AI-style recommendations based on the data
+      const recommendations: string[] = [];
+      if (pendingCount > 0) {
+        recommendations.push(`${pendingCount} collection${pendingCount > 1 ? 's' : ''} waiting for driver assignment — assign a driver now`);
+      }
+      if (inProgressCount > 0) {
+        recommendations.push(`${inProgressCount} collection${inProgressCount > 1 ? 's' : ''} in progress for 4+ hours — check with driver for status update`);
+      }
+      if (totalStale > 3) {
+        recommendations.push('Consider re-assigning to available drivers to clear the backlog');
+      }
+
+      // Top 3 collection summaries for the message
+      const topItems = collections.slice(0, 3).map(c => {
+        const age = Math.round((now.getTime() - new Date(c.createdAt).getTime()) / 3600000);
+        return `• ${(c as any).clientName || 'Unknown'} — ${c.status} (${age}h ago)${(c as any).driver?.name ? ` [Driver: ${(c as any).driver.name}]` : ' [No driver assigned]'}`;
+      }).join('\n');
+
+      // ── Send WhatsApp to tenant admin ──
+      if (admin?.phone) {
+        const waMessage =
+          `📋 *Collection Reminder*\n\n` +
+          `Hi ${adminName}, you have *${totalStale} incomplete collection${totalStale > 1 ? 's' : ''}* that need attention:\n\n` +
+          `${topItems}\n\n` +
+          `💡 *AI Recommendation:*\n${recommendations.map(r => `→ ${r}`).join('\n')}\n\n` +
+          `Open FlowOps to take action: ${this.config.get('APP_URL', 'https://app.flowop.work')}/collections`;
+
+        await this._sendPlatformWhatsApp(admin.phone, waMessage);
+      }
+
+      // ── Send email to tenant admin ──
+      const emailHtml = `
+        <h2 style="margin-top:0;color:#1e3a5f;">📋 Incomplete Collections — Action Required</h2>
+        <p>Hi ${adminName},</p>
+        <p>You have <strong>${totalStale} collection${totalStale > 1 ? 's' : ''}</strong> that ${totalStale > 1 ? 'have' : 'has'} been waiting too long:</p>
+
+        <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:16px 20px;border-radius:8px;margin:16px 0;">
+          <p style="margin:0 0 8px;font-weight:700;color:#92400e;">⚠️ Stale Collections:</p>
+          <ul style="margin:0;padding-left:20px;color:#374151;">
+            ${pendingCount > 0 ? `<li><strong>${pendingCount}</strong> pending (waiting 2+ hours for assignment)</li>` : ''}
+            ${inProgressCount > 0 ? `<li><strong>${inProgressCount}</strong> in progress (4+ hours without completion)</li>` : ''}
+          </ul>
+        </div>
+
+        <div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:16px 20px;border-radius:8px;margin:16px 0;">
+          <p style="margin:0 0 8px;font-weight:700;color:#1e40af;">💡 AI Recommendations:</p>
+          <ul style="margin:0;padding-left:20px;color:#374151;">
+            ${recommendations.map(r => `<li>${r}</li>`).join('')}
+          </ul>
+        </div>
+
+        <a href="${this.config.get('APP_URL', 'https://app.flowop.work')}/collections"
+           style="display:inline-block;margin:20px 0;padding:14px 32px;background:#3b82f6;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">
+          Open Collections →
+        </a>
+        <p style="color:#6b7280;font-size:13px;">
+          Proper logistics: every collection should be assigned within 2 hours and completed within 4 hours of assignment.
+        </p>
+      `;
+
+      await this.email.send({
+        to: company.email,
+        subject: `⚠️ ${totalStale} incomplete collection${totalStale > 1 ? 's' : ''} need attention — ${company.name}`,
+        text: `Hi ${adminName}, you have ${totalStale} stale collections. Open FlowOps to take action.`,
+        html: emailHtml,
+      }).catch(() => {});
+
+      reminded++;
+    }
+
+    this.logger.log(`Collection reminders sent to ${reminded} companies (${staleCollections.length} stale collections)`);
+    return { reminded, staleCollections: staleCollections.length };
+  }
 }
