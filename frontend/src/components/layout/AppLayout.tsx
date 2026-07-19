@@ -313,26 +313,6 @@ export default function AppLayout() {
     return () => { alive = false; };
   }, []);
 
-  // ── Onboarding auto-redirect for first-time tenants ────────────────────
-  // If the company has never onboarded (0 waybills, 0 drivers, not dismissed),
-  // redirect them to the guided setup wizard on first login.
-  useEffect(() => {
-    // Only trigger for authenticated tenants on the dashboard (not if already on /onboarding)
-    if (!isAuthenticated || location.pathname === '/onboarding') return;
-    // Only check on dashboard load (don't interrupt navigation to other pages)
-    if (location.pathname !== '/dashboard') return;
-
-    let alive = true;
-    api.get('/companies/onboarding-status')
-      .then((res: any) => {
-        const data = res?.data ?? res;
-        if (alive && data?.shouldShowOnboarding) {
-          navigate('/onboarding', { replace: true });
-        }
-      })
-      .catch(() => { /* silently fail — don't block the app */ });
-    return () => { alive = false; };
-  }, [isAuthenticated, location.pathname, navigate]);
   const features = ent?.features ?? null;
   const location = useLocation();
   const navigate = useNavigate();
@@ -348,6 +328,22 @@ export default function AppLayout() {
     window.addEventListener("beforeinstallprompt", handler as EventListener);
     return () => window.removeEventListener("beforeinstallprompt", handler as EventListener);
   }, []);
+
+  // ── Onboarding auto-redirect for first-time tenants ────────────────────
+  useEffect(() => {
+    if (!isAuthenticated || location.pathname === '/onboarding') return;
+    if (location.pathname !== '/dashboard') return;
+    let alive = true;
+    api.get('/companies/onboarding-status')
+      .then((res: any) => {
+        const data = res?.data ?? res;
+        if (alive && data?.shouldShowOnboarding) {
+          navigate('/onboarding', { replace: true });
+        }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isAuthenticated, location.pathname, navigate]);
 
   const nav = useMemo((): NavItem[] => [
     { section: "CORE", label: "Dashboard", desc: "Executive command", to: "/dashboard", icon: LayoutDashboard, perm: "dashboard" },
