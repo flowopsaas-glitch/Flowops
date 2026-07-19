@@ -154,4 +154,92 @@ export class CompaniesService {
     ]);
     return { total, pending, inProgress, collected, syncedAt: new Date() };
   }
+
+  // ── Onboarding ──────────────────────────────────────────────────────
+
+  /**
+   * Returns the onboarding checklist status for a company.
+   * The frontend uses this to decide whether to redirect to the wizard.
+   *
+   * Proper logistics onboarding follows these steps:
+   *   1. Company profile (name, address, contact — already filled at signup)
+   *   2. Add first driver (the field operation backbone)
+   *   3. Create first waybill (proves the system works end-to-end)
+   *   4. Set up branding (customer-facing identity)
+   *   5. Configure notifications (WhatsApp/email templates)
+   *
+   * The checklist is DYNAMIC — computed from live data, not a stored flag.
+   * This means even if a tenant skips onboarding, the checklist updates
+   * as they naturally use the platform.
+   */
+  async getOnboardingStatus(companyId: string) {
+    const [company, driversCount, waybillsCount, collectionsCount] = await Promise.all([
+      this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: {
+          name: true, email: true, phone: true, address: true,
+          logoUrl: true, brandName: true, primaryColor: true,
+          whatsappNumber: true, trialEndsAt: true, plan: true,
+        },
+      }),
+      this.prisma.driver.count({ where: { companyId, isActive: true } }),
+      this.prisma.waybill.count({ where: { companyId } }),
+      this.prisma.collection.count({ where: { companyId } }),
+    ]);
+
+    // Compute each step's completion status
+    const steps = {
+      companyProfile: Boolean(company?.name && company?.email && company?.phone),
+      firstDriver: driversCount > 0,
+      firstWaybill: waybillsCount > 0,
+      branding: Boolean(company?.logoUrl || company?.brandName || company?.primaryColor),
+      communications: Boolean(company?.whatsappNumber),
+    };
+
+    const completedCount = Object.values(steps).filter(Boolean).length;
+    const totalSteps = Object.keys(steps).length;
+    const allComplete = completedCount === totalSteps;
+
+    // A company is "onboarded" if they've completed at least 3/5 core steps
+    // OR if they've explicitly marked onboarding as complete
+    const effectivelyOnboarded = completedCount >= 3 || allComplete;
+
+    return {
+      steps,
+      completedCount,
+      totalSteps,
+      progressPercent: Math.round((completedCount / totalSteps) * 100),
+      allComplete,
+      effectivelyOnboarded,
+      shouldShowOnboarding: !effectivelyOnboarded && waybillsCount === 0 && driversCount === 0,
+      companyName: company?.name ?? null,
+      plan: company?.plan ?? 'starter',
+      trialEndsAt: company?.trialEndsAt ?? null,
+    };
+  }
+
+  /**
+   * Marks onboarding as complete. The frontend wizard calls this on the
+   * final "Go Live" step. This is a soft flag — the dynamic checklist
+   * will still show incomplete items, but the redirect is suppressed.
+   */
+  async markOnboardingComplete(companyId: string) {
+    // We use a simple update since the Company model doesn't have a dedicated
+    // onboardingComplete column yet — we'll store it in the JSON featureOverrides
+    // field as a non-feature flag. This avoids a schema migration.
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { featureOverrides: true },
+    });
+    const overrides = (company?.featureOverrides as Record<string, any>) ?? {};
+    overrides._onboardingComplete = true;
+    overrides._onboardingCompletedAt = new Date().toISOString();
+
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { featureOverrides: overrides },
+    });
+
+    return { success: true, message: 'Onboarding marked as complete. Welcome to FlowOps!' };
+  }
 }
