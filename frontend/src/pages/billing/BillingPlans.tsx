@@ -57,7 +57,7 @@ const PLANS = PLAN_CATALOG.map((p) => ({
   key: p.key,
   name: p.name,
   price: p.period ? `${p.price} ${p.period}` : p.price,
-  features: p.features,
+  features: Array.isArray(p.features) ? p.features : [],
   ...PLAN_STYLE[p.key],
 }));
 
@@ -365,7 +365,7 @@ export default function BillingPlans() {
 
             {/* Included features */}
             <div className="mt-5 flex flex-wrap gap-2">
-              {currentPlan.features.map(f => (
+              {(currentPlan.features || []).map(f => (
                 <div key={f} className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-black/20 px-3 py-1.5 text-xs text-white/65">
                   <CheckCircle2 className="h-3 w-3 text-emerald-400/70 flex-shrink-0" />
                   {f}
@@ -439,7 +439,7 @@ export default function BillingPlans() {
                   </div>
                   <p className="text-xl font-black text-white mb-4">{plan.price}</p>
                   <div className="flex-1 space-y-2 mb-5">
-                    {plan.features.map(f => (
+                    {(plan.features || []).map(f => (
                       <div key={f} className="flex items-center gap-2 text-xs text-white/65">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/70 flex-shrink-0" />
                         {f}
