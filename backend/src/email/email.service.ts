@@ -340,7 +340,7 @@ export class EmailService {
           <table style="width:100%;margin:12px 0 0;border-collapse:collapse;">
             <tr>
               <td style="padding:8px 0;"><strong>Professional</strong></td>
-              <td style="padding:8px 0;text-align:right;color:#1e3a5f;font-weight:700;">R19,999/month</td>
+              <td style="padding:8px 0;text-align:right;color:#1e3a5f;font-weight:700;">Custom pricing</td>
             </tr>
             <tr style="border-top:1px solid #e5e7eb;">
               <td style="padding:8px 0;"><strong>Enterprise</strong></td>
@@ -368,7 +368,7 @@ export class EmailService {
     return this.send({
       to: email,
       subject: `Your FlowOps trial has ended — upgrade to continue (${tenant.companyName})`,
-      text: `Hi ${tenant.name},\n\nYour 14-day FlowOps trial has ended and your ${tenant.companyName} account is now locked.\n\nAll your data is safe. Upgrade to Professional (R19,999/month) or Enterprise to instantly restore access.\n\nUpgrade: ${billingUrl}`,
+      text: `Hi ${tenant.name},\n\nYour 14-day FlowOps trial has ended and your ${tenant.companyName} account is now locked.\n\nAll your data is safe. Upgrade to Professional or Enterprise to instantly restore access.\n\nUpgrade: ${billingUrl}`,
       html: this.wrap(`
         <h2 style="margin-top:0;color:#dc2626;">Your trial has ended</h2>
         <p>Hi ${tenant.name},</p>
@@ -400,7 +400,7 @@ export class EmailService {
                 <span style="color:#6b7280;font-size:13px;">Everything you need to scale</span>
               </td>
               <td style="padding:12px 0;text-align:right;border-bottom:1px solid #dbeafe;">
-                <strong style="font-size:18px;color:#1e3a5f;">R19,999</strong><span style="color:#6b7280;">/month</span>
+                <strong style="font-size:18px;color:#1e3a5f;">Custom</strong><span style="color:#6b7280;"> pricing</span>
               </td>
             </tr>
             <tr>
