@@ -51,7 +51,7 @@ export const PLAN_CATALOG: PlanCatalogEntry[] = [
   {
     key: "professional",
     name: "Professional",
-    price: "R 19,999",
+    price: "Custom",
     period: "/month",
     popular: true,
     tagline: "The full platform for growing courier operations.",
