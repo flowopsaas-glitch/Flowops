@@ -235,14 +235,14 @@ export class ForwardingController {
   // ── Document PDFs (Phase 2) ────────────────────────────────────────────────────
 
   @Get('files/:id/documents/:type.pdf')
-  @ApiOperation({ summary: 'Generate a PDF: commercial-invoice | packing-list | bill-of-lading | sad500' })
+  @ApiOperation({ summary: 'Generate a PDF: commercial-invoice | packing-list | bill-of-lading | sad500 | cmr | certificate-of-origin | dangerous-goods | transit-bond | zim-form47' })
   async documentPdf(
     @CurrentUser() u: any,
     @Param('id') id: string,
     @Param('type') type: string,
     @Res() res: Response,
   ) {
-    const allowed = ['commercial-invoice', 'packing-list', 'bill-of-lading', 'sad500'];
+    const allowed = ['commercial-invoice', 'packing-list', 'bill-of-lading', 'sad500', 'cmr', 'certificate-of-origin', 'dangerous-goods', 'transit-bond', 'zim-form47'];
     if (!allowed.includes(type)) {
       res.status(400).json({ message: `Unknown document type. Use: ${allowed.join(', ')}` });
       return;

@@ -107,7 +107,7 @@ export const suggestDuty = async (id: string, hsCode?: string, description?: str
 export const updateCargo = async (id: string, cid: string, dto: Partial<Cargo>) =>
   unwrap(await api.patch(`/forwarding/files/${id}/cargo/${cid}`, dto));
 
-export type ForwardingDocType = "commercial-invoice" | "packing-list" | "bill-of-lading" | "sad500";
+export type ForwardingDocType = "commercial-invoice" | "packing-list" | "bill-of-lading" | "sad500" | "cmr" | "certificate-of-origin" | "dangerous-goods" | "transit-bond" | "zim-form47";
 
 // ── Phase 3: SAD declaration + demurrage ──────────────────────────────────
 
