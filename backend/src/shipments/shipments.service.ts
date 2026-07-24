@@ -158,18 +158,51 @@ export class ShipmentsService {
   }
 
   async recalculateRisk(companyId: string, dto: any) {
-    // Stub: real implementation would run ML model or rules engine
-    const waybill = await this.prisma.waybill.update({
-      where: { id: dto.waybillId },
-      data: { riskScore: Math.random(), riskLevel: 'LOW' },
+    const waybill = await this.prisma.waybill.findFirst({
+      where: { id: dto.waybillId, companyId },
     });
-    // Push the new score to dashboards listening on `risk-score-updated`.
+    if (!waybill) throw new NotFoundException('Waybill not found');
+
+    // Rule-based risk scoring engine (replaces ML stub)
+    let score = 0;
+    const notes: string[] = [];
+
+    // Factor 1: COD amount (high COD = higher risk of disputes/fraud)
+    if (waybill.codAmount && waybill.codAmount > 5000) { score += 20; notes.push('High COD amount (>R5000)'); }
+    else if (waybill.codAmount && waybill.codAmount > 2000) { score += 10; notes.push('Moderate COD amount'); }
+
+    // Factor 2: Delivery attempts (multiple failures = escalating risk)
+    if (waybill.attemptCount >= 3) { score += 35; notes.push('Max delivery attempts reached'); }
+    else if (waybill.attemptCount >= 2) { score += 20; notes.push('Multiple delivery attempts'); }
+    else if (waybill.attemptCount >= 1) { score += 10; notes.push('Previous failed attempt'); }
+
+    // Factor 3: Address quality (missing geocoding = harder to deliver)
+    if (!waybill.recipientLat || !waybill.recipientLng) { score += 15; notes.push('Address not geocoded'); }
+
+    // Factor 4: Age (older undelivered waybills are higher risk)
+    const ageDays = Math.floor((Date.now() - new Date(waybill.createdAt).getTime()) / 86_400_000);
+    if (ageDays > 7 && waybill.status !== 'DELIVERED') { score += 20; notes.push(`Aging ${ageDays} days without delivery`); }
+    else if (ageDays > 3 && waybill.status !== 'DELIVERED') { score += 10; notes.push(`${ageDays} days old`); }
+
+    // Factor 5: Return-to-sender flagged
+    if (waybill.returnToSender) { score += 30; notes.push('Marked for return-to-sender'); }
+
+    // Normalize to 0-1 scale and assign risk level
+    const riskScore = Math.min(score / 100, 1.0);
+    const riskLevel = riskScore >= 0.7 ? 'CRITICAL' : riskScore >= 0.5 ? 'HIGH' : riskScore >= 0.25 ? 'MEDIUM' : 'LOW';
+    const riskNotes = notes.length > 0 ? notes.join('; ') : 'No risk factors detected';
+
+    const updated = await this.prisma.waybill.update({
+      where: { id: dto.waybillId },
+      data: { riskScore, riskLevel, riskNotes },
+    });
+
     this.safeEmit(() => this.gateway.emitRiskScoreUpdated(companyId, {
-      waybillId: waybill.id,
-      trackingNumber: waybill.trackingNumber,
-      riskLevel: waybill.riskLevel,
-      riskScore: waybill.riskScore,
+      waybillId: updated.id,
+      trackingNumber: updated.trackingNumber,
+      riskLevel: updated.riskLevel,
+      riskScore: updated.riskScore,
     }));
-    return waybill;
+    return updated;
   }
 }
