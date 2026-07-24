@@ -142,6 +142,57 @@ export class LogisticsAnalyticsService {
     });
 
     // ── Upsert snapshot ─────────────────────────────────────────────────
+    // Compute average delivery time (minutes from creation to POD)
+    const deliveredWaybills = await this.prisma.waybill.findMany({
+      where: {
+        companyId,
+        status: 'DELIVERED',
+        podDeliveredAt: { not: null },
+        createdAt: { gte: start, lt: end },
+      },
+      select: { createdAt: true, podDeliveredAt: true },
+    });
+    let avgDeliveryMinutes: number | null = null;
+    if (deliveredWaybills.length > 0) {
+      const totalMinutes = deliveredWaybills.reduce((sum, w) => {
+        const diff = (new Date(w.podDeliveredAt!).getTime() - new Date(w.createdAt).getTime()) / 60000;
+        return sum + diff;
+      }, 0);
+      avgDeliveryMinutes = Math.round(totalMinutes / deliveredWaybills.length);
+    }
+
+    // Compute driver utilization (% of active drivers who had at least 1 shipment this period)
+    let avgDriverUtilPct: number | null = null;
+    if (activeDrivers > 0) {
+      const driversWithShipments = await this.prisma.shipment.groupBy({
+        by: ['driverId'],
+        where: {
+          companyId,
+          driverId: { not: null },
+          createdAt: { gte: start, lt: end },
+        },
+      });
+      avgDriverUtilPct = Math.round((driversWithShipments.length / activeDrivers) * 10000) / 100;
+    }
+
+    // Compute top performing driver (most deliveries this period)
+    let topDriverId: string | null = null;
+    const topDriver = await this.prisma.shipment.groupBy({
+      by: ['driverId'],
+      where: {
+        companyId,
+        status: 'DELIVERED',
+        driverId: { not: null },
+        createdAt: { gte: start, lt: end },
+      },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 1,
+    });
+    if (topDriver.length > 0 && topDriver[0].driverId) {
+      topDriverId = topDriver[0].driverId;
+    }
+
     const data = {
       totalDeliveries,
       deliveredOnTime,
@@ -149,15 +200,15 @@ export class LogisticsAnalyticsService {
       returnedParcels,
       totalCollections,
       onTimePercentage,
-      avgDeliveryMinutes: null, // TODO: compute from POD timestamps
+      avgDeliveryMinutes,
       slaBreaches,
       customerRatingAvg,
       revenue,
       costPerDelivery,
       codCollected,
       activeDrivers,
-      avgDriverUtilPct: null, // TODO: compute from shipment assignments
-      topDriverId: null, // TODO: compute top performer
+      avgDriverUtilPct,
+      topDriverId,
       aiInsights,
       aiGeneratedAt: aiInsights ? new Date() : null,
     };

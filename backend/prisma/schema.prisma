@@ -583,6 +583,16 @@ model ShipmentFile {
   etd          DateTime?
   eta          DateTime?
 
+  // Cross-border / CMR / Transit fields
+  shipperAddress     String?
+  consigneeAddress   String?
+  originCountry      String? // ISO country code or name
+  destinationCountry String?
+  transitCountries   String? // comma-separated
+  vehicleReg         String? // truck registration plate
+  sealNumbers        String? // customs seal numbers
+  importerTin        String? // importer tax ID (e.g. ZIMRA TIN)
+
   // AI-derived (demurrage / delay risk)
   aiRiskScore Int?
   aiRiskNote  String? @db.Text
@@ -640,6 +650,12 @@ model CargoLine {
   hsCode       String? // tariff heading
   customsValue Float?
   dutyRatePct  Float? // ad valorem duty rate % (operator-set or AI-suggested)
+
+  // Dangerous Goods (DG) fields
+  unNumber       String? // UN classification number (e.g. "1203")
+  dgClass        String? // DG class (e.g. "3" for flammable liquids)
+  packingGroup   String? // I, II, or III
+  emergencyPhone String? // 24-hour emergency contact
 
   @@index([fileId])
   @@map("cargo_lines")
