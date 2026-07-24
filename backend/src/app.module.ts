@@ -66,6 +66,7 @@ import { CommercialAnalyticsModule } from './commercial-analytics/commercial-ana
 import { OtpModule } from './otp/otp.module';
 import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module';
 import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence.module';
+import { FleetMaintenanceModule } from './fleet-maintenance/fleet-maintenance.module';
 import { DriverSafetyModule } from './driver-safety/driver-safety.module';
 import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
 
@@ -139,6 +140,7 @@ import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
     CommercialAnalyticsModule,
     WarehouseManagementModule,
     FleetIntelligenceModule,
+    FleetMaintenanceModule,
     DriverSafetyModule,
     LogisticsOpsModule,
     OtpModule,

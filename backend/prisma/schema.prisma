@@ -1656,8 +1656,22 @@ model VehicleService {
   notes       String?
   kmAtService Int?
   cost        Float?
+  currency    String   @default("ZAR")
   servicedAt  DateTime @default(now())
   createdAt   DateTime @default(now())
+
+  // AI predictive maintenance
+  aiPredictedNextKm   Int?       // AI-predicted next service mileage
+  aiPredictedNextDate DateTime?  // AI-predicted next service date
+  aiConfidence        Float?     // 0.0–1.0 confidence score
+  aiRiskLevel         String?    // LOW | MEDIUM | HIGH | CRITICAL
+  aiNotes             String?    // AI-generated maintenance advice
+
+  // Service provider
+  providerName    String?  // workshop/mechanic name
+  invoiceRef      String?  // workshop invoice reference
+  partsReplaced   String?  // comma-separated parts list
+  warrantyExpiry  DateTime?
 
   driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
