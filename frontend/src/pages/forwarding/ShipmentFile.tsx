@@ -269,16 +269,40 @@ function AddCharge({ onAdd, disabled }: { onAdd: (d: any) => void; disabled: boo
   );
 }
 
-const DOC_TYPES: { type: fwd.ForwardingDocType; label: string }[] = [
-  { type: "commercial-invoice", label: "Commercial Invoice" },
-  { type: "packing-list", label: "Packing List" },
-  { type: "bill-of-lading", label: "Bill of Lading" },
-  { type: "sad500", label: "SAD 500 (draft)" },
-  { type: "cmr", label: "CMR Consignment Note" },
-  { type: "certificate-of-origin", label: "Certificate of Origin" },
-  { type: "dangerous-goods", label: "Dangerous Goods Declaration" },
-  { type: "transit-bond", label: "Transit Bond" },
-  { type: "zim-form47", label: "ZIMRA Form 47 (Import)" },
+const DOC_TYPES: { type: fwd.ForwardingDocType; label: string; group: string }[] = [
+  // Core trade documents
+  { type: "commercial-invoice", label: "Commercial Invoice", group: "Trade" },
+  { type: "packing-list", label: "Packing List", group: "Trade" },
+  { type: "bill-of-lading", label: "Bill of Lading", group: "Trade" },
+  { type: "certificate-of-origin", label: "Certificate of Origin", group: "Trade" },
+  // Cross-border / transport
+  { type: "cmr", label: "CMR Consignment Note", group: "Transport" },
+  { type: "dangerous-goods", label: "Dangerous Goods", group: "Transport" },
+  { type: "transit-bond", label: "Transit Bond", group: "Transport" },
+  // Southern Africa (SADC)
+  { type: "sad500", label: "SA — SAD 500", group: "SADC" },
+  { type: "zim-form47", label: "Zimbabwe — Form 47", group: "SADC" },
+  { type: "mozambique-jue", label: "Mozambique — JUE", group: "SADC" },
+  { type: "botswana-burs", label: "Botswana — BURS", group: "SADC" },
+  { type: "sadc-cd", label: "SADC Declaration", group: "SADC" },
+  // East Africa (EAC)
+  { type: "kenya-c17", label: "Kenya — C17", group: "EAC" },
+  { type: "tanzania-tancis", label: "Tanzania — TANCIS", group: "EAC" },
+  { type: "uganda-ura", label: "Uganda — URA", group: "EAC" },
+  { type: "rwanda-rra", label: "Rwanda — RRA", group: "EAC" },
+  { type: "drc-dgda", label: "DRC — DGDA", group: "EAC" },
+  { type: "eac-cd", label: "EAC Declaration", group: "EAC" },
+  // West Africa (ECOWAS)
+  { type: "nigeria-sgd", label: "Nigeria — SGD", group: "ECOWAS" },
+  { type: "ghana-boe", label: "Ghana — Bill of Entry", group: "ECOWAS" },
+  { type: "ivory-coast-dgd", label: "Ivory Coast — DGD", group: "ECOWAS" },
+  { type: "senegal-gainde", label: "Senegal — GAINDE", group: "ECOWAS" },
+  { type: "ecowas-sgd", label: "ECOWAS Declaration", group: "ECOWAS" },
+  // Central & North Africa
+  { type: "cameroon-sydonia", label: "Cameroon — SYDONIA", group: "Other" },
+  { type: "ethiopia-erca", label: "Ethiopia — ERCA", group: "Other" },
+  { type: "egypt-nafeza", label: "Egypt — Nafeza", group: "Other" },
+  { type: "comesa-cd", label: "COMESA Declaration", group: "Other" },
 ];
 
 function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.Cargo[]; onChange: () => void }) {
@@ -325,15 +349,26 @@ function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.C
 
   return (
     <Section title="Documents & SA customs" icon={Calculator}>
-      {/* Document downloads */}
-      <div className="flex flex-wrap gap-2">
-        {DOC_TYPES.map((d) => (
-          <button key={d.type} onClick={() => dl(d.type)} disabled={busy === d.type}
-            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-40">
-            {busy === d.type ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            {d.label}
-          </button>
-        ))}
+      {/* Document downloads — grouped by region */}
+      <div className="space-y-3">
+        {["Trade", "Transport", "SADC", "EAC", "ECOWAS", "Other"].map((group) => {
+          const docs = DOC_TYPES.filter((d) => d.group === group);
+          if (docs.length === 0) return null;
+          return (
+            <div key={group}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5">{group}</p>
+              <div className="flex flex-wrap gap-2">
+                {docs.map((d) => (
+                  <button key={d.type} onClick={() => dl(d.type)} disabled={busy === d.type}
+                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-40">
+                    {busy === d.type ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* SA customs estimate */}

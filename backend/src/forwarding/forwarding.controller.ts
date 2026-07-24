@@ -242,7 +242,15 @@ export class ForwardingController {
     @Param('type') type: string,
     @Res() res: Response,
   ) {
-    const allowed = ['commercial-invoice', 'packing-list', 'bill-of-lading', 'sad500'];
+    const allowed = [
+      'commercial-invoice', 'packing-list', 'bill-of-lading', 'sad500',
+      'cmr', 'certificate-of-origin', 'dangerous-goods', 'transit-bond',
+      'zim-form47', 'kenya-c17', 'nigeria-sgd', 'ghana-boe',
+      'ethiopia-erca', 'tanzania-tancis', 'drc-dgda', 'egypt-nafeza',
+      'mozambique-jue', 'botswana-burs', 'uganda-ura', 'rwanda-rra',
+      'ivory-coast-dgd', 'senegal-gainde', 'cameroon-sydonia',
+      'comesa-cd', 'ecowas-sgd', 'eac-cd', 'sadc-cd',
+    ];
     if (!allowed.includes(type)) {
       res.status(400).json({ message: `Unknown document type. Use: ${allowed.join(', ')}` });
       return;
