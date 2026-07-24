@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   Loader2, Plus, Trash2, Sparkles, Wand2, FileText, Truck, AlertTriangle,
   Box, Package, DollarSign, Anchor, ChevronRight, CheckCircle2, Download, Calculator,
-  Stamp, Send, Timer, Layers,
+  Stamp, Send, Timer, Layers, Globe, Shield,
 } from "lucide-react";
 import * as fwd from "../../api/forwardingApi";
 import { useToast } from "../../components/ToastProvider";
@@ -108,6 +108,9 @@ export default function ShipmentFilePage() {
           </div>
         </Section>
 
+        {/* Cross-border details */}
+        <CrossBorderPanel fileId={id} file={file} onChange={load} />
+
         {/* Containers */}
         <Section title={`Containers (${file.containers?.length ?? 0})`} icon={Box}>
           {file.containers?.map((c) => (
@@ -135,6 +138,9 @@ export default function ShipmentFilePage() {
           ))}
           <AddCargo fileId={id} onAdd={(dto) => run("addg", () => fwd.addCargo(id, dto), "Cargo added")} disabled={!!busy} />
         </Section>
+
+        {/* Dangerous goods fields (per cargo line) */}
+        <DGCargoEditor fileId={id} cargo={file.cargo || []} onChange={load} />
 
         {/* Charges + margin */}
         <Section title="Charges & margin" icon={DollarSign}>
@@ -263,16 +269,40 @@ function AddCharge({ onAdd, disabled }: { onAdd: (d: any) => void; disabled: boo
   );
 }
 
-const DOC_TYPES: { type: fwd.ForwardingDocType; label: string }[] = [
-  { type: "commercial-invoice", label: "Commercial Invoice" },
-  { type: "packing-list", label: "Packing List" },
-  { type: "bill-of-lading", label: "Bill of Lading" },
-  { type: "sad500", label: "SAD 500 (draft)" },
-  { type: "cmr", label: "CMR Consignment Note" },
-  { type: "certificate-of-origin", label: "Certificate of Origin" },
-  { type: "dangerous-goods", label: "Dangerous Goods Declaration" },
-  { type: "transit-bond", label: "Transit Bond" },
-  { type: "zim-form47", label: "ZIMRA Form 47 (Import)" },
+const DOC_TYPES: { type: fwd.ForwardingDocType; label: string; group: string }[] = [
+  // Core trade documents
+  { type: "commercial-invoice", label: "Commercial Invoice", group: "Trade" },
+  { type: "packing-list", label: "Packing List", group: "Trade" },
+  { type: "bill-of-lading", label: "Bill of Lading", group: "Trade" },
+  { type: "certificate-of-origin", label: "Certificate of Origin", group: "Trade" },
+  // Cross-border / transport
+  { type: "cmr", label: "CMR Consignment Note", group: "Transport" },
+  { type: "dangerous-goods", label: "Dangerous Goods", group: "Transport" },
+  { type: "transit-bond", label: "Transit Bond", group: "Transport" },
+  // Southern Africa (SADC)
+  { type: "sad500", label: "SA — SAD 500", group: "SADC" },
+  { type: "zim-form47", label: "Zimbabwe — Form 47", group: "SADC" },
+  { type: "mozambique-jue", label: "Mozambique — JUE", group: "SADC" },
+  { type: "botswana-burs", label: "Botswana — BURS", group: "SADC" },
+  { type: "sadc-cd", label: "SADC Declaration", group: "SADC" },
+  // East Africa (EAC)
+  { type: "kenya-c17", label: "Kenya — C17", group: "EAC" },
+  { type: "tanzania-tancis", label: "Tanzania — TANCIS", group: "EAC" },
+  { type: "uganda-ura", label: "Uganda — URA", group: "EAC" },
+  { type: "rwanda-rra", label: "Rwanda — RRA", group: "EAC" },
+  { type: "drc-dgda", label: "DRC — DGDA", group: "EAC" },
+  { type: "eac-cd", label: "EAC Declaration", group: "EAC" },
+  // West Africa (ECOWAS)
+  { type: "nigeria-sgd", label: "Nigeria — SGD", group: "ECOWAS" },
+  { type: "ghana-boe", label: "Ghana — Bill of Entry", group: "ECOWAS" },
+  { type: "ivory-coast-dgd", label: "Ivory Coast — DGD", group: "ECOWAS" },
+  { type: "senegal-gainde", label: "Senegal — GAINDE", group: "ECOWAS" },
+  { type: "ecowas-sgd", label: "ECOWAS Declaration", group: "ECOWAS" },
+  // Central & North Africa
+  { type: "cameroon-sydonia", label: "Cameroon — SYDONIA", group: "Other" },
+  { type: "ethiopia-erca", label: "Ethiopia — ERCA", group: "Other" },
+  { type: "egypt-nafeza", label: "Egypt — Nafeza", group: "Other" },
+  { type: "comesa-cd", label: "COMESA Declaration", group: "Other" },
 ];
 
 function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.Cargo[]; onChange: () => void }) {
@@ -319,15 +349,26 @@ function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.C
 
   return (
     <Section title="Documents & SA customs" icon={Calculator}>
-      {/* Document downloads */}
-      <div className="flex flex-wrap gap-2">
-        {DOC_TYPES.map((d) => (
-          <button key={d.type} onClick={() => dl(d.type)} disabled={busy === d.type}
-            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-40">
-            {busy === d.type ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            {d.label}
-          </button>
-        ))}
+      {/* Document downloads — grouped by region */}
+      <div className="space-y-3">
+        {["Trade", "Transport", "SADC", "EAC", "ECOWAS", "Other"].map((group) => {
+          const docs = DOC_TYPES.filter((d) => d.group === group);
+          if (docs.length === 0) return null;
+          return (
+            <div key={group}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5">{group}</p>
+              <div className="flex flex-wrap gap-2">
+                {docs.map((d) => (
+                  <button key={d.type} onClick={() => dl(d.type)} disabled={busy === d.type}
+                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-40">
+                    {busy === d.type ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* SA customs estimate */}
@@ -643,6 +684,142 @@ function ConsolidationPanel({ file, onChange }: { file: fwd.ShipmentFile; onChan
         </select>
         <button onClick={() => { if (pick) { act("att", () => fwd.attachHouse(file.id, pick), "House attached"); setPick(""); } }} disabled={!pick || busy === "att"}
           className="flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/15 px-3 py-1.5 text-xs font-bold text-indigo-200 disabled:opacity-40"><Plus className="h-3.5 w-3.5" /> Attach</button>
+      </div>
+    </Section>
+  );
+}
+
+
+// ── Cross-border fields panel ─────────────────────────────────────────────────
+// Allows operators to fill in vehicle registration, origin/destination countries,
+// transit countries, seal numbers, and importer TIN — required for CMR, Transit
+// Bond, Certificate of Origin, and ZIM Form 47 PDF generation.
+
+function CrossBorderPanel({ fileId, file, onChange }: { fileId: string; file: fwd.ShipmentFile; onChange: () => void }) {
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    shipperAddress: (file as any).shipperAddress || "",
+    consigneeAddress: (file as any).consigneeAddress || "",
+    originCountry: (file as any).originCountry || "",
+    destinationCountry: (file as any).destinationCountry || "",
+    transitCountries: (file as any).transitCountries || "",
+    vehicleReg: (file as any).vehicleReg || "",
+    sealNumbers: (file as any).sealNumbers || "",
+    importerTin: (file as any).importerTin || "",
+  });
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const payload: any = {};
+      Object.entries(form).forEach(([k, v]) => { if (v) payload[k] = v; });
+      await fwd.updateFile(fileId, payload);
+      showToast("Cross-border details saved", "success");
+      onChange();
+    } catch (err: any) { showToast(err?.message ?? "Save failed", "error"); }
+    finally { setBusy(false); }
+  };
+
+  const hasData = Object.values(form).some(Boolean);
+
+  return (
+    <Section title="Cross-border & transport" icon={Globe}>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Shipper Address</label>
+          <input value={form.shipperAddress} onChange={set("shipperAddress")} placeholder="Full shipper address" className={`${inputCls} w-full`} />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Consignee Address</label>
+          <input value={form.consigneeAddress} onChange={set("consigneeAddress")} placeholder="Full consignee address" className={`${inputCls} w-full`} />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Origin Country</label>
+          <input value={form.originCountry} onChange={set("originCountry")} placeholder="e.g. South Africa" className={`${inputCls} w-full`} />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Destination Country</label>
+          <input value={form.destinationCountry} onChange={set("destinationCountry")} placeholder="e.g. Zimbabwe" className={`${inputCls} w-full`} />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Transit Countries</label>
+          <input value={form.transitCountries} onChange={set("transitCountries")} placeholder="e.g. Mozambique, Botswana" className={`${inputCls} w-full`} />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Vehicle Registration</label>
+          <input value={form.vehicleReg} onChange={set("vehicleReg")} placeholder="e.g. CA 123-456" className={`${inputCls} w-full`} />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Seal Numbers</label>
+          <input value={form.sealNumbers} onChange={set("sealNumbers")} placeholder="Customs seal numbers" className={`${inputCls} w-full`} />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-white/35">Importer TIN (ZIMRA)</label>
+          <input value={form.importerTin} onChange={set("importerTin")} placeholder="Tax ID for import declaration" className={`${inputCls} w-full`} />
+        </div>
+      </div>
+      <div className="flex items-center gap-3 pt-2">
+        <button onClick={save} disabled={busy}
+          className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/15 px-4 py-2 text-sm font-bold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-40">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />} Save cross-border details
+        </button>
+        {hasData && <span className="text-[11px] text-white/30">These fields populate CMR, Transit Bond, Certificate of Origin, and ZIM Form 47 PDFs.</span>}
+      </div>
+    </Section>
+  );
+}
+
+// ── Dangerous Goods (DG) cargo fields ──────────────────────────────────────────
+// For cargo lines that are hazardous — operators can add UN number, DG class,
+// packing group, and emergency contact. These populate the Dangerous Goods
+// Declaration PDF.
+
+function DGCargoEditor({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.Cargo[]; onChange: () => void }) {
+  const { showToast } = useToast();
+  const [edits, setEdits] = useState<Record<string, any>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const save = async (cargoId: string) => {
+    const e = edits[cargoId] || {};
+    setBusy(cargoId);
+    try {
+      await fwd.updateCargo(fileId, cargoId, {
+        unNumber: e.unNumber || undefined,
+        dgClass: e.dgClass || undefined,
+        packingGroup: e.packingGroup || undefined,
+        emergencyPhone: e.emergencyPhone || undefined,
+      });
+      showToast("DG fields updated", "success");
+      onChange();
+    } catch (err: any) { showToast(err?.message ?? "Update failed", "error"); }
+    finally { setBusy(null); }
+  };
+
+  if (cargo.length === 0) return null;
+
+  return (
+    <Section title="Dangerous goods (DG)" icon={Shield}>
+      <p className="text-[11px] text-white/40 mb-2">If any cargo is hazardous, fill in UN number, DG class, packing group, and 24-hour emergency contact. This populates the Dangerous Goods Declaration PDF.</p>
+      <div className="space-y-2">
+        {cargo.map((c) => {
+          const e = edits[c.id] || {};
+          return (
+            <div key={c.id} className="rounded-xl border border-white/6 bg-black/20 px-3 py-2 space-y-1.5">
+              <span className="text-sm text-white/75 font-bold">{c.description}</span>
+              <div className="flex gap-2 flex-wrap">
+                <input placeholder="UN No. (e.g. 1203)" defaultValue={(c as any).unNumber || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], unNumber: ev.target.value } }))} className={`${inputCls} w-28`} />
+                <input placeholder="Class (e.g. 3)" defaultValue={(c as any).dgClass || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], dgClass: ev.target.value } }))} className={`${inputCls} w-20`} />
+                <input placeholder="PG (I/II/III)" defaultValue={(c as any).packingGroup || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], packingGroup: ev.target.value } }))} className={`${inputCls} w-24`} />
+                <input placeholder="Emergency phone" defaultValue={(c as any).emergencyPhone || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], emergencyPhone: ev.target.value } }))} className={`${inputCls} w-40`} />
+                <button onClick={() => save(c.id)} disabled={busy === c.id}
+                  className="rounded-lg border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 disabled:opacity-40">{busy === c.id ? "..." : "Save DG"}</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </Section>
   );

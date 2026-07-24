@@ -107,7 +107,14 @@ export const suggestDuty = async (id: string, hsCode?: string, description?: str
 export const updateCargo = async (id: string, cid: string, dto: Partial<Cargo>) =>
   unwrap(await api.patch(`/forwarding/files/${id}/cargo/${cid}`, dto));
 
-export type ForwardingDocType = "commercial-invoice" | "packing-list" | "bill-of-lading" | "sad500" | "cmr" | "certificate-of-origin" | "dangerous-goods" | "transit-bond" | "zim-form47";
+export type ForwardingDocType =
+  | "commercial-invoice" | "packing-list" | "bill-of-lading" | "sad500"
+  | "cmr" | "certificate-of-origin" | "dangerous-goods" | "transit-bond"
+  | "zim-form47" | "kenya-c17" | "nigeria-sgd" | "ghana-boe"
+  | "ethiopia-erca" | "tanzania-tancis" | "drc-dgda" | "egypt-nafeza"
+  | "mozambique-jue" | "botswana-burs" | "uganda-ura" | "rwanda-rra"
+  | "ivory-coast-dgd" | "senegal-gainde" | "cameroon-sydonia"
+  | "comesa-cd" | "ecowas-sgd" | "eac-cd" | "sadc-cd";
 
 // ── Phase 3: SAD declaration + demurrage ──────────────────────────────────
 

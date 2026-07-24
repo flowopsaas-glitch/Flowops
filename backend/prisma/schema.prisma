@@ -586,11 +586,11 @@ model ShipmentFile {
   // Cross-border / CMR / Transit fields
   shipperAddress     String?
   consigneeAddress   String?
-  originCountry      String? // ISO country code or name, e.g. "ZA"
-  destinationCountry String? // ISO country code or name, e.g. "ZW"
-  transitCountries   String? // comma-separated transit countries
+  originCountry      String? // ISO country code or name
+  destinationCountry String?
+  transitCountries   String? // comma-separated
   vehicleReg         String? // truck registration plate
-  sealNumbers        String? // customs seal numbers (comma-separated)
+  sealNumbers        String? // customs seal numbers
   importerTin        String? // importer tax ID (e.g. ZIMRA TIN)
 
   // AI-derived (demurrage / delay risk)
