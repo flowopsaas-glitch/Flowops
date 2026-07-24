@@ -204,8 +204,10 @@ export class WaybillsController {
   }
 
   @Get('waybills/:id/receipt')
-  getReceipt(@Param('id') id: string, @CurrentUser() u: any) {
-    return this.svc.getReceipt(id, u.companyId);
+  async getReceipt(@Param('id') id: string, @CurrentUser() u: any, @Res() res: Response) {
+    const { buffer, filename, contentType } = await this.svc.getReceipt(id, u.companyId);
+    res.set({ 'Content-Type': contentType, 'Content-Disposition': `inline; filename="${filename}"`, 'Content-Length': String(buffer.length) });
+    res.end(buffer);
   }
 
   @Get('waybills/:id/assist')

@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';
+import { PaystackService } from '../paystack/paystack.service';
 
 @Injectable()
 export class InvoicesService {
@@ -12,6 +13,7 @@ export class InvoicesService {
     private prisma: PrismaService,
     private gateway: EventsGateway,
     private email: EmailService,
+    @Inject(forwardRef(() => PaystackService)) private paystack: PaystackService,
   ) {}
 
   /** Realtime emits are best-effort — they must never break invoicing. */
@@ -607,12 +609,24 @@ export class InvoicesService {
   // Initiate Paystack payment for an invoice (returns redirect URL)
   async initiatePay(id: string, companyId: string) {
     const inv = await this.findOne(id, companyId);
-    // Paystack integration happens in PaystackModule — stub here
-    return {
+
+    if (inv.status === 'PAID') return { invoiceId: id, message: 'Invoice already paid' };
+
+    // Get client email from the invoice
+    const email = inv.clientEmail || `billing+${inv.invoiceNumber}@flowop.work`;
+    const appUrl = process.env.APP_URL || 'https://app.flowop.work';
+
+    const result = await this.paystack.initializePayment({
+      email,
+      amount: Math.round(inv.total * 100), // Paystack uses cents/kobo
+      companyId,
       invoiceId: id,
-      amount: inv.total,
-      message: 'Use PaystackService.initializePayment to generate a payment URL',
-    };
+      description: `Invoice ${inv.invoiceNumber} — ${inv.clientName}`,
+      callbackUrl: `${appUrl}/invoices?paid=${id}`,
+      metadata: { invoiceNumber: inv.invoiceNumber, clientName: inv.clientName },
+    });
+
+    return { invoiceId: id, ...result };
   }
 
   // ── Manual payment approval ──────────────────────────────────────────

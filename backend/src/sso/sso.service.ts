@@ -226,16 +226,50 @@ export class SsoService {
         this.logger.warn(`userinfo fetch failed, falling back to id_token: ${e.message}`);
       }
     }
-    if (tokenJson.id_token) return this.decodeJwtClaims(tokenJson.id_token);
+    if (tokenJson.id_token) return this.decodeJwtClaims(tokenJson.id_token, conn);
     throw new UnauthorizedException('No identity claims returned by the provider');
   }
 
   /**
-   * Decodes an id_token payload. NOTE: the signature is not cryptographically
-   * verified here (JWKS verification is a hardening follow-up); the token is
-   * received directly over TLS from the configured provider's token endpoint.
+   * Decodes and verifies an id_token payload. Uses JWKS endpoint when
+   * configured (conn.jwksUri), otherwise falls back to TLS-trust decode
+   * (token received directly from provider's token endpoint over TLS).
    */
-  private decodeJwtClaims(idToken: string): OidcClaims {
+  private async decodeJwtClaims(idToken: string, conn?: any): Promise<OidcClaims> {
+    // If JWKS URI available, verify signature cryptographically
+    if (conn?.jwksUri) {
+      try {
+        const jwksRes = await fetch(conn.jwksUri);
+        if (jwksRes.ok) {
+          const jwks: any = await jwksRes.json();
+          const header = JSON.parse(Buffer.from(idToken.split('.')[0], 'base64url').toString());
+          const key = jwks.keys?.find((k: any) => k.kid === header.kid || k.use === 'sig');
+          if (key) {
+            // Verify using Node crypto (RS256)
+            const crypto = await import('crypto');
+            const [headerB64, payloadB64, sigB64] = idToken.split('.');
+            const signedContent = `${headerB64}.${payloadB64}`;
+            const signature = Buffer.from(sigB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+            // Build public key from JWK
+            const pubKey = crypto.createPublicKey({ key, format: 'jwk' });
+            const verified = crypto.verify('sha256', Buffer.from(signedContent), pubKey, signature);
+
+            if (!verified) {
+              this.logger.warn('SSO id_token signature verification FAILED');
+              throw new UnauthorizedException('Identity token signature is invalid');
+            }
+            this.logger.log('SSO id_token signature verified via JWKS');
+          }
+        }
+      } catch (e: any) {
+        // If verification fails due to network/format issues, log and continue
+        // with TLS-trust (token was received directly from provider over HTTPS)
+        if (e instanceof UnauthorizedException) throw e;
+        this.logger.warn(`JWKS verification skipped: ${e?.message} — trusting TLS`);
+      }
+    }
+
     try {
       const payload = idToken.split('.')[1];
       const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');

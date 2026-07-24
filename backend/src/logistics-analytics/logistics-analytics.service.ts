@@ -149,15 +149,15 @@ export class LogisticsAnalyticsService {
       returnedParcels,
       totalCollections,
       onTimePercentage,
-      avgDeliveryMinutes: null, // TODO: compute from POD timestamps
+      avgDeliveryMinutes: await this.computeAvgDeliveryMinutes(companyId, start, end),
       slaBreaches,
       customerRatingAvg,
       revenue,
       costPerDelivery,
       codCollected,
       activeDrivers,
-      avgDriverUtilPct: null, // TODO: compute from shipment assignments
-      topDriverId: null, // TODO: compute top performer
+      avgDriverUtilPct: await this.computeDriverUtilization(companyId, activeDrivers, start, end),
+      topDriverId: await this.computeTopDriver(companyId, start, end),
       aiInsights,
       aiGeneratedAt: aiInsights ? new Date() : null,
     };
@@ -240,6 +240,36 @@ Return ONLY valid JSON in this format:
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
+
+  private async computeAvgDeliveryMinutes(companyId: string, start: Date, end: Date): Promise<number | null> {
+    const delivered = await this.prisma.waybill.findMany({
+      where: { companyId, status: 'DELIVERED', podDeliveredAt: { not: null }, createdAt: { gte: start, lt: end } },
+      select: { createdAt: true, podDeliveredAt: true },
+    });
+    if (delivered.length === 0) return null;
+    const totalMin = delivered.reduce((sum, w) => sum + (new Date(w.podDeliveredAt!).getTime() - new Date(w.createdAt).getTime()) / 60000, 0);
+    return Math.round(totalMin / delivered.length);
+  }
+
+  private async computeDriverUtilization(companyId: string, activeDrivers: number, start: Date, end: Date): Promise<number | null> {
+    if (activeDrivers === 0) return null;
+    const driversWithShipments = await this.prisma.shipment.groupBy({
+      by: ['driverId'],
+      where: { companyId, driverId: { not: null }, createdAt: { gte: start, lt: end } },
+    });
+    return Math.round((driversWithShipments.length / activeDrivers) * 10000) / 100;
+  }
+
+  private async computeTopDriver(companyId: string, start: Date, end: Date): Promise<string | null> {
+    const top = await this.prisma.shipment.groupBy({
+      by: ['driverId'],
+      where: { companyId, status: 'DELIVERED', driverId: { not: null }, createdAt: { gte: start, lt: end } },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 1,
+    });
+    return top.length > 0 && top[0].driverId ? top[0].driverId : null;
+  }
 
   private currentPeriod(): string {
     const now = new Date();
