@@ -268,6 +268,11 @@ const DOC_TYPES: { type: fwd.ForwardingDocType; label: string }[] = [
   { type: "packing-list", label: "Packing List" },
   { type: "bill-of-lading", label: "Bill of Lading" },
   { type: "sad500", label: "SAD 500 (draft)" },
+  { type: "cmr", label: "CMR Consignment Note" },
+  { type: "certificate-of-origin", label: "Certificate of Origin" },
+  { type: "dangerous-goods", label: "Dangerous Goods Declaration" },
+  { type: "transit-bond", label: "Transit Bond" },
+  { type: "zim-form47", label: "ZIMRA Form 47 (Import)" },
 ];
 
 function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.Cargo[]; onChange: () => void }) {

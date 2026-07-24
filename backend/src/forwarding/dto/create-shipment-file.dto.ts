@@ -32,4 +32,14 @@ export class CreateShipmentFileDto {
   @IsOptional() @IsString() vesselVoyage?: string;
   @IsOptional() @IsDateString() etd?: string;
   @IsOptional() @IsDateString() eta?: string;
+
+  // Cross-border / CMR / Transit
+  @IsOptional() @IsString() shipperAddress?: string;
+  @IsOptional() @IsString() consigneeAddress?: string;
+  @IsOptional() @IsString() originCountry?: string;
+  @IsOptional() @IsString() destinationCountry?: string;
+  @IsOptional() @IsString() transitCountries?: string;
+  @IsOptional() @IsString() vehicleReg?: string;
+  @IsOptional() @IsString() sealNumbers?: string;
+  @IsOptional() @IsString() importerTin?: string;
 }

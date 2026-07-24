@@ -3,7 +3,7 @@ import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomsService } from './customs.service';
 
-type DocType = 'commercial-invoice' | 'packing-list' | 'bill-of-lading' | 'sad500';
+type DocType = 'commercial-invoice' | 'packing-list' | 'bill-of-lading' | 'sad500' | 'cmr' | 'certificate-of-origin' | 'dangerous-goods' | 'transit-bond' | 'zim-form47';
 
 @Injectable()
 export class ForwardingPdfService {
@@ -41,6 +41,11 @@ export class ForwardingPdfService {
         case 'packing-list': this.packingList(doc, file); break;
         case 'bill-of-lading': this.billOfLading(doc, file); break;
         case 'sad500': this.sad500(doc, file, estimate); break;
+        case 'cmr': this.cmrConsignmentNote(doc, file); break;
+        case 'certificate-of-origin': this.certificateOfOrigin(doc, file); break;
+        case 'dangerous-goods': this.dangerousGoodsDeclaration(doc, file); break;
+        case 'transit-bond': this.transitBond(doc, file); break;
+        case 'zim-form47': this.zimForm47(doc, file, estimate); break;
       }
     });
     return { buffer, filename: `${type}-${file.fileNumber}.pdf` };
@@ -164,5 +169,245 @@ export class ForwardingPdfService {
         .font('Helvetica-Bold').text(`Total payable to SARS (est.): ${t.totalPayable.toFixed(2)}`);
       doc.moveDown(0.3).font('Helvetica-Oblique').fontSize(8).fillColor('#777').text(estimate.note);
     }
+  }
+
+  // ── CMR — International Road Consignment Note ──────────────────────────────
+  // Required for cross-border road freight (SA ↔ ZW, SA ↔ Mozambique, etc.)
+  // Based on the UNECE CMR Convention format.
+
+  private cmrConsignmentNote(doc: PDFKit.PDFDocument, file: any) {
+    this.header(doc, file, 'CMR — International Consignment Note');
+    doc.font('Helvetica').fontSize(8).fillColor('#555')
+      .text('Convention on the Contract for the International Carriage of Goods by Road (CMR)');
+    doc.fillColor('#000').moveDown(0.8);
+
+    // Box 1: Sender
+    this.kv(doc, '1. Sender (Name, Address, Country):', file.shipperName);
+    this.kv(doc, '   Address:', file.shipperAddress || '—');
+    doc.moveDown(0.3);
+
+    // Box 2: Consignee
+    this.kv(doc, '2. Consignee (Name, Address, Country):', file.consigneeName);
+    this.kv(doc, '   Address:', file.consigneeAddress || '—');
+    doc.moveDown(0.3);
+
+    // Box 3: Place of delivery
+    this.kv(doc, '3. Place of Delivery:', file.pod || '—');
+    doc.moveDown(0.3);
+
+    // Box 4: Place and date of taking over
+    this.kv(doc, '4. Place of Taking Over:', file.pol || '—');
+    this.kv(doc, '   Date:', file.etd ? new Date(file.etd).toDateString() : '—');
+    doc.moveDown(0.3);
+
+    // Box 5: Documents attached
+    this.kv(doc, '5. Documents Attached:', 'Commercial Invoice, Packing List');
+    doc.moveDown(0.3);
+
+    // Goods description
+    doc.font('Helvetica-Bold').fontSize(10).text('6. Marks & Numbers / Number & Kind of Packages / Description of Goods');
+    (file.cargo || []).forEach((c: any) => {
+      doc.font('Helvetica').fontSize(9)
+        .text(`• ${c.description} — ${c.pieces ?? '?'} pcs, ${c.weightKg ?? '?'} kg${c.hsCode ? `, HS: ${c.hsCode}` : ''}`);
+    });
+    doc.moveDown(0.5);
+
+    // Weight & volume
+    this.kv(doc, '11. Gross Weight (kg):', String(file.grossWeightKg ?? '—'));
+    this.kv(doc, '12. Volume (CBM):', String(file.volumeCbm ?? '—'));
+    doc.moveDown(0.3);
+
+    // Carrier
+    this.kv(doc, '16. Carrier (Name, Address):', file.carrierName || '—');
+    doc.moveDown(0.3);
+
+    // Vehicle
+    this.kv(doc, '18. Vehicle Registration:', file.vehicleReg || '—');
+    doc.moveDown(0.8);
+
+    // Signatures
+    doc.font('Helvetica-Bold').fontSize(9).text('Signatures:');
+    doc.font('Helvetica').fontSize(9)
+      .text('Sender: _________________________    Date: ___________')
+      .text('Carrier: _________________________    Date: ___________')
+      .text('Consignee: _________________________    Date: ___________');
+  }
+
+  // ── Certificate of Origin ──────────────────────────────────────────────────
+  // Proves where goods were manufactured. Required for preferential duty rates
+  // under SADC Trade Protocol, AGOA, and bilateral trade agreements.
+
+  private certificateOfOrigin(doc: PDFKit.PDFDocument, file: any) {
+    this.header(doc, file, 'Certificate of Origin', false);
+    doc.font('Helvetica').fontSize(8).fillColor('#555')
+      .text('SADC Trade Protocol / Preferential Certificate');
+    doc.fillColor('#000').moveDown(0.8);
+
+    this.kv(doc, '1. Exporter (Name, Address, Country):', file.shipperName);
+    doc.moveDown(0.3);
+    this.kv(doc, '2. Consignee (Name, Address, Country):', file.consigneeName);
+    doc.moveDown(0.3);
+    this.kv(doc, '3. Country of Origin:', file.originCountry || 'South Africa');
+    this.kv(doc, '4. Country of Destination:', file.destinationCountry || '—');
+    doc.moveDown(0.3);
+    this.kv(doc, '5. Transport Details:', `${file.mode || 'ROAD'} — ${file.pol || '?'} to ${file.pod || '?'}`);
+    doc.moveDown(0.5);
+
+    doc.font('Helvetica-Bold').fontSize(10).text('6. Item Description / HS Code / Origin Criteria');
+    (file.cargo || []).forEach((c: any) => {
+      doc.font('Helvetica').fontSize(9)
+        .text(`• ${c.description}  HS: ${c.hsCode || '—'}  Qty: ${c.pieces ?? '?'}  Value: ZAR ${(c.customsValue ?? 0).toFixed(2)}  Origin: Wholly obtained`);
+    });
+    doc.moveDown(0.5);
+
+    this.kv(doc, '7. Total FOB Value:', `ZAR ${(file.cargo || []).reduce((s: number, c: any) => s + (c.customsValue ?? 0), 0).toFixed(2)}`);
+    doc.moveDown(0.8);
+
+    doc.font('Helvetica-Bold').fontSize(9).text('Declaration by the Exporter:');
+    doc.font('Helvetica').fontSize(8)
+      .text('I, the undersigned, declare that the goods described above meet the conditions required for the issue of this certificate.');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(9)
+      .text('Signature: _________________________    Date: ___________')
+      .text('Place: _________________________    Stamp: ___________');
+  }
+
+  // ── Dangerous Goods Declaration ────────────────────────────────────────────
+  // IMDG / ADR compliant. Required when transporting hazardous materials.
+
+  private dangerousGoodsDeclaration(doc: PDFKit.PDFDocument, file: any) {
+    this.header(doc, file, 'Dangerous Goods Declaration');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#b91c1c')
+      .text('⚠️ HAZARDOUS MATERIALS — HANDLE WITH CARE');
+    doc.fillColor('#000').moveDown(0.5);
+
+    this.kv(doc, 'Shipper:', file.shipperName);
+    this.kv(doc, 'Consignee:', file.consigneeName);
+    this.kv(doc, 'Carrier:', file.carrierName || '—');
+    this.kv(doc, 'Vehicle Reg:', file.vehicleReg || '—');
+    doc.moveDown(0.5);
+
+    doc.font('Helvetica-Bold').fontSize(10).text('Dangerous Goods Details');
+    doc.font('Helvetica').fontSize(9);
+    (file.cargo || []).forEach((c: any) => {
+      doc.text(`• ${c.description}`);
+      doc.text(`  UN Number: ${(c as any).unNumber || '____'}  Class: ${(c as any).dgClass || '____'}  PG: ${(c as any).packingGroup || '____'}`);
+      doc.text(`  Quantity: ${c.pieces ?? '?'} pcs, ${c.weightKg ?? '?'} kg`);
+      doc.text(`  Emergency Contact: ${(c as any).emergencyPhone || '____________________'}`);
+      doc.moveDown(0.3);
+    });
+
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').fontSize(9).text('Shipper\'s Declaration:');
+    doc.font('Helvetica').fontSize(8)
+      .text('I hereby declare that the contents of this consignment are fully and accurately described by the proper shipping name, and are classified, packaged, marked and labelled, and are in all respects in proper condition for transport according to applicable international and national governmental regulations.');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(9)
+      .text('Signature: _________________________    Date: ___________')
+      .text('Name (Print): _________________________    Title: ___________');
+  }
+
+  // ── Transit Bond Documentation ─────────────────────────────────────────────
+  // Required when goods pass THROUGH a country without customs clearance
+  // (e.g., goods from Mozambique passing through Zimbabwe to South Africa).
+
+  private transitBond(doc: PDFKit.PDFDocument, file: any) {
+    this.header(doc, file, 'Transit Bond Declaration');
+    doc.font('Helvetica').fontSize(8).fillColor('#555')
+      .text('For goods in transit — not cleared for consumption in the transit country');
+    doc.fillColor('#000').moveDown(0.8);
+
+    this.kv(doc, 'Principal (Bond Holder):', file.shipperName);
+    this.kv(doc, 'Guarantor (Surety):', '___________________________________');
+    doc.moveDown(0.3);
+    this.kv(doc, 'Office of Departure:', file.pol || '—');
+    this.kv(doc, 'Office of Destination:', file.pod || '—');
+    this.kv(doc, 'Transit Country/Countries:', file.transitCountries || '—');
+    doc.moveDown(0.3);
+    this.kv(doc, 'Mode of Transport:', file.mode || 'ROAD');
+    this.kv(doc, 'Vehicle Registration:', file.vehicleReg || '—');
+    this.kv(doc, 'Seal Numbers:', file.sealNumbers || '—');
+    doc.moveDown(0.5);
+
+    doc.font('Helvetica-Bold').fontSize(10).text('Goods Under Transit');
+    (file.cargo || []).forEach((c: any) => {
+      doc.font('Helvetica').fontSize(9)
+        .text(`• ${c.description} — ${c.pieces ?? '?'} pcs, ${c.weightKg ?? '?'} kg  HS: ${c.hsCode || '—'}  Value: ZAR ${(c.customsValue ?? 0).toFixed(2)}`);
+    });
+
+    const totalValue = (file.cargo || []).reduce((s: number, c: any) => s + (c.customsValue ?? 0), 0);
+    doc.moveDown(0.5);
+    this.kv(doc, 'Total Value of Goods:', `ZAR ${totalValue.toFixed(2)}`);
+    this.kv(doc, 'Bond Amount (typically 110% of duties):', `ZAR ${(totalValue * 0.3 * 1.1).toFixed(2)} (estimated)`);
+    doc.moveDown(0.5);
+    this.kv(doc, 'Time Limit for Transit:', '72 hours from departure');
+    doc.moveDown(0.8);
+
+    doc.font('Helvetica-Bold').fontSize(9).text('Undertaking:');
+    doc.font('Helvetica').fontSize(8)
+      .text('The principal undertakes to present the goods intact at the office of destination within the prescribed time limit. Failure to do so will result in the bond being called upon for payment of all duties and taxes.');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(9)
+      .text('Principal: _________________________    Date: ___________')
+      .text('Customs Officer (Departure): _________________________    Stamp: ___________');
+  }
+
+  // ── Zimbabwe Form 47 — Import Declaration ──────────────────────────────────
+  // ZIMRA (Zimbabwe Revenue Authority) import declaration form.
+  // Required for ALL commercial imports into Zimbabwe.
+
+  private zimForm47(doc: PDFKit.PDFDocument, file: any, estimate: any) {
+    this.header(doc, file, 'ZIMRA Form 47 — Import Declaration (Draft)');
+    doc.font('Helvetica').fontSize(8).fillColor('#555')
+      .text('Zimbabwe Revenue Authority — Customs Declaration for Imports. Draft for agent capture — official submission via ASYCUDA.');
+    doc.fillColor('#000').moveDown(0.8);
+
+    // Section A: Declarant
+    this.kv(doc, 'A1. Declarant/Agent:', file.consigneeName || '—');
+    this.kv(doc, 'A2. Importer TIN:', (file as any).importerTin || '___________________');
+    this.kv(doc, 'A3. Exporter:', file.shipperName);
+    this.kv(doc, 'A4. Country of Origin:', file.originCountry || 'South Africa');
+    this.kv(doc, 'A5. Country of Export:', file.originCountry || 'South Africa');
+    doc.moveDown(0.3);
+
+    // Section B: Transport
+    this.kv(doc, 'B1. Mode of Transport:', file.mode || 'ROAD');
+    this.kv(doc, 'B2. Port/Border of Entry:', file.pod || '—');
+    this.kv(doc, 'B3. Vehicle Registration:', file.vehicleReg || '—');
+    this.kv(doc, 'B4. Bill of Lading / Waybill No.:', file.fileNumber);
+    doc.moveDown(0.3);
+
+    // Section C: Goods
+    doc.font('Helvetica-Bold').fontSize(10).text('C. Description of Goods');
+    let totalCIF = 0;
+    (file.cargo || []).forEach((c: any, i: number) => {
+      const val = c.customsValue ?? 0; totalCIF += val;
+      doc.font('Helvetica').fontSize(9)
+        .text(`${i + 1}. ${c.description}`)
+        .text(`   HS Code: ${c.hsCode || '—'}  Qty: ${c.pieces ?? '?'}  Weight: ${c.weightKg ?? '?'} kg`)
+        .text(`   CIF Value (USD): ${val.toFixed(2)}  Duty Rate: ${c.dutyRatePct ?? 25}%`);
+      doc.moveDown(0.2);
+    });
+
+    // Section D: Duties
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').fontSize(10).text('D. Duty & Tax Calculation');
+    const dutyRate = 0.25; // Zimbabwe general rate
+    const vatRate = 0.15;  // Zimbabwe VAT
+    const duty = totalCIF * dutyRate;
+    const vat = (totalCIF + duty) * vatRate;
+    doc.font('Helvetica').fontSize(9)
+      .text(`Total CIF Value: USD ${totalCIF.toFixed(2)}`)
+      .text(`Customs Duty (est. 25%): USD ${duty.toFixed(2)}`)
+      .text(`VAT (15% on CIF + Duty): USD ${vat.toFixed(2)}`)
+      .font('Helvetica-Bold').text(`Total Payable to ZIMRA (est.): USD ${(duty + vat).toFixed(2)}`);
+    doc.moveDown(0.3);
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#777')
+      .text('Note: This is a draft estimate. Official assessment by ZIMRA via ASYCUDA is binding. Rates may vary by tariff heading.');
+    doc.fillColor('#000').moveDown(0.5);
+
+    doc.font('Helvetica').fontSize(9)
+      .text('Declarant Signature: _________________________    Date: ___________')
+      .text('ZIMRA Officer: _________________________    Stamp: ___________');
   }
 }
