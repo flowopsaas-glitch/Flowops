@@ -227,7 +227,7 @@ export class AlertingService {
               `${urgencyText}\n\n` +
               `Upgrade now to keep your access:\n` +
               `${this.config.get('APP_URL', 'https://app.flowop.work')}/settings/billing\n\n` +
-              `• *Professional* — R19,999/month\n` +
+              `• *Professional* — Custom pricing (based on your region)\n` +
               `• *Enterprise* — Custom pricing\n\n` +
               `All your data will be preserved when you upgrade. Reply here if you need help! 💪`,
             );

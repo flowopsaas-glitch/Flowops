@@ -231,13 +231,13 @@ export default function BillingPlans() {
         // Paystack not configured — WhatsApp fallback
         const msg = encodeURIComponent(
           `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-          `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (R19,999/mo).\n\nPlease send a payment link or activate our account. 🙏`
+          `We'd like to upgrade to the *FlowOps ${plan.name} Plan*.\n\nPlease send pricing for our region and a payment link. 🙏`
         );
         window.open(`${waBase}?text=${msg}`, "_blank");
       }
     } catch {
       const msg = encodeURIComponent(
-        `Hi! 👋 *${company?.name}* would like to upgrade to *FlowOps ${plan.name}* (R19,999/mo). Please send a payment link. 🙏`
+        `Hi! 👋 *${company?.name}* would like to upgrade to *FlowOps ${plan.name}*. Please send pricing for our region. 🙏`
       );
       window.open(`${waBase}?text=${msg}`, "_blank");
     } finally { setUpgrading(null); }
@@ -307,7 +307,7 @@ export default function BillingPlans() {
                   Your trial has expired — account is locked
                 </p>
                 <p className="text-sm text-rose-300/70 mt-1">
-                  Upgrade to Professional (R19,999/mo) or Enterprise to restore full access.
+                  Upgrade to Professional or Enterprise to restore full access.
                   All your data is safe and waiting.
                 </p>
               </div>

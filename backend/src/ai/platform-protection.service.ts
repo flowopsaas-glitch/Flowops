@@ -58,6 +58,11 @@ export class PlatformProtectionService {
 
   private async checkWmsIntegrity(): Promise<void> {
     try {
+      // Guard: skip if WMS models aren't migrated yet
+      // (inventoryItem table may not exist in the DB)
+      const hasWms = await (this.prisma as any).inventoryItem?.count?.().catch(() => null);
+      if (hasWms === null || hasWms === undefined) return; // WMS not deployed — skip silently
+
       // Check for negative inventory (should never happen)
       const negativeStock = await this.prisma.inventoryItem.count({
         where: { quantityOnHand: { lt: 0 } },

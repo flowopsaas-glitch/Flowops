@@ -161,7 +161,7 @@ export class BillingService {
     // EXPIRED: trial ended without upgrading → block ALL resource creation
     if (effective === 'expired') {
       throw new ForbiddenException(
-        'Your 14-day trial has expired. Please upgrade to Professional (R19,999/month) or Enterprise to continue using FlowOps. ' +
+        'Your 14-day trial has expired. Please upgrade to Professional or Enterprise to continue using FlowOps. ' +
         'Go to Settings → Billing to choose your plan.',
       );
     }
