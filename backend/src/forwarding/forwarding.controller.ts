@@ -235,7 +235,7 @@ export class ForwardingController {
   // ── Document PDFs (Phase 2) ────────────────────────────────────────────────────
 
   @Get('files/:id/documents/:type.pdf')
-  @ApiOperation({ summary: 'Generate a PDF: commercial-invoice | packing-list | bill-of-lading | sad500' })
+  @ApiOperation({ summary: 'Generate a PDF: commercial-invoice | packing-list | bill-of-lading | sad500 | cmr | certificate-of-origin | dangerous-goods | transit-bond | zim-form47' })
   async documentPdf(
     @CurrentUser() u: any,
     @Param('id') id: string,
