@@ -985,13 +985,13 @@ Return ONLY valid JSON:
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
 
     // Get pick frequency per SKU (last 30 days)
-    const pickFrequency = await this.prisma.stockMovement.groupBy({
+    const pickFrequency = await (this.prisma.stockMovement as any).groupBy({
       by: ['sku'],
       where: { companyId, type: 'PICK', performedAt: { gte: thirtyDaysAgo } },
       _count: { _all: true },
       _sum: { quantity: true },
       orderBy: { _count: { _all: 'desc' } },
-    });
+    }) as { sku: string; _count: { _all: number }; _sum: { quantity: number | null } }[];
 
     // Get current bin locations for each SKU
     const inventory = await this.prisma.inventoryItem.findMany({
