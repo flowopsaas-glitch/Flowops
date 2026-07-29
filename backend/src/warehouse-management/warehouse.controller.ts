@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WarehouseManagementService } from './warehouse-management.service';
 import { WarehouseAnalyticsService } from './warehouse-analytics.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
