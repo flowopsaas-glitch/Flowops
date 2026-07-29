@@ -144,4 +144,36 @@ export class WarehouseController {
   getMovements(@CurrentUser() u: any, @Query() filters: any) {
     return this.wms.getMovementHistory(u.companyId, filters);
   }
+
+  // ── Cross-docking ─────────────────────────────────────────────────────────
+
+  @Post('cross-dock')
+  @ApiOperation({ summary: 'Cross-dock: bypass storage — inbound goes direct to outbound destinations' })
+  createCrossDock(@CurrentUser() u: any, @Body() dto: any) {
+    return this.wms.createCrossDock(u.companyId, dto);
+  }
+
+  // ── Wave Planning ─────────────────────────────────────────────────────────
+
+  @Post('waves')
+  @ApiOperation({ summary: 'Create a pick wave — groups pending orders into efficient picker routes by zone' })
+  createWave(@CurrentUser() u: any, @Body() dto: any) {
+    return this.wms.createWave(u.companyId, dto?.warehouseId, dto);
+  }
+
+  // ── AI Slotting Optimization ──────────────────────────────────────────────
+
+  @Get('slotting/:warehouseId')
+  @ApiOperation({ summary: 'AI slotting analysis — velocity-based ABC classification + relocation recommendations' })
+  getSlotting(@CurrentUser() u: any, @Param('warehouseId') warehouseId: string) {
+    return this.wms.aiSlottingOptimization(u.companyId, warehouseId);
+  }
+
+  // ── Barcode/QR Scan Verification ──────────────────────────────────────────
+
+  @Post('scan/verify')
+  @ApiOperation({ summary: 'Verify a barcode/QR scan — matches SKU, bin, GR, or pick order with context validation' })
+  verifyScan(@CurrentUser() u: any, @Body() dto: any) {
+    return this.wms.verifyScan(u.companyId, dto);
+  }
 }
