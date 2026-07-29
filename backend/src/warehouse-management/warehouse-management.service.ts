@@ -823,4 +823,349 @@ Return ONLY valid JSON:
       todayMovements,
     };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CROSS-DOCKING (Bypass Storage — Direct Inbound → Outbound)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async createCrossDock(companyId: string, dto: {
+    warehouseId: string;
+    supplierName?: string;
+    inboundRef?: string;
+    lines: { sku: string; quantity: number; destinationClient: string; destinationAddress?: string }[];
+  }) {
+    const count = await this.prisma.goodsReceipt.count({ where: { companyId } });
+    const receiptNumber = `XD-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
+
+    // Create a goods receipt flagged as cross-dock (no put-away, goes direct to outbound)
+    const gr = await this.prisma.goodsReceipt.create({
+      data: {
+        companyId, warehouseId: dto.warehouseId, receiptNumber,
+        supplierName: dto.supplierName, poNumber: dto.inboundRef,
+        expectedLines: dto.lines.length,
+        expectedQty: dto.lines.reduce((s, l) => s + l.quantity, 0),
+        status: 'ARRIVED',
+        arrivedAt: new Date(),
+        lines: { create: dto.lines.map(l => ({ sku: l.sku, expectedQty: l.quantity, description: l.destinationClient })) },
+      },
+      include: { lines: true },
+    });
+
+    // Auto-create pick orders for each destination (bypass storage entirely)
+    const pickOrders: any[] = [];
+    const grouped: Record<string, typeof dto.lines> = {};
+    for (const line of dto.lines) {
+      const key = line.destinationClient;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(line);
+    }
+
+    for (const [client, lines] of Object.entries(grouped)) {
+      const poCount = await this.prisma.pickOrder.count({ where: { companyId } });
+      const orderNumber = `XD-PO-${new Date().getFullYear()}-${String(poCount + 1).padStart(5, '0')}`;
+      const po = await this.prisma.pickOrder.create({
+        data: {
+          companyId, warehouseId: dto.warehouseId, orderNumber,
+          sourceType: 'CROSS_DOCK', sourceId: gr.id,
+          clientName: client, shipToName: client,
+          shipToAddress: lines[0]?.destinationAddress || '',
+          priority: 10, // High priority — cross-dock is time-sensitive
+          totalLines: lines.length,
+          totalQty: lines.reduce((s, l) => s + l.quantity, 0),
+          lines: { create: lines.map(l => ({ sku: l.sku, requestedQty: l.quantity })) },
+        },
+        include: { lines: true },
+      });
+      pickOrders.push(po);
+    }
+
+    await this.recordMovement(companyId, {
+      type: 'CROSS_DOCK', sku: dto.lines.map(l => l.sku).join(', '),
+      quantity: dto.lines.reduce((s, l) => s + l.quantity, 0),
+      reason: `Cross-dock: ${dto.supplierName || 'inbound'} → ${Object.keys(grouped).length} destinations`,
+    });
+
+    this.logger.log(`Cross-dock ${receiptNumber}: ${dto.lines.length} lines → ${pickOrders.length} pick orders`);
+
+    return {
+      receiptNumber,
+      goodsReceiptId: gr.id,
+      pickOrders: pickOrders.map(po => ({ id: po.id, orderNumber: po.orderNumber, client: po.clientName })),
+      totalItems: dto.lines.reduce((s, l) => s + l.quantity, 0),
+      destinations: Object.keys(grouped).length,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // WAVE PLANNING (Group Picks Into Efficient Waves)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async createWave(companyId: string, warehouseId: string, dto?: {
+    maxOrders?: number; maxLines?: number; priority?: string; zoneFilter?: string;
+  }) {
+    const maxOrders = dto?.maxOrders || 20;
+    const maxLines = dto?.maxLines || 100;
+
+    // Find pending pick orders, prioritized
+    const pendingPicks = await this.prisma.pickOrder.findMany({
+      where: {
+        companyId, warehouseId, status: 'PENDING',
+        ...(dto?.priority ? { priority: { gte: parseInt(dto.priority) } } : {}),
+      },
+      include: { lines: true },
+      orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+      take: maxOrders,
+    });
+
+    if (pendingPicks.length === 0) {
+      return { waveId: null, message: 'No pending pick orders to wave', orders: 0, lines: 0 };
+    }
+
+    // Group by zone for efficient picker routing
+    const waveOrders: any[] = [];
+    let totalLines = 0;
+
+    for (const order of pendingPicks) {
+      if (totalLines + order.totalLines > maxLines) break;
+      waveOrders.push(order);
+      totalLines += order.totalLines;
+    }
+
+    // Build zone-optimized pick sequence
+    const allLines = waveOrders.flatMap(o => o.lines);
+    const zoneGroups: Record<string, any[]> = {};
+
+    for (const line of allLines) {
+      if (line.suggestedBinId) {
+        const bin = await this.prisma.binLocation.findUnique({
+          where: { id: line.suggestedBinId },
+          include: { zone: true },
+        });
+        const zoneName = bin?.zone?.name || 'UNKNOWN';
+        if (!zoneGroups[zoneName]) zoneGroups[zoneName] = [];
+        zoneGroups[zoneName].push({ ...line, binCode: bin?.code, aisle: bin?.aisle });
+      } else {
+        if (!zoneGroups['UNASSIGNED']) zoneGroups['UNASSIGNED'] = [];
+        zoneGroups['UNASSIGNED'].push(line);
+      }
+    }
+
+    // Sort within each zone by aisle → rack → level (serpentine path)
+    for (const zone of Object.keys(zoneGroups)) {
+      zoneGroups[zone].sort((a: any, b: any) => (a.binCode || '').localeCompare(b.binCode || ''));
+    }
+
+    // Mark all wave orders as IN_PROGRESS
+    const waveId = `WAVE-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`;
+    for (const order of waveOrders) {
+      await this.prisma.pickOrder.update({
+        where: { id: order.id },
+        data: { status: 'IN_PROGRESS' },
+      });
+    }
+
+    this.logger.log(`Wave ${waveId}: ${waveOrders.length} orders, ${totalLines} lines across ${Object.keys(zoneGroups).length} zones`);
+
+    return {
+      waveId,
+      orders: waveOrders.length,
+      lines: totalLines,
+      zones: Object.keys(zoneGroups).length,
+      pickSequence: zoneGroups,
+      orderIds: waveOrders.map(o => o.id),
+      estimatedPickTime: Math.ceil(totalLines * 0.8), // ~0.8 min per line estimate
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AI SLOTTING OPTIMIZATION (Place Fast-Movers Near Dispatch)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async aiSlottingOptimization(companyId: string, warehouseId: string) {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
+
+    // Get pick frequency per SKU (last 30 days)
+    const pickFrequency = await this.prisma.stockMovement.groupBy({
+      by: ['sku'],
+      where: { companyId, type: 'PICK', performedAt: { gte: thirtyDaysAgo } },
+      _count: { _all: true },
+      _sum: { quantity: true },
+      orderBy: { _count: { _all: 'desc' } },
+    });
+
+    // Get current bin locations for each SKU
+    const inventory = await this.prisma.inventoryItem.findMany({
+      where: { companyId, quantityOnHand: { gt: 0 } },
+      include: { bin: { include: { zone: true } } },
+    });
+
+    // Classify into velocity bands (ABC analysis)
+    const totalPicks = pickFrequency.reduce((s, p) => s + p._count._all, 0);
+    let cumulative = 0;
+    const velocityMap: Record<string, 'A' | 'B' | 'C'> = {};
+
+    for (const pf of pickFrequency) {
+      cumulative += pf._count._all;
+      const pct = cumulative / totalPicks;
+      velocityMap[pf.sku] = pct <= 0.2 ? 'A' : pct <= 0.5 ? 'B' : 'C';
+    }
+
+    // Generate recommendations
+    const recommendations: any[] = [];
+
+    for (const item of inventory) {
+      const velocity = velocityMap[item.sku] || 'C';
+      const isInPickZone = item.bin?.zone?.type === 'PICK';
+      const pickSeq = item.bin?.pickSequence || 999;
+
+      // A-class items should be in PICK zone with low pickSequence (close to dispatch)
+      if (velocity === 'A' && !isInPickZone) {
+        recommendations.push({
+          sku: item.sku,
+          description: item.description,
+          currentBin: item.bin?.code,
+          currentZone: item.bin?.zone?.name,
+          velocity: 'A',
+          picksLast30d: pickFrequency.find(p => p.sku === item.sku)?._count._all || 0,
+          recommendation: 'MOVE_TO_PICK_ZONE',
+          reason: 'High-velocity item currently in bulk storage — move to pick face for faster fulfilment',
+          priority: 'HIGH',
+        });
+      }
+
+      // A-class items in pick zone but far from dispatch (high pickSequence)
+      if (velocity === 'A' && isInPickZone && pickSeq > 50) {
+        recommendations.push({
+          sku: item.sku,
+          description: item.description,
+          currentBin: item.bin?.code,
+          currentZone: item.bin?.zone?.name,
+          velocity: 'A',
+          picksLast30d: pickFrequency.find(p => p.sku === item.sku)?._count._all || 0,
+          recommendation: 'MOVE_CLOSER_TO_DISPATCH',
+          reason: 'High-velocity item too far from pack/dispatch area — reduce walker distance',
+          priority: 'MEDIUM',
+        });
+      }
+
+      // C-class items wasting prime pick-face space
+      if (velocity === 'C' && isInPickZone && pickSeq < 30) {
+        recommendations.push({
+          sku: item.sku,
+          description: item.description,
+          currentBin: item.bin?.code,
+          currentZone: item.bin?.zone?.name,
+          velocity: 'C',
+          picksLast30d: pickFrequency.find(p => p.sku === item.sku)?._count._all || 0,
+          recommendation: 'MOVE_TO_BULK',
+          reason: 'Slow-mover occupying premium pick-face slot — free up space for fast-movers',
+          priority: 'LOW',
+        });
+      }
+    }
+
+    // AI summary
+    const aCount = Object.values(velocityMap).filter(v => v === 'A').length;
+    const bCount = Object.values(velocityMap).filter(v => v === 'B').length;
+    const cCount = Object.values(velocityMap).filter(v => v === 'C').length;
+    const misplacedA = recommendations.filter(r => r.velocity === 'A').length;
+
+    return {
+      velocityAnalysis: { A: aCount, B: bCount, C: cCount, totalSKUs: pickFrequency.length },
+      recommendations: recommendations.slice(0, 50),
+      summary: {
+        totalRecommendations: recommendations.length,
+        highPriority: recommendations.filter(r => r.priority === 'HIGH').length,
+        estimatedPickTimeReduction: `${Math.min(misplacedA * 5, 40)}%`,
+        message: misplacedA > 0
+          ? `${misplacedA} high-velocity items are in suboptimal locations. Relocating them could reduce pick time by up to ${Math.min(misplacedA * 5, 40)}%.`
+          : 'Slotting is well optimized. No urgent moves needed.',
+      },
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // BARCODE / QR SCAN VERIFICATION
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async verifyScan(companyId: string, dto: {
+    barcode: string;
+    context: 'RECEIVE' | 'PICK' | 'PUT_AWAY' | 'TRANSFER' | 'CYCLE_COUNT';
+    expectedSku?: string;
+    expectedBin?: string;
+    expectedQuantity?: number;
+  }) {
+    const barcode = dto.barcode.trim();
+
+    // Try to match: SKU, bin code, goods receipt number, pick order number
+    const [itemBySku, binByCode, grByNumber, poByNumber] = await Promise.all([
+      this.prisma.inventoryItem.findFirst({
+        where: { companyId, sku: barcode },
+        include: { bin: { include: { zone: true } } },
+      }),
+      this.prisma.binLocation.findFirst({
+        where: { code: barcode, zone: { warehouse: { companyId } } },
+        include: { zone: true, inventory: { where: { quantityOnHand: { gt: 0 } }, take: 5 } },
+      }),
+      this.prisma.goodsReceipt.findFirst({ where: { companyId, receiptNumber: barcode } }),
+      this.prisma.pickOrder.findFirst({ where: { companyId, orderNumber: barcode } }),
+    ]);
+
+    const result: any = {
+      barcode,
+      context: dto.context,
+      matched: false,
+      type: null,
+      data: null,
+      verification: { valid: false, errors: [] as string[] },
+    };
+
+    if (itemBySku) {
+      result.matched = true;
+      result.type = 'SKU';
+      result.data = {
+        sku: itemBySku.sku,
+        description: itemBySku.description,
+        bin: itemBySku.bin?.code,
+        zone: itemBySku.bin?.zone?.name,
+        quantityOnHand: itemBySku.quantityOnHand,
+        batchNumber: itemBySku.batchNumber,
+        expiryDate: itemBySku.expiryDate,
+      };
+      // Verify against expected
+      if (dto.expectedSku && dto.expectedSku !== barcode) {
+        result.verification.errors.push(`Expected SKU ${dto.expectedSku}, scanned ${barcode}`);
+      } else {
+        result.verification.valid = true;
+      }
+    } else if (binByCode) {
+      result.matched = true;
+      result.type = 'BIN';
+      result.data = {
+        binCode: binByCode.code,
+        zone: binByCode.zone?.name,
+        isEmpty: binByCode.isEmpty,
+        contents: binByCode.inventory.map(i => ({ sku: i.sku, qty: i.quantityOnHand })),
+      };
+      if (dto.expectedBin && dto.expectedBin !== barcode) {
+        result.verification.errors.push(`Expected bin ${dto.expectedBin}, scanned ${barcode}`);
+      } else {
+        result.verification.valid = true;
+      }
+    } else if (grByNumber) {
+      result.matched = true;
+      result.type = 'GOODS_RECEIPT';
+      result.data = { receiptNumber: grByNumber.receiptNumber, status: grByNumber.status, supplier: grByNumber.supplierName };
+      result.verification.valid = true;
+    } else if (poByNumber) {
+      result.matched = true;
+      result.type = 'PICK_ORDER';
+      result.data = { orderNumber: poByNumber.orderNumber, status: poByNumber.status, client: poByNumber.clientName };
+      result.verification.valid = true;
+    } else {
+      result.verification.errors.push(`Barcode "${barcode}" not found in system`);
+    }
+
+    return result;
+  }
 }
