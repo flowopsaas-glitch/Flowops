@@ -1,8 +1,10 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from "@zxing/library";
 
+// Accept both `onDetected` and legacy `onScan` for backward compatibility.
 type Props = {
-  onDetected: (value: string) => void;
+  onDetected?: (value: string) => void;
+  onScan?: (value: string) => void;
   className?: string;
 };
 
@@ -10,7 +12,7 @@ function inputBase() {
   return "w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400";
 }
 
-export default function BarcodeQrScanner({ onDetected, className }: Props) {
+export default function BarcodeQrScanner({ onDetected, onScan, className }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
 
@@ -53,7 +55,8 @@ export default function BarcodeQrScanner({ onDetected, className }: Props) {
       setRunning(true);
 
       // Start decoding from video device
-      await readerRef.current.decodeFromVideoDevice(null,
+      await readerRef.current.decodeFromVideoDevice(
+        null,
         videoRef.current,
         (result, error) => {
           if (result?.getText()) {
@@ -61,7 +64,8 @@ export default function BarcodeQrScanner({ onDetected, className }: Props) {
             // stop scanning once we have a result
             stopCamera();
             setLast(text);
-            onDetected(text);
+            if (onDetected) onDetected(text);
+            if (onScan) onScan(text);
           }
           // ignore decode errors; they happen while scanning
           void error;
@@ -94,7 +98,8 @@ export default function BarcodeQrScanner({ onDetected, className }: Props) {
       if (!text) throw new Error("No barcode/QR detected in image.");
 
       setLast(text);
-      onDetected(text);
+      if (onDetected) onDetected(text);
+      if (onScan) onScan(text);
     } catch (e: any) {
       setErr(e?.message || "Image scan failed.");
     }
