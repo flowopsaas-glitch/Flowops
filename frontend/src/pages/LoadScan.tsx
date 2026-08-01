@@ -96,13 +96,11 @@ export default function LoadScan() {
     }
   };
 
-  const loadedCount = manifest?.waybills.filter(
-    (mw) => mw.waybill.status === "IN_TRANSIT"
-  ).length ?? 0;
+  const loadedCount =
+    manifest?.waybills.filter((mw) => mw.waybill.status === "IN_TRANSIT").length ?? 0;
   const totalCount = manifest?.waybills.length ?? 0;
-  const unscannedWaybills = manifest?.waybills.filter(
-    (mw) => mw.waybill.status !== "IN_TRANSIT"
-  ) ?? [];
+  const unscannedWaybills =
+    manifest?.waybills.filter((mw) => mw.waybill.status !== "IN_TRANSIT") ?? [];
 
   if (loading) {
     return (
@@ -129,9 +127,7 @@ export default function LoadScan() {
         <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-8 text-center">
           <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto mb-4" />
           <h2 className="text-2xl font-black text-white mb-2">Loading Complete</h2>
-          <p className="text-white/60 mb-6">
-            Manifest dispatched successfully
-          </p>
+          <p className="text-white/60 mb-6">Manifest dispatched successfully</p>
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="rounded-2xl bg-white/[0.05] p-4">
               <p className="text-xs text-white/40 uppercase tracking-wider">Loaded</p>
@@ -174,9 +170,7 @@ export default function LoadScan() {
             <ScanLine className="w-7 h-7 text-blue-400" />
             Route Load &amp; Scan
           </h1>
-          <p className="text-sm text-white/50 mt-1">
-            Verify each parcel as it&apos;s loaded onto the vehicle
-          </p>
+          <p className="text-sm text-white/50 mt-1">Verify each parcel as it&apos;s loaded onto the vehicle</p>
         </div>
       </div>
 
@@ -228,7 +222,7 @@ export default function LoadScan() {
           <h3 className="text-sm font-bold text-white">Scan Parcel</h3>
         </div>
 
-        <BarcodeQrScanner onScan={handleScan} />
+        <BarcodeQrScanner onDetected={handleScan} />
 
         <form onSubmit={handleManualSubmit} className="flex gap-3">
           <input
@@ -323,7 +317,7 @@ export default function LoadScan() {
         {!showConfirmComplete ? (
           <button
             onClick={() => setShowConfirmComplete(true)}
-            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-4 text-sm font-black text-white hover:from-blue-500 hover:to-blue-400 transition flex items-center justify-center gap-2"
+            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-4 text-sm font-black text-white hover:from-blue-500 hover:to-blue-400 transition flex items-center justify-center gap-3"
           >
             <Truck className="w-5 h-5" />
             Complete Loading &amp; Dispatch
@@ -345,9 +339,7 @@ export default function LoadScan() {
                     </p>
                   ))}
                   {unscannedWaybills.length > 5 && (
-                    <p className="text-xs text-white/30">
-                      ...and {unscannedWaybills.length - 5} more
-                    </p>
+                    <p className="text-xs text-white/30">...and {unscannedWaybills.length - 5} more</p>
                   )}
                 </div>
               </div>
@@ -364,11 +356,7 @@ export default function LoadScan() {
                 disabled={completing}
                 className="flex-1 rounded-2xl bg-green-600 py-3 text-sm font-black text-white hover:bg-green-500 transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {completing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4" />
-                )}
+                {completing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                 Confirm Dispatch
               </button>
             </div>
