@@ -1,0 +1,23 @@
+name: Deploy FlowOps to Production
+
+on:
+  push:
+    branches:
+      - main  # Change this to 'master' if your default branch is named master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /root/Flowops
+            git pull origin main
+            pnpm install
+            pnpm build
+            pm2 restart all
