@@ -8,6 +8,35 @@ import { api } from "../api/client";
 
 function unwrap(r: any): any { return r?.data ?? r; }
 
+// Lightweight local types to satisfy the TypeScript compiler in this UI file.
+// Prefer importing shared types from the canonical types package if available,
+// but these local shapes are intentionally minimal and non-breaking.
+
+type FleetDriver = {
+  driverId: string;
+  id?: string;
+  driverName?: string;
+  name?: string;
+  vehicleReg?: string | null;
+  vehicleType?: string | null;
+  currentKm?: number | null;
+  nextServiceKm?: number | null;
+  nextServiceDate?: string | null;
+  vehicleNotes?: string | null;
+  status?: "OK" | "DUE_SOON" | "OVERDUE" | "CRITICAL" | string;
+  kmOverdue?: number | null;
+  daysOverdue?: number | null;
+};
+
+type ServiceLog = {
+  id: string;
+  serviceType: string;
+  notes?: string | null;
+  servicedAt?: string | null;
+  kmAtService?: number | null;
+  cost?: number | null;
+};
+
 const SERVICE_TYPES = [
   "Oil Change", "Tyre Rotation", "Tyre Replacement", "Annual Service",
   "Brake Inspection", "Brake Pads", "Battery Check", "Wheel Alignment",
@@ -229,7 +258,7 @@ export default function FleetMaintenance() {
                     <Plus className="h-3.5 w-3.5" /> Log Service
                   </button>
                   <button onClick={() => loadAiAdvice(selected.driverId || selected.id)} disabled={aiLoading}
-                    className="flex items-center gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/20 disabled:opacity-50">
+                    className="flex items-center gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/20 disabled:opacity[...]
                     {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />} AI Diagnosis
                   </button>
                 </div>
@@ -301,11 +330,11 @@ export default function FleetMaintenance() {
                   </div>
                   <div className="flex items-center gap-4 flex-wrap">
                     <div className="text-center">
-                      <div className={`text-2xl font-black ${(aiAdvice.healthScore ?? 0) >= 7 ? "text-emerald-300" : (aiAdvice.healthScore ?? 0) >= 4 ? "text-amber-300" : "text-rose-300"}`}>{aiAdvice.healthScore}/10</div>
+                      <div className={`text-2xl font-black ${(aiAdvice.healthScore ?? 0) >= 7 ? "text-emerald-300" : (aiAdvice.healthScore ?? 0) >= 4 ? "text-amber-300" : "text-rose-300"}`}>{aiAd[...]
                       <div className="text-[10px] text-white/40">Health</div>
                     </div>
                     <div className="text-center">
-                      <div className={`text-lg font-black ${aiAdvice.breakdownRisk === "LOW" ? "text-emerald-300" : aiAdvice.breakdownRisk === "MEDIUM" ? "text-amber-300" : "text-rose-300"}`}>{aiAdvice.breakdownRisk}</div>
+                      <div className={`text-lg font-black ${aiAdvice.breakdownRisk === "LOW" ? "text-emerald-300" : aiAdvice.breakdownRisk === "MEDIUM" ? "text-amber-300" : "text-rose-300"}`}>{ai[...]
                       <div className="text-[10px] text-white/40">Breakdown Risk</div>
                     </div>
                     <div className="text-center">
