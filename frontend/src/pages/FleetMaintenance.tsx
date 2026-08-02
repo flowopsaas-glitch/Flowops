@@ -258,7 +258,7 @@ export default function FleetMaintenance() {
                     <Plus className="h-3.5 w-3.5" /> Log Service
                   </button>
                   <button onClick={() => loadAiAdvice(selected.driverId || selected.id)} disabled={aiLoading}
-                    className="flex items-center gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/20 disabled:opacity[...]
+                    className="flex items-center gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/20 disabled:opacity-50">
                     {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />} AI Diagnosis
                   </button>
                 </div>
