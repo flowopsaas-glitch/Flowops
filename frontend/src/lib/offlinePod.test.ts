@@ -73,7 +73,7 @@ describe('offlinePod queue', () => {
 
     expect(synced).toBe(2);
     expect(post).toHaveBeenCalledTimes(2);
-    expect(post).toHaveBeenCalledWith('/waybills/wb1/complete', expect.any(FormData));
+    expect(post).toHaveBeenCalledWith('/waybills/wb1/deliver', expect.any(FormData));
     expect(getPodQueue()).toHaveLength(0);
   });
 

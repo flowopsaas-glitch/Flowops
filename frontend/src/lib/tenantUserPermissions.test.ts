@@ -62,7 +62,7 @@ describe('buildRoleDefaultTenantNavPermissions', () => {
   it('DRIVER gets a focused field set', () => {
     const p = buildRoleDefaultTenantNavPermissions('DRIVER');
     expect(p.podDeliveries).toBe(true);
-    expect(p.driverDispatch).toBe(true);
+    expect(p.driverDispatch).toBe(false);
     expect(p.invoices).toBe(false);
     expect(p.usersRoles).toBe(false);
   });
