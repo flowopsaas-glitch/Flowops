@@ -649,7 +649,7 @@ jobs:
           docker network rm smoke-net 2>/dev/null || true
 
       - name: Scan backend image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: flowops-backend:smoke-test
           format: sarif
