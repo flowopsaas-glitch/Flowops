@@ -335,7 +335,7 @@ jobs:
       # The amd64 image is already loaded from the smoke-test step, so
       # Trivy scans it from the local Docker daemon — no extra pull needed.
       - name: Scan image for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: flowops-frontend:smoke-test
           format: sarif
@@ -459,7 +459,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Scan frontend for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./frontend
@@ -478,7 +478,7 @@ jobs:
           category: trivy-frontend
 
       - name: Scan backend for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./backend
@@ -499,7 +499,7 @@ jobs:
       # Human-readable table for the workflow logs (informational, no fail)
       - name: Print frontend CVE summary
         if: always()
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./frontend
@@ -511,7 +511,7 @@ jobs:
 
       - name: Print backend CVE summary
         if: always()
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./backend
@@ -649,7 +649,7 @@ jobs:
           docker network rm smoke-net 2>/dev/null || true
 
       - name: Scan backend image (Trivy)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: flowops-backend:smoke-test
           format: sarif
