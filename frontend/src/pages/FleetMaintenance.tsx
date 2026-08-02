@@ -330,11 +330,11 @@ export default function FleetMaintenance() {
                   </div>
                   <div className="flex items-center gap-4 flex-wrap">
                     <div className="text-center">
-                      <div className={`text-2xl font-black ${(aiAdvice.healthScore ?? 0) >= 7 ? "text-emerald-300" : (aiAdvice.healthScore ?? 0) >= 4 ? "text-amber-300" : "text-rose-300"}`}>{aiAd[...]
+                      <div className={`text-2xl font-black ${(aiAdvice.healthScore ?? 0) >= 7 ? "text-emerald-300" : (aiAdvice.healthScore ?? 0) >= 4 ? "text-amber-300" : "text-rose-300"}`}>{aiAdvice.healthScore}/10</div>
                       <div className="text-[10px] text-white/40">Health</div>
                     </div>
                     <div className="text-center">
-                      <div className={`text-lg font-black ${aiAdvice.breakdownRisk === "LOW" ? "text-emerald-300" : aiAdvice.breakdownRisk === "MEDIUM" ? "text-amber-300" : "text-rose-300"}`}>{ai[...]
+                      <div className={`text-lg font-black ${aiAdvice.breakdownRisk === "LOW" ? "text-emerald-300" : aiAdvice.breakdownRisk === "MEDIUM" ? "text-amber-300" : "text-rose-300"}`}>{aiAdvice.breakdownRisk}</div>
                       <div className="text-[10px] text-white/40">Breakdown Risk</div>
                     </div>
                     <div className="text-center">

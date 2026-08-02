@@ -213,7 +213,8 @@ export default function Shipments() {
     if (!waybillId) return;
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(waybillId) ? next.delete(waybillId) : next.add(waybillId);
+      if (next.has(waybillId)) next.delete(waybillId);
+      else next.add(waybillId);
       return next;
     });
   };
