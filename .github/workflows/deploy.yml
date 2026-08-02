@@ -3,21 +3,22 @@ name: Deploy FlowOps to Production
 on:
   push:
     branches:
-      - main  # Change this to 'master' if your default branch is named master
+      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to Server
-        uses: appleboy/ssh-action@master
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 30m
+          script_stop: true
           script: |
-            cd /root/Flowops
-            git pull origin main
-            pnpm install
-            pnpm build
-            pm2 restart all
+            set -Eeuo pipefail
+            cd /opt/flowops
+            ./deploy/vps-deploy.sh
