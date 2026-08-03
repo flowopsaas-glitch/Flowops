@@ -124,17 +124,35 @@ export class CollectionsService {
 
   async create(companyId: string, dto: any) {
     const data: any = { ...dto, companyId };
-    // Geocode the pickup address so the collection lands on the map and can be
-    // routed/assigned by proximity. Best-effort: never blocks creation.
+
+    // ── Smart Address Resolution ────────────────────────────────────────────
+    // Uses the world-class smartResolve engine: AddressBook fuzzy matching first,
+    // then geocode fallback. Upgrades the raw address to its canonical form so
+    // all downstream systems (routing, tracking, reports) use consistent data.
     if (data.pickupAddress && (data.pickupLat == null || data.pickupLng == null)) {
       const company = await this.prisma.company.findUnique({
         where: { id: companyId },
         select: { country: true },
       });
-      const point = await this.geo.geocode(data.pickupAddress, company?.country ?? undefined);
-      if (point) {
-        data.pickupLat = point.lat;
-        data.pickupLng = point.lng;
+      const country = company?.country ?? undefined;
+
+      // Try smart resolution first (AddressBook + fuzzy + geocode)
+      const smart = await this.geo.smartResolve(data.pickupAddress, companyId, country);
+
+      if (smart.point) {
+        data.pickupLat = smart.point.lat;
+        data.pickupLng = smart.point.lng;
+        // Upgrade to canonical address if resolved with high confidence
+        if (smart.confidence >= 75 && smart.canonical && smart.canonical !== data.pickupAddress) {
+          data.pickupAddress = smart.canonical;
+        }
+      } else {
+        // Fallback: plain geocode (in case smartResolve had an issue)
+        const point = await this.geo.geocode(data.pickupAddress, country);
+        if (point) {
+          data.pickupLat = point.lat;
+          data.pickupLng = point.lng;
+        }
       }
     }
     const collection = await this.prisma.collection.create({ data });
