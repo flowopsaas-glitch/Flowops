@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pricing | FlowOps</title>
+  <style>
+    :root { --bg: #0a0e1a; --card: #111827; --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6; --border: #1e293b; --green: #10b981; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 2rem 1rem; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 2.2rem; text-align: center; margin-bottom: 0.5rem; color: #fff; }
+    .subtitle { text-align: center; color: var(--muted); margin-bottom: 3rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+    .plan { background: var(--card); border-radius: 12px; padding: 2rem; border: 1px solid var(--border); }
+    .plan.featured { border-color: var(--accent); position: relative; }
+    .plan.featured::before { content: "MOST POPULAR"; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #fff; font-size: 0.7rem; padding: 4px 12px; border-radius: 12px; font-weight: 700; }
+    .plan h2 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+    .price { font-size: 2rem; font-weight: 700; color: #fff; margin: 1rem 0; }
+    .price span { font-size: 1rem; color: var(--muted); font-weight: 400; }
+    .features { list-style: none; padding: 0; margin: 1.5rem 0; }
+    .features li { padding: 0.4rem 0; color: var(--muted); padding-left: 1.5rem; position: relative; }
+    .features li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+    .cta { display: block; text-align: center; background: var(--accent); color: #fff; padding: 0.8rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 1.5rem; }
+    .cta:hover { opacity: 0.9; }
+    .cta.outline { background: transparent; border: 1px solid var(--accent); color: var(--accent); }
+    .back { display: inline-block; margin-bottom: 1.5rem; color: var(--accent); font-size: 0.9rem; text-decoration: none; }
+    .footer { text-align: center; margin-top: 3rem; color: var(--muted); font-size: 0.9rem; }
+    .footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="/" class="back">&larr; Back to FlowOps</a>
+    <h1>Simple, transparent pricing</h1>
+    <p class="subtitle">No contracts. No hidden fees. Cancel anytime.</p>
+    <div class="grid">
+      <div class="plan">
+        <h2>Starter</h2>
+        <p style="color: var(--muted);">For small courier teams getting started</p>
+        <div class="price">R499 <span>/month</span></div>
+        <ul class="features">
+          <li>Up to 5 drivers</li>
+          <li>500 waybills/month</li>
+          <li>Real-time driver tracking</li>
+          <li>Digital POD (photo + signature)</li>
+          <li>WhatsApp notifications</li>
+          <li>Basic dispatch dashboard</li>
+          <li>Client tracking links</li>
+          <li>Email support</li>
+        </ul>
+        <a href="/" class="cta outline">Start free trial</a>
+      </div>
+      <div class="plan featured">
+        <h2>Professional</h2>
+        <p style="color: var(--muted);">For growing operations that need intelligence</p>
+        <div class="price">R1,499 <span>/month</span></div>
+        <ul class="features">
+          <li>Up to 20 drivers</li>
+          <li>Unlimited waybills</li>
+          <li>Everything in Starter, plus:</li>
+          <li>AI-powered smart dispatch</li>
+          <li>Smart Address Resolution</li>
+          <li>Revenue per driver hour analytics</li>
+          <li>COD collection management</li>
+          <li>Auto-invoicing from POD</li>
+          <li>Client health scoring</li>
+          <li>Route optimisation</li>
+          <li>Priority WhatsApp support</li>
+        </ul>
+        <a href="/" class="cta">Start free trial</a>
+      </div>
+      <div class="plan">
+        <h2>Enterprise</h2>
+        <p style="color: var(--muted);">For established fleets needing full control</p>
+        <div class="price">R3,499 <span>/month</span></div>
+        <ul class="features">
+          <li>Unlimited drivers</li>
+          <li>Unlimited waybills</li>
+          <li>Everything in Professional, plus:</li>
+          <li>Multi-branch support</li>
+          <li>SSO (Okta, Azure AD, Google)</li>
+          <li>API access + webhooks</li>
+          <li>Custom integrations</li>
+          <li>Dedicated account manager</li>
+          <li>SLA guarantee (99.5% uptime)</li>
+          <li>Custom reporting</li>
+          <li>Onboarding + training</li>
+        </ul>
+        <a href="/" class="cta outline">Contact sales</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>All prices exclude VAT. 14-day free trial on all plans. No credit card required to start.</p>
+      <p style="margin-top: 1rem;"><a href="/refund-policy.html">Refund Policy</a> &middot; <a href="/cancellation-policy.html">Cancellation Policy</a> &middot; <a href="/terms-of-service.html">Terms of Service</a> &middot; <a href="/privacy-policy.html">Privacy Policy</a></p>
+    </div>
+  </div>
+</body>
+</html>
