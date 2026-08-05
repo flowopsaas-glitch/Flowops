@@ -355,7 +355,7 @@ export class AlertingService {
           `Your *${co.name}* FlowOps trial has ended and your account is now *locked*.\n\n` +
           `Don't worry — all your data is safe! 🔒\n\n` +
           `To restore access, upgrade to:\n` +
-          `• *Professional* — R19,999/month\n` +
+          `• *Professional* — Custom pricing (based on your region)\n` +
           `• *Enterprise* — Custom pricing\n\n` +
           `Upgrade here: ${this.config.get('APP_URL', 'https://app.flowop.work')}/settings/billing\n\n` +
           `Questions? Reply to this message — we'll help you get back up and running! 🚀`,

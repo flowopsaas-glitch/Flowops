@@ -122,7 +122,7 @@ Most courier companies still manage operations with:
 - **Active Tenants:** Courier companies in South Africa and Zimbabwe
 - **Platform Scale:** 100+ operational features, 300+ PRs shipped
 - **Driver Portal:** Live at driver.flowop.work (PWA, offline-capable)
-- **Pricing:** Professional R19,999/month | Enterprise Custom
+- **Pricing:** Professional Custom (by region) | Enterprise Custom
 - **Free Trial:** 14-day full-access trial for new operators
 
 ---
