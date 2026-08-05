@@ -98,6 +98,14 @@ const FleetMaintenance = lazy(() => import("./pages/FleetMaintenance"));
 const DriverLeaderboard = lazy(() => import("./pages/DriverLeaderboard"));
 const DriversManagement = lazy(() => import("./pages/DriversManagement"));
 const HighRiskQueuePage = lazy(() => import("./pages/HighRiskQueuePage"));
+const AIRouteOptimization = lazy(() => import("./pages/AIRouteOptimization"));
+const DeliveryNotes = lazy(() => import("./pages/DeliveryNotes"));
+const OrderFlowIntegrations = lazy(() => import("./pages/OrderFlowIntegrations"));
+const SmartRouting = lazy(() => import("./pages/SmartRouting"));
+const MarketTrends = lazy(() => import("./pages/MarketTrends"));
+const ElectronicPodPage = lazy(() => import("./pages/ElectronicPod"));
+const LiveTrackingDashboard = lazy(() => import("./pages/LiveTrackingDashboard"));
+const DigitalPaymentsPage = lazy(() => import("./pages/DigitalPayments"));
 const UserRolesPage = lazy(() => import("./pages/UsersRoles"));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
@@ -266,6 +274,14 @@ export default function App() {
               <Route path="/manifests/:id/load-scan" element={<RequirePermission perm="waybillInbox"><LoadScan /></RequirePermission>} />
               <Route path="/routes" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
               <Route path="/route-optimizer" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="Route Optimizer"><RouteOptimizer /></RequireFeature></RequirePermission>} />
+              <Route path="/ai-route-optimization" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="routeOptimization" name="AI Route Optimization"><AIRouteOptimization /></RequireFeature></RequirePermission>} />
+              <Route path="/delivery-notes" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="deliveryNotes" name="Delivery Notes"><DeliveryNotes /></RequireFeature></RequirePermission>} />
+              <Route path="/order-flow" element={<RequirePermission adminOnly><RequireFeature feature="orderFlowIntegration" name="Order Flow Integrations"><OrderFlowIntegrations /></RequireFeature></RequirePermission>} />
+              <Route path="/smart-routing" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="smartRouting" name="Smart Routing"><SmartRouting /></RequireFeature></RequirePermission>} />
+              <Route path="/market-trends" element={<RequirePermission adminOnly><RequireFeature feature="marketTrends" name="Market Trends"><MarketTrends /></RequireFeature></RequirePermission>} />
+              <Route path="/epod" element={<RequirePermission perm="podDeliveries"><RequireFeature feature="epod" name="Electronic POD"><ElectronicPodPage /></RequireFeature></RequirePermission>} />
+              <Route path="/live-tracking" element={<RequirePermission perm="driverDispatch"><RequireFeature feature="liveTracking" name="Live Tracking"><LiveTrackingDashboard /></RequireFeature></RequirePermission>} />
+              <Route path="/digital-payments" element={<RequirePermission perm="invoices"><RequireFeature feature="digitalPayments" name="Digital Payments"><DigitalPaymentsPage /></RequireFeature></RequirePermission>} />
               <Route path="/fleet" element={<RequirePermission perm="driverDispatch"><FleetMaintenance /></RequirePermission>} />
               <Route path="/driver-leaderboard" element={<RequirePermission perm="driverDispatch"><DriverLeaderboard /></RequirePermission>} />
               <Route path="/drivers" element={<RequirePermission perm="driverDispatch"><DriversManagement /></RequirePermission>} />

@@ -70,6 +70,14 @@ import { FleetMaintenanceModule } from './fleet-maintenance/fleet-maintenance.mo
 import { DriverSafetyModule } from './driver-safety/driver-safety.module';
 import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
 import { CarbonModule } from './carbon/carbon.module';
+import { RouteOptimizationModule } from './route-optimization/route-optimization.module';
+import { DeliveryNotesModule } from './delivery-notes/delivery-notes.module';
+import { OrderFlowModule } from './order-flow/order-flow.module';
+import { SmartRoutingModule } from './smart-routing/smart-routing.module';
+import { MarketTrendsModule } from './market-trends/market-trends.module';
+import { EpodModule } from './epod/epod.module';
+import { LiveTrackingModule } from './live-tracking/live-tracking.module';
+import { DigitalPaymentsModule } from './digital-payments/digital-payments.module';
 
 @Module({
   imports: [
@@ -145,6 +153,17 @@ import { CarbonModule } from './carbon/carbon.module';
     DriverSafetyModule,
     LogisticsOpsModule,
     CarbonModule,
+
+    // CLAW Intel — competitive action items (#352–#356 + Detrack/Bringg parity)
+    RouteOptimizationModule,
+    DeliveryNotesModule,
+    OrderFlowModule,
+    SmartRoutingModule,
+    MarketTrendsModule,
+    EpodModule,
+    LiveTrackingModule,
+    DigitalPaymentsModule,
+
     OtpModule,
 
     // Domain modules
