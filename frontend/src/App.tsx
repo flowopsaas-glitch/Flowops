@@ -63,6 +63,10 @@ const CommercialAnalytics = lazy(() => import("./pages/CommercialAnalytics"));
 const FleetIntelligence = lazy(() => import("./pages/FleetIntelligence"));
 const SafetyZones = lazy(() => import("./pages/SafetyZones"));
 const WarehouseManagement = lazy(() => import("./pages/WarehouseManagement"));
+const WmsCrossDocking = lazy(() => import("./pages/wms/CrossDocking"));
+const WmsWavePlanning = lazy(() => import("./pages/wms/WavePlanning"));
+const WmsAISlotting = lazy(() => import("./pages/wms/AISlotting"));
+const WmsBarcodeScan = lazy(() => import("./pages/wms/BarcodeScan"));
 const CarrierManagement = lazy(() => import("./pages/CarrierManagement"));
 const SsoSettings = lazy(() => import("./pages/enterprise/SsoSettings"));
 const DepotsPage        = lazy(() => import("./pages/DepotsPage"));
@@ -306,6 +310,10 @@ export default function App() {
               <Route path="/fleet-intelligence" element={<FleetIntelligence />} />
               <Route path="/safety-zones" element={<SafetyZones />} />
               <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
+              <Route path="/wms/cross-dock" element={<RequireFeature feature="warehouseManagement" name="Cross-Docking"><WmsCrossDocking /></RequireFeature>} />
+              <Route path="/wms/waves" element={<RequireFeature feature="warehouseManagement" name="Wave Planning"><WmsWavePlanning /></RequireFeature>} />
+              <Route path="/wms/slotting" element={<RequireFeature feature="warehouseManagement" name="AI Slotting"><WmsAISlotting /></RequireFeature>} />
+              <Route path="/wms/scan" element={<RequireFeature feature="warehouseManagement" name="Barcode Scan"><WmsBarcodeScan /></RequireFeature>} />
               <Route path="/carriers" element={<RequirePermission perm="rateCards"><CarrierManagement /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />

@@ -23,3 +23,11 @@ export const createCycleCount = (data: any) => api.post('/wms/counts', data);
 export const submitCycleCount = (id: string, data: any) => api.post(`/wms/counts/${id}/submit`, data);
 export const approveCycleCount = (id: string) => api.post(`/wms/counts/${id}/approve`);
 export const getMovements = (filters?: any) => api.get('/wms/movements', { params: filters });
+
+
+
+// ── World-Class WMS Operations (PR #338 endpoints) ───────────────────────
+export const createCrossDock = (data: any) => api.post('/wms/cross-dock', data);
+export const createWave = (data: any) => api.post('/wms/waves', data);
+export const getSlotting = (warehouseId: string) => api.get(`/wms/slotting/${warehouseId}`);
+export const verifyScan = (data: any) => api.post('/wms/scan/verify', data);
