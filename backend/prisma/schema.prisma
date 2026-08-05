@@ -227,6 +227,15 @@ model Company {
   courierOrders         CourierOrder[]
   integrationCredentials IntegrationCredential[]
 
+  // CLAW Intel features
+  routeOptimizations    RouteOptimization[]
+  deliveryNotes         DeliveryNote[]
+  orderFlowIntegrations OrderFlowIntegration[]
+  routePlans            RoutePlan[]
+  electronicPods        ElectronicPod[]
+  liveTrackingSessions  LiveTrackingSession[]
+  digitalPayments       DigitalPayment[]
+
   @@map("companies")
 }
 
@@ -3314,4 +3323,308 @@ model TrackingEvent {
   @@index([waybillId, createdAt])
   @@index([companyId, createdAt])
   @@map("tracking_events")
+}
+
+
+// ─── Route Optimization (AI-powered, Issue #352) ─────────────────────────────
+
+enum RouteOptimizationStatus {
+  PENDING
+  OPTIMIZING
+  COMPLETED
+  FAILED
+}
+
+model RouteOptimization {
+  id          String                  @id @default(cuid())
+  companyId   String
+  company     Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name        String?
+  status      RouteOptimizationStatus @default(PENDING)
+
+  // Input
+  deliveryIds String[]                // IDs of deliveries/waybills to optimize
+  vehicleIds  String[]                // IDs of available vehicles/drivers
+  depot       Json?                   // { lat, lng, address } origin point
+
+  // Output
+  optimizedRoutes Json?               // Array of routes: [{ vehicleId, stops: [{lat, lng, waybillId, eta}], totalDistance, totalTime }]
+  totalDistance   Float?              // km
+  totalDuration   Float?              // minutes
+  savingsPercent  Float?              // % improvement over naive ordering
+
+  // AI metadata
+  modelUsed    String?                // e.g. "groq/llama-3.1-70b"
+  aiInsights   Json?                  // Textual insights from AI about the optimization
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  allocations DeliveryAllocation[]
+
+  @@index([companyId, createdAt])
+  @@map("route_optimizations")
+}
+
+model DeliveryAllocation {
+  id              String   @id @default(cuid())
+  companyId       String
+  optimizationId  String
+  optimization    RouteOptimization @relation(fields: [optimizationId], references: [id], onDelete: Cascade)
+
+  waybillId       String
+  driverId        String?
+  vehicleId       String?
+  sequence        Int               // Order in the route
+  estimatedArrival DateTime?
+  distance        Float?            // km from previous stop
+  status          String  @default("PENDING") // PENDING | ASSIGNED | IN_TRANSIT | COMPLETED
+
+  createdAt       DateTime @default(now())
+
+  @@index([companyId])
+  @@index([optimizationId])
+  @@map("delivery_allocations")
+}
+
+// ─── Dispatcher Notes (Issue #353) ───────────────────────────────────────────
+
+model DeliveryNote {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  waybillId   String?  // Optional link to a specific waybill
+  content     String   // The note text
+  priority    String   @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  category    String?  // INSTRUCTION | ISSUE | UPDATE | GENERAL
+  createdBy   String?  // userId who created the note
+  createdByName String?
+  isResolved  Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, createdAt])
+  @@index([waybillId])
+  @@map("delivery_notes")
+}
+
+// ─── Auto Order Flow Integration (Issue #354) ────────────────────────────────
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  CONFIGURING
+}
+
+enum IntegrationType {
+  SHOPIFY
+  WOOCOMMERCE
+  MAGENTO
+  CUSTOM_API
+  CSV_IMPORT
+  WEBHOOK
+}
+
+model OrderFlowIntegration {
+  id          String            @id @default(cuid())
+  companyId   String
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name        String            // User-friendly name
+  type        IntegrationType
+  status      IntegrationStatus @default(CONFIGURING)
+  config      Json?             // Provider-specific config (endpoints, mapping rules)
+  credentials Json?             // Encrypted credentials (API keys, tokens)
+
+  // Stats
+  lastSyncAt     DateTime?
+  totalOrders    Int @default(0)
+  failedOrders   Int @default(0)
+
+  // Auto-dispatch settings
+  autoDispatch   Boolean @default(false)
+  dispatchRules  Json?   // Rules for automatic assignment (area, driver, time windows)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  syncLogs    OrderSyncLog[]
+
+  @@index([companyId])
+  @@map("order_flow_integrations")
+}
+
+model OrderSyncLog {
+  id              String   @id @default(cuid())
+  integrationId   String
+  integration     OrderFlowIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  companyId       String
+
+  externalOrderId String?
+  waybillId       String? // Created waybill if successful
+  status          String  // SUCCESS | FAILED | SKIPPED
+  errorMessage    String?
+  payload         Json?   // Raw order data from external source
+
+  createdAt       DateTime @default(now())
+
+  @@index([integrationId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("order_sync_logs")
+}
+
+// ─── Smart Routing / Route Planning (Issue #355) ─────────────────────────────
+
+enum RoutePlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model RoutePlan {
+  id              String         @id @default(cuid())
+  companyId       String
+  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name            String?
+  status          RoutePlanStatus @default(DRAFT)
+  vehicleId       String?
+  driverId        String?
+
+  // Route data
+  routeCoordinates Json?         // Array of {lat, lng} waypoints
+  stops            Json?          // Array of {waybillId, lat, lng, address, scheduledTime, serviceTime}
+  totalStops       Int @default(0)
+
+  // Metrics
+  estimatedTime    Float?        // minutes
+  estimatedDistance Float?       // km
+  actualTime       Float?        // minutes (filled on completion)
+  actualDistance    Float?       // km (filled on completion)
+
+  // Scheduling
+  scheduledDate    DateTime?
+  startTime        DateTime?
+  endTime          DateTime?
+  vehicleCapacity  Float?        // kg or volume constraint
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([companyId, scheduledDate])
+  @@index([driverId])
+  @@map("route_plans")
+}
+
+// ─── Real-time Tracking Upgrade + ePOD + Digital Payments (Detrack/Bringg parity) ───
+
+enum EpodStatus {
+  PENDING
+  CAPTURED
+  VERIFIED
+  DISPUTED
+}
+
+model ElectronicPod {
+  id          String     @id @default(cuid())
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  waybillId   String
+  driverId    String?
+  status      EpodStatus @default(PENDING)
+
+  // Proof data
+  signatureUrl   String?  // Cloud URL to signature image
+  photoUrls      String[] // Photos of delivery
+  recipientName  String?
+  recipientId    String?  // ID number of recipient
+  notes          String?
+  geoLat         Float?
+  geoLng         Float?
+  capturedAt     DateTime?
+
+  // Verification
+  verifiedBy     String?
+  verifiedAt     DateTime?
+  disputeReason  String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([companyId, createdAt])
+  @@index([waybillId])
+  @@map("electronic_pods")
+}
+
+model LiveTrackingSession {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  driverId    String
+  vehicleId   String?
+  manifestId  String?
+
+  isActive    Boolean  @default(true)
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+
+  // Real-time data
+  currentLat  Float?
+  currentLng  Float?
+  speed       Float?   // km/h
+  heading     Float?   // degrees
+  lastPingAt  DateTime?
+
+  // Trip stats
+  distanceCovered Float? // km
+  stopsCompleted  Int @default(0)
+  totalStops      Int @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, isActive])
+  @@index([driverId, isActive])
+  @@map("live_tracking_sessions")
+}
+
+model DigitalPayment {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  waybillId   String?
+  driverId    String?
+
+  // Payment details
+  amount      Float
+  currency    String  @default("ZAR")
+  method      String  // CARD | EFT | MOBILE_MONEY | QR_CODE | CASH
+  status      String  @default("PENDING") // PENDING | PROCESSING | SUCCESS | FAILED | REFUNDED
+  reference   String? @unique
+  externalId  String? // Payment gateway reference
+
+  // Payer info
+  payerName   String?
+  payerPhone  String?
+  payerEmail  String?
+
+  // Gateway
+  gateway     String? // PAYSTACK | OZOW | YOCO | MANUAL
+  gatewayResponse Json?
+
+  paidAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, createdAt])
+  @@index([waybillId])
+  @@map("digital_payments")
 }
