@@ -69,6 +69,7 @@ import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence
 import { FleetMaintenanceModule } from './fleet-maintenance/fleet-maintenance.module';
 import { DriverSafetyModule } from './driver-safety/driver-safety.module';
 import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
+import { CarbonModule } from './carbon/carbon.module';
 
 @Module({
   imports: [
@@ -143,6 +144,7 @@ import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
     FleetMaintenanceModule,
     DriverSafetyModule,
     LogisticsOpsModule,
+    CarbonModule,
     OtpModule,
 
     // Domain modules
