@@ -1,0 +1,150 @@
+# FlowOps — VPS Production Override (Elite Host: 1 CPU, 2GB RAM, 25GB SSD)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --build
+#
+# This file extends the base docker-compose.yml with:
+#   - Memory limits tuned for 2GB RAM
+#   - Cloudflare Tunnel sidecar (cloudflared)
+#   - All ports bound to 127.0.0.1 (traffic goes through tunnel only)
+#   - Driver-portal service included
+#   - Automated database backups
+
+name: flowops
+
+services:
+  frontend:
+    restart: always
+    # No host port binding — cloudflared reaches frontend via Docker network.
+    # This avoids the docker-proxy port binding bug on Ubuntu 26.04 kernels.
+    # For local debugging: docker compose exec frontend curl localhost:80/healthz
+    ports: []
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  driver-portal:
+    restart: always
+    ports: []
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  api:
+    restart: always
+    # No host port — traffic flows through frontend nginx proxy
+    ports: []
+    environment:
+      NODE_ENV: production
+      APP_URL: https://app.flowop.work
+      CORS_ORIGINS: https://app.flowop.work,https://driver.flowop.work,https://www.flowop.work
+      API_PUBLIC_URL: https://api.flowop.work/api/v1
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 384M
+
+  postgres:
+    restart: always
+    ports: []
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 192M
+    # Tuned for 2GB RAM VPS — conservative shared_buffers
+    command: >
+      postgres
+        -c shared_buffers=128MB
+        -c effective_cache_size=256MB
+        -c work_mem=4MB
+        -c maintenance_work_mem=64MB
+        -c max_connections=50
+        -c wal_buffers=4MB
+        -c checkpoint_completion_target=0.9
+        -c random_page_cost=1.1
+
+  redis:
+    restart: always
+    ports: []
+    # Cap Redis memory — evicts LRU keys if hit
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+        reservations:
+          memory: 32M
+
+  # ── Cloudflare Tunnel ────────────────────────────────────────────────────
+  # Routes traffic from Cloudflare edge to local services without exposing ports.
+  # Requires: /etc/cloudflared/config.yml + credentials JSON on the host.
+  # Uses Docker service names (frontend:80, driver-portal:80) since we no longer
+  # expose host ports — cloudflared talks to containers over the Docker network.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - /etc/cloudflared:/etc/cloudflared:ro
+    networks: [flowops-net]
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  # ── Automated database backup ────────────────────────────────────────────
+  postgres-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [flowops-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - postgres-backups:/backups
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-flowops}
+      POSTGRES_DB: ${POSTGRES_DB:-flowops}
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+    # Dump every 6 hours; retain last 28 files (7 days x 4/day).
+    command: >
+      sh -c '
+        set -e
+        echo "Backup service started. Dumping every 6h, retaining 28 files."
+        while true; do
+          FILE="/backups/flowops_$$(date +%Y%m%d_%H%M%S).sql.gz"
+          echo "Dumping to $$FILE ..."
+          pg_dump -h postgres -U $$POSTGRES_USER $$POSTGRES_DB | gzip > "$$FILE"
+          echo "Dump complete: $$(du -sh $$FILE | cut -f1)"
+          ls -t /backups/*.sql.gz 2>/dev/null | tail -n +29 | xargs -r rm -v
+          echo "Sleeping 6h..."
+          sleep 21600
+        done
+      '
+
+volumes:
+  postgres-backups:
+    driver: local

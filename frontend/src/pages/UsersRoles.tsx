@@ -4,6 +4,12 @@ import {
   Eye, EyeOff, Settings, Activity, Search, Command, Filter
 } from 'lucide-react';
 import { api } from '../api/client';
+import {
+  ALL_TENANT_NAV_PERMISSION_KEYS,
+  TENANT_NAV_PERMISSION_LABELS,
+  normalizeTenantNavPermissions,
+  buildRoleDefaultTenantNavPermissions,
+} from '../lib/tenantUserPermissions';
 
 export default function UsersRoles() {
   const [users, setUsers] = useState([]);
@@ -72,14 +78,42 @@ export default function UsersRoles() {
     } finally { setCreating(false); }
   };
 
-  // 🚀 PERMISSION ENGINE: Real-time patch to database
-  const handleTogglePermission = async (userId: number, currentPermissions: any, key: string) => {
-    const updatedPermissions = { ...currentPermissions, [key]: !currentPermissions[key] };
+  // 🚀 PERMISSION ENGINE: writes the FULL canonical nav-permission set so the
+  // toggles here actually drive the sidebar + route guards (RequirePermission /
+  // AppLayout both read these exact keys from tenantUserPermissions).
+  const handleTogglePermission = async (user: any, key: string) => {
+    const current = normalizeTenantNavPermissions(user.permissions, user.role);
+    const updatedPermissions = { ...current, [key]: !current[key] };
     try {
-      await api.patch(`/users/${userId}`, { permissions: updatedPermissions });
-      fetchUsers(); 
-    } catch (err) { 
-      console.error("Permission update failed on FlowOps ledger", err); 
+      await api.patch(`/users/${user.id}`, { permissions: updatedPermissions });
+      fetchUsers();
+    } catch (err) {
+      console.error("Permission update failed on FlowOps ledger", err);
+    }
+  };
+
+  // Bulk: revoke everything except the dashboard (so the user can still log in).
+  const handleRevokeAll = async (user: any) => {
+    const cleared = Object.fromEntries(
+      ALL_TENANT_NAV_PERMISSION_KEYS.map((k) => [k, k === "dashboard"]),
+    );
+    try {
+      await api.patch(`/users/${user.id}`, { permissions: cleared });
+      fetchUsers();
+    } catch (err) {
+      console.error("Revoke-all failed", err);
+    }
+  };
+
+  // Bulk: reset to the sensible defaults for the user's role / department.
+  const handleResetToRole = async (user: any) => {
+    try {
+      await api.patch(`/users/${user.id}`, {
+        permissions: buildRoleDefaultTenantNavPermissions(user.role),
+      });
+      fetchUsers();
+    } catch (err) {
+      console.error("Reset-to-role failed", err);
     }
   };
 
@@ -181,42 +215,55 @@ export default function UsersRoles() {
                 </div>
 
                 {/* --- BACK: THE PERMISSION MATRIX (Flip-Page) --- */}
-                <div className="absolute inset-0 backface-hidden [transform:rotateX(180deg)] bg-[#0b1530] border-2 border-blue-600/50 rounded-[48px] p-10 shadow-[0_0_80px_rgba(37,99,235,0.15)]">
-                  <div className="flex justify-between items-center mb-8">
+                <div className="absolute inset-0 backface-hidden [transform:rotateX(180deg)] bg-[#0b1530] border-2 border-blue-600/50 rounded-[48px] p-6 shadow-[0_0_80px_rgba(37,99,235,0.15)]">
+                  <div className="flex justify-between items-center mb-4">
                     <div className="space-y-1">
                       <h4 className="text-white font-black text-2xl tracking-tighter italic">ACCESS MATRIX</h4>
-                      <p className="text-blue-500 text-[10px] font-bold uppercase tracking-[0.2em]">FlowOps Security Protocol</p>
+                      <p className="text-blue-500 text-[10px] font-bold uppercase tracking-[0.2em]">Sidebar &amp; page visibility · {user.role}</p>
                     </div>
                     <button onClick={() => setFlippedId(null)} className="p-3 hover:bg-white/10 rounded-full text-slate-400 transition-colors">
                       <X size={24} />
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    {['dashboard', 'shipments', 'billing', 'dispatch', 'OCR_inbox', 'analytics'].map((module) => (
-                      <button 
-                        key={module}
-                        onClick={() => handleTogglePermission(user.id, user.permissions || {}, module)}
-                        className={`p-5 rounded-[22px] border-2 transition-all flex items-center justify-between group/btn ${
-                          user.permissions?.[module] 
-                            ? 'bg-blue-600 border-blue-400 shadow-lg' 
-                            : 'bg-black/40 border-white/5 opacity-40 hover:opacity-100 hover:border-white/20'
-                        }`}
-                      >
-                        <span className={`text-[12px] font-black uppercase tracking-tighter ${user.permissions?.[module] ? 'text-white' : 'text-slate-500'}`}>
-                          {module.replace('_', ' ')}
-                        </span>
-                        {user.permissions?.[module] ? <Eye size={18} className="text-white" /> : <EyeOff size={18} className="text-slate-700" />}
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2.5 max-h-[150px] overflow-y-auto pr-2 custom-scrollbar">
+                    {ALL_TENANT_NAV_PERMISSION_KEYS.map((key) => {
+                      const on = normalizeTenantNavPermissions(user.permissions, user.role)[key];
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => handleTogglePermission(user, key)}
+                          title={TENANT_NAV_PERMISSION_LABELS[key]}
+                          className={`p-3 rounded-2xl border-2 transition-all flex items-center justify-between gap-2 group/btn ${
+                            on
+                              ? 'bg-blue-600 border-blue-400 shadow-lg'
+                              : 'bg-black/40 border-white/5 opacity-50 hover:opacity-100 hover:border-white/20'
+                          }`}
+                        >
+                          <span className={`truncate text-left text-[11px] font-black uppercase tracking-tight ${on ? 'text-white' : 'text-slate-500'}`}>
+                            {TENANT_NAV_PERMISSION_LABELS[key]}
+                          </span>
+                          {on ? <Eye size={15} className="shrink-0 text-white" /> : <EyeOff size={15} className="shrink-0 text-slate-700" />}
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  <div className="mt-10 flex gap-4">
-                    <button className="flex-1 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 py-4 rounded-2xl text-[11px] font-black uppercase transition-all tracking-widest">
+                  <div className="mt-5 flex gap-3">
+                    <button
+                      onClick={() => handleRevokeAll(user)}
+                      className="flex-1 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 py-3.5 rounded-2xl text-[11px] font-black uppercase transition-all tracking-widest"
+                    >
                       REVOKE ALL
                     </button>
-                    <button onClick={() => setFlippedId(null)} className="flex-[2] bg-white text-black py-4 rounded-2xl text-[11px] font-black uppercase shadow-2xl transition-all hover:bg-blue-500 hover:text-white">
-                      COMMIT WORKSPACE CHANGES
+                    <button
+                      onClick={() => handleResetToRole(user)}
+                      className="flex-1 bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-black border border-amber-500/20 py-3.5 rounded-2xl text-[11px] font-black uppercase transition-all tracking-widest"
+                    >
+                      RESET TO {String(user.role || 'ROLE').toUpperCase()}
+                    </button>
+                    <button onClick={() => setFlippedId(null)} className="flex-[1.6] bg-white text-black py-3.5 rounded-2xl text-[11px] font-black uppercase shadow-2xl transition-all hover:bg-blue-500 hover:text-white">
+                      DONE
                     </button>
                   </div>
                 </div>

@@ -1,9 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EventsGateway } from '../gateway/events.gateway';
+import { DriverSafetyService } from '../driver-safety/driver-safety.service';
 
 @Injectable()
 export class DriverPortalService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(DriverPortalService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+    private gateway: EventsGateway,
+    private safety: DriverSafetyService,
+  ) {}
 
   /**
    * Returns all active jobs for a driver as a flat array.
@@ -52,39 +62,275 @@ export class DriverPortalService {
       notes: c.notes,
       scheduledAt: c.scheduledAt,
       createdAt: c.createdAt,
+      // ── Backward-compatible aliases ──────────────────────────────────────
+      waybillNumber: `COL-${c.id.slice(-6).toUpperCase()}`,
+      receiverName:  c.clientName ?? 'Client',
+      receiverPhone: c.clientPhone,
+      destination:   c.pickupAddress,
     }));
 
     const deliveryJobs = shipments.map(s => {
       const wb = wbMap[s.waybillId] ?? {};
+      const tnum = (wb as any).trackingNumber ?? s.id;
+      const rname = (wb as any).recipientName ?? 'Recipient';
+      const rphone = (wb as any).recipientPhone ?? null;
+      const raddress = (wb as any).recipientAddress ?? null;
       return {
         id: s.id,
         type: 'delivery',
         status: s.status,
-        trackingNumber: (wb as any).trackingNumber ?? s.id,
-        recipientName: (wb as any).recipientName ?? 'Recipient',
-        recipientPhone: (wb as any).recipientPhone,
-        recipientAddress: (wb as any).recipientAddress,
+        // Canonical fields
+        trackingNumber: tnum,
+        recipientName:  rname,
+        recipientPhone: rphone,
+        recipientAddress: raddress,
         recipientLat: (wb as any).recipientLat ?? s.currentLat,
         recipientLng: (wb as any).recipientLng ?? s.currentLng,
-        senderName: (wb as any).senderName,
+        senderName:    (wb as any).senderName,
         senderAddress: (wb as any).senderAddress,
-        weight: (wb as any).weight,
+        weight:      (wb as any).weight,
         totalAmount: (wb as any).totalAmount,
-        codAmount: (wb as any).codAmount,
-        codCollected: (wb as any).codCollected,
-        waybillId: s.waybillId,
-        createdAt: s.createdAt,
+        codAmount:   (wb as any).codAmount,
+        codCollected:(wb as any).codCollected,
+        waybillId:   s.waybillId,
+        createdAt:   s.createdAt,
+        // ── Backward-compatible aliases used by the standalone driver portal ──
+        waybillNumber: tnum,          // Dashboard reads w.waybillNumber
+        receiverName:  rname,         // Dashboard reads w.receiverName
+        receiverPhone: rphone,        // Dashboard reads w.receiverPhone
+        destination:   raddress,      // Dashboard reads w.destination
       };
     });
 
-    return [...collectionJobs, ...deliveryJobs];
+    // ── Linehaul manifests assigned to this driver ──────────────────────────
+    const manifests = await this.prisma.manifest.findMany({
+      where: { driverId, dispatched: false },
+      include: {
+        branch: { select: { name: true, address: true } },
+        _count: { select: { waybills: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const linehaulJobs = manifests.map(m => ({
+      id: m.id,
+      type: 'linehaul',
+      status: 'IN_TRANSIT',
+      trackingNumber: m.code,
+      recipientName: m.branch?.name ?? 'Destination Hub',
+      recipientPhone: null,
+      recipientAddress: m.branch?.address ?? 'Inter-branch transfer',
+      recipientLat: null,
+      recipientLng: null,
+      senderName: 'FlowOps Hub',
+      senderAddress: null,
+      weight: null,
+      totalAmount: null,
+      codAmount: null,
+      codCollected: false,
+      waybillId: null,
+      manifestId: m.id,
+      manifestCode: m.code,
+      parcelCount: m._count.waybills,
+      destinationBranch: m.branch?.name ?? 'Unknown Branch',
+      createdAt: m.createdAt,
+      // Backward-compatible aliases
+      waybillNumber: m.code,
+      receiverName: m.branch?.name ?? 'Destination Hub',
+      receiverPhone: null,
+      destination: m.branch?.address ?? 'Inter-branch transfer',
+    }));
+
+    return [...collectionJobs, ...deliveryJobs, ...linehaulJobs];
   }
 
-  async updateGps(driverId: string, lat: number, lng: number) {
-    return this.prisma.driver.update({
+  /**
+   * POST /driver-portal/manifest/:id/deliver — driver confirms linehaul arrival
+   * at the destination branch. Marks manifest as dispatched and updates all
+   * waybills to COLLECTED (received at destination hub, ready for last-mile).
+   */
+  async confirmLinehaulDelivery(manifestId: string, driverId: string, companyId: string) {
+    const manifest = await this.prisma.manifest.findFirst({
+      where: { id: manifestId, driverId, dispatched: false },
+      include: { waybills: true, branch: { select: { name: true } } },
+    });
+
+    if (!manifest) {
+      throw new Error('Manifest not found, already delivered, or not assigned to you');
+    }
+
+    // Mark manifest as delivered
+    await this.prisma.manifest.update({
+      where: { id: manifestId },
+      data: { dispatched: true, dispatchedAt: new Date() },
+    });
+
+    // Update all waybills in the manifest to AT_DESTINATION_HUB (arrived at receiving branch)
+    const waybillIds = manifest.waybills.map((mw: any) => mw.waybillId);
+    if (waybillIds.length > 0) {
+      await this.prisma.waybill.updateMany({
+        where: { id: { in: waybillIds } },
+        data: { status: 'AT_DESTINATION_HUB' },
+      });
+
+      // Auto-reassign each waybill to the nearest available driver at the destination branch
+      for (const wbId of waybillIds) {
+        const availableDriver = await this.prisma.driver.findFirst({
+          where: { companyId, isActive: true, status: 'AVAILABLE', id: { not: driverId } },
+          orderBy: { lastSeen: 'desc' },
+        });
+        if (availableDriver) {
+          const existingShipment = await this.prisma.shipment.findFirst({ where: { waybillId: wbId, companyId } });
+          if (existingShipment) {
+            await this.prisma.shipment.update({ where: { id: existingShipment.id }, data: { driverId: availableDriver.id, status: 'PENDING' } });
+          } else {
+            await this.prisma.shipment.create({ data: { waybillId: wbId, companyId, driverId: availableDriver.id, status: 'PENDING' } });
+          }
+        }
+      }
+    }
+
+    this.logger.log(
+      `Linehaul ${manifest.code} delivered by driver ${driverId} to branch ${manifest.branch?.name ?? manifestId}. ` +
+      `${waybillIds.length} waybills marked COLLECTED.`,
+    );
+
+    return {
+      success: true,
+      manifestCode: manifest.code,
+      destinationBranch: manifest.branch?.name ?? 'Unknown',
+      waybillsDelivered: waybillIds.length,
+    };
+  }
+
+  async updateGps(driverId: string, lat: number, lng: number, speed?: number) {
+    const driver = await this.prisma.driver.update({
       where: { id: driverId },
       data: { lastLat: lat, lastLng: lng, lastSeen: new Date() },
     });
+
+    // ── AI SAFETY SUPERVISOR: Check crime hotspots on every GPS update ────
+    // Non-blocking — safety alerts fire asynchronously without slowing GPS response.
+    void this.safety.checkPosition(
+      driverId, driver.companyId, lat, lng, speed, driver.name,
+    ).catch((err) => {
+      this.logger.warn(`Safety check failed (non-blocking): ${err?.message}`);
+    });
+
+    return driver;
+  }
+
+  /**
+   * confirmCollection — driver marks a collection as picked up.
+   *
+   * Lifecycle:
+   * 1. Marks Collection status → COLLECTED + pickedUpAt = now
+   * 2. Auto-creates a Waybill from the collection data
+   * 3. Auto-creates a Shipment linking the waybill to the same driver (IN_TRANSIT)
+   * 4. Returns the new waybill (so the driver portal can navigate to it for delivery/POD)
+   */
+  async confirmCollection(
+    collectionId: string,
+    driverId: string,
+    companyId: string,
+    body: { parcelCount?: number; notes?: string },
+  ) {
+    // 1. Find and validate the collection
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, driverId, companyId },
+    });
+    if (!collection) {
+      throw new Error('Collection not found or not assigned to this driver');
+    }
+    if (collection.status === 'COLLECTED') {
+      throw new Error('This collection has already been confirmed');
+    }
+
+    // 2. Mark as COLLECTED
+    await this.prisma.collection.update({
+      where: { id: collectionId },
+      data: {
+        status: 'COLLECTED',
+        pickedUpAt: new Date(),
+        notes: body.notes ? `${collection.notes ?? ''}\nDriver: ${body.notes}`.trim() : collection.notes,
+      },
+    });
+
+    // 3. Auto-create a Waybill from the collection data
+    const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
+    const waybill = await this.prisma.waybill.create({
+      data: {
+        trackingNumber,
+        companyId,
+        status: 'IN_TRANSIT',
+        senderName: collection.clientName,
+        senderPhone: collection.clientPhone,
+        senderAddress: collection.pickupAddress,
+        recipientName: collection.clientName, // same client — they'll update recipient on dispatch
+        recipientPhone: collection.clientPhone,
+        recipientAddress: collection.pickupAddress, // placeholder until dispatch sets delivery address
+        weight: 0,
+        totalAmount: 0,
+        description: `Collection pickup — ${body.parcelCount ?? 1} parcel(s). ${body.notes ?? ''}`.trim(),
+      },
+    });
+
+    // 4. Auto-create Shipment → AI auto-assigns to the best available driver
+    // Logic: if the collecting driver is AVAILABLE/ON_ROUTE, assign to them
+    // (they already have the parcel). Otherwise, find the nearest available driver.
+    let assignedDriverId = driverId; // default: same driver who collected
+
+    try {
+      const collectingDriver = await this.prisma.driver.findUnique({
+        where: { id: driverId },
+        select: { status: true },
+      });
+
+      // If the collecting driver is already on another route or offline,
+      // AI finds the best alternative
+      if (collectingDriver?.status === 'OFFLINE') {
+        const availableDrivers = await this.prisma.driver.findMany({
+          where: { companyId, isActive: true, status: 'AVAILABLE' },
+          select: { id: true, name: true },
+          take: 1,
+        });
+        if (availableDrivers.length > 0) {
+          assignedDriverId = availableDrivers[0].id;
+          this.logger.log(`AI: Collecting driver offline → reassigned to ${availableDrivers[0].name}`);
+        }
+      }
+    } catch { /* fallback: keep the collecting driver */ }
+
+    await this.prisma.shipment.create({
+      data: {
+        waybillId: waybill.id,
+        companyId,
+        driverId: assignedDriverId,
+        status: 'IN_TRANSIT',
+      },
+    });
+
+    this.logger.log(`Collection ${collectionId} confirmed → Waybill ${trackingNumber} created → AI-assigned to driver ${assignedDriverId}`);
+
+    // 5. Emit real-time update to dispatch board
+    try {
+      this.gateway.emitToCompany(companyId, 'collection-confirmed', {
+        collectionId,
+        waybillId: waybill.id,
+        trackingNumber,
+        driverId: assignedDriverId,
+        aiAssigned: assignedDriverId !== driverId,
+      });
+    } catch { /* best-effort */ }
+
+    return {
+      success: true,
+      collection: { id: collectionId, status: 'COLLECTED' },
+      waybill: { id: waybill.id, trackingNumber, status: 'IN_TRANSIT' },
+      assignedDriverId,
+      aiAssigned: assignedDriverId !== driverId,
+      message: `Collected! Waybill ${trackingNumber} created and AI-assigned for delivery.`,
+    };
   }
 
   async recordPod(body: {
@@ -94,7 +340,7 @@ export class DriverPortalService {
     recipientName?: string;
     notes?: string;
   }) {
-    return this.prisma.waybill.update({
+    const updated = await this.prisma.waybill.update({
       where: { id: body.waybillId },
       data: {
         status: 'DELIVERED',
@@ -103,12 +349,115 @@ export class DriverPortalService {
         podRecipient: body.recipientName,
       },
     });
+
+    // ── Update the linked Shipment to DELIVERED ─────────────────────────
+    // The Shipment model has its own status field. Without this update, the
+    // Shipments page keeps showing IN_TRANSIT even after POD is captured.
+    await this.prisma.shipment.updateMany({
+      where: { waybillId: body.waybillId },
+      data: { status: 'DELIVERED', deliveredAt: new Date() },
+    });
+
+    // ── Close the loop ───────────────────────────────────────────────────
+    // A field POD is a real DELIVERED event. Mirror the office delivery path:
+    // notify the customer, request a rating, and live-refresh the dispatch
+    // board. All best-effort — none of this can break the POD write itself.
+    void this.notifications.notifyWaybillStatus(updated as any);
+    void this.notifications.sendRatingRequest(updated as any);
+    try {
+      this.gateway.emitShipmentUpdate(updated.companyId, {
+        waybillId: updated.id,
+        trackingNumber: updated.trackingNumber,
+        status: 'DELIVERED',
+        source: 'driver-pod',
+      });
+    } catch (err: any) {
+      this.logger.warn(`POD realtime emit failed: ${err?.message ?? err}`);
+    }
+
+    return updated;
   }
 
-  async getMessages(driverId: string, limit = 50, _skip = 0) {
-    // Return empty array until a proper chat system is wired up.
-    // The driver portal handles this gracefully and shows an empty chat.
-    void driverId; void limit;
-    return [];
+  async getMessages(driverId: string, limit = 50, skip = 0) {
+    const msgs = await this.prisma.driverChatMessage.findMany({
+      where: { driverId },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+      skip,
+    });
+    return msgs;
+  }
+
+  async sendMessage(driverId: string, companyId: string, message: string, senderType = 'driver', attachmentUrl?: string, attachmentType?: string) {
+    return this.prisma.driverChatMessage.create({
+      data: { driverId, companyId, message, senderType, attachmentUrl, attachmentType },
+    });
+  }
+
+  async markRead(id: string) {
+    // The driver portal frontend passes the driverId (not a messageId) to this
+    // endpoint. Detect which case we're in: if the id matches a driver record,
+    // bulk-mark all unread dispatch messages for that driver as read.
+    const driver = await this.prisma.driver.findUnique({ where: { id }, select: { id: true } });
+    if (driver) {
+      const result = await this.prisma.driverChatMessage.updateMany({
+        where: { driverId: id, senderType: 'dispatch', readAt: null },
+        data: { readAt: new Date() },
+      });
+      return { ok: true, marked: result.count };
+    }
+    // Fallback: treat as a single messageId (original behavior)
+    return this.prisma.driverChatMessage.update({
+      where: { id },
+      data: { readAt: new Date() },
+    });
+  }
+
+  /** Typing state kept in-memory (ephemeral — no DB write needed) */
+  private typingMap = new Map<string, { isTyping: boolean; updatedAt: Date }>();
+
+  setTyping(driverId: string, isTyping: boolean) {
+    this.typingMap.set(driverId, { isTyping, updatedAt: new Date() });
+    return { ok: true };
+  }
+
+  getTypingStatus(driverId: string) {
+    const entry = this.typingMap.get(driverId);
+    if (!entry) return { isTyping: false };
+    // Expire typing status after 4 s
+    const expired = (Date.now() - entry.updatedAt.getTime()) > 4000;
+    return { isTyping: expired ? false : entry.isTyping };
+  }
+
+  /** Dispatch-side: list drivers with their most recent message + unread count */
+  async getDriverConversations(companyId: string) {
+    const drivers = await this.prisma.driver.findMany({
+      where: { companyId, isActive: true },
+      select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
+    });
+
+    const convos = await Promise.all(drivers.map(async d => {
+      const unread = await this.prisma.driverChatMessage.count({
+        where: { driverId: d.id, senderType: 'driver', readAt: null },
+      });
+      const last = await this.prisma.driverChatMessage.findFirst({
+        where: { driverId: d.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+    }));
+
+    return convos.sort((a, b) => {
+      if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
+      if (a.lastMessageAt && b.lastMessageAt) return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
+      return 0;
+    });
+  }
+
+  /** Dispatch sends a message to a specific driver */
+  async dispatchSend(driverId: string, companyId: string, message: string) {
+    return this.prisma.driverChatMessage.create({
+      data: { driverId, companyId, message, senderType: 'dispatch' },
+    });
   }
 }

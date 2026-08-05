@@ -2,6 +2,7 @@ import {
   Controller, Post, Get, Body, Req, UseGuards, HttpCode, HttpStatus, Query,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -17,15 +18,20 @@ export class AuthController {
 
   /** POST /api/v1/auth/login  — tenant user login */
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Tenant login' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  login(@Body() dto: LoginDto, @Req() req: any) {
+    return this.authService.login(dto, {
+      ip: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   /** POST /api/v1/auth/register  — request a new tenant workspace */
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   @ApiOperation({ summary: 'Request tenant workspace (creates ApprovalRequest)' })
   register(@Body() dto: RegisterDto) {
@@ -42,6 +48,7 @@ export class AuthController {
 
   /** POST /api/v1/auth/refresh  — rotate access + refresh tokens */
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate token pair using refresh token' })
@@ -64,18 +71,26 @@ export class AuthController {
    * After patching the bundle's base URL to localhost:3000 this path is called.
    */
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('driver-portal/login')
-  driverPortalLogin(@Body() body: { phone: string; pin: string }) {
-    return this.authService.driverLogin(body.phone, body.pin);
+  driverPortalLogin(@Body() body: { phone: string; pin: string }, @Req() req: any) {
+    return this.authService.driverLogin(body.phone, body.pin, {
+      ip: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   /**
    * POST /api/v1/auth/driver-login  — driver portal login (phone + PIN).
    */
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('driver-login')
-  driverLogin(@Body() dto: { phone: string; pin: string }) {
-    return this.authService.driverLogin(dto.phone, dto.pin);
+  driverLogin(@Body() dto: { phone: string; pin: string }, @Req() req: any) {
+    return this.authService.driverLogin(dto.phone, dto.pin, {
+      ip: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   /**
@@ -86,6 +101,7 @@ export class AuthController {
    * so the frontend reads: apiResponse.data.access_token
    */
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('owner-login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Platform owner login' })
@@ -95,6 +111,7 @@ export class AuthController {
 
   /** POST /api/v1/auth/owner-refresh */
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('owner-refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate owner token pair' })
@@ -134,6 +151,7 @@ export class AuthController {
    * Sends a password-reset email. Always returns 200 (no user enumeration).
    */
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset email' })
@@ -146,6 +164,7 @@ export class AuthController {
    * Resets the password using the token from the email.
    */
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using token from email' })

@@ -166,6 +166,8 @@ export class PaystackService {
 
       case 'subscription.create':
         this.logger.log(`Subscription created: ${data.subscription_code}`);
+        // Promote the company's plan based on Paystack plan code
+        await this.handleSubscriptionCreated(data);
         break;
 
       case 'subscription.not_renew':
@@ -202,6 +204,204 @@ export class PaystackService {
       });
       this.logger.log(`Invoice ${payment.invoiceId} marked PAID via webhook`);
     }
+
+    // If this charge is tied to a Paystack subscription plan, promote company.plan
+    const planCode = tx.plan?.plan_code as string | undefined;
+    if (planCode && payment?.companyId) {
+      await this.promotePlanByCode(planCode, payment.companyId);
+    }
+  }
+
+  private async handleSubscriptionCreated(data: any) {
+    const planCode = data.plan?.plan_code as string | undefined;
+    const email    = data.customer?.email as string | undefined;
+    if (!planCode || !email) return;
+
+    const company = await this.prisma.company.findFirst({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
+    if (company) await this.promotePlanByCode(planCode, company.id);
+  }
+
+  /** Map a Paystack plan code → internal plan name and persist it. */
+  private async promotePlanByCode(planCode: string, companyId: string) {
+    const planMap: Record<string, string> = {
+      'PLN_l3kobthzahnkpf3': 'professional',
+      'PLN_9at9kn2ra8jtae0': 'enterprise',
+    };
+    const plan = planMap[planCode];
+    if (!plan) return;
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { plan, trialEndsAt: null }, // clear trial — they're now on a paid plan
+    });
+    this.logger.log(`Company ${companyId} promoted to plan '${plan}' via webhook`);
+  }
+
+  // ── Subscription checkout (first payment → creates recurring subscription) ──
+
+  /**
+   * Initialize a Paystack transaction that ALSO creates a subscription.
+   *
+   * How it works with Paystack:
+   *   1. We call POST /transaction/initialize with a `plan` code in the body
+   *   2. Paystack shows the customer a checkout page
+   *   3. On successful first charge → Paystack auto-creates a subscription
+   *   4. We get a `charge.success` webhook + `subscription.create` webhook
+   *   5. Both promote the company's plan via promotePlanByCode()
+   *
+   * This is the correct flow for NEW subscribers who don't yet have an
+   * authorization code (card on file). For existing subscribers who want
+   * to change plans, use createSubscription() with their authorization.
+   */
+  async initializeSubscriptionCheckout(params: {
+    email: string;
+    companyId: string;
+    planCode: string;        // e.g. 'PLN_l3kobthzahnkpf3'
+    callbackUrl?: string;    // where Paystack redirects after payment
+  }) {
+    if (!this.secretKey) {
+      return {
+        configured: false,
+        message:
+          'Paystack is not configured. ' +
+          'Set PAYSTACK_SECRET_KEY in your environment to enable payments. ' +
+          'Contact support@flowop.work for manual activation.',
+      };
+    }
+
+    const reference = `FO-SUB-${uuid().split('-')[0].toUpperCase()}`;
+
+    // Map plan code to internal name + price for the Payment record
+    const planMap: Record<string, { name: string; amountZar: number }> = {
+      'PLN_l3kobthzahnkpf3': { name: 'professional', amountZar: 19999 },
+      'PLN_9at9kn2ra8jtae0': { name: 'enterprise', amountZar: 100000 },
+    };
+    const planInfo = planMap[params.planCode];
+    if (!planInfo) throw new BadRequestException(`Invalid plan code: ${params.planCode}`);
+
+    const payload: any = {
+      email: params.email,
+      amount: planInfo.amountZar * 100, // Paystack expects kobo (cents)
+      reference,
+      plan: params.planCode, // ← THIS makes Paystack auto-create a subscription on success
+      callback_url: params.callbackUrl,
+      metadata: {
+        companyId: params.companyId,
+        planCode: params.planCode,
+        planName: planInfo.name,
+        custom_fields: [
+          { display_name: 'Company', variable_name: 'companyId', value: params.companyId },
+          { display_name: 'Plan', variable_name: 'planName', value: planInfo.name },
+        ],
+      },
+    };
+
+    const { data } = await axios.post(`${PAYSTACK_BASE}/transaction/initialize`, payload, {
+      headers: this.headers,
+    });
+
+    if (!data.status) throw new BadRequestException(data.message);
+
+    // Record the pending payment
+    await this.prisma.payment.create({
+      data: {
+        reference,
+        amount: planInfo.amountZar,
+        currency: 'ZAR',
+        description: `FlowOps ${planInfo.name.charAt(0).toUpperCase() + planInfo.name.slice(1)} subscription`,
+        customerEmail: params.email,
+        companyId: params.companyId,
+        status: 'PENDING',
+      },
+    });
+
+    this.logger.log(
+      `Subscription checkout initialized: ${params.email} → ${planInfo.name} (ref: ${reference})`,
+    );
+
+    return {
+      reference,
+      authorizationUrl: data.data.authorization_url,
+      accessCode: data.data.access_code,
+      planName: planInfo.name,
+    };
+  }
+
+  // ── Verify & activate subscription after callback ────────────────────
+
+  /**
+   * Called when Paystack redirects back to the callback URL with ?reference=xxx.
+   * Verifies the transaction AND activates the subscription (plan promotion).
+   *
+   * Returns a rich result object suitable for the frontend callback page.
+   */
+  async verifyAndActivateSubscription(reference: string) {
+    if (!this.secretKey) {
+      throw new BadRequestException('Paystack is not configured');
+    }
+
+    const { data } = await axios.get(
+      `${PAYSTACK_BASE}/transaction/verify/${reference}`,
+      { headers: this.headers },
+    );
+
+    if (!data.status) throw new BadRequestException(data.message);
+
+    const tx = data.data;
+    const success = tx.status === 'success';
+
+    // Update payment record
+    await this.prisma.payment.updateMany({
+      where: { reference },
+      data: {
+        status: success ? 'SUCCESS' : 'FAILED',
+        paystackReference: tx.reference,
+        paystackChannel: tx.channel,
+        customerEmail: tx.customer?.email,
+        customerName: tx.customer?.first_name
+          ? `${tx.customer.first_name} ${tx.customer.last_name || ''}`.trim()
+          : undefined,
+        paidAt: success ? new Date() : undefined,
+        webhookPayload: tx,
+      },
+    });
+
+    if (success) {
+      // Promote the company plan
+      const payment = await this.prisma.payment.findFirst({ where: { reference } });
+      if (payment?.companyId) {
+        const planCode = tx.plan?.plan_code || (tx.metadata?.planCode as string);
+        if (planCode) {
+          await this.promotePlanByCode(planCode, payment.companyId);
+        }
+
+        // Re-activate the company if it was suspended (trial expired)
+        await this.prisma.company.update({
+          where: { id: payment.companyId },
+          data: { isActive: true },
+        });
+      }
+
+      return {
+        success: true,
+        reference,
+        amount: tx.amount / 100,
+        currency: tx.currency || 'ZAR',
+        planName: tx.plan?.name || tx.metadata?.planName || 'Professional',
+        customerEmail: tx.customer?.email,
+        paidAt: new Date().toISOString(),
+        message: 'Payment successful! Your plan has been upgraded.',
+      };
+    }
+
+    return {
+      success: false,
+      reference,
+      message: tx.gateway_response || 'Payment was not successful. Please try again.',
+      status: tx.status,
+    };
   }
 
   // ── Subscriptions ─────────────────────────────────────────────────────
@@ -210,8 +410,8 @@ export class PaystackService {
    * Subscribe a customer to a recurring Paystack plan.
    *
    * Active plans (Flowops Holdings, Test Mode):
-   *   professional → PLN_l3kobthzahnkpf3 (ZAR 14,999 / month)
-   *   enterprise   → PLN_9at9kn2ra8jtae0 (ZAR 29,999 / month)
+   *   professional → PLN_l3kobthzahnkpf3 (ZAR 19,999 / month)
+   *   enterprise   → PLN_9at9kn2ra8jtae0 (ZAR 100,000 / month — custom/contact sales)
    *
    * For the free Starter plan use activateStarterPlan() instead.
    *

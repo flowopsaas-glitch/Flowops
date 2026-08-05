@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -7,11 +7,14 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
+import { PLAN_ENTITLEMENTS, FEATURE_KEYS, FEATURE_LABELS } from '../billing/plan-entitlements';
 
 type OwnerActor = { id?: string; email?: string } | null | undefined;
 
 @Injectable()
 export class OwnerService {
+  private readonly logger = new Logger(OwnerService.name);
+
   constructor(
     private prisma: PrismaService,
     private email: EmailService,
@@ -79,10 +82,12 @@ export class OwnerService {
       const req = await this.prisma.approvalRequest.findFirst({ where: { companyId: tenantId } });
       if (req) {
         let passwordHash: string;
-        try {
-          const parsed = JSON.parse(req.notes ?? '{}');
-          passwordHash = parsed.passwordHash;
-        } catch {
+        // Use the dedicated passwordHash field (set during registration).
+        // Fall back to a forced-reset password if the field is absent (legacy
+        // requests created before the migration).
+        if (req.passwordHash) {
+          passwordHash = req.passwordHash;
+        } else {
           passwordHash = await bcrypt.hash('ChangeMe123!', 12);
         }
         await this.prisma.user.create({
@@ -93,6 +98,7 @@ export class OwnerService {
             phone: req.phone,
             role: 'ADMIN',
             companyId: tenantId,
+            emailVerified: true, // owner-approved accounts are pre-verified
           },
         });
         await this.prisma.approvalRequest.update({
@@ -102,8 +108,23 @@ export class OwnerService {
 
         // Send welcome email to the newly approved admin user
         await this.email.sendWelcomeEmail(req.email, req.fullName, req.company);
+
+        // Send trial started email to inform about the 14-day trial lifecycle
+        const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+        await this.email.sendTrialStartedEmail(req.email, {
+          name: req.fullName,
+          companyName: req.company,
+          trialEndsAt: trialEnd,
+        });
       }
-      const updated = await this.prisma.company.update({ where: { id: tenantId }, data: { isActive: true } });
+      const updated = await this.prisma.company.update({
+        where: { id: tenantId },
+        data: {
+          isActive: true,
+          plan: 'starter',
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      });
       await audit('tenant.approve');
       return updated;
     }
@@ -168,7 +189,7 @@ export class OwnerService {
       },
       {
         secret: this.config.get<string>('JWT_SECRET'),
-        expiresIn: '30m',
+        expiresIn: '8h',
       },
     );
 
@@ -184,7 +205,7 @@ export class OwnerService {
 
     return {
       access_token: accessToken,
-      expiresInMinutes: 30,
+      expiresInMinutes: 480,
       tenant: { id: company.id, name: company.name },
       impersonatedUser: { id: target.id, email: target.email, role: target.role },
     };
@@ -220,12 +241,17 @@ export class OwnerService {
 
   private static readonly PLAN_PRICE_ZAR: Record<string, number> = {
     starter: 0,
-    professional: 14999,
-    enterprise: 29999,
+    professional: 19999,
+    enterprise: 100000,
   };
 
   private planPrice(plan?: string | null): number {
     return OwnerService.PLAN_PRICE_ZAR[(plan || 'starter').toLowerCase()] ?? 0;
+  }
+
+  /** Effective monthly price: a per-tenant custom price wins over the plan list price. */
+  private effPrice(c: { plan?: string | null; priceOverrideZar?: number | null }): number {
+    return c.priceOverrideZar != null ? c.priceOverrideZar : this.planPrice(c.plan);
   }
 
   async platformAnalytics() {
@@ -237,18 +263,18 @@ export class OwnerService {
 
     const companies = await this.prisma.company.findMany({
       select: {
-        id: true, name: true, plan: true, isActive: true, createdAt: true, country: true,
+        id: true, name: true, plan: true, priceOverrideZar: true, isActive: true, createdAt: true, country: true,
         _count: { select: { users: true, waybills: true } },
       },
     });
     const active = companies.filter((c) => c.isActive);
 
     // ── Revenue (MRR/ARR/ARPA) from active subscriptions ──
-    const mrr = active.reduce((s, c) => s + this.planPrice(c.plan), 0);
+    const mrr = active.reduce((s, c) => s + this.effPrice(c), 0);
     const mrrPrev = companies
       .filter((c) => c.isActive && c.createdAt <= d30)
-      .reduce((s, c) => s + this.planPrice(c.plan), 0);
-    const payingTenants = active.filter((c) => this.planPrice(c.plan) > 0).length;
+      .reduce((s, c) => s + this.effPrice(c), 0);
+    const payingTenants = active.filter((c) => this.effPrice(c) > 0).length;
     const arpa = payingTenants ? mrr / payingTenants : 0;
 
     // ── Tenant growth + churn (window approximation) ──
@@ -267,7 +293,7 @@ export class OwnerService {
       count: active.filter((c) => (c.plan || 'starter').toLowerCase() === p).length,
       mrr: active
         .filter((c) => (c.plan || 'starter').toLowerCase() === p)
-        .reduce((s, c) => s + this.planPrice(c.plan), 0),
+        .reduce((s, c) => s + this.effPrice(c), 0),
     }));
 
     // ── 6-month tenant growth series (new + cumulative) ──
@@ -329,7 +355,7 @@ export class OwnerService {
         const vol30 = recentVolume.get(c.id) ?? 0;
         const usersScore = (Math.min(c._count.users, 10) / 10) * 25;
         const volumeScore = (Math.min(vol30, 100) / 100) * 45;
-        const planScore = this.planPrice(c.plan) > 0 ? 30 : 8;
+        const planScore = this.effPrice(c) > 0 ? 30 : 8;
         const score = Math.round(usersScore + volumeScore + planScore);
         const risk = score >= 70 ? 'healthy' : score >= 40 ? 'watch' : 'at_risk';
         return {
@@ -455,7 +481,8 @@ export class OwnerService {
       where: { id: tenantId },
       select: {
         id: true, name: true, tradingName: true, email: true, phone: true,
-        plan: true, isActive: true, createdAt: true, country: true, city: true,
+        plan: true, priceOverrideZar: true, featureOverrides: true,
+        isActive: true, createdAt: true, country: true, city: true,
         slaBreachMinutes: true, slaWarningMinutes: true,
         _count: { select: { users: true, waybills: true, collections: true, drivers: true, invoices: true } },
       },
@@ -511,7 +538,7 @@ export class OwnerService {
     // Health score (same composite as the platform leaderboard)
     const usersScore = (Math.min(company._count.users, 10) / 10) * 25;
     const volumeScore = (Math.min(waybills30, 100) / 100) * 45;
-    const planScore = this.planPrice(company.plan) > 0 ? 30 : 8;
+    const planScore = this.effPrice(company) > 0 ? 30 : 8;
     const score = Math.round(usersScore + volumeScore + planScore);
 
     return {
@@ -520,6 +547,8 @@ export class OwnerService {
       tenant: {
         id: company.id, name: company.name, tradingName: company.tradingName,
         email: company.email, phone: company.phone, plan: company.plan ?? 'starter',
+        priceOverrideZar: company.priceOverrideZar ?? null,
+        featureOverrides: (company.featureOverrides ?? {}) as Record<string, boolean>,
         isActive: company.isActive, createdAt: company.createdAt,
         country: company.country, city: company.city,
         slaBreachMinutes: company.slaBreachMinutes, slaWarningMinutes: company.slaWarningMinutes,
@@ -533,7 +562,7 @@ export class OwnerService {
         invoices: company._count.invoices,
       },
       revenue: {
-        mrr: this.planPrice(company.plan),
+        mrr: this.effPrice(company),
         collectedTotal: revAll._sum.amount ?? 0,
         collected30: rev30._sum.amount ?? 0,
       },
@@ -555,13 +584,13 @@ export class OwnerService {
   async captureMrrSnapshot() {
     const companies = await this.prisma.company.findMany({
       where: { isActive: true },
-      select: { id: true, plan: true },
+      select: { id: true, plan: true, priceOverrideZar: true },
     });
     const perTenant: Record<string, number> = {};
     let mrr = 0;
     let paying = 0;
     for (const c of companies) {
-      const price = this.planPrice(c.plan);
+      const price = this.effPrice(c);
       perTenant[c.id] = price;
       mrr += price;
       if (price > 0) paying += 1;
@@ -681,16 +710,25 @@ export class OwnerService {
   async createTenantAdmin(tenantId: string, dto: { name: string; email: string; password: string }, actor?: OwnerActor) {
     const company = await this.prisma.company.findUnique({ where: { id: tenantId }, select: { name: true } });
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        name: dto.name,
-        passwordHash,
-        role: 'ADMIN',
-        companyId: tenantId,
-      },
-      select: { id: true, email: true, name: true },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email.toLowerCase(),
+          name: dto.name,
+          passwordHash,
+          role: 'ADMIN',
+          companyId: tenantId,
+          emailVerified: true, // owner-created admins are pre-verified
+        },
+        select: { id: true, email: true, name: true },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new ConflictException('A user with this email already exists in this tenant.');
+      }
+      throw e;
+    }
     await this.audit.record({
       action: 'user.create',
       actorId: actor?.id ?? null,
@@ -714,6 +752,34 @@ export class OwnerService {
       targetName: updated.name,
     });
     return updated;
+  }
+
+  /**
+   * Permanently delete a tenant and ALL its data. Destructive and irreversible —
+   * every child record (users, waybills, collections, shipments, invoices,
+   * drivers, etc.) is removed via DB cascade. Audited before the row disappears.
+   * The frontend requires the owner to type the tenant name to confirm.
+   */
+  async deleteTenant(tenantId: string, actor?: OwnerActor) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, plan: true, _count: { select: { users: true, waybills: true } } },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    // Record the intent first so the audit trail survives the cascade delete.
+    await this.audit.record({
+      action: 'tenant.delete',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: { plan: company.plan, users: company._count.users, waybills: company._count.waybills },
+    });
+
+    await this.prisma.company.delete({ where: { id: tenantId } });
+    return { deleted: true, id: tenantId, name: company.name };
   }
 
   // ── AI alerts (critical events across all tenants) ────────────────────
@@ -743,17 +809,23 @@ export class OwnerService {
    * FlowOps billing plans — synced from Paystack (Flowops Holdings, ID: 1839930).
    *
    *   Starter:      FREE   (no Paystack plan — instant activation, no billing)
-   *   Professional: ZAR 14,999 / month  PLN_l3kobthzahnkpf3
-   *   Enterprise:   ZAR 29,999 / month  PLN_9at9kn2ra8jtae0
+   *   Professional: ZAR 19,999 / month  PLN_l3kobthzahnkpf3
+   *   Enterprise:   ZAR 100,000 / month  PLN_9at9kn2ra8jtae0 (custom/contact sales)
+   *
+   *   NOTE: the Professional Paystack plan amount must be updated in the
+   *   Paystack dashboard (or a new plan code issued) to charge R11,999.
    */
   async getPlans() {
+    const E = PLAN_ENTITLEMENTS;
     return [
       {
         id: 'starter',
         name: 'Starter',
         description: 'For small couriers getting started — free, no credit card required',
-        maxUsers: 5,
-        maxWaybills: 200,
+        maxUsers: E.starter.limits.users,
+        maxWaybills: E.starter.limits.waybillsPerMonth,
+        maxDrivers: E.starter.limits.drivers,
+        maxBranches: E.starter.limits.branches,
         price: 0,
         currency: 'ZAR',
         interval: null,            // free — not billed
@@ -764,9 +836,11 @@ export class OwnerService {
         id: 'professional',
         name: 'Professional',
         description: 'Full FlowOps feature suite for growing couriers',
-        maxUsers: 50,
-        maxWaybills: 10000,
-        price: 14999,
+        maxUsers: E.professional.limits.users,
+        maxWaybills: E.professional.limits.waybillsPerMonth,
+        maxDrivers: E.professional.limits.drivers,
+        maxBranches: E.professional.limits.branches,
+        price: E.professional.priceZar,
         currency: 'ZAR',
         interval: 'month',
         paystackPlanCode: 'PLN_l3kobthzahnkpf3',
@@ -776,9 +850,11 @@ export class OwnerService {
         id: 'enterprise',
         name: 'Enterprise',
         description: 'Unlimited scale + white-label + dedicated support',
-        maxUsers: -1,
-        maxWaybills: -1,
-        price: 29999,
+        maxUsers: E.enterprise.limits.users,
+        maxWaybills: E.enterprise.limits.waybillsPerMonth,
+        maxDrivers: E.enterprise.limits.drivers,
+        maxBranches: E.enterprise.limits.branches,
+        price: E.enterprise.priceZar,
         currency: 'ZAR',
         interval: 'month',
         paystackPlanCode: 'PLN_9at9kn2ra8jtae0',
@@ -805,6 +881,83 @@ export class OwnerService {
     return updated;
   }
 
+  /**
+   * Feature catalog for the owner subscription editor: every feature key with a
+   * human label and which plan tiers include it by default. The owner toggles
+   * these as per-tenant add-ons (granted on top of the tenant's plan).
+   */
+  getFeatureCatalog() {
+    return FEATURE_KEYS.map((key) => ({
+      key,
+      label: FEATURE_LABELS[key] ?? key,
+      includedIn: {
+        starter: Boolean(PLAN_ENTITLEMENTS.starter.features[key]),
+        professional: Boolean(PLAN_ENTITLEMENTS.professional.features[key]),
+        enterprise: Boolean(PLAN_ENTITLEMENTS.enterprise.features[key]),
+      },
+    }));
+  }
+
+  /**
+   * Owner edits a tenant's full subscription in one call: plan tier, per-tenant
+   * feature add-ons (grant Enterprise features to a Professional tenant without a
+   * full upgrade), and a custom negotiated price. Any field omitted is left as-is.
+   * Audit-logged with a before/after diff.
+   */
+  async updateTenantSubscription(
+    tenantId: string,
+    body: { plan?: string; featureOverrides?: Record<string, boolean>; priceOverrideZar?: number | null },
+    actor?: OwnerActor,
+  ) {
+    const before = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { name: true, plan: true, featureOverrides: true, priceOverrideZar: true },
+    });
+    if (!before) throw new NotFoundException('Tenant not found');
+
+    const data: any = {};
+    if (body.plan !== undefined) {
+      const allowed = ['starter', 'professional', 'enterprise'];
+      const plan = String(body.plan).toLowerCase();
+      if (!allowed.includes(plan)) throw new BadRequestException(`Invalid plan. Use: ${allowed.join(', ')}`);
+      data.plan = plan;
+    }
+    if (body.featureOverrides !== undefined) {
+      // Keep only known feature keys set to true — a clean grant-map.
+      const clean: Record<string, boolean> = {};
+      for (const k of FEATURE_KEYS) if (body.featureOverrides?.[k]) clean[k] = true;
+      data.featureOverrides = clean;
+    }
+    if (body.priceOverrideZar !== undefined) {
+      data.priceOverrideZar =
+        body.priceOverrideZar === null || Number.isNaN(Number(body.priceOverrideZar))
+          ? null
+          : Math.max(0, Number(body.priceOverrideZar));
+    }
+
+    const updated = await this.prisma.company.update({ where: { id: tenantId }, data });
+
+    await this.audit.record({
+      action: 'tenant.subscription_change',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: before.name,
+      metadata: {
+        from: { plan: before.plan, featureOverrides: before.featureOverrides, priceOverrideZar: before.priceOverrideZar },
+        to: { plan: data.plan ?? before.plan, featureOverrides: data.featureOverrides ?? before.featureOverrides, priceOverrideZar: data.priceOverrideZar ?? before.priceOverrideZar },
+      },
+    });
+
+    return {
+      id: updated.id,
+      plan: updated.plan,
+      featureOverrides: (updated.featureOverrides ?? {}) as Record<string, boolean>,
+      priceOverrideZar: updated.priceOverrideZar ?? null,
+    };
+  }
+
   // ── Approval requests ─────────────────────────────────────────────────
 
   async getApprovalRequests(query?: any) {
@@ -817,15 +970,35 @@ export class OwnerService {
   async approveRequest(requestId: string, actor?: OwnerActor) {
     const req = await this.prisma.approvalRequest.findUniqueOrThrow({ where: { id: requestId } });
     // Create company + user
+    // Use the dedicated passwordHash column set during registration.
+    // The legacy path that read from JSON.parse(req.notes) was always wrong —
+    // notes never contained a passwordHash; only the dedicated column does.
+    // Fall back to a forced-change password only for truly ancient requests
+    // that predate the column (i.e. passwordHash is genuinely null/undefined).
     let passwordHash: string;
-    try { passwordHash = JSON.parse(req.notes ?? '{}').passwordHash; } catch { passwordHash = await bcrypt.hash('ChangeMe123!', 12); }
+    if (req.passwordHash) {
+      passwordHash = req.passwordHash;
+    } else {
+      passwordHash = await bcrypt.hash('ChangeMe123!', 12);
+      this.logger.warn(`approveRequest: no passwordHash on request ${requestId} — tenant must reset password on first login.`);
+    }
 
+    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14-day trial
     const company = await this.prisma.company.create({
-      data: { name: req.company, email: req.email, isActive: true },
+      data: { name: req.company, email: req.email, isActive: true, plan: 'starter', trialEndsAt },
     });
-    await this.prisma.user.create({
-      data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id },
-    });
+    try {
+      await this.prisma.user.create({
+        data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id, emailVerified: true },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        // Roll back the just-created company so a retry/approve is clean.
+        await this.prisma.company.delete({ where: { id: company.id } }).catch(() => undefined);
+        throw new ConflictException('A user with this email already exists. This request may have already been approved.');
+      }
+      throw e;
+    }
     await this.prisma.approvalRequest.update({
       where: { id: requestId },
       data: { status: 'APPROVED', companyId: company.id },
@@ -839,6 +1012,15 @@ export class OwnerService {
       targetName: company.name,
       metadata: { requestId, email: req.email },
     });
+
+    // Send welcome + trial started emails to the new tenant admin
+    await this.email.sendWelcomeEmail(req.email, req.fullName, req.company);
+    await this.email.sendTrialStartedEmail(req.email, {
+      name: req.fullName,
+      companyName: req.company,
+      trialEndsAt,
+    });
+
     return { company, message: 'Approved and onboarded' };
   }
 

@@ -13,9 +13,17 @@ import {
   Search,
   Truck,
   XCircle,
+  AlertTriangle,
+  Gauge,
+  Timer,
+  Printer,
+  Loader2,
 } from "lucide-react";
 import { api } from "../api/client";
 import { exportCsv, csvFilename } from "../lib/exportCsv";
+import { printWaybillLabels } from "../lib/labelPrint";
+import { TiltCard } from "../components/premium/TiltCard";
+import { useToast } from "../components/ToastProvider";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -23,6 +31,7 @@ type ShipmentStatus = "PENDING" | "IN_TRANSIT" | "DELIVERED" | "FAILED";
 
 type Shipment = {
   id: string;
+  waybillId?: string | null;
   status: ShipmentStatus;
   currentLat?: number | null;
   currentLng?: number | null;
@@ -41,6 +50,29 @@ type Shipment = {
     phone?: string | null;
     vehicleType?: string | null;
   } | null;
+};
+
+type ShipmentHealthData = {
+  statusCounts: Record<string, number>;
+  total: number;
+  inTransit: number;
+  etaBreaches: number;
+  stalled: number;
+  healthyInTransit: number;
+  avgTransitHours: number | null;
+  deliveredLast30: number;
+  stallHours: number;
+  watch: Array<{
+    id: string;
+    trackingNumber: string;
+    recipient: string;
+    driver?: string | null;
+    etaBreached: boolean;
+    stalled: boolean;
+    stalledHours: number;
+    ageHours: number;
+  }>;
+  note: string;
 };
 
 // ── Status config ──────────────────────────────────────────────────────────
@@ -110,8 +142,13 @@ function formatEta(ts?: string | null): string {
 
 export default function Shipments() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [health, setHealth] = useState<ShipmentHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const { showToast } = useToast();
+  // Bulk parcel-label printing — set of selected waybill ids.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isPrinting, setIsPrinting] = useState(false);
   const [statusFilter, setStatusFilter] = useSearchParams();
   const activeStatusFilter = (statusFilter.get("status") || "").toUpperCase() as ShipmentStatus | "";
 
@@ -121,6 +158,7 @@ export default function Shipments() {
       const res: any = await api.get("/shipments");
       const data = res?.data ?? res;
       setShipments(Array.isArray(data) ? data : []);
+      api.get("/shipments/health").then((r: any) => setHealth(r?.data ?? r)).catch(() => setHealth(null));
     } catch {
       setShipments([]);
     } finally {
@@ -161,10 +199,57 @@ export default function Shipments() {
     return list;
   }, [shipments, activeStatusFilter, search]);
 
+  // ── Bulk label printing ──────────────────────────────────────────────────
+  // Only shipments that carry a waybill can be label-printed.
+  const selectableVisible = useMemo(
+    () => visible.filter((s) => !!s.waybillId),
+    [visible],
+  );
+  const allVisibleSelected =
+    selectableVisible.length > 0 &&
+    selectableVisible.every((s) => selected.has(s.waybillId as string));
+
+  const toggleOne = (waybillId?: string | null) => {
+    if (!waybillId) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(waybillId)) next.delete(waybillId);
+      else next.add(waybillId);
+      return next;
+    });
+  };
+
+  const toggleAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        selectableVisible.forEach((s) => next.delete(s.waybillId as string));
+      } else {
+        selectableVisible.forEach((s) => next.add(s.waybillId as string));
+      }
+      return next;
+    });
+  };
+
+  async function printSelectedLabels() {
+    if (selected.size === 0) return;
+    setIsPrinting(true);
+    try {
+      const n = await printWaybillLabels([...selected]);
+      showToast(`Generated ${n} label${n === 1 ? "" : "s"}.`, "success");
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message || err?.message || "Failed to generate labels";
+      showToast(msg, "error");
+    } finally {
+      setIsPrinting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl fx-glass fx-reveal">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-400">
@@ -194,24 +279,39 @@ export default function Shipments() {
               <RefreshCw className="h-4 w-4" /> Refresh
             </button>
             <button
+              onClick={() => void printSelectedLabels()}
+              disabled={selected.size === 0 || isPrinting}
+              title={selected.size === 0 ? "Select shipments to print parcel labels" : `Print ${selected.size} parcel label(s)`}
+              className="inline-flex items-center gap-2 rounded-2xl border border-sky-400/30 bg-sky-500/15 px-4 py-2.5 text-sm font-bold text-sky-200 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {isPrinting ? "Preparing…" : `Print Labels${selected.size ? ` (${selected.size})` : ""}`}
+            </button>
+            <button
               onClick={() => exportCsv(
-                visible.map((w: any) => ({
-                  tracking:  w.trackingNumber,
-                  status:    w.status,
-                  sender:    w.senderName,
-                  recipient: w.recipientName,
-                  address:   w.recipientAddress,
-                  amount:    w.totalAmount ?? "",
-                  created:   w.createdAt,
+                visible.map((s: Shipment) => ({
+                  tracking:  s.waybill?.trackingNumber ?? s.id,
+                  status:    s.status,
+                  recipient: s.waybill?.recipientName  ?? "",
+                  address:   s.waybill?.recipientAddress ?? "",
+                  driver:    s.driver?.name             ?? "",
+                  eta:       s.estimatedDelivery
+                    ? new Date(s.estimatedDelivery).toLocaleDateString("en-ZA")
+                    : "",
+                  gps:       (s.currentLat && s.currentLng)
+                    ? `${s.currentLat},${s.currentLng}`
+                    : "",
+                  created:   s.createdAt,
                 })),
                 csvFilename("shipments"),
                 [
                   { key: "tracking",  label: "Tracking #"      },
                   { key: "status",    label: "Status"          },
-                  { key: "sender",    label: "Sender"          },
                   { key: "recipient", label: "Recipient"       },
                   { key: "address",   label: "Delivery Address"},
-                  { key: "amount",    label: "Amount ZAR"      },
+                  { key: "driver",    label: "Driver"          },
+                  { key: "eta",       label: "ETA"             },
+                  { key: "gps",       label: "GPS Coords"      },
                   { key: "created",   label: "Created"         },
                 ]
               )}
@@ -232,7 +332,7 @@ export default function Shipments() {
             { key: "delivered", label: "Delivered", icon: <CheckCircle2 className="h-5 w-5" />, tone: "text-emerald-300" },
             { key: "failed", label: "Failed", icon: <AlertCircle className="h-5 w-5" />, tone: "text-rose-300" },
           ] as const
-        ).map(({ key, label, icon, tone }) => (
+        ).map(({ key, label, icon, tone }, i) => (
           <button
             key={key}
             onClick={() =>
@@ -241,7 +341,7 @@ export default function Shipments() {
                 key === "inTransit" ? "IN_TRANSIT" : key.toUpperCase()
               )
             }
-            className={`rounded-[24px] border border-white/10 bg-white/[0.05] p-5 text-left shadow-xl transition-colors hover:bg-white/[0.08] ${
+            className={`rounded-[24px] border border-white/10 bg-white/[0.05] p-5 text-left shadow-xl fx-lift fx-reveal fx-reveal-${i + 1} transition-colors hover:bg-white/[0.08] ${
               activeStatusFilter ===
               (key === "inTransit" ? "IN_TRANSIT" : key.toUpperCase())
                 ? "ring-2 ring-blue-400/40"
@@ -261,8 +361,11 @@ export default function Shipments() {
         ))}
       </div>
 
+      {/* Ops health */}
+      {health && health.inTransit > 0 && <ShipmentHealthPanel data={health} onFilter={() => statusFilter.set("status", "IN_TRANSIT")} />}
+
       {/* Table */}
-      <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl">
+      <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl fx-glass fx-reveal">
         {/* Search */}
         <div className="border-b border-white/10 p-4 flex items-center gap-3">
           <Search className="h-4 w-4 text-white/30 shrink-0" />
@@ -281,6 +384,16 @@ export default function Shipments() {
           <table className="w-full min-w-[820px] text-left text-sm">
             <thead>
               <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-white/40">
+                <th className="px-5 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible shipments"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    disabled={selectableVisible.length === 0}
+                    className="h-4 w-4 cursor-pointer accent-sky-500 disabled:opacity-30"
+                  />
+                </th>
                 <th className="px-5 py-3">Tracking</th>
                 <th className="px-5 py-3">Recipient</th>
                 <th className="px-5 py-3">Driver</th>
@@ -294,7 +407,7 @@ export default function Shipments() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b border-white/5">
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <td key={j} className="px-5 py-4">
                         <div className="h-3 animate-pulse rounded-full bg-white/5" />
                       </td>
@@ -303,7 +416,7 @@ export default function Shipments() {
                 ))
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center">
+                  <td colSpan={8} className="px-5 py-16 text-center">
                     <Package className="mx-auto h-10 w-10 text-white/10 mb-3" />
                     <div className="text-white/40 font-bold">
                       {shipments.length === 0
@@ -318,6 +431,19 @@ export default function Shipments() {
                     key={s.id}
                     className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
                   >
+                    {/* Select */}
+                    <td className="px-5 py-4">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${s.waybill?.trackingNumber ?? "shipment"} for label printing`}
+                        checked={!!s.waybillId && selected.has(s.waybillId)}
+                        onChange={() => toggleOne(s.waybillId)}
+                        disabled={!s.waybillId}
+                        title={s.waybillId ? "Select for label printing" : "No waybill linked"}
+                        className="h-4 w-4 cursor-pointer accent-sky-500 disabled:opacity-30"
+                      />
+                    </td>
+
                     {/* Tracking */}
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
@@ -414,6 +540,80 @@ export default function Shipments() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+
+// ── Shipment ops-health panel ───────────────────────────────────────────────
+
+function fmtHrs(h: number | null): string {
+  if (h == null) return "—";
+  if (h < 24) return `${Math.round(h)}h`;
+  return `${(h / 24).toFixed(1)}d`;
+}
+
+function ShipmentHealthPanel({ data, onFilter }: { data: ShipmentHealthData; onFilter: () => void }) {
+  const atRisk = data.etaBreaches + data.stalled;
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl fx-glass fx-reveal">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div className="flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-cyan-300" />
+          <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">In-Transit Health</h2>
+        </div>
+        <button onClick={onFilter} className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/8 px-4 py-2 text-sm font-bold text-cyan-300 hover:bg-cyan-500/15 transition">
+          View in-transit <Truck className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <TiltCard>
+          <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.06] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-cyan-300">{data.inTransit}</div><Truck className="h-4 w-4 text-cyan-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">In transit</div>
+            <div className="text-[10px] text-emerald-300/70 mt-0.5">{data.healthyInTransit} on track</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-2xl border p-4 h-full ${data.etaBreaches > 0 ? "border-rose-500/30 bg-rose-500/[0.08]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${data.etaBreaches > 0 ? "text-rose-300" : "text-white"}`}>{data.etaBreaches}</div><AlertTriangle className="h-4 w-4 text-rose-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">ETA breached</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-2xl border p-4 h-full ${data.stalled > 0 ? "border-amber-500/30 bg-amber-500/[0.07]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${data.stalled > 0 ? "text-amber-300" : "text-white"}`}>{data.stalled}</div><Timer className="h-4 w-4 text-amber-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Stalled &gt;{data.stallHours}h</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-white">{fmtHrs(data.avgTransitHours)}</div><Clock className="h-4 w-4 text-white/25" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Avg transit (30d)</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{data.deliveredLast30} delivered</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {atRisk > 0 && (
+        <div className="mt-5">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">At-risk in transit — investigate first</p>
+          <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+            {data.watch.map((w) => (
+              <div key={w.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/25 px-3 py-2">
+                <span className="font-mono text-xs font-black text-cyan-300 shrink-0">{w.trackingNumber}</span>
+                <span className="min-w-0 flex-1 truncate text-[11px] text-white/55">{w.recipient}{w.driver ? ` · ${w.driver}` : ""}</span>
+                {w.etaBreached && <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-bold text-rose-300 shrink-0">ETA breached</span>}
+                {w.stalled && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300 shrink-0">stalled {fmtHrs(w.stalledHours)}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{data.note}</p>
     </div>
   );
 }

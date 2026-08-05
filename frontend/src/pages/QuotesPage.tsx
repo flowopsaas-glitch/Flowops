@@ -9,8 +9,13 @@ import {
   Scale,
   Search,
   XCircle,
+  Target,
+  Wallet,
+  Trophy,
+  TrendingDown,
 } from "lucide-react";
 import { api } from "../api/client";
+import { TiltCard } from "../components/premium/TiltCard";
 
 // ── Types (match actual Quote schema) ──────────────────────────────────────
 // Quote: id, fromAddress, toAddress, weight, price, breakdown(Json),
@@ -27,6 +32,22 @@ type Quote = {
   accepted: boolean;
   expiresAt?: string | null;
   createdAt: string;
+};
+
+type QuoteMetrics = {
+  total: number;
+  accepted: number;
+  pending: number;
+  expired: number;
+  winRatePct: number;
+  acceptRatePct: number;
+  wonValue: number;
+  pipelineValue: number;
+  lostValue: number;
+  totalValue: number;
+  avgQuoteValue: number;
+  avgWonValue: number;
+  note: string;
 };
 
 function money(v?: number | null) {
@@ -142,6 +163,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [metrics, setMetrics] = useState<QuoteMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -151,9 +173,19 @@ export default function QuotesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res: any = await api.get("/quotes");
-      const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
-      setQuotes(data);
+      const [listRes, metRes] = await Promise.allSettled([
+        api.get("/quotes"),
+        api.get("/quotes/metrics"),
+      ]);
+      if (listRes.status === "fulfilled") {
+        const res: any = listRes.value;
+        const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+        setQuotes(data);
+      }
+      if (metRes.status === "fulfilled") {
+        const m: any = metRes.value;
+        setMetrics(m?.data ?? m);
+      }
     } finally {
       setLoading(false);
     }
@@ -186,7 +218,11 @@ export default function QuotesPage() {
     if (filter === "expired")  list = list.filter((q) => !q.accepted && isExpired(q.expiresAt));
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter((x) => x.fromAddress.toLowerCase().includes(q) || x.toAddress.toLowerCase().includes(q));
+      list = list.filter((x) =>
+        x.fromAddress.toLowerCase().includes(q) ||
+        x.toAddress.toLowerCase().includes(q) ||
+        (x.clientName?.toLowerCase().includes(q))
+      );
     }
     return list;
   }, [quotes, filter, search]);
@@ -230,22 +266,15 @@ export default function QuotesPage() {
         ))}
       </div>
 
-      {/* Accepted value banner */}
-      {stats.totalValue > 0 && (
-        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 px-5 py-3 flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-          <span className="text-sm text-slate-300">
-            Accepted quote value: <span className="font-black text-emerald-300">{money(stats.totalValue)}</span>
-          </span>
-        </div>
-      )}
+      {/* Conversion pipeline */}
+      {metrics && metrics.total > 0 && <QuotePipeline m={metrics} />}
 
       {/* Table */}
       <div className="rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl">
         <div className="border-b border-white/10 p-4 flex items-center gap-3">
           <Search className="h-4 w-4 text-white/30 shrink-0" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by address…"
+            placeholder="Search by client name or address…"
             className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30" />
         </div>
 
@@ -325,13 +354,34 @@ export default function QuotesPage() {
                       ) : "—"}
                     </td>
                     <td className="px-5 py-4 text-right">
-                      {!q.accepted && !expired && (
-                        <button disabled={busy === q.id} onClick={() => accept(q.id)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60">
-                          {busy === q.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                          Accept
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Send quote via WhatsApp — Freshdesk/modern CRM standard */}
+                        <button
+                          title="Send quote via WhatsApp"
+                          onClick={() => {
+                            const text = [
+                              `Hi${q.clientName ? ` ${q.clientName}` : ""}! Here's your FlowOps freight quote:`,
+                              `From: ${q.fromAddress}`,
+                              `To: ${q.toAddress}`,
+                              `Weight: ${q.weight}kg`,
+                              `Price: ZAR ${q.price.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`,
+                              q.expiresAt ? `Valid until: ${new Date(q.expiresAt).toLocaleDateString("en-ZA")}` : "",
+                              "Reply to accept.",
+                            ].filter(Boolean).join("\n");
+                            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-green-400/20 bg-green-500/10 px-2.5 py-1.5 text-[11px] font-bold text-green-200 hover:bg-green-500/20 transition"
+                        >
+                          💬 WhatsApp
                         </button>
-                      )}
+                        {!q.accepted && !expired && (
+                          <button disabled={busy === q.id} onClick={() => accept(q.id)}
+                            className="inline-flex items-center gap-1 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60">
+                            {busy === q.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                            Accept
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -340,6 +390,89 @@ export default function QuotesPage() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+
+// ── Conversion pipeline panel ───────────────────────────────────────────────
+
+function QuotePipeline({ m }: { m: QuoteMetrics }) {
+  const winTone = m.winRatePct >= 60 ? "text-emerald-300" : m.winRatePct >= 30 ? "text-amber-300" : "text-rose-300";
+  const winBar = m.winRatePct >= 60 ? "bg-emerald-400" : m.winRatePct >= 30 ? "bg-amber-400" : "bg-rose-400";
+
+  // Value split across won / open / lost for the conversion bar.
+  const valTotal = Math.max(1, m.wonValue + m.pipelineValue + m.lostValue);
+  const seg = [
+    { v: m.wonValue, cls: "bg-emerald-400", label: "Won" },
+    { v: m.pipelineValue, cls: "bg-sky-400", label: "Open" },
+    { v: m.lostValue, cls: "bg-rose-400", label: "Lost" },
+  ];
+
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 fx-glass fx-reveal">
+      <div className="flex items-center gap-2 mb-4">
+        <Target className="h-4 w-4 text-emerald-300" />
+        <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">Conversion Pipeline</h2>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Win rate */}
+        <TiltCard>
+          <div className="rounded-[20px] border border-white/8 bg-black/20 p-5 h-full">
+            <div className="flex items-center justify-between">
+              <div className={`text-4xl font-black ${winTone}`}>{m.winRatePct}%</div>
+              <Trophy className={`h-5 w-5 ${winTone}`} />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">Win rate</div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
+              <div className={`h-full ${winBar}`} style={{ width: `${Math.min(100, m.winRatePct)}%` }} />
+            </div>
+            <div className="mt-2 text-[10px] text-white/35">{m.accepted} won of {m.accepted + m.expired} decided · {m.acceptRatePct}% of all</div>
+          </div>
+        </TiltCard>
+
+        {/* Open pipeline */}
+        <TiltCard>
+          <div className="rounded-[20px] border border-sky-400/20 bg-sky-500/[0.06] p-5 h-full">
+            <div className="flex items-center justify-between">
+              <div className="text-2xl font-black text-sky-300">{money(m.pipelineValue)}</div>
+              <Clock className="h-5 w-5 text-sky-300" />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">Open pipeline</div>
+            <div className="mt-2 text-[10px] text-white/35">{m.pending} live quote{m.pending === 1 ? "" : "s"} awaiting a decision</div>
+          </div>
+        </TiltCard>
+
+        {/* Won value */}
+        <TiltCard>
+          <div className="rounded-[20px] border border-emerald-400/20 bg-emerald-500/[0.06] p-5 h-full">
+            <div className="flex items-center justify-between">
+              <div className="text-2xl font-black text-emerald-300">{money(m.wonValue)}</div>
+              <Wallet className="h-5 w-5 text-emerald-300" />
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mt-1">Won value</div>
+            <div className="mt-2 text-[10px] text-white/35">avg won {money(m.avgWonValue)} · avg quote {money(m.avgQuoteValue)}</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {/* Value conversion bar */}
+      <div className="mt-5">
+        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
+          {seg.map((s) => s.v > 0 && (
+            <div key={s.label} className={s.cls} style={{ width: `${(s.v / valTotal) * 100}%` }} title={`${s.label}: ${money(s.v)}`} />
+          ))}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-4 text-[10px] text-white/45">
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Won {money(m.wonValue)}</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" /> Open {money(m.pipelineValue)}</span>
+          <span className="inline-flex items-center gap-1"><TrendingDown className="h-3 w-3 text-rose-300" /> Lost {money(m.lostValue)}</span>
+        </div>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{m.note}</p>
     </div>
   );
 }

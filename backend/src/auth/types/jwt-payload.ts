@@ -7,6 +7,8 @@ export interface JwtPayload {
   companyId: string;
   role: UserRole;
   type: 'tenant';
+  /** Session id — must match User.activeSessionId (single active session). */
+  sid?: string;
 }
 
 /** Payload encoded inside owner (platform-admin) access tokens. */

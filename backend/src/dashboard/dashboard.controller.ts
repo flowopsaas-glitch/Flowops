@@ -19,6 +19,21 @@ export class DashboardController {
     return this.svc.getKpis(u.companyId);
   }
 
+  @Get('dashboard/trends')
+  getTrends(@CurrentUser() u: any, @Query('days') days?: string) {
+    return this.svc.getTrends(u.companyId, days ? parseInt(days) : 30);
+  }
+
+  @Get('dashboard/live-etas')
+  getLiveEtas(@CurrentUser() u: any) {
+    return this.svc.getLiveEtas(u.companyId);
+  }
+
+  @Get('dashboard/forwarding-metrics')
+  getForwardingMetrics(@CurrentUser() u: any) {
+    return this.svc.getForwardingMetrics(u.companyId);
+  }
+
   @Get('dashboard/activities')
   getActivities(@CurrentUser() u: any, @Query('limit') limit?: string) {
     return this.svc.getActivities(u.companyId, limit ? parseInt(limit) : 20);
@@ -27,6 +42,11 @@ export class DashboardController {
   @Get('operations/summary')
   getOperationsSummary(@CurrentUser() u: any) {
     return this.svc.getOperationsSummary(u.companyId);
+  }
+
+  @Get('operations/exception-sla')
+  getExceptionSla(@CurrentUser() u: any) {
+    return this.svc.getExceptionSla(u.companyId);
   }
 
   @Get('collections-state-sync/dashboard')

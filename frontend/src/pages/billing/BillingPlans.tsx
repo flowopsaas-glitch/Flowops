@@ -1,18 +1,25 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowRight,
   BadgeCheck,
+  Building2,
   CheckCircle2,
   CreditCard,
   ExternalLink,
   FileText,
   Loader2,
+  Package,
   RefreshCw,
   Sparkles,
+  Truck,
+  Users,
   Zap,
 } from "lucide-react";
 import { api } from "../../api/client";
+import { getEntitlements, type Entitlements, type UsageMeter } from "../../api/billingApi";
+import { PLAN_CATALOG } from "../../lib/planCatalog";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -32,60 +39,33 @@ type Company = {
   plan?: string | null;
   isActive?: boolean;
   currency?: string | null;
+  trialEndsAt?: string | null;
 };
 
 // ── Plan definitions ───────────────────────────────────────────────────────
+// Content (names, prices, feature bullets) comes from the shared plan catalog
+// so the in-app cards and the marketing Pricing page never drift. Only the
+// in-app visual styling lives here.
 
-const PLANS = [
-  {
-    key: "starter",
-    name: "Starter",
-    price: "Free",
-    color: "border-slate-500/30 bg-slate-500/8",
-    badge: "text-slate-300 bg-slate-500/15 border-slate-500/30",
-    features: [
-      "Up to 100 waybills/month",
-      "3 driver accounts",
-      "Basic dashboard",
-      "Email support",
-    ],
-  },
-  {
-    key: "professional",
-    name: "Professional",
-    price: "R 14,999 / mo",
-    color: "border-sky-500/30 bg-sky-500/8",
-    badge: "text-sky-300 bg-sky-500/15 border-sky-500/30",
-    highlighted: true,
-    features: [
-      "Unlimited waybills",
-      "25 driver accounts",
-      "AI Control Tower",
-      "Route optimisation",
-      "WhatsApp & Email hub",
-      "COD reconciliation",
-      "Webhook & API access",
-      "Priority support",
-    ],
-  },
-  {
-    key: "enterprise",
-    name: "Enterprise",
-    price: "Custom",
-    color: "border-violet-500/30 bg-violet-500/8",
-    badge: "text-violet-300 bg-violet-500/15 border-violet-500/30",
-    features: [
-      "Everything in Pro",
-      "Unlimited drivers",
-      "Custom SLA targets",
-      "Dedicated onboarding",
-      "Multi-branch support",
-      "Custom integrations",
-      "SLA breach automation",
-      "White-label portal",
-    ],
-  },
-];
+const PLAN_STYLE: Record<string, { color: string; badge: string; highlighted?: boolean }> = {
+  starter:      { color: "border-slate-500/30 bg-slate-500/8",  badge: "text-slate-300 bg-slate-500/15 border-slate-500/30" },
+  professional: { color: "border-sky-500/30 bg-sky-500/8",      badge: "text-sky-300 bg-sky-500/15 border-sky-500/30", highlighted: true },
+  enterprise:   { color: "border-violet-500/30 bg-violet-500/8", badge: "text-violet-300 bg-violet-500/15 border-violet-500/30" },
+};
+
+const PLANS = PLAN_CATALOG.map((p) => ({
+  key: p.key,
+  name: p.name,
+  price: p.period ? `${p.price} ${p.period}` : p.price,
+  features: Array.isArray(p.features) ? p.features : [],
+  ...PLAN_STYLE[p.key],
+}));
+
+// ── Plan codes (Paystack) ──────────────────────────────────────────────────
+const PLAN_CODES: Record<string, string> = {
+  professional: 'PLN_l3kobthzahnkpf3',
+  enterprise:   'PLN_9at9kn2ra8jtae0',
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -110,22 +90,90 @@ const STATUS_STYLE: Record<string, string> = {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
+function UsageCard({
+  label,
+  sub,
+  icon: Icon,
+  meter,
+}: {
+  label: string;
+  sub?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  meter: UsageMeter;
+}) {
+  const pct = meter.unlimited
+    ? 0
+    : meter.limit === 0
+    ? 100
+    : Math.min(100, Math.round((meter.used / meter.limit) * 100));
+  const near = !meter.unlimited && pct >= 80 && !meter.atLimit;
+  const barColor = meter.atLimit
+    ? "bg-rose-400"
+    : near
+    ? "bg-amber-400"
+    : "bg-sky-400";
+
+  return (
+    <div
+      className={`rounded-2xl border p-4 ${
+        meter.atLimit
+          ? "border-rose-500/30 bg-rose-500/8"
+          : near
+          ? "border-amber-500/25 bg-amber-500/8"
+          : "border-white/8 bg-black/20"
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Icon className="h-4 w-4 text-white/40" />
+        <span className="text-[11px] font-black uppercase tracking-wider text-white/45">
+          {label}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-black text-white">{meter.used}</span>
+        <span className="text-sm font-bold text-white/40">
+          {meter.unlimited ? "/ ∞" : `/ ${meter.limit}`}
+        </span>
+        {sub && <span className="ml-auto text-[10px] text-white/30">{sub}</span>}
+      </div>
+      {meter.unlimited ? (
+        <p className="mt-2 text-[11px] font-bold text-emerald-300/80">Unlimited</p>
+      ) : (
+        <>
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/8">
+            <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+          </div>
+          <p className={`mt-1.5 text-[11px] font-semibold ${meter.atLimit ? "text-rose-300" : "text-white/40"}`}>
+            {meter.atLimit
+              ? "Limit reached"
+              : `${meter.remaining} remaining`}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function BillingPlans() {
   const navigate = useNavigate();
   const [company, setCompany] = useState<Company | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [loading, setLoading] = useState(true);
+  const [upgrading, setUpgrading] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [cRaw, iRaw] = await Promise.all([
+        const [cRaw, iRaw, entRaw] = await Promise.all([
           api.get("/companies/my-company"),
           api.get("/invoices/supervisor"),
+          getEntitlements().catch(() => null),
         ]);
         const c = unwrap(cRaw);
         const iList: any = unwrap(iRaw);
         setCompany(c);
+        if (entRaw) setEntitlements(entRaw);
         const arr: Invoice[] = Array.isArray(iList)
           ? iList
           : Array.isArray(iList?.data)
@@ -142,6 +190,58 @@ export default function BillingPlans() {
 
   const currentPlanKey = String(company?.plan ?? "starter").toLowerCase();
   const currentPlan = PLANS.find(p => p.key === currentPlanKey) ?? PLANS[0];
+
+  // Trial countdown
+  const trialDaysLeft = company?.trialEndsAt
+    ? Math.ceil((new Date(company.trialEndsAt).getTime() - Date.now()) / 86400000)
+    : null;
+  const onTrial = trialDaysLeft !== null && trialDaysLeft > 0;
+
+  const handleUpgrade = async (plan: typeof PLANS[0]) => {
+    const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "27606592875";
+    const waBase  = `https://wa.me/${ownerWa}`;
+
+    if (plan.key === "enterprise") {
+      const msg = encodeURIComponent(
+        `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
+        `We'd like to discuss the *FlowOps Enterprise Plan* — dedicated onboarding, unlimited drivers, and custom SLA.\n\nCan we schedule a call? 🙏`
+      );
+      window.open(`${waBase}?text=${msg}`, "_blank");
+      return;
+    }
+
+    if (plan.key === "starter") {
+      // Can't downgrade to starter post-trial — no free tier
+      return;
+    }
+
+    // Professional — initialize a Paystack subscription checkout
+    const planCode = PLAN_CODES[plan.key];
+    if (!planCode) return;
+
+    setUpgrading(plan.key);
+    try {
+      const res: any = await api.post("/paystack/checkout", { planCode });
+      const raw = unwrap(res);
+      const url = raw?.authorizationUrl ?? raw?.authorization_url;
+      if (url) {
+        // Redirect to Paystack hosted checkout
+        window.location.href = url;
+      } else if (raw?.configured === false) {
+        // Paystack not configured — WhatsApp fallback
+        const msg = encodeURIComponent(
+          `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
+          `We'd like to upgrade to the *FlowOps ${plan.name} Plan*.\n\nPlease send pricing for our region and a payment link. 🙏`
+        );
+        window.open(`${waBase}?text=${msg}`, "_blank");
+      }
+    } catch {
+      const msg = encodeURIComponent(
+        `Hi! 👋 *${company?.name}* would like to upgrade to *FlowOps ${plan.name}*. Please send pricing for our region. 🙏`
+      );
+      window.open(`${waBase}?text=${msg}`, "_blank");
+    } finally { setUpgrading(null); }
+  };
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(30,80,140,0.14),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 overflow-y-auto">
@@ -172,6 +272,55 @@ export default function BillingPlans() {
             </button>
           </div>
         </div>
+
+        {/* ── Trial banner ── */}
+        {onTrial && (
+          <div className="rounded-[20px] border border-amber-400/30 bg-amber-500/10 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 text-amber-300 shrink-0" />
+              <div>
+                <p className="text-sm font-black text-amber-200">
+                  14-day Pro trial — <span className="text-amber-300">{trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} remaining</span>
+                </p>
+                <p className="text-xs text-amber-300/60 mt-0.5">
+                  After the trial your account will be locked. Upgrade to Professional or Enterprise to keep access.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleUpgrade(PLANS.find(p => p.key === "professional")!)}
+              disabled={!!upgrading}
+              className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-xs font-black text-amber-200 hover:bg-amber-500/30 transition disabled:opacity-50"
+            >
+              {upgrading === "professional" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upgrade to Pro →"}
+            </button>
+          </div>
+        )}
+
+        {/* ── Trial EXPIRED banner (account locked) ── */}
+        {!onTrial && entitlements?.trialExpired && (
+          <div className="rounded-[20px] border-2 border-rose-500/40 bg-rose-500/10 px-5 py-5 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-6 w-6 text-rose-400 shrink-0" />
+              <div>
+                <p className="text-base font-black text-rose-200">
+                  Your trial has expired — account is locked
+                </p>
+                <p className="text-sm text-rose-300/70 mt-1">
+                  Upgrade to Professional or Enterprise to restore full access.
+                  All your data is safe and waiting.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleUpgrade(PLANS.find(p => p.key === "professional")!)}
+              disabled={!!upgrading}
+              className="shrink-0 rounded-xl bg-rose-500 px-5 py-3 text-sm font-black text-white hover:bg-rose-600 transition shadow-lg shadow-rose-500/20 disabled:opacity-50"
+            >
+              {upgrading === "professional" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upgrade Now — Restore Access"}
+            </button>
+          </div>
+        )}
 
         {/* ── Current plan card ── */}
         {loading ? (
@@ -216,12 +365,46 @@ export default function BillingPlans() {
 
             {/* Included features */}
             <div className="mt-5 flex flex-wrap gap-2">
-              {currentPlan.features.map(f => (
+              {(currentPlan.features || []).map(f => (
                 <div key={f} className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-black/20 px-3 py-1.5 text-xs text-white/65">
                   <CheckCircle2 className="h-3 w-3 text-emerald-400/70 flex-shrink-0" />
                   {f}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Usage this month ── */}
+        {!loading && entitlements && (
+          <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.3)]">
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 ring-1 ring-sky-500/20">
+                  <Zap className="h-4 w-4 text-sky-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">Usage this month</h3>
+                  <p className="text-[11px] text-white/40">
+                    Live against your {entitlements.planName} plan limits
+                    {entitlements.onTrial && (
+                      <span className="text-amber-300/80"> · Pro trial active</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              {Object.values(entitlements.usage).some((m) => m.atLimit) && (
+                <span className="flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-bold text-rose-300">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Limit reached — upgrade to add more
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <UsageCard label="Waybills" sub="this month" icon={Package} meter={entitlements.usage.waybillsThisMonth} />
+              <UsageCard label="Drivers" sub="active" icon={Truck} meter={entitlements.usage.drivers} />
+              <UsageCard label="Team members" sub="active" icon={Users} meter={entitlements.usage.users} />
+              <UsageCard label="Branches" sub="" icon={Building2} meter={entitlements.usage.branches} />
             </div>
           </div>
         )}
@@ -256,7 +439,7 @@ export default function BillingPlans() {
                   </div>
                   <p className="text-xl font-black text-white mb-4">{plan.price}</p>
                   <div className="flex-1 space-y-2 mb-5">
-                    {plan.features.map(f => (
+                    {(plan.features || []).map(f => (
                       <div key={f} className="flex items-center gap-2 text-xs text-white/65">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/70 flex-shrink-0" />
                         {f}
@@ -265,52 +448,22 @@ export default function BillingPlans() {
                   </div>
                   {!isCurrent && (
                     <button
-                      onClick={() => {
-                        // Owner's WhatsApp number from env (e.g. 27821234567)
-                        const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "";
-                        const waBase  = ownerWa ? `https://wa.me/${ownerWa}` : "https://wa.me";
-
-                        if (plan.key === "enterprise") {
-                          const msg = encodeURIComponent(
-                            `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-                            `We'd like to learn more about the *FlowOps Enterprise Plan* — dedicated onboarding, unlimited drivers, and custom SLA targets.\n\n` +
-                            `Can we schedule a call? 🙏`
-                          );
-                          window.open(`${waBase}?text=${msg}`, "_blank");
-                        } else {
-                          api.post("/paystack/initialize", { plan: plan.key })
-                            .then((res: any) => {
-                              const url = res?.data?.authorization_url ?? res?.authorization_url;
-                              if (url) window.open(url, "_blank");
-                              else {
-                                const msg = encodeURIComponent(
-                                  `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-                                  `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\n` +
-                                  `Please send us a payment link. Thank you! 🙏`
-                                );
-                                window.open(`${waBase}?text=${msg}`, "_blank");
-                              }
-                            })
-                            .catch(() => {
-                              const msg = encodeURIComponent(
-                                `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-                                `We'd like to upgrade to the *FlowOps ${plan.name} Plan* (${plan.price}/mo).\n\n` +
-                                `Please send us a payment link. Thank you! 🙏`
-                              );
-                              window.open(`${waBase}?text=${msg}`, "_blank");
-                            });
-                        }
-                      }}
+                      disabled={upgrading === plan.key}
+                      onClick={() => handleUpgrade(plan)}
                       className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition ${
                         plan.highlighted
                           ? "bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:bg-sky-500/30"
                           : "bg-white/8 border border-white/10 text-white/70 hover:bg-white/15 hover:text-white"
-                      }`}
+                      } disabled:opacity-50 disabled:cursor-wait`}
                     >
-                      {plan.key === "enterprise" ? (
+                      {upgrading === plan.key ? (
+                        <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing…</>
+                      ) : plan.key === "enterprise" ? (
                         <>Contact Sales <ExternalLink className="h-3.5 w-3.5" /></>
+                      ) : plan.key === "starter" && currentPlanKey !== "starter" ? (
+                        <>Downgrade to Free <ArrowRight className="h-3.5 w-3.5" /></>
                       ) : (
-                        <>Upgrade <ArrowRight className="h-3.5 w-3.5" /></>
+                        <>Upgrade to {plan.name} <ArrowRight className="h-3.5 w-3.5" /></>
                       )}
                     </button>
                   )}

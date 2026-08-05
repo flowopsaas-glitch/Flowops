@@ -4,7 +4,7 @@ Run: python3 /tmp/patch_home.py  (from ~/FlowOps-Logistics/flowops-web)
 """
 import pathlib, sys
 
-WA = "27814065725"
+WA = "27606592875"
 p = pathlib.Path('/home/kakes/FlowOps-Logistics/flowops-web/client/src/pages/Home.tsx')
 if not p.exists():
     sys.exit('File not found: ' + str(p))
@@ -85,7 +85,7 @@ OLD_PRICE = '''            {[
 
 NEW_PRICE = '''            {[
               { plan: "Starter",      price: "Free",    sub: "",    desc: "Up to 100 waybills/month",  pop: false, cta: "Start Free",    msg: "Hi! I want to start on the FlowOps Starter (free) plan." },
-              { plan: "Professional", price: "R14,999", sub: "/mo", desc: "Unlimited waybills + AI",   pop: true,  cta: "Upgrade Now",   msg: "Hi! I want to upgrade to FlowOps Professional at R14,999/mo." },
+              { plan: "Professional", price: "Custom", sub: "/mo", desc: "Unlimited waybills + AI",   pop: true,  cta: "Upgrade Now",   msg: "Hi! I want to upgrade to FlowOps Professional. Please send me pricing for my region." },
               { plan: "Enterprise",   price: "Custom",  sub: "",    desc: "White-label + custom SLA",  pop: false, cta: "Contact Sales", msg: "Hi! I want to discuss FlowOps Enterprise pricing for my organisation." },
             ].map((pl, i) => (
               <div

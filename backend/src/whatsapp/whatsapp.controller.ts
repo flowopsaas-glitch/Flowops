@@ -1,14 +1,19 @@
 import {
-  Controller, Get, Post, Body, Param, Query, Req, Res, RawBodyRequest, HttpCode,
+  Controller, Get, Post, Body, Param, Query, Req, Res, RawBodyRequest, HttpCode, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { WhatsAppService } from './whatsapp.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('WhatsApp')
 @ApiBearerAuth()
+@UseGuards(FeatureGuard)
+@RequireFeature('whatsapp')
 @Controller('whatsapp')
 export class WhatsAppController {
   constructor(private readonly svc: WhatsAppService) {}
@@ -40,6 +45,26 @@ export class WhatsAppController {
     return this.svc.sendMessage(u.companyId, body.to, body.message);
   }
 
+  @Get('templates')
+  templates() {
+    return this.svc.listTemplates();
+  }
+
+  @Post('send-template')
+  @HttpCode(200)
+  sendTemplate(
+    @CurrentUser() u: any,
+    @Body() body: { to: string; name: string; language?: string; variables?: string[] },
+  ) {
+    return this.svc.sendTemplate(
+      u.companyId,
+      body.to,
+      body.name,
+      body.language ?? 'en_US',
+      body.variables ?? [],
+    );
+  }
+
   @Post('register-client-number')
   registerNumber(@CurrentUser() u: any, @Body() body: { phoneNumber: string }) {
     return this.svc.registerNumber(u.companyId, body.phoneNumber);
@@ -53,15 +78,16 @@ export class WhatsAppController {
    * your webhook URL in the Meta developer portal.
    */
   @Public()
+  @SkipThrottle() // Meta verification challenge
   @Get('webhook')
   @ApiOperation({ summary: 'Meta webhook verification challenge' })
-  verifyWebhook(
+  async verifyWebhook(
     @Query('hub.mode') mode: string,
     @Query('hub.verify_token') token: string,
     @Query('hub.challenge') challenge: string,
     @Res() res: Response,
   ) {
-    const challengeResponse = this.svc.verifyWebhook(mode, token, challenge);
+    const challengeResponse = await this.svc.verifyWebhook(mode, token, challenge);
     // Must return plain text integer for Meta to accept
     res.set('Content-Type', 'text/plain').send(challengeResponse);
   }
@@ -73,6 +99,7 @@ export class WhatsAppController {
    * so we can return 200 OK quickly as Meta requires.
    */
   @Public()
+  @SkipThrottle() // external provider callback (signature verified)
   @Post('webhook')
   @HttpCode(200)
   @ApiOperation({ summary: 'Meta webhook event receiver' })

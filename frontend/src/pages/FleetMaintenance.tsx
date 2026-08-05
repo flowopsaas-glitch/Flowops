@@ -1,31 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock,
-  Loader2, Plus, RefreshCw, Truck, Wrench,
+  Loader2, Plus, RefreshCw, Truck, Wrench, Brain, DollarSign, Shield,
+  Activity, Gauge,
 } from "lucide-react";
 import { api } from "../api/client";
 
+function unwrap(r: any): any { return r?.data ?? r; }
+
+// Lightweight local types to satisfy the TypeScript compiler in this UI file.
+// Prefer importing shared types from the canonical types package if available,
+// but these local shapes are intentionally minimal and non-breaking.
+
 type FleetDriver = {
-  id: string; name: string; vehicleType: string; vehicleReg?: string | null;
-  status: string; currentKm: number | null; nextServiceKm: number | null;
-  nextServiceDate: string | null; vehicleNotes: string | null;
-  services: Array<{ servicedAt: string; serviceType: string }>;
-  kmUntilService: number | null; daysUntilService: number | null;
-  serviceAlert: boolean;
+  driverId: string;
+  id?: string;
+  driverName?: string;
+  name?: string;
+  vehicleReg?: string | null;
+  vehicleType?: string | null;
+  currentKm?: number | null;
+  nextServiceKm?: number | null;
+  nextServiceDate?: string | null;
+  vehicleNotes?: string | null;
+  status?: "OK" | "DUE_SOON" | "OVERDUE" | "CRITICAL" | string;
+  kmOverdue?: number | null;
+  daysOverdue?: number | null;
 };
 
 type ServiceLog = {
-  id: string; serviceType: string; notes?: string | null;
-  kmAtService?: number | null; cost?: number | null; servicedAt: string;
+  id: string;
+  serviceType: string;
+  notes?: string | null;
+  servicedAt?: string | null;
+  kmAtService?: number | null;
+  cost?: number | null;
 };
-
-function unwrapList(r: any): any[] { const d = r?.data ?? r; return Array.isArray(d) ? d : []; }
-function unwrap(r: any): any { return r?.data ?? r; }
 
 const SERVICE_TYPES = [
   "Oil Change", "Tyre Rotation", "Tyre Replacement", "Annual Service",
-  "Brake Service", "Battery Replacement", "Wheel Alignment", "Transmission Service",
-  "Air Filter", "Spark Plugs", "Coolant Flush", "Other",
+  "Brake Inspection", "Brake Pads", "Battery Check", "Wheel Alignment",
+  "Transmission", "Air Filter", "Coolant Flush", "Suspension", "Other",
 ];
 
 export default function FleetMaintenance() {
@@ -36,6 +51,8 @@ export default function FleetMaintenance() {
   const [histLoading, setHistLoading] = useState(false);
   const [showLogForm, setShowLogForm] = useState(false);
   const [showOdoForm, setShowOdoForm] = useState(false);
+  const [aiAdvice, setAiAdvice] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Log service form
   const [logForm, setLogForm] = useState({ serviceType: SERVICE_TYPES[0], notes: "", kmAtService: "", cost: "", servicedAt: "" });
@@ -47,8 +64,9 @@ export default function FleetMaintenance() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const raw: any = await api.get("/drivers/fleet/dashboard");
-      setDrivers(unwrapList(raw));
+      const raw: any = await api.get("/fleet-maintenance/health");
+      const data = unwrap(raw);
+      setDrivers(data?.vehicles || []);
     } finally { setLoading(false); }
   }, []);
 
@@ -57,24 +75,36 @@ export default function FleetMaintenance() {
   const loadHistory = useCallback(async (driverId: string) => {
     setHistLoading(true);
     try {
-      const raw: any = await api.get(`/drivers/${driverId}/service-history`);
-      setHistory(unwrapList(raw));
+      const raw: any = await api.get(`/fleet-maintenance/history?driverId=${driverId}`);
+      const data = unwrap(raw);
+      setHistory(Array.isArray(data) ? data : []);
     } finally { setHistLoading(false); }
   }, []);
 
-  const selectDriver = (d: FleetDriver) => {
+  const selectDriver = (d: any) => {
     setSelected(d);
     setShowLogForm(false);
     setShowOdoForm(false);
+    setAiAdvice(null);
     setOdoForm({ currentKm: String(d.currentKm ?? ""), nextServiceKm: String(d.nextServiceKm ?? ""), nextServiceDate: d.nextServiceDate ? d.nextServiceDate.slice(0, 10) : "" });
-    void loadHistory(d.id);
+    void loadHistory(d.driverId || d.id);
+  };
+
+  const loadAiAdvice = async (driverId: string) => {
+    setAiLoading(true);
+    try {
+      const raw: any = await api.get(`/fleet-maintenance/ai-advice/${driverId}`);
+      setAiAdvice(unwrap(raw));
+    } catch { setAiAdvice({ error: true, overallRecommendation: "AI advice unavailable — check GROQ_API_KEY" }); }
+    finally { setAiLoading(false); }
   };
 
   const logService = async () => {
     if (!selected || !logForm.serviceType) return;
     setSaving(true);
     try {
-      await api.post(`/drivers/${selected.id}/service-log`, {
+      await api.post(`/fleet-maintenance/log`, {
+        driverId: selected.id,
         serviceType: logForm.serviceType,
         notes: logForm.notes || undefined,
         kmAtService: logForm.kmAtService ? parseInt(logForm.kmAtService) : undefined,
@@ -92,17 +122,15 @@ export default function FleetMaintenance() {
     if (!selected || !odoForm.currentKm) return;
     setSaving(true);
     try {
-      await api.patch(`/drivers/${selected.id}/odometer`, {
-        currentKm: parseInt(odoForm.currentKm),
-        nextServiceKm: odoForm.nextServiceKm ? parseInt(odoForm.nextServiceKm) : undefined,
-        nextServiceDate: odoForm.nextServiceDate || undefined,
+      await api.patch(`/fleet-maintenance/odometer/${selected.id}`, {
+        km: parseInt(odoForm.currentKm),
       });
       setShowOdoForm(false);
       await load();
     } finally { setSaving(false); }
   };
 
-  const alerts = useMemo(() => drivers.filter((d) => d.serviceAlert).length, [drivers]);
+  const alerts = useMemo(() => drivers.filter((d: any) => d.status === "OVERDUE" || d.status === "CRITICAL").length, [drivers]);
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.06),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 overflow-y-auto">
@@ -143,14 +171,14 @@ export default function FleetMaintenance() {
                 <Truck className="mx-auto h-10 w-10 text-white/10 mb-3" />
                 <div className="text-white/30 font-bold">No drivers in fleet yet.</div>
               </div>
-            ) : drivers.map((d) => (
+            ) : drivers.map((d: any) => (
               <button
-                key={d.id}
+                key={d.driverId}
                 onClick={() => selectDriver(d)}
                 className={`w-full rounded-[24px] border p-5 text-left transition-all ${
-                  selected?.id === d.id
+                  (selected as any)?.driverId === d.driverId
                     ? "border-amber-400/30 bg-amber-500/8"
-                    : d.serviceAlert
+                    : d.status === "OVERDUE" || d.status === "CRITICAL"
                     ? "border-amber-400/20 bg-amber-500/5 hover:bg-amber-500/10"
                     : "border-white/10 bg-white/[0.05] hover:bg-white/[0.08]"
                 }`}
@@ -161,7 +189,7 @@ export default function FleetMaintenance() {
                       <Truck className="h-5 w-5 text-white/60" />
                     </div>
                     <div>
-                      <div className="font-bold text-white">{d.name}</div>
+                      <div className="font-bold text-white">{d.driverName}</div>
                       <div className="text-xs text-white/40">
                         {d.vehicleReg ?? d.vehicleType}
                         {d.currentKm != null && ` · ${d.currentKm.toLocaleString()} km`}
@@ -169,24 +197,32 @@ export default function FleetMaintenance() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
-                    {d.serviceAlert ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-                        <AlertTriangle className="h-3 w-3" /> Service Due
+                    {d.status === "CRITICAL" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-rose-400/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-300">
+                        <AlertTriangle className="h-3 w-3" /> CRITICAL
                       </span>
-                    ) : (
+                    ) : d.status === "OVERDUE" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                        <AlertTriangle className="h-3 w-3" /> Overdue
+                      </span>
+                    ) : d.status === "DUE_SOON" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-sky-400/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-300">
+                        <Clock className="h-3 w-3" /> Due Soon
+                      </span>
+                    ) : d.status === "OK" ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/8 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
                         <CheckCircle2 className="h-3 w-3" /> OK
                       </span>
-                    )}
-                    {d.kmUntilService != null && (
-                      <span className="text-[10px] text-white/30">
-                        {d.kmUntilService <= 0 ? "Overdue" : `${d.kmUntilService.toLocaleString()} km to service`}
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/40">
+                        No Data
                       </span>
                     )}
-                    {d.daysUntilService != null && (
-                      <span className="text-[10px] text-white/30">
-                        {d.daysUntilService <= 0 ? "Service date passed" : `${d.daysUntilService}d until service`}
-                      </span>
+                    {d.kmOverdue != null && d.kmOverdue > 0 && (
+                      <span className="text-[10px] text-rose-300">{d.kmOverdue.toLocaleString()} km overdue</span>
+                    )}
+                    {d.daysOverdue != null && d.daysOverdue > 0 && (
+                      <span className="text-[10px] text-amber-300">{d.daysOverdue}d overdue</span>
                     )}
                   </div>
                 </div>
@@ -204,8 +240,8 @@ export default function FleetMaintenance() {
                     <Truck className="h-5 w-5 text-amber-400" />
                   </div>
                   <div>
-                    <div className="font-black text-white">{selected.name}</div>
-                    <div className="text-xs text-white/40">{selected.vehicleReg ?? selected.vehicleType}</div>
+                    <div className="font-black text-white">{(selected as any).driverName || (selected as any).name}</div>
+                    <div className="text-xs text-white/40">{(selected as any).vehicleReg ?? (selected as any).vehicleType}</div>
                   </div>
                 </div>
                 {selected.vehicleNotes && (
@@ -220,6 +256,10 @@ export default function FleetMaintenance() {
                   <button onClick={() => { setShowLogForm((v) => !v); setShowOdoForm(false); }}
                     className="flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20">
                     <Plus className="h-3.5 w-3.5" /> Log Service
+                  </button>
+                  <button onClick={() => loadAiAdvice(selected.driverId || selected.id)} disabled={aiLoading}
+                    className="flex items-center gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/20 disabled:opacity-50">
+                    {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />} AI Diagnosis
                   </button>
                 </div>
               </div>
@@ -277,6 +317,49 @@ export default function FleetMaintenance() {
                     className="w-full rounded-2xl bg-amber-500 hover:bg-amber-400 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-50">
                     {saving ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Save Service Record"}
                   </button>
+                </div>
+              )}
+
+              {/* AI Maintenance Advice */}
+              {aiAdvice && !aiAdvice.error && (
+                <div className="rounded-[20px] border border-violet-400/20 bg-violet-500/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-violet-300" />
+                    <span className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-300">AI Maintenance Supervisor</span>
+                    {aiAdvice.source === "ai" && <span className="text-[9px] bg-violet-500/20 text-violet-200 px-1.5 py-0.5 rounded-full">Groq</span>}
+                  </div>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="text-center">
+                      <div className={`text-2xl font-black ${(aiAdvice.healthScore ?? 0) >= 7 ? "text-emerald-300" : (aiAdvice.healthScore ?? 0) >= 4 ? "text-amber-300" : "text-rose-300"}`}>{aiAdvice.healthScore}/10</div>
+                      <div className="text-[10px] text-white/40">Health</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`text-lg font-black ${aiAdvice.breakdownRisk === "LOW" ? "text-emerald-300" : aiAdvice.breakdownRisk === "MEDIUM" ? "text-amber-300" : "text-rose-300"}`}>{aiAdvice.breakdownRisk}</div>
+                      <div className="text-[10px] text-white/40">Breakdown Risk</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-black text-white/80">R{(aiAdvice.costForecast3Months || 0).toLocaleString()}</div>
+                      <div className="text-[10px] text-white/40">3-Month Forecast</div>
+                    </div>
+                  </div>
+                  {aiAdvice.urgentItems?.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-white/50 mb-1">Urgent Items:</div>
+                      {aiAdvice.urgentItems.map((item: any, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-xs py-1">
+                          <span className={`w-2 h-2 rounded-full ${item.priority === "CRITICAL" ? "bg-rose-400" : item.priority === "HIGH" ? "bg-amber-400" : "bg-white/30"}`} />
+                          <span className="text-white/75">{item.item}</span>
+                          {item.estimatedCost && <span className="ml-auto text-white/40">~R{item.estimatedCost}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {aiAdvice.africanConditionsAdvice && (
+                    <div className="text-xs text-white/50 bg-black/20 rounded-xl px-3 py-2">
+                      <span className="font-bold text-white/60">African conditions:</span> {aiAdvice.africanConditionsAdvice}
+                    </div>
+                  )}
+                  <div className="text-xs text-white/60">{aiAdvice.overallRecommendation}</div>
                 </div>
               )}
 

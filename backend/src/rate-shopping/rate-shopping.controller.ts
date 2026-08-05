@@ -1,10 +1,14 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RateShoppingService, RateRequest, CarrierConfig } from './rate-shopping.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Rate Shopping')
 @ApiBearerAuth()
+@UseGuards(FeatureGuard)
+@RequireFeature('rateShopping')
 @Controller('rate-shopping')
 export class RateShoppingController {
   constructor(private readonly svc: RateShoppingService) {}

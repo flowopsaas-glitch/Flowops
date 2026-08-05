@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class BranchesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private billing: BillingService,
+  ) {}
 
   async findAll(companyId: string) {
     return this.prisma.branch.findMany({ where: { companyId }, include: { _count: { select: { drivers: true } } } });
@@ -20,6 +24,8 @@ export class BranchesService {
   }
 
   async create(companyId: string, dto: any) {
+    // Enforce the plan's branch limit (Starter = 1; Pro/Enterprise unlimited).
+    await this.billing.assertCanCreate(companyId, 'branch');
     return this.prisma.branch.create({ data: { ...dto, companyId } });
   }
 

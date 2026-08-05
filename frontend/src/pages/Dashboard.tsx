@@ -9,6 +9,10 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { normalizeTenantNavPermissions } from "../lib/tenantUserPermissions";
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
+import { ForwardingControlTower } from "../components/premium/ForwardingControlTower";
+import { TiltCard } from "../components/premium/TiltCard";
+import { PerformanceTrends } from "../components/premium/PerformanceTrends";
+import { getEntitlements } from "../api/billingApi";
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../api/client';
 
@@ -49,14 +53,14 @@ function MapController({ center }: { center: [number, number] }) {
 
 function MetricCard(props: { 
   title: string; value: string; subtitle: string; icon: any; 
-  gradient: string; to: string; onAiClick?: () => void 
+  gradient: string; to: string; onAiClick?: () => void; className?: string;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const navigate = useNavigate();
   const Icon = props.icon;
 
   return (
-    <div className="group h-[190px] w-full [perspective:1000px] cursor-pointer" onClick={() => setIsFlipped(!isFlipped)}>
+    <div className={`group h-[190px] w-full [perspective:1000px] cursor-pointer ${props.className ?? ""}`} onClick={() => setIsFlipped(!isFlipped)}>
       <div className={`relative h-full w-full rounded-[24px] transition-all duration-700 [transform-style:preserve-3d] ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
         <div className={`absolute inset-0 h-full w-full rounded-[24px] p-6 [backface-visibility:hidden] border border-white/10 shadow-xl ${props.gradient}`}>
           <div className="flex items-start justify-between">
@@ -139,7 +143,7 @@ function KpiCard(props: { title: string; kpi: Kpi; icon: any; currency: string; 
   return (
     <button
       onClick={() => navigate(props.to)}
-      className="group text-left rounded-[20px] border border-white/10 bg-slate-900/60 p-5 transition-all hover:border-sky-400/40 hover:bg-slate-900/90"
+      className="group h-full w-full text-left rounded-[20px] border border-white/10 bg-slate-900/60 p-5 transition-all hover:border-sky-400/40 hover:bg-slate-900/90"
     >
       <div className="flex items-center justify-between">
         <div className="rounded-xl border border-white/10 bg-white/[0.04] p-2 text-sky-300">
@@ -181,6 +185,19 @@ export default function Dashboard() {
   });
   const [kpis, setKpis] = useState<KpiSet | null>(null);
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [forwardingEntitled, setForwardingEntitled] = useState(false);
+
+  useEffect(() => {
+    if (booting || !user) return;
+    (async () => {
+      try {
+        const ent = await getEntitlements().catch(() => null);
+        setForwardingEntitled(Boolean((ent as any)?.features?.freightForwarding));
+      } catch { /* entitlement check best-effort */ }
+    })();
+  }, [user, booting]);
+  // Keyed by driverId — refreshed every 30 s alongside metrics
+  const [etaMap, setEtaMap] = useState<Record<string, { etaMinutes: number; distanceKm: number; trackingNumber: string; urgency: string }>>({});
 
   const currency = (user?.company?.currency as string) || "ZAR";
   const company = user?.company;
@@ -235,6 +252,19 @@ export default function Dashboard() {
       }
     };
 
+    const fetchEtas = async () => {
+      try {
+        const res = await api.get<any, any>(`/dashboard/live-etas`);
+        const data: any[] = Array.isArray(res) ? res
+          : Array.isArray((res as any)?.data) ? (res as any).data : [];
+        const map: typeof etaMap = {};
+        for (const e of data) map[e.driverId] = e;
+        setEtaMap(map);
+      } catch {
+        // ETAs are best-effort — don't log noise if backend returns nothing
+      }
+    };
+
     const fetchKpis = async () => {
       try {
         const res = await api.get<any, any>(`/dashboard/kpis`);
@@ -247,6 +277,11 @@ export default function Dashboard() {
 
     fetchMetrics();
     fetchKpis();
+    fetchEtas();
+
+    // Refresh metrics + ETAs every 30 seconds (KPIs only need daily precision)
+    const interval = setInterval(() => { fetchMetrics(); fetchEtas(); }, 30_000);
+    return () => clearInterval(interval);
   }, [user, booting]);
 
   // 2. Real-time WebSockets Over-the-Air Update Listener Loop
@@ -303,14 +338,18 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#020617] text-slate-100 p-8 space-y-8 font-sans">
       <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`${persona} · ${company?.name || "FlowOps Demo"}`} />
 
+      {/* Freight Control Tower — import/export hero for forwarding-entitled tenants */}
+      {forwardingEntitled && <ForwardingControlTower />}
+
+
       {/* Operational metrics — shown to operations / dispatch / command personas */}
       {canSeeOps && (
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-        <MetricCard title="Pending Collection" value={liveMetrics.collections} subtitle="Waybills awaiting courier dropoff assignment." icon={Package} gradient="bg-gradient-to-br from-amber-500 to-orange-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="Active Resources" value={liveMetrics.activeDrivers} subtitle="Live registered logistics drivers checked-in." icon={Users} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" to="/driver-dispatch" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/shipments?status=IN_TRANSIT" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="At Local Hubs" value={liveMetrics.stock} subtitle="Waybills scanned inside processing nodes safely." icon={FileText} gradient="bg-gradient-to-br from-purple-500 to-pink-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
-        <MetricCard title="Anomalies Flagged" value={liveMetrics.risks} subtitle="Operational exceptions under AI review queues." icon={AlertTriangle} gradient="bg-gradient-to-br from-rose-500 to-red-600" to="/high-risk-queue" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-1" title="Pending Collection" value={liveMetrics.collections} subtitle="Waybills awaiting courier dropoff assignment." icon={Package} gradient="bg-gradient-to-br from-amber-500 to-orange-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-2" title="Active Resources" value={liveMetrics.activeDrivers} subtitle="Live registered logistics drivers checked-in." icon={Users} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" to="/driver-dispatch" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-3" title="In Transit (N1/N3)" value={liveMetrics.transit} subtitle="Freight linehauls moving out cross-province." icon={Truck} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" to="/shipments?status=IN_TRANSIT" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-4" title="At Local Hubs" value={liveMetrics.stock} subtitle="Waybills scanned inside processing nodes safely." icon={FileText} gradient="bg-gradient-to-br from-purple-500 to-pink-600" to="/waybills" onAiClick={() => setIsAiOpen(true)} />
+        <MetricCard className="fx-reveal fx-reveal-5" title="Anomalies Flagged" value={liveMetrics.risks} subtitle="Operational exceptions under AI review queues." icon={AlertTriangle} gradient="bg-gradient-to-br from-rose-500 to-red-600" to="/high-risk-queue" onAiClick={() => setIsAiOpen(true)} />
       </div>
       )}
 
@@ -325,8 +364,10 @@ export default function Dashboard() {
         </div>
         {kpis ? (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            {kpiCards.map((c) => (
-              <KpiCard key={c.title} title={c.title} kpi={c.kpi} icon={c.icon} currency={currency} to={c.to} />
+            {kpiCards.map((c, i) => (
+              <TiltCard key={c.title} className={`h-full fx-reveal fx-reveal-${(i % 6) + 1}`}>
+                <KpiCard title={c.title} kpi={c.kpi} icon={c.icon} currency={currency} to={c.to} />
+              </TiltCard>
             ))}
           </div>
         ) : (
@@ -339,6 +380,9 @@ export default function Dashboard() {
       </div>
       )}
 
+      {/* Performance Trends — time-series volume & revenue (exec view) */}
+      {(canSeeOps || canSeeFinance) && <PerformanceTrends currency={currency} />}
+
       {/* Leaflet Real-time Transit Grid Block Container — operations personas only */}
       {canSeeMap && (
       <div className="relative bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-[32px] p-6 h-[600px] overflow-hidden shadow-2xl">
@@ -346,20 +390,50 @@ export default function Dashboard() {
           📡 Live Telemetry Feed Connected
         </div>
         
-        <MapContainer center={mapCenterPoint} zoom={5} style={{ height: "100%", width: "100%", borderRadius: "24px" }} zoomControl={false}>
-          <TileLayer attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapContainer center={mapCenterPoint} zoom={5} style={{ height: "100%", width: "100%", borderRadius: "24px" }} zoomControl={false} attributionControl={false}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
           <MarkerClusterGroup>
-            {activeDrivers.map((driver) => (
-              <Marker key={driver.id} position={[driver.lat, driver.lng]}>
-                <Popup>
-                  <div className="text-slate-900 p-1 font-sans">
-                    <h4 className="font-black text-sm">{driver.name}</h4>
-                    <p className="text-xs text-slate-500 font-bold">Reg: {driver.vehicleReg}</p>
-                    <p className="text-[10px] text-emerald-600 font-bold mt-1">Coords: {driver.lat.toFixed(4)}, {driver.lng.toFixed(4)}</p>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+            {activeDrivers.map((driver) => {
+              const eta = etaMap[driver.id];
+              const etaColor = !eta ? '#6b7280'
+                : eta.urgency === 'imminent' ? '#10b981'
+                : eta.urgency === 'near'     ? '#f59e0b'
+                : '#3b82f6';
+              return (
+                <Marker key={driver.id} position={[driver.lat, driver.lng]}>
+                  <Popup>
+                    <div className="text-slate-900 p-1 font-sans min-w-[160px]">
+                      <h4 className="font-black text-sm">{driver.name}</h4>
+                      <p className="text-xs text-slate-500 font-bold">Reg: {driver.vehicleReg}</p>
+                      {eta ? (
+                        <>
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{
+                              background: etaColor + '22',
+                              color: etaColor,
+                              border: `1px solid ${etaColor}55`,
+                              borderRadius: 999,
+                              padding: '2px 8px',
+                              fontWeight: 900,
+                              fontSize: 11,
+                            }}>
+                              ⏱ {eta.etaMinutes} min ETA
+                            </span>
+                          </div>
+                          <p style={{ fontSize: 10, color: '#6b7280', marginTop: 4, fontWeight: 600 }}>
+                            {eta.distanceKm} km · {eta.trackingNumber}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-1">
+                          Coords: {driver.lat.toFixed(4)}, {driver.lng.toFixed(4)}
+                        </p>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MarkerClusterGroup>
           <MapController center={mapCenterPoint} />
         </MapContainer>

@@ -19,6 +19,11 @@ export class ShipmentsController {
     return this.svc.findLive(u.companyId);
   }
 
+  @Get('shipments/health')
+  health(@CurrentUser() u: any) {
+    return this.svc.health(u.companyId);
+  }
+
   @Post('shipments')
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);

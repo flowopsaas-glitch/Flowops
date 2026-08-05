@@ -11,6 +11,11 @@ export class ClientsController {
     return this.svc.findAll(u.companyId, bt);
   }
 
+  @Get('overview')
+  overview(@CurrentUser() u: any) {
+    return this.svc.overview(u.companyId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);

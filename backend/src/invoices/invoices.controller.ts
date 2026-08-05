@@ -24,6 +24,13 @@ export class InvoicesController {
     return this.svc.getMetrics(u.companyId);
   }
 
+  @Post('invoices/auto-generate')
+  @HttpCode(HttpStatus.OK)
+  triggerAutoInvoice(@CurrentUser() u: any) {
+    // Tenant-scoped: generates a statement only for the caller's company.
+    return this.svc.autoGenerateForCompany(u.companyId);
+  }
+
   @Post('invoices')
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);
@@ -80,6 +87,11 @@ export class InvoicesController {
   @Get('invoices/unbilled-waybills')
   getUnbilledWaybills(@CurrentUser() u: any) {
     return this.svc.getUnbilledWaybills(u.companyId);
+  }
+
+  @Get('invoices/billing-coverage')
+  getBillingCoverage(@CurrentUser() u: any) {
+    return this.svc.getBillingCoverage(u.companyId);
   }
 
   @Get('invoices/:id')

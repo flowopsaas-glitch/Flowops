@@ -43,18 +43,47 @@ export class AIClawController {
    */
   async implement(plan: any, extractedData: any) {
     this.logger.log(`[Claw 2] Implementing ${plan.action} on ${plan.target}`);
-    
+
+    // EmailHubItem columns only (see prisma/schema.prisma): there is no
+    // `aiMetadata` column, and `status` must be one of the documented values
+    // NEW|TRIAGED|IN_PROGRESS|WAITING|RESOLVED|ARCHIVED. Persist the extraction
+    // into `aiSummary` and mark the item handled via the canonical `resolved`
+    // flag.
+    const aiSummary =
+      typeof extractedData === 'string'
+        ? extractedData
+        : JSON.stringify(extractedData ?? {});
+
+    // The canonical handled-write. `resolved` + `needsOpsAction` are the source
+    // of truth the Email Hub UI reads; these columns have existed since the
+    // model was introduced so this write is always valid.
+    const canonical = { aiSummary, resolved: true, needsOpsAction: false };
+
     try {
-      // Cast prisma to 'any' for dynamic table targeting (e.g., emailHubItem vs waybill)
+      // Cast prisma to 'any' for dynamic table targeting (e.g., emailHubItem vs waybill).
+      // Preferred path also aligns the cosmetic `status` column to 'RESOLVED'.
       return await (this.prisma as any)[plan.target].update({
-        where: { id: plan.payload.id },
-        data: {
-          aiMetadata: extractedData,
-          status: 'PROCESSED',
-        },
+        where: { id: String(plan.payload.id) },
+        data: { ...canonical, status: 'RESOLVED' },
       });
     } catch (error: any) {
-      // Pass the failure to Claw 3 for analysis
+      // If a deployment drifts to a Prisma client generated before the `status`
+      // column existed, the engine throws `Unknown argument status`. That is a
+      // cosmetic-only failure — the item is still fully handled. Retry the
+      // canonical write WITHOUT `status` so the record is marked resolved and
+      // Claw 3 is never spammed with a bogus "Logic Failure" each sweep.
+      if (/unknown argument.*status/i.test(error?.message ?? '')) {
+        try {
+          return await (this.prisma as any)[plan.target].update({
+            where: { id: String(plan.payload.id) },
+            data: canonical,
+          });
+        } catch (retryError: any) {
+          return { failed: true, error: retryError.message };
+        }
+      }
+
+      // Genuine failures still flow to Claw 3 for analysis.
       return { failed: true, error: error.message };
     }
   }

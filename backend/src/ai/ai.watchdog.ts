@@ -62,36 +62,37 @@ export class AiWatchdog {
 
   /**
    * 🔍 Anomaly Detection Logic
+   * Narrowed to only trigger on genuine code-level crashes — not normal
+   * Prisma validation errors or missing-data scenarios which are expected.
    */
   private isCodeInfection(err: any): boolean {
     const message = err?.message?.toLowerCase() || '';
-    const stack = err?.stack?.toLowerCase() || '';
-    
-    return message.includes('is not a function') || 
-           message.includes('undefined') || 
-           message.includes('blank') ||
-           message.includes('bridge') ||
-           stack.includes('render') ||
-           stack.includes('component');
+    // Only flag catastrophic runtime failures, not everyday query errors
+    return message.includes('is not a function') ||
+           message.includes('cannot read properties of null') ||
+           message.includes('maximum call stack');
   }
 
   /**
    * 🔑 Credential Sanitization
-   * Ensures logistics flow (Nodemailer/Groq) isn't interrupted by auth failures.
+   * Surfaces missing AI/email credentials as low-noise warnings (not hard errors)
+   * so they don't masquerade as failures in the logs.
    */
   private async auditCredentials(): Promise<void> {
     if (!process.env.GROQ_API_KEY) {
-      this.logger.error('Intellect Failure: GROQ_API_KEY is missing from runtime environmental configurations.');
+      this.logger.warn('GROQ_API_KEY is not set — AI copilot/Plan-build features will use deterministic fallbacks.');
     }
-    
-    // Verifies the 16-character App Password requirement for SMTP integration tunnels
-    const mailPassword = process.env.EMAIL_APP_PASSWORD || '';
-    const sanitizedPassword = mailPassword.replace(/\s+/g, ''); // Strip spacing blocks
-    
-    if (!sanitizedPassword || sanitizedPassword.length !== 16) {
-      this.logger.error(`⚠️ Security Warning: EMAIL_APP_PASSWORD is invalid or does not match the 16-character Google/Office365 format specification.`);
+
+    // Email is delivered via Resend (preferred) or SendGrid.
+    // Only warn when NEITHER is configured.
+    const resendKey = process.env.RESEND_API_KEY || '';
+    const sendgridKey = process.env.SENDGRID_API_KEY || '';
+    if (resendKey) {
+      this.logger.log('🔐 Email (Resend) credentials present.');
+    } else if (sendgridKey && sendgridKey !== 'SG.CHANGE_ME') {
+      this.logger.log('🔐 Email (SendGrid) credentials present.');
     } else {
-      this.logger.log('🔐 Communication channel app credentials verified successfully.');
+      this.logger.warn('No email provider configured (RESEND_API_KEY or SENDGRID_API_KEY) — outbound email disabled.');
     }
   }
 }

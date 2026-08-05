@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import { spawn } from 'child_process';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiDiscoveryService } from './ai-discovery.service';
@@ -13,6 +14,7 @@ export class AiAutonomyService {
     private readonly prisma: PrismaService,
     private readonly discovery: AiDiscoveryService,
     private readonly devops: AiDevOpsService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -55,8 +57,10 @@ export class AiAutonomyService {
         this.logger.warn(`Detected ${data.results.length} code pattern discrepancies via Semgrep. Dispatched to threat analyzer...`);
         await this.discovery.analyzeSecurityThreats('SEMGREP', data.results);
       }
-    } catch (e: any) { 
-      this.logger.error(`Semgrep scan lifecycle dropped or no configuration file located: ${e.message}`); 
+    } catch (e: any) {
+      // semgrep is an OPTIONAL dev tool, not bundled in the production image.
+      // Its absence (spawn ENOENT) is expected — log at debug, never as an error.
+      this.logger.debug(`Semgrep scan skipped (tool not available): ${e.message}`);
     }
   }
 
@@ -81,34 +85,32 @@ export class AiAutonomyService {
         // Executes verified auto-repair via proxy mapping paths inside AiDevOpsService
         await this.devops.executeAutoRepair('package.json', 'Security patch: Vulnerable dependencies detected');
       }
-    } catch (e: any) { 
-      this.logger.error(`Trivy tracking layer execution failed: ${e.message}`); 
+    } catch (e: any) {
+      // trivy is an OPTIONAL dev tool, not bundled in the production image.
+      this.logger.debug(`Trivy scan skipped (tool not available): ${e.message}`);
     }
   }
 
-  /** 📊 SIGNOZ: Direct query for performance latency spikes */
+  /**
+   * 📊 SIGNOZ: Placeholder — only runs when a SigNoz/ClickHouse tracing
+   * backend is attached (OTEL_EXPORTER_OTLP_ENDPOINT is set). Without it,
+   * this is a no-op rather than a guaranteed-to-fail raw query every sweep.
+   */
   private async syncSigNozMetrics(): Promise<void> {
-    try {
-      // Safe casting bypasses over query parameters to track slow execution queries cleanly
-      const slowTraces = await this.prisma.$queryRawUnsafe(
-        `SELECT * FROM signoz_traces.distributed_signoz_index_v2 WHERE durationNano > 2000000000 LIMIT 10`
-      );
-      
-      if (slowTraces && Array.isArray(slowTraces) && slowTraces.length > 0) {
-        this.logger.warn(`Detected ${slowTraces.length} infrastructure performance traces exceeding >2s execution thresholds.`);
-      }
-    } catch (err: any) {
-      this.logger.error(`Failed to interface with SigNoz tracing tables: ${err.message}`);
-    }
+    const otelEndpoint = this.config?.get?.('OTEL_EXPORTER_OTLP_ENDPOINT') ?? '';
+    if (!otelEndpoint) return; // No tracing backend — skip entirely
+    // Future: query SigNoz ClickHouse for slow traces when infra is attached.
   }
 
   /** 📦 EMAIL HUB: Processes logistics data extraction and promotion */
   private async auditEmailLogistics(): Promise<void> {
     try {
-      // Filter for PENDING items that contain body text to prevent type runtime drops
+      // Filter for unresolved items that contain body text to prevent type runtime drops.
+      // `resolved` is the canonical "handled" flag (a `status` column also exists
+      // since the Email Hub revamp, but `resolved` stays the source of truth here).
       const pendingItems = await (this.prisma as any).emailHubItem.findMany({ 
         where: { 
-          status: 'PENDING',
+          resolved: false,
           body: { not: null }
         } 
       });
@@ -117,7 +119,25 @@ export class AiAutonomyService {
         if (!item.body) continue;
 
         const result = await this.discovery.extractLogisticsData(item.body);
-        
+
+        // Guard: reject the AI fallback error-object. The extractor returns a
+        // sentinel value when parsing fails — { referenceNumber: 'ERROR-PARSING', ... }.
+        // We must never write that to the database as a real waybill.
+        if (!result) continue;
+        if (result.referenceNumber === 'ERROR-PARSING') {
+          this.logger.warn(`EmailHubItem ${item.id}: extraction returned error sentinel — skipping waybill creation.`);
+          continue;
+        }
+        // All required fields must be present and non-placeholder before promotion.
+        const requiredFields: (keyof typeof result)[] = ['referenceNumber', 'pickupAddress', 'receiverCity'];
+        const hasPlaceholders = requiredFields.some(
+          (f) => !result[f] || result[f] === 'Unknown',
+        );
+        if (hasPlaceholders) {
+          this.logger.warn(`EmailHubItem ${item.id}: extraction result has missing/unknown fields — skipping promotion. Fields: ${JSON.stringify(result)}`);
+          continue;
+        }
+
         if (result) {
           // Automatically promote unstructured email payloads directly into verified system Waybills
           await this.prisma.waybill.create({ 
@@ -127,11 +147,24 @@ export class AiAutonomyService {
             } 
           });
 
-          // Mutate the hub state context flag cleanly to RESOLVED
-          await (this.prisma as any).emailHubItem.update({ 
-            where: { id: item.id }, 
-            data: { status: 'RESOLVED' } 
-          });
+          // Mark the hub item handled in a single atomic write. `resolved` is
+          // the canonical handled flag and `status` aligns the Email Hub UI to
+          // the documented 'RESOLVED' value (see schema.prisma EmailHubItem).
+          // If a deployment ever drifts to a Prisma client that predates the
+          // `status` column, we fall back to writing the canonical `resolved`
+          // flag alone — so promotion is never left half-done and the sweep
+          // never spews the noisy `Unknown argument 'status'` error each run.
+          try {
+            await (this.prisma as any).emailHubItem.update({
+              where: { id: item.id },
+              data: { resolved: true, status: 'RESOLVED', needsOpsAction: false },
+            });
+          } catch {
+            await (this.prisma as any).emailHubItem.update({
+              where: { id: item.id },
+              data: { resolved: true },
+            });
+          }
 
           this.logger.log(`Successfully promoted EmailHubItem entry ID ${item.id} to enterprise Waybill.`);
         }

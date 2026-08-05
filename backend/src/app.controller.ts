@@ -1,10 +1,12 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from './prisma/prisma.service';
 import { AuthService } from './auth/auth.service';
 
 import { Public } from './common/decorators/public.decorator';
 
 @Controller()
+@SkipThrottle() // health/diagnostics — must not be rate-limited (Docker/PM2 probes)
 export class AppController {
   constructor(
     private readonly prisma: PrismaService,

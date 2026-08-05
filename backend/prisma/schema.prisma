@@ -24,7 +24,9 @@ enum UserRole {
 enum WaybillStatus {
   PENDING
   COLLECTED
+  AT_ORIGIN_HUB
   IN_TRANSIT
+  AT_DESTINATION_HUB
   OUT_FOR_DELIVERY
   DELIVERED
   FAILED_DELIVERY
@@ -130,11 +132,19 @@ model Company {
   address     String?
   city        String?
   country     String  @default("ZA")
+  currency    String  @default("ZAR")
   vatNumber   String?
 
   // WhatsApp — tenant's own mobile number used for click-to-chat (wa.me) links.
   // No Business API token needed; agents send from this number via WhatsApp Web/app.
   whatsappNumber String?
+
+  // Banking details — appears on invoices so clients know where to pay.
+  bankName       String?
+  bankAccountHolder String?
+  bankAccountNumber String?
+  bankBranchCode String?
+  bankAccountType String?  // "Cheque" | "Savings" | "Current"
 
   // Branding
   logoUrl            String?
@@ -160,6 +170,22 @@ model Company {
   trialEndsAt   DateTime?
   isActive      Boolean  @default(true)
 
+  // ── Owner-managed subscription overrides ──────────────────────────────
+  // Per-tenant feature add-ons granted beyond the plan tier (key -> true),
+  // e.g. give a Professional tenant `freightForwarding` without a full upgrade.
+  // Merged on top of the plan's feature flags by BillingService.
+  featureOverrides Json?
+  // Custom monthly price (ZAR) the owner negotiated for this tenant. When set,
+  // it overrides the plan list price for MRR + billing display. Null = use plan.
+  priceOverrideZar Float?
+
+  // CLAW Autopilot for Operations (Enterprise) — when enabled, the autonomy
+  // engine may auto-execute safe ops actions (reassign stalled pickups,
+  // escalate SLA pre-breaches / COD mismatches). Aggression overrides the
+  // global CLAW_AGGRESSION_LEVEL for this tenant when set (LOW|MEDIUM|HIGH).
+  autopilotEnabled    Boolean @default(false)
+  autopilotAggression String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -169,6 +195,7 @@ model Company {
   collections        Collection[]
   shipments          Shipment[]
   drivers            Driver[]
+  driverChatMessages DriverChatMessage[] @relation("CompanyDriverChats")
   branches           Branch[]
   manifests          Manifest[]
   invoices           Invoice[]
@@ -188,8 +215,47 @@ model Company {
   webhookEndpoints   WebhookEndpoint[]
   codTransactions    CodTransaction[]
   clients            Client[]
+  returns            Return[]
+  creditNotes        CreditNote[]
+  debitNotes         DebitNote[]
+  salespeople        Salesperson[]
+  commissions        Commission[]
+  accountingConnections AccountingConnection[]
+  accountingSyncLogs    AccountingSyncLog[]
+  ssoConnection         SsoConnection?
+  supportTickets        SupportTicket[]
+  courierOrders         CourierOrder[]
+  integrationCredentials IntegrationCredential[]
 
   @@map("companies")
+}
+
+// ─── Integration credentials (per-tenant, encrypted) ────────────────────────
+// Tenant-owned connection secrets for external providers (WhatsApp Business API,
+// Shopify, WooCommerce). Secret material is AES-256-GCM encrypted at rest and
+// NEVER returned to any client. `externalRef` is the inbound-routing key
+// (WhatsApp phone_number_id, Shopify shop domain, WooCommerce source URL) so a
+// webhook can be matched to its owning company with a single indexed lookup.
+model IntegrationCredential {
+  id               String    @id @default(cuid())
+  companyId        String
+  provider         String    // 'whatsapp' | 'shopify' | 'woocommerce'
+  config           Json?     // non-secret fields (phoneNumberId, shopDomain, ...)
+  externalRef      String?   // inbound-routing key (lowercased/normalised)
+  secretCiphertext String?
+  secretIv         String?
+  secretAuthTag    String?
+  status           String    @default("UNVERIFIED")
+  lastVerifiedAt   DateTime?
+  createdBy        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider])
+  @@index([provider, externalRef])
+  @@map("integration_credentials")
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────
@@ -219,6 +285,16 @@ model User {
   resetToken       String?
   resetTokenExpiry DateTime?
 
+  // ── Single active session + login audit ───────────────────────────────
+  // Only one device may hold a live session at a time. Each login mints a new
+  // sessionId (also embedded in the access token as `sid`); the JWT strategy
+  // rejects any token whose sid != activeSessionId, so a new login elsewhere
+  // immediately invalidates every other device.
+  activeSessionId    String?
+  lastLoginAt        DateTime?
+  lastLoginIp        String?
+  lastLoginUserAgent String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -226,6 +302,8 @@ model User {
   notificationPreference NotificationPreference?
   assignedCollections    Collection[]            @relation("AssignedAgent")
   assignedShipments      Shipment[]
+  // Optional link to a Driver record so DRIVER-role users see only their own jobs
+  linkedDriver           Driver?
 
   @@unique([email, companyId])
   @@map("users")
@@ -287,6 +365,12 @@ model ApprovalRequest {
   company  String
   notes    String?
 
+  // Dedicated field for the bcrypt password hash — never stored in notes/JSON.
+  // Set during registration; consumed and cleared after the admin account is
+  // created on approval. Kept separate so it is never exposed in approval
+  // request listings.
+  passwordHash String?
+
   // Linked once approved
   companyId     String?  @unique
   tenantCompany Company? @relation(fields: [companyId], references: [id])
@@ -344,6 +428,12 @@ model Driver {
   status      DriverStatus @default(OFFLINE)
   isActive    Boolean      @default(true)
 
+  // ── Customer delivery rating ──────────────────────────────────────────
+  customerRating      Int?
+  customerRatingNote  String?
+  ratingToken         String?   @unique
+  ratingRequestedAt   DateTime?
+
   // Last known GPS position
   lastLat  Float?
   lastLng  Float?
@@ -352,11 +442,25 @@ model Driver {
   // Driver portal auth (phone + hashed 4-digit PIN)
   driverPin String?
 
+  // ── Single active session + login audit (driver portal) ───────────────
+  // Mirrors the User model: one device per driver. driver-login mints a new
+  // sessionId embedded in the driver token as `sid`.
+  activeSessionId    String?
+  lastLoginAt        DateTime?
+  lastLoginIp        String?
+  lastLoginUserAgent String?
+
+  // Optional link to a User account — enables role-scoped job delivery
+  userId    String? @unique
+  user      User?   @relation(fields: [userId], references: [id])
+
   // Fleet / vehicle maintenance
   currentKm       Int?       // current odometer reading
   nextServiceKm   Int?       // odometer reading at which next service is due
   nextServiceDate DateTime?  // calendar-based service due date
   vehicleNotes    String?    // free-form notes (tyre condition, defects etc.)
+
+  chatMessages    DriverChatMessage[]
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -367,13 +471,28 @@ model Driver {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  collections Collection[]
-  shipments   Shipment[]
-  manifests   Manifest[]
-  wallet      DriverWallet?
-  services    VehicleService[]
+  collections     Collection[]
+  shipments       Shipment[]
+  manifests       Manifest[]
+  wallet          DriverWallet?
+  services        VehicleService[]
+  returns         Return[]
+  refreshTokens   DriverRefreshToken[]
 
   @@map("drivers")
+}
+
+// Driver refresh tokens — enables silent token rotation (4h access / 7d refresh)
+// so drivers don't get kicked out mid-shift when their short-lived access token expires.
+model DriverRefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("driver_refresh_tokens")
 }
 
 // ─── Branches ─────────────────────────────────────────────────────────────
@@ -399,7 +518,387 @@ model Branch {
   @@map("branches")
 }
 
+// ─── Freight Forwarding (import/export) ─────────────────────────────────────
+// New product line: ocean/air container import/export. A ShipmentFile is the
+// central record per consignment; containers/cargo, routing milestones, charges
+// (cost vs sell) and documents hang off it. Additive — no changes to the
+// existing courier tables. See .kiro/specs/freight-forwarding.
+
+enum FreightMode {
+  OCEAN
+  AIR
+  ROAD
+}
+
+enum FreightDirection {
+  IMPORT
+  EXPORT
+}
+
+enum LoadType {
+  FCL
+  LCL
+  BREAKBULK
+  AIR
+}
+
+enum ShipmentFileStatus {
+  DRAFT
+  BOOKED
+  CARGO_RECEIVED
+  LOADED
+  DEPARTED
+  ARRIVED
+  CUSTOMS_CLEARED
+  DELIVERED
+  CANCELLED
+}
+
+model ShipmentFile {
+  id         String              @id @default(cuid())
+  fileNumber String // e.g. IMP-2026-00042 (unique per tenant)
+  mode       FreightMode
+  direction  FreightDirection
+  loadType   LoadType
+  status     ShipmentFileStatus  @default(DRAFT)
+  incoterm   String? // EXW|FOB|CIF|DDP...
+
+  // Parties (denormalised; optional Client links can come later)
+  shipperName   String?
+  consigneeName String?
+  notifyParty   String?
+  carrierName   String?
+  agentName     String?
+
+  // Cargo summary
+  goodsDescription String? @db.Text
+  packages         Int?
+  grossWeightKg    Float?
+  volumeCbm        Float?
+
+  // Routing
+  pol          String? // port of loading (UN/LOCODE or name)
+  pod          String? // port of discharge
+  vesselVoyage String? // or flight number
+  etd          DateTime?
+  eta          DateTime?
+
+  // Cross-border / CMR / Transit fields
+  shipperAddress     String?
+  consigneeAddress   String?
+  originCountry      String? // ISO country code or name
+  destinationCountry String?
+  transitCountries   String? // comma-separated
+  vehicleReg         String? // truck registration plate
+  sealNumbers        String? // customs seal numbers
+  importerTin        String? // importer tax ID (e.g. ZIMRA TIN)
+
+  // AI-derived (demurrage / delay risk)
+  aiRiskScore Int?
+  aiRiskNote  String? @db.Text
+
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  containers ShipmentContainer[]
+  cargo      CargoLine[]
+  charges    ShipmentCharge[]
+  documents  ShipmentDocument[]
+  milestones ShipmentMilestone[]
+  declarations CustomsDeclaration[]
+  disbursements Disbursement[]
+
+  // Consolidation / co-load (Phase 3): house files grouped under a master file.
+  isMaster     Boolean        @default(false)
+  masterFileId String?
+  master       ShipmentFile?  @relation("Consolidation", fields: [masterFileId], references: [id], onDelete: SetNull)
+  houseFiles   ShipmentFile[] @relation("Consolidation")
+
+  @@unique([fileNumber, companyId])
+  @@index([companyId, status])
+  @@map("shipment_files")
+}
+
+model ShipmentContainer {
+  id          String       @id @default(cuid())
+  fileId      String
+  file        ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  containerNo String // e.g. ABCU1234567
+  isoType     String // 20GP|40HC|40RF...
+  sealNo      String?
+  vgmKg       Float?
+
+  // Demurrage / detention (Phase 3)
+  freeDays      Int?      // free days before per-diem starts
+  perDiemRate   Float?    // demurrage/detention rate per day
+  availableFrom DateTime? // clock start (discharge / availability)
+  returnedAt    DateTime? // empty-return / gate-in (clock stop)
+
+  @@index([fileId])
+  @@map("shipment_containers")
+}
+
+model CargoLine {
+  id           String       @id @default(cuid())
+  fileId       String
+  file         ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  description  String
+  pieces       Int?
+  weightKg     Float?
+  dimensions   String?
+  hsCode       String? // tariff heading
+  customsValue Float?
+  dutyRatePct  Float? // ad valorem duty rate % (operator-set or AI-suggested)
+
+  // Dangerous Goods (DG) fields
+  unNumber       String? // UN classification number (e.g. "1203")
+  dgClass        String? // DG class (e.g. "3" for flammable liquids)
+  packingGroup   String? // I, II, or III
+  emergencyPhone String? // 24-hour emergency contact
+
+  @@index([fileId])
+  @@map("cargo_lines")
+}
+
+model ShipmentCharge {
+  id          String       @id @default(cuid())
+  fileId      String
+  file        ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  description String
+  currency    String       @default("ZAR")
+  cost        Float        @default(0)
+  sell        Float        @default(0)
+  invoiceTo   String? // party to bill
+
+  @@index([fileId])
+  @@map("shipment_charges")
+}
+
+model ShipmentDocument {
+  id        String       @id @default(cuid())
+  fileId    String
+  file      ShipmentFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  type      String // BILL_OF_LADING|COMMERCIAL_INVOICE|PACKING_LIST|CERT_OF_ORIGIN|SAD500|OTHER
+  fileName  String
+  fileKey   String // storage key (R2/local)
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+  @@map("shipment_documents")
+}
+
+model ShipmentMilestone {
+  id        String             @id @default(cuid())
+  fileId    String
+  file      ShipmentFile       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  status    ShipmentFileStatus
+  note      String?
+  reachedAt DateTime           @default(now())
+
+  @@index([fileId])
+  @@map("shipment_milestones")
+}
+
+enum CustomsDeclarationStatus {
+  DRAFT
+  SUBMITTED
+  QUERY
+  RELEASED
+  REJECTED
+}
+
+// Per-tenant SARS transmission method. FlowOps holds NO SARS credentials and is
+// never the declarant — the tenant brings their own path (see the
+// sars-edi-customs-bridge spec).
+enum CustomsEdiPath {
+  DIRECT_EDI             // tenant is a registered SARS EDI user
+  SERVICE_PROVIDER       // tenant uses a SARS-approved VAN / EDI service provider
+  CLEARING_AGENT_HANDOFF // no live wire — package handed to the tenant's agent
+}
+
+enum CustomsEdiCredentialStatus {
+  UNVERIFIED
+  VERIFIED
+  DISABLED
+}
+
+// SAD (Single Administrative Document) declaration workflow (Phase 3). Holds a
+// CUSDEC-style structured payload and a lifecycle. NOTE: actual SARS EDI wire
+// submission requires SARS accreditation + a registered EDI gateway — this
+// models the workflow + payload; submission is a pluggable stub for now.
+model CustomsDeclaration {
+  id     String                   @id @default(cuid())
+  fileId String
+  file   ShipmentFile             @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  type   String // IMPORT | EXPORT
+  status CustomsDeclarationStatus @default(DRAFT)
+
+  lrn String? // local reference number (our side)
+  mrn String? // movement/customs reference (from SARS)
+
+  payload           Json?  // CUSDEC-style declaration data
+  customsValueTotal Float?
+  dutyTotal         Float?
+  vatTotal          Float?
+
+  // Which transmission path actually lodged this (null until submitted live).
+  lodgementProvider String?
+
+  submittedAt  DateTime?
+  responseAt   DateTime?
+  responseNote String?
+
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ediMessages CustomsEdiMessage[]
+
+  @@index([fileId])
+  @@index([companyId, status])
+  @@map("customs_declarations")
+}
+
+// Per-tenant customs transmission credentials. One active record per company.
+// Secret material is AES-256-GCM encrypted at rest and never returned to clients
+// (masked on read). FlowOps never stores a platform-wide SARS credential.
+model CustomsEdiCredential {
+  id     String                     @id @default(cuid())
+  companyId String
+  path   CustomsEdiPath
+  status CustomsEdiCredentialStatus  @default(UNVERIFIED)
+
+  customsClientCode String? // tenant's SARS CCN (not secret — appears on the SAD)
+  providerName      String? // VAN/provider label or agent name
+  endpointUrl       String? // provider gateway / agent webhook
+  agentEmail        String? // CLEARING_AGENT_HANDOFF target
+
+  // Encrypted secret (AES-256-GCM). Never serialized to clients or logs.
+  secretCiphertext String? @db.Text
+  secretIv         String?
+  secretAuthTag    String?
+
+  lastVerifiedAt DateTime?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([companyId]) // one credential record per tenant
+  @@map("customs_edi_credentials")
+}
+
+// CUSDEC/CUSRES message log — audit trail + LRN-based idempotency for the bridge.
+model CustomsEdiMessage {
+  id            String             @id @default(cuid())
+  declarationId String
+  declaration   CustomsDeclaration @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+  companyId     String
+  direction     String   // OUTBOUND | INBOUND
+  messageType   String   // CUSDEC | CUSRES | VERIFY
+  status        String   // SENT | ACK | ERROR | RECEIVED
+  reference     String?  // provider/SARS message ref
+  payload       Json?
+  error         String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  @@index([declarationId])
+  @@index([companyId, createdAt])
+  @@map("customs_edi_messages")
+}
+
+// ─── Carriers & Procurement (buy-side) ─────────────────────────────────────
+// Shipping lines, airlines, road carriers and broker/vendor partners a forwarder
+// books space with — plus their negotiated buy-rates. Distinct from the sell-side
+// RateCard. Scoped per tenant.
+enum CarrierType {
+  OCEAN_LINE
+  AIRLINE
+  ROAD_CARRIER
+  COURIER
+  CUSTOMS_BROKER
+  OTHER
+}
+
+model Carrier {
+  id            String      @id @default(cuid())
+  companyId     String
+  name          String
+  type          CarrierType @default(OTHER)
+  code          String?     // SCAC / IATA / internal code
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  accountNumber String?     // our account number with this carrier
+  notes         String?     @db.Text
+  isActive      Boolean     @default(true)
+
+  rates     CarrierRate[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, isActive])
+  @@map("carriers")
+}
+
+model CarrierRate {
+  id            String   @id @default(cuid())
+  carrierId     String
+  carrier       Carrier  @relation(fields: [carrierId], references: [id], onDelete: Cascade)
+  companyId     String
+  lane          String?  // e.g. "CNSHA → ZADUR"
+  mode          String?  // OCEAN | AIR | ROAD
+  containerType String?  // 20GP | 40HC | LCL | AIR
+  buyRate       Float    @default(0)
+  currency      String   @default("USD")
+  validFrom     DateTime?
+  validTo       DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([carrierId])
+  @@map("carrier_rates")
+}
+
+// ─── Disbursements (clearing-agent finance) ────────────────────────────────
+// Duties / VAT / port & line charges a forwarder pays to an authority ON BEHALF
+// of a client, then recovers. Tracks paid-out vs recovered for the import/export
+// finance desk. Scoped per tenant.
+enum DisbursementStatus {
+  OUTSTANDING // paid out to the authority, not yet recovered from the client
+  INVOICED    // billed to the client (recovery invoice raised)
+  RECOVERED   // client has reimbursed us
+  WRITTEN_OFF // unrecoverable
+}
+
+model Disbursement {
+  id          String             @id @default(cuid())
+  companyId   String
+  fileId      String?
+  file        ShipmentFile?      @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  clientName  String?
+  authority   String // SARS, port authority, shipping line, airline, etc.
+  category    String? // DUTY | VAT | PORT | LINE | STORAGE | OTHER
+  reference   String? // receipt / payment reference
+  description String?
+  amount      Float              @default(0) // amount paid out
+  currency    String             @default("ZAR")
+  status      DisbursementStatus @default(OUTSTANDING)
+  paidAt      DateTime           @default(now())
+  recoveredAt DateTime?
+  invoiceId   String? // optional link to the recovery invoice
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([fileId])
+  @@map("disbursements")
+}
+
 // ─── Waybills ─────────────────────────────────────────────────────────────
+
 
 model Waybill {
   id             String        @id @default(cuid())
@@ -409,6 +908,7 @@ model Waybill {
   // Parties
   senderName       String
   senderPhone      String
+  senderEmail      String?
   senderAddress    String
   recipientName    String
   recipientPhone   String
@@ -431,16 +931,37 @@ model Waybill {
   codCollected    Boolean   @default(false)   // driver has physically collected the cash
   codCollectedAt  DateTime?
 
+  // Customer delivery rating (requested via /waybills/:id/rate-request after delivery)
+  customerRating      Int?
+  customerRatingNote  String?
+  ratingToken         String?   @unique
+  ratingRequestedAt   DateTime?
+
   // Risk assessment
   riskLevel RiskLevel @default(LOW)
   riskScore Float?
   riskNotes String?
 
-  // Proof of delivery
+  // Proof of delivery (RECEIVER signature at delivery — Leg 7)
   podSignatureUrl String?
   podImageUrl     String?
   podRecipient    String?
   podDeliveredAt  DateTime?
+
+  // Proof of collection (SENDER + DRIVER signatures at pickup — Leg 1)
+  // Complete chain of custody: sender confirms handover → driver acknowledges receipt
+  pocSenderSignatureUrl    String?  // Sender signed on driver's phone at collection
+  pocSenderName            String?  // Who signed at collection (sender side)
+  pocDriverSignatureUrl    String?  // Driver signed to acknowledge receipt
+  pocCollectionPhotoUrl    String?  // Photo of parcels at collection (condition evidence)
+  pocCollectedAt           DateTime? // Timestamp of collection signatures
+
+  // Delivery attempts (3x retry before return-to-sender)
+  attemptCount    Int       @default(0)   // Number of delivery attempts made
+  maxAttempts     Int       @default(3)   // Max attempts before return (configurable)
+  nextAttemptAt   DateTime?               // Scheduled next attempt (auto-set on failure)
+  lastAttemptNote String?                 // Reason for last failed attempt
+  returnToSender  Boolean   @default(false) // True when max attempts exhausted
 
   // Uploaded scan file (Cloudflare R2 key)
   fileUrl String?
@@ -460,6 +981,7 @@ model Waybill {
   invoiceItems     InvoiceItem[]
   inboxItem        WaybillInboxItem?
   codTransactions  CodTransaction[]
+  returns          Return[]
 
   @@unique([trackingNumber, companyId])
   @@map("waybills")
@@ -623,6 +1145,9 @@ model Invoice {
 
   items    InvoiceItem[]
   payments Payment[]
+  creditNotes CreditNote[]
+  debitNotes  DebitNote[]
+  commissions Commission[]
 
   @@unique([invoiceNumber, companyId])
   @@map("invoices")
@@ -676,6 +1201,7 @@ model RateCard {
   maxWeight  Float?
   basePrice  Float
   pricePerKg Float   @default(0)
+  currency   String  @default("ZAR")  // ISO 4217 (ZAR, USD, EUR, GBP, etc.)
   isActive   Boolean @default(true)
 
   companyId String
@@ -691,8 +1217,10 @@ model Quote {
   id          String  @id @default(cuid())
   fromAddress String
   toAddress   String
+  clientName  String?   // optional — who the quote is for
   weight      Float
   price       Float
+  currency    String  @default("ZAR")  // ISO 4217
   breakdown   Json?
   accepted    Boolean   @default(false)
   expiresAt   DateTime?
@@ -878,13 +1406,64 @@ model EmailHubItem {
   resolved Boolean @default(false)
   category String?
 
+  // ── Triage / classification (matches frontend contract) ──
+  type      String @default("GENERAL") // COLLECTION_REQUEST|POD|QUOTE|FEEDBACK|NOTIFICATION|AI_MONITOR|GENERAL
+  status    String @default("NEW") // NEW|TRIAGED|IN_PROGRESS|WAITING|RESOLVED|ARCHIVED
+  priority  String @default("MEDIUM") // LOW|MEDIUM|HIGH|CRITICAL
+  direction String @default("INBOUND") // INBOUND|OUTBOUND
+
+  senderName     String?
+  senderEmail    String?
+  recipientEmail String?
+
+  waybillNumber String?
+  podNumber     String?
+
+  // ── AI monitoring ──
+  aiSummary         String? @db.Text
+  aiConfidence      Float?
+  aiCategory        String?
+  aiSuggestedAction String?
+  opsNote           String? @db.Text
+
+  isRead         Boolean  @default(false)
+  needsOpsAction Boolean  @default(false)
+  receivedAt     DateTime @default(now())
+
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  attachments EmailAttachment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([companyId])
   @@map("email_hub_items")
+}
+
+model EmailAttachment {
+  id             String       @id @default(cuid())
+  emailHubItemId String
+  emailHubItem   EmailHubItem @relation(fields: [emailHubItemId], references: [id], onDelete: Cascade)
+
+  filename String
+  mimeType String?
+  size     Int     @default(0)
+  fileKey  String? // object key in Cloudflare R2
+  fileUrl  String? // resolved (signed/public) URL
+
+  // ── AI threat scan ──
+  scanStatus   String    @default("PENDING") // PENDING|CLEAN|THREAT|SKIPPED|ERROR
+  threatLevel  String    @default("NONE") // NONE|LOW|MEDIUM|HIGH|CRITICAL
+  threatReason String?
+  scanEngine   String? // heuristic | clamav | virustotal
+  scannedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([emailHubItemId])
+  @@map("email_attachments")
 }
 
 // ─── Leads ────────────────────────────────────────────────────────────────
@@ -1093,8 +1672,22 @@ model VehicleService {
   notes       String?
   kmAtService Int?
   cost        Float?
+  currency    String   @default("ZAR")
   servicedAt  DateTime @default(now())
   createdAt   DateTime @default(now())
+
+  // AI predictive maintenance
+  aiPredictedNextKm   Int?       // AI-predicted next service mileage
+  aiPredictedNextDate DateTime?  // AI-predicted next service date
+  aiConfidence        Float?     // 0.0–1.0 confidence score
+  aiRiskLevel         String?    // LOW | MEDIUM | HIGH | CRITICAL
+  aiNotes             String?    // AI-generated maintenance advice
+
+  // Service provider
+  providerName    String?  // workshop/mechanic name
+  invoiceRef      String?  // workshop invoice reference
+  partsReplaced   String?  // comma-separated parts list
+  warrantyExpiry  DateTime?
 
   driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
@@ -1146,4 +1739,1579 @@ model Client {
   @@index([companyId, billingType])
   @@index([companyId, name])
   @@map("clients")
+}
+
+
+// ── Driver ↔ Dispatch real-time chat ─────────────────────────────────────────
+
+model DriverChatMessage {
+  id             String    @id @default(cuid())
+  driverId       String
+  driver         Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company   @relation("CompanyDriverChats", fields: [companyId], references: [id], onDelete: Cascade)
+  /// 'driver' | 'dispatch'
+  senderType     String
+  message        String
+  attachmentUrl  String?
+  attachmentType String?   // 'image' | 'document'
+  readAt         DateTime? // null = unread
+  createdAt      DateTime  @default(now())
+
+  @@index([driverId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("driver_chat_messages")
+}
+
+
+// ─── Returns Management ────────────────────────────────────────────────────
+// Full RMA lifecycle: a customer/agent logs a return against an original
+// waybill (or ad-hoc), it gets triaged + approved, a driver collects it, it's
+// received and inspected at the warehouse, then resolved (refund / replace /
+// restock / dispose). Mirrors the courier-industry returns workflow that
+// incumbents like Parcel Perfect ship, with COD-aware refunds + restocking.
+
+enum ReturnStatus {
+  REQUESTED   // logged, awaiting triage/approval
+  APPROVED    // approved for collection
+  REJECTED    // return refused
+  SCHEDULED   // collection booked / driver assigned
+  IN_TRANSIT  // being returned to the warehouse
+  RECEIVED    // physically back at the warehouse
+  INSPECTING  // QA inspection in progress
+  COMPLETED   // resolved (refund/replace/restock/dispose done)
+  CANCELLED   // withdrawn by customer/agent
+}
+
+enum ReturnReason {
+  DAMAGED
+  DEFECTIVE
+  WRONG_ITEM
+  NOT_AS_DESCRIBED
+  MISSING_PARTS
+  NO_LONGER_NEEDED
+  FAILED_DELIVERY
+  LATE_DELIVERY
+  OTHER
+}
+
+enum ReturnResolution {
+  PENDING
+  REFUND
+  REPLACEMENT
+  REPAIR
+  STORE_CREDIT
+  RESTOCK
+  DISPOSE
+}
+
+enum ReturnCondition {
+  RESELLABLE
+  MINOR_DAMAGE
+  DAMAGED
+  UNUSABLE
+}
+
+model Return {
+  id        String @id @default(cuid())
+  rmaNumber String // human-friendly return reference (e.g. RMA-2406-0007)
+
+  // Link back to the original outbound waybill (optional — supports ad-hoc returns).
+  // trackingNumber is denormalised so search/history survives if the waybill is gone.
+  waybillId      String?
+  waybill        Waybill? @relation(fields: [waybillId], references: [id])
+  trackingNumber String?
+
+  // Who is returning
+  customerName  String
+  customerPhone String?
+  customerEmail String?
+  pickupAddress String?
+  pickupLat     Float?
+  pickupLng     Float?
+
+  reason     ReturnReason     @default(OTHER)
+  reasonNote String?
+  status     ReturnStatus     @default(REQUESTED)
+  resolution ReturnResolution @default(PENDING)
+
+  // Financials (COD-aware: a returned COD parcel may owe the customer a refund)
+  refundAmount Float?
+  restockFee   Float?
+  currency     String @default("ZAR")
+
+  // Logistics — reuse the existing driver fleet for collection
+  assignedDriverId String?
+  assignedDriver   Driver?   @relation(fields: [assignedDriverId], references: [id])
+  scheduledAt      DateTime?
+  collectedAt      DateTime?
+  receivedAt       DateTime?
+
+  // Inspection / QA
+  inspectionNotes String?
+  condition       ReturnCondition?
+  restocked       Boolean          @default(false)
+
+  // Audit trail
+  approvedById String?
+  approvedAt   DateTime?
+  resolvedAt   DateTime?
+
+  items ReturnItem[]
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([rmaNumber, companyId])
+  @@index([companyId])
+  @@index([status])
+  @@index([waybillId])
+  @@map("returns")
+}
+
+model ReturnItem {
+  id          String  @id @default(cuid())
+  returnId    String
+  return      Return  @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  description String
+  sku         String?
+  quantity    Int     @default(1)
+  unitValue   Float?
+  condition   ReturnCondition?
+  restocked   Boolean @default(false)
+
+  @@index([returnId])
+  @@map("return_items")
+}
+
+
+// ─── Accounting: Credit / Debit Notes, Statements, Sales Commission ─────────
+// Adjustment documents and salesperson commission tracking that close the
+// accounting-depth gap vs incumbents (credit/debit notes, age analysis,
+// statements, Pastel/CSV export, sales commission).
+
+enum CreditNoteStatus {
+  DRAFT    // being prepared
+  ISSUED   // finalised + numbered, owed back to the client
+  APPLIED  // offset against an invoice / fully consumed
+  VOID     // cancelled
+}
+
+enum DebitNoteStatus {
+  DRAFT
+  ISSUED
+  SETTLED
+  VOID
+}
+
+enum CommissionStatus {
+  PENDING   // calculated, awaiting approval
+  APPROVED  // approved for payout
+  PAID      // paid out to the salesperson
+  VOID
+}
+
+model CreditNote {
+  id         String           @id @default(cuid())
+  number     String           // CN-YYYY-#### per company
+  status     CreditNoteStatus @default(DRAFT)
+
+  clientName  String
+  clientEmail String?
+
+  // Optional link to the invoice this credit adjusts
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  reason   String?
+  subtotal Float  @default(0)
+  tax      Float  @default(0)
+  total    Float  @default(0)
+  // How much of `total` has been applied/offset so far
+  appliedAmount Float @default(0)
+
+  issuedAt  DateTime?
+  appliedAt DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  items CreditNoteItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([number, companyId])
+  @@index([companyId, status])
+  @@index([companyId, clientName])
+  @@map("credit_notes")
+}
+
+model CreditNoteItem {
+  id           String     @id @default(cuid())
+  description  String
+  quantity     Int        @default(1)
+  unitPrice    Float
+  total        Float
+  creditNoteId String
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+
+  @@map("credit_note_items")
+}
+
+model DebitNote {
+  id         String          @id @default(cuid())
+  number     String          // DN-YYYY-#### per company
+  status     DebitNoteStatus @default(DRAFT)
+
+  clientName  String
+  clientEmail String?
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  reason   String?
+  subtotal Float @default(0)
+  tax      Float @default(0)
+  total    Float @default(0)
+
+  issuedAt  DateTime?
+  settledAt DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  items DebitNoteItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([number, companyId])
+  @@index([companyId, status])
+  @@index([companyId, clientName])
+  @@map("debit_notes")
+}
+
+model DebitNoteItem {
+  id          String    @id @default(cuid())
+  description String
+  quantity    Int       @default(1)
+  unitPrice   Float
+  total       Float
+  debitNoteId String
+  debitNote   DebitNote @relation(fields: [debitNoteId], references: [id], onDelete: Cascade)
+
+  @@map("debit_note_items")
+}
+
+model Salesperson {
+  id                  String  @id @default(cuid())
+  name                String
+  email               String?
+  // Default commission rate (percent of invoice value) used when generating
+  // commission records. Can be overridden per generated record.
+  defaultCommissionPct Float  @default(0)
+  isActive            Boolean @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  commissions Commission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("salespeople")
+}
+
+model Commission {
+  id            String           @id @default(cuid())
+  salespersonId String
+  salesperson   Salesperson      @relation(fields: [salespersonId], references: [id], onDelete: Cascade)
+
+  // Source of the commissionable amount
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  periodMonth String           // YYYY-MM the commission belongs to
+  baseAmount  Float            // commissionable base (e.g. invoice total ex-VAT)
+  ratePct     Float            // percent applied
+  amount      Float            // computed commission payout
+  status      CommissionStatus @default(PENDING)
+  note        String?
+
+  approvedAt DateTime?
+  paidAt     DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, periodMonth])
+  @@index([salespersonId, status])
+  @@map("commissions")
+}
+
+
+// ─── AI Accounting Bridge: two-way sync to Xero / Sage / Pastel ─────────────
+// One unified connection per accounting provider, OAuth tokens, and a sync log
+// per pushed document. The AI reconciliation layer reads these to flag
+// mismatches, duplicates and unsynced paid invoices.
+
+enum AccountingProvider {
+  XERO
+  SAGE
+  PASTEL
+}
+
+enum AccountingConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  EXPIRED
+}
+
+enum AccountingSyncDocType {
+  INVOICE
+  CREDIT_NOTE
+}
+
+enum AccountingSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+  SKIPPED
+}
+
+model AccountingConnection {
+  id       String                     @id @default(cuid())
+  provider AccountingProvider
+  status   AccountingConnectionStatus @default(DISCONNECTED)
+
+  // OAuth (Xero/Sage). Pastel is file-based and needs none.
+  accessToken    String?   @db.Text
+  refreshToken   String?   @db.Text
+  tokenExpiresAt DateTime?
+
+  // Provider org/tenant (Xero tenantId, Sage business id)
+  externalTenantId   String?
+  externalTenantName String?
+
+  // Account-code mapping + options (AR account, sales account, VAT type…)
+  settings Json?
+
+  lastSyncAt DateTime?
+  lastError  String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  syncLogs AccountingSyncLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, provider])
+  @@index([companyId])
+  @@map("accounting_connections")
+}
+
+model AccountingSyncLog {
+  id           String                @id @default(cuid())
+  connectionId String
+  connection   AccountingConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  docType        AccountingSyncDocType
+  documentId     String // FlowOps invoice / credit-note id
+  documentNumber String?
+  externalId     String? // id in Xero/Sage after push
+  status         AccountingSyncStatus  @default(PENDING)
+  amount         Float?
+  direction      String                @default("PUSH") // PUSH | PULL
+  error          String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([connectionId])
+  @@index([documentId])
+  @@map("accounting_sync_logs")
+}
+
+
+// ─── Enterprise SSO (OIDC) ──────────────────────────────────────────────────
+// Per-tenant single sign-on via OpenID Connect (Okta, Azure AD, Google
+// Workspace, Auth0, etc.). Gated to the Enterprise plan. Authorization-Code
+// flow handled server-side; users are JIT-provisioned on first login.
+
+model SsoConnection {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  provider String  @default("oidc") // oidc (covers Okta / Azure AD / Google / Auth0)
+  enabled  Boolean @default(false)
+
+  // OIDC endpoints + credentials
+  issuer       String?
+  clientId     String?
+  clientSecret String? // NOTE: stored as-is; encrypt at rest before GA
+  authUrl      String? // authorization endpoint
+  tokenUrl     String? // token endpoint
+  userInfoUrl  String? // userinfo endpoint (preferred for claims)
+  scopes       String  @default("openid email profile")
+
+  // JIT provisioning controls
+  allowedDomain String? // only emails on this domain may sign in (e.g. acme.com)
+  autoProvision Boolean @default(true)
+  defaultRole   String  @default("AGENT")
+
+  lastLoginAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sso_connections")
+}
+
+
+// ─── CLAW Observatory (self-hosted error intelligence) ──────────────────────
+// FlowOps-native, self-hosted error capture for backend 5xx + frontend JS
+// errors. Identical errors are grouped by a stable fingerprint (count + first/
+// last seen), CLAW AI triages each group (severity + summary + suggested fix),
+// and the owner console surfaces them ranked. Complements the proactive
+// Integration Sentinel and reactive Sentry — but owns the data (no third party).
+
+model ErrorEvent {
+  id          String  @id @default(cuid())
+  fingerprint String  @unique // groups identical errors
+
+  source  String  @default("backend") // backend | frontend
+  level   String  @default("error")   // error | warning
+  message String  @db.Text
+  stack   String? @db.Text
+
+  // Where it happened
+  path    String? // request path or page URL
+  method  String?
+
+  // Occurrence tracking
+  count       Int      @default(1)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  // Lifecycle
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+
+  // CLAW AI triage (best-effort, populated async)
+  aiSeverity   String? // LOW | MEDIUM | HIGH | CRITICAL
+  aiSummary    String? @db.Text
+  aiSuggestion String? @db.Text
+  aiTriagedAt  DateTime?
+
+  // Latest-occurrence context + optional tenant/user association
+  context   Json?
+  companyId String?
+  userId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resolved, lastSeenAt])
+  @@index([source, level])
+  @@map("error_events")
+}
+
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+// Raised when the AI Support Agent can't fully resolve a query (or the user
+// asks to escalate). Keeps an audit trail + the conversation that led to it so
+// nothing falls through the cracks.
+model SupportTicket {
+  id           String              @id @default(cuid())
+  companyId    String
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  subject      String
+  message      String              @db.Text
+  status       SupportTicketStatus @default(OPEN)
+  priority     String              @default("normal") // low | normal | high
+  category     String? // AI-classified topic (billing, drivers, waybills, …)
+  raisedById   String?
+  raisedByName String?
+  transcript   Json? // the agent conversation that led to escalation
+  aiSummary    String?             @db.Text
+  resolution   String?             @db.Text
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([companyId, status])
+  @@map("support_tickets")
+}
+
+
+enum CourierOrderStatus {
+  NEW
+  ASSIGNED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+enum CourierOrderPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Client-submitted delivery order in the Courier Management Suite. Distinct from
+// a Waybill (the formal parcel record): an order is the intake/work item that
+// the AI delivery-orchestration engine assigns + sequences across drivers.
+// assignedDriverId is a plain column (no FK relation) to keep the Driver model
+// untouched; driver details are resolved on read.
+model CourierOrder {
+  id               String               @id @default(cuid())
+  companyId        String
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reference        String
+  clientName       String
+  clientId         String?
+  pickupAddress    String
+  dropoffAddress   String
+  contactName      String?
+  contactPhone     String?
+  itemsDesc        String?
+  pieces           Int                  @default(1)
+  weightKg         Float?
+  priority         CourierOrderPriority @default(NORMAL)
+  windowStart      DateTime?
+  windowEnd        DateTime?
+  status           CourierOrderStatus   @default(NEW)
+  assignedDriverId String?
+  sequence         Int?
+  aiReasoning      String?              @db.Text
+  notes            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([companyId, status])
+  @@map("courier_orders")
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── WAREHOUSE MANAGEMENT SYSTEM (WMS) ───────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// World-class WMS: zone/bin hierarchy, inventory tracking, goods receipt,
+// put-away, pick/pack, cycle count, stock movements, dock scheduling, and
+// AI-powered warehouse analytics. Designed for 3PL operations at scale.
+
+enum WarehouseZoneType {
+  RECEIVING    // Inbound dock / goods-in area
+  BULK         // Long-term / pallet storage
+  PICK         // Active pick face
+  PACKING      // Pack & label station
+  DISPATCH     // Outbound staging / dock
+  RETURNS      // RMA inspection & processing
+  COLD         // Temperature-controlled
+  HAZMAT       // Dangerous goods (ADR/SANS)
+  QUARANTINE   // Held stock (damaged/pending QA)
+  CROSSDOCK    // Pass-through (no storage)
+}
+
+enum StockMovementType {
+  RECEIPT      // Goods received from supplier/transfer
+  PUT_AWAY     // Moved from receiving to storage bin
+  PICK         // Picked for an order
+  PACK         // Packed into shipment
+  TRANSFER     // Moved between bins
+  ADJUSTMENT   // Manual correction (write-off, found, damage)
+  RETURN_IN    // Returned goods received
+  DISPATCH     // Shipped out
+  CYCLE_COUNT  // Adjustment from count variance
+  REPLENISH    // Moved from bulk to pick face
+}
+
+enum PickOrderStatus {
+  PENDING      // Created, not yet assigned
+  ASSIGNED     // Picker allocated
+  IN_PROGRESS  // Picking started
+  PICKED       // All items picked
+  PACKED       // Packed and ready for dispatch
+  DISPATCHED   // Handed to driver / shipped
+  CANCELLED    // Order cancelled
+}
+
+enum GoodsReceiptStatus {
+  EXPECTED     // ASN received, goods not yet arrived
+  ARRIVED      // Vehicle at dock, unloading
+  INSPECTING   // QA check in progress
+  COMPLETED    // Received & put away
+  REJECTED     // Failed inspection, returned to sender
+}
+
+enum CycleCountStatus {
+  SCHEDULED    // Planned but not started
+  IN_PROGRESS  // Counters actively counting
+  COMPLETED    // Count finished, variances recorded
+  APPROVED     // Variances approved and adjustments posted
+}
+
+// ── Warehouse (physical site) ────────────────────────────────────────────────
+// Extends the existing Branch model with warehouse-specific attributes.
+// A company can have multiple warehouses; each has zones → bins.
+model Warehouse {
+  id        String @id @default(cuid())
+  companyId String
+  branchId  String? // Optional link to existing Branch
+
+  name           String
+  code           String? // Short code (e.g. "JHB-01", "CPT-MAIN")
+  address        String?
+  city           String?
+  lat            Float?
+  lng            Float?
+
+  // Capacity
+  totalAreaSqm      Float?
+  usableAreaSqm     Float?
+  totalBinLocations Int    @default(0)
+  maxPalletCapacity Int?
+
+  // Operations config
+  operatingHoursStart String? // "06:00"
+  operatingHoursEnd   String? // "22:00"
+  timezone            String  @default("Africa/Johannesburg")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  zones          WarehouseZone[]
+  goodsReceipts  GoodsReceipt[]
+  pickOrders     PickOrder[]
+  cycleCounts    CycleCount[]
+  dockSlots      DockSlot[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("warehouses")
+}
+
+// ── Zone (logical area within a warehouse) ───────────────────────────────────
+model WarehouseZone {
+  id          String        @id @default(cuid())
+  warehouseId String
+  warehouse   Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  name        String        // "Zone A - Bulk Storage"
+  code        String        // "A", "PICK-1", "COLD-01"
+  type        WarehouseZoneType @default(BULK)
+
+  // Physical
+  areaSqm     Float?
+  temperature Float?        // °C (for cold chain)
+  maxWeight   Float?        // kg capacity
+
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  binLocations BinLocation[]
+
+  @@index([warehouseId])
+  @@map("warehouse_zones")
+}
+
+// ── Bin Location (smallest addressable storage unit) ─────────────────────────
+// Address format: ZONE-AISLE-RACK-LEVEL-POSITION (e.g. "A-01-03-02-001")
+model BinLocation {
+  id     String        @id @default(cuid())
+  zoneId String
+  zone   WarehouseZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  // Hierarchical address
+  code       String   // Full address: "A-01-03-02-001"
+  aisle      String?  // "01"
+  rack       String?  // "03"
+  level      String?  // "02" (shelf level)
+  position   String?  // "001" (position on shelf)
+
+  // Capacity & constraints
+  maxWeightKg   Float?
+  maxVolumeCbm  Float?
+  widthCm       Float?
+  heightCm      Float?
+  depthCm       Float?
+  binType       String  @default("SHELF") // SHELF | PALLET | FLOOR | TOTE | DRAWER
+
+  // State
+  isEmpty       Boolean @default(true)
+  isBlocked     Boolean @default(false) // Temporarily unavailable
+  blockReason   String?
+
+  // Pick priority (lower = picked first for FIFO/FEFO)
+  pickSequence  Int     @default(0)
+
+  inventory     InventoryItem[]
+  movements     StockMovement[]
+
+  @@unique([zoneId, code])
+  @@index([zoneId])
+  @@map("bin_locations")
+}
+
+// ── Inventory Item (stock at a specific bin) ─────────────────────────────────
+// Each row = one SKU in one bin. Multiple rows for same SKU across bins.
+model InventoryItem {
+  id        String @id @default(cuid())
+  companyId String
+
+  binId     String
+  bin       BinLocation @relation(fields: [binId], references: [id], onDelete: Cascade)
+
+  // Product identification
+  sku           String        // Stock Keeping Unit
+  barcode       String?       // EAN/UPC barcode
+  description   String
+  category      String?       // Product category
+
+  // Quantities
+  quantityOnHand    Int   @default(0) // Physical stock in this bin
+  quantityAllocated Int   @default(0) // Reserved for pick orders
+  quantityAvailable Int   @default(0) // onHand - allocated (computed)
+
+  // Batch/lot tracking
+  batchNumber   String?
+  lotNumber     String?
+  serialNumber  String?
+  expiryDate    DateTime?     // For FEFO (First Expired First Out)
+  manufacturedDate DateTime?
+
+  // Value
+  unitCost      Float?        // Cost per unit (for inventory valuation)
+  currency      String @default("ZAR")
+
+  // Physical
+  weightKg      Float?
+  volumeCbm     Float?
+
+  // Replenishment
+  reorderPoint    Int?        // Trigger replenishment when qty drops below
+  reorderQuantity Int?        // How much to reorder/replenish
+  maxQuantity     Int?        // Max stock for this bin
+
+  // Status
+  status    String @default("AVAILABLE") // AVAILABLE | ALLOCATED | HELD | DAMAGED | EXPIRED
+  lastCountedAt DateTime?
+  lastMovedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, sku])
+  @@index([binId])
+  @@index([companyId, status])
+  @@index([expiryDate])
+  @@map("inventory_items")
+}
+
+// ── Stock Movement (every movement creates an audit trail) ───────────────────
+model StockMovement {
+  id        String @id @default(cuid())
+  companyId String
+
+  type      StockMovementType
+  sku       String
+  quantity  Int               // Positive = in, Negative = out
+  reference String?           // PO number, pick order, manifest code, etc.
+
+  // Location
+  fromBinId String?
+  fromBin   BinLocation? @relation(fields: [fromBinId], references: [id])
+  toBinId   String?
+
+  // Context
+  goodsReceiptId String?
+  pickOrderId    String?
+  cycleCountId   String?
+  reason         String?       // For adjustments: "damaged", "found", "write-off"
+
+  // Audit
+  performedBy    String?       // User ID who executed
+  performedAt    DateTime @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, sku])
+  @@index([companyId, type])
+  @@index([companyId, performedAt])
+  @@map("stock_movements")
+}
+
+// ── Goods Receipt (inbound receiving workflow) ───────────────────────────────
+model GoodsReceipt {
+  id          String @id @default(cuid())
+  companyId   String
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  // Reference
+  receiptNumber String          // "GR-2026-00001"
+  poNumber      String?         // Purchase order reference
+  supplierName  String?
+  carrierName   String?
+
+  status        GoodsReceiptStatus @default(EXPECTED)
+
+  // Expected vs Actual
+  expectedDate  DateTime?
+  arrivedAt     DateTime?
+  completedAt   DateTime?
+
+  // Dock assignment
+  dockSlotId    String?
+
+  // Totals
+  expectedLines   Int   @default(0)
+  receivedLines   Int   @default(0)
+  expectedQty     Int   @default(0)
+  receivedQty     Int   @default(0)
+  damagedQty      Int   @default(0)
+  rejectedQty     Int   @default(0)
+
+  // Notes
+  notes           String? @db.Text
+  inspectionNotes String? @db.Text
+
+  // Audit
+  receivedBy    String?
+  completedBy   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines GoodsReceiptLine[]
+
+  @@unique([companyId, receiptNumber])
+  @@index([companyId, status])
+  @@index([warehouseId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id             String       @id @default(cuid())
+  goodsReceiptId String
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+
+  sku             String
+  description     String?
+  expectedQty     Int     @default(0)
+  receivedQty     Int     @default(0)
+  damagedQty      Int     @default(0)
+
+  // Put-away
+  putAwayBinId    String? // Where it was stored
+  putAwayComplete Boolean @default(false)
+
+  // Batch
+  batchNumber     String?
+  expiryDate      DateTime?
+  unitCost        Float?
+
+  @@index([goodsReceiptId])
+  @@map("goods_receipt_lines")
+}
+
+// ── Pick Order (outbound fulfilment workflow) ─────────────────────────────────
+model PickOrder {
+  id          String @id @default(cuid())
+  companyId   String
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  orderNumber   String          // "PO-2026-00001"
+  status        PickOrderStatus @default(PENDING)
+  priority      Int     @default(0) // Higher = more urgent
+
+  // Source (what triggered this pick)
+  sourceType    String? // WAYBILL | MANIFEST | SALES_ORDER | TRANSFER
+  sourceId      String? // waybillId, manifestId, etc.
+  clientName    String?
+
+  // Assignment
+  assignedTo    String? // Picker user ID
+  assignedAt    DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  packedAt      DateTime?
+  dispatchedAt  DateTime?
+
+  // Totals
+  totalLines    Int   @default(0)
+  pickedLines   Int   @default(0)
+  totalQty      Int   @default(0)
+  pickedQty     Int   @default(0)
+
+  // Shipping
+  shipToName    String?
+  shipToAddress String?
+  trackingNumber String? // Links back to waybill
+
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines PickOrderLine[]
+
+  @@unique([companyId, orderNumber])
+  @@index([companyId, status])
+  @@index([warehouseId])
+  @@index([assignedTo, status])
+  @@map("pick_orders")
+}
+
+model PickOrderLine {
+  id          String    @id @default(cuid())
+  pickOrderId String
+  pickOrder   PickOrder @relation(fields: [pickOrderId], references: [id], onDelete: Cascade)
+
+  sku           String
+  description   String?
+  requestedQty  Int
+  pickedQty     Int     @default(0)
+  shortQty      Int     @default(0) // qty that couldn't be fulfilled
+
+  // Directed pick: which bin to pick from
+  suggestedBinId String?
+  actualBinId    String?  // Where it was actually picked from
+
+  // Status
+  picked    Boolean @default(false)
+  pickedAt  DateTime?
+  pickedBy  String?
+
+  @@index([pickOrderId])
+  @@map("pick_order_lines")
+}
+
+// ── Cycle Count (inventory accuracy) ─────────────────────────────────────────
+model CycleCount {
+  id          String @id @default(cuid())
+  companyId   String
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  countNumber   String            // "CC-2026-00001"
+  status        CycleCountStatus  @default(SCHEDULED)
+  countType     String @default("FULL") // FULL | ABC | ZONE | SKU | RANDOM
+
+  // Schedule
+  scheduledDate DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  approvedAt    DateTime?
+  approvedBy    String?
+
+  // Scope
+  zoneFilter    String?   // Only count specific zone(s)
+  skuFilter     String?   // Only count specific SKU(s)
+  abcClass      String?   // A | B | C (for ABC counting)
+
+  // Results
+  totalBins       Int @default(0)
+  countedBins     Int @default(0)
+  totalVariances  Int @default(0)
+  varianceValue   Float @default(0) // ZAR value of discrepancies
+
+  // Accuracy
+  accuracyRate    Float? // % of bins with zero variance
+
+  notes           String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines CycleCountLine[]
+
+  @@unique([companyId, countNumber])
+  @@index([companyId, status])
+  @@map("cycle_counts")
+}
+
+model CycleCountLine {
+  id           String     @id @default(cuid())
+  cycleCountId String
+  cycleCount   CycleCount @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
+
+  binCode      String
+  sku          String
+  description  String?
+
+  // Expected vs Actual
+  systemQty    Int           // What the system says
+  countedQty   Int?          // What was physically counted
+  variance     Int?          // countedQty - systemQty
+
+  // Resolution
+  resolved     Boolean @default(false)
+  adjustmentPosted Boolean @default(false)
+  resolvedBy   String?
+  resolvedAt   DateTime?
+  notes        String?
+
+  @@index([cycleCountId])
+  @@map("cycle_count_lines")
+}
+
+// ── Dock Slot (inbound/outbound dock scheduling) ─────────────────────────────
+model DockSlot {
+  id          String    @id @default(cuid())
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  name        String    // "Dock 1", "Bay A"
+  type        String    @default("BOTH") // INBOUND | OUTBOUND | BOTH
+  isActive    Boolean   @default(true)
+
+  appointments DockAppointment[]
+
+  @@index([warehouseId])
+  @@map("dock_slots")
+}
+
+model DockAppointment {
+  id         String   @id @default(cuid())
+  companyId  String
+  dockSlotId String
+  dockSlot   DockSlot @relation(fields: [dockSlotId], references: [id], onDelete: Cascade)
+
+  // Scheduling
+  type          String    // INBOUND | OUTBOUND
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  actualArrival  DateTime?
+  actualDepart   DateTime?
+
+  // Reference
+  carrierName    String?
+  vehicleReg     String?
+  reference      String?  // PO, manifest, GR number
+  goodsReceiptId String?
+
+  // Status
+  status    String @default("SCHEDULED") // SCHEDULED | ARRIVED | IN_PROGRESS | COMPLETED | CANCELLED | NO_SHOW
+
+  notes     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([dockSlotId, scheduledStart])
+  @@index([companyId, status])
+  @@map("dock_appointments")
+}
+
+
+// ─── Commercial Analytics Suite ──────────────────────────────────────────────
+// World-class pricing analysis, profitability metrics, client intelligence, and
+// revenue forecasting. Powers strategic decision-making for logistics operators.
+
+// Per-delivery cost model — enables true margin calculation per waybill.
+// Costs are estimated from distance × per-km rate, driver hourly cost, and
+// fixed overheads. Updated by the cost-allocation engine or set manually.
+model DeliveryCostAllocation {
+  id        String @id @default(cuid())
+  companyId String
+  waybillId String @unique
+  period    String // YYYY-MM
+
+  // Revenue (from waybill.totalAmount)
+  revenue       Float @default(0)
+
+  // Cost breakdown
+  fuelCost      Float @default(0)
+  labourCost    Float @default(0)  // driver time × hourly rate
+  vehicleCost   Float @default(0)  // depreciation + maintenance allocation
+  overheadCost  Float @default(0)  // warehousing, admin, insurance
+  tollsCost     Float @default(0)
+  totalCost     Float @default(0)
+
+  // Derived
+  grossMargin     Float @default(0) // revenue - totalCost
+  marginPercent   Float @default(0) // (grossMargin / revenue) × 100
+
+  // Route metadata (for lane analysis)
+  fromZone     String?
+  toZone       String?
+  distanceKm   Float?
+  driverId     String?
+  clientName   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, period])
+  @@index([companyId, clientName])
+  @@index([companyId, fromZone, toZone])
+  @@map("delivery_cost_allocations")
+}
+
+// Periodic lane profitability snapshot (aggregated per zone-pair per month).
+// Enables "which routes make money, which lose" analysis.
+model LaneProfitability {
+  id        String @id @default(cuid())
+  companyId String
+  period    String // YYYY-MM
+
+  fromZone     String
+  toZone       String
+
+  // Volume
+  totalDeliveries  Int   @default(0)
+  successRate      Float @default(0)
+
+  // Revenue
+  totalRevenue     Float @default(0)
+  avgRevenuePerDel Float @default(0)
+
+  // Cost
+  totalCost        Float @default(0)
+  avgCostPerDel    Float @default(0)
+
+  // Profitability
+  grossProfit      Float @default(0)
+  marginPercent    Float @default(0)
+
+  // Trend (vs previous period)
+  revenueDelta     Float? // % change from prior period
+  volumeDelta      Float? // % change in deliveries
+  marginDelta      Float? // absolute change in margin %
+
+  // AI recommendation
+  pricingSignal    String? // UNDERPRICED | OPTIMAL | OVERPRICED | LOW_VOLUME
+  aiRecommendation String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period, fromZone, toZone])
+  @@index([companyId, period])
+  @@map("lane_profitability")
+}
+
+// Client profitability scoring — per-client per-period commercial intelligence.
+// Combines revenue, cost-to-serve, payment behaviour, and growth trajectory.
+model ClientProfitability {
+  id        String @id @default(cuid())
+  companyId String
+  period    String // YYYY-MM
+  clientName String
+
+  // Revenue metrics
+  revenue          Float @default(0)
+  revenueGrowthPct Float? // vs prior period
+  deliveryCount    Int   @default(0)
+  avgRevenuePerDel Float @default(0)
+
+  // Cost metrics
+  totalCost        Float @default(0)
+  costToServePct   Float @default(0) // totalCost / revenue × 100
+
+  // Profitability
+  grossProfit      Float @default(0)
+  marginPercent    Float @default(0)
+  profitRank       Int?  // rank within company (1 = most profitable)
+
+  // Payment behaviour
+  avgDaysToPay     Float?
+  collectionRate   Float @default(0)
+  overdueAmount    Float @default(0)
+
+  // Customer Lifetime Value
+  clv              Float? // predicted 12-month future value
+  clvTier          String? // PLATINUM | GOLD | SILVER | BRONZE | AT_RISK
+
+  // Churn signals
+  churnRisk        Float? // 0-100 probability
+  churnSignals     Json?  // array of risk factors
+
+  // Engagement
+  monthsActive     Int   @default(0)
+  lastDeliveryAt   DateTime?
+  volumeTrend      String? // GROWING | STABLE | DECLINING | NEW | DORMANT
+
+  // AI insights
+  aiInsights       Json?
+  aiGeneratedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period, clientName])
+  @@index([companyId, period])
+  @@index([companyId, clientName])
+  @@map("client_profitability")
+}
+
+// AI-generated pricing recommendations — stored per lane/client for review.
+model PricingRecommendation {
+  id        String @id @default(cuid())
+  companyId String
+  type      String // LANE | CLIENT | RATE_CARD | GENERAL
+
+  // What it applies to
+  fromZone    String?
+  toZone      String?
+  clientName  String?
+  rateCardId  String?
+
+  // Current state
+  currentPrice    Float?
+  currentMargin   Float?
+  currentVolume   Int?
+
+  // Recommendation
+  recommendedPrice  Float?
+  expectedMargin    Float?
+  expectedImpact    String? @db.Text // "Increase revenue by ~R12,000/month"
+  confidence        Float?  // 0-100
+
+  // Reasoning
+  reasoning     String? @db.Text
+  dataPoints    Json?   // supporting evidence
+  signal        String  // INCREASE | DECREASE | HOLD | REVIEW
+
+  // Lifecycle
+  status     String @default("PENDING") // PENDING | ACCEPTED | REJECTED | EXPIRED
+  reviewedAt DateTime?
+  reviewedBy String?
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@index([companyId, status])
+  @@index([companyId, type])
+  @@map("pricing_recommendations")
+}
+
+// Revenue forecast snapshots — ML-predicted future revenue with confidence bands.
+model RevenueForecast {
+  id        String @id @default(cuid())
+  companyId String
+  generatedAt DateTime @default(now())
+
+  // Forecast horizon
+  forecastPeriod  String // YYYY-MM (the month being predicted)
+  forecastType    String @default("MONTHLY") // MONTHLY | QUARTERLY
+
+  // Prediction
+  predictedRevenue   Float
+  lowerBound         Float  // 80% confidence interval
+  upperBound         Float
+  confidence         Float  // 0-100
+
+  // Basis
+  historicalAvg      Float?
+  trend              Float? // monthly growth rate used
+  seasonalFactor     Float? // seasonal multiplier applied
+  pipelineValue      Float? // value of accepted quotes not yet invoiced
+
+  // Comparison (filled after period ends)
+  actualRevenue      Float?
+  accuracy           Float? // |actual - predicted| / actual × 100
+
+  @@unique([companyId, forecastPeriod, forecastType])
+  @@index([companyId])
+  @@map("revenue_forecasts")
+}
+
+// Commercial analytics configuration — per-tenant cost model parameters.
+model CommercialConfig {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  // Cost model inputs (per-km rates, hourly costs, etc.)
+  fuelCostPerKm      Float @default(2.50)  // ZAR per km
+  driverHourlyCost   Float @default(45.0)  // ZAR per hour
+  vehicleCostPerKm   Float @default(1.80)  // depreciation + maintenance
+  overheadPerDelivery Float @default(15.0)  // fixed overhead allocation
+  avgDeliveryMinutes  Float @default(25.0)  // assumed time per stop
+  avgKmPerDelivery    Float @default(12.0)  // assumed distance when no GPS
+
+  // Pricing targets
+  targetMarginPct    Float @default(35.0) // desired gross margin %
+  minMarginPct       Float @default(15.0) // alarm threshold
+
+  // Forecast model parameters
+  seasonalityEnabled Boolean @default(true)
+  forecastMonths     Int     @default(3)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("commercial_configs")
+}
+
+
+// ─── Logistics Analytics (per-tenant monthly KPI snapshots) ──────────────────
+// Computed analytics snapshot per company per period (YYYY-MM). Powers the
+// analytics dashboard with volume, performance, financial, and fleet KPIs.
+// AI insights are generated best-effort via Groq and cached here.
+
+model LogisticsAnalytics {
+  id        String @id @default(cuid())
+  companyId String
+  period    String // YYYY-MM
+
+  // Volume KPIs
+  totalDeliveries  Int   @default(0)
+  deliveredOnTime  Int   @default(0)
+  failedDeliveries Int   @default(0)
+  returnedParcels  Int   @default(0)
+  totalCollections Int   @default(0)
+
+  // Performance KPIs
+  onTimePercentage    Float  @default(0)
+  avgDeliveryMinutes  Float? // average time from dispatch to POD
+  slaBreaches         Int    @default(0)
+  customerRatingAvg   Float?
+
+  // Financial KPIs
+  revenue         Float  @default(0)
+  costPerDelivery Float?
+  codCollected    Float  @default(0)
+
+  // Fleet KPIs
+  activeDrivers    Int    @default(0)
+  avgDriverUtilPct Float?
+  topDriverId      String?
+
+  // AI-generated insights (JSON: { summary, trends[], recommendations[] })
+  aiInsights    Json?
+  aiGeneratedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period])
+  @@index([companyId])
+  @@map("logistics_analytics")
+}
+
+
+// ─── ESG / Carbon Reporting (fleet emissions) ────────────────────────────────
+// Tracks CO2 emissions per delivery period per company. Computed from total km
+// driven (via route optimizer data / shipment distances) × vehicle emission factors.
+// Powers the ESG dashboard and DHL subcontractor compliance reports.
+
+model CarbonReport {
+  id        String   @id @default(cuid())
+  companyId String
+  period    String   // YYYY-MM
+
+  // Distance metrics
+  totalKmDriven    Float   @default(0)
+  totalDeliveries  Int     @default(0)
+  avgKmPerDelivery Float?
+
+  // Emissions (kg CO2)
+  totalCo2Kg       Float   @default(0)  // total emissions this period
+  co2PerDelivery   Float?               // avg per delivery
+  co2PerKm         Float?               // emission factor used
+
+  // Fleet composition
+  petrolVehicles   Int     @default(0)
+  dieselVehicles   Int     @default(0)
+  electricVehicles Int     @default(0)
+  motorbikeCount   Int     @default(0)
+
+  // Offsets / reductions
+  offsetKg         Float   @default(0)
+  netEmissionsKg   Float   @default(0)  // total - offset
+
+  // Comparison
+  prevPeriodCo2Kg  Float?
+  changePercent    Float?  // vs previous period
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, period])
+  @@index([companyId])
+  @@map("carbon_reports")
+}
+
+
+
+// ─── Driver Safety Zones (Crime Hotspot Detection) ────────────────────────────
+// AI-powered real-time driver safety alerts. When a driver's GPS enters a
+// designated safety zone (crime hotspot, hijacking area, high-risk corridor),
+// the system immediately alerts the driver, dispatch, and tenant admin.
+// No competitor in Africa offers this level of driver protection.
+
+enum SafetyZoneRiskLevel {
+  LOW        // Awareness — minor risk (e.g. poor lighting area)
+  MEDIUM     // Caution — moderate risk (occasional incidents)
+  HIGH       // Alert — known problem area (regular theft/hijack)
+  CRITICAL   // Danger — active threat zone (avoid if possible)
+}
+
+model SafetyZone {
+  id        String              @id @default(cuid())
+  companyId String
+  name      String              // "Alexandra", "N1 Johannesburg Off-ramp", "Diepsloot"
+  description String?           // "High hijacking area. Avoid stopping. Lock doors."
+
+  // Geographic center + radius (circle geofence)
+  lat       Float
+  lng       Float
+  radiusM   Int     @default(1000) // radius in metres
+
+  riskLevel SafetyZoneRiskLevel @default(HIGH)
+
+  // Alert configuration
+  alertMessage String?          // Custom alert shown to driver (e.g. "Lock doors. Do not stop.")
+  notifyDriver Boolean @default(true)
+  notifyDispatch Boolean @default(true)
+  notifyAdmin  Boolean @default(true)
+
+  // Source / metadata
+  source    String?             // "SAPS_STATS" | "MANUAL" | "AI_DETECTED" | "COMMUNITY"
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  alerts SafetyAlert[]
+
+  @@index([companyId, isActive])
+  @@index([lat, lng])
+  @@map("safety_zones")
+}
+
+model SafetyAlert {
+  id        String @id @default(cuid())
+  companyId String
+
+  // Who was alerted
+  driverId  String
+  driverName String?
+
+  // Which zone triggered it
+  zoneId    String
+  zone      SafetyZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneName  String?
+  riskLevel SafetyZoneRiskLevel
+
+  // GPS position when alert fired
+  lat       Float
+  lng       Float
+  speed     Float?  // km/h at time of alert
+
+  // Alert delivery status
+  driverNotified   Boolean @default(false)
+  dispatchNotified Boolean @default(false)
+  adminNotified    Boolean @default(false)
+
+  // Response
+  acknowledged Boolean   @default(false) // driver tapped "OK"
+  acknowledgedAt DateTime?
+  exitedZoneAt   DateTime? // when driver left the zone
+
+  // Audit
+  metadata  Json?   // any extra context (waybill being delivered, etc.)
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([driverId, createdAt])
+  @@index([zoneId])
+  @@map("safety_alerts")
+}
+
+
+
+// ─── Address Book (saved sender/receiver addresses for quick-fill) ────────────
+// Tenants save frequently-used addresses to avoid retyping on every waybill.
+// Each entry can be marked as SENDER, RECEIVER, or BOTH.
+
+model AddressBookEntry {
+  id        String @id @default(cuid())
+  companyId String
+
+  label       String   // "Takealot JHB", "Head Office", "John's Home"
+  type        String   @default("BOTH") // SENDER | RECEIVER | BOTH
+  name        String
+  company     String?
+  phone       String?
+  email       String?
+  address     String
+  city        String?
+  postalCode  String?
+  country     String   @default("ZA")
+  lat         Float?
+  lng         Float?
+
+  // Usage tracking (for smart suggestions)
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
+
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, type])
+  @@index([companyId, usageCount])
+  @@map("address_book_entries")
+}
+
+// ─── Tracking Timeline Events (multi-leg journey visibility) ──────────────────
+// Every status change, scan, signature, or location update creates an event.
+// Powers the customer-facing tracking page with granular journey visibility.
+
+model TrackingEvent {
+  id        String @id @default(cuid())
+  waybillId String
+  companyId String
+
+  // What happened
+  event       String   // COLLECTED | SCANNED_IN | SORTED | LOADED | IN_TRANSIT | ARRIVED | OUT_FOR_DELIVERY | DELIVERED | FAILED | RETURNED
+  status      String?  // The WaybillStatus this event corresponds to
+  description String   // Human-readable: "Parcel collected from sender by Sipho"
+
+  // Where it happened
+  location    String?  // "Johannesburg Hub", "N1 Highway", "Pretoria Branch"
+  lat         Float?
+  lng         Float?
+
+  // Who did it
+  actorType   String?  // DRIVER | WAREHOUSE | SYSTEM | DISPATCH
+  actorId     String?
+  actorName   String?
+
+  // Metadata
+  metadata    Json?    // Extra context: { manifestCode, branchName, attemptNumber, signatureUrl }
+
+  createdAt   DateTime @default(now())
+
+  @@index([waybillId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("tracking_events")
 }

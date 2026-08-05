@@ -2,6 +2,8 @@ import axios from 'axios';
 import {
   clearSession,
   getAccessToken,
+  getRefreshToken as sessionGetRefreshToken,
+  setRefreshToken as sessionSetRefreshToken,
   getLoginMode as sessionGetLoginMode,
   isDriverMode as sessionIsDriverMode,
   isOwnerMode as sessionIsOwnerMode,
@@ -18,6 +20,8 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 export const getToken = (): string | null => getAccessToken();
 export const setToken = (token: string | null) => setAccessToken(token);
 export const setMemoryToken = (token: string | null) => sessionSetMemoryToken(token);
+export const getRefreshToken = (): string | null => sessionGetRefreshToken();
+export const setRefreshToken = (token: string | null) => sessionSetRefreshToken(token);
 
 export const getLoginMode = (): string => sessionGetLoginMode();
 export const setLoginMode = (mode: string) => {
@@ -84,15 +88,27 @@ api.interceptors.response.use(
       sessionIsTenantMode()
     ) {
       originalRequest._retry = true;
+      const storedRefresh = sessionGetRefreshToken();
+      // No refresh token to present → can't silently refresh; end the session.
+      if (!storedRefresh) {
+        clearAuth();
+        return Promise.reject(new ApiError('Session expired. Please log in again.', 401));
+      }
       try {
-        const { data } = await axios.post(
+        const resp = await axios.post(
           `${API_BASE}/auth/refresh`,
-          {},
+          { refreshToken: storedRefresh },
           { withCredentials: true },
         );
-        setMemoryToken(data.accessToken);
-        setToken(data.accessToken);
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+        // Unwrap the TransformInterceptor envelope: { data: { access_token, refresh_token }, ... }
+        const body = resp.data?.data ?? resp.data ?? {};
+        const newAccess = body.access_token ?? body.accessToken;
+        const newRefresh = body.refresh_token ?? body.refreshToken;
+        if (!newAccess) throw new Error('No access token in refresh response');
+        if (newRefresh) sessionSetRefreshToken(newRefresh);
+        setMemoryToken(newAccess);
+        setToken(newAccess);
+        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
         return api(originalRequest);
       } catch (refreshError) {
         clearAuth();

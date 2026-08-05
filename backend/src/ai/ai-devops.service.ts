@@ -1,6 +1,7 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { spawn } from 'child_process';
 import { AiService } from './ai.service';
+import { CompetitiveIntelligenceService } from './competitive-intelligence.service';
 import { PrismaService } from '../prisma/prisma.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -14,52 +15,52 @@ export class AiDevOpsService {
     @Inject(forwardRef(() => AiService))
     private readonly aiService: AiService,
     private readonly prisma: PrismaService,
+    private readonly intel: CompetitiveIntelligenceService,
   ) {}
 
   /**
-   * Evaluates the external logistics landscape and self-injects features.
+   * CLAW market-gap ideation. Asks the model what logistics capabilities the
+   * SA market is missing, then queues each idea as a trackable "upgrade" action
+   * item for a human to review (Done / Dismiss). It does NOT deploy anything.
+   *
+   * Replaces the former learnAndEvolve / injectCompetitiveFeature path, which
+   * claimed to "self-deploy feature nodes" but only wrote a log row (and could
+   * silently flip company.isActive). CLAW proposes; people decide and build.
+   *
+   * @param companyId optional — queue for one tenant; omit to queue for all active tenants.
+   * @returns the list of suggested capabilities.
    */
-  async learnAndEvolve(companyId: number): Promise<string[]> {
-    this.logger.log('🌐 [CLAW EVOLUTION] Initiating South African Market Research Pass...');
-    const researchQuery = "Identify unique logistics features missing in the South African (ZAR) gig economy.";
-    
-    try {
-      const innovations = await this.aiService.analyzeMarketGaps(researchQuery);
-      this.logger.log(`✨ [CLAW EVOLUTION] Discovered upgrades: ${innovations.join(', ')}`);
+  async suggestPlatformUpgrades(companyId?: string): Promise<string[]> {
+    this.logger.log('🌐 [CLAW IDEATION] Scanning the SA logistics market for capability gaps...');
+    const researchQuery = 'Identify unique logistics features missing in the South African (ZAR) gig economy.';
 
-      for (const feature of innovations) {
-        await this.injectCompetitiveFeature(companyId, feature);
-      }
-      return innovations;
+    let ideas: string[] = [];
+    try {
+      ideas = (await this.aiService.analyzeMarketGaps(researchQuery))
+        .map((s) => s.trim())
+        .filter(Boolean);
     } catch (error: any) {
-      this.logger.error(`❌ [CLAW EVOLUTION] Evolution loop failed: ${error?.message || error}`);
+      this.logger.error(`[CLAW IDEATION] Market-gap analysis failed: ${error?.message || error}`);
       return [];
     }
-  }
+    if (ideas.length === 0) return [];
 
-  /**
-   * Safely registers code optimizations or features within the persistent data store.
-   */
-  private async injectCompetitiveFeature(companyId: number, featureName: string): Promise<any> {
-    this.logger.warn(`🚀 [CLAW EVOLUTION] Deploying self-developed operational feature node: ${featureName}...`);
-    try {
-      if ((this.prisma as any).companyActivityLog) {
-        return await (this.prisma as any).companyActivityLog.create({
-          data: {
-            companyId,
-            type: 'AI_EVOLUTION',
-            description: `Self-deployed feature node: ${featureName}`,
-            createdAt: new Date()
-          }
-        });
+    const companies = companyId
+      ? [{ id: companyId }]
+      : await this.prisma.company.findMany({ where: { isActive: true }, select: { id: true } });
+
+    for (const c of companies) {
+      for (const idea of ideas) {
+        try {
+          await this.intel.recordUpgradeSuggestion(c.id, idea);
+        } catch (e: any) {
+          this.logger.error(`[CLAW IDEATION] Could not queue suggestion for ${c.id}: ${e.message}`);
+        }
       }
-      return await this.prisma.company.update({
-        where: { id: String(companyId) },
-        data: { isActive: true }
-      });
-    } catch (dbErr: any) {
-      this.logger.error(`Failed to record feature injection parameters in history logs: ${dbErr.message}`);
     }
+
+    this.logger.log(`✨ [CLAW IDEATION] Queued ${ideas.length} upgrade suggestion(s) for review: ${ideas.join(', ')}`);
+    return ideas;
   }
      /**
    * 🔄 Compatibility Proxy Alias

@@ -62,14 +62,16 @@ export async function syncPodQueue(): Promise<number> {
   for (const item of queue) {
     try {
       const formData = new FormData();
+      // Field must be 'photo' — matches @UploadedFile('photo') in the NestJS controller
       formData.append(
-        "signature",
-        new File([dataUrlToBlob(item.signatureDataUrl)], `POD_${item.waybillNumber}.png`, {
+        "photo",
+        new File([dataUrlToBlob(item.signatureDataUrl)], `POD_${item.waybillNumber || item.waybillId}.png`, {
           type: "image/png",
         }),
       );
       if (item.recipient) formData.append("recipient", item.recipient);
-      await api.post(`/waybills/${item.waybillId}/complete`, formData);
+      // Endpoint is /waybills/:id/deliver — NOT /complete (that route does not exist)
+      await api.post(`/waybills/${item.waybillId}/deliver`, formData);
       synced++;
     } catch {
       remaining.push(item); // keep for the next attempt

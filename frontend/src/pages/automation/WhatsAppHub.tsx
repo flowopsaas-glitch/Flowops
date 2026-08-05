@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Zap, MessageSquare, Phone, Plus, Save, ExternalLink, Loader2 } from "lucide-react";
+import { Send, Zap, MessageSquare, Phone, Plus, Save, ExternalLink, Loader2, FileText } from "lucide-react";
 import { api } from "../../api/client";
 import { useToast } from "../../components/ui/use-toast";
+import WhatsAppTemplateModal from "../../components/WhatsAppTemplateModal";
 
 type Thread = {
   id: string;
@@ -27,6 +28,18 @@ function initialsFor(t: Thread) {
   return base.slice(0, 2).toUpperCase();
 }
 
+/** Human label for an outbound message's delivery status. */
+function statusLabel(status?: string) {
+  switch (status) {
+    case "click_to_chat": return "opened in WhatsApp";
+    case "sent":          return "sent ✓";
+    case "delivered":     return "delivered ✓✓";
+    case "read":          return "read ✓✓";
+    case "failed":        return "failed ✕";
+    default:              return status ?? "";
+  }
+}
+
 export default function WhatsAppHub() {
   const { toast } = useToast();
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -38,6 +51,13 @@ export default function WhatsAppHub() {
   const [companyNumber, setCompanyNumber] = useState("");
   const [numberDraft, setNumberDraft] = useState("");
   const [savingNumber, setSavingNumber] = useState(false);
+
+  // When the WhatsApp Business API is configured (.env tokens present) the
+  // send button delivers directly via Meta; otherwise it falls back to
+  // click-to-chat (wa.me) which opens WhatsApp for the agent to press send.
+  const [apiConfigured, setApiConfigured] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   // Start a brand-new conversation with any number (no existing thread needed).
   const [newChatNumber, setNewChatNumber] = useState("");
@@ -58,9 +78,11 @@ export default function WhatsAppHub() {
   const fetchSettings = async () => {
     try {
       const res: any = await api.get("/whatsapp/settings");
-      const num = res?.whatsappNumber ?? res?.data?.whatsappNumber ?? "";
+      const data = res?.data ?? res;
+      const num = data?.whatsappNumber ?? "";
       setCompanyNumber(num);
       setNumberDraft(num);
+      setApiConfigured(Boolean(data?.apiConfigured));
     } catch (e) {
       console.error(e);
     }
@@ -97,22 +119,63 @@ export default function WhatsAppHub() {
     }
   };
 
-  // Open WhatsApp (web/app) with a pre-filled message via a wa.me link, and
-  // log the outbound message so the thread history stays intact.
+  // Send a message. When the Business API is configured we deliver directly
+  // via Meta (real delivery + read receipts + inbound replies via webhook).
+  // Otherwise we fall back to click-to-chat: open wa.me with the message
+  // pre-filled so the agent sends it from their own WhatsApp.
   const handleSend = async () => {
-    if (!newMessage.trim() || !selectedPhone) return;
+    if (!newMessage.trim() || !selectedPhone || sending) return;
+    const text = newMessage;
+    setSending(true);
     try {
-      const res: any = await api.post("/whatsapp/compose", {
-        to: selectedPhone,
-        message: newMessage,
+      if (apiConfigured) {
+        const res: any = await api.post("/whatsapp/send", { to: selectedPhone, message: text });
+        const data = res?.data ?? res;
+        // Backend returns { sent:false, configured:false } if tokens missing.
+        if (data?.configured === false) {
+          toast({ title: data?.message ?? "WhatsApp API not configured.", variant: "destructive" });
+          return;
+        }
+        setNewMessage("");
+        loadMessages(selectedPhone);
+        fetchSidebar();
+        toast({ title: "Message sent via WhatsApp." });
+      } else {
+        const res: any = await api.post("/whatsapp/compose", { to: selectedPhone, message: text });
+        const url = res?.url ?? res?.data?.url;
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+        setNewMessage("");
+        loadMessages(selectedPhone);
+        fetchSidebar();
+      }
+    } catch (e: any) {
+      // Surface the real Meta error (e.g. outside the 24h window → template required,
+      // or recipient not on the test number's allow-list).
+      const detail = e?.response?.data?.message || e?.message || "Send failed";
+      toast({
+        title: apiConfigured ? "WhatsApp send failed" : "Could not open WhatsApp.",
+        description: apiConfigured ? detail : undefined,
+        variant: "destructive",
       });
-      const url = res?.url ?? res?.data?.url;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
-      setNewMessage("");
-      loadMessages(selectedPhone);
-      fetchSidebar();
-    } catch (e) {
-      toast({ title: "Could not open WhatsApp.", variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // ── Create Collection from a WhatsApp message ──────────────────────────
+  const handleCreateCollectionFromMessage = async (messageText: string) => {
+    if (!selectedPhone) return;
+    const thread = threads.find(t => t.phone === selectedPhone);
+    try {
+      await api.post("/collections", {
+        clientName: thread?.name ?? `WhatsApp ${selectedPhone}`,
+        clientPhone: selectedPhone.startsWith("+") ? selectedPhone : `+${selectedPhone}`,
+        pickupAddress: "To be confirmed (from WhatsApp message)",
+        notes: `WhatsApp message: "${messageText.slice(0, 200)}"`,
+      });
+      toast({ title: "Collection created from message! Assign a driver in Collections." });
+    } catch (e: any) {
+      toast({ title: "Failed to create collection", description: e?.message, variant: "destructive" });
     }
   };
 
@@ -157,7 +220,9 @@ export default function WhatsAppHub() {
               </button>
             </div>
             <div className="mt-2 text-[10px] text-white/40">
-              Messages open in WhatsApp — no API key needed.
+              {apiConfigured
+                ? "Connected to WhatsApp Business API — messages send directly."
+                : "Messages open in WhatsApp — no API key needed."}
             </div>
           </div>
 
@@ -205,9 +270,11 @@ export default function WhatsAppHub() {
           <>
             <div className="p-6 border-b border-white/5 bg-slate-950/40 backdrop-blur-md flex items-center justify-between">
               <div>
-                <h3 className="font-black text-white text-2xl tracking-tighter">{selectedPhone}</h3>
+                <h3 className="font-black text-white text-2xl tracking-tighter">
+                {threads.find(t => t.phone === selectedPhone)?.name || selectedPhone}
+              </h3>
                 <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mt-1">
-                  Click-to-Chat · History
+                  {apiConfigured ? "Live · Business API" : "Click-to-Chat · History"}
                 </p>
               </div>
               <a
@@ -238,10 +305,19 @@ export default function WhatsAppHub() {
                         }`}
                       >
                         {msg.content}
-                        {outbound && msg.status === "click_to_chat" && (
+                        {outbound && msg.status && (
                           <div className="mt-1 text-[9px] uppercase tracking-widest text-white/60">
-                            sent via WhatsApp
+                            {statusLabel(msg.status)}
                           </div>
+                        )}
+                        {!outbound && msg.content.length > 15 && (
+                          <button
+                            onClick={() => handleCreateCollectionFromMessage(msg.content)}
+                            className="mt-3 flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-[10px] font-bold text-sky-300 hover:bg-sky-500/20 transition"
+                            title="Create a collection from this message"
+                          >
+                            <Plus size={12} /> Create Collection
+                          </button>
                         )}
                       </div>
                     </div>
@@ -255,14 +331,24 @@ export default function WhatsAppHub() {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="Type a message — opens in WhatsApp..."
+                placeholder={apiConfigured ? "Type a message…" : "Type a message — opens in WhatsApp..."}
                 className="flex-1 bg-white/5 border border-white/10 rounded-[28px] py-5 px-8 text-sm font-medium outline-none focus:border-emerald-500/40"
               />
+              {apiConfigured && selectedPhone && (
+                <button
+                  onClick={() => setTemplateOpen(true)}
+                  title="Send an approved template (for first contact / outside the 24h window)"
+                  className="bg-white/5 border border-white/10 text-white/80 px-5 rounded-[24px] font-bold flex items-center gap-2 hover:bg-white/10"
+                >
+                  <FileText size={18} /> Template
+                </button>
+              )}
               <button
                 onClick={handleSend}
-                className="bg-emerald-500 text-slate-950 px-10 rounded-[24px] shadow-xl font-bold flex items-center gap-2"
+                disabled={sending || !newMessage.trim()}
+                className="bg-emerald-500 text-slate-950 px-10 rounded-[24px] shadow-xl font-bold flex items-center gap-2 disabled:opacity-50"
               >
-                <Send size={18} /> Send
+                {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />} Send
               </button>
             </div>
           </>
@@ -273,6 +359,18 @@ export default function WhatsAppHub() {
           </div>
         )}
       </div>
+
+      {templateOpen && selectedPhone && (
+        <WhatsAppTemplateModal
+          to={selectedPhone}
+          onClose={() => setTemplateOpen(false)}
+          onSent={() => {
+            setTemplateOpen(false);
+            loadMessages(selectedPhone);
+            fetchSidebar();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -40,6 +40,29 @@ export class CompaniesController {
     return this.svc.addAdmin(id, body);
   }
 
+  // ── Onboarding ──────────────────────────────────────────────────────────
+
+  /**
+   * GET /companies/onboarding-status
+   * Returns the onboarding checklist progress for the current company.
+   * Used by the frontend to decide whether to show the onboarding wizard.
+   */
+  @Get('onboarding-status')
+  getOnboardingStatus(@CurrentUser() u: any) {
+    return this.svc.getOnboardingStatus(u.companyId);
+  }
+
+  /**
+   * POST /companies/onboarding-complete
+   * Marks the company's onboarding as complete. Called by the wizard on the
+   * final step. Once complete, the tenant is never redirected to onboarding again.
+   */
+  @Post('onboarding-complete')
+  @HttpCode(HttpStatus.OK)
+  markOnboardingComplete(@CurrentUser() u: any) {
+    return this.svc.markOnboardingComplete(u.companyId);
+  }
+
   @Get('platform/overview')
   platformOverview() {
     return this.svc.platformOverview();

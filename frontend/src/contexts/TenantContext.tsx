@@ -74,6 +74,7 @@ function resolveLogoUrl(raw: string | null | undefined): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^data:image\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith("/")) return `${FLOWOPS_HTTP_ORIGIN}${trimmed}`;
   return `${FLOWOPS_HTTP_ORIGIN}/${trimmed}`;
 }
@@ -159,7 +160,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   // mount with defaults too, so the tokens are always present.
   useEffect(() => {
     applyBrandingToRoot(branding);
-  }, [branding]);
+    // Expose tenant currency globally so page-level money() helpers can read it
+    // without needing the hook (backward-compat for existing inline formatters).
+    (window as any).__FLOWOPS_CURRENCY__ = tenant?.currency ?? 'ZAR';
+    (window as any).__FLOWOPS_COUNTRY__ = tenant?.country ?? 'ZA';
+  }, [branding, tenant?.currency, tenant?.country]);
 
   const value = useMemo<TenantContextValue>(
     () => ({ tenant, branding, isLoading, error, refresh: load }),

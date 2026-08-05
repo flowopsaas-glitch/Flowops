@@ -11,10 +11,28 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  Bot
+  Bot,
+  Star,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
 import { api } from '../api/client';
+import { TiltCard } from "../components/premium/TiltCard";
 import DeliveryAction from './Deliveries/DeliveryAction'; // 🚀 Importing our signature logic
+
+type DeliveryQuality = {
+  statusCounts: Record<string, number>;
+  delivered: number;
+  deliverySuccessRatePct: number;
+  csat: number | null;
+  ratedCount: number;
+  ratingRequested: number;
+  ratingResponseRatePct: number | null;
+  distribution: Record<string, number>;
+  codOutstanding: number;
+  codOutstandingCount: number;
+  note: string;
+};
 
 // 🏗️ Tile Component: Added onClick and hover states
 function Tile(props: {
@@ -28,7 +46,7 @@ function Tile(props: {
   return (
     <div 
       onClick={props.onClick}
-      className={`group rounded-[26px] border border-white/10 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition-all cursor-pointer 
+      className={`group rounded-[26px] border border-white/10 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition-all cursor-pointer fx-lift 
       ${props.active ? 'bg-blue-500/10 border-blue-500/50' : 'bg-white/5 hover:bg-white/10'}`}
     >
       <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/10 group-hover:ring-blue-500/30 transition-all">
@@ -51,6 +69,11 @@ export default function PodDeliveries() {
   const [selectedWaybill, setSelectedWaybill] = useState<any | null>(null);
   const [aiReview, setAiReview] = useState<any | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [quality, setQuality] = useState<DeliveryQuality | null>(null);
+
+  useEffect(() => {
+    api.get("/waybills/quality").then((r: any) => setQuality(r?.data ?? r)).catch(() => setQuality(null));
+  }, []);
 
   // 📡 Fetch pending waybills from the backend
   const fetchQueue = async () => {
@@ -264,6 +287,9 @@ export default function PodDeliveries() {
           />
         </div>
 
+        {/* Delivery quality scorecard */}
+        {quality && (quality.delivered > 0 || quality.ratedCount > 0) && <DeliveryQualityPanel q={quality} />}
+
         {/* Footer Info Sections */}
         <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
           <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.30)]">
@@ -318,6 +344,84 @@ function AssistList({ title, items }: { title: string; items: string[] }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+
+
+// ── Delivery quality scorecard (CSAT + success + COD) ───────────────────────
+
+function qMoney(v: number) {
+  return `R ${Math.round(v).toLocaleString("en-ZA")}`;
+}
+
+function DeliveryQualityPanel({ q }: { q: DeliveryQuality }) {
+  const csat = q.csat;
+  const csatTone = csat == null ? "text-white" : csat >= 4 ? "text-emerald-300" : csat >= 3 ? "text-amber-300" : "text-rose-300";
+  const successTone = q.deliverySuccessRatePct >= 95 ? "text-emerald-300" : q.deliverySuccessRatePct >= 85 ? "text-amber-300" : "text-rose-300";
+  const maxStar = Math.max(1, ...[1, 2, 3, 4, 5].map((s) => q.distribution[String(s)] ?? 0));
+
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.30)] fx-reveal">
+      <div className="flex items-center gap-2 mb-4">
+        <Star className="h-4 w-4 text-amber-300" />
+        <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">Delivery Quality</h2>
+        <span className="text-[10px] text-white/30">customer CSAT, success rate &amp; COD settlement</span>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between">
+              <div className={`text-3xl font-black ${csatTone}`}>{csat == null ? "—" : csat.toFixed(2)}</div>
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star key={s} className={`h-3 w-3 ${csat != null && s <= Math.round(csat) ? "text-amber-300 fill-amber-300" : "text-white/20"}`} />
+                ))}
+              </div>
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">CSAT (avg of 5)</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{q.ratedCount} rating{q.ratedCount === 1 ? "" : "s"}{q.ratingResponseRatePct != null ? ` · ${q.ratingResponseRatePct}% response` : ""}</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between"><div className={`text-2xl font-black ${successTone}`}>{q.deliverySuccessRatePct}%</div><TrendingUp className={`h-4 w-4 ${successTone}`} /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Delivery success</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{q.delivered} delivered</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-2xl border p-4 h-full ${q.codOutstanding > 0 ? "border-amber-400/20 bg-amber-500/[0.07]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between"><div className={`text-xl font-black ${q.codOutstanding > 0 ? "text-amber-300" : "text-white"}`}>{qMoney(q.codOutstanding)}</div><Wallet className="h-4 w-4 text-amber-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">COD outstanding</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{q.codOutstandingCount} uncollected</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mb-2">Rating spread</div>
+            <div className="space-y-1">
+              {[5, 4, 3, 2, 1].map((s) => {
+                const v = q.distribution[String(s)] ?? 0;
+                return (
+                  <div key={s} className="flex items-center gap-1.5">
+                    <span className="w-3 text-[10px] text-white/40">{s}</span>
+                    <Star className="h-2.5 w-2.5 text-amber-300/60 shrink-0" />
+                    <span className="relative flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                      <span className="absolute inset-y-0 left-0 rounded-full bg-amber-400" style={{ width: `${(v / maxStar) * 100}%` }} />
+                    </span>
+                    <span className="w-5 text-right text-[10px] text-white/45">{v}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </TiltCard>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{q.note}</p>
     </div>
   );
 }

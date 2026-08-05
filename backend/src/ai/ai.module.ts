@@ -23,6 +23,8 @@ import { Claw5SyncService }                  from './claw-5-sync.service';
 import { Claw6SentinelService }              from './claw-6-sentinel.service';
 import { ClawLogicEngine }                   from './claw-logic.engine';
 import { CompetitiveIntelligenceService }    from './competitive-intelligence.service';
+import { IntegrationSentinelService }        from './integration-sentinel.service';
+import { PlatformProtectionService }         from './platform-protection.service';
 
 // ── External modules ─────────────────────────────────────────────────────────
 import { PrismaModule }   from '../prisma/prisma.module';
@@ -43,8 +45,8 @@ import { ConfigService }  from '@nestjs/config';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET', 'default_secret'),
-        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '15m') },
+        secret: config.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '4h') },
       }),
       inject: [ConfigService],
     }),
@@ -70,6 +72,8 @@ import { ConfigService }  from '@nestjs/config';
     Claw6SentinelService,
     ClawLogicEngine,
     CompetitiveIntelligenceService,
+    IntegrationSentinelService,
+    PlatformProtectionService,
   ],
   exports: [
     AiService,
@@ -78,6 +82,8 @@ import { ConfigService }  from '@nestjs/config';
     AiEventsService,
     ClawService,
     CompetitiveIntelligenceService,
+    IntegrationSentinelService,
+    PlatformProtectionService,
   ],
 })
 export class AiModule {}

@@ -2,79 +2,68 @@ import { Link } from "react-router-dom";
 import { CheckCircle2, ArrowRight, MessageCircle, Zap } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
+import { PLAN_CATALOG } from "../../lib/planCatalog";
 
-const WA_NUMBER = "27814065725";
+const WA_NUMBER = "27606592875";
 
-const plans = [
-  {
-    name: "Starter",
-    price: "R 5,499",
-    period: "/month",
-    description: "Perfect for small courier teams getting started.",
-    features: [
-      "Up to 5 users",
-      "Unlimited waybills",
-      "Driver dispatch & GPS tracking",
-      "Invoicing & rate cards",
-      "WhatsApp click-to-chat",
-      "14-day free trial",
-    ],
-    cta: "Start Free Trial",
+// Feature bullets / names / prices come from the shared plan catalog so this
+// marketing page and the in-app Billing screen always match. Only the
+// marketing-specific presentation (badges, CTAs, trial notes) lives here.
+const PLAN_META: Record<
+  string,
+  { badge: string; badgeColor: string; cta: string; ctaTo: string | null; highlight: boolean; trialNote: string }
+> = {
+  starter: {
+    badge: "Free forever",
+    badgeColor: "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
+    cta: "Start 14-day trial",
     ctaTo: "/signup?plan=starter",
     highlight: false,
+    trialNote: "14-day full Pro access, then free Starter tier",
   },
-  {
-    name: "Professional",
-    price: "R 14,999",
-    period: "/month",
-    description: "The full platform for growing operations.",
-    features: [
-      "Up to 20 users",
-      "Everything in Starter",
-      "COD reconciliation + driver wallets",
-      "Multi-carrier rate shopping",
-      "AI Control Tower",
-      "Route optimisation",
-      "Multi-branch support",
-      "API keys & webhooks",
-      "Shopify / WooCommerce connector",
-    ],
-    cta: "Start Free Trial",
+  professional: {
+    badge: "Most Popular",
+    badgeColor: "border-sky-400/30 bg-sky-500/20 text-sky-300",
+    cta: "Start 14-day trial",
     ctaTo: "/signup?plan=professional",
     highlight: true,
-    badge: "Most Popular",
+    trialNote: "14-day free trial — no card required",
   },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For large fleets and multi-company platforms.",
-    features: [
-      "Unlimited users",
-      "Everything in Professional",
-      "White-label branding",
-      "Dedicated account manager",
-      "Custom SLA & onboarding",
-      "Custom integrations",
-    ],
+  enterprise: {
+    badge: "Custom",
+    badgeColor: "border-violet-400/20 bg-violet-500/10 text-violet-300",
     cta: "Contact Sales",
     ctaTo: null,
     highlight: false,
+    trialNote: "",
   },
-];
+};
+
+const plans = PLAN_CATALOG.map((p) => ({
+  name: p.name,
+  price: p.price,
+  period: p.period ?? "",
+  description: p.tagline,
+  features: p.features,
+  ...PLAN_META[p.key],
+}));
 
 const faqs = [
   {
-    q: "Is there a free trial?",
-    a: "Yes — every plan starts with a 14-day free trial. No credit card required.",
+    q: "Is there a free plan?",
+    a: "Yes — Starter is free forever (up to 100 waybills/month, 3 drivers). Every new account also gets a 14-day trial of the full Professional platform before settling on a plan.",
+  },
+  {
+    q: "What happens after the 14-day trial?",
+    a: "Your account automatically drops to the free Starter tier. All your data is kept — you just lose access to Pro features like the AI Control Tower, COD reconciliation, and API access. You can upgrade to Professional at any time.",
   },
   {
     q: "Can I change plans later?",
-    a: "Absolutely. You can upgrade or downgrade at any time. Billing adjusts from the next month.",
+    a: "Yes. Upgrade from Starter to Professional at any time inside the app (Billing & Plans page). Downgrade also works — just contact us on WhatsApp.",
   },
   {
     q: "Is billing in ZAR?",
-    a: "Yes. All pricing is in South African Rand and billed locally. No surprise currency conversions.",
+    a: "Yes. All pricing is in South African Rand and billed locally via Paystack. No surprise currency conversions.",
   },
   {
     q: "What payment methods do you accept?",
@@ -118,7 +107,7 @@ export default function PricingPage() {
               }`}
             >
               {plan.badge && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border border-sky-400/30 bg-sky-500/20 px-4 py-1 text-xs font-black text-sky-300">
+                <div className={`absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border px-4 py-1 text-xs font-black ${plan.badgeColor}`}>
                   {plan.badge}
                 </div>
               )}
@@ -170,6 +159,9 @@ export default function PricingPage() {
                   <MessageCircle className="h-4 w-4" />
                   {plan.cta}
                 </a>
+              )}
+              {plan.trialNote && (
+                <p className="mt-3 text-center text-xs text-white/30">{plan.trialNote}</p>
               )}
             </div>
           ))}

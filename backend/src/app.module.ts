@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { ThrottlerProxyGuard } from './common/guards/throttler-proxy.guard';
 
 // Feature modules
 import { AuthModule } from './auth/auth.module';
@@ -35,13 +37,38 @@ import { GeocodingModule } from './geocoding/geocoding.module';
 import { RoutingModule } from './routing/routing.module';
 import { EcommerceModule } from './ecommerce/ecommerce.module';
 import { RateShoppingModule } from './rate-shopping/rate-shopping.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
 import { AuditModule } from './audit/audit.module';
 import { DriverPortalModule } from './driver-portal/driver-portal.module';
 import { AlertingModule } from './alerting/alerting.module';
-import { DriverPortalModule } from './driver-portal/driver-portal.module';
+import { EmailHubModule } from './email-hub/email-hub.module';
+import { CopilotModule } from './copilot/copilot.module';
+import { BillingModule } from './billing/billing.module';
+import { ForwardingModule } from './forwarding/forwarding.module';
+import { CarriersModule } from './carriers/carriers.module';
+import { DisbursementsModule } from './disbursements/disbursements.module';
+import { AccountingIntegrationsModule } from './accounting-integrations/accounting-integrations.module';
+import { AutopilotModule } from './autopilot/autopilot.module';
+import { SsoModule } from './sso/sso.module';
+import { ObservabilityModule } from './observability/observability.module';
+import { ReturnsModule } from './returns/returns.module';
+import { AccountingModule } from './accounting/accounting.module';
+import { SupportModule } from './support/support.module';
+import { SlaModule } from './sla/sla.module';
+import { EsgModule } from './esg/esg.module';
+import { CourierManagementModule } from './courier-management/courier-management.module';
+import { CustomerPortalModule } from './customer-portal/customer-portal.module';
+import { LogisticsAnalyticsModule } from './logistics-analytics/logistics-analytics.module';
+import { CommercialAnalyticsModule } from './commercial-analytics/commercial-analytics.module';
+import { OtpModule } from './otp/otp.module';
+import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module';
+import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence.module';
+import { FleetMaintenanceModule } from './fleet-maintenance/fleet-maintenance.module';
+import { DriverSafetyModule } from './driver-safety/driver-safety.module';
+import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
 
 @Module({
   imports: [
@@ -51,8 +78,22 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
     // Cron scheduling
     ScheduleModule.forRoot(),
 
+    // ── API rate limiting (anti-scrape / anti-abuse) ─────────────────────
+    // Generous global backstop (600 req / 60s per client) that only trips on
+    // bulk scraping or floods; sensitive routes set tighter @Throttle limits.
+    // ttl is in milliseconds (throttler v5).
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 600 }]),
+
     // Database (global — exported PrismaService available everywhere)
     PrismaModule,
+
+    // Plan entitlements + limit enforcement (global)
+    BillingModule,
+
+    // Freight forwarding (import/export — Enterprise, feature-gated)
+    ForwardingModule,
+    CarriersModule,
+    DisbursementsModule,
 
     // Storage (Cloudflare R2 — global)
     StorageModule,
@@ -76,12 +117,33 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
     ApiModule,
     EcommerceModule,
     RateShoppingModule,
+    // Per-tenant integration credentials (WhatsApp / Shopify / WooCommerce)
+    IntegrationsModule,
 
     // Platform audit trail (global)
     AuditModule,
 
     // Owner alerting engine (global)
     AlertingModule,
+    EmailHubModule,
+    CopilotModule,
+    AccountingIntegrationsModule,
+    AutopilotModule,
+    SsoModule,
+    ObservabilityModule,
+    SupportModule,
+    SlaModule,
+    EsgModule,
+    CourierManagementModule,
+    CustomerPortalModule,
+    LogisticsAnalyticsModule,
+    CommercialAnalyticsModule,
+    WarehouseManagementModule,
+    FleetIntelligenceModule,
+    FleetMaintenanceModule,
+    DriverSafetyModule,
+    LogisticsOpsModule,
+    OtpModule,
 
     // Domain modules
     AuthModule,
@@ -93,8 +155,10 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
     CollectionsModule,
     ClientsModule,
     ShipmentsModule,
+    ReturnsModule,
     ManifestsModule,
     InvoicesModule,
+    AccountingModule,
     RateCardsModule,
     QuotesModule,
     NotificationsModule,
@@ -115,6 +179,11 @@ import { DriverPortalModule } from './driver-portal/driver-portal.module';
 
     // Apply RolesGuard globally — only enforced when @Roles() is present
     { provide: APP_GUARD, useClass: RolesGuard },
+
+    // Rate limiting runs last so authenticated requests are tracked per-user
+    // (fair on shared office NATs) while @Public routes fall back to client IP
+    // (stops login brute-force and unauthenticated scraping).
+    { provide: APP_GUARD, useClass: ThrottlerProxyGuard },
   ],
 })
 export class AppModule {}

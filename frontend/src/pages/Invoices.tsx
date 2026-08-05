@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Sparkles,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -244,6 +245,8 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = (searchParams.get("status") || "").toUpperCase() as InvoiceStatus | "";
@@ -309,6 +312,23 @@ export default function Invoices() {
     }
   };
 
+  // Bundle every unbilled DELIVERED waybill into one monthly statement —
+  // the same pipeline the 1st-of-month cron runs, scoped to this tenant.
+  const autoGenerate = async () => {
+    setGenerating(true);
+    setGenMsg(null);
+    try {
+      const res: any = await api.post("/invoices/auto-generate", {});
+      const r = res?.data ?? res;
+      setGenMsg(r?.message ?? (r?.generated ? "Statement generated." : "No unbilled deliveries to invoice."));
+      await load();
+    } catch (err: any) {
+      setGenMsg(err?.message || "Could not generate statement.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {showCreate && (
@@ -316,7 +336,7 @@ export default function Invoices() {
       )}
 
       {/* Header */}
-      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl fx-glass fx-reveal">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black tracking-tight text-white">Invoices</h1>
@@ -325,6 +345,15 @@ export default function Invoices() {
           <div className="flex gap-3">
             <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10">
               <RefreshCw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={autoGenerate}
+              disabled={generating}
+              title="Bundle all unbilled delivered waybills into one monthly statement"
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+            >
+              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Generate statement
             </button>
             <button
               onClick={() => exportCsv(
@@ -366,6 +395,17 @@ export default function Invoices() {
         </div>
       </div>
 
+      {/* Auto-generate result banner */}
+      {genMsg && (
+        <div className="flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">
+          <Sparkles className="h-4 w-4 shrink-0" />
+          <span>{genMsg}</span>
+          <button onClick={() => setGenMsg(null)} className="ml-auto text-emerald-200/60 hover:text-emerald-200">
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Metrics */}
       {metrics && (
         <div className="grid gap-4 md:grid-cols-3">
@@ -377,7 +417,7 @@ export default function Invoices() {
             <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-300/60">Collected</div>
             <div className="mt-2 text-3xl font-black text-emerald-300">{money(metrics.collected)}</div>
           </div>
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 fx-lift">
             <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Collection Rate</div>
             <div className="mt-2 text-3xl font-black text-white">
               {metrics.collectionRate.toFixed(1)}%

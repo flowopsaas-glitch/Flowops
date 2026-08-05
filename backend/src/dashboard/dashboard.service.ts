@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 
+/** Average road speed used for ETA estimates (km/h).
+ *  40 km/h is conservative for urban SA deliveries on a busy day. */
+const AVG_SPEED_KMH = 40;
+
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
@@ -102,6 +106,99 @@ export class DashboardService {
     };
   }
 
+  /**
+   * Daily performance trend series for the exec dashboard. Returns one point
+   * per day over the requested window (7–90 days) with shipment volume created,
+   * deliveries completed, exceptions (failed/returned) and invoiced revenue —
+   * the time-series view the point-in-time KPI cards can't show. All derived
+   * from live tenant data; `delivered`/`exceptions` are bucketed by the day the
+   * waybill reached that status (updatedAt), consistent with the KPI window.
+   */
+  async getTrends(companyId: string, days = 30) {
+    const n = Math.min(90, Math.max(7, Math.floor(days) || 30));
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(today);
+    start.setDate(today.getDate() - (n - 1));
+
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+    // Seed an ordered bucket map so every day appears even with zero activity.
+    const buckets = new Map<string, { date: string; created: number; delivered: number; exceptions: number; revenue: number }>();
+    for (let i = 0; i < n; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      buckets.set(dayKey(d), { date: dayKey(d), created: 0, delivered: 0, exceptions: 0, revenue: 0 });
+    }
+
+    const [created, statusChanged, invoices] = await Promise.all([
+      this.prisma.waybill.findMany({
+        where: { companyId, createdAt: { gte: start } },
+        select: { createdAt: true },
+      }),
+      this.prisma.waybill.findMany({
+        where: {
+          companyId,
+          updatedAt: { gte: start },
+          status: { in: ['DELIVERED', 'FAILED_DELIVERY', 'RETURNED'] },
+        },
+        select: { status: true, updatedAt: true },
+      }),
+      this.prisma.invoice.findMany({
+        where: { companyId, createdAt: { gte: start } },
+        select: { total: true, createdAt: true },
+      }),
+    ]);
+
+    for (const w of created) {
+      const b = buckets.get(dayKey(w.createdAt));
+      if (b) b.created += 1;
+    }
+    for (const w of statusChanged) {
+      const b = buckets.get(dayKey(w.updatedAt));
+      if (!b) continue;
+      if (w.status === 'DELIVERED') b.delivered += 1;
+      else b.exceptions += 1;
+    }
+    for (const inv of invoices) {
+      const b = buckets.get(dayKey(inv.createdAt));
+      if (b) b.revenue += inv.total || 0;
+    }
+
+    const series = [...buckets.values()].map((b) => ({ ...b, revenue: Math.round(b.revenue) }));
+    const totals = series.reduce(
+      (acc, b) => {
+        acc.created += b.created;
+        acc.delivered += b.delivered;
+        acc.exceptions += b.exceptions;
+        acc.revenue += b.revenue;
+        return acc;
+      },
+      { created: 0, delivered: 0, exceptions: 0, revenue: 0 },
+    );
+
+    // Momentum: compare the most recent half of the window to the prior half.
+    const half = Math.floor(n / 2);
+    const recent = series.slice(n - half);
+    const prior = series.slice(n - 2 * half, n - half);
+    const sum = (arr: typeof series, k: 'created' | 'delivered' | 'exceptions' | 'revenue') =>
+      arr.reduce((s, b) => s + (b[k] as number), 0);
+    const pctDelta = (a: number, b: number) => (b > 0 ? Math.round(((a - b) / b) * 1000) / 10 : null);
+
+    return {
+      days: n,
+      series,
+      totals,
+      momentum: {
+        created: pctDelta(sum(recent, 'created'), sum(prior, 'created')),
+        delivered: pctDelta(sum(recent, 'delivered'), sum(prior, 'delivered')),
+        revenue: pctDelta(sum(recent, 'revenue'), sum(prior, 'revenue')),
+      },
+      note:
+        'Live tenant data. Deliveries and exceptions are bucketed by the day the waybill reached that status; revenue is invoiced value by invoice date.',
+    };
+  }
+
   /** Computes the KPI inputs for a single [start, end) window. */
   private async windowMetrics(companyId: string, start: Date, end: Date) {
     const [shipments, delivered, failed, returned, invoiceAgg, waybillCount] =
@@ -151,6 +248,83 @@ export class DashboardService {
       exceptionRate: outcomeTotal ? ((failed + returned) / outcomeTotal) * 100 : 0,
       avgDeliveryHours: deliveredWithDates ? totalHours / deliveredWithDates : 0,
       revenuePerWaybill: waybillCount ? revenue / waybillCount : 0,
+    };
+  }
+
+  /**
+   * Freight-forwarding control-tower metrics (import/export). Powers the
+   * Forwarding View on the dashboard — shipment files by mode/direction,
+   * arrivals window, customs pipeline, demurrage risk, ETA exceptions and
+   * gross profit. All derived from live forwarding data, tenant-scoped.
+   */
+  async getForwardingMetrics(companyId: string) {
+    const now = new Date();
+    const in7 = new Date(now.getTime() + 7 * 86_400_000);
+    const in14 = new Date(now.getTime() + 14 * 86_400_000);
+    const OPEN: any = { notIn: ['DELIVERED', 'CANCELLED'] };
+
+    const [
+      totalFiles, openFiles, byMode, byDirection,
+      arriving7, arriving14, etaExceptions,
+      customsByStatus, charges, openContainers, recentFiles,
+    ] = await Promise.all([
+      this.prisma.shipmentFile.count({ where: { companyId } }),
+      this.prisma.shipmentFile.count({ where: { companyId, status: OPEN } }),
+      this.prisma.shipmentFile.groupBy({ by: ['mode'], where: { companyId }, _count: { _all: true } }),
+      this.prisma.shipmentFile.groupBy({ by: ['direction'], where: { companyId }, _count: { _all: true } }),
+      this.prisma.shipmentFile.count({ where: { companyId, status: OPEN, eta: { gte: now, lte: in7 } } }),
+      this.prisma.shipmentFile.count({ where: { companyId, status: OPEN, eta: { gte: now, lte: in14 } } }),
+      this.prisma.shipmentFile.count({
+        where: { companyId, eta: { lt: now }, status: { notIn: ['CUSTOMS_CLEARED', 'DELIVERED', 'CANCELLED'] } as any },
+      }),
+      this.prisma.customsDeclaration.groupBy({ by: ['status'], where: { companyId }, _count: { _all: true } }),
+      this.prisma.shipmentCharge.findMany({ where: { file: { companyId } }, select: { cost: true, sell: true } }),
+      this.prisma.shipmentContainer.findMany({
+        where: { file: { companyId }, availableFrom: { not: null }, returnedAt: null },
+        select: { freeDays: true, availableFrom: true },
+      }),
+      this.prisma.shipmentFile.findMany({
+        where: { companyId },
+        orderBy: { updatedAt: 'desc' },
+        take: 8,
+        select: {
+          id: true, fileNumber: true, mode: true, direction: true, status: true,
+          pol: true, pod: true, eta: true, aiRiskScore: true, consigneeName: true,
+        },
+      }),
+    ]);
+
+    let revenue = 0, cost = 0;
+    for (const c of charges) { revenue += c.sell || 0; cost += c.cost || 0; }
+
+    let demurrageAtRisk = 0;
+    for (const ct of openContainers) {
+      if (ct.availableFrom == null) continue;
+      const daysOut = (now.getTime() - new Date(ct.availableFrom).getTime()) / 86_400_000;
+      if (daysOut >= (ct.freeDays ?? 0) - 2) demurrageAtRisk++;
+    }
+
+    const m: any = {}; for (const x of byMode) m[x.mode] = x._count._all;
+    const d: any = {}; for (const x of byDirection) d[x.direction] = x._count._all;
+    const c: any = {}; for (const x of customsByStatus) c[x.status] = x._count._all;
+
+    return {
+      totalFiles,
+      openFiles,
+      mode: { OCEAN: m.OCEAN || 0, AIR: m.AIR || 0, ROAD: m.ROAD || 0 },
+      direction: { IMPORT: d.IMPORT || 0, EXPORT: d.EXPORT || 0 },
+      arriving7,
+      arriving14,
+      etaExceptions,
+      customs: {
+        draft: c.DRAFT || 0, submitted: c.SUBMITTED || 0, query: c.QUERY || 0,
+        released: c.RELEASED || 0, rejected: c.REJECTED || 0,
+      },
+      demurrageAtRisk,
+      revenue: Math.round(revenue),
+      cost: Math.round(cost),
+      grossProfit: Math.round(revenue - cost),
+      recentFiles,
     };
   }
 
@@ -287,6 +461,117 @@ export class DashboardService {
       })),
       trend,
     };
+  }
+
+  /**
+   * Exception SLA tracker — open delivery exceptions (FAILED_DELIVERY /
+   * RETURNED waybills still in that state) aged by how long they've sat
+   * unactioned, against a 24h actioning SLA. Surfaces breach count, an aging
+   * spread and an oldest-first watch list so the ops desk works the worst
+   * first. Tenant-scoped, read-only.
+   */
+  async getExceptionSla(companyId: string) {
+    const SLA_HOURS = 24;
+    const now = Date.now();
+    const open = await this.prisma.waybill.findMany({
+      where: { companyId, status: { in: ['FAILED_DELIVERY', 'RETURNED'] } },
+      select: {
+        id: true, trackingNumber: true, status: true, updatedAt: true,
+        recipientName: true, recipientAddress: true, riskLevel: true,
+      },
+      orderBy: { updatedAt: 'asc' }, // oldest first
+      take: 500,
+    });
+
+    const buckets = { lt4: 0, h4_12: 0, h12_24: 0, gt24: 0 };
+    let breached = 0;
+    let oldestHours = 0;
+
+    const aged = open.map((w) => {
+      const ageHours = Math.max(0, (now - new Date(w.updatedAt).getTime()) / 3_600_000);
+      if (ageHours < 4) buckets.lt4 += 1;
+      else if (ageHours < 12) buckets.h4_12 += 1;
+      else if (ageHours < 24) buckets.h12_24 += 1;
+      else buckets.gt24 += 1;
+      if (ageHours >= SLA_HOURS) breached += 1;
+      oldestHours = Math.max(oldestHours, ageHours);
+      return {
+        id: w.id,
+        trackingNumber: w.trackingNumber,
+        status: w.status,
+        recipientName: w.recipientName,
+        recipientAddress: w.recipientAddress,
+        riskLevel: w.riskLevel,
+        ageHours: Math.round(ageHours * 10) / 10,
+        breached: ageHours >= SLA_HOURS,
+      };
+    });
+
+    return {
+      slaHours: SLA_HOURS,
+      openCount: open.length,
+      breached,
+      withinSla: open.length - breached,
+      breachRatePct: open.length ? Math.round((breached / open.length) * 1000) / 10 : 0,
+      oldestHours: Math.round(oldestHours * 10) / 10,
+      buckets,
+      watch: aged.slice(0, 10), // oldest first
+      note:
+        'Open exceptions are waybills still in FAILED_DELIVERY / RETURNED. Age is measured from the last status change; a 24h actioning SLA flags breaches.',
+    };
+  }
+
+  /**
+   * Live ETA for every shipment currently IN_TRANSIT.
+   * Uses haversine straight-line distance ÷ AVG_SPEED_KMH as a first-pass
+   * estimate.  Values refresh every 30 s in the Dashboard so the map popup
+   * always shows a fresh countdown without page reloads.
+   */
+  async getLiveEtas(companyId: string) {
+    const shipments = await this.prisma.shipment.findMany({
+      where: { companyId, status: 'IN_TRANSIT' },
+      include: {
+        driver: { select: { id: true, name: true, lastLat: true, lastLng: true } },
+        waybill: {
+          select: {
+            trackingNumber: true,
+            recipientName: true,
+            recipientLat: true,
+            recipientLng: true,
+          },
+        },
+      },
+    });
+
+    return shipments
+      .filter(
+        (s) =>
+          s.driver?.lastLat != null &&
+          s.driver?.lastLng != null &&
+          s.waybill?.recipientLat != null &&
+          s.waybill?.recipientLng != null,
+      )
+      .map((s) => {
+        const distKm = GeocodingService.haversineKm(
+          s.driver!.lastLat as number,
+          s.driver!.lastLng as number,
+          s.waybill!.recipientLat as number,
+          s.waybill!.recipientLng as number,
+        );
+        const etaMinutes = Math.max(1, Math.round((distKm / AVG_SPEED_KMH) * 60));
+        return {
+          driverId:       s.driverId,
+          shipmentId:     s.id,
+          trackingNumber: s.waybill!.trackingNumber,
+          recipientName:  s.waybill!.recipientName,
+          etaMinutes,
+          distanceKm:     Math.round(distKm * 10) / 10,
+          urgency:
+            etaMinutes <= 15 ? 'imminent'
+            : etaMinutes <= 60 ? 'near'
+            : 'en-route',
+        };
+      });
   }
 
   async getActivities(companyId: string, limit = 20) {

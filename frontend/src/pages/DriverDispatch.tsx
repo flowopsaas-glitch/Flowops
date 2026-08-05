@@ -10,6 +10,10 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+// ── Standardised dark tile source (CartoDB Dark Matter) ──
+const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const DARK_TILE_ATTR = '&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>';
+
 import { api } from '../api/client';
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { useToast } from "../components/ToastProvider";
@@ -30,7 +34,7 @@ const driverIcon = new L.Icon({
 });
 
 // --- STYLING ---
-const softCard = "rounded-[26px] border border-white/10 bg-white/[0.04] shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl";
+const softCard = "rounded-[26px] border border-white/10 bg-white/[0.04] shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl fx-lift";
 
 function StatCard({ label, value, hint }: { label: string; value: number | string; hint: string }) {
   return (
@@ -83,13 +87,13 @@ export default function DriverDispatch() {
     try {
       setLoading(true);
       setOffline(false);
-      const [wbRes, collRes, driversTableRes] = await Promise.allSettled([
-        api.get('/waybills'), api.get('/collections'), api.get('/drivers')
+      const [wbRes, collRes, driversTableRes, shipmentsRes] = await Promise.allSettled([
+        api.get('/waybills'), api.get('/collections'), api.get('/drivers'), api.get('/shipments')
       ]);
 
-      const allFailed = [wbRes, collRes, driversTableRes].every(r => r.status === 'rejected');
+      const allFailed = [wbRes, collRes, driversTableRes, shipmentsRes].every(r => r.status === 'rejected');
       if (allFailed) {
-        const firstErr: any = [wbRes, collRes, driversTableRes].find(r => r.status === 'rejected');
+        const firstErr: any = [wbRes, collRes, driversTableRes, shipmentsRes].find(r => r.status === 'rejected');
         const status = (firstErr as any)?.reason?.status;
         setOfflineReason(status === 401 || status === 403 ? 'session' : 'backend');
         setOffline(true);
@@ -111,6 +115,15 @@ export default function DriverDispatch() {
       const waybillsData    = allWb;
       const collectionsData = unwrapList(collRes.status       === 'fulfilled' ? collRes.value      : null);
       const rawDriversTable = unwrapList(driversTableRes.status === 'fulfilled' ? driversTableRes.value : null);
+      const activeShipments = unwrapList(shipmentsRes.status === 'fulfilled' ? shipmentsRes.value : null);
+
+      // Build per-driver job count from IN_TRANSIT/PENDING shipments
+      const jobsByDriver: Record<string, number> = {};
+      for (const s of activeShipments) {
+        if (s.driverId && ['PENDING', 'IN_TRANSIT'].includes(s.status ?? '')) {
+          jobsByDriver[String(s.driverId)] = (jobsByDriver[String(s.driverId)] ?? 0) + 1;
+        }
+      }
 
       // FIX: Waybill has no driverId field — it links via Shipment.
       // Filter by status instead: PENDING and COLLECTED = unassigned to driver
@@ -145,9 +158,11 @@ export default function DriverDispatch() {
         name: d.name || "Driver",
         status: (d.status || "AVAILABLE").toUpperCase(),
         vehicle: d.vehicleReg || "Van",
+        phone: d.phone || "",
         zone: "GENERAL ZONE",
         lat: d.lastLat ?? -26.20,
         lng: d.lastLng ?? 28.05,
+        jobsActive: jobsByDriver[String(d.id)] ?? 0,
       }));
 
       setJobs([...deliveries, ...collections]);
@@ -244,10 +259,46 @@ export default function DriverDispatch() {
   // Quick WhatsApp contact for a driver
   const contactDriver = useCallback((driver: any) => {
     if (driver.phone) {
-      const phone = driver.phone.replace(/\D/g, '');
+      // Normalise: strip non-digits, replace leading 0 with SA country code 27
+      const phone = driver.phone.replace(/\D/g, '').replace(/^0/, '27');
       window.open(`https://wa.me/${phone}?text=Hi+${encodeURIComponent(driver.name)}%2C+you+have+new+job(s)+assigned.+Please+check+the+app.`, '_blank');
     }
   }, []);
+
+  // Haversine distance (km) between two lat/lng pairs
+  const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
+  // Estimate ETA for a job → nearest available driver at 40 km/h average
+  const etaForJob = useMemo(() => {
+    if (!selectedJob || drivers.length === 0) return null;
+    const nearest = [...drivers].sort((a, b) => {
+      if (a.status !== 'AVAILABLE') return 1;
+      if (b.status !== 'AVAILABLE') return -1;
+      return haversineKm(a.lat, a.lng, selectedJob.lat, selectedJob.lng)
+           - haversineKm(b.lat, b.lng, selectedJob.lat, selectedJob.lng);
+    })[0];
+    if (!nearest || nearest.status !== 'AVAILABLE') return null;
+    const km = haversineKm(nearest.lat, nearest.lng, selectedJob.lat, selectedJob.lng);
+    const mins = Math.round(km / 40 * 60);
+    return mins < 60 ? `~${mins} min` : `~${Math.floor(mins/60)}h ${mins%60}m`;
+  }, [selectedJob, drivers]);
+
+  // Notify customer with stops-ahead ETA via POST /waybills/:id/notify-eta
+  const notifyEta = useCallback(async (job: any, stopsAhead: number) => {
+    if (job.type !== 'DELIVERY') return;
+    try {
+      await (api as any).post(`/waybills/${job.raw.id}/notify-eta`, { stopsAhead, etaMinutes: 30 });
+      showToast(`Customer notified: ${stopsAhead} stop${stopsAhead !== 1 ? 's' : ''} ahead`, "success");
+    } catch {
+      showToast("Notification failed", "error");
+    }
+  }, [showToast]);
 
   return (
     <div className="min-h-screen bg-[#07111f] p-7">
@@ -358,6 +409,20 @@ export default function DriverDispatch() {
                         <div className="mt-1 text-[11px] text-sky-300/70 font-bold flex items-center gap-1">
                           <MapPin className="h-3 w-3" />{job.area}
                         </div>
+                        {/* Notify customer button */}
+                        {job.type === 'DELIVERY' && job.raw?.recipientPhone && (
+                          <div className="mt-2 flex gap-2">
+                            <a
+                              href={`https://wa.me/${(job.raw.recipientPhone || '').replace(/\D/g,'').replace(/^0/,'27')}?text=${encodeURIComponent(`Hi, your FlowOps parcel (${job.reference}) is being prepared for dispatch. Track it: ${window.location.origin}/track/${job.reference}`)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1 rounded-lg bg-emerald-500/15 border border-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-300 hover:bg-emerald-500/25 transition-colors"
+                            >
+                              <MessageCircle className="h-3 w-3" /> Notify
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -442,6 +507,11 @@ export default function DriverDispatch() {
                       </div>
                       <div className="flex items-center gap-2">
                         <div className={`px-2 py-0.5 rounded text-[10px] font-black ${driver.status === 'AVAILABLE' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>{driver.status}</div>
+                        {driver.jobsActive > 0 && (
+                          <div className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 text-[10px] font-black">
+                            {driver.jobsActive} active
+                          </div>
+                        )}
                         <button onClick={() => contactDriver(driver)} title="WhatsApp driver"
                           className="p-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition">
                           <MessageCircle className="h-3.5 w-3.5" />
@@ -463,7 +533,7 @@ export default function DriverDispatch() {
         ) : (
           /* 🚀 MAP VIEW MODE */
           <div className="w-full h-[75vh] rounded-[32px] overflow-hidden border border-white/10 shadow-2xl relative animate-in fade-in zoom-in-95 duration-300">
-            <MapContainer center={branchCenter} zoom={12} style={{ height: '100%', width: '100%', background: '#0b1a2b' }} zoomControl={false}>
+            <MapContainer center={branchCenter} zoom={12} style={{ height: '100%', width: '100%', background: '#0b1a2b' }} zoomControl={false} attributionControl={false}>
               <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
               <ChangeView center={selectedJob ? [selectedJob.lat, selectedJob.lng] : branchCenter} />
               

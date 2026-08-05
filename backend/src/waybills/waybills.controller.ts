@@ -1,18 +1,77 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, Res,
   UseInterceptors, UploadedFile, HttpStatus, HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { Response } from 'express';
+import { UserRole } from '@prisma/client';
 import { WaybillsService } from './waybills.service';
+import { LabelService } from './label.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('Waybills')
 @ApiBearerAuth()
 @Controller()
 export class WaybillsController {
-  constructor(private readonly svc: WaybillsService) {}
+  constructor(
+    private readonly svc: WaybillsService,
+    private readonly labels: LabelService,
+  ) {}
+
+  // ── Parcel label printing (PDF) ───────────────────────────────────
+  // Staff-only: who physically prints/applies labels at the hub.
+
+  /**
+   * POST /waybills/labels — bulk label sheet for many waybills in one PDF.
+   * Declared before the GET '/waybills/:id/label' so the literal path is
+   * matched cleanly. Body: { ids: string[] }.
+   */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
+  @Post('waybills/labels')
+  async printLabels(
+    @CurrentUser() u: any,
+    @Body() body: { ids: string[] },
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.labels.generateForMany(
+      body?.ids ?? [],
+      u.companyId,
+    );
+    this.streamPdf(res, buffer, filename);
+  }
+
+  /** GET /waybills/:id/label — single 4x6" parcel label PDF. */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
+  @Get('waybills/:id/label')
+  async printLabel(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.labels.generateForWaybill(
+      id,
+      u.companyId,
+    );
+    this.streamPdf(res, buffer, filename);
+  }
+
+  private streamPdf(res: Response, buffer: Buffer, filename: string) {
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.end(buffer);
+  }
 
   // ── Waybills CRUD ─────────────────────────────────────────────────
 
@@ -21,9 +80,19 @@ export class WaybillsController {
     return this.svc.findAll(u.companyId, q);
   }
 
+  @Get('waybills/my-deliveries')
+  findMyDeliveries(@CurrentUser() u: any) {
+    return this.svc.findMyDeliveries(u.id, u.companyId);
+  }
+
   @Get('waybills/recent')
   findRecent(@CurrentUser() u: any) {
     return this.svc.findRecent(u.companyId);
+  }
+
+  @Get('waybills/quality')
+  deliveryQuality(@CurrentUser() u: any) {
+    return this.svc.deliveryQuality(u.companyId);
   }
 
   @Post('waybills')
@@ -43,6 +112,22 @@ export class WaybillsController {
     @Body() body: { trackingNumbers: string[]; targetStatus: string },
   ) {
     return this.svc.batchScan(u.companyId, body.trackingNumbers, body.targetStatus);
+  }
+
+  /**
+   * POST /waybills/bulk-import
+   * Accepts a CSV file and creates waybills in bulk.
+   * Returns per-row results (created, failed, duplicate).
+   */
+  @Post('waybills/bulk-import')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  bulkImport(
+    @CurrentUser() u: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.svc.bulkImportCsv(u.companyId, file);
   }
 
   @Get('waybills/:id')
@@ -71,6 +156,41 @@ export class WaybillsController {
     return this.svc.assignDriver(id, u.companyId, body.driverId);
   }
 
+  // ── Customer rating endpoints ──────────────────────────────────────
+
+  /** POST /waybills/:id/rate-request — dispatcher sends rating invite */
+  @Post('waybills/:id/rate-request')
+  requestRating(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.requestRating(id, u.companyId);
+  }
+
+  /** GET /waybills/rate/:token — public, loads rating page data */
+  @Public()
+  @Get('waybills/rate/:token')
+  getPublicRating(@Param('token') token: string) {
+    return this.svc.getPublicRating(token);
+  }
+
+  /** POST /waybills/rate/:token — public, submits rating */
+  @Public()
+  @Post('waybills/rate/:token')
+  submitRating(
+    @Param('token') token: string,
+    @Body() body: { rating: number; note?: string },
+  ) {
+    return this.svc.submitRating(token, body);
+  }
+
+  /** POST /waybills/:id/notify-eta — dispatcher triggers ETA + stops-ahead */
+  @Post('waybills/:id/notify-eta')
+  notifyCustomerEta(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Body() body: { stopsAhead: number; etaMinutes?: number },
+  ) {
+    return this.svc.notifyCustomerEta(id, u.companyId, body);
+  }
+
   @Post('waybills/:id/deliver')
   @UseInterceptors(FileInterceptor('photo'))
   @ApiConsumes('multipart/form-data')
@@ -84,8 +204,10 @@ export class WaybillsController {
   }
 
   @Get('waybills/:id/receipt')
-  getReceipt(@Param('id') id: string, @CurrentUser() u: any) {
-    return this.svc.getReceipt(id, u.companyId);
+  async getReceipt(@Param('id') id: string, @CurrentUser() u: any, @Res() res: Response) {
+    const { buffer, filename, contentType } = await this.svc.getReceipt(id, u.companyId);
+    res.set({ 'Content-Type': contentType, 'Content-Disposition': `inline; filename="${filename}"`, 'Content-Length': String(buffer.length) });
+    res.end(buffer);
   }
 
   @Get('waybills/:id/assist')

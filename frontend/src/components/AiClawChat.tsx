@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Terminal, X, ChevronRight, Cpu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { FLOWOPS_API_URL } from '../lib/env';
-import { getAccessToken } from '../lib/session';
+import { api } from '../api/client';
 
 interface Message {
   role: 'user' | 'claw' | 'system' | 'system_thought';
@@ -77,21 +76,11 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
         }
       };
 
-      const response = await fetch(`${FLOWOPS_API_URL}/ai/claw-chat/query`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${getAccessToken() ?? ''}`
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error("BACKEND_VALIDATION_ERROR:", data);
-        throw new Error(data.message || "Protocol handshake failed");
-      }
+      // Route through the shared api client: same-origin (no baked-in
+      // localhost), JWT auth + silent refresh, and consistent error handling.
+      // The TransformInterceptor wraps the payload as { data, statusCode, message }.
+      const res: any = await api.post('/ai/claw-chat/query', requestBody);
+      const data: any = res?.data ?? res ?? {};
 
       // Update self-awareness metrics based on actual server output data
       setTelemetry({

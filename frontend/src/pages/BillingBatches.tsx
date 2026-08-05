@@ -9,8 +9,13 @@ import {
   RefreshCw,
   TrendingUp,
   Wallet,
+  AlertTriangle,
+  ShieldCheck,
+  Clock,
 } from "lucide-react";
 import { api } from "../api/client";
+import { TiltCard } from "../components/premium/TiltCard";
+import { formatMoney } from "../lib/currency";
 
 // ── Types matching the real Invoice schema ──────────────────────────────────
 type Invoice = {
@@ -36,6 +41,17 @@ type Metrics = {
   collectionRate: number;
 };
 
+type BillingCoverage = {
+  billable: number;
+  billedCount: number;
+  unbilledCount: number;
+  unbilledValue: number;
+  coverageRatePct: number;
+  aging: { lt7: number; d7_30: number; gt30: number };
+  watch: Array<{ id: string; trackingNumber: string; recipient: string; amount: number; ageDays: number }>;
+  note: string;
+};
+
 // ── Status config ──────────────────────────────────────────────────────────
 const STATUS: Record<string, { cls: string; label: string }> = {
   DRAFT:     { cls: "border-slate-400/20 bg-slate-500/10 text-slate-300", label: "Draft" },
@@ -46,7 +62,9 @@ const STATUS: Record<string, { cls: string; label: string }> = {
 };
 
 function money(v?: number | null) {
-  return `ZAR ${(v ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Uses tenant currency when available via the global formatMoney import.
+  // Falls back to ZAR if no tenant context (e.g. in modals rendered before context loads).
+  return formatMoney(v ?? 0, (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR');
 }
 
 // ── Generate Invoice Modal ─────────────────────────────────────────────────
@@ -157,6 +175,7 @@ function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 export default function BillingBatches() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [coverage, setCoverage] = useState<BillingCoverage | null>(null);
   const [loading, setLoading] = useState(true);
   const [showGenerate, setShowGenerate] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -176,6 +195,7 @@ export default function BillingBatches() {
         const m: any = metRes.value;
         setMetrics(m?.data ?? m);
       }
+      api.get("/invoices/billing-coverage").then((r: any) => setCoverage(r?.data ?? r)).catch(() => setCoverage(null));
     } finally {
       setLoading(false);
     }
@@ -253,6 +273,11 @@ export default function BillingBatches() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Billing coverage / revenue leakage */}
+      {coverage && coverage.billable > 0 && (
+        <BillingCoveragePanel data={coverage} onGenerate={() => setShowGenerate(true)} />
       )}
 
       {/* Invoice groups */}
@@ -333,6 +358,97 @@ export default function BillingBatches() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+
+
+// ── Billing coverage / revenue-leakage panel ────────────────────────────────
+
+function BillingCoveragePanel({ data, onGenerate }: { data: BillingCoverage; onGenerate: () => void }) {
+  const cov = data.coverageRatePct;
+  const covTone = cov >= 95 ? "text-emerald-300" : cov >= 80 ? "text-amber-300" : "text-rose-300";
+  const covBar = cov >= 95 ? "bg-emerald-400" : cov >= 80 ? "bg-amber-400" : "bg-rose-400";
+  const agingTotal = Math.max(1, data.aging.lt7 + data.aging.d7_30 + data.aging.gt30);
+  const segs = [
+    { v: data.aging.lt7, cls: "bg-emerald-400", label: "<7d" },
+    { v: data.aging.d7_30, cls: "bg-amber-400", label: "7–30d" },
+    { v: data.aging.gt30, cls: "bg-rose-500", label: ">30d" },
+  ];
+
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-xl fx-glass fx-reveal">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-cyan-300" />
+          <h2 className="text-[11px] font-black uppercase tracking-[0.24em] text-white/60">Billing Coverage</h2>
+          <span className="text-[10px] text-white/30">are we billing everything we delivered?</span>
+        </div>
+        {data.unbilledCount > 0 && (
+          <button onClick={onGenerate} className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/8 px-4 py-2 text-sm font-bold text-cyan-300 hover:bg-cyan-500/15 transition">
+            <Plus className="h-4 w-4" /> Bill {data.unbilledCount} unbilled
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <TiltCard>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 h-full">
+            <div className="flex items-center justify-between"><div className={`text-3xl font-black ${covTone}`}>{cov}%</div><CheckCircle2 className={`h-4 w-4 ${covTone}`} /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Coverage</div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5"><div className={`h-full ${covBar}`} style={{ width: `${Math.min(100, cov)}%` }} /></div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className={`rounded-2xl border p-4 h-full ${data.unbilledValue > 0 ? "border-rose-500/25 bg-rose-500/[0.07]" : "border-white/8 bg-white/[0.03]"}`}>
+            <div className="flex items-center justify-between"><div className={`text-xl font-black ${data.unbilledValue > 0 ? "text-rose-300" : "text-white"}`}>{money(data.unbilledValue)}</div><AlertTriangle className="h-4 w-4 text-rose-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Unbilled value</div>
+            <div className="text-[10px] text-white/35 mt-0.5">delivered, not invoiced</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-amber-300">{data.unbilledCount}</div><FileText className="h-4 w-4 text-amber-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Unbilled waybills</div>
+          </div>
+        </TiltCard>
+        <TiltCard>
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-4 h-full">
+            <div className="flex items-center justify-between"><div className="text-2xl font-black text-emerald-300">{data.billedCount}</div><Wallet className="h-4 w-4 text-emerald-300" /></div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40 mt-1">Billed of {data.billable}</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {data.unbilledCount > 0 && (
+        <div className="mt-5 grid lg:grid-cols-2 gap-5">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Unbilled aging</p>
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
+              {segs.map((s) => s.v > 0 && <div key={s.label} className={s.cls} style={{ width: `${(s.v / agingTotal) * 100}%` }} title={`${s.label}: ${s.v}`} />)}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-white/45">
+              {segs.map((s) => <span key={s.label} className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${s.cls}`} /> {s.label} {s.v}</span>)}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40 mb-2">Oldest unbilled — bill these first</p>
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+              {data.watch.map((w) => (
+                <div key={w.id} className="flex items-center gap-3 rounded-xl bg-black/25 px-3 py-2 text-sm">
+                  <span className="font-mono text-xs font-black text-cyan-300 shrink-0">{w.trackingNumber}</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-white/55">{w.recipient}</span>
+                  <span className="shrink-0 font-mono text-white/70">{money(w.amount)}</span>
+                  <span className={`shrink-0 text-[10px] font-bold ${w.ageDays > 30 ? "text-rose-300" : "text-white/40"}`}><Clock className="inline h-3 w-3 mr-0.5" />{w.ageDays}d</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-3 text-[10px] leading-snug text-white/30">{data.note}</p>
     </div>
   );
 }

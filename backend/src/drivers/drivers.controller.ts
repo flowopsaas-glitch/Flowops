@@ -1,13 +1,17 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DriversService } from './drivers.service';
+import { LeaderboardService } from './leaderboard.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 
 @ApiTags('Drivers')
 @ApiBearerAuth()
 @Controller('drivers')
 export class DriversController {
-  constructor(private readonly svc: DriversService) {}
+  constructor(
+    private readonly svc: DriversService,
+    private readonly leaderboard: LeaderboardService,
+  ) {}
 
   @Get()
   findAll(@CurrentUser() u: any, @Query() q: any) {
@@ -18,6 +22,25 @@ export class DriversController {
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);
   }
+
+  // ── Static named routes must come BEFORE /:id to avoid being shadowed ──────
+
+  @Get('field-ops')
+  getFieldOps(@CurrentUser() u: any) {
+    return this.svc.getFieldOps(u.companyId);
+  }
+
+  @Get('fleet/dashboard')
+  fleetDashboard(@CurrentUser() u: any) {
+    return this.svc.fleetDashboard(u.companyId);
+  }
+
+  @Get('leaderboard')
+  getLeaderboard(@CurrentUser() u: any, @Query('period') period?: string) {
+    return this.leaderboard.getLeaderboard(u.companyId, period);
+  }
+
+  // ── Param routes ─────────────────────────────────────────────────────────────
 
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
@@ -62,16 +85,6 @@ export class DriversController {
     @Body() body: { currentKm: number; nextServiceKm?: number; nextServiceDate?: string },
   ) {
     return this.svc.updateOdometer(id, u.companyId, body);
-  }
-
-  @Get('field-ops')
-  getFieldOps(@CurrentUser() u: any) {
-    return this.svc.getFieldOps(u.companyId);
-  }
-
-  @Get('fleet/dashboard')
-  fleetDashboard(@CurrentUser() u: any) {
-    return this.svc.fleetDashboard(u.companyId);
   }
 
   // ── Driver PIN management ─────────────────────────────────────────────────

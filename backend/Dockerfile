@@ -64,7 +64,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
 
-# Sync schema then start. db push is idempotent — safe to run on every start.
-# --skip-generate: client was already generated in the builder stage.
-# --accept-data-loss: required flag for db push in non-interactive mode.
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push --skip-generate --accept-data-loss && node dist/main"]
+# Sync schema then start the app.
+# This repo uses `prisma db push` (no migrations folder), so `migrate deploy`
+# would fail. `db push` applies the schema diff non-destructively and is safe
+# to run on every container start (idempotent — no-ops when already in sync).
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --skip-generate && node dist/main"]

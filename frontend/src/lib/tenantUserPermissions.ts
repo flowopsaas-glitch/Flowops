@@ -6,6 +6,7 @@ export type TenantNavPermissionKey =
   | "clients"
   | "notifications"
   | "collections"
+  | "returns"
   | "podDeliveries"
   | "driverDispatch"
   | "whatsapp"
@@ -15,9 +16,11 @@ export type TenantNavPermissionKey =
   | "billingBatches"
   | "invoiceDrafts"
   | "invoices"
+  | "accounting"
   | "creditControl"
   | "quotes"
   | "aiControlTower"
+  | "copilot"
   | "risksExceptions"
   | "usersRoles"
   | "settings";
@@ -32,6 +35,7 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   clients: "Clients",
   notifications: "Notifications",
   collections: "Collections",
+  returns: "Returns (RMA)",
   podDeliveries: "POD / Deliveries",
   driverDispatch: "Driver Dispatch",
   whatsapp: "WhatsApp",
@@ -41,9 +45,11 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   billingBatches: "Billing Batches",
   invoiceDrafts: "Invoice Drafts",
   invoices: "Invoices",
+  accounting: "Accounting",
   creditControl: "Credit Control",
   quotes: "Quotes",
   aiControlTower: "AI Control Tower",
+  copilot: "Ask FlowOps",
   risksExceptions: "High Risk Queue",
   usersRoles: "Users & Roles",
   settings: "Settings",
@@ -57,6 +63,7 @@ export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [
   "clients",
   "notifications",
   "collections",
+  "returns",
   "podDeliveries",
   "driverDispatch",
   "whatsapp",
@@ -66,9 +73,11 @@ export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [
   "billingBatches",
   "invoiceDrafts",
   "invoices",
+  "accounting",
   "creditControl",
   "quotes",
   "aiControlTower",
+  "copilot",
   "risksExceptions",
   "usersRoles",
   "settings",
@@ -83,6 +92,7 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     clients: true,
     notifications: true,
     collections: true,
+    returns: true,
     podDeliveries: true,
     driverDispatch: true,
     whatsapp: true,
@@ -92,9 +102,11 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     billingBatches: true,
     invoiceDrafts: true,
     invoices: true,
+    accounting: true,
     creditControl: true,
     quotes: true,
     aiControlTower: true,
+    copilot: true,
     risksExceptions: true,
     usersRoles: true,
     settings: true,
@@ -122,6 +134,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       clients: true,
       notifications: true,
       collections: true,
+      returns: true,
       podDeliveries: true,
       driverDispatch: true,
       whatsapp: true,
@@ -131,9 +144,11 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: true,
       invoiceDrafts: true,
       invoices: true,
+      accounting: true,
       creditControl: true,
       quotes: true,
       aiControlTower: true,
+      copilot: true,
       risksExceptions: true,
       usersRoles: false,
       settings: false,
@@ -142,6 +157,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
 
   if (value === "WAREHOUSE") {
     // Hub clerk: inbound/outbound goods handling, POD capture, exception flags.
+    // Returns land at the warehouse for receiving + inspection, so they get it.
     return {
       dashboard: true,
       shipments: true,
@@ -150,6 +166,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       clients: false,
       notifications: true,
       collections: false,
+      returns: true,
       podDeliveries: true,
       driverDispatch: false,
       whatsapp: true,
@@ -159,9 +176,11 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      accounting: false,
       creditControl: false,
       quotes: false,
       aiControlTower: false,
+      copilot: false,
       risksExceptions: true,
       usersRoles: false,
       settings: false,
@@ -170,32 +189,32 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
 
   if (value === "DRIVER") {
     // Field driver — focused on their active deliveries / pickups.
-    // Management pages (dispatch console, route optimizer, fleet mgmt,
-    // waybill register, shipments log, settings, integrations) are NOT
-    // relevant for someone in the field and are deliberately removed.
     return {
       dashboard: true,
-      shipments: false,        // management console — not for field drivers
+      shipments: false,
       waybillInbox: false,
-      waybills: false,         // full waybill register — management only
+      waybills: false,
       clients: false,
       notifications: true,
-      collections: true,       // see their pickup queue
-      podDeliveries: true,     // POD capture + delivery list
-      driverDispatch: false,   // managing other drivers — removed
-      whatsapp: true,          // contact clients / dispatch
+      collections: true,
+      returns: false,
+      podDeliveries: true,
+      driverDispatch: false,
+      whatsapp: true,
       email: false,
       clientQueries: false,
       rateCards: false,
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      accounting: false,
       creditControl: false,
       quotes: false,
       aiControlTower: false,
+      copilot: false,
       risksExceptions: false,
       usersRoles: false,
-      settings: false,         // integrations / system config — removed
+      settings: false,
     };
   }
 
@@ -203,7 +222,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     return buildViewerPermissions();
   }
 
-  if (value === "DISPATCH") {    return {
+  if (value === "DISPATCH") {
+    return {
       dashboard: true,
       shipments: true,
       waybillInbox: true,
@@ -211,6 +231,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       clients: true,
       notifications: true,
       collections: true,
+      returns: true,
       podDeliveries: true,
       driverDispatch: true,
       whatsapp: true,
@@ -220,9 +241,11 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      accounting: false,
       creditControl: false,
       quotes: true,
       aiControlTower: true,
+      copilot: true,
       risksExceptions: true,
       usersRoles: false,
       settings: false,
@@ -237,6 +260,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     clients: true,
     notifications: true,
     collections: false,
+    returns: false,
     podDeliveries: true,
     driverDispatch: false,
     whatsapp: false,
@@ -246,9 +270,11 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     billingBatches: false,
     invoiceDrafts: false,
     invoices: false,
+    accounting: false,
     creditControl: false,
     quotes: false,
     aiControlTower: false,
+    copilot: false,
     risksExceptions: false,
     usersRoles: false,
     settings: false,
@@ -266,6 +292,7 @@ function buildViewerPermissions(): TenantNavPermissions {
     clients: false,
     notifications: true,
     collections: false,
+    returns: false,
     podDeliveries: false,
     driverDispatch: false,
     whatsapp: false,
@@ -275,9 +302,11 @@ function buildViewerPermissions(): TenantNavPermissions {
     billingBatches: true,  // Billing Batches + COD Reconciliation
     invoiceDrafts: true,
     invoices: true,        // Finance Home + Invoices
+    accounting: true,      // credit/debit notes, statements, age analysis
     creditControl: true,
     quotes: true,
     aiControlTower: false,
+    copilot: true,         // Ask FlowOps — analytics Q&A fits the finance/reporting viewer
     risksExceptions: false,
     usersRoles: false,
     settings: false,

@@ -194,7 +194,7 @@ export default function CreditControl() {
       )}
 
       {/* Header */}
-      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl">
+      <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-7 shadow-xl fx-glass fx-reveal">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-300">
@@ -238,7 +238,7 @@ export default function CreditControl() {
           { icon: TrendingUp, label: "Cash Collected",    val: money(metrics?.collected),   tone: "text-emerald-300", sub: `${metrics?.total ?? 0} invoices total` },
           { icon: Wallet,     label: "Collection Rate",   val: `${(metrics?.collectionRate ?? 0).toFixed(1)}%`, tone: "text-white", sub: "vs total billed" },
         ].map(({ icon: Icon, label, val, tone, sub }) => (
-          <div key={label} className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 shadow-xl">
+          <div key={label} className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 shadow-xl fx-lift">
             <div className="flex items-center justify-between">
               <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">{label}</div>
               <Icon className="h-5 w-5 text-white/30" />

@@ -4,7 +4,7 @@ Run: python3 scripts/marketing/upgrade_home.py
 """
 import pathlib
 
-WA = "27814065725"
+WA = "27606592875"
 
 p = pathlib.Path('/home/kakes/FlowOps-Logistics/flowops-web/client/src/pages/Home.tsx')
 

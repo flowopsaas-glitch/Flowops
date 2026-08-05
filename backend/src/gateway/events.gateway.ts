@@ -79,27 +79,73 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.debug(`Socket disconnected: ${client.id}`);
   }
 
-  /** Client emits this after login to join their company room. */
+  /** Client emits this after login to join their company room.
+   * The companyId from the JWT token is always used — the client-supplied
+   * companyId is validated against the token claim to prevent a client from
+   * joining another tenant's room.
+   */
   @SubscribeMessage('joinCompanyDashboard')
   async joinRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { companyId: string },
   ) {
-    await client.join(`company:${data.companyId}`);
-    this.socketCompany.set(client.id, data.companyId);
-    return { joined: `company:${data.companyId}` };
+    // Extract and re-verify the token to get the authoritative companyId.
+    const token =
+      (client.handshake.auth as any)?.token ??
+      client.handshake.headers?.authorization?.replace('Bearer ', '');
+
+    if (!token) {
+      this.logger.warn(`Socket ${client.id} tried joinCompanyDashboard without a token — rejected`);
+      return { error: 'Not authenticated' };
+    }
+
+    let verifiedCompanyId: string | undefined;
+    try {
+      const payload = this.jwtService.verify(token, {
+        secret: this.config.get<string>('JWT_SECRET'),
+      });
+      // Only tenant tokens belong to a company room.
+      if (payload.type === 'tenant' && payload.companyId) {
+        verifiedCompanyId = payload.companyId;
+      }
+    } catch {
+      this.logger.warn(`Socket ${client.id} tried joinCompanyDashboard with invalid token — rejected`);
+      return { error: 'Invalid token' };
+    }
+
+    if (!verifiedCompanyId) {
+      return { error: 'Not a tenant session' };
+    }
+
+    // Reject if the client is trying to join a different company's room.
+    if (data?.companyId && data.companyId !== verifiedCompanyId) {
+      this.logger.warn(
+        `Socket ${client.id} tried to join company:${data.companyId} but token says ${verifiedCompanyId} — rejected`,
+      );
+      return { error: 'Forbidden' };
+    }
+
+    await client.join(`company:${verifiedCompanyId}`);
+    this.socketCompany.set(client.id, verifiedCompanyId);
+    this.logger.debug(`Socket ${client.id} joined company:${verifiedCompanyId}`);
+    return { joined: `company:${verifiedCompanyId}` };
   }
 
-  /** Driver emits location updates. */
+  /** Driver emits location updates.
+   * Only forwarded if the socket is already in a verified company room
+   * (i.e. joined via joinCompanyDashboard with a valid token).
+   */
   @SubscribeMessage('driver-location')
   handleDriverLocation(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { driverId: string; lat: number; lng: number },
   ) {
     const companyId = this.socketCompany.get(client.id);
-    if (companyId) {
-      this.emitToCompany(companyId, 'driver-location-updated', data);
+    if (!companyId) {
+      // Not in a verified room — silently ignore
+      return;
     }
+    this.emitToCompany(companyId, 'driver-location-updated', data);
   }
 
   // ── Emit helpers (called by services) ────────────────────────────────
@@ -120,6 +166,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.emitToCompany(companyId, 'shipment-status-changed', shipment);
   }
 
+  /** Emit to a specific driver (if they have a socket connected via driver portal). */
+  emitToDriver(driverId: string, event: string, data: any) {
+    this.server.to(`driver:${driverId}`).emit(event, data);
+  }
+
   emitDispatchAssigned(companyId: string, data: any) {
     this.emitToCompany(companyId, 'dispatch-assigned', data);
   }
@@ -128,13 +179,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.emitToCompany(companyId, 'risk-score-updated', data);
   }
 
-  emitAutoInvoiceCompleted(companyId: string, invoiceId: string) {
-    this.emitToCompany(companyId, 'auto-invoice-completed', { invoiceId });
+  emitAutoInvoiceCompleted(
+    companyId: string,
+    invoice: { id: string; invoiceNumber?: string; total?: number; deliveryCount?: number },
+  ) {
+    this.emitToCompany(companyId, 'auto-invoice-completed', invoice);
   }
 
-  emitSystemHeal(companyId: string, reason: string) {
-    this.emitToCompany(companyId, 'system-ui-heal', { reason });
-  }
+  // emitSystemHeal REMOVED — this dead-code path allowed any backend service
+  // to force a full browser reload on all connected clients of a company,
+  // causing severe UX degradation (page "jumping"). The frontend listener
+  // has also been removed. If a real hot-update mechanism is ever needed,
+  // use the PWA service-worker update flow instead.
 
   /**
    * broadcastToCompany — called by the 6-Claw AI services.

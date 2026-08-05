@@ -1,9 +1,25 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventsGateway } from '../gateway/events.gateway';
+import { EmailService } from '../email/email.service';
+import { PaystackService } from '../paystack/paystack.service';
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(InvoicesService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private gateway: EventsGateway,
+    private email: EmailService,
+    @Inject(forwardRef(() => PaystackService)) private paystack: PaystackService,
+  ) {}
+
+  /** Realtime emits are best-effort — they must never break invoicing. */
+  private safeEmit(fn: () => void): void {
+    try { fn(); } catch (err: any) { this.logger.warn(`Invoice realtime emit failed: ${err?.message ?? err}`); }
+  }
 
   async findAll(companyId: string, query?: any) {
     const where: any = { companyId };
@@ -149,19 +165,33 @@ export class InvoicesService {
     const money = (v?: number | null) =>
       `ZAR ${(v ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`;
 
-    // Update sentAt to track the reminder
+    const subject = `Payment Reminder — ${inv.invoiceNumber} (${daysPast > 0 ? `${daysPast} days overdue` : 'due soon'})`;
+    const text = `Dear ${inv.clientName}, invoice ${inv.invoiceNumber} for ${money(inv.total)} was due on ${fmt(inv.dueDate)}. Please arrange payment at your earliest convenience.`;
+    const html =
+      `<p>Dear ${inv.clientName ?? 'Customer'},</p>` +
+      `<p>This is a friendly reminder that invoice <strong>${inv.invoiceNumber}</strong> for ` +
+      `<strong>${money(inv.total)}</strong> was due on <strong>${fmt(inv.dueDate)}</strong>` +
+      `${daysPast > 0 ? ` — now <strong>${daysPast} day(s) overdue</strong>` : ''}.</p>` +
+      `<p>Please arrange payment at your earliest convenience. If you have already paid, kindly disregard this message.</p>` +
+      `<p>Thank you.</p>`;
+
+    // Send via SendGrid (EmailService). Degrades gracefully if SendGrid isn't
+    // configured — the service logs the email instead of throwing.
+    const sent = await this.email.send({ to: inv.clientEmail, subject, html, text });
+
+    // Track the reminder timestamp regardless (so the UI reflects the attempt).
     await this.prisma.invoice.update({
       where: { id },
       data: { sentAt: new Date() },
     });
 
-    // TODO: wire to EmailService when SENDGRID_API_KEY is configured
-    // For now, return the payload that would be sent
     return {
-      sent: true,
+      sent,
       to: inv.clientEmail,
-      subject: `Payment Reminder — ${inv.invoiceNumber} (${daysPast > 0 ? `${daysPast} days overdue` : 'due soon'})`,
-      message: `Dear ${inv.clientName}, invoice ${inv.invoiceNumber} for ${money(inv.total)} was due on ${fmt(inv.dueDate)}. Please arrange payment at your earliest convenience.`,
+      subject,
+      message: sent
+        ? `Reminder emailed to ${inv.clientEmail}.`
+        : 'Email not sent — configure SENDGRID_API_KEY to enable delivery. Reminder logged.',
       daysPastDue: daysPast,
     };
   }
@@ -222,7 +252,7 @@ export class InvoicesService {
     const inv = await this.findOne(id, companyId);
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { name: true, tradingName: true, email: true, phone: true, address: true, city: true, vatNumber: true, logoUrl: true, primaryColor: true },
+      select: { name: true, tradingName: true, email: true, phone: true, address: true, city: true, vatNumber: true, logoUrl: true, primaryColor: true, bankName: true, bankAccountHolder: true, bankAccountNumber: true, bankBranchCode: true, bankAccountType: true },
     });
 
     const fmt = (v?: number | null) =>
@@ -313,6 +343,18 @@ export class InvoicesService {
   </table>
 
   <div class="footer">
+    ${(company as any)?.bankName ? `
+    <div style="margin-bottom:16px;text-align:left;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:8px">Payment Details</div>
+      <div style="font-size:13px;color:#111827;line-height:1.8">
+        <strong>Bank:</strong> ${(company as any).bankName}<br/>
+        ${(company as any).bankAccountHolder ? `<strong>Account Holder:</strong> ${(company as any).bankAccountHolder}<br/>` : ''}
+        <strong>Account No:</strong> ${(company as any).bankAccountNumber ?? '—'}<br/>
+        <strong>Branch Code:</strong> ${(company as any).bankBranchCode ?? '—'}<br/>
+        ${(company as any).bankAccountType ? `<strong>Account Type:</strong> ${(company as any).bankAccountType}<br/>` : ''}
+      </div>
+    </div>
+    ` : ''}
     Thank you for your business. Please reference <strong>${inv.invoiceNumber}</strong> when making payment.
   </div>
 
@@ -351,6 +393,198 @@ export class InvoicesService {
     });
   }
 
+  /**
+   * Billing coverage / revenue-leakage audit. Across DELIVERED, billable
+   * (totalAmount > 0) waybills: how many are on an invoice vs still unbilled,
+   * the unbilled value at risk, and how stale the unbilled ones are. This is the
+   * "are we billing everything we delivered?" check the batch desk needs.
+   * Tenant-scoped, read-only.
+   */
+  async getBillingCoverage(companyId: string) {
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const billableWhere = { companyId, status: 'DELIVERED' as const, totalAmount: { gt: 0 } };
+
+    const [billedCount, unbilledAgg, unbilledList] = await Promise.all([
+      this.prisma.waybill.count({ where: { ...billableWhere, invoiceItems: { some: {} } } }),
+      this.prisma.waybill.aggregate({
+        where: { ...billableWhere, invoiceItems: { none: {} } },
+        _count: { _all: true },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.waybill.findMany({
+        where: { ...billableWhere, invoiceItems: { none: {} } },
+        select: { id: true, trackingNumber: true, recipientName: true, totalAmount: true, updatedAt: true },
+        orderBy: { updatedAt: 'asc' }, // oldest unbilled first
+        take: 500,
+      }),
+    ]);
+
+    const unbilledCount = unbilledAgg._count._all;
+    const unbilledValue = Math.round(unbilledAgg._sum.totalAmount ?? 0);
+    const billable = billedCount + unbilledCount;
+    const coverageRatePct = billable ? Math.round((billedCount / billable) * 1000) / 10 : 100;
+
+    const aging = { lt7: 0, d7_30: 0, gt30: 0 };
+    const watch = unbilledList.map((w) => {
+      const ageDays = Math.floor((now - new Date(w.updatedAt).getTime()) / DAY);
+      if (ageDays < 7) aging.lt7 += 1;
+      else if (ageDays <= 30) aging.d7_30 += 1;
+      else aging.gt30 += 1;
+      return {
+        id: w.id,
+        trackingNumber: w.trackingNumber,
+        recipient: w.recipientName ?? '—',
+        amount: Math.round(w.totalAmount ?? 0),
+        ageDays,
+      };
+    }).slice(0, 10);
+
+    return {
+      billable,
+      billedCount,
+      unbilledCount,
+      unbilledValue,
+      coverageRatePct,
+      aging, // computed over the oldest unbilled (capped at 500)
+      watch,
+      note:
+        'Coverage is delivered, billable (priced) waybills already on an invoice vs still unbilled. Unbilled value is revenue delivered but not yet invoiced. Aging is from the delivery/last-update date.',
+    };
+  }
+
+
+  // ── Auto monthly invoicing ────────────────────────────────────────────────
+
+  /**
+   * Builds one consolidated "Monthly Delivery Statement" for a single company:
+   * bundles every DELIVERED waybill that has a totalAmount and isn't already on
+   * an invoice into line-items, sets dueDate = +30 days, and closes the loop —
+   * emits `auto-invoice-completed` to refresh finance dashboards live and logs
+   * a staff notification.
+   *
+   * Idempotent: getUnbilledWaybills filters out waybills already on an invoice,
+   * so re-running is safe. Returns the created invoice, or null if there was
+   * nothing to bill.
+   */
+  async generateMonthlyInvoiceForCompany(company: {
+    id: string;
+    name: string;
+    tradingName?: string | null;
+  }) {
+    const waybills = await this.getUnbilledWaybills(company.id);
+    if (!waybills.length) return null;
+
+    const subtotal = waybills.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
+    const tax      = Math.round(subtotal * 0.15 * 100) / 100;
+    const total    = Math.round((subtotal + tax) * 100) / 100;
+
+    const count         = await this.prisma.invoice.count({ where: { companyId: company.id } });
+    const year          = new Date().getFullYear();
+    const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
+    const dueDate       = new Date();
+    dueDate.setDate(dueDate.getDate() + 30);
+
+    const items = waybills.map((w) => ({
+      description: `Delivery ${w.trackingNumber} — ${w.recipientName ?? ''}`.trimEnd(),
+      quantity:    1,
+      unitPrice:   w.totalAmount ?? 0,
+      total:       w.totalAmount ?? 0,
+      waybillId:   w.id,
+    }));
+
+    const invoice = await this.prisma.invoice.create({
+      data: {
+        companyId:     company.id,
+        invoiceNumber,
+        clientName:    company.tradingName ?? company.name,
+        subtotal,
+        tax,
+        total,
+        status:        'SENT',
+        sentAt:        new Date(),
+        dueDate,
+        notes:         `Auto-generated monthly statement — ${waybills.length} deliveries`,
+        items:         { create: items },
+      },
+      include: { items: true },
+    });
+
+    // ── Close the loop ───────────────────────────────────────────────────
+    // Live-refresh the Finance dashboards (frontend listens on
+    // `auto-invoice-completed`) and drop a staff notification in the bell.
+    this.safeEmit(() => this.gateway.emitAutoInvoiceCompleted(company.id, {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      total: invoice.total,
+      deliveryCount: waybills.length,
+    }));
+    try {
+      await this.prisma.notification.create({
+        data: {
+          companyId: company.id,
+          title: `Monthly statement generated · ${invoiceNumber}`,
+          body: `${waybills.length} deliveries bundled — total R${total.toFixed(2)}, due ${dueDate.toLocaleDateString('en-ZA')}.`,
+          type: 'INVOICE_GENERATED',
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Auto-invoice notification failed: ${err?.message ?? err}`);
+    }
+
+    return invoice;
+  }
+
+  /**
+   * Platform-wide monthly cron. Runs on the 1st of every month at 02:00
+   * (off-peak) and generates a statement for every active company.
+   */
+  @Cron('0 2 1 * *', { name: 'auto-monthly-invoicing' })
+  async autoGenerateMonthlyInvoices(): Promise<{ generated: number; skipped: number }> {
+    const companies = await this.prisma.company.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, tradingName: true },
+    });
+
+    let generated = 0;
+    let skipped   = 0;
+
+    for (const company of companies) {
+      try {
+        const invoice = await this.generateMonthlyInvoiceForCompany(company);
+        if (invoice) generated++; else skipped++;
+      } catch (err: any) {
+        this.logger.error(`Auto-invoice failed for company ${company.id}: ${err?.message ?? err}`);
+        skipped++;
+      }
+    }
+
+    return { generated, skipped };
+  }
+
+  /**
+   * Tenant-scoped manual trigger — used by the "Generate now" button so an
+   * admin can produce their own statement on demand without waiting for the
+   * 1st. Strictly isolated to the caller's company (the platform-wide cron
+   * is the only path that touches every tenant).
+   */
+  async autoGenerateForCompany(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, name: true, tradingName: true },
+    });
+    if (!company) throw new NotFoundException('Company not found');
+
+    const invoice = await this.generateMonthlyInvoiceForCompany(company);
+    return {
+      generated: invoice ? 1 : 0,
+      skipped:   invoice ? 0 : 1,
+      invoice:   invoice ?? null,
+      message:   invoice
+        ? `Statement ${invoice.invoiceNumber} created with ${invoice.items?.length ?? 0} deliveries.`
+        : 'No unbilled deliveries — nothing to invoice right now.',
+    };
+  }
 
   async create(companyId: string, dto: any) {
     const count = await this.prisma.invoice.count({ where: { companyId } });
@@ -375,12 +609,24 @@ export class InvoicesService {
   // Initiate Paystack payment for an invoice (returns redirect URL)
   async initiatePay(id: string, companyId: string) {
     const inv = await this.findOne(id, companyId);
-    // Paystack integration happens in PaystackModule — stub here
-    return {
+
+    if (inv.status === 'PAID') return { invoiceId: id, message: 'Invoice already paid' };
+
+    // Get client email from the invoice
+    const email = inv.clientEmail || `billing+${inv.invoiceNumber}@flowop.work`;
+    const appUrl = process.env.APP_URL || 'https://app.flowop.work';
+
+    const result = await this.paystack.initializePayment({
+      email,
+      amount: Math.round(inv.total * 100), // Paystack uses cents/kobo
+      companyId,
       invoiceId: id,
-      amount: inv.total,
-      message: 'Use PaystackService.initializePayment to generate a payment URL',
-    };
+      description: `Invoice ${inv.invoiceNumber} — ${inv.clientName}`,
+      callbackUrl: `${appUrl}/invoices?paid=${id}`,
+      metadata: { invoiceNumber: inv.invoiceNumber, clientName: inv.clientName },
+    });
+
+    return { invoiceId: id, ...result };
   }
 
   // ── Manual payment approval ──────────────────────────────────────────

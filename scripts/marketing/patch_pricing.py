@@ -4,7 +4,7 @@ Run: python3 /tmp/patch_pricing.py  (from ~/FlowOps-Logistics/flowops-web)
 """
 import pathlib, sys
 
-WA = "27814065725"
+WA = "27606592875"
 p = pathlib.Path('/home/kakes/FlowOps-Logistics/flowops-web/client/src/pages/Pricing.tsx')
 if not p.exists():
     sys.exit('Not found: ' + str(p))
@@ -61,13 +61,13 @@ NEW_PLANS = (
     '  {\n'
     '    name: "Professional",\n'
     '    description: "The full FlowOps platform — no limits",\n'
-    '    price: "R14,999",\n'
+    '    price: "Custom",\n'
     '    sub: "/mo",\n'
     '    popular: true,\n'
     '    features: ["Unlimited waybills", "Unlimited driver accounts", "AI dispatch engine", "Route optimizer", "COD reconciliation", "WhatsApp & Email hub", "Webhook & API access", "Priority support"],\n'
     '    notIncluded: ["Dedicated account manager"],\n'
     '    cta: "Upgrade to Pro",\n'
-    '    msg: "Hi! I want to upgrade to FlowOps Professional at R14,999/mo. Please send me a payment link.",\n'
+    '    msg: "Hi! I want to upgrade to FlowOps Professional. Please send me pricing for my region.",\n'
     '  },\n'
     '  {\n'
     '    name: "Enterprise",\n'

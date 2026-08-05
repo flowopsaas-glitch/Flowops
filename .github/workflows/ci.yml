@@ -259,7 +259,7 @@ jobs:
           load: true
           tags: flowops-frontend:smoke-test
           build-args: |
-            VITE_API_URL=/api
+            VITE_API_URL=/api/v1
             VITE_APP_ENV=${{ github.ref_type == 'tag' && 'production' || 'staging' }}
             VITE_APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
             VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
@@ -335,7 +335,7 @@ jobs:
       # The amd64 image is already loaded from the smoke-test step, so
       # Trivy scans it from the local Docker daemon — no extra pull needed.
       - name: Scan image for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: flowops-frontend:smoke-test
           format: sarif
@@ -367,7 +367,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VITE_API_URL=/api
+            VITE_API_URL=/api/v1
             VITE_APP_ENV=${{ github.ref_type == 'tag' && 'production' || 'staging' }}
             VITE_APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
             VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
@@ -443,10 +443,10 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # Dependency / filesystem security scan (Trivy).
   #
-  # Scans package-lock.json and the checked-out source tree for known CVEs
-  # in npm dependencies. Runs in parallel with the image jobs — no docker
-  # build needed.  CRITICAL findings fail the job; results always upload to
-  # the GitHub Security tab so HIGH findings are visible and trackable.
+  # Scans both frontend and backend package-lock.json for known CVEs.
+  # Runs in parallel with the image jobs — no docker build needed.
+  # CRITICAL findings fail the job; results always upload to the GitHub
+  # Security tab so HIGH findings are visible and trackable.
   # ──────────────────────────────────────────────────────────────────────────
   security-scan:
     name: Dependency Security Scan (Trivy)
@@ -458,32 +458,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Scan filesystem for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Scan frontend for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./frontend
           format: sarif
-          output: trivy-fs-results.sarif
+          output: trivy-fs-frontend.sarif
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           vuln-type: 'library'
           ignore-unfixed: true
 
-      - name: Upload filesystem SARIF to GitHub Security tab
+      - name: Upload frontend SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: trivy-fs-results.sarif
-          category: trivy-fs
+          sarif_file: trivy-fs-frontend.sarif
+          category: trivy-frontend
 
-      # Human-readable table for the workflow logs (informational, no fail).
-      - name: Print CVE summary table
+      - name: Scan backend for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./backend
+          format: sarif
+          output: trivy-fs-backend.sarif
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          vuln-type: 'library'
+          ignore-unfixed: true
+
+      - name: Upload backend SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          sarif_file: trivy-fs-backend.sarif
+          category: trivy-backend-deps
+
+      # Human-readable table for the workflow logs (informational, no fail)
+      - name: Print frontend CVE summary
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./frontend
+          format: table
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          vuln-type: 'library'
+          ignore-unfixed: true
+
+      - name: Print backend CVE summary
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./backend
           format: table
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
@@ -550,37 +581,75 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke-test backend image
+      - name: Smoke-test backend image (real NestJS boot)
         run: |
           set -euo pipefail
+
+          # Spin up a throw-away Postgres so Prisma can connect and the NestJS
+          # module graph fully initialises — catches broken imports, missing
+          # providers, and schema mismatches the old plain-http stub missed.
+          docker network create smoke-net
+
+          docker run --rm -d \
+            --name smoke-postgres \
+            --network smoke-net \
+            -e POSTGRES_USER=smoke \
+            -e POSTGRES_PASSWORD=smoke \
+            -e POSTGRES_DB=smoke \
+            postgres:16-alpine
+
+          # Wait for Postgres (up to 30s)
+          for i in $(seq 1 30); do
+            if docker exec smoke-postgres pg_isready -U smoke >/dev/null 2>&1; then
+              echo "[$i] Postgres ready"; break
+            fi
+            [ "$i" = "30" ] && echo "FAIL: Postgres never became ready" && exit 1
+            sleep 1
+          done
+
+          # Generate unique secrets so the startup same-secret guard doesn't trip
+          ACC_SECRET="smoke-access-$(openssl rand -hex 8)"
+          REF_SECRET="smoke-refresh-$(openssl rand -hex 8)"
+
           docker run --rm -d \
             --name flowops-backend-smoke \
+            --network smoke-net \
             -p 3001:3000 \
-            -e DATABASE_URL="postgresql://x:x@localhost/x" \
-            -e JWT_SECRET="smoke-test-secret" \
-            -e JWT_REFRESH_SECRET="smoke-test-refresh" \
+            -e DATABASE_URL="postgresql://smoke:smoke@smoke-postgres:5432/smoke" \
+            -e JWT_SECRET="$ACC_SECRET" \
+            -e JWT_REFRESH_SECRET="$REF_SECRET" \
             -e OWNER_SEED_EMAIL="smoke@test.local" \
             -e OWNER_SEED_PASSWORD="SmokeTest123!" \
             -e NODE_ENV="production" \
-            flowops-backend:smoke-test node -e "
-              const http = require('http');
-              const server = http.createServer((req, res) => {
-                res.writeHead(200, {'Content-Type':'application/json'});
-                res.end(JSON.stringify({status:'ok',db:'skipped-in-smoke'}));
-              });
-              server.listen(3000, () => console.log('smoke ok'));
-            " || true
+            -e REDIS_HOST="localhost" \
+            -e REDIS_PORT="6379" \
+            flowops-backend:smoke-test
 
-          # Give container 15s to start
-          for i in $(seq 1 15); do
-            if curl -fsS http://localhost:3001/ >/dev/null 2>&1; then break; fi
+          # Wait for NestJS /health endpoint (up to 60s)
+          echo "Waiting for NestJS /health..."
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then
+              echo "[$i] /health reachable — NestJS fully booted"; break
+            fi
+            if [ "$i" = "60" ]; then
+              echo "FAIL: backend never became healthy"
+              docker logs flowops-backend-smoke | tail -50
+              docker stop flowops-backend-smoke smoke-postgres 2>/dev/null || true
+              docker network rm smoke-net 2>/dev/null || true
+              exit 1
+            fi
             sleep 1
           done
-          echo "Backend smoke test passed (image builds and Node starts)"
-          docker stop flowops-backend-smoke 2>/dev/null || true
+
+          body=$(curl -fsS http://localhost:3001/health)
+          echo "Health: $body"
+          echo "PASS: NestJS backend booted and /health responded"
+
+          docker stop flowops-backend-smoke smoke-postgres 2>/dev/null || true
+          docker network rm smoke-net 2>/dev/null || true
 
       - name: Scan backend image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: flowops-backend:smoke-test
           format: sarif

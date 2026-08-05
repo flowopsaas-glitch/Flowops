@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class DriversService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private billing: BillingService) {}
 
   async findAll(companyId: string, query?: any) {
     const where: any = { companyId };
@@ -18,7 +19,19 @@ export class DriversService {
     return driver;
   }
 
+  /**
+   * Find the Driver record linked to the authenticated user.
+   * Returns null when the user has no linked driver (e.g. they are an ADMIN
+   * using the app in a DRIVER role for testing, not a real field driver).
+   */
+  async findMine(userId: string, companyId: string) {
+    return this.prisma.driver.findFirst({
+      where: { userId, companyId, isActive: true },
+    });
+  }
+
   async create(companyId: string, dto: any) {
+    await this.billing.assertCanCreate(companyId, 'driver');
     return this.prisma.driver.create({ data: { ...dto, companyId } });
   }
 

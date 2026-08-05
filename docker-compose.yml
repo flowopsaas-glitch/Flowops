@@ -27,12 +27,19 @@ services:
       target: production
       args:
         # Build-time env vars baked into the SPA bundle by Vite.
-        VITE_API_URL: ${VITE_API_URL:-/api}
+        # NOTE: VITE_API_URL must be /api/v1 — the SPA uses it verbatim as the
+        # axios baseURL and the backend mounts all routes under /api/v1. nginx
+        # proxies `location /api/` through, so /api/v1/* resolves. Just /api 404s.
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
         VITE_APP_ENV: ${VITE_APP_ENV:-production}
         VITE_APP_VERSION: ${VITE_APP_VERSION:-0.0.0}
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
         VITE_OLLAMA_URL: ${VITE_OLLAMA_URL:-}
         VITE_OTEL_EXPORTER_OTLP_ENDPOINT: ${VITE_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+        # Clone-tripwire config — set these to the new instance's domain so the
+        # integrity beacon doesn't false-fire when served from a non-flowop.work host.
+        VITE_CANONICAL_HOSTS: ${VITE_CANONICAL_HOSTS:-}
+        VITE_INTEGRITY_BEACON_URL: ${VITE_INTEGRITY_BEACON_URL:-}
         # Paystack public key — safe to include in the frontend bundle
         VITE_PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-pk_test_fa7d0085df63bad80b49faefefb}
     image: ${FRONTEND_IMAGE:-flowops/frontend:${IMAGE_TAG:-latest}}
@@ -45,6 +52,34 @@ services:
       NGINX_PORT: 80
     ports:
       - "${FRONTEND_HOST_PORT:-8080}:80"
+    networks: [flowops-net]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--output", "/dev/null", "http://localhost:80/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  driver-portal:
+    # Standalone driver PWA (phone + PIN). Served by nginx, proxies /api to the
+    # api service. Single active session is enforced by the backend DriverAuthGuard.
+    build:
+      context: ./driver-portal
+      target: production
+      args:
+        VITE_API_URL: ${DRIVER_VITE_API_URL:-/api/v1}
+    image: ${DRIVER_PORTAL_IMAGE:-flowops/driver-portal:${IMAGE_TAG:-latest}}
+    environment:
+      BACKEND_HOST: ${BACKEND_HOST:-api}
+      BACKEND_PORT: ${API_PORT:-3000}
+      NGINX_PORT: 80
+    ports:
+      - "${DRIVER_PORTAL_HOST_PORT:-8081}:80"
     networks: [flowops-net]
     restart: unless-stopped
     depends_on:
@@ -80,7 +115,10 @@ services:
 
       # ── Auth ──────────────────────────────────────────────────────────
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-${JWT_SECRET}}
+      # JWT_REFRESH_SECRET MUST be different from JWT_SECRET.
+      # A shared secret means a leaked access token also compromises refresh tokens.
+      # Generate with: openssl rand -hex 32
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env (must differ from JWT_SECRET)}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
 
@@ -114,6 +152,47 @@ services:
       # ── Email (SendGrid) ──────────────────────────────────────────────
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-noreply@flowops.local}
+      SENDGRID_FROM_NAME: ${SENDGRID_FROM_NAME:-FlowOps}
+
+      # ── Email (Resend — preferred, takes priority over SendGrid) ──────
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      RESEND_FROM_NAME: ${RESEND_FROM_NAME:-}
+
+      # ── AI providers ──────────────────────────────────────────────────
+      # Groq powers Ask FlowOps, CLAW chat, competitive intel, the AI Support
+      # Agent, Courier orchestration, Observatory triage and the Build Planner.
+      # WITHOUT these reaching the container, all AI features silently fall back
+      # — this block is why they work under compose (not just PM2-on-host).
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      TAVILY_TIMEOUT_MS: ${TAVILY_TIMEOUT_MS:-15000}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLAW_AGGRESSION_LEVEL: ${CLAW_AGGRESSION_LEVEL:-MEDIUM}
+
+      # ── Public backend URL (SSO + accounting OAuth callbacks) ─────────
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8080/api/v1}
+
+      # ── CLAW Build Planner → GitHub issue handoff (optional) ──────────
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+
+      # ── Accounting integrations (Xero / Sage OAuth — optional) ────────
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      SAGE_CLIENT_ID: ${SAGE_CLIENT_ID:-}
+      SAGE_CLIENT_SECRET: ${SAGE_CLIENT_SECRET:-}
+
+      # ── Geocoding ─────────────────────────────────────────────────────
+      GEOCODER_PROVIDER: ${GEOCODER_PROVIDER:-nominatim}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+      DEFAULT_COUNTRY: ${DEFAULT_COUNTRY:-za}
+
+      # ── Paystack plan codes + error tracking (optional) ───────────────
+      PAYSTACK_PROFESSIONAL_PLAN_CODE: ${PAYSTACK_PROFESSIONAL_PLAN_CODE:-}
+      PAYSTACK_ENTERPRISE_PLAN_CODE: ${PAYSTACK_ENTERPRISE_PLAN_CODE:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy

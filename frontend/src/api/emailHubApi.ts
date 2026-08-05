@@ -19,16 +19,30 @@ export type EmailHubStatus =
 
 export type EmailHubPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
+export type EmailHubAttachment = {
+  id: string;
+  filename: string;
+  mimeType?: string | null;
+  size: number;
+  fileUrl?: string | null;
+  scanStatus: "PENDING" | "CLEAN" | "THREAT" | "SKIPPED" | "ERROR";
+  threatLevel: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  threatReason?: string | null;
+  scanEngine?: string | null;
+};
+
 export type EmailHubItem = {
-  id: number;
+  id: string;
   type: EmailHubType;
   status: EmailHubStatus;
   priority: EmailHubPriority;
+  direction?: "INBOUND" | "OUTBOUND";
   subject: string;
   senderName?: string | null;
   senderEmail: string;
+  recipientEmail?: string | null;
   body: string;
-  companyId?: number | null;
+  companyId?: string | null;
   collectionId?: number | null;
   quoteId?: number | null;
   clientId?: number | null;
@@ -44,6 +58,7 @@ export type EmailHubItem = {
   needsOpsAction: boolean;
   receivedAt: string;
   updatedAt: string;
+  attachments?: EmailHubAttachment[];
   company?: { id: number; name: string } | null;
   collection?: { id: number; name: string } | null;
   quote?: { id: number } | null;
@@ -90,7 +105,7 @@ export async function getEmailHubStats(): Promise<EmailHubStats> {
   return unwrap<EmailHubStats>(raw);
 }
 
-export async function getEmailHubItem(id: number): Promise<EmailHubItem> {
+export async function getEmailHubItem(id: string): Promise<EmailHubItem> {
   const raw: any = await api.get(`/email-hub/${id}`);
   return unwrap<EmailHubItem>(raw);
 }
@@ -103,19 +118,42 @@ export async function createEmailHubItem(
 }
 
 export async function updateEmailHubItem(
-  id: number,
+  id: string,
   payload: Partial<EmailHubItem>
 ): Promise<EmailHubItem> {
   const raw: any = await api.patch(`/email-hub/${id}`, payload);
   return unwrap<EmailHubItem>(raw);
 }
 
-export async function markEmailHubRead(id: number): Promise<void> {
+export async function markEmailHubRead(id: string): Promise<void> {
   await api.patch(`/email-hub/${id}/read`);
 }
 
-export async function resolveEmailHubItem(id: number): Promise<void> {
+export async function resolveEmailHubItem(id: string): Promise<void> {
   await api.patch(`/email-hub/${id}/resolve`);
+}
+
+/**
+ * Compose and send an email with optional attachments. Every attachment is
+ * threat-scanned server-side; files rated HIGH/CRITICAL are blocked from
+ * transmission and the resulting hub item is flagged for ops.
+ */
+export async function sendEmailHub(
+  form: { to: string; subject: string; body?: string; type?: EmailHubType; priority?: EmailHubPriority },
+  files: File[] = []
+): Promise<EmailHubItem> {
+  const fd = new FormData();
+  fd.append("to", form.to);
+  fd.append("subject", form.subject);
+  if (form.body) fd.append("body", form.body);
+  if (form.type) fd.append("type", form.type);
+  if (form.priority) fd.append("priority", form.priority);
+  for (const file of files) fd.append("attachments", file);
+
+  const raw: any = await api.post("/email-hub/send", fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return unwrap<EmailHubItem>(raw);
 }
 
 export async function seedEmailHubDemo(): Promise<{ created: number }> {

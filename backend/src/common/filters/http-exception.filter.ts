@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { reportToSentry } from '../sentry';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -55,5 +56,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
       timestamp: new Date().toISOString(),
     });
+
+    // Report unexpected (5xx) failures to Sentry with request context — 4xx
+    // client errors are expected and intentionally skipped to avoid noise.
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      const user = (request as any).user;
+      reportToSentry(exception, {
+        method: request.method,
+        path: request.url,
+        statusCode: status,
+        userId: user?.id,
+        companyId: user?.companyId,
+      });
+    }
   }
 }

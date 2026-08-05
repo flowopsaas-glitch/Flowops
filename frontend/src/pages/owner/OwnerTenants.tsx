@@ -9,6 +9,7 @@ import {
   Search,
   UserX,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { api } from "../../api/client";
 import { startImpersonation } from "../../lib/impersonation";
@@ -21,6 +22,7 @@ type TenantRow = {
   phone?: string | null;
   plan?: string | null;
   isActive: boolean;
+  trialEndsAt?: string | null;
   createdAt: string;
   _count?: { users: number; waybills: number };
 };
@@ -153,6 +155,18 @@ export default function OwnerTenants() {
     doAction(`plan-${id}`, async () => {
       await api.patch("/owner/plans", { tenantId: id, plan });
     }, `${name} → ${plan} plan updated.`);
+  }
+
+  function deleteTenant(id: string, name: string) {
+    const typed = window.prompt(
+      `⚠️ PERMANENTLY DELETE "${name}" and ALL its data (users, waybills, invoices…)?\n` +
+      `This cannot be undone.\n\nType the tenant name to confirm:`,
+    );
+    if (typed == null) return;
+    if (typed.trim() !== name) { window.alert("Name did not match — deletion cancelled."); return; }
+    doAction(`delete-${id}`, async () => {
+      await api.delete(`/owner/tenants/${id}`);
+    }, `${name} deleted.`);
   }
 
   async function viewAs(id: string, name: string) {
@@ -324,9 +338,40 @@ export default function OwnerTenants() {
                   <td className="px-3 py-3 text-slate-300">{t._count?.users ?? "—"}</td>
                   <td className="px-3 py-3 text-slate-300">{t._count?.waybills ?? "—"}</td>
                   <td className="px-3 py-3">
-                    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${t.isActive ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200" : "border-rose-400/20 bg-rose-500/10 text-rose-200"}`}>
-                      {t.isActive ? "Active" : "Suspended"}
-                    </span>
+                    {/* Status badge — Trial / Active / Suspended */}
+                    {(() => {
+                      if (!t.isActive) {
+                        return (
+                          <span className="rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-bold text-rose-200">
+                            Suspended
+                          </span>
+                        );
+                      }
+                      if (t.trialEndsAt) {
+                        const daysLeft = Math.ceil(
+                          (new Date(t.trialEndsAt).getTime() - Date.now()) / 86400000
+                        );
+                        if (daysLeft > 0) {
+                          return (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-bold text-amber-200">
+                              Trial
+                              <span className="text-amber-300/70">{daysLeft}d</span>
+                            </span>
+                          );
+                        }
+                        // Trial expired — still active but needs upgrade
+                        return (
+                          <span className="rounded-full border border-orange-400/30 bg-orange-500/10 px-2.5 py-0.5 text-[11px] font-bold text-orange-200">
+                            Trial expired
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-200">
+                          Active
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-3 text-slate-400 whitespace-nowrap text-xs">
                     {new Date(t.createdAt).toLocaleDateString("en-ZA")}
@@ -357,6 +402,11 @@ export default function OwnerTenants() {
                           → Pro
                         </button>
                       ) : null}
+                      {/* Delete */}
+                      <button disabled={busy === `delete-${t.id}`} onClick={(e) => { e.stopPropagation(); deleteTenant(t.id, t.name); }}
+                        className="inline-flex items-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-60">
+                        <Trash2 className="h-3 w-3" /> {busy === `delete-${t.id}` ? "…" : "Delete"}
+                      </button>
                     </div>
                   </td>
                 </tr>

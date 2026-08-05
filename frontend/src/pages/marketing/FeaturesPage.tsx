@@ -2,7 +2,8 @@ import { Link } from "react-router-dom";
 import {
   Package, Truck, BarChart3, MessageCircle, Shield,
   MapPin, FileText, Scan, Wallet, Route, Bell, Users,
-  CheckCircle2, ArrowRight, Zap,
+  CheckCircle2, ArrowRight, Zap, Bot, ShieldCheck, Ship, Mail, RotateCcw,
+  Activity, TrendingUp, Target, LifeBuoy, PackageCheck,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
@@ -81,6 +82,55 @@ const sections = [
           "Customer portal for booking requests",
         ],
       },
+      {
+        icon: RotateCcw,
+        title: "Returns / RMA",
+        points: [
+          "Full RMA lifecycle — request, collect, inspect, resolve",
+          "Refund, replace, restock or dispose outcomes",
+          "Warehouse receiving & inspection workflow",
+          "Credit-note generation on approved returns",
+        ],
+      },
+    ],
+  },
+  {
+    label: "Warehousing & Fulfilment",
+    color: "amber",
+    features: [
+      {
+        icon: PackageCheck,
+        title: "Warehouse Management System (WMS)",
+        points: [
+          "Multi-warehouse support with zone hierarchy (Receiving, Bulk, Pick, Dispatch, Cold, Hazmat)",
+          "Bin locations with rack/level/position addressing",
+          "Full goods receipt workflow — expected, arrived, inspected, put-away",
+          "AI-powered put-away suggestions (consolidation + capacity-aware)",
+          "SKU-level inventory with batch, lot & expiry tracking",
+        ],
+      },
+      {
+        icon: Scan,
+        title: "Pick, Pack & Dispatch",
+        points: [
+          "Order-driven pick lists with AI-optimized FEFO bin selection",
+          "Barcode scan verification at load-out",
+          "Shortest-path pick sequencing through warehouse",
+          "Pack confirmation with shipment linking",
+          "Dock scheduling for inbound & outbound vehicles",
+        ],
+      },
+      {
+        icon: Activity,
+        title: "Inventory Intelligence",
+        points: [
+          "Scheduled cycle counts (Full, ABC, Zone, SKU-based)",
+          "Variance tracking with auto-adjustment posting",
+          "AI replenishment engine (bulk → pick face auto-trigger)",
+          "Stock transfer, adjustments & full movement audit trail",
+          "Real-time KPIs: throughput, accuracy, utilisation, dwell time",
+        ],
+      },
     ],
   },
   {
@@ -107,6 +157,16 @@ const sections = [
           "Configurable per-user notification preferences",
         ],
       },
+      {
+        icon: Mail,
+        title: "Email Hub",
+        points: [
+          "Unified inbox for ops & client email",
+          "AI triage and logistics-data extraction",
+          "Attachment threat scanning",
+          "Auto-promote bookings into waybills",
+        ],
+      },
     ],
   },
   {
@@ -130,7 +190,44 @@ const sections = [
           "On-time delivery %, delivery success rate",
           "Average delivery time and exception rate",
           "Revenue per waybill with 30-day trend deltas",
+          "Time-series trend charts (7 / 30 / 90-day) for volume & revenue",
           "Outstanding AR aging buckets",
+        ],
+      },
+    ],
+  },
+  {
+    label: "Decision Intelligence",
+    color: "rose",
+    features: [
+      {
+        icon: Activity,
+        title: "Department Command Centres",
+        points: [
+          "Freight-forwarding control tower — arrivals board, customs queue, exceptions-as-tasks",
+          "Ops exception-SLA tracker — aged failed/returned waybills vs a 24h SLA",
+          "In-transit shipment health — ETA breaches, stalled shipments & dwell time",
+          "Every exception deep-links straight to the record to action",
+        ],
+      },
+      {
+        icon: TrendingUp,
+        title: "Revenue & Finance Intelligence",
+        points: [
+          "Billing coverage audit — catches delivered-but-unbilled revenue leakage",
+          "Disbursement recovery cockpit — recovery rate, client exposure & ageing",
+          "Quote conversion pipeline — win rate, open pipeline & won/lost value",
+          "Carrier lane rate explorer — cheapest buy-rate per lane + savings available",
+        ],
+      },
+      {
+        icon: Target,
+        title: "Customer & Returns Intelligence",
+        points: [
+          "Client portfolio — billing mix, credit exposure & contract-renewal watch",
+          "Returns intelligence — reason mix, cycle time & restock recovery",
+          "Collections scheduling efficiency — unassigned ageing & on-time pickup",
+          "All from your own live data — no fabricated benchmarks",
         ],
       },
     ],
@@ -171,6 +268,62 @@ const sections = [
       },
     ],
   },
+  {
+    label: "Enterprise",
+    color: "cyan",
+    features: [
+      {
+        icon: Bot,
+        title: "CLAW Autopilot",
+        points: [
+          "Autonomous ops — detects risk and takes safe, confidence-gated actions",
+          "Auto-assigns stalled pickups and escalates SLA pre-breaches",
+          "Flags COD mismatches before they cost you",
+          "Adjustable aggression with full action audit log",
+        ],
+      },
+      {
+        icon: Ship,
+        title: "Freight Forwarding",
+        points: [
+          "Import/export shipment files — ocean, air & road",
+          "Container (ISO 6346), cargo, charges & margin tracking",
+          "SA customs estimator (ATV-based VAT) + AI HS classification",
+          "Commercial invoice, packing list, B/L & SAD500 PDFs",
+        ],
+      },
+      {
+        icon: ShieldCheck,
+        title: "Single Sign-On (SSO)",
+        points: [
+          "OIDC SSO — Okta, Azure AD, Google Workspace, Auth0",
+          "Just-in-time user provisioning on first login",
+          "Domain restriction and default-role mapping",
+          "Centralised identity for your whole team",
+        ],
+      },
+      {
+        icon: LifeBuoy,
+        title: "AI Support Agent",
+        points: [
+          "In-app product help grounded in your live operational data",
+          "Answers “where is my shipment / invoice / driver” instantly",
+          "Guides staff through workflows without leaving the app",
+          "Escalates to a human with full context when needed",
+        ],
+      },
+      {
+        icon: PackageCheck,
+        title: "Courier Management",
+        points: [
+          "Orchestrate client orders across your courier network",
+          "AI-assisted allocation and exception handling",
+          "Unified view of orders, statuses and SLAs",
+          "Built for 3PLs and multi-carrier operations",
+        ],
+      },
+    ],
+  },
 ];
 
 const colorMap: Record<string, { badge: string; icon: string; dot: string }> = {
@@ -179,6 +332,8 @@ const colorMap: Record<string, { badge: string; icon: string; dot: string }> = {
   emerald: { badge: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400" },
   violet:  { badge: "border-violet-400/20 bg-violet-400/10 text-violet-300",   icon: "border-violet-400/20 bg-violet-400/10 text-violet-300",   dot: "bg-violet-400" },
   amber:   { badge: "border-amber-400/20 bg-amber-400/10 text-amber-300",     icon: "border-amber-400/20 bg-amber-400/10 text-amber-300",     dot: "bg-amber-400" },
+  cyan:    { badge: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",        icon: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",        dot: "bg-cyan-400" },
+  rose:    { badge: "border-rose-400/20 bg-rose-400/10 text-rose-300",        icon: "border-rose-400/20 bg-rose-400/10 text-rose-300",        dot: "bg-rose-400" },
 };
 
 export default function FeaturesPage() {
@@ -193,8 +348,9 @@ export default function FeaturesPage() {
           Everything your team needs
         </h1>
         <p className="text-lg text-white/50 max-w-xl mx-auto">
-          Built for South African courier operations — from waybill to invoice,
-          driver to depot, cash to reconciliation.
+          Built for South African courier and freight-forwarding operations —
+          from waybill to invoice, driver to depot, cash to reconciliation, with
+          decision intelligence on every department.
         </p>
       </div>
 

@@ -40,12 +40,13 @@ WORKDIR /app
 
 # Copy only the lockfile + manifest first so this layer caches across source
 # edits. The lockfile is tracked in this repo (root .gitignore was patched in
-# PR #2 to stop ignoring it).
-COPY package.json package-lock.json ./
+# PR #2 to stop ignoring it). .npmrc carries legacy-peer-deps (eslint-plugin-jsx-a11y's
+# peer range lags ESLint 10) so the install resolves the same as locally.
+COPY package.json package-lock.json .npmrc ./
 
 # BuildKit cache mount → repeated builds reuse npm's content-addressable cache.
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund
+    npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─────────────────────────────────────────────────────────────────────────
 # 2. Build — compiles the SPA. Build-time env vars get baked into the bundle.
@@ -60,19 +61,24 @@ ARG VITE_APP_VERSION=0.0.0
 ARG VITE_SENTRY_DSN=
 ARG VITE_OLLAMA_URL=
 ARG VITE_OTEL_EXPORTER_OTLP_ENDPOINT=
+ARG VITE_CANONICAL_HOSTS=
+ARG VITE_INTEGRITY_BEACON_URL=
 
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_APP_ENV=$VITE_APP_ENV \
     VITE_APP_VERSION=$VITE_APP_VERSION \
     VITE_SENTRY_DSN=$VITE_SENTRY_DSN \
     VITE_OLLAMA_URL=$VITE_OLLAMA_URL \
-    VITE_OTEL_EXPORTER_OTLP_ENDPOINT=$VITE_OTEL_EXPORTER_OTLP_ENDPOINT
+    VITE_OTEL_EXPORTER_OTLP_ENDPOINT=$VITE_OTEL_EXPORTER_OTLP_ENDPOINT \
+    VITE_CANONICAL_HOSTS=$VITE_CANONICAL_HOSTS \
+    VITE_INTEGRITY_BEACON_URL=$VITE_INTEGRITY_BEACON_URL
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 RUN npm run build && \
-    test -f dist/index.html  # fail loudly if the build produced no index
+    test -f dist/index.html && \
+    node scripts/check-bundle-leak.mjs dist  # fail loudly on missing index, leaked secrets or source maps
 
 # ─────────────────────────────────────────────────────────────────────────
 # 3. Production runtime — nginx serves the SPA + proxies /api and /socket.io.

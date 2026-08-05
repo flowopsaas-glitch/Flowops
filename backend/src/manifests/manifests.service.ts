@@ -71,4 +71,56 @@ export class ManifestsService {
     });
     return manifest;
   }
+
+  /**
+   * Inbound manifests — what's currently en route TO a specific branch.
+   * Used by destination depots to see incoming linehauls with:
+   *  - Manifest code + parcel count
+   *  - Sending driver name + phone + GPS (last known position)
+   *  - Dispatch time (for ETA estimation)
+   *  - Waybill tracking numbers in the manifest
+   *
+   * If branchId is null (user has no branch assigned), returns ALL
+   * undispatched manifests for the company so the main hub sees everything.
+   */
+  async getInboundManifests(companyId: string, branchId?: string | null) {
+    const where: any = { companyId, dispatched: false };
+    if (branchId) where.branchId = branchId;
+
+    const manifests = await this.prisma.manifest.findMany({
+      where,
+      include: {
+        driver: { select: { name: true, phone: true, lastLat: true, lastLng: true, lastSeen: true, vehicleReg: true } },
+        branch: { select: { name: true, address: true } },
+        waybills: { include: { waybill: { select: { trackingNumber: true, recipientName: true, recipientAddress: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return manifests.map(m => ({
+      id: m.id,
+      code: m.code,
+      destinationBranch: m.branch?.name ?? 'Unknown',
+      destinationAddress: m.branch?.address ?? null,
+      parcelCount: m.waybills.length,
+      dispatchedAt: m.dispatchedAt,
+      createdAt: m.createdAt,
+      driver: m.driver ? {
+        name: m.driver.name,
+        phone: m.driver.phone,
+        vehicleReg: m.driver.vehicleReg,
+        lastLat: m.driver.lastLat,
+        lastLng: m.driver.lastLng,
+        lastSeen: m.driver.lastSeen,
+      } : null,
+      waybills: m.waybills.map(mw => ({
+        trackingNumber: (mw.waybill as any)?.trackingNumber ?? 'N/A',
+        recipientName: (mw.waybill as any)?.recipientName ?? 'Unknown',
+        recipientAddress: (mw.waybill as any)?.recipientAddress ?? null,
+      })),
+      // AI-estimated ETA based on creation time (simple heuristic: 4h for intercity)
+      estimatedArrival: new Date((m.createdAt as Date).getTime() + 4 * 60 * 60 * 1000).toISOString(),
+      status: 'EN_ROUTE',
+    }));
+  }
 }
