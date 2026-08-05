@@ -29,6 +29,8 @@ export const FEATURE_KEYS = [
   'whiteLabel', 'nativeApp', 'selfHost', 'dedicatedManager',
   'clawAutopilot', 'sso', 'freightForwarding', 'aiSupportAgent', 'courierManagement',
   'logisticsAnalytics', 'commercialAnalytics', 'warehouseManagement',
+  'deliveryNotes', 'digitalPayments', 'epod', 'liveTracking',
+  'marketTrends', 'orderFlowIntegration', 'smartRouting',
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -43,6 +45,8 @@ const PRO: Partial<Record<FeatureKey, boolean>> = {
   whatsapp: true, emailHub: true, accounting: true, accountingBridge: true,
   aiControlTower: true, copilot: true, api: true, ecommerce: true,
   commercialAnalytics: true,
+  deliveryNotes: true, digitalPayments: true, epod: true, liveTracking: true,
+  smartRouting: true,
 };
 
 const ENTERPRISE: Partial<Record<FeatureKey, boolean>> = {
@@ -50,6 +54,7 @@ const ENTERPRISE: Partial<Record<FeatureKey, boolean>> = {
   whiteLabel: true, nativeApp: true, selfHost: true, dedicatedManager: true,
   clawAutopilot: true, sso: true, freightForwarding: true, aiSupportAgent: true, courierManagement: true,
   logisticsAnalytics: true, commercialAnalytics: true, warehouseManagement: true,
+  marketTrends: true, orderFlowIntegration: true,
 };
 
 const fill = (on: Partial<Record<FeatureKey, boolean>>): Record<string, boolean> =>
@@ -115,4 +120,11 @@ export const FEATURE_LABELS: Record<string, string> = {
   aiSupportAgent: 'AI Support Agent',
   courierManagement: 'Courier Management (orchestration)',
   logisticsAnalytics: 'Logistics Analytics (premium insights)',
+  deliveryNotes: 'Delivery Notes (dispatcher)',
+  digitalPayments: 'Digital Payment Collection',
+  epod: 'Electronic Proof of Delivery',
+  liveTracking: 'Live GPS Tracking',
+  marketTrends: 'Market Trends Intelligence (AI)',
+  orderFlowIntegration: 'Auto Order Flow Integration',
+  smartRouting: 'Smart Route Planning & Scheduling',
 };

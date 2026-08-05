@@ -101,6 +101,7 @@ export class OrderFlowService {
       const waybill = await this.prisma.waybill.create({
         data: {
           companyId,
+          trackingNumber: `OF-${dto.externalOrderId}-${Date.now()}`,
           senderName: orderData.senderName || orderData.shopName || 'External Order',
           senderAddress: orderData.senderAddress || '',
           senderPhone: orderData.senderPhone || '',
@@ -110,8 +111,6 @@ export class OrderFlowService {
           recipientEmail: orderData.recipientEmail || orderData.customerEmail || '',
           description: orderData.description || `Order ${dto.externalOrderId}`,
           weight: orderData.weight ? parseFloat(orderData.weight) : null,
-          pieces: orderData.pieces || orderData.items?.length || 1,
-          specialInstructions: orderData.notes || orderData.specialInstructions || '',
           status: 'PENDING',
         },
       });
@@ -184,7 +183,7 @@ export class OrderFlowService {
       if (driver) {
         await this.prisma.waybill.update({
           where: { id: waybillId },
-          data: { status: 'COLLECTED', driverId: driver.id },
+          data: { status: 'COLLECTED' },
         });
         this.logger.log(`Auto-dispatched waybill ${waybillId} to driver ${driver.id}`);
       }
