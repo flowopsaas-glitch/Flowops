@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { StickyNote, Plus, Search, Filter, CheckCircle2, AlertTriangle, Clock, Loader2, Trash2 } from 'lucide-react';
 import { listDeliveryNotes, createDeliveryNote, resolveDeliveryNote, deleteDeliveryNote, type DeliveryNote, type CreateNotePayload, type NotePriority } from '../api/deliveryNotesApi';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 export default function DeliveryNotes() {
   const { showToast } = useToast();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Radio, MapPin, Truck, Clock, Gauge, Navigation, Loader2, RefreshCw, Circle } from 'lucide-react';
 import { api } from '../api/client';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 type TrackingSession = {
   id: string;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, Brain, BarChart3, Target, Shield, Loader2, Send, Lightbulb, Globe } from 'lucide-react';
 import { getMarketTrends, askMarketInsight, type MarketTrendData, type MarketInsight } from '../api/marketTrendsApi';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 export default function MarketTrends() {
   const { showToast } = useToast();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Route, MapPin, Truck, Zap, Clock, TrendingDown, Brain, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { listOptimizations, createOptimization, getOptimization, type RouteOptimization, type CreateOptimizationPayload } from '../api/routeOptimizationApi';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 export default function AIRouteOptimization() {
   const { showToast } = useToast();
