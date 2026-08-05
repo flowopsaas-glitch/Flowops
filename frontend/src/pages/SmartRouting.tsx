@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Navigation, Plus, Play, Square, Ban, Calendar, MapPin, Clock, Truck, Loader2, Route } from 'lucide-react';
 import { listRoutePlans, createRoutePlan, activateRoutePlan, completeRoutePlan, cancelRoutePlan, type RoutePlan, type CreateRoutePlanPayload } from '../api/smartRoutingApi';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 export default function SmartRouting() {
   const { showToast } = useToast();

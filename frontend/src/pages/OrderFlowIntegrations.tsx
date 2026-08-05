@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plug, Plus, Power, PowerOff, Trash2, RefreshCw, Loader2, ArrowRightLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { listIntegrations, createIntegration, activateIntegration, deactivateIntegration, deleteIntegration, type OrderFlowIntegration, type CreateIntegrationPayload, type IntegrationType } from '../api/orderFlowApi';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 export default function OrderFlowIntegrations() {
   const { showToast } = useToast();

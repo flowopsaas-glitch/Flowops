@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CreditCard, Plus, DollarSign, TrendingUp, AlertCircle, CheckCircle2, Loader2, RotateCcw, XCircle } from 'lucide-react';
 import { listPayments, createPayment, getPaymentStats, refundPayment, type DigitalPayment, type PaymentStats, type CreatePaymentPayload, type PaymentMethod } from '../api/digitalPaymentsApi';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 export default function DigitalPayments() {
   const { showToast } = useToast();

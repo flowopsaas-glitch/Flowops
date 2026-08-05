@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FileSignature, Camera, CheckCircle2, AlertTriangle, Loader2, MapPin, Clock, Eye, Shield } from 'lucide-react';
 import { listEpods, getEpodStats, verifyEpod, disputeEpod, type ElectronicPod as EPod, type EpodStats } from '../api/epodApi';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../components/ToastProvider';
 
 export default function ElectronicPod() {
   const { showToast } = useToast();
