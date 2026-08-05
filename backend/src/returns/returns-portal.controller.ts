@@ -111,12 +111,11 @@ export class ReturnsPortalController {
         waybillId: waybill.id,
         companyId: waybill.companyId,
         reason: body.reason as any,
-        description: body.description || `Customer return: ${body.reason}`,
         customerName: waybill.recipientName,
         customerPhone: body.customerPhone,
         customerEmail: body.customerEmail,
         status: 'REQUESTED',
-      },
+      } as any,
     });
 
     return {
@@ -138,9 +137,7 @@ export class ReturnsPortalController {
   async getReturnStatus(@Param('returnId') returnId: string) {
     const ret = await this.prisma.return.findFirst({
       where: { id: returnId },
-      select: {
-        id: true, status: true, reason: true, description: true,
-        customerName: true, createdAt: true, updatedAt: true,
+      include: {
         waybill: { select: { trackingNumber: true } },
         company: { select: { brandName: true, name: true, logoUrl: true, primaryColor: true } },
       },
@@ -184,8 +181,8 @@ export class ReturnsPortalController {
     @Query('lng') lng?: string,
   ) {
     const branches = await this.prisma.branch.findMany({
-      where: { companyId, isActive: true },
-      select: { id: true, name: true, address: true, city: true, lat: true, lng: true, phone: true },
+      where: { companyId },
+      select: { id: true, name: true, address: true, city: true, lat: true, lng: true },
     });
 
     // Sort by distance if coordinates provided
@@ -206,7 +203,6 @@ export class ReturnsPortalController {
         address: [b.address, b.city].filter(Boolean).join(', '),
         lat: b.lat,
         lng: b.lng,
-        phone: b.phone,
       })),
       count: branches.length,
     };
