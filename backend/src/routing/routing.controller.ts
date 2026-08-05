@@ -40,4 +40,23 @@ export class RoutingController {
       start: body.start,
     });
   }
+
+  /** Optimize a driver's delivery route (shipments) — AI-prioritized. */
+  @Post('optimize/deliveries')
+  @HttpCode(200)
+  optimizeDeliveries(
+    @CurrentUser() u: any,
+    @Body()
+    body: {
+      driverId?: string;
+      waybillIds?: string[];
+      start?: { lat: number; lng: number };
+    },
+  ) {
+    return this.svc.optimizeDeliveries(u.companyId, {
+      driverId: body.driverId,
+      waybillIds: body.waybillIds,
+      start: body.start,
+    });
+  }
 }

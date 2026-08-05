@@ -402,193 +402,60 @@ const GALLERY: GalleryImage[] = [
 ];
 
 function VisualGallery() {
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const [zoomed, setZoomed] = useState(false);
-  const touchStartX = useRef<number | null>(null);
-  const isOpen = openIndex !== null;
-
-  const open = useCallback((i: number) => {
-    setZoomed(false);
-    setOpenIndex(i);
-  }, []);
-
-  const close = useCallback(() => {
-    setOpenIndex(null);
-    setZoomed(false);
-  }, []);
-
-  const go = useCallback((dir: number) => {
-    setZoomed(false);
-    setOpenIndex((i) =>
-      i === null ? i : (i + dir + GALLERY.length) % GALLERY.length
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowRight") go(1);
-      else if (e.key === "ArrowLeft") go(-1);
-    };
-    window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [isOpen, close, go]);
-
-  const active = isOpen ? GALLERY[openIndex as number] : null;
+  const images = [
+    { src: "/flowops-render1.png", alt: "FlowOps platform" },
+    { src: "/flowops-render2.png", alt: "FlowOps logistics" },
+    { src: "/flowops-photo1.jpg",  alt: "FlowOps in action" },
+    { src: "/flowops-render3.png", alt: "FlowOps operations" },
+    { src: "/flowops-photo2.jpg",  alt: "FlowOps courier" },
+  ];
+  // duplicate for seamless loop
+  const track = [...images, ...images];
 
   return (
-    <section className="py-16 border-t border-white/5">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="text-center mb-10">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/30">
-            Logistics, Evolved.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {GALLERY.map((img, i) => (
-            <button
-              key={img.src}
-              type="button"
-              onClick={() => open(i)}
-              aria-label={`View full image: ${img.caption}`}
-              className={`group relative block w-full overflow-hidden rounded-[24px] border border-white/10 cursor-zoom-in bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70 ${img.tile}`}
-            >
-              <img
-                src={img.src}
-                alt={img.alt}
-                loading="lazy"
-                className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.05]"
-              />
-              {/* hover affordance */}
-              <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3.5 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
-                  <ZoomIn className="h-3.5 w-3.5" />
-                  View full image
-                </span>
-              </span>
-              {/* caption */}
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-3 pt-10 text-left text-xs font-medium text-white/90 bg-gradient-to-t from-black/80 via-black/30 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
-                {img.caption}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <p className="mt-6 text-center text-xs text-white/30">
-          Tap any image to view it in full.
+    <section className="py-16 border-t border-white/5 overflow-hidden">
+      <div className="mb-8 text-center">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-white/25">
+          Logistics, Evolved.
         </p>
       </div>
 
-      {/* Lightbox */}
-      {isOpen && active && (
+      {/* Scrolling track */}
+      <div className="relative">
+        {/* Fade edges */}
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-32 bg-gradient-to-r from-[#07111f] to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-32 bg-gradient-to-l from-[#07111f] to-transparent" />
+
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={active.caption}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md"
-          onClick={close}
-          onTouchStart={(e) => {
-            touchStartX.current = e.touches[0].clientX;
-          }}
-          onTouchEnd={(e) => {
-            if (zoomed || touchStartX.current === null) {
-              touchStartX.current = null;
-              return;
-            }
-            const dx = e.changedTouches[0].clientX - touchStartX.current;
-            if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
-            touchStartX.current = null;
+          className="flex gap-5"
+          style={{
+            animation: "marquee 40s linear infinite",
+            width: "max-content",
           }}
         >
-          {/* top bar */}
-          <div
-            className="absolute top-0 inset-x-0 flex items-center justify-between p-4 sm:p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/80 backdrop-blur-sm">
-              {(openIndex as number) + 1} / {GALLERY.length}
-            </span>
-            <button
-              type="button"
-              onClick={close}
-              aria-label="Close"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
+          {track.map((img, i) => (
+            <div
+              key={i}
+              className="relative shrink-0 w-[420px] h-[260px] rounded-[20px] overflow-hidden border border-white/10 group"
             >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          {/* previous */}
-          {GALLERY.length > 1 && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                go(-1);
-              }}
-              aria-label="Previous image"
-              className="absolute left-2 sm:left-6 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
-            >
-              <ChevronLeft className="h-6 w-6" />
-            </button>
-          )}
-
-          {/* image — object-contain shows the ENTIRE photo, no cropping */}
-          <div
-            className={`relative max-h-[88vh] max-w-[92vw] ${
-              zoomed ? "overflow-auto" : ""
-            }`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={active.src}
-              alt={active.alt}
-              onClick={() => setZoomed((z) => !z)}
-              className={`mx-auto rounded-xl shadow-2xl transition-transform duration-300 ${
-                zoomed
-                  ? "max-w-none w-auto h-auto cursor-zoom-out"
-                  : "max-h-[80vh] max-w-[92vw] object-contain cursor-zoom-in"
-              }`}
-            />
-          </div>
-
-          {/* next */}
-          {GALLERY.length > 1 && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                go(1);
-              }}
-              aria-label="Next image"
-              className="absolute right-2 sm:right-6 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
-            >
-              <ChevronRight className="h-6 w-6" />
-            </button>
-          )}
-
-          {/* caption + hints */}
-          <div
-            className="absolute bottom-0 inset-x-0 p-4 sm:p-6 text-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="mx-auto max-w-2xl text-sm font-medium text-white/90">
-              {active.caption}
-            </p>
-            <p className="mt-1 text-xs text-white/40">
-              Click image to {zoomed ? "zoom out" : "zoom in"} · Esc to close
-              {GALLERY.length > 1 ? " · ← → to navigate" : ""}
-            </p>
-          </div>
+              {/* glow on hover */}
+              <div className="absolute inset-0 bg-sky-500/0 group-hover:bg-sky-500/5 transition-all duration-500 z-10 rounded-[20px]" />
+              <img
+                src={img.src}
+                alt={img.alt}
+                className="w-full h-full object-contain bg-[#080f1e] group-hover:scale-[1.03] transition-transform duration-700"
+              />
+            </div>
+          ))}
         </div>
-      )}
+      </div>
+
+      <style>{`
+        @keyframes marquee {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
+        }
+      `}</style>
     </section>
   );
 }
