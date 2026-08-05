@@ -398,6 +398,10 @@ export default function AppLayout() {
     { section: "INSIGHTS", label: "Logistics Analytics", desc: "AI-powered delivery insights (Enterprise)", to: "/logistics-analytics", icon: BarChart3, entitlement: "logisticsAnalytics" },
     { section: "INSIGHTS", label: "Commercial Analytics", desc: "Pricing, profitability & revenue intelligence", to: "/commercial-analytics", icon: PieChart, entitlement: "commercialAnalytics" },
     { section: "INSIGHTS", label: "Warehouse Management", desc: "Inventory, pick/pack & AI optimization", to: "/wms", icon: Layers, entitlement: "warehouseManagement" },
+    { section: "INSIGHTS", label: "Cross-Docking", desc: "Bypass storage — direct to dispatch", to: "/wms/cross-dock", icon: Zap, entitlement: "warehouseManagement" },
+    { section: "INSIGHTS", label: "Wave Planning", desc: "Batch picks into efficient waves", to: "/wms/waves", icon: Layers, entitlement: "warehouseManagement" },
+    { section: "INSIGHTS", label: "AI Slotting", desc: "Velocity-based bin optimization", to: "/wms/slotting", icon: Brain, entitlement: "warehouseManagement" },
+    { section: "INSIGHTS", label: "Barcode Verify", desc: "Scan & validate warehouse items", to: "/wms/scan", icon: ScanLine, entitlement: "warehouseManagement" },
     
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower", entitlement: "aiControlTower"   },
     { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
