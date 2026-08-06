@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CodService } from './cod.service';
+import { CodGuardianService } from './cod-guardian.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
@@ -10,7 +11,10 @@ import { RequireFeature } from '../billing/require-feature.decorator';
 @UseGuards(FeatureGuard)
 @Controller('cod')
 export class CodController {
-  constructor(private readonly svc: CodService) {}
+  constructor(
+    private readonly svc: CodService,
+    private readonly guardian: CodGuardianService,
+  ) {}
 
   @Get('summary')
   @RequireFeature('codReconciliation')
@@ -67,5 +71,23 @@ export class CodController {
   @RequireFeature('codReconciliation')
   getWallet(@Param('driverId') driverId: string) {
     return this.svc.getWallet(driverId);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CASH FLOW GUARDIAN — AI-Powered COD Intelligence
+  // ══════════════════════════════════════════════════════════════════════════
+
+  @Get('guardian/report')
+  @RequireFeature('codReconciliation')
+  @ApiOperation({ summary: 'Cash Flow Guardian — full cash position report with driver risk scoring' })
+  getGuardianReport(@CurrentUser() u: any) {
+    return this.guardian.generateCashPosition(u.companyId);
+  }
+
+  @Post('guardian/alert')
+  @RequireFeature('codReconciliation')
+  @ApiOperation({ summary: 'Manually trigger Cash Flow Guardian WhatsApp alert to owner' })
+  triggerAlert(@CurrentUser() u: any) {
+    return this.guardian.dailyCashPositionAlert();
   }
 }
