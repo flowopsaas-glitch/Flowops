@@ -1067,7 +1067,7 @@ export class AirCargoIntelligenceService {
 
   private parseFlightNumber(vesselVoyage: string): string {
     // "SA 286 / 15AUG" → "SA286", "ET 501" → "ET501", "KQ100" → "KQ100"
-    return vesselVoyage.split(/[\/\-]/)[0].replace(/\s+/g, '').replace(/\d{2}[A-Z]{3}$/i, '').trim();
+    return vesselVoyage.split(/[/-]/)[0].replace(/\s+/g, '').replace(/\d{2}[A-Z]{3}$/i, '').trim();
   }
 
   private extractAwbFromFileNumber(fileNumber: string): string {
