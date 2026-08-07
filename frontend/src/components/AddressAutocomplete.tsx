@@ -29,7 +29,7 @@ export default function AddressAutocomplete({
   const [suggestions, setSuggestions] = useState<AddressEntry[]>([]);
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Debounced search

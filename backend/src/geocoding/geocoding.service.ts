@@ -303,7 +303,7 @@ export class GeocodingService {
       .toLowerCase()
       .trim()
       // Remove special chars except alphanumeric, spaces, commas, dots, hyphens
-      .replace(/[^\w\s,.\-]/g, ' ')
+      .replace(/[^\w\s,.-]/g, ' ')
       // Collapse multiple spaces
       .replace(/\s+/g, ' ')
       .trim();

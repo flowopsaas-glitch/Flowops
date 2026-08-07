@@ -336,7 +336,7 @@ export class VesselTrackingService {
   private parseVesselName(vesselVoyage: string): string {
     // "MSC GÜLSÜN / 123W" → "MSC GÜLSÜN"
     // "EVER GIVEN 456E" → "EVER GIVEN"
-    const parts = vesselVoyage.split(/[\/\-]/);
+    const parts = vesselVoyage.split(/[/-]/);
     return (parts[0] || vesselVoyage).replace(/\d+[EWNS]?$/i, '').trim();
   }
 

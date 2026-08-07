@@ -255,7 +255,7 @@ export class WarehouseManagementService {
     expiryDate?: Date; goodsReceiptId?: string; performedBy?: string;
   }) {
     // Find or create inventory item at this bin
-    let item = await this.prisma.inventoryItem.findFirst({
+    const item = await this.prisma.inventoryItem.findFirst({
       where: { companyId, binId: dto.binId, sku: dto.sku, batchNumber: dto.batchNumber || null },
     });
 
@@ -455,7 +455,7 @@ export class WarehouseManagementService {
 
     let totalVariances = 0;
     let varianceValue = 0;
-    let countedBins = new Set<string>();
+    const countedBins: Set<string> = new Set<string>();
 
     for (const count of dto.lines) {
       const line = cc.lines.find(l => l.binCode === count.binCode && l.sku === count.sku);
@@ -756,7 +756,7 @@ Return ONLY valid JSON:
     });
 
     // Add to destination
-    let dest = await this.prisma.inventoryItem.findFirst({
+    const dest = await this.prisma.inventoryItem.findFirst({
       where: { companyId, binId: dto.toBinId, sku: dto.sku },
     });
     if (dest) {

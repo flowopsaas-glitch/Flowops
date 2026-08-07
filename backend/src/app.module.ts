@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
@@ -86,6 +87,9 @@ import { DigitalPaymentsModule } from './digital-payments/digital-payments.modul
 
     // Cron scheduling
     ScheduleModule.forRoot(),
+
+    // In-process event bus (enables @OnEvent decorators across modules)
+    EventEmitterModule.forRoot(),
 
     // ── API rate limiting (anti-scrape / anti-abuse) ─────────────────────
     // Generous global backstop (600 req / 60s per client) that only trips on
