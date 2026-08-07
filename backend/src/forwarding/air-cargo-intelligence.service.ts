@@ -791,7 +791,7 @@ export class AirCargoIntelligenceService {
   async getCustomsPreClearance(companyId: string, fileId: string): Promise<CustomsPreClearance> {
     const file = await this.prisma.shipmentFile.findFirst({
       where: { id: fileId, companyId, mode: 'AIR' },
-      include: { cargo: true, documents: true },
+      include: { cargo: true, documents: true, milestones: { orderBy: { reachedAt: 'desc' }, take: 1 } },
     });
 
     if (!file) throw new Error('Air shipment file not found');
