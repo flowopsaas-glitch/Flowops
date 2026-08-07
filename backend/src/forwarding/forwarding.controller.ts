@@ -14,6 +14,7 @@ import { CustomsDeclarationService } from './customs-declaration.service';
 import { CustomsEdiCredentialService } from './customs-edi/customs-edi-credential.service';
 import { DemurrageService } from './demurrage.service';
 import { VesselTrackingService } from './vessel-tracking.service';
+import { AirCargoIntelligenceService } from './air-cargo-intelligence.service';
 import { ConsolidationService } from './consolidation.service';
 import { ForwardingOverviewService } from './forwarding-overview.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
@@ -39,6 +40,7 @@ export class ForwardingController {
     private readonly ediCredentials: CustomsEdiCredentialService,
     private readonly demurrage: DemurrageService,
     private readonly vessel: VesselTrackingService,
+    private readonly airCargo: AirCargoIntelligenceService,
     private readonly consolidation: ConsolidationService,
     private readonly overviewSvc: ForwardingOverviewService,
   ) {}
@@ -341,5 +343,67 @@ export class ForwardingController {
   @ApiOperation({ summary: 'AI: extract a shipment-file draft from document text' })
   extract(@Body() body: { text: string }) {
     return this.ai.extractFromText(body?.text);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // AIR CARGO INTELLIGENCE — Flight Tracking, Airport Congestion, Cost AI,
+  // AWB Generation, Customs Pre-Clearance, ULD Tracking
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  @Get('files/:id/flight-tracking')
+  @ApiOperation({ summary: 'Live flight tracking + predicted ETA + airport congestion for air shipments' })
+  trackFlight(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.airCargo.trackFlight(u.companyId, id);
+  }
+
+  @Get('airports/congestion')
+  @ApiOperation({ summary: 'Airport congestion levels for all African + Asian cargo hubs' })
+  airportCongestion() {
+    return this.airCargo.getAllAirportCongestion();
+  }
+
+  @Get('airports/congestion/:iataCode')
+  @ApiOperation({ summary: 'Airport congestion for a specific airport (IATA code or city name)' })
+  airportCongestionByCode(@Param('iataCode') iataCode: string) {
+    return this.airCargo.getAirportCongestion(iataCode);
+  }
+
+  @Post('files/:id/air-vs-ocean')
+  @ApiOperation({ summary: 'AI: Air vs Ocean cost/time comparison with recommendation' })
+  airVsOcean(
+    @Param('id') id: string,
+    @Body() body: { origin: string; destination: string; weightKg: number; volumeCbm: number },
+  ) {
+    return this.airCargo.compareAirVsOcean(body.origin, body.destination, body.weightKg, body.volumeCbm);
+  }
+
+  @Get('files/:id/awb-data')
+  @ApiOperation({ summary: 'Generate AWB data (IATA Res 600a/672 compliant) for PDF rendering' })
+  awbData(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.airCargo.generateAwbData(u.companyId, id);
+  }
+
+  @Get('files/:id/customs-pre-clearance')
+  @ApiOperation({ summary: 'Customs pre-clearance status + alerts (WCO PLACI framework)' })
+  customsPreClearance(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.airCargo.getCustomsPreClearance(u.companyId, id);
+  }
+
+  @Get('files/:id/uld-tracking')
+  @ApiOperation({ summary: 'ULD (Unit Load Device) tracking for air shipment containers' })
+  uldTracking(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.airCargo.getUldTracking(u.companyId, id);
+  }
+
+  @Post('uld/validate')
+  @ApiOperation({ summary: 'Validate a ULD code format per IATA ULD Technical Manual' })
+  validateUld(@Body() body: { code: string }) {
+    return this.airCargo.validateUldCode(body.code);
+  }
+
+  @Get('uld/specs')
+  @ApiOperation({ summary: 'ULD type specifications (dimensions, max weight, tare)' })
+  uldSpecs(@Query('type') type?: string) {
+    return this.airCargo.getUldSpecs(type);
   }
 }
