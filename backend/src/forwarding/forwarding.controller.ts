@@ -13,6 +13,7 @@ import { ForwardingPdfService } from './forwarding-pdf.service';
 import { CustomsDeclarationService } from './customs-declaration.service';
 import { CustomsEdiCredentialService } from './customs-edi/customs-edi-credential.service';
 import { DemurrageService } from './demurrage.service';
+import { VesselTrackingService } from './vessel-tracking.service';
 import { ConsolidationService } from './consolidation.service';
 import { ForwardingOverviewService } from './forwarding-overview.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
@@ -37,6 +38,7 @@ export class ForwardingController {
     private readonly declarations: CustomsDeclarationService,
     private readonly ediCredentials: CustomsEdiCredentialService,
     private readonly demurrage: DemurrageService,
+    private readonly vessel: VesselTrackingService,
     private readonly consolidation: ConsolidationService,
     private readonly overviewSvc: ForwardingOverviewService,
   ) {}
@@ -198,6 +200,20 @@ export class ForwardingController {
   @ApiOperation({ summary: 'Compute accruing demurrage/detention for the file' })
   getDemurrage(@CurrentUser() u: any, @Param('id') id: string) {
     return this.demurrage.calcForFile(u.companyId, id);
+  }
+
+  // ── Vessel Tracking + Port Intelligence ───────────────────────────────────────
+
+  @Get('files/:id/vessel-tracking')
+  @ApiOperation({ summary: 'Live vessel tracking + predicted ETA + port congestion' })
+  trackVessel(@CurrentUser() u: any, @Param('id') id: string) {
+    return this.vessel.trackVessel(u.companyId, id);
+  }
+
+  @Get('ports/congestion')
+  @ApiOperation({ summary: 'Port congestion levels for all major African + Asian ports' })
+  portCongestion() {
+    return this.vessel.getAllPortCongestion();
   }
 
   // ── Consolidation / co-load (Phase 3) ───────────────────────────────────────────
