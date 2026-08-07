@@ -9,6 +9,7 @@ import { CustomsService } from './customs.service';
 import { ForwardingPdfService } from './forwarding-pdf.service';
 import { CustomsDeclarationService } from './customs-declaration.service';
 import { DemurrageService } from './demurrage.service';
+import { VesselTrackingService } from './vessel-tracking.service';
 import { ConsolidationService } from './consolidation.service';
 import { ForwardingOverviewService } from './forwarding-overview.service';
 import { CustomsEdiCryptoService } from './customs-edi/crypto.service';
@@ -30,7 +31,7 @@ import { DirectSarsEdiTransport } from './customs-edi/transports/direct-sars-edi
   providers: [
     ShipmentFileService, ContainersService, ChargesService, ForwardingAiService,
     CustomsService, ForwardingPdfService, CustomsDeclarationService, DemurrageService,
-    ConsolidationService, ForwardingOverviewService,
+    VesselTrackingService, ConsolidationService, ForwardingOverviewService,
     // SARS EDI customs bridge
     CustomsEdiCryptoService, CustomsEdiCredentialService, CustomsEdiTransportFactory,
     NullCustomsEdiTransport, ClearingAgentHandoffTransport, ServiceProviderEdiTransport,
