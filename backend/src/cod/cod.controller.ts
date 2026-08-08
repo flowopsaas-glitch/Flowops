@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CodService } from './cod.service';
 import { CodGuardianService } from './cod-guardian.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
 
@@ -18,19 +19,19 @@ export class CodController {
 
   @Get('summary')
   @RequireFeature('codReconciliation')
-  getSummary(@CurrentUser() u: any) {
+  getSummary(@CurrentUser() u: AuthenticatedUser) {
     return this.svc.getSummary(u.companyId);
   }
 
   @Get('outstanding')
   @RequireFeature('codReconciliation')
-  getOutstanding(@CurrentUser() u: any) {
+  getOutstanding(@CurrentUser() u: AuthenticatedUser) {
     return this.svc.getOutstandingWaybills(u.companyId);
   }
 
   @Post('collect/:waybillId')
   @RequireFeature('codReconciliation')
-  recordCollection(@Param('waybillId') waybillId: string, @CurrentUser() u: any) {
+  recordCollection(@Param('waybillId') waybillId: string, @CurrentUser() u: AuthenticatedUser) {
     return this.svc.recordCollection(waybillId, u.companyId, u.id);
   }
 
@@ -39,7 +40,7 @@ export class CodController {
   settle(
     @Param('driverId') driverId: string,
     @Body() body: { amount: number; note?: string },
-    @CurrentUser() u: any,
+    @CurrentUser() u: AuthenticatedUser,
   ) {
     return this.svc.settleDriver(driverId, body.amount, u.companyId, body.note);
   }
@@ -56,14 +57,14 @@ export class CodController {
   @Post('geofence')
   geofence(
     @Body() body: { driverId: string; lat: number; lng: number; radiusM?: number },
-    @CurrentUser() u: any,
+    @CurrentUser() u: AuthenticatedUser,
   ) {
     return this.svc.checkGeofence(body.driverId, u.companyId, body.lat, body.lng, body.radiusM ?? 500);
   }
 
   @Get('wallets')
   @RequireFeature('codReconciliation')
-  listWallets(@CurrentUser() u: any) {
+  listWallets(@CurrentUser() u: AuthenticatedUser) {
     return this.svc.listWallets(u.companyId);
   }
 
@@ -80,14 +81,14 @@ export class CodController {
   @Get('guardian/report')
   @RequireFeature('codReconciliation')
   @ApiOperation({ summary: 'Cash Flow Guardian — full cash position report with driver risk scoring' })
-  getGuardianReport(@CurrentUser() u: any) {
+  getGuardianReport(@CurrentUser() u: AuthenticatedUser) {
     return this.guardian.generateCashPosition(u.companyId);
   }
 
   @Post('guardian/alert')
   @RequireFeature('codReconciliation')
   @ApiOperation({ summary: 'Manually trigger Cash Flow Guardian WhatsApp alert to owner' })
-  triggerAlert(@CurrentUser() u: any) {
+  triggerAlert(@CurrentUser() u: AuthenticatedUser) {
     return this.guardian.dailyCashPositionAlert();
   }
 }

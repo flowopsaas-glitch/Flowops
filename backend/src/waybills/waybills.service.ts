@@ -87,7 +87,7 @@ export class WaybillsService {
     const [items, total] = await Promise.all([
       this.prisma.waybill.findMany({
         where, skip: (page - 1) * limit, take: limit,
-        include: { shipments: { select: { status: true, driverId: true } } },
+        include: { shipments: { select: { status: true, driverId: true }, take: 5 } },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.waybill.count({ where }),

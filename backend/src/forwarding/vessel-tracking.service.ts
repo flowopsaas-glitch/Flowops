@@ -322,7 +322,7 @@ export class VesselTrackingService {
           });
         }
       } catch (err: any) {
-        this.logger.debug(`Vessel monitor failed for ${file.fileNumber}: ${err.message}`);
+        this.logger.warn(`Vessel monitor failed for ${file.fileNumber}: ${err.message}`);
       }
     }
 
