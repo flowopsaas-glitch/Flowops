@@ -983,7 +983,7 @@ export class AirCargoIntelligenceService {
           }
         }
       } catch (err: any) {
-        this.logger.debug(`Air cargo monitor error for ${file.fileNumber}: ${err.message}`);
+        this.logger.warn(`Air cargo monitor error for ${file.fileNumber}: ${err.message}`);
       }
     }
 
