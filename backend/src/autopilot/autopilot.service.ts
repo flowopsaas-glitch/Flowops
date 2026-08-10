@@ -439,17 +439,22 @@ export class AutopilotService {
     }
     if (companies.length === 0) return;
 
-    this.logger.log(`🤖 Autopilot sweep across ${companies.length} tenant(s)...`);
-    for (const c of companies) {
-      try {
-        if (!(await this.billing.hasFeature(c.id, 'clawAutopilot'))) continue;
-        const res = await this.run(c.id, true);
-        if (res.executed > 0) {
-          this.logger.log(`Autopilot[${c.id.slice(-8)}]: executed ${res.executed}/${res.totalSignals} signals.`);
+    this.logger.log(`Autopilot sweep across ${companies.length} tenant(s)...`);
+
+    // Batch process (3 at a time) instead of sequential with per-company feature check
+    for (let i = 0; i < companies.length; i += 3) {
+      const batch = companies.slice(i, i + 3);
+      await Promise.allSettled(batch.map(async (c) => {
+        try {
+          if (!(await this.billing.hasFeature(c.id, 'clawAutopilot'))) return;
+          const res = await this.run(c.id, true);
+          if (res.executed > 0) {
+            this.logger.log(`Autopilot[${c.id.slice(-8)}]: executed ${res.executed}/${res.totalSignals} signals.`);
+          }
+        } catch (e: any) {
+          this.logger.error(`Autopilot run failed for ${c.id}: ${e.message}`);
         }
-      } catch (e: any) {
-        this.logger.error(`Autopilot run failed for ${c.id}: ${e.message}`);
-      }
+      }));
     }
   }
 }

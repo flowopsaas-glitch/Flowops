@@ -268,11 +268,18 @@ export class CodGuardianService {
       take: 100,
     });
 
-    for (const wb of collectedWaybills.slice(0, 20)) {
-      const tx = await this.prisma.codTransaction.findFirst({
-        where: { waybillId: wb.id, type: 'COLLECTION' },
-      });
-      if (!tx) {
+    // BATCH: Fetch all COD transactions for these waybills in ONE query
+    const waybillIds = collectedWaybills.slice(0, 50).map(w => w.id);
+    const existingTransactions = waybillIds.length > 0
+      ? await this.prisma.codTransaction.findMany({
+          where: { waybillId: { in: waybillIds }, type: 'COLLECTION' },
+          select: { waybillId: true },
+        })
+      : [];
+    const txWaybillIds = new Set(existingTransactions.map(t => t.waybillId));
+
+    for (const wb of collectedWaybills.slice(0, 50)) {
+      if (!txWaybillIds.has(wb.id)) {
         discrepancies.push({
           type: 'MISSING_TRANSACTION',
           description: `${wb.trackingNumber}: marked collected (R${wb.codAmount}) but no wallet transaction recorded`,
@@ -282,30 +289,45 @@ export class CodGuardianService {
     }
 
     // Check 2: Wallet balance doesn't match transaction sum
+    // BATCH: Use groupBy to get all wallet totals in TWO queries instead of 2 per wallet
     const wallets = await this.prisma.driverWallet.findMany({
       where: { driver: { companyId }, balance: { gt: 0 } },
       include: { driver: { select: { id: true, name: true } } },
+      take: 20,
     });
 
-    for (const wallet of wallets.slice(0, 10)) {
-      const collections = await this.prisma.codTransaction.aggregate({
-        where: { walletId: wallet.id, type: 'COLLECTION' },
-        _sum: { amount: true },
-      });
-      const settlements = await this.prisma.codTransaction.aggregate({
-        where: { walletId: wallet.id, type: 'SETTLEMENT' },
-        _sum: { amount: true },
-      });
-      const expectedBalance = (collections._sum.amount || 0) - (settlements._sum.amount || 0);
-      const diff = Math.abs(wallet.balance - expectedBalance);
+    if (wallets.length > 0) {
+      const walletIds = wallets.map(w => w.id);
 
-      if (diff > 1) { // Allow R1 rounding tolerance
-        discrepancies.push({
-          type: 'BALANCE_MISMATCH',
-          description: `${wallet.driver.name}: wallet shows R${wallet.balance.toFixed(2)} but transactions sum to R${expectedBalance.toFixed(2)} (diff: R${diff.toFixed(2)})`,
-          amount: diff,
-          driverId: wallet.driver.id,
-        });
+      const collectionsByWallet = await this.prisma.codTransaction.groupBy({
+        by: ['walletId'],
+        where: { walletId: { in: walletIds }, type: 'COLLECTION' },
+        _sum: { amount: true },
+      });
+
+      const settlementsByWallet = await this.prisma.codTransaction.groupBy({
+        by: ['walletId'],
+        where: { walletId: { in: walletIds }, type: 'SETTLEMENT' },
+        _sum: { amount: true },
+      });
+
+      const collectionMap = new Map(collectionsByWallet.map(c => [c.walletId, c._sum.amount || 0]));
+      const settlementMap = new Map(settlementsByWallet.map(s => [s.walletId, s._sum.amount || 0]));
+
+      for (const wallet of wallets) {
+        const collected = collectionMap.get(wallet.id) || 0;
+        const settled = settlementMap.get(wallet.id) || 0;
+        const expectedBalance = collected - settled;
+        const diff = Math.abs(wallet.balance - expectedBalance);
+
+        if (diff > 1) {
+          discrepancies.push({
+            type: 'BALANCE_MISMATCH',
+            description: `${wallet.driver.name}: wallet shows R${wallet.balance.toFixed(2)} but transactions sum to R${expectedBalance.toFixed(2)} (diff: R${diff.toFixed(2)})`,
+            amount: diff,
+            driverId: wallet.driver.id,
+          });
+        }
       }
     }
 

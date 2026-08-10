@@ -44,9 +44,8 @@ export class SlaAlertsService {
     for (const company of companies) {
       const now = Date.now();
       const warningThreshold = now - (company.slaWarningMinutes * 60_000);
-      const breachThreshold = now - (company.slaBreachMinutes * 60_000);
 
-      // Find waybills at risk (IN_TRANSIT or OUT_FOR_DELIVERY that haven't been delivered)
+      // Find waybills at risk
       const atRiskWaybills = await this.prisma.waybill.findMany({
         where: {
           companyId: company.id,
@@ -61,6 +60,25 @@ export class SlaAlertsService {
         take: 100,
       });
 
+      if (atRiskWaybills.length === 0) continue;
+
+      // BATCH DEDUP: Fetch ALL today's SLA notifications for this company in ONE query
+      const today = new Date().toISOString().slice(0, 10);
+      const existingAlerts = await this.prisma.notification.findMany({
+        where: {
+          companyId: company.id,
+          type: { in: ['SLA_BREACH', 'SLA_WARNING'] },
+          createdAt: { gte: new Date(today) },
+        },
+        select: { title: true },
+      });
+      const alertedTrackingNumbers = new Set(
+        existingAlerts.map(n => {
+          const match = n.title.match(/·\s(.+)$/);
+          return match ? match[1].trim() : '';
+        }).filter(Boolean),
+      );
+
       for (const waybill of atRiskWaybills) {
         const ageMinutes = Math.round((now - new Date(waybill.updatedAt).getTime()) / 60_000);
         const isBreached = ageMinutes >= company.slaBreachMinutes;
@@ -68,18 +86,10 @@ export class SlaAlertsService {
 
         if (!isWarning && !isBreached) continue;
 
-        // Deduplicate: check if we already alerted for this waybill today
-        const today = new Date().toISOString().slice(0, 10);
+        // In-memory dedup check (no DB query per waybill)
+        if (alertedTrackingNumbers.has(waybill.trackingNumber)) continue;
+
         const alertType = isBreached ? 'SLA_BREACH' : 'SLA_WARNING';
-        const existing = await this.prisma.notification.findFirst({
-          where: {
-            companyId: company.id,
-            type: alertType,
-            title: { contains: waybill.trackingNumber },
-            createdAt: { gte: new Date(today) },
-          },
-        });
-        if (existing) continue;
 
         // Update waybill risk level
         const newRiskLevel = isBreached ? 'CRITICAL' : 'HIGH';

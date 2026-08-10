@@ -52,13 +52,24 @@ export class OtpService implements OnModuleInit {
     const before = this.store.size;
     const now = Date.now();
 
+    // Collect expired keys first (avoid modifying Map during iteration)
+    const expiredKeys: string[] = [];
     for (const [key, entry] of this.store.entries()) {
-      if (now > entry.expiresAt) this.store.delete(key);
+      if (now > entry.expiresAt) expiredKeys.push(key);
+    }
+
+    // Delete in separate pass (safe)
+    for (const key of expiredKeys) {
+      this.store.delete(key);
     }
 
     // Also clean stale rate-limit entries (older than 2 minutes)
+    const staleRateLimitKeys: string[] = [];
     for (const [key, ts] of this.lastSent.entries()) {
-      if (now - ts > RATE_LIMIT_MS * 2) this.lastSent.delete(key);
+      if (now - ts > RATE_LIMIT_MS * 2) staleRateLimitKeys.push(key);
+    }
+    for (const key of staleRateLimitKeys) {
+      this.lastSent.delete(key);
     }
 
     const cleaned = before - this.store.size;
