@@ -111,14 +111,23 @@ export class AiEventsService {
   async verifyCompliance(companyId: number) {
     this.logger.log(`[Claw 1] POD Compliance Scan for Company ${companyId}`);
 
+    // Delta sync: only check waybills delivered in the last 7 days
+    // instead of ALL delivered waybills (unbounded growth problem)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
     const delivered = await this.prisma.waybill.findMany({
-      where: { companyId: String(companyId), status: 'DELIVERED' },
+      where: {
+        companyId: String(companyId),
+        status: 'DELIVERED',
+        updatedAt: { gte: sevenDaysAgo },
+      },
       select: {
         id: true, trackingNumber: true,
         podSignatureUrl: true, podRecipient: true,
         podImageUrl: true, podDeliveredAt: true,
       },
-      take: 500,
+      take: 200, // Reduced from 500 — with delta sync we need fewer records
+      orderBy: { updatedAt: 'desc' },
     });
 
     let compliant = 0;
@@ -141,6 +150,7 @@ export class AiEventsService {
       nonCompliant: issues.length,
       complianceRatePct: total > 0 ? Math.round((compliant / total) * 1000) / 10 : 100,
       issues: issues.slice(0, 20),
+      scanWindow: '7 days',
     };
   }
 

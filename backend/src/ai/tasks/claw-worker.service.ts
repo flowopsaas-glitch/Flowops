@@ -3,57 +3,69 @@ import { Cron } from '@nestjs/schedule';
 import { AiEventsService } from '../ai-events.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
+/** Process companies in batches with concurrency control. */
+async function batchProcess<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    await Promise.allSettled(batch.map(fn));
+  }
+}
+
 @Injectable()
 export class ClawWorkerService {
   private readonly logger = new Logger(ClawWorkerService.name);
 
+  /** Max companies to process in parallel per batch. */
+  private static readonly BATCH_CONCURRENCY = 5;
+
   constructor(
     private readonly aiEventsService: AiEventsService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
-   * Orchestrates the multi-tenant logistics sweep.
-   * Runs every 5 minutes based on project specifications.
+   * Multi-tenant logistics sweep — runs every 30 minutes.
+   * Uses batched concurrent processing instead of sequential loop.
    */
-  @Cron('*/30 * * * *') 
+  @Cron('*/30 * * * *')
   async handleScheduledExtraction() {
-    this.logger.log('🤖 AI Claw: Initiating multi-tenant logistics sweep...');
+    this.logger.log('AI Claw: Initiating multi-tenant logistics sweep...');
 
     try {
-      // 1. Fetch all active companies to ensure strict data isolation boundaries
       const companies = await this.prisma.company.findMany({
-        select: { id: true }
+        where: { isActive: true },
+        select: { id: true },
       });
 
-      if (!companies || companies.length === 0) {
-        this.logger.warn('⚠️ Multi-tenant sweep complete: No active company entities registered in the database cluster.');
+      if (!companies.length) {
+        this.logger.warn('Multi-tenant sweep: no active companies found.');
         return;
       }
 
-      this.logger.debug(`📡 Sector Scan: Found ${companies.length} corporate nodes to audit.`);
+      this.logger.log(`Processing ${companies.length} companies (batch size: ${ClawWorkerService.BATCH_CONCURRENCY})...`);
 
-      // 2. Process tasks sequentially to keep a low database load across multi-tenant schemas
-      for (const company of companies) {
+      let successCount = 0;
+      let failCount = 0;
+
+      await batchProcess(companies, ClawWorkerService.BATCH_CONCURRENCY, async (company) => {
         try {
-          this.logger.debug(`🔄 Syncing data pipeline matrix for Company ID: ${company.id}...`);
-          
-          // Trigger the operational sync via your core event layer service
           await this.aiEventsService.syncExistingToAIEvents(company.id as any);
-          
-          this.logger.log(`✅ System Sync successful for Company ID: ${company.id}`);
+          successCount++;
         } catch (error: unknown) {
-          // Explicitly type-guarding variables handles TS18046 code parsing rules perfectly
-          const errorMessage = error instanceof Error ? error.message : 'Unknown cognitive sync loop exception';
-          this.logger.error(`❌ Claw processing failure for Company Node ${company.id}: ${errorMessage}`);
+          failCount++;
+          const msg = error instanceof Error ? error.message : 'Unknown error';
+          this.logger.warn(`Claw sync failed for company ${company.id}: ${msg}`);
         }
-      }
-      
-      this.logger.log('🏁 AI Claw: Multi-tenant logistics sweep operation complete.');
-    } catch (globalError: unknown) {
-      const globalMsg = globalError instanceof Error ? globalError.message : 'Critical system database platform failure';
-      this.logger.error(`🚨 CRITICAL CLAW WORKER STRUCTURAL FAILURE: ${globalMsg}`);
+      });
+
+      this.logger.log(`AI Claw sweep complete: ${successCount} ok, ${failCount} failed (${companies.length} total).`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      this.logger.error(`CRITICAL: Claw worker failed to start: ${msg}`);
     }
   }
 }
-
