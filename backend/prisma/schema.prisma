@@ -993,6 +993,10 @@ model Waybill {
   returns          Return[]
 
   @@unique([trackingNumber, companyId])
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([companyId, updatedAt])
+  @@index([status, updatedAt])
   @@map("waybills")
 }
 
@@ -1261,6 +1265,8 @@ model Notification {
 
   createdAt DateTime @default(now())
 
+  @@index([companyId, type, createdAt])
+  @@index([companyId, createdAt])
   @@map("notifications")
 }
 

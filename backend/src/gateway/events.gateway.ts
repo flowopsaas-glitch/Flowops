@@ -9,7 +9,15 @@ import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: {
-    origin: (origin: string, cb: (err: Error | null, allow?: boolean) => void) => cb(null, true), // refined via CORS_ORIGINS at init
+    origin: (origin: string, cb: (err: Error | null, allow?: boolean) => void) => {
+      // In production, only allow configured origins. In dev, allow all.
+      const allowed = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map(o => o.trim());
+      if (!origin || allowed.includes(origin) || process.env.NODE_ENV !== 'production') {
+        cb(null, true);
+      } else {
+        cb(new Error(`WebSocket origin ${origin} not allowed`), false);
+      }
+    },
     credentials: true,
   },
   transports: ['websocket', 'polling'],
