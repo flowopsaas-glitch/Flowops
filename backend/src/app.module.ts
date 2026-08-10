@@ -81,6 +81,7 @@ import { MarketTrendsModule } from './market-trends/market-trends.module';
 import { EpodModule } from './epod/epod.module';
 import { LiveTrackingModule } from './live-tracking/live-tracking.module';
 import { DigitalPaymentsModule } from './digital-payments/digital-payments.module';
+import { IntelligenceModule } from './intelligence/intelligence.module';
 
 @Module({
   imports: [
@@ -169,6 +170,9 @@ import { DigitalPaymentsModule } from './digital-payments/digital-payments.modul
     EpodModule,
     LiveTrackingModule,
     DigitalPaymentsModule,
+
+    // Predictive Delivery Intelligence (AI-powered, self-learning)
+    IntelligenceModule,
 
     OtpModule,
 
