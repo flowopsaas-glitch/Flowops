@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from './prisma/prisma.service';
 import { AuthService } from './auth/auth.service';
+import { HealthSentinelService } from './common/guards/health-sentinel.service';
 
 import { Public } from './common/decorators/public.decorator';
 
@@ -11,6 +12,7 @@ export class AppController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    private readonly healthSentinel: HealthSentinelService,
   ) {}
 
   /**
@@ -25,8 +27,12 @@ export class AppController {
   @Get('health')
   async health() {
     try {
+      const sentinel = this.healthSentinel.getStatus();
+      if (!sentinel.healthy) {
+        return { status: 'degraded', issues: sentinel.issues, ts: new Date().toISOString() };
+      }
       await this.prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', db: 'connected', ts: new Date().toISOString() };
+      return { status: 'ok', db: 'connected', uptime: Math.round(process.uptime()), ts: new Date().toISOString() };
     } catch {
       return { status: 'degraded', db: 'unreachable', ts: new Date().toISOString() };
     }

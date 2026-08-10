@@ -9,6 +9,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ThrottlerProxyGuard } from './common/guards/throttler-proxy.guard';
+import { ApiShieldGuard } from './common/guards/api-shield.guard';
+import { HealthSentinelService } from './common/guards/health-sentinel.service';
 
 // Feature modules
 import { AuthModule } from './auth/auth.module';
@@ -198,6 +200,9 @@ import { DigitalPaymentsModule } from './digital-payments/digital-payments.modul
   ],
   controllers: [AppController],
   providers: [
+    // API Shield — first line of defence (injection, XSS, bot detection)
+    { provide: APP_GUARD, useClass: ApiShieldGuard },
+
     // Apply JwtAuthGuard globally — all routes need a valid token
     // unless decorated with @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -206,9 +211,10 @@ import { DigitalPaymentsModule } from './digital-payments/digital-payments.modul
     { provide: APP_GUARD, useClass: RolesGuard },
 
     // Rate limiting runs last so authenticated requests are tracked per-user
-    // (fair on shared office NATs) while @Public routes fall back to client IP
-    // (stops login brute-force and unauthenticated scraping).
     { provide: APP_GUARD, useClass: ThrottlerProxyGuard },
+
+    // Health Sentinel — background health monitoring (not a guard, but a service)
+    HealthSentinelService,
   ],
 })
 export class AppModule {}
