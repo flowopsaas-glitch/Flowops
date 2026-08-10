@@ -63,21 +63,41 @@ export interface VesselTrackingResult {
 
 // Major African port reference data
 const AFRICAN_PORTS: Record<string, { name: string; country: string; lat: number; lng: number; avgWaitDays: number }> = {
+  // ── SOUTHERN AFRICA (SADC Gateway Corridor) ───────────────────────────────
+  'NAWVB': { name: 'Walvis Bay (SADC Gateway)', country: 'NA', lat: -22.9575, lng: 14.5054, avgWaitDays: 1.5 },
+  'NALUD': { name: 'Lüderitz', country: 'NA', lat: -26.6481, lng: 15.1591, avgWaitDays: 1 },
   'ZADUR': { name: 'Durban', country: 'ZA', lat: -29.8587, lng: 31.0218, avgWaitDays: 3 },
   'ZACPT': { name: 'Cape Town', country: 'ZA', lat: -33.9021, lng: 18.4321, avgWaitDays: 2 },
   'ZAPLZ': { name: 'Port Elizabeth / Gqeberha', country: 'ZA', lat: -33.7614, lng: 25.6307, avgWaitDays: 1.5 },
+  'ZANGQ': { name: 'Ngqura (Coega)', country: 'ZA', lat: -33.8000, lng: 25.6833, avgWaitDays: 1 },
+  'ZAREX': { name: 'Richards Bay', country: 'ZA', lat: -28.8000, lng: 32.0833, avgWaitDays: 2 },
   'MZMPM': { name: 'Maputo', country: 'MZ', lat: -25.9653, lng: 32.5892, avgWaitDays: 4 },
+  'MZBEW': { name: 'Beira', country: 'MZ', lat: -19.8286, lng: 34.8587, avgWaitDays: 5 },
+  'MZNAK': { name: 'Nacala', country: 'MZ', lat: -14.5428, lng: 40.6728, avgWaitDays: 3 },
+  'AOLOW': { name: 'Lobito', country: 'AO', lat: -12.3481, lng: 13.5456, avgWaitDays: 6 },
+  'AOLAD': { name: 'Luanda', country: 'AO', lat: -8.7900, lng: 13.2344, avgWaitDays: 8 },
+  // ── EAST AFRICA ───────────────────────────────────────────────────────────
   'TZDRS': { name: 'Dar es Salaam', country: 'TZ', lat: -6.8235, lng: 39.2695, avgWaitDays: 7 },
   'KEMBA': { name: 'Mombasa', country: 'KE', lat: -4.0435, lng: 39.6682, avgWaitDays: 5 },
+  'DJJIB': { name: 'Djibouti', country: 'DJ', lat: 11.5880, lng: 43.1456, avgWaitDays: 2 },
+  // ── WEST AFRICA ───────────────────────────────────────────────────────────
   'NGAPP': { name: 'Apapa (Lagos)', country: 'NG', lat: 6.4459, lng: 3.3582, avgWaitDays: 14 },
   'NGTIN': { name: 'Tin Can Island (Lagos)', country: 'NG', lat: 6.4298, lng: 3.3418, avgWaitDays: 12 },
   'GHTMA': { name: 'Tema', country: 'GH', lat: 5.6344, lng: -0.0052, avgWaitDays: 4 },
+  'CIDAB': { name: 'Abidjan', country: 'CI', lat: 5.2866, lng: -3.9816, avgWaitDays: 3 },
+  'SNDKR': { name: 'Dakar', country: 'SN', lat: 14.6928, lng: -17.4286, avgWaitDays: 3 },
+  // ── NORTH AFRICA ──────────────────────────────────────────────────────────
   'DZALG': { name: 'Algiers', country: 'DZ', lat: 36.7538, lng: 3.0588, avgWaitDays: 3 },
   'EGPSD': { name: 'Port Said', country: 'EG', lat: 31.2653, lng: 32.3019, avgWaitDays: 2 },
+  'MATNG': { name: 'Tanger Med', country: 'MA', lat: 35.8853, lng: -5.5098, avgWaitDays: 1 },
+  // ── ASIA (major trade partners) ───────────────────────────────────────────
   'CNSHA': { name: 'Shanghai', country: 'CN', lat: 31.3497, lng: 121.5884, avgWaitDays: 1 },
   'CNNGB': { name: 'Ningbo', country: 'CN', lat: 29.8683, lng: 121.5440, avgWaitDays: 1 },
   'CNYTN': { name: 'Yantian (Shenzhen)', country: 'CN', lat: 22.5676, lng: 114.2829, avgWaitDays: 1 },
   'HKHKG': { name: 'Hong Kong', country: 'HK', lat: 22.2793, lng: 114.1628, avgWaitDays: 0.5 },
+  'SGSIN': { name: 'Singapore', country: 'SG', lat: 1.2644, lng: 103.8200, avgWaitDays: 0.5 },
+  'AEJEA': { name: 'Jebel Ali (Dubai)', country: 'AE', lat: 25.0057, lng: 55.0621, avgWaitDays: 1 },
+  'INMUN': { name: 'Nhava Sheva (Mumbai)', country: 'IN', lat: 18.9500, lng: 72.9500, avgWaitDays: 3 },
 };
 
 @Injectable()
