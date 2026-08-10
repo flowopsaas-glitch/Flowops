@@ -15,6 +15,7 @@ import { CustomsEdiCredentialService } from './customs-edi/customs-edi-credentia
 import { DemurrageService } from './demurrage.service';
 import { VesselTrackingService } from './vessel-tracking.service';
 import { AirCargoIntelligenceService } from './air-cargo-intelligence.service';
+import { SadcCorridorService } from './sadc-corridor.service';
 import { ConsolidationService } from './consolidation.service';
 import { ForwardingOverviewService } from './forwarding-overview.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
@@ -42,6 +43,7 @@ export class ForwardingController {
     private readonly demurrage: DemurrageService,
     private readonly vessel: VesselTrackingService,
     private readonly airCargo: AirCargoIntelligenceService,
+    private readonly sadcCorridor: SadcCorridorService,
     private readonly consolidation: ConsolidationService,
     private readonly overviewSvc: ForwardingOverviewService,
   ) {}
@@ -406,5 +408,51 @@ export class ForwardingController {
   @ApiOperation({ summary: 'ULD type specifications (dimensions, max weight, tare)' })
   uldSpecs(@Query('type') type?: string) {
     return this.airCargo.getUldSpecs(type);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // SADC CORRIDOR INTELLIGENCE — Border posts, corridors, Walvis Bay comparison
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  @Get('sadc/border-posts')
+  @ApiOperation({ summary: 'All SADC border posts with congestion levels and wait times' })
+  sadcBorderPosts() {
+    return this.sadcCorridor.getAllBorderPosts();
+  }
+
+  @Get('sadc/border-posts/:code')
+  @ApiOperation({ summary: 'Specific border post details (wait times, required docs)' })
+  sadcBorderPost(@Param('code') code: string) {
+    return this.sadcCorridor.getBorderPost(code);
+  }
+
+  @Get('sadc/corridors')
+  @ApiOperation({ summary: 'All SADC trade corridors with transit times and costs' })
+  sadcCorridors() {
+    return this.sadcCorridor.getAllCorridors();
+  }
+
+  @Get('sadc/corridors/:code')
+  @ApiOperation({ summary: 'Specific corridor details' })
+  sadcCorridorByCode(@Param('code') code: string) {
+    return this.sadcCorridor.getCorridor(code);
+  }
+
+  @Get('sadc/corridors/:code/documents')
+  @ApiOperation({ summary: 'Required documents for a specific corridor (per country + per border)' })
+  sadcCorridorDocs(@Param('code') code: string) {
+    return this.sadcCorridor.getRequiredDocuments(code);
+  }
+
+  @Get('sadc/compare')
+  @ApiOperation({ summary: 'Compare corridors for a destination — find the fastest/cheapest route' })
+  sadcCompare(@Query('origin') origin: string, @Query('destination') destination: string) {
+    return this.sadcCorridor.compareCorridors(origin, destination);
+  }
+
+  @Get('sadc/walvis-vs-durban')
+  @ApiOperation({ summary: 'Walvis Bay SADC Gateway vs Durban — cost, time, risk comparison' })
+  walvisVsDurban(@Query('destination') destination: string) {
+    return this.sadcCorridor.walvisBayVsDurban(destination);
   }
 }

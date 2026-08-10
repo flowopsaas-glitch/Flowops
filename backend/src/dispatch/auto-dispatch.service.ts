@@ -76,7 +76,6 @@ export class AutoDispatchService {
         id: true, trackingNumber: true,
         recipientAddress: true, recipientLat: true, recipientLng: true,
         senderAddress: true, senderLat: true, senderLng: true,
-        grossWeightKg: true,
       },
     });
 
@@ -86,11 +85,10 @@ export class AutoDispatchService {
 
     // Get available drivers with their current position
     const drivers = await this.prisma.driver.findMany({
-      where: { companyId, isActive: true, status: { in: ['AVAILABLE', 'ONLINE'] } },
+      where: { companyId, isActive: true, status: 'AVAILABLE' as any },
       select: {
         id: true, name: true, phone: true, status: true,
         lastLat: true, lastLng: true, vehicleType: true,
-        _count: { select: { shipments: true } },
       },
     });
 
@@ -103,7 +101,7 @@ export class AutoDispatchService {
       by: ['driverId'],
       where: {
         driverId: { in: drivers.map(d => d.id) },
-        status: { in: ['PENDING', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'] },
+        status: { in: ['PENDING', 'IN_TRANSIT'] as any },
       },
       _count: { _all: true },
     });
@@ -127,7 +125,7 @@ export class AutoDispatchService {
 
       // Factor 2: Current load (0-30 points deduction)
       const currentLoad = loadMap.get(driver.id) || 0;
-      const loadPenalty = Math.min(30, currentLoad * 3); // 10 active = 30 point penalty
+      const loadPenalty = Math.min(30, Number(currentLoad) * 3);
       score -= loadPenalty;
 
       // Factor 3: Area success rate (0-20 bonus) — from historical data
