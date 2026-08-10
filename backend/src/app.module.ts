@@ -82,6 +82,7 @@ import { EpodModule } from './epod/epod.module';
 import { LiveTrackingModule } from './live-tracking/live-tracking.module';
 import { DigitalPaymentsModule } from './digital-payments/digital-payments.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
+import { DispatchModule } from './dispatch/dispatch.module';
 
 @Module({
   imports: [
@@ -173,6 +174,9 @@ import { IntelligenceModule } from './intelligence/intelligence.module';
 
     // Predictive Delivery Intelligence (AI-powered, self-learning)
     IntelligenceModule,
+
+    // Smart Auto-Dispatch + Customer Live Tracking
+    DispatchModule,
 
     OtpModule,
 
