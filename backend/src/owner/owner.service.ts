@@ -31,7 +31,11 @@ export class OwnerService {
     const [companies, total] = await Promise.all([
       this.prisma.company.findMany({
         skip: (page - 1) * limit, take: limit,
-        include: { _count: { select: { users: true, waybills: true } } },
+        select: {
+          id: true, name: true, isActive: true, plan: true,
+          createdAt: true, updatedAt: true,
+          _count: { select: { users: true, waybills: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.company.count(),
