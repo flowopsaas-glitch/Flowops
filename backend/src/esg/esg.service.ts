@@ -29,8 +29,11 @@ export class EsgService {
       where: { isActive: true },
       select: { id: true },
     });
-    for (const c of companies) {
-      await this.computeForCompany(c.id);
+
+    // Batch process companies (5 at a time) instead of sequential
+    for (let i = 0; i < companies.length; i += 5) {
+      const batch = companies.slice(i, i + 5);
+      await Promise.allSettled(batch.map(c => this.computeForCompany(c.id)));
     }
   }
 
@@ -43,27 +46,31 @@ export class EsgService {
       where: { companyId, status: 'DELIVERED', updatedAt: { gte: start, lt: end } },
     });
 
-    // Get fleet composition
-    const drivers = await this.prisma.driver.findMany({
+    // Use groupBy for fleet composition (DB-level aggregation, no unbounded fetch)
+    const fleetGroups = await this.prisma.driver.groupBy({
+      by: ['vehicleType'],
       where: { companyId, isActive: true },
-      select: { vehicleType: true },
+      _count: { _all: true },
     });
 
     const fleet = { petrol: 0, diesel: 0, electric: 0, motorbike: 0 };
-    for (const d of drivers) {
-      const vt = (d.vehicleType || '').toLowerCase();
-      if (vt.includes('electric') || vt.includes('ev')) fleet.electric++;
-      else if (vt.includes('motorbike') || vt.includes('scooter') || vt.includes('bike')) fleet.motorbike++;
-      else if (vt.includes('truck') || vt.includes('van')) fleet.diesel++;
-      else fleet.petrol++;
+    let totalVehicles = 0;
+    for (const entry of fleetGroups) {
+      const vt = (entry.vehicleType || '').toLowerCase();
+      const count = entry._count._all;
+      totalVehicles += count;
+      if (vt.includes('electric') || vt.includes('ev')) fleet.electric += count;
+      else if (vt.includes('motorbike') || vt.includes('scooter') || vt.includes('bike')) fleet.motorbike += count;
+      else if (vt.includes('truck') || vt.includes('van')) fleet.diesel += count;
+      else fleet.petrol += count;
     }
+    if (totalVehicles === 0) totalVehicles = 1;
 
     // Estimate total km from route data (avg 15km per delivery in SA metro areas)
     const avgKmPerDelivery = 15; // conservative SA metro estimate
     const totalKmDriven = totalDeliveries * avgKmPerDelivery;
 
     // Weighted emission factor based on fleet mix
-    const totalVehicles = drivers.length || 1;
     const weightedFactor =
       (fleet.diesel * EMISSION_FACTORS.van +
        fleet.petrol * EMISSION_FACTORS.car +
