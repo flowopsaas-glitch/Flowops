@@ -1,3 +1,4 @@
+import { UpdateCompanyDto, UpdateSlaDto, AddAdminDto } from './dto/update-company.dto';
 import {
   Controller, Get, Post, Patch, Body, Param, Query,
   UseInterceptors, UploadedFile, HttpCode, HttpStatus,
@@ -19,7 +20,7 @@ export class CompaniesController {
   }
 
   @Patch('my-company')
-  updateMyCompany(@CurrentUser() u: any, @Body() body: any) {
+  updateMyCompany(@CurrentUser() u: any, @Body() body: UpdateCompanyDto) {
     return this.svc.updateMyCompany(u.companyId, body);
   }
 
@@ -31,12 +32,12 @@ export class CompaniesController {
   }
 
   @Patch(':id/sla')
-  updateSla(@Param('id') id: string, @Body() body: any) {
+  updateSla(@Param('id') id: string, @Body() body: UpdateSlaDto) {
     return this.svc.updateSla(id, body);
   }
 
   @Post(':id/admins')
-  addAdmin(@Param('id') id: string, @Body() body: any) {
+  addAdmin(@Param('id') id: string, @Body() body: AddAdminDto) {
     return this.svc.addAdmin(id, body);
   }
 

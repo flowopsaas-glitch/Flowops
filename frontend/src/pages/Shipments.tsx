@@ -152,25 +152,34 @@ export default function Shipments() {
   const [statusFilter, setStatusFilter] = useSearchParams();
   const activeStatusFilter = (statusFilter.get("status") || "").toUpperCase() as ShipmentStatus | "";
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const res: any = await api.get("/shipments");
+      const res: any = await api.get("/shipments?limit=500");
+      if (signal?.aborted) return;
       const data = res?.data ?? res;
       setShipments(Array.isArray(data) ? data : []);
-      api.get("/shipments/health").then((r: any) => setHealth(r?.data ?? r)).catch(() => setHealth(null));
+      api.get("/shipments/health").then((r: any) => {
+        if (!signal?.aborted) setHealth(r?.data ?? r);
+      }).catch(() => {
+        if (!signal?.aborted) setHealth(null);
+      });
     } catch {
-      setShipments([]);
+      if (!signal?.aborted) setShipments([]);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
+  /** Manual refresh (used as onClick handler). */
+  const refresh = useCallback(() => { void load(); }, [load]);
+
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
     // Auto-refresh every 30 s (live dispatch environment)
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
+    const t = setInterval(() => load(controller.signal), 30_000);
+    return () => { controller.abort(); clearInterval(t); };
   }, [load]);
 
   const stats = useMemo(() => {
@@ -273,7 +282,7 @@ export default function Shipments() {
               </button>
             )}
             <button
-              onClick={load}
+              onClick={refresh}
               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10"
             >
               <RefreshCw className="h-4 w-4" /> Refresh
