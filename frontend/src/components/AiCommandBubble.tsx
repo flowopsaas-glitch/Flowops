@@ -19,7 +19,7 @@ const AiCommandBubble = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}` // Ensure JWT is passed
+          'Authorization': `Bearer ${localStorage.getItem('flowops.access_token') || ''}` // Use canonical token key
         },
         body: JSON.stringify({ command }),
       });

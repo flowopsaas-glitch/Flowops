@@ -66,7 +66,7 @@ export default function FileUpload({
     const formData = new FormData();
     formData.append("file", file);
 
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem("flowops.access_token") || "";
     const res = await fetch(
       `${FLOWOPS_API_URL}/uploads?category=${encodeURIComponent(category)}`,
       {
