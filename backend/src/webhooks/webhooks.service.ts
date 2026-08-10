@@ -159,8 +159,12 @@ export class WebhooksService {
       });
     } catch { return; }
 
-    for (const delivery of due) {
-      await this.retryDelivery(delivery);
+    if (due.length === 0) return;
+
+    // Batch process retries (5 concurrent) instead of sequential
+    for (let i = 0; i < due.length; i += 5) {
+      const batch = due.slice(i, i + 5);
+      await Promise.allSettled(batch.map(d => this.retryDelivery(d)));
     }
   }
 

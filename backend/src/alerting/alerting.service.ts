@@ -428,31 +428,50 @@ export class AlertingService {
     since.setHours(since.getHours() - 24);
     const day = new Date().toISOString().slice(0, 10);
 
+    // BATCH: Use groupBy to aggregate ALL companies in ONE query per status
+    const stats = await this.prisma.waybill.groupBy({
+      by: ['companyId', 'status'],
+      where: {
+        status: { in: ['DELIVERED', 'FAILED_DELIVERY', 'RETURNED'] },
+        createdAt: { gt: since },
+      },
+      _count: { _all: true },
+    });
+
+    // Map results by company
+    const statsByCompany = new Map<string, { delivered: number; failed: number; returned: number }>();
+    for (const stat of stats) {
+      if (!statsByCompany.has(stat.companyId)) {
+        statsByCompany.set(stat.companyId, { delivered: 0, failed: 0, returned: 0 });
+      }
+      const entry = statsByCompany.get(stat.companyId)!;
+      if (stat.status === 'DELIVERED') entry.delivered = stat._count._all;
+      else if (stat.status === 'FAILED_DELIVERY') entry.failed = stat._count._all;
+      else if (stat.status === 'RETURNED') entry.returned = stat._count._all;
+    }
+
+    // Get company names for those with spikes
     const companies = await this.prisma.company.findMany({
-      where: { isActive: true },
+      where: { isActive: true, id: { in: Array.from(statsByCompany.keys()) } },
       select: { id: true, name: true },
     });
 
     const out: DraftAlert[] = [];
     for (const c of companies) {
-      const [delivered, failed, returned] = await Promise.all([
-        this.prisma.waybill.count({ where: { companyId: c.id, status: 'DELIVERED', createdAt: { gt: since } } }),
-        this.prisma.waybill.count({ where: { companyId: c.id, status: 'FAILED_DELIVERY', createdAt: { gt: since } } }),
-        this.prisma.waybill.count({ where: { companyId: c.id, status: 'RETURNED', createdAt: { gt: since } } }),
-      ]);
-      const outcomes = delivered + failed + returned;
+      const s = statsByCompany.get(c.id) || { delivered: 0, failed: 0, returned: 0 };
+      const outcomes = s.delivered + s.failed + s.returned;
       if (outcomes < 5) continue;
-      const exceptionRate = ((failed + returned) / outcomes) * 100;
+      const exceptionRate = ((s.failed + s.returned) / outcomes) * 100;
       if (exceptionRate <= 25) continue;
       out.push({
         type: 'sla_spike',
         severity: 'warning',
         title: `Exception spike: ${c.name}`,
-        message: `${c.name} had a ${exceptionRate.toFixed(0)}% delivery exception rate in the last 24h (${failed + returned} of ${outcomes}). Investigate routing/driver issues.`,
+        message: `${c.name} had a ${exceptionRate.toFixed(0)}% delivery exception rate in the last 24h (${s.failed + s.returned} of ${outcomes}). Investigate routing/driver issues.`,
         tenantId: c.id,
         tenantName: c.name,
         dedupeKey: `sla_spike:${c.id}:${day}`,
-        metadata: { exceptionRate: Math.round(exceptionRate), outcomes, failed, returned },
+        metadata: { exceptionRate: Math.round(exceptionRate), outcomes, failed: s.failed, returned: s.returned },
       });
     }
     return out;

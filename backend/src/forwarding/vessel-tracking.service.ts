@@ -301,32 +301,43 @@ export class VesselTrackingService {
 
   @Cron('0 */6 * * *')
   async monitorInTransitVessels() {
-    this.logger.log('🚢 VESSEL INTELLIGENCE: Checking in-transit ocean shipments...');
+    this.logger.log('VESSEL INTELLIGENCE: Checking in-transit ocean shipments...');
 
-    const departetFiles = await this.prisma.shipmentFile.findMany({
+    const departedFiles = await this.prisma.shipmentFile.findMany({
       where: { mode: 'OCEAN', status: { in: ['DEPARTED', 'LOADED'] } },
       select: { id: true, companyId: true, fileNumber: true, vesselVoyage: true, pod: true, eta: true },
+      take: 1000, // Cap to prevent unbounded loops
     });
 
-    for (const file of departetFiles) {
-      try {
-        const congestion = this.getPortCongestion(file.pod || '');
-        if (congestion && congestion.congestionLevel === 'CRITICAL' && file.eta) {
-          // Update AI risk score
-          await this.prisma.shipmentFile.update({
-            where: { id: file.id },
-            data: {
-              aiRiskScore: Math.min(100, (congestion.avgWaitDays * 8)),
-              aiRiskNote: `Port ${congestion.portName} critically congested (${congestion.avgWaitDays}d avg wait). Expect ${congestion.avgWaitDays} additional days beyond carrier ETA. Demurrage risk HIGH.`,
-            },
-          });
-        }
-      } catch (err: any) {
-        this.logger.warn(`Vessel monitor failed for ${file.fileNumber}: ${err.message}`);
+    if (departedFiles.length === 0) return;
+
+    // Filter to only those with CRITICAL congestion (in-memory, no extra queries)
+    const criticalUpdates: Array<{ id: string; aiRiskScore: number; aiRiskNote: string }> = [];
+    for (const file of departedFiles) {
+      const congestion = this.getPortCongestion(file.pod || '');
+      if (congestion && congestion.congestionLevel === 'CRITICAL' && file.eta) {
+        criticalUpdates.push({
+          id: file.id,
+          aiRiskScore: Math.min(100, (congestion.avgWaitDays * 8)),
+          aiRiskNote: `Port ${congestion.portName} critically congested (${congestion.avgWaitDays}d avg wait). Expect ${congestion.avgWaitDays} additional days beyond carrier ETA. Demurrage risk HIGH.`,
+        });
       }
     }
 
-    this.logger.log(`🚢 VESSEL INTELLIGENCE: Checked ${departetFiles.length} shipments`);
+    // Batch update only critical shipments (parallel, 10 at a time)
+    if (criticalUpdates.length > 0) {
+      for (let i = 0; i < criticalUpdates.length; i += 10) {
+        const batch = criticalUpdates.slice(i, i + 10);
+        await Promise.allSettled(batch.map(u =>
+          this.prisma.shipmentFile.update({
+            where: { id: u.id },
+            data: { aiRiskScore: u.aiRiskScore, aiRiskNote: u.aiRiskNote },
+          }),
+        ));
+      }
+    }
+
+    this.logger.log(`VESSEL INTELLIGENCE: Checked ${departedFiles.length} shipments, updated ${criticalUpdates.length} critical`);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
