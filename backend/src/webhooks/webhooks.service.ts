@@ -1,11 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { CronMutex } from '../common/utils/cron-mutex';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
+  private readonly retryMutex = new CronMutex('webhook-retries');
 
   constructor(private prisma: PrismaService) {}
 
@@ -146,25 +148,30 @@ export class WebhooksService {
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async processRetries() {
-    let due: Array<{ id: string; endpointId: string; payload: string; attempts: number }> = [];
+    if (!this.retryMutex.acquire()) return; // Skip if previous run still executing
     try {
-      due = await this.prisma.webhookDelivery.findMany({
-        where: {
-          status: { in: ['FAILED', 'RETRYING'] },
-          attempts: { lt: 5 },
-          nextRetryAt: { lte: new Date() },
-        },
-        select: { id: true, endpointId: true, payload: true, attempts: true },
-        take: 50,
-      });
-    } catch { return; }
+      let due: Array<{ id: string; endpointId: string; payload: string; attempts: number }> = [];
+      try {
+        due = await this.prisma.webhookDelivery.findMany({
+          where: {
+            status: { in: ['FAILED', 'RETRYING'] },
+            attempts: { lt: 5 },
+            nextRetryAt: { lte: new Date() },
+          },
+          select: { id: true, endpointId: true, payload: true, attempts: true },
+          take: 50,
+        });
+      } catch { return; }
 
-    if (due.length === 0) return;
+      if (due.length === 0) return;
 
-    // Batch process retries (5 concurrent) instead of sequential
-    for (let i = 0; i < due.length; i += 5) {
-      const batch = due.slice(i, i + 5);
-      await Promise.allSettled(batch.map(d => this.retryDelivery(d)));
+      // Batch process retries (5 concurrent) instead of sequential
+      for (let i = 0; i < due.length; i += 5) {
+        const batch = due.slice(i, i + 5);
+        await Promise.allSettled(batch.map(d => this.retryDelivery(d)));
+      }
+    } finally {
+      this.retryMutex.release();
     }
   }
 

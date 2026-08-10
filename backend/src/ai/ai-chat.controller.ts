@@ -1,4 +1,4 @@
-import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, BadRequestException, Logger } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ClawService } from './claw.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 @Controller('ai/claw-chat')
 @Throttle({ default: { limit: 20, ttl: 60_000 } })
 export class AiChatController {
+  private readonly logger = new Logger(AiChatController.name);
   constructor(private readonly claw: ClawService) {}
 
   @Post('query')
@@ -27,7 +28,7 @@ export class AiChatController {
     try {
       return await this.claw.processTenantQuery(body.command, u.companyId);
     } catch (error) {
-      console.error('CLAW_ENGINE_FAULT:', error);
+      this.logger.error(`CLAW_ENGINE_FAULT: ${error?.message ?? error}`);
       throw new BadRequestException('The Claw engine encountered a reasoning error.');
     }
   }

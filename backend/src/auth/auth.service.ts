@@ -269,27 +269,33 @@ export class AuthService {
   // ── Driver token refresh (silent re-issue using refresh token) ────────
 
   async driverRefresh(refreshToken: string) {
-    const stored = await this.prisma.driverRefreshToken.findUnique({
-      where: { token: refreshToken },
-      include: { driver: true },
+    return this.prisma.$transaction(async (tx) => {
+      const stored = await tx.driverRefreshToken.findUnique({
+        where: { token: refreshToken },
+        include: { driver: true },
+      });
+
+      if (!stored || stored.expiresAt < new Date()) {
+        throw new UnauthorizedException('Driver refresh token invalid or expired');
+      }
+
+      if (!stored.driver.isActive) {
+        throw new UnauthorizedException('Driver account is inactive');
+      }
+
+      // Atomic delete to prevent race condition
+      const deleted = await tx.driverRefreshToken.deleteMany({
+        where: { id: stored.id },
+      });
+      if (deleted.count === 0) {
+        throw new UnauthorizedException('Refresh token already consumed');
+      }
+
+      const sid = (stored.driver as any).activeSessionId as string | null ?? uuid();
+      const tokens = this.issueDriverTokenPair(stored.driver, sid);
+
+      return { access_token: tokens.accessToken, refresh_token: tokens.refreshToken };
     });
-
-    if (!stored || stored.expiresAt < new Date()) {
-      throw new UnauthorizedException('Driver refresh token invalid or expired');
-    }
-
-    if (!stored.driver.isActive) {
-      throw new UnauthorizedException('Driver account is inactive');
-    }
-
-    // Rotate: delete old refresh token, issue a new pair
-    await this.prisma.driverRefreshToken.delete({ where: { id: stored.id } });
-
-    // Preserve the existing session id so the driver isn't forcibly logged out
-    const sid = (stored.driver as any).activeSessionId as string | null ?? uuid();
-    const tokens = this.issueDriverTokenPair(stored.driver, sid);
-
-    return { access_token: tokens.accessToken, refresh_token: tokens.refreshToken };
   }
 
   // ── Register (creates ApprovalRequest, awaiting admin approval) ───────
@@ -339,36 +345,42 @@ export class AuthService {
   // ── Token refresh ─────────────────────────────────────────────────────
 
   async refresh(dto: RefreshDto) {
-    const stored = await this.prisma.refreshToken.findUnique({
-      where: { token: dto.refreshToken },
-      include: { user: { include: { company: true } } },
-    });
-
-    if (!stored || stored.expiresAt < new Date()) {
-      throw new UnauthorizedException('Refresh token invalid or expired');
-    }
-
-    // Rotate: delete old, issue new pair
-    await this.prisma.refreshToken.delete({ where: { id: stored.id } });
-
-    if (!stored.user.isActive || !stored.user.company.isActive) {
-      throw new UnauthorizedException('Account is inactive');
-    }
-
-    // Continue the SAME session: keep the sid the active session holds so the
-    // refreshed access token still matches User.activeSessionId. (Legacy
-    // sessions with no sid adopt a fresh one here.)
-    let sid = (stored.user as any).activeSessionId as string | null;
-    if (!sid) {
-      sid = uuid();
-      await this.prisma.user.update({
-        where: { id: stored.user.id },
-        data: { activeSessionId: sid } as any,
+    // Use transaction to prevent race condition: two concurrent requests
+    // with the same refresh token could both succeed without this.
+    return this.prisma.$transaction(async (tx) => {
+      const stored = await tx.refreshToken.findUnique({
+        where: { token: dto.refreshToken },
+        include: { user: { include: { company: true } } },
       });
-    }
 
-    const tokens = await this.issueTokenPair(stored.user, sid);
-    return { access_token: tokens.accessToken, refresh_token: tokens.refreshToken };
+      if (!stored || stored.expiresAt < new Date()) {
+        throw new UnauthorizedException('Refresh token invalid or expired');
+      }
+
+      // Atomic delete — if this fails (already deleted by concurrent request), throw
+      const deleted = await tx.refreshToken.deleteMany({
+        where: { id: stored.id },
+      });
+      if (deleted.count === 0) {
+        throw new UnauthorizedException('Refresh token already consumed');
+      }
+
+      if (!stored.user.isActive || !stored.user.company.isActive) {
+        throw new UnauthorizedException('Account is inactive');
+      }
+
+      let sid = (stored.user as any).activeSessionId as string | null;
+      if (!sid) {
+        sid = uuid();
+        await tx.user.update({
+          where: { id: stored.user.id },
+          data: { activeSessionId: sid } as any,
+        });
+      }
+
+      const tokens = await this.issueTokenPair(stored.user, sid);
+      return { access_token: tokens.accessToken, refresh_token: tokens.refreshToken };
+    });
   }
 
   // ── Get current user (GET /auth/me) ───────────────────────────────────
