@@ -1,3 +1,4 @@
+import { CreateCollectionDto, UpdateCollectionDto } from './dto/collection.dto';
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CollectionsService } from './collections.service';
@@ -20,7 +21,7 @@ export class CollectionsController {
   }
 
   @Post('collections')
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateCollectionDto) {
     return this.svc.create(u.companyId, body);
   }
 
@@ -30,7 +31,7 @@ export class CollectionsController {
   }
 
   @Patch('collections/:id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: CreateCollectionDto) {
     return this.svc.update(id, u.companyId, body);
   }
 

@@ -1,3 +1,4 @@
+import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto';
 import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { BranchesService } from './branches.service';
@@ -20,12 +21,12 @@ export class BranchesController {
   }
 
   @Post()
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateBranchDto) {
     return this.svc.create(u.companyId, body);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: CreateBranchDto) {
     return this.svc.update(id, u.companyId, body);
   }
 }

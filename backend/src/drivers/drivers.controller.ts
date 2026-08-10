@@ -1,3 +1,4 @@
+import { CreateDriverDto, UpdateDriverDto, UpdateDriverLocationDto } from './dto/create-driver.dto';
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DriversService } from './drivers.service';
@@ -19,7 +20,7 @@ export class DriversController {
   }
 
   @Post()
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateDriverDto) {
     return this.svc.create(u.companyId, body);
   }
 
@@ -48,12 +49,12 @@ export class DriversController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateDriverDto) {
     return this.svc.update(id, u.companyId, body);
   }
 
   @Patch(':id/location')
-  updateLocation(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  updateLocation(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateDriverLocationDto) {
     return this.svc.updateLocation(id, u.companyId, body.lat, body.lng);
   }
 

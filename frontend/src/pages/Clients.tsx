@@ -275,18 +275,30 @@ export default function ClientsPage() {
     setTimeout(() => setToast(""), 3500);
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const res = await api.get("/clients");
+      const res = await api.get("/clients?limit=500");
+      if (signal?.aborted) return;
       setClients(unwrap(res));
-      api.get("/clients/overview").then((r: any) => setOverview(r?.data ?? r)).catch(() => setOverview(null));
+      api.get("/clients/overview").then((r: any) => {
+        if (!signal?.aborted) setOverview(r?.data ?? r);
+      }).catch(() => {
+        if (!signal?.aborted) setOverview(null);
+      });
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  /** Manual refresh (used as onClick handler). */
+  const refresh = useCallback(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
 
   const visible = useMemo(() => {
     let list = clients;
@@ -354,7 +366,7 @@ export default function ClientsPage() {
             <p className="mt-1 text-sm text-white/45">COD, prepaid, contract, and cash clients — all in one place.</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
+            <button onClick={refresh} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
               <RefreshCw className="h-4 w-4" />
             </button>
             <button
