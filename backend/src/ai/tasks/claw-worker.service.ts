@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { AiEventsService } from '../ai-events.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CronMutex } from '../../common/utils/cron-mutex';
 
 /** Process companies in batches with concurrency control. */
 async function batchProcess<T>(
@@ -21,6 +22,7 @@ export class ClawWorkerService {
 
   /** Max companies to process in parallel per batch. */
   private static readonly BATCH_CONCURRENCY = 5;
+  private readonly mutex = new CronMutex('claw-worker');
 
   constructor(
     private readonly aiEventsService: AiEventsService,
@@ -29,13 +31,15 @@ export class ClawWorkerService {
 
   /**
    * Multi-tenant logistics sweep — runs every 30 minutes.
-   * Uses batched concurrent processing instead of sequential loop.
+   * Uses batched concurrent processing with mutex to prevent overlap.
    */
   @Cron('*/30 * * * *')
   async handleScheduledExtraction() {
-    this.logger.log('AI Claw: Initiating multi-tenant logistics sweep...');
+    if (!this.mutex.acquire()) return; // Skip if previous run still executing
 
     try {
+      this.logger.log('AI Claw: Initiating multi-tenant logistics sweep...');
+
       const companies = await this.prisma.company.findMany({
         where: { isActive: true },
         select: { id: true },
@@ -66,6 +70,8 @@ export class ClawWorkerService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(`CRITICAL: Claw worker failed to start: ${msg}`);
+    } finally {
+      this.mutex.release();
     }
   }
 }
