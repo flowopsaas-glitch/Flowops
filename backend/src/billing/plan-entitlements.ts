@@ -3,7 +3,7 @@
 // surfaced to the frontend via GET /billing/entitlements. Keep this in sync with
 // the marketing PricingPage + in-app BillingPlans (they read the same shape).
 
-export type PlanId = 'starter' | 'professional' | 'enterprise';
+export type PlanId = 'starter' | 'professional' | 'professional_10' | 'professional_25' | 'professional_50' | 'enterprise';
 
 export interface PlanLimits {
   waybillsPerMonth: number; // -1 = unlimited
@@ -70,9 +70,30 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlement> = {
   },
   professional: {
     id: 'professional',
-    name: 'Professional',
+    name: 'Professional (3 Drivers)',
+    priceZar: 5999,
+    limits: { waybillsPerMonth: -1, drivers: 3, users: 10, branches: 1 },
+    features: fill(PRO),
+  },
+  professional_10: {
+    id: 'professional_10',
+    name: 'Professional (10 Drivers)',
+    priceZar: 9999,
+    limits: { waybillsPerMonth: -1, drivers: 10, users: 25, branches: 3 },
+    features: fill(PRO),
+  },
+  professional_25: {
+    id: 'professional_25',
+    name: 'Professional (25 Drivers)',
     priceZar: 19999,
     limits: { waybillsPerMonth: -1, drivers: 25, users: 50, branches: -1 },
+    features: fill(PRO),
+  },
+  professional_50: {
+    id: 'professional_50',
+    name: 'Professional (50 Drivers)',
+    priceZar: 29999,
+    limits: { waybillsPerMonth: -1, drivers: 50, users: 100, branches: -1 },
     features: fill(PRO),
   },
   enterprise: {
@@ -86,7 +107,9 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlement> = {
 
 export function normalizePlan(plan?: string | null): PlanId {
   const p = String(plan || 'starter').toLowerCase();
-  return (p === 'professional' || p === 'enterprise') ? p : 'starter';
+  if (p === 'enterprise') return 'enterprise';
+  if (p.startsWith('professional')) return p as PlanId;
+  return 'starter';
 }
 
 
