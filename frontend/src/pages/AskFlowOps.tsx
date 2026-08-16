@@ -17,7 +17,7 @@ export default function AskFlowOps() {
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { getCopilotSuggestions().then(setSuggestions).catch(() => {}); }, []);
+  useEffect(() => { getCopilotSuggestions().then(setSuggestions).catch(() => setSuggestions([])); }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [entries]);
 
   async function ask(question: string) {

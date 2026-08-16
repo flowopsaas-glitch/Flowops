@@ -208,7 +208,7 @@ export default function WaybillInbox() {
               </div>
 
               <div className="flex gap-3">
-                <button onClick={() => { if(window.confirm("Reject document?")) api.delete(`/waybills/inbox/${selectedItem.id}`).then(() => fetchData()) }} className="bg-red-500/10 text-red-500 p-4 rounded-2xl border border-red-500/20"><Trash2 size={18} /></button>
+                <button onClick={() => { if(window.confirm("Reject document?")) api.delete(`/waybills/inbox/${selectedItem.id}`).then(() => fetchData()).catch(() => alert("Failed to reject document. Please try again.")) }} className="bg-red-500/10 text-red-500 p-4 rounded-2xl border border-red-500/20"><Trash2 size={18} /></button>
                 <button onClick={() => void handleApprove()} className="bg-white/5 hover:bg-white/10 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase border border-white/10 transition-all">Commit</button>
                 <button onClick={() => void handleApprove({ print: true })} className="bg-sky-500 hover:bg-sky-400 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-2xl transition-all inline-flex items-center gap-2"><Printer size={16} /> Commit &amp; Print</button>
               </div>
