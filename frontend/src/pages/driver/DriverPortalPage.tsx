@@ -26,7 +26,8 @@ export default function DriverPortalPage() {
       const list: any[] = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
       setJobs(list.slice(0, 10));
     } catch {
-      // offline — show empty list
+      // offline or error — show empty list, don't crash
+      setJobs([]);
     } finally {
       setLoadingJobs(false);
     }
