@@ -11,6 +11,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { ThrottlerProxyGuard } from './common/guards/throttler-proxy.guard';
 import { ApiShieldGuard } from './common/guards/api-shield.guard';
 import { HealthSentinelService } from './common/guards/health-sentinel.service';
+import { ApiHealthMonitorService } from './common/guards/api-health-monitor.service';
 
 // Feature modules
 import { AuthModule } from './auth/auth.module';
@@ -223,6 +224,9 @@ import { DispatchModule } from './dispatch/dispatch.module';
 
     // Health Sentinel — background health monitoring (not a guard, but a service)
     HealthSentinelService,
+
+    // API Health Monitor — tests all critical cycles every 10 minutes
+    ApiHealthMonitorService,
   ],
 })
 export class AppModule {}
