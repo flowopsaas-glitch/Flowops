@@ -450,7 +450,7 @@ async function main() {
       await prisma.whatsAppMessage.create({ data: {
         threadId: thread.id, content: t.messages[i].content,
         direction: t.messages[i].direction, status: 'DELIVERED',
-        createdAt: hoursAgo(t.messages.length - i),
+        sentAt: hoursAgo(t.messages.length - i),
       }});
     }
   }
