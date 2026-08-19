@@ -236,7 +236,7 @@ async function main() {
     }
 
     const wb = await prisma.waybill.create({ data: {
-      companyId: cid,
+      company: { connect: { id: cid } },
       trackingNumber: waybillNum(i + 1),
       status,
       senderName: client.tradingName,
@@ -271,9 +271,9 @@ async function main() {
     const wb = activeWaybills[i];
     const driver = onRouteDrivers[i % onRouteDrivers.length];
     await prisma.shipment.create({ data: {
-      companyId: cid,
-      waybillId: wb.id,
-      driverId: driver.id,
+      company: { connect: { id: cid } },
+      waybill: { connect: { id: wb.id } },
+      driver: { connect: { id: driver.id } },
       status: 'IN_TRANSIT',
       currentLat: driver.lastLat + (Math.random() * 0.02 - 0.01),
       currentLng: driver.lastLng + (Math.random() * 0.02 - 0.01),
@@ -292,7 +292,7 @@ async function main() {
     const loc = BRANCHES[randInt(0, 3)];
     const driver = colStatuses[i] !== 'PENDING' ? rand(onRouteDrivers) : null;
     await prisma.collection.create({ data: {
-      companyId: cid,
+      company: { connect: { id: cid } },
       status: colStatuses[i],
       clientName: client.tradingName,
       clientPhone: phone(),
@@ -334,7 +334,7 @@ async function main() {
     const itemTotal = subtotal / numItems;
 
     await prisma.invoice.create({ data: {
-      companyId: cid,
+      company: { connect: { id: cid } },
       invoiceNumber: `INV-2026-${String(i + 1).padStart(4, '0')}`,
       clientName: client.name,
       clientEmail: client.email,
@@ -370,7 +370,7 @@ async function main() {
   ];
   for (const q of quoteDefs) {
     await prisma.quote.create({ data: {
-      companyId: cid,
+      company: { connect: { id: cid } },
       fromAddress: q.from,
       toAddress: q.to,
       clientName: rand(clients).tradingName,
@@ -399,7 +399,7 @@ async function main() {
     { type: 'COD_RECONCILIATION', title: 'COD Mismatch: R2,340 Unreconciled', body: '3 COD collections from yesterday have not been banked. Total outstanding: R2,340. Drivers: Kagiso Modise (R1,200), Bongani Zulu (R1,140).', severity: 'warning' },
   ];
   for (const e of aiEvents) {
-    await prisma.aiEvent.create({ data: { companyId: cid, ...e, resolved: e.severity === 'info', createdAt: daysAgo(randInt(0, 3)) } });
+    await prisma.aiEvent.create({ data: { company: { connect: { id: cid } }, ...e, resolved: e.severity === 'info', createdAt: daysAgo(randInt(0, 3)) } });
   }
   console.log(`  Created ${aiEvents.length} AI events (${aiEvents.filter(e => e.severity === 'critical').length} critical)`);
 
@@ -413,7 +413,7 @@ async function main() {
     { title: 'New Quote Accepted', body: 'Tiger Brands accepted quote for JHB-DBN (22kg, R2,064).', type: 'success' },
   ];
   for (const n of notifs) {
-    await prisma.notification.create({ data: { companyId: cid, ...n, createdAt: hoursAgo(randInt(0, 12)) } });
+    await prisma.notification.create({ data: { company: { connect: { id: cid } }, ...n, createdAt: hoursAgo(randInt(0, 12)) } });
   }
   console.log(`  Created ${notifs.length} notifications`);
 
@@ -442,7 +442,7 @@ async function main() {
   ];
   for (const t of waThreads) {
     const thread = await prisma.whatsAppThread.create({ data: {
-      companyId: cid, phone: phone(), name: t.name, lastMessageAt: new Date(),
+      company: { connect: { id: cid } }, phone: phone(), name: t.name, lastMessageAt: new Date(),
     }});
     for (let i = 0; i < t.messages.length; i++) {
       await prisma.whatsAppMessage.create({ data: {
