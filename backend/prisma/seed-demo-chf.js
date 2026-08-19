@@ -292,7 +292,7 @@ async function main() {
     const client = rand(clients);
     const loc = BRANCHES[randInt(0, 3)];
     const driver = colStatuses[i] !== 'PENDING' ? rand(onRouteDrivers) : null;
-    await prisma.collection.create({ data: {
+    const colData = {
       company: { connect: { id: cid } },
       status: colStatuses[i],
       clientName: client.tradingName,
@@ -303,10 +303,11 @@ async function main() {
       pickupLng: loc.lng + (Math.random() * 0.05 - 0.025),
       notes: rand(['Fragile - handle with care', '3 pallets ready at dock', 'Gate code: 4532#', 'Ask for warehouse manager', 'Temperature controlled', null]),
       scheduledAt: daysFromNow(randInt(0, 2)),
-      driverId: driver?.id ?? null,
       createdAt: daysAgo(randInt(0, 3)),
       updatedAt: new Date(),
-    }});
+    };
+    if (driver) colData.driver = { connect: { id: driver.id } };
+    await prisma.collection.create({ data: colData });
   }
   console.log(`  Created ${colStatuses.length} collections`);
 
