@@ -223,7 +223,7 @@ async function main() {
     
     let podDeliveredAt = null;
     let codAmount = null;
-    let riskLevel = null;
+    let riskLevel = undefined; // omit from create if not set
     
     if (status === 'DELIVERED') {
       podDeliveredAt = daysAgo(randInt(0, 14));
@@ -235,7 +235,7 @@ async function main() {
       riskLevel = rand(['HIGH', 'CRITICAL']);
     }
 
-    const wb = await prisma.waybill.create({ data: {
+    const wbData = {
       company: { connect: { id: cid } },
       trackingNumber: waybillNum(i + 1),
       status,
@@ -254,10 +254,11 @@ async function main() {
       totalAmount,
       codAmount,
       podDeliveredAt,
-      riskLevel,
       createdAt,
       updatedAt: new Date(),
-    }});
+    };
+    if (riskLevel) wbData.riskLevel = riskLevel;
+    const wb = await prisma.waybill.create({ data: wbData });
     waybills.push(wb);
   }
   console.log(`  Created ${waybills.length} waybills (${waybillDistribution.filter(s => s === 'IN_TRANSIT').length} in transit, ${waybillDistribution.filter(s => s === 'DELIVERED').length} delivered)`);
