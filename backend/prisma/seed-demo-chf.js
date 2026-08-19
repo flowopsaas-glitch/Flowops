@@ -422,24 +422,24 @@ async function main() {
   // ── 12. WHATSAPP THREADS ──────────────────────────────────────────────────
   const waThreads = [
     { name: 'Shoprite Logistics', messages: [
-      { content: 'Hi, we have 3 pallets ready for collection at Sandton DC. Gate 4.', direction: 'inbound' },
-      { content: 'Confirmed. Driver Sipho Dlamini dispatched. ETA 45 minutes. Tracking: CHF-00042', direction: 'outbound' },
-      { content: 'Perfect, thank you. Gate code is 7721#', direction: 'inbound' },
+      { content: 'Hi, we have 3 pallets ready for collection at Sandton DC. Gate 4.', direction: 'INBOUND' },
+      { content: 'Confirmed. Driver Sipho Dlamini dispatched. ETA 45 minutes. Tracking: CHF-00042', direction: 'OUTBOUND' },
+      { content: 'Perfect, thank you. Gate code is 7721#', direction: 'INBOUND' },
     ]},
     { name: 'Tiger Brands Supply', messages: [
-      { content: 'What is the status of our shipment CHF-00034?', direction: 'inbound' },
-      { content: 'CHF-00034 is currently in transit on the N1. Driver: Zanele Ndlovu. ETA: Tomorrow 08:00. Live tracking link sent to your email.', direction: 'outbound' },
-      { content: 'Thanks. Please ensure temperature stays below 8C.', direction: 'inbound' },
-      { content: 'Confirmed. Temperature monitoring active. Current reading: 4.2C. Will alert if threshold exceeded.', direction: 'outbound' },
+      { content: 'What is the status of our shipment CHF-00034?', direction: 'INBOUND' },
+      { content: 'CHF-00034 is currently in transit on the N1. Driver: Zanele Ndlovu. ETA: Tomorrow 08:00. Live tracking link sent to your email.', direction: 'OUTBOUND' },
+      { content: 'Thanks. Please ensure temperature stays below 8C.', direction: 'INBOUND' },
+      { content: 'Confirmed. Temperature monitoring active. Current reading: 4.2C. Will alert if threshold exceeded.', direction: 'OUTBOUND' },
     ]},
     { name: 'Woolworths Freight', messages: [
-      { content: 'Invoice query - INV-2026-0004 shows different rate than agreed. Can you check?', direction: 'inbound' },
-      { content: 'Checking now. The rate applied was our standard JHB-CPT express (R28/kg). Your contract rate is R24/kg. Issuing credit note for the difference.', direction: 'outbound' },
-      { content: 'Appreciated. Please send updated invoice.', direction: 'inbound' },
+      { content: 'Invoice query - INV-2026-0004 shows different rate than agreed. Can you check?', direction: 'INBOUND' },
+      { content: 'Checking now. The rate applied was our standard JHB-CPT express (R28/kg). Your contract rate is R24/kg. Issuing credit note for the difference.', direction: 'OUTBOUND' },
+      { content: 'Appreciated. Please send updated invoice.', direction: 'INBOUND' },
     ]},
     { name: 'Massmart Distribution', messages: [
-      { content: 'We need to schedule 5 collections for next Monday from our Midrand DC.', direction: 'inbound' },
-      { content: 'Noted. I have allocated 2 trucks for Monday morning. Collections scheduled for 06:00-10:00. Confirmation sent to your ops team.', direction: 'outbound' },
+      { content: 'We need to schedule 5 collections for next Monday from our Midrand DC.', direction: 'INBOUND' },
+      { content: 'Noted. I have allocated 2 trucks for Monday morning. Collections scheduled for 06:00-10:00. Confirmation sent to your ops team.', direction: 'OUTBOUND' },
     ]},
   ];
   for (const t of waThreads) {
@@ -449,7 +449,7 @@ async function main() {
     for (let i = 0; i < t.messages.length; i++) {
       await prisma.whatsAppMessage.create({ data: {
         threadId: thread.id, content: t.messages[i].content,
-        direction: t.messages[i].direction, status: 'delivered',
+        direction: t.messages[i].direction, status: 'DELIVERED',
         createdAt: hoursAgo(t.messages.length - i),
       }});
     }
