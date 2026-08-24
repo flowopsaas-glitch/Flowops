@@ -20,8 +20,21 @@ export class AiOpsController {
     const stats = await this.aiService.getDashboardStats(u.companyId);
 
     // Fetch real AI events from the aiEvent table for the Live Alert Stack
+    // FILTER OUT owner/platform events — tenants should only see operational logistics alerts
+    const OWNER_EVENT_TYPES = [
+      'INTEGRATION_HEALTH', 'PLATFORM_HEALTH', 'SYSTEM_ERROR', 
+      'CONFIG_WARNING', 'HEALTH_CHECK', 'INTEGRATION_FAILING',
+    ];
     const aiEvents = await this.prisma.aiEvent.findMany({
-      where: { companyId: u.companyId, resolved: false },
+      where: { 
+        companyId: u.companyId, 
+        resolved: false,
+        type: { notIn: OWNER_EVENT_TYPES },
+        // Only show events with logistics-relevant titles (not integration failures)
+        NOT: {
+          title: { startsWith: 'Integration' },
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: 10,
     });
