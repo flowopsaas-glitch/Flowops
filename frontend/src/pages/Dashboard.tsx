@@ -391,7 +391,7 @@ export default function Dashboard() {
         </div>
         
         <MapContainer center={mapCenterPoint} zoom={5} style={{ height: "100%", width: "100%", borderRadius: "24px" }} zoomControl={false} attributionControl={false}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <MarkerClusterGroup>
             {activeDrivers.map((driver) => {
               const eta = etaMap[driver.id];
