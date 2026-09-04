@@ -143,6 +143,26 @@ async function main() {
   const cid = company.id;
   console.log(`Company: ${company.name} (${cid})`);
 
+  // ── Grant the Rail Enterprise add-on to this demo tenant ────────────────────
+  // Rail & Intermodal is now gated behind the `rail` Enterprise entitlement
+  // (BillingService.hasFeature). The demo tenant is on Professional, so we grant
+  // it the single add-on via featureOverrides — the exact mechanism a real Pro
+  // customer would use to unlock Rail without a full Enterprise upgrade. Merged
+  // grant-only; leaves every other override untouched.
+  {
+    const current = (company.featureOverrides && typeof company.featureOverrides === 'object')
+      ? company.featureOverrides : {};
+    if (current.rail !== true) {
+      await prisma.company.update({
+        where: { id: cid },
+        data: { featureOverrides: { ...current, rail: true } },
+      });
+      console.log('  ↳ Granted "rail" Enterprise add-on to demo tenant (featureOverrides.rail = true).');
+    } else {
+      console.log('  ↳ Demo tenant already entitled to "rail".');
+    }
+  }
+
   // ── Clear existing rail demo data (children first) ──────────────────────────
   console.log('\nClearing existing rail demo data...');
   await prisma.railConsignmentEvent.deleteMany({ where: { consignment: { companyId: cid } } });

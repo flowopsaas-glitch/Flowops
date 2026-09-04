@@ -30,7 +30,7 @@ export const FEATURE_KEYS = [
   'clawAutopilot', 'sso', 'freightForwarding', 'aiSupportAgent', 'courierManagement',
   'logisticsAnalytics', 'commercialAnalytics', 'warehouseManagement',
   'deliveryNotes', 'digitalPayments', 'epod', 'liveTracking',
-  'marketTrends', 'orderFlowIntegration', 'smartRouting',
+  'marketTrends', 'orderFlowIntegration', 'smartRouting', 'rail',
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -54,7 +54,7 @@ const ENTERPRISE: Partial<Record<FeatureKey, boolean>> = {
   whiteLabel: true, nativeApp: true, selfHost: true, dedicatedManager: true,
   clawAutopilot: true, sso: true, freightForwarding: true, aiSupportAgent: true, courierManagement: true,
   logisticsAnalytics: true, commercialAnalytics: true, warehouseManagement: true,
-  marketTrends: true, orderFlowIntegration: true,
+  marketTrends: true, orderFlowIntegration: true, rail: true,
 };
 
 const fill = (on: Partial<Record<FeatureKey, boolean>>): Record<string, boolean> =>
@@ -140,6 +140,7 @@ export const FEATURE_LABELS: Record<string, string> = {
   clawAutopilot: 'CLAW Autopilot (autonomous ops)',
   sso: 'Single Sign-On (OIDC)',
   freightForwarding: 'Freight Forwarding (import/export)',
+  rail: 'Rail & Intermodal (corridor coordination)',
   aiSupportAgent: 'AI Support Agent',
   courierManagement: 'Courier Management (orchestration)',
   logisticsAnalytics: 'Logistics Analytics (premium insights)',

@@ -18,6 +18,7 @@ export const ENTERPRISE_FEATURES = new Set<string>([
   "clawAutopilot",
   "sso",
   "freightForwarding",
+  "rail",
   "aiSupportAgent",
   "courierManagement",
   "logisticsAnalytics",

@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
 import { CreateRailConsignmentDto } from './dto/create-rail-consignment.dto';
 import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';
 import { CreateWagonDto } from './dto/wagon.dto';
@@ -17,7 +18,25 @@ import { CreateIntermodalLegDto } from './dto/intermodal-leg.dto';
  */
 @Injectable()
 export class RailService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly billing: BillingService,
+  ) {}
+
+  // ── Entitlement gate ─────────────────────────────────────────────────────────
+
+  /**
+   * Rail & Intermodal is an Enterprise capability (like Freight Forwarding).
+   * Every read/write entry point asserts it; helper methods route through
+   * create()/get()/list()/overview() so the gate is enforced consignment-wide.
+   */
+  private async assertEntitled(companyId: string): Promise<void> {
+    if (!(await this.billing.hasFeature(companyId, 'rail'))) {
+      throw new ForbiddenException(
+        'Rail & Intermodal is an Enterprise feature. Upgrade your plan to coordinate rail consignments and intermodal handoffs.',
+      );
+    }
+  }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -38,6 +57,7 @@ export class RailService {
   // ── Consignment CRUD ─────────────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateRailConsignmentDto) {
+    await this.assertEntitled(companyId);
     const consignmentNumber = await this.nextConsignmentNumber(companyId);
     const consignment = await this.prisma.railConsignment.create({
       data: {
@@ -78,6 +98,7 @@ export class RailService {
     companyId: string,
     filters: { status?: string; corridor?: string; commodity?: string; q?: string } = {},
   ) {
+    await this.assertEntitled(companyId);
     const where: any = { companyId };
     if (filters.status) where.status = filters.status;
     if (filters.corridor) where.corridor = filters.corridor;
@@ -101,6 +122,7 @@ export class RailService {
   }
 
   async get(companyId: string, id: string) {
+    await this.assertEntitled(companyId);
     const c = await this.prisma.railConsignment.findFirst({
       where: { id, companyId },
       include: {
@@ -247,36 +269,74 @@ export class RailService {
    * Rail command-centre metrics for the tenant. All computed from real records.
    */
   async overview(companyId: string) {
-    const consignments = await this.prisma.railConsignment.findMany({
-      where: { companyId },
-      include: { wagons: true, legs: true },
+    await this.assertEntitled(companyId);
+
+    // ── Perf note (200+ tenants) ───────────────────────────────────────────────
+    // Every query below is company-scoped and backed by @@index([companyId,...]),
+    // so a tenant only ever touches its own rows — 200 tenants add zero fan-out.
+    // We NEVER load all consignments + wagons + legs into JS (the old N+1 risk for
+    // a single heavy tenant). Instead we push counts/sums/groupings into Postgres
+    // via count/aggregate/groupBy, and only pull the small set of rows we genuinely
+    // need to compute (arrived on-time %, transit + dwell averages).
+
+    const where = { companyId } as const;
+    const CLOSED = ['COMPLETED', 'CANCELLED'] as const;
+
+    // Status counts in a single grouped query.
+    const statusGroups = await this.prisma.railConsignment.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    });
+    const countByStatus: Record<string, number> = {};
+    for (const g of statusGroups) countByStatus[g.status] = g._count._all;
+    const totalConsignments = statusGroups.reduce((s, g) => s + g._count._all, 0);
+
+    const inTransitCount = countByStatus['IN_TRANSIT'] ?? 0;
+    const atInterchangeCount = countByStatus['AT_INTERCHANGE'] ?? 0;
+    const activeCount =
+      totalConsignments - (countByStatus['COMPLETED'] ?? 0) - (countByStatus['CANCELLED'] ?? 0);
+
+    // At-risk active consignments — DB count, not a JS scan.
+    const atRisk = await this.prisma.railConsignment.count({
+      where: { companyId, riskLevel: { in: ['HIGH', 'CRITICAL'] }, status: { notIn: [...CLOSED] } },
     });
 
-    const active = consignments.filter(
-      (c) => !['COMPLETED', 'CANCELLED'].includes(c.status),
-    );
-    const inTransit = consignments.filter((c) => c.status === 'IN_TRANSIT');
-    const atInterchange = consignments.filter((c) => c.status === 'AT_INTERCHANGE');
+    // Tonnage planned (all) and moved (offloaded/completed) via aggregate sums.
+    const [tonnagePlannedAgg, tonnageMovedAgg] = await Promise.all([
+      this.prisma.railConsignment.aggregate({ where, _sum: { tonnage: true } }),
+      this.prisma.railConsignment.aggregate({
+        where: { companyId, status: { in: ['OFFLOADED', 'COMPLETED'] } },
+        _sum: { tonnage: true },
+      }),
+    ]);
+    const tonnagePlanned = tonnagePlannedAgg._sum.tonnage ?? 0;
+    const tonnageMoved = tonnageMovedAgg._sum.tonnage ?? 0;
 
-    const wagonsInTransit = inTransit.reduce((s, c) => s + c.wagons.length, 0);
-    const totalWagons = consignments.reduce((s, c) => s + c.wagons.length, 0);
+    // Wagon counts: total for tenant + those on in-transit consignments (DB counts).
+    const [totalWagons, wagonsInTransit] = await Promise.all([
+      this.prisma.wagon.count({ where: { consignment: { companyId } } }),
+      this.prisma.wagon.count({
+        where: { consignment: { companyId, status: 'IN_TRANSIT' } },
+      }),
+    ]);
 
-    // Tonnage moved (completed + offloaded consignments).
-    const tonnageMoved = consignments
-      .filter((c) => ['OFFLOADED', 'COMPLETED'].includes(c.status))
-      .reduce((s, c) => s + (c.tonnage ?? 0), 0);
-
-    const tonnagePlanned = consignments.reduce((s, c) => s + (c.tonnage ?? 0), 0);
-
-    // On-time %: of arrived consignments with a planned arrival, how many hit it.
-    const arrived = consignments.filter((c) => c.actualArrival && c.plannedArrival);
-    const onTime = arrived.filter(
+    // On-time %: only the arrived+planned consignments (bounded) — select just the
+    // two timestamps we need, never the full row graph.
+    const arrivedRows = await this.prisma.railConsignment.findMany({
+      where: { companyId, actualArrival: { not: null }, plannedArrival: { not: null } },
+      select: { actualArrival: true, plannedArrival: true, actualDeparture: true },
+      take: 1000,
+    });
+    const onTime = arrivedRows.filter(
       (c) => c.actualArrival!.getTime() <= c.plannedArrival!.getTime(),
     );
-    const onTimePct = arrived.length ? Math.round((onTime.length / arrived.length) * 100) : null;
+    const onTimePct = arrivedRows.length
+      ? Math.round((onTime.length / arrivedRows.length) * 100)
+      : null;
 
     // Average corridor transit time (hours) for departed+arrived consignments.
-    const withTransit = consignments.filter((c) => c.actualDeparture && c.actualArrival);
+    const withTransit = arrivedRows.filter((c) => c.actualDeparture && c.actualArrival);
     const avgTransitHours = withTransit.length
       ? Math.round(
           withTransit.reduce(
@@ -286,31 +346,34 @@ export class RailService {
         )
       : null;
 
-    // Average interchange dwell (hours) across all legs that recorded dwell.
-    const dwellLegs = consignments.flatMap((c) => c.legs).filter((l) => l.dwellHours != null);
-    const avgInterchangeDwellHours = dwellLegs.length
-      ? Math.round(
-          (dwellLegs.reduce((s, l) => s + (l.dwellHours ?? 0), 0) / dwellLegs.length) * 10,
-        ) / 10
-      : null;
+    // Average interchange dwell (hours): DB average over legs that recorded dwell,
+    // scoped to this tenant's consignments. No JS flatMap over every leg.
+    const dwellAgg = await this.prisma.intermodalLeg.aggregate({
+      where: { dwellHours: { not: null }, consignment: { companyId } },
+      _avg: { dwellHours: true },
+    });
+    const avgInterchangeDwellHours =
+      dwellAgg._avg.dwellHours != null ? Math.round(dwellAgg._avg.dwellHours * 10) / 10 : null;
 
-    // Corridor breakdown.
-    const byCorridor: Record<string, { consignments: number; tonnage: number }> = {};
-    for (const c of consignments) {
-      const key = c.corridor || 'Unassigned';
-      byCorridor[key] = byCorridor[key] || { consignments: 0, tonnage: 0 };
-      byCorridor[key].consignments += 1;
-      byCorridor[key].tonnage += c.tonnage ?? 0;
-    }
-
-    const atRisk = active.filter((c) => c.riskLevel === 'HIGH' || c.riskLevel === 'CRITICAL').length;
+    // Corridor breakdown — grouped sum/count in one DB query.
+    const corridorGroups = await this.prisma.railConsignment.groupBy({
+      by: ['corridor'],
+      where,
+      _count: { _all: true },
+      _sum: { tonnage: true },
+    });
+    const byCorridor = corridorGroups.map((g) => ({
+      corridor: g.corridor || 'Unassigned',
+      consignments: g._count._all,
+      tonnage: Math.round(g._sum.tonnage ?? 0),
+    }));
 
     return {
       generatedAt: new Date().toISOString(),
       metrics: {
-        activeConsignments: active.length,
-        inTransit: inTransit.length,
-        atInterchange: atInterchange.length,
+        activeConsignments: activeCount,
+        inTransit: inTransitCount,
+        atInterchange: atInterchangeCount,
         wagonsInTransit,
         totalWagons,
         tonnageMoved: Math.round(tonnageMoved),
@@ -320,11 +383,7 @@ export class RailService {
         avgInterchangeDwellHours,
         atRisk,
       },
-      byCorridor: Object.entries(byCorridor).map(([corridor, v]) => ({
-        corridor,
-        consignments: v.consignments,
-        tonnage: Math.round(v.tonnage),
-      })),
+      byCorridor,
     };
   }
 }

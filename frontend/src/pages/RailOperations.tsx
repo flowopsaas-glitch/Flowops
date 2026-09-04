@@ -28,6 +28,93 @@ import {
   type RailStatus,
 } from "../api/railApi";
 import { useToast } from "../components/ToastProvider";
+import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+
+// ── SADC rail corridor geography (static reference, NOT live train GPS) ────────
+// Approximate lat/lng of the key sidings, yards, interchanges and ports on the
+// Southern African rail network. This is fixed infrastructure geography we draw
+// so operators can see WHICH corridor a consignment runs on — it is deliberately
+// NOT a live position feed (FlowOps has no operator signalling feed; showing a
+// fake moving train would be dishonest). Coordinates are public knowledge.
+const SIDINGS: Record<string, [number, number]> = {
+  "Lubumbashi": [-11.66, 27.48],
+  "Kasumbalesa": [-12.25, 27.79],
+  "Kolwezi": [-10.72, 25.47],
+  "Ndola": [-12.97, 28.63],
+  "Kitwe": [-12.82, 28.21],
+  "Livingstone": [-17.85, 25.87],
+  "Beitbridge": [-22.21, 29.99],
+  "Bulawayo": [-20.15, 28.58],
+  "Harare": [-17.83, 31.05],
+  "Musina": [-22.35, 30.04],
+  "Polokwane": [-23.90, 29.47],
+  "City Deep (JHB)": [-26.22, 28.07],
+  "eMalahleni": [-25.87, 29.23],
+  "Ermelo": [-26.53, 29.98],
+  "Richards Bay": [-28.78, 32.04],
+  "Durban": [-29.88, 31.03],
+  "Pyramid (Pretoria)": [-25.62, 28.19],
+  "Hotazel": [-27.22, 22.95],
+  "Kimberley": [-28.74, 24.76],
+  "De Aar": [-30.65, 24.01],
+  "Gqeberha (Coega)": [-33.76, 25.68],
+  "Saldanha": [-33.01, 17.94],
+  "Sishen": [-27.79, 22.99],
+  "Komatipoort": [-25.43, 31.95],
+  "Maputo": [-25.97, 32.57],
+  "Ressano Garcia": [-25.44, 31.99],
+  "Steelpoort": [-24.72, 30.20],
+  "Phalaborwa": [-23.94, 31.14],
+};
+
+// Named corridors → ordered list of geography nodes (drawn as a polyline).
+// The `match` strings let us light up the corridor a consignment belongs to.
+const CORRIDORS: {
+  name: string;
+  color: string;
+  nodes: string[];
+  match: string[]; // substrings that map a consignment.corridor onto this line
+}[] = [
+  {
+    name: "Copperbelt (DRC → Durban)",
+    color: "#f59e0b",
+    nodes: ["Lubumbashi", "Kasumbalesa", "Ndola", "Kitwe", "Bulawayo", "Beitbridge", "Musina", "Polokwane", "City Deep (JHB)", "Durban"],
+    match: ["copper", "north-south", "north south", "drc"],
+  },
+  {
+    name: "Coal Line (Mpumalanga → Richards Bay)",
+    color: "#10b981",
+    nodes: ["eMalahleni", "Ermelo", "Richards Bay"],
+    match: ["coal"],
+  },
+  {
+    name: "Manganese / Orex (Northern Cape → Coega)",
+    color: "#a78bfa",
+    nodes: ["Hotazel", "Sishen", "Kimberley", "De Aar", "Gqeberha (Coega)"],
+    match: ["manganese", "orex", "ore"],
+  },
+  {
+    name: "Maputo Corridor (JHB → Maputo)",
+    color: "#38bdf8",
+    nodes: ["City Deep (JHB)", "eMalahleni", "Komatipoort", "Ressano Garcia", "Maputo"],
+    match: ["maputo"],
+  },
+  {
+    name: "Natcor (JHB → Durban)",
+    color: "#f472b6",
+    nodes: ["City Deep (JHB)", "Durban"],
+    match: ["natcor", "durban"],
+  },
+];
+
+const ZA_SADC_CENTER: [number, number] = [-24.5, 28.5];
+
+function corridorMatches(consignmentCorridor: string | null | undefined, c: (typeof CORRIDORS)[number]): boolean {
+  if (!consignmentCorridor) return false;
+  const s = consignmentCorridor.toLowerCase();
+  return c.match.some((m) => s.includes(m));
+}
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 const LIFECYCLE: RailStatus[] = [
@@ -103,6 +190,91 @@ function Kpi({
       </div>
       <div className="mt-3 text-3xl font-black text-white">{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+    </div>
+  );
+}
+
+// ── Corridor map (static geography, not live position) ─────────────────────────
+function RailCorridorMap({ activeCorridor }: { activeCorridor?: string | null }) {
+  // Which corridors have an active/selected consignment on them (to highlight).
+  const highlighted = useMemo(
+    () => new Set(CORRIDORS.filter((c) => corridorMatches(activeCorridor, c)).map((c) => c.name)),
+    [activeCorridor],
+  );
+  const anyHighlight = highlighted.size > 0;
+
+  const linePositions = (nodes: string[]) =>
+    nodes.map((n) => SIDINGS[n]).filter(Boolean) as [number, number][];
+
+  // Unique nodes to render as siding markers.
+  const nodes = useMemo(() => {
+    const set = new Map<string, [number, number]>();
+    for (const c of CORRIDORS) for (const n of c.nodes) if (SIDINGS[n]) set.set(n, SIDINGS[n]);
+    return Array.from(set.entries());
+  }, []);
+
+  return (
+    <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MapPin className="h-4 w-4 text-emerald-400" />
+          <h2 className="text-sm font-bold uppercase tracking-widest text-slate-300">SADC Rail Corridors</h2>
+        </div>
+        <span className="text-[11px] text-slate-500">Corridor geography — not live train position</span>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-white/10">
+        <div className="h-[420px] w-full">
+          <MapContainer
+            center={ZA_SADC_CENTER}
+            zoom={5}
+            style={{ height: "100%", width: "100%" }}
+            scrollWheelZoom
+            attributionControl={false}
+          >
+            <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
+            {CORRIDORS.map((c) => {
+              const on = !anyHighlight || highlighted.has(c.name);
+              return (
+                <Polyline
+                  key={c.name}
+                  positions={linePositions(c.nodes)}
+                  pathOptions={{
+                    color: c.color,
+                    weight: highlighted.has(c.name) ? 5 : 3,
+                    opacity: on ? 0.9 : 0.2,
+                    dashArray: highlighted.has(c.name) ? undefined : "6 8",
+                  }}
+                >
+                  <Tooltip sticky>{c.name}</Tooltip>
+                </Polyline>
+              );
+            })}
+
+            {nodes.map(([name, pos]) => (
+              <CircleMarker
+                key={name}
+                center={pos}
+                radius={4}
+                pathOptions={{ color: "#e2e8f0", fillColor: "#0b0f14", fillOpacity: 1, weight: 2 }}
+              >
+                <Tooltip>{name}</Tooltip>
+              </CircleMarker>
+            ))}
+          </MapContainer>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
+        {CORRIDORS.map((c) => (
+          <span key={c.name} className="inline-flex items-center gap-1.5 text-slate-400">
+            <span className="inline-block h-1 w-5 rounded-full" style={{ background: c.color }} />
+            {c.name}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -235,6 +407,9 @@ export default function RailOperations() {
           )}
         </div>
       )}
+
+      {/* Corridor map (static geography — highlights the open consignment's corridor) */}
+      <RailCorridorMap activeCorridor={selected?.corridor} />
 
       {/* Filters */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
