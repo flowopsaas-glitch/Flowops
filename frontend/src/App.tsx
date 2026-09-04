@@ -85,6 +85,7 @@ const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
 const OwnerAudit = lazy(() => import("./pages/owner/OwnerAudit"));
 const OwnerTenantDetail = lazy(() => import("./pages/owner/OwnerTenantDetail"));
+const OwnerUpgradeRequests = lazy(() => import("./pages/owner/OwnerUpgradeRequests"));
 const OwnerOpsMap = lazy(() => import("./pages/owner/OwnerOpsMap"));
 const WaybillCapture = lazy(() => import("./pages/WaybillCapture"));
 const BatchScan      = lazy(() => import("./pages/BatchScan"));
@@ -239,6 +240,7 @@ export default function App() {
               <Route path="/owner/dashboard" element={<SuperAdminDashboard />} />
               <Route path="/owner/tenants" element={<OwnerTenants />} />
               <Route path="/owner/tenants/:id" element={<OwnerTenantDetail />} />
+              <Route path="/owner/upgrades" element={<OwnerUpgradeRequests />} />
               <Route path="/owner/access" element={<OwnerAccessManager />} />
               <Route path="/owner/ops" element={<OwnerOpsMap />} />
               <Route path="/owner/audit" element={<OwnerAudit />} />

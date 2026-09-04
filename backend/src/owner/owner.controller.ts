@@ -252,6 +252,22 @@ export class OwnerController {
     return this.svc.approveRequest(id, owner);
   }
 
+  // ── Plan upgrade requests (in-app, owner-approved) ────────────────────────
+  @Get('plan-upgrade-requests')
+  getUpgradeRequests(@Query() q: any) {
+    return this.svc.getUpgradeRequests(q);
+  }
+
+  @Post('plan-upgrade-requests/:id/approve')
+  approveUpgradeRequest(@Param('id') id: string, @CurrentUser() owner: any) {
+    return this.svc.approveUpgradeRequest(id, owner);
+  }
+
+  @Post('plan-upgrade-requests/:id/decline')
+  declineUpgradeRequest(@Param('id') id: string, @Body() body: { reason?: string }, @CurrentUser() owner: any) {
+    return this.svc.declineUpgradeRequest(id, body?.reason, owner);
+  }
+
   @Post('approval-requests/:id/reject')
   rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }, @CurrentUser() owner: any) {
     return this.svc.rejectRequest(id, body?.reason, owner);

@@ -1044,4 +1044,127 @@ export class OwnerService {
     });
     return updated;
   }
+
+  // ── Plan upgrade requests (in-app, owner-approved) ─────────────────────
+
+  /** List tenant plan-upgrade requests (optionally filter by ?status=PENDING). */
+  async getUpgradeRequests(query?: any) {
+    return this.prisma.planUpgradeRequest.findMany({
+      where: query?.status ? { status: query.status } : {},
+      include: { company: { select: { name: true, email: true, plan: true } } },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: 200,
+    });
+  }
+
+  /**
+   * Approve a plan-upgrade request → set the tenant's plan to the requested tier,
+   * mark the request APPROVED, resolve the alert AiEvent, audit it, and email
+   * the tenant. Mirrors updateTenantPlan's write + audit.
+   */
+  async approveUpgradeRequest(requestId: string, actor?: OwnerActor) {
+    const req = await this.prisma.planUpgradeRequest.findUniqueOrThrow({
+      where: { id: requestId },
+      include: { company: { select: { id: true, name: true, email: true, plan: true } } },
+    });
+    if (req.status !== 'PENDING') {
+      throw new ConflictException(`This request is already ${req.status.toLowerCase()}.`);
+    }
+
+    // Flip the plan.
+    await this.prisma.company.update({
+      where: { id: req.companyId },
+      data: { plan: req.requestedPlan, trialEndsAt: null }, // clear trial — now on a paid tier
+    });
+
+    const updated = await this.prisma.planUpgradeRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'APPROVED',
+        reviewedById: actor?.id ?? null,
+        reviewedByEmail: actor?.email ?? null,
+        reviewedAt: new Date(),
+      },
+    });
+
+    // Resolve the owner-console alert for this request.
+    await this.prisma.aiEvent.updateMany({
+      where: { sourceType: 'plan_upgrade_request', sourceId: requestId },
+      data: { resolved: true, resolvedAt: new Date() },
+    });
+
+    await this.audit.record({
+      action: 'tenant.plan_change',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: req.companyId,
+      targetName: req.company?.name ?? null,
+      metadata: { from: req.currentPlan, to: req.requestedPlan, via: 'upgrade_request', requestId },
+    });
+
+    // Notify the tenant (best-effort).
+    if (req.company?.email) {
+      await this.email
+        .send({
+          to: req.company.email,
+          subject: `Your FlowOps plan upgrade is approved`,
+          html: `<p>Good news — your upgrade to the <strong>${req.requestedPlan}</strong> plan has been approved and is now active on your FlowOps account.</p>`,
+          text: `Your upgrade to the ${req.requestedPlan} plan has been approved and is now active.`,
+        })
+        .catch(() => undefined);
+    }
+
+    return { request: updated, message: 'Approved — tenant plan updated.' };
+  }
+
+  /** Decline a plan-upgrade request (records reason, resolves the alert). */
+  async declineUpgradeRequest(requestId: string, reason?: string, actor?: OwnerActor) {
+    const req = await this.prisma.planUpgradeRequest.findUniqueOrThrow({
+      where: { id: requestId },
+      include: { company: { select: { name: true, email: true } } },
+    });
+    if (req.status !== 'PENDING') {
+      throw new ConflictException(`This request is already ${req.status.toLowerCase()}.`);
+    }
+
+    const updated = await this.prisma.planUpgradeRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'REJECTED',
+        decisionNote: reason ?? null,
+        reviewedById: actor?.id ?? null,
+        reviewedByEmail: actor?.email ?? null,
+        reviewedAt: new Date(),
+      },
+    });
+
+    await this.prisma.aiEvent.updateMany({
+      where: { sourceType: 'plan_upgrade_request', sourceId: requestId },
+      data: { resolved: true, resolvedAt: new Date() },
+    });
+
+    await this.audit.record({
+      action: 'tenant.plan_upgrade_declined',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: req.companyId,
+      targetName: req.company?.name ?? null,
+      metadata: { requestedPlan: req.requestedPlan, reason: reason ?? null, requestId },
+    });
+
+    if (req.company?.email) {
+      await this.email
+        .send({
+          to: req.company.email,
+          subject: `Update on your FlowOps plan upgrade request`,
+          html: `<p>Your request to upgrade to the <strong>${req.requestedPlan}</strong> plan was not approved at this time.${reason ? ` Reason: ${reason}` : ''} Please contact us if you'd like to discuss.</p>`,
+          text: `Your request to upgrade to the ${req.requestedPlan} plan was not approved at this time.${reason ? ` Reason: ${reason}` : ''}`,
+        })
+        .catch(() => undefined);
+    }
+
+    return { request: updated, message: 'Request declined.' };
+  }
 }

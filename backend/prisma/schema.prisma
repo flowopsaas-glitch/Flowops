@@ -211,6 +211,7 @@ model Company {
   emailHubItems      EmailHubItem[]
   workflows          Workflow[]
   approvalRequest    ApprovalRequest?
+  planUpgradeRequests PlanUpgradeRequest[]
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
   codTransactions    CodTransaction[]
@@ -388,6 +389,38 @@ model ApprovalRequest {
   updatedAt DateTime @updatedAt
 
   @@map("approval_requests")
+}
+
+// In-app plan-upgrade request → owner approval (no payment provider).
+// A tenant admin requests a higher tier from inside the app; the platform
+// owner approves (which flips company.plan) or declines. Tenant-scoped.
+model PlanUpgradeRequest {
+  id        String         @id @default(cuid())
+  status    ApprovalStatus @default(PENDING)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  currentPlan   String  // tenant's plan when the request was raised (audit snapshot)
+  requestedPlan String  // target PlanId (professional / professional_10/25/50 / enterprise)
+
+  // Who raised it (tenant admin)
+  requestedById    String?
+  requestedByEmail String?
+  note             String? @db.Text // optional message from the tenant
+
+  // Owner decision
+  reviewedById    String?
+  reviewedByEmail String?
+  reviewedAt      DateTime?
+  decisionNote    String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@map("plan_upgrade_requests")
 }
 
 model NotificationPreference {

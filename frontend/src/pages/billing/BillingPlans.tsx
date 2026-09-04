@@ -7,7 +7,6 @@ import {
   Building2,
   CheckCircle2,
   CreditCard,
-  ExternalLink,
   FileText,
   Loader2,
   Package,
@@ -61,11 +60,28 @@ const PLANS = PLAN_CATALOG.map((p) => ({
   ...PLAN_STYLE[p.key],
 }));
 
-// ── Plan codes (Paystack) ──────────────────────────────────────────────────
-const PLAN_CODES: Record<string, string> = {
-  professional: 'PLN_l3kobthzahnkpf3',
-  enterprise:   'PLN_9at9kn2ra8jtae0',
+// ── Requestable tiers (owner-approved upgrade, no payment provider) ─────────
+// The backend REQUESTABLE_PLANS + PLAN_ENTITLEMENTS are the source of truth;
+// this list mirrors them for the in-app tier picker.
+type UpgradeRequest = {
+  id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedPlan: string;
+  currentPlan: string;
+  decisionNote?: string | null;
+  createdAt: string;
 };
+
+const REQUESTABLE_TIERS: { key: string; name: string; price: string }[] = [
+  { key: "professional",    name: "Professional — 3 drivers",  price: "R5,999/mo" },
+  { key: "professional_10", name: "Professional — 10 drivers", price: "R9,999/mo" },
+  { key: "professional_25", name: "Professional — 25 drivers", price: "R19,999/mo" },
+  { key: "professional_50", name: "Professional — 50 drivers", price: "R29,999/mo" },
+  { key: "enterprise",      name: "Enterprise",                price: "Custom" },
+];
+
+const PLAN_LABEL: Record<string, string> =
+  Object.fromEntries(REQUESTABLE_TIERS.map((t) => [t.key, t.name]));
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -160,7 +176,20 @@ export default function BillingPlans() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [requests, setRequests] = useState<UpgradeRequest[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<string>("");
+  const [requestNote, setRequestNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const loadRequests = async () => {
+    try {
+      const r: any = await api.get("/billing/upgrade-requests");
+      const list = unwrap(r);
+      setRequests(Array.isArray(list) ? list : []);
+    } catch { /* non-fatal */ }
+  };
 
   useEffect(() => {
     void (async () => {
@@ -185,8 +214,11 @@ export default function BillingPlans() {
       } finally {
         setLoading(false);
       }
+      void loadRequests();
     })();
   }, []);
+
+  const pendingRequest = requests.find((r) => r.status === "PENDING") ?? null;
 
   const currentPlanKey = String(company?.plan ?? "starter").toLowerCase();
   const currentPlan = PLANS.find(p => p.key === currentPlanKey) ?? PLANS[0];
@@ -197,50 +229,41 @@ export default function BillingPlans() {
     : null;
   const onTrial = trialDaysLeft !== null && trialDaysLeft > 0;
 
-  const handleUpgrade = async (plan: typeof PLANS[0]) => {
-    const ownerWa = import.meta.env.VITE_OWNER_WHATSAPP || "27606592875";
-    const waBase  = `https://wa.me/${ownerWa}`;
-
-    if (plan.key === "enterprise") {
-      const msg = encodeURIComponent(
-        `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-        `We'd like to discuss the *FlowOps Enterprise Plan* — dedicated onboarding, unlimited drivers, and custom SLA.\n\nCan we schedule a call? 🙏`
-      );
-      window.open(`${waBase}?text=${msg}`, "_blank");
+  // Open the tier picker. `preselect` lets a card jump straight to its tier.
+  const handleUpgrade = (plan: { key: string }) => {
+    if (plan.key === "starter") return; // no downgrade to free post-trial
+    if (pendingRequest) {
+      setNotice({ kind: "err", text: "You already have an upgrade request awaiting approval." });
       return;
     }
+    // Default the picker to a sensible tier for the card that was clicked.
+    setSelectedTier(plan.key === "enterprise" ? "enterprise" : plan.key === "professional" ? "professional_10" : plan.key);
+    setRequestNote("");
+    setNotice(null);
+    setPickerOpen(true);
+  };
 
-    if (plan.key === "starter") {
-      // Can't downgrade to starter post-trial — no free tier
-      return;
-    }
-
-    // Professional — initialize a Paystack subscription checkout
-    const planCode = PLAN_CODES[plan.key];
-    if (!planCode) return;
-
-    setUpgrading(plan.key);
+  const submitUpgradeRequest = async () => {
+    if (!selectedTier) return;
+    setSubmitting(true);
+    setNotice(null);
     try {
-      const res: any = await api.post("/paystack/checkout", { planCode });
-      const raw = unwrap(res);
-      const url = raw?.authorizationUrl ?? raw?.authorization_url;
-      if (url) {
-        // Redirect to Paystack hosted checkout
-        window.location.href = url;
-      } else if (raw?.configured === false) {
-        // Paystack not configured — WhatsApp fallback
-        const msg = encodeURIComponent(
-          `Hi! 👋 I'm the admin of *${company?.name || "our company"}* (Tenant ID: ${company?.id?.slice(-8) || "N/A"}).\n\n` +
-          `We'd like to upgrade to the *FlowOps ${plan.name} Plan*.\n\nPlease send pricing for our region and a payment link. 🙏`
-        );
-        window.open(`${waBase}?text=${msg}`, "_blank");
-      }
-    } catch {
-      const msg = encodeURIComponent(
-        `Hi! 👋 *${company?.name}* would like to upgrade to *FlowOps ${plan.name}*. Please send pricing for our region. 🙏`
-      );
-      window.open(`${waBase}?text=${msg}`, "_blank");
-    } finally { setUpgrading(null); }
+      await api.post("/billing/upgrade-requests", {
+        requestedPlan: selectedTier,
+        note: requestNote.trim() || undefined,
+      });
+      setPickerOpen(false);
+      setNotice({
+        kind: "ok",
+        text: `Upgrade request sent to FlowOps for approval. You'll be notified once it's reviewed.`,
+      });
+      await loadRequests();
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? e?.message ?? "Could not send the request. Please try again.";
+      setNotice({ kind: "err", text: String(msg) });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -273,6 +296,40 @@ export default function BillingPlans() {
           </div>
         </div>
 
+        {/* ── Upgrade request status ── */}
+        {notice && (
+          <div
+            className={`rounded-[18px] border px-5 py-3 text-sm font-semibold ${
+              notice.kind === "ok"
+                ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+                : "border-rose-400/30 bg-rose-500/10 text-rose-200"
+            }`}
+          >
+            {notice.text}
+          </div>
+        )}
+
+        {pendingRequest && (
+          <div className="rounded-[18px] border border-sky-400/30 bg-sky-500/10 px-5 py-4 flex items-center gap-3">
+            <Loader2 className="h-5 w-5 text-sky-300 animate-spin shrink-0" />
+            <div>
+              <p className="text-sm font-black text-sky-200">
+                Upgrade request pending approval — {PLAN_LABEL[pendingRequest.requestedPlan] ?? pendingRequest.requestedPlan}
+              </p>
+              <p className="text-xs text-sky-300/60 mt-0.5">
+                Requested {shortDate(pendingRequest.createdAt)}. FlowOps will review and activate it shortly.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!pendingRequest && requests[0]?.status === "REJECTED" && (
+          <div className="rounded-[18px] border border-white/12 bg-white/5 px-5 py-3 text-sm text-white/60">
+            Your last upgrade request ({PLAN_LABEL[requests[0].requestedPlan] ?? requests[0].requestedPlan}) was not approved.
+            {requests[0].decisionNote ? ` Reason: ${requests[0].decisionNote}` : ""} You can submit a new request below.
+          </div>
+        )}
+
         {/* ── Trial banner ── */}
         {onTrial && (
           <div className="rounded-[20px] border border-amber-400/30 bg-amber-500/10 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
@@ -288,11 +345,11 @@ export default function BillingPlans() {
               </div>
             </div>
             <button
-              onClick={() => handleUpgrade(PLANS.find(p => p.key === "professional")!)}
-              disabled={!!upgrading}
+              onClick={() => handleUpgrade({ key: "professional" })}
+              disabled={!!pendingRequest}
               className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-xs font-black text-amber-200 hover:bg-amber-500/30 transition disabled:opacity-50"
             >
-              {upgrading === "professional" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upgrade to Pro →"}
+              {pendingRequest ? "Request pending…" : "Upgrade to Pro →"}
             </button>
           </div>
         )}
@@ -313,11 +370,11 @@ export default function BillingPlans() {
               </div>
             </div>
             <button
-              onClick={() => handleUpgrade(PLANS.find(p => p.key === "professional")!)}
-              disabled={!!upgrading}
+              onClick={() => handleUpgrade({ key: "professional" })}
+              disabled={!!pendingRequest}
               className="shrink-0 rounded-xl bg-rose-500 px-5 py-3 text-sm font-black text-white hover:bg-rose-600 transition shadow-lg shadow-rose-500/20 disabled:opacity-50"
             >
-              {upgrading === "professional" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upgrade Now — Restore Access"}
+              {pendingRequest ? "Request pending…" : "Upgrade Now — Restore Access"}
             </button>
           </div>
         )}
@@ -446,24 +503,21 @@ export default function BillingPlans() {
                       </div>
                     ))}
                   </div>
-                  {!isCurrent && (
+                  {!isCurrent && plan.key !== "starter" && (
                     <button
-                      disabled={upgrading === plan.key}
+                      disabled={!!pendingRequest}
                       onClick={() => handleUpgrade(plan)}
+                      title={pendingRequest ? "You already have a request awaiting approval" : undefined}
                       className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition ${
                         plan.highlighted
                           ? "bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:bg-sky-500/30"
                           : "bg-white/8 border border-white/10 text-white/70 hover:bg-white/15 hover:text-white"
-                      } disabled:opacity-50 disabled:cursor-wait`}
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
                     >
-                      {upgrading === plan.key ? (
-                        <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing…</>
-                      ) : plan.key === "enterprise" ? (
-                        <>Contact Sales <ExternalLink className="h-3.5 w-3.5" /></>
-                      ) : plan.key === "starter" && currentPlanKey !== "starter" ? (
-                        <>Downgrade to Free <ArrowRight className="h-3.5 w-3.5" /></>
+                      {plan.key === "enterprise" ? (
+                        <>Request Enterprise <ArrowRight className="h-3.5 w-3.5" /></>
                       ) : (
-                        <>Upgrade to {plan.name} <ArrowRight className="h-3.5 w-3.5" /></>
+                        <>Request Upgrade <ArrowRight className="h-3.5 w-3.5" /></>
                       )}
                     </button>
                   )}
@@ -542,6 +596,81 @@ export default function BillingPlans() {
         </div>
 
       </div>
+
+      {/* ── Tier picker modal (request upgrade → owner approval) ── */}
+      {pickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => !submitting && setPickerOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-[24px] border border-white/12 bg-[#0b1226] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-1">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500/15 ring-1 ring-sky-500/25">
+                <Sparkles className="h-5 w-5 text-sky-300" />
+              </div>
+              <h3 className="text-lg font-black text-white">Request a plan upgrade</h3>
+            </div>
+            <p className="text-xs text-white/50 mb-4">
+              Pick the tier you'd like. FlowOps reviews and activates it — no card required here.
+            </p>
+
+            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">
+              Target tier
+            </label>
+            <div className="space-y-2 mb-4">
+              {REQUESTABLE_TIERS.filter((t) => t.key !== currentPlanKey).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setSelectedTier(t.key)}
+                  className={`w-full flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
+                    selectedTier === t.key
+                      ? "border-sky-400/50 bg-sky-500/15"
+                      : "border-white/10 bg-white/5 hover:bg-white/10"
+                  }`}
+                >
+                  <span className="text-sm font-bold text-white">{t.name}</span>
+                  <span className="text-xs text-white/50">{t.price}</span>
+                </button>
+              ))}
+            </div>
+
+            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">
+              Note (optional)
+            </label>
+            <textarea
+              value={requestNote}
+              onChange={(e) => setRequestNote(e.target.value)}
+              rows={3}
+              placeholder="Anything the FlowOps team should know…"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder-white/25 outline-none focus:border-sky-500/50 resize-none"
+            />
+
+            {notice?.kind === "err" && (
+              <p className="mt-3 text-xs font-semibold text-rose-300">{notice.text}</p>
+            )}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setPickerOpen(false)}
+                disabled={submitting}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-bold text-white/60 hover:bg-white/10 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitUpgradeRequest}
+                disabled={submitting || !selectedTier}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-sky-500/90 py-2.5 text-sm font-black text-white hover:bg-sky-400 disabled:opacity-50 disabled:cursor-wait"
+              >
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</> : <>Send request <ArrowRight className="h-4 w-4" /></>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
