@@ -537,6 +537,7 @@ enum FreightMode {
   OCEAN
   AIR
   ROAD
+  RAIL
 }
 
 enum FreightDirection {
@@ -3633,4 +3634,147 @@ model DigitalPayment {
   @@index([companyId, createdAt])
   @@index([waybillId])
   @@map("digital_payments")
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RAIL / INTERMODAL OPERATIONS
+//
+// FlowOps sits ABOVE the rail network as a coordination + intelligence layer —
+// it is NOT a signalling / slot-allocation / marshalling control system.
+// A RailConsignment is the central record for cargo moving (in whole or part)
+// by rail. Wagons/rakes, intermodal legs (road<->rail<->port handoffs) and a
+// status event timeline hang off it. Additive; mirrors the ShipmentFile design.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum RailConsignmentStatus {
+  PLANNED          // booked / slot requested
+  WAGONS_ALLOCATED // rolling stock assigned
+  LOADING          // at origin siding / terminal
+  DEPARTED         // left origin
+  IN_TRANSIT       // on the corridor
+  AT_INTERCHANGE   // handoff point (border / yard / port)
+  ARRIVED          // reached destination siding / terminal
+  OFFLOADED        // cargo discharged
+  COMPLETED        // consignment closed
+  CANCELLED
+}
+
+enum WagonType {
+  FLAT           // container / breakbulk
+  GONDOLA        // bulk minerals (coal, manganese)
+  TANK           // liquids / fuel
+  BOXCAR         // covered general freight
+  HOPPER         // free-flowing bulk
+  CONTAINER_CAR  // intermodal container flats
+}
+
+enum IntermodalLegMode {
+  ROAD
+  RAIL
+  PORT
+}
+
+enum IntermodalLegStatus {
+  PENDING
+  IN_PROGRESS
+  HANDED_OVER
+  COMPLETED
+  DELAYED
+}
+
+model RailConsignment {
+  id                String                @id @default(cuid())
+  consignmentNumber String // RAIL-2026-00042 (unique per tenant)
+  status            RailConsignmentStatus @default(PLANNED)
+
+  // Commercial / cargo
+  clientName    String?
+  commodity     String  // Copper cathodes | Coal | Manganese | Containers | Fuel...
+  tonnage       Float?  // total planned tonnage
+  wagonsPlanned Int?    // planned number of wagons/rake size
+
+  // Corridor / routing
+  corridor          String? // North-South | Maputo | Copperbelt | Coal Line...
+  originSiding      String? // origin terminal / siding / mine
+  destinationSiding String? // destination terminal / siding / port
+  railOperator      String? // train operating company (TOC)
+  serviceRef        String? // rail service / path / slot reference
+  interchangePoint  String? // primary handoff (border / yard / port)
+
+  // Schedule
+  plannedDeparture DateTime?
+  plannedArrival   DateTime?
+  actualDeparture  DateTime?
+  actualArrival    DateTime?
+
+  // Coordination intelligence (FlowOps' value)
+  slaHours     Int?    // target corridor transit SLA
+  riskLevel    RiskLevel?
+  riskNote     String? @db.Text
+
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wagons Wagon[]
+  legs   IntermodalLeg[]
+  events RailConsignmentEvent[]
+
+  @@unique([consignmentNumber, companyId])
+  @@index([companyId, status])
+  @@map("rail_consignments")
+}
+
+model Wagon {
+  id             String    @id @default(cuid())
+  consignmentId  String
+  consignment    RailConsignment @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  wagonNumber    String    // rolling-stock ID e.g. SAR-064213
+  type           WagonType @default(CONTAINER_CAR)
+  tareTonnes     Float?    // empty weight
+  loadedTonnes   Float?    // cargo weight on this wagon
+  commodity      String?
+  sealNumbers    String?
+  lastKnownSiding String?  // location snapshot (coordination, not signalling)
+  loadedAt       DateTime?
+  offloadedAt    DateTime?
+
+  @@index([consignmentId])
+  @@map("wagons")
+}
+
+// Road <-> Rail <-> Port handoffs — "the gap nobody owns".
+model IntermodalLeg {
+  id            String              @id @default(cuid())
+  consignmentId String
+  consignment   RailConsignment     @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  sequence      Int                 // 1,2,3... order of legs in the journey
+  mode          IntermodalLegMode
+  status        IntermodalLegStatus @default(PENDING)
+  fromLocation  String?
+  toLocation    String?
+  handler       String?             // carrier / operator responsible for this leg
+  plannedStart  DateTime?
+  plannedEnd    DateTime?
+  actualStart   DateTime?
+  actualEnd     DateTime?
+  dwellHours    Float?              // dwell/idle time at the handoff (computed)
+  note          String?             @db.Text
+
+  @@index([consignmentId])
+  @@map("intermodal_legs")
+}
+
+model RailConsignmentEvent {
+  id            String                @id @default(cuid())
+  consignmentId String
+  consignment   RailConsignment       @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  status        RailConsignmentStatus
+  note          String?               @db.Text
+  location      String?
+  reachedAt     DateTime              @default(now())
+
+  @@index([consignmentId])
+  @@map("rail_consignment_events")
 }

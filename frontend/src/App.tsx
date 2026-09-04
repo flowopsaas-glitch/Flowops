@@ -54,6 +54,7 @@ const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const CompetitiveIntelligence = lazy(() => import("./pages/CompetitiveIntelligence"));
 const Observatory = lazy(() => import("./pages/Observatory"));
 const ForwardingConsole = lazy(() => import("./pages/forwarding/ForwardingConsole"));
+const RailOperations = lazy(() => import("./pages/RailOperations"));
 const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
 const SupportAgent = lazy(() => import("./pages/SupportAgent"));
@@ -300,6 +301,7 @@ export default function App() {
               <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
               <Route path="/billing/callback" element={<BillingCallback />} />
               <Route path="/settings/billing" element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
+              <Route path="/rail" element={<RequirePermission adminOnly><RailOperations /></RequirePermission>} />
               <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/:id" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ShipmentFilePage /></RequireFeature></RequirePermission>} />
               <Route path="/autopilot" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="clawAutopilot" name="CLAW Autopilot"><AutopilotConsole /></RequireFeature></RequirePermission>} />
