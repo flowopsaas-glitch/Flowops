@@ -11,7 +11,7 @@
  *
  * Each consignment has wagons, intermodal legs (road↔rail↔port handoffs with
  * dwell hours) and an event timeline. Scoped to the 'FlowOps Demo Couriers'
- * tenant. Reuses the proven Prisma patterns: company:{connect}, UPPERCASE enums,
+ * tenant. Reuses the proven Prisma patterns: scalar FKs (companyId), UPPERCASE enums,
  * omit-if-unset, explicit dates.
  *
  * Usage (inside API container):
@@ -159,7 +159,7 @@ async function main() {
     const consignmentNumber = `RAIL-${year}-${String(seq).padStart(5, '0')}`;
 
     const data = {
-      company: { connect: { id: cid } },
+      companyId: cid,
       consignmentNumber,
       status: c.status,
       commodity: c.commodity,
@@ -191,7 +191,7 @@ async function main() {
     for (let i = 1; i <= wagonSample; i++) {
       await prisma.wagon.create({
         data: {
-          consignment: { connect: { id: consignment.id } },
+          consignmentId: consignment.id,
           wagonNumber: wagonNo(c.wagonPrefix, randInt(10000, 999999)),
           type: c.wagonType,
           tareTonnes: c.wagonType === 'TANK' ? 22 : c.wagonType === 'CONTAINER_CAR' ? 20 : 26,
@@ -211,7 +211,7 @@ async function main() {
     for (const leg of c.legs) {
       legSeq += 1;
       const legData = {
-        consignment: { connect: { id: consignment.id } },
+        consignmentId: consignment.id,
         sequence: legSeq,
         mode: leg.mode,
         status: leg.status,

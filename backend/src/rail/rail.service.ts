@@ -41,7 +41,7 @@ export class RailService {
     const consignmentNumber = await this.nextConsignmentNumber(companyId);
     const consignment = await this.prisma.railConsignment.create({
       data: {
-        company: { connect: { id: companyId } },
+        companyId,
         consignmentNumber,
         commodity: dto.commodity,
         clientName: dto.clientName ?? null,
@@ -179,7 +179,7 @@ export class RailService {
     await this.get(companyId, consignmentId);
     return this.prisma.wagon.create({
       data: {
-        consignment: { connect: { id: consignmentId } },
+        consignmentId,
         wagonNumber: dto.wagonNumber,
         ...(dto.type ? { type: dto.type } : {}),
         tareTonnes: dto.tareTonnes ?? null,
@@ -203,7 +203,7 @@ export class RailService {
     await this.get(companyId, consignmentId);
     return this.prisma.intermodalLeg.create({
       data: {
-        consignment: { connect: { id: consignmentId } },
+        consignmentId,
         sequence: dto.sequence,
         mode: dto.mode,
         ...(dto.status ? { status: dto.status } : {}),
