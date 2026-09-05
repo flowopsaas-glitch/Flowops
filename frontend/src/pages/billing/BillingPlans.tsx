@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowUpCircle,
   BadgeCheck,
   Building2,
   CheckCircle2,
@@ -221,7 +222,12 @@ export default function BillingPlans() {
   const pendingRequest = requests.find((r) => r.status === "PENDING") ?? null;
 
   const currentPlanKey = String(company?.plan ?? "starter").toLowerCase();
-  const currentPlan = PLANS.find(p => p.key === currentPlanKey) ?? PLANS[0];
+  // The catalog only has 3 cards (starter/professional/enterprise); the driver
+  // sub-tiers (professional_10/25/50) all map to the Professional card.
+  const currentCardKey = currentPlanKey.startsWith("professional") ? "professional" : currentPlanKey;
+  const currentPlan = PLANS.find(p => p.key === currentCardKey) ?? PLANS[0];
+  // Human label for the tenant's exact tier (incl. driver count).
+  const currentTierLabel = PLAN_LABEL[currentPlanKey] ?? currentPlan.name;
 
   // Trial countdown
   const trialDaysLeft = company?.trialEndsAt
@@ -236,8 +242,10 @@ export default function BillingPlans() {
       setNotice({ kind: "err", text: "You already have an upgrade request awaiting approval." });
       return;
     }
-    // Default the picker to a sensible tier for the card that was clicked.
-    setSelectedTier(plan.key === "enterprise" ? "enterprise" : plan.key === "professional" ? "professional_10" : plan.key);
+    // Default the picker: honour an explicit tier click, else first non-current tier.
+    const explicit = plan.key === "enterprise" ? "enterprise" : REQUESTABLE_TIERS.some(t => t.key === plan.key) ? plan.key : "";
+    const firstAvailable = REQUESTABLE_TIERS.find((t) => t.key !== currentPlanKey)?.key ?? "";
+    setSelectedTier(explicit && explicit !== currentPlanKey ? explicit : firstAvailable);
     setRequestNote("");
     setNotice(null);
     setPickerOpen(true);
@@ -394,7 +402,7 @@ export default function BillingPlans() {
                     Current Plan
                   </p>
                   <div className="flex items-center gap-3">
-                    <h2 className="text-2xl font-black text-white">{currentPlan.name}</h2>
+                    <h2 className="text-2xl font-black text-white">{currentTierLabel}</h2>
                     <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wider ${currentPlan.badge}`}>
                       {company?.isActive ? "Active" : "Inactive"}
                     </span>
@@ -402,7 +410,15 @@ export default function BillingPlans() {
                   <p className="mt-1 text-sm text-white/50">{currentPlan.price}</p>
                 </div>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  onClick={() => handleUpgrade({ key: "professional" })}
+                  disabled={!!pendingRequest}
+                  className="flex items-center gap-2 rounded-xl border border-sky-400/40 bg-sky-500/20 px-4 py-2.5 text-sm font-black text-sky-200 hover:bg-sky-500/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ArrowUpCircle className="h-4 w-4" />
+                  {pendingRequest ? "Upgrade pending…" : "Upgrade / Change Plan"}
+                </button>
                 <button
                   onClick={() => navigate("/billing-batches")}
                   className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-bold text-white/70 hover:bg-white/15 hover:text-white transition"
@@ -473,7 +489,7 @@ export default function BillingPlans() {
           </h2>
           <div className="grid gap-4 sm:grid-cols-3">
             {PLANS.map(plan => {
-              const isCurrent = plan.key === currentPlanKey;
+              const isCurrent = plan.key === currentCardKey;
               return (
                 <div
                   key={plan.key}
