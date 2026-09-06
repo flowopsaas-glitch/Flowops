@@ -7,7 +7,14 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
-import { PLAN_ENTITLEMENTS, FEATURE_KEYS, FEATURE_LABELS } from '../billing/plan-entitlements';
+import {
+  PLAN_ENTITLEMENTS,
+  FEATURE_KEYS,
+  FEATURE_LABELS,
+  ADDON_PRICES_ZAR,
+  isAddonFeature,
+  normalizePlan,
+} from '../billing/plan-entitlements';
 
 type OwnerActor = { id?: string; email?: string } | null | undefined;
 
@@ -900,6 +907,87 @@ export class OwnerService {
         enterprise: Boolean(PLAN_ENTITLEMENTS.enterprise.features[key]),
       },
     }));
+  }
+
+  // ── Quote Machine (owner) ──────────────────────────────────────────────
+
+  /**
+   * The sellable add-on catalog with list prices — the source for the owner
+   * Quote Machine. Each entry says whether the feature is already bundled into a
+   * given base plan (so the quote can skip charging for it on that plan).
+   */
+  getAddonCatalog() {
+    return (Object.keys(ADDON_PRICES_ZAR) as (keyof typeof ADDON_PRICES_ZAR)[]).map((key) => ({
+      key,
+      label: FEATURE_LABELS[key] ?? key,
+      priceZar: ADDON_PRICES_ZAR[key] ?? 0,
+      includedIn: {
+        starter: Boolean(PLAN_ENTITLEMENTS.starter.features[key]),
+        professional: Boolean(PLAN_ENTITLEMENTS.professional.features[key]),
+        enterprise: Boolean(PLAN_ENTITLEMENTS.enterprise.features[key]),
+      },
+    }));
+  }
+
+  /**
+   * Build a quote: base plan price + selected add-ons (skipping any already
+   * bundled in the chosen plan) + optional custom-price override. Pure
+   * calculation — persists nothing. Returns a fully itemised breakdown the
+   * owner can copy into an email/proposal.
+   */
+  buildQuote(body: {
+    plan?: string;
+    addons?: string[];
+    customPriceZar?: number | null;
+    companyName?: string | null;
+    billingInterval?: 'month' | 'year';
+  }) {
+    const planId = normalizePlan(body?.plan);
+    const plan = PLAN_ENTITLEMENTS[planId];
+    const basePrice = plan.priceZar;
+
+    const requested = Array.isArray(body?.addons) ? body!.addons! : [];
+    const lineItems: { key: string; label: string; priceZar: number; note?: string }[] = [];
+
+    for (const key of requested) {
+      if (!isAddonFeature(key)) continue; // ignore unknown / non-sellable keys
+      const bundled = Boolean(plan.features[key]);
+      lineItems.push({
+        key,
+        label: FEATURE_LABELS[key] ?? key,
+        priceZar: bundled ? 0 : (ADDON_PRICES_ZAR[key] ?? 0),
+        note: bundled ? `Already included in ${plan.name}` : undefined,
+      });
+    }
+
+    const addonsTotal = lineItems.reduce((s, l) => s + l.priceZar, 0);
+    const listTotal = basePrice + addonsTotal;
+
+    // Custom price overrides the list total when the owner sets one (>= 0).
+    const hasCustom = body?.customPriceZar != null && Number(body.customPriceZar) >= 0;
+    const finalMonthly = hasCustom ? Number(body!.customPriceZar) : listTotal;
+
+    const interval = body?.billingInterval === 'year' ? 'year' : 'month';
+    // Annual shown as 12x monthly (no auto-discount — owner decides via custom price).
+    const finalForInterval = interval === 'year' ? finalMonthly * 12 : finalMonthly;
+
+    return {
+      companyName: body?.companyName ?? null,
+      currency: 'ZAR',
+      interval,
+      plan: { id: planId, name: plan.name, priceZar: basePrice },
+      addons: lineItems,
+      totals: {
+        basePriceZar: basePrice,
+        addonsZar: addonsTotal,
+        listTotalZar: listTotal,
+        customPriceZar: hasCustom ? finalMonthly : null,
+        finalMonthlyZar: finalMonthly,
+        finalForIntervalZar: finalForInterval,
+        discountVsListZar: hasCustom ? Math.max(0, listTotal - finalMonthly) : 0,
+      },
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   /**

@@ -68,6 +68,8 @@ export default function OwnerLayout() {
   const onDashboard = location.pathname.startsWith("/owner/dashboard");
   const onTenants = location.pathname.startsWith("/owner/tenants");
   const onUpgrades = location.pathname.startsWith("/owner/upgrades");
+  const onQuote = location.pathname.startsWith("/owner/quote");
+  const onOkrs = location.pathname.startsWith("/owner/okrs");
   const onAccess = location.pathname.startsWith("/owner/access");
   const onOps = location.pathname.startsWith("/owner/ops");
   const onAudit = location.pathname.startsWith("/owner/audit");
@@ -112,6 +114,22 @@ export default function OwnerLayout() {
               className={navButtonClass(onUpgrades)}
             >
               Upgrades
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/owner/quote")}
+              className={navButtonClass(onQuote)}
+            >
+              Quote
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/owner/okrs")}
+              className={navButtonClass(onOkrs)}
+            >
+              OKRs
             </button>
 
             <button

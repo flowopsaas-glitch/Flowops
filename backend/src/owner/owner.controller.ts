@@ -229,6 +229,26 @@ export class OwnerController {
     return this.svc.getFeatureCatalog();
   }
 
+  // ── Quote Machine ─────────────────────────────────────────────────────────
+  @Get('addon-catalog')
+  getAddonCatalog() {
+    return this.svc.getAddonCatalog();
+  }
+
+  @Post('quote')
+  buildQuote(
+    @Body()
+    body: {
+      plan?: string;
+      addons?: string[];
+      customPriceZar?: number | null;
+      companyName?: string | null;
+      billingInterval?: 'month' | 'year';
+    },
+  ) {
+    return this.svc.buildQuote(body);
+  }
+
   @Patch('plans')
   updatePlan(@Body() body: { tenantId: string; plan: string }, @CurrentUser() owner: any) {
     return this.svc.updateTenantPlan(body.tenantId, body.plan, owner);

@@ -541,6 +541,15 @@ export default function BillingPlans() {
               );
             })}
           </div>
+
+          {/* Add-on note */}
+          <div className="mt-4 rounded-[18px] border border-emerald-400/20 bg-emerald-500/[0.06] px-5 py-4">
+            <p className="text-sm font-bold text-emerald-200">🚆 Rail &amp; Intermodal — add-on available on any plan</p>
+            <p className="mt-1 text-xs text-white/50">
+              Coordinate rail consignments, wagons and road↔rail↔port handoffs. Available as an add-on on any base
+              plan — you don't need full Enterprise. Use “Upgrade / Change Plan” above or contact us for rail pricing.
+            </p>
+          </div>
         </div>
 
         {/* ── Recent invoices ── */}

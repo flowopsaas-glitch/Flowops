@@ -152,3 +152,29 @@ export const FEATURE_LABELS: Record<string, string> = {
   orderFlowIntegration: 'Auto Order Flow Integration',
   smartRouting: 'Smart Route Planning & Scheduling',
 };
+
+// ── Add-on list prices (ZAR / month) ────────────────────────────────────────
+// Monthly list price to grant a single feature as a per-tenant add-on (on top
+// of any base plan) via featureOverrides. These are the DEFAULT quote figures —
+// the owner can always override the total with a custom negotiated price. Only
+// the premium, separately-sellable capabilities are priced; core/Pro features
+// that come bundled with a plan are intentionally omitted (they're not add-ons).
+export const ADDON_PRICES_ZAR: Partial<Record<FeatureKey, number>> = {
+  rail: 7500,               // Rail & Intermodal corridor coordination
+  freightForwarding: 6500,  // Import/export, containers, customs
+  warehouseManagement: 5000,
+  courierManagement: 4500,
+  clawAutopilot: 6000,      // Autonomous ops
+  aiSupportAgent: 2500,
+  logisticsAnalytics: 3500,
+  sso: 2000,                // OIDC Single Sign-On
+  whiteLabel: 3000,
+  nativeApp: 4000,
+  marketTrends: 2500,
+  dedicatedManager: 5000,
+};
+
+/** True if a feature is separately sellable as an add-on (has a list price). */
+export function isAddonFeature(key: string): key is FeatureKey {
+  return Object.prototype.hasOwnProperty.call(ADDON_PRICES_ZAR, key);
+}

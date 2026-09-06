@@ -423,6 +423,62 @@ model PlanUpgradeRequest {
   @@map("plan_upgrade_requests")
 }
 
+// ── OKRs (platform-owner strategic cockpit) ─────────────────────────────────
+// Objectives & Key Results for FlowOps itself (not tenant-scoped) — the owner
+// tracks quarterly objectives, each with measurable key results that roll up to
+// an auto-computed progress %. Owner-only; lives behind the owner console.
+enum OkrStatus {
+  ON_TRACK
+  AT_RISK
+  BEHIND
+  ACHIEVED
+  CANCELLED
+}
+
+enum KeyResultUnit {
+  NUMBER
+  PERCENT
+  CURRENCY
+}
+
+model Objective {
+  id          String     @id @default(cuid())
+  title       String
+  description String?    @db.Text
+  quarter     String     // e.g. "2026-Q4"
+  owner       String?    // person accountable
+  status      OkrStatus  @default(ON_TRACK)
+  sortOrder   Int        @default(0)
+
+  keyResults  KeyResult[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([quarter])
+  @@map("objectives")
+}
+
+model KeyResult {
+  id          String        @id @default(cuid())
+  objectiveId String
+  objective   Objective     @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  title       String
+  unit        KeyResultUnit @default(NUMBER)
+  startValue  Float         @default(0)
+  targetValue Float
+  currentValue Float        @default(0)
+  status      OkrStatus     @default(ON_TRACK)
+  sortOrder   Int           @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([objectiveId])
+  @@map("key_results")
+}
+
 model NotificationPreference {
   id     String @id @default(cuid())
   userId String @unique

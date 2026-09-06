@@ -53,6 +53,7 @@ import { CopilotModule } from './copilot/copilot.module';
 import { BillingModule } from './billing/billing.module';
 import { ForwardingModule } from './forwarding/forwarding.module';
 import { RailModule } from './rail/rail.module';
+import { OkrModule } from './okr/okr.module';
 import { CarriersModule } from './carriers/carriers.module';
 import { DisbursementsModule } from './disbursements/disbursements.module';
 import { AccountingIntegrationsModule } from './accounting-integrations/accounting-integrations.module';
@@ -113,6 +114,8 @@ import { DispatchModule } from './dispatch/dispatch.module';
     ForwardingModule,
     // Rail / intermodal coordination (RASA demo)
     RailModule,
+    // OKRs — owner strategic cockpit
+    OkrModule,
     CarriersModule,
     DisbursementsModule,
 
