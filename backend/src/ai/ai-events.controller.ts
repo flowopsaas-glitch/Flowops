@@ -22,6 +22,12 @@ export class AiEventsController {
     return this.aiEventsService.list(user.companyId as any);
   }
 
+  /** Queue counters for the High Risk Queue header cards. */
+  @Get('stats')
+  async stats(@CurrentUser() user: { companyId: string }) {
+    return this.aiEventsService.stats(user.companyId as any);
+  }
+
   // 🚀 FIX: The missing Copilot Endpoint
   @Post('ask')
   @HttpCode(HttpStatus.OK)
@@ -80,14 +86,21 @@ export class AiEventsController {
   @Post(':id/resolve')
   @HttpCode(HttpStatus.OK)
   async resolve(
-    @Param('id') id: number, 
-    @Body('companyId') companyId: number,
-    @Body('note') note: string
+    @Param('id') id: string,
+    @CurrentUser() user: { companyId: string },
+    @Body('note') note?: string,
   ) {
-    if (!companyId) {
-      throw new BadRequestException('companyId is required to resolve an event');
-    }
     const resolutionNote = note || 'Resolved via AI Claw workflow';
-    return this.aiEventsService.resolve(id, companyId, resolutionNote);
+    return this.aiEventsService.resolve(id as any, user.companyId as any, resolutionNote);
+  }
+
+  /** Dismiss (hide) an event from the queue — tenant-scoped, soft. */
+  @Post(':id/dismiss')
+  @HttpCode(HttpStatus.OK)
+  async dismiss(
+    @Param('id') id: string,
+    @CurrentUser() user: { companyId: string },
+  ) {
+    return this.aiEventsService.dismiss(id as any, user.companyId as any);
   }
 }

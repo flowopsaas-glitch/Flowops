@@ -83,7 +83,7 @@ export default function AdminApprovalDashboard() {
     setActionLoading(true);
     setError("");
     try {
-      await api.patch(`/admin/approval-requests/${id}/approve`, {});
+      await api.post(`/admin/approval-requests/${id}/approve`, {});
       setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "APPROVED" } : r));
       setSelected(null);
     } catch (e: any) {
@@ -98,7 +98,7 @@ export default function AdminApprovalDashboard() {
     setActionLoading(true);
     setError("");
     try {
-      await api.patch(`/admin/approval-requests/${id}/reject`, { reason: rejectionReason });
+      await api.post(`/admin/approval-requests/${id}/reject`, { reason: rejectionReason });
       setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "REJECTED" } : r));
       setSelected(null);
       setRejectionReason("");
