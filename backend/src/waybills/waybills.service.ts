@@ -378,10 +378,17 @@ export class WaybillsService {
   async recordDelivery(
     id: string,
     companyId: string,
-    dto: { recipient: string; signatureBase64?: string },
+    dto: { recipient: string; signatureBase64?: string; scannedCodes?: string | string[] },
     file?: Express.Multer.File,
   ) {
     const waybill = await this.findOne(id, companyId);
+
+    // scannedCodes arrives as a JSON string from multipart form-data.
+    let scannedCodes: string[] = [];
+    if (dto.scannedCodes) {
+      if (Array.isArray(dto.scannedCodes)) scannedCodes = dto.scannedCodes;
+      else { try { scannedCodes = JSON.parse(dto.scannedCodes); } catch { scannedCodes = []; } }
+    }
 
     let podSignatureUrl: string | undefined;
     let podImageUrl: string | undefined;
@@ -407,6 +414,7 @@ export class WaybillsService {
         podDeliveredAt: new Date(),
         ...(podSignatureUrl && { podSignatureUrl }),
         ...(podImageUrl && { podImageUrl }),
+        ...(scannedCodes.length && { podScannedCodes: scannedCodes }),
       },
     });
     // Notify the customer their parcel was delivered + request rating.

@@ -1046,6 +1046,8 @@ model Waybill {
   podImageUrl     String?
   podRecipient    String?
   podDeliveredAt  DateTime?
+  // Barcodes scanned at handover — audit trail of exactly what was delivered.
+  podScannedCodes String[]
 
   // Proof of collection (SENDER + DRIVER signatures at pickup — Leg 1)
   // Complete chain of custody: sender confirms handover → driver acknowledges receipt
