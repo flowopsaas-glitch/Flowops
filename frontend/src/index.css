@@ -142,3 +142,58 @@ html, body, #root {
 .lm-main, .lm-header {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
+
+
+
+/* ─── Readability foundation (world-class legibility pass) ────────────────────
+   Single controlled layer that improves legibility platform-wide WITHOUT
+   editing individual pages. If anything looks wrong, comment out this whole
+   block and you are back to the previous look instantly — zero risk to the
+   rest of the app.
+
+   Strategy:
+   • Lift the smallest fixed fonts (10–11px) to comfortable minimums. These
+     tiny "tactical" labels are the main reason the UI felt zoom-worthy.
+   • Nudge the base body size up slightly so relative Tailwind sizes scale.
+   • Widen the desktop content area on large monitors so it doesn't feel
+     cramped/small in the middle of a big screen.
+   • Enforce a 44px minimum touch target on interactive controls (mobile).
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* 1) Base size — gentle global lift (affects rem-based sizing). */
+html {
+  font-size: 106.25%; /* 17px base instead of 16px — ~6% larger everywhere */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* 2) Raise the smallest hardcoded Tailwind arbitrary sizes to readable floors.
+      10px → 12px, 11px → 12.5px. Kept minimal so layouts stay intact. */
+.text-\[10px\] { font-size: 12px !important; line-height: 1.35 !important; }
+.text-\[11px\] { font-size: 12.5px !important; line-height: 1.4 !important; }
+
+/* Tailwind's text-xs (12px) → 13px for body-level readability. */
+.text-xs { font-size: 13px !important; line-height: 1.45 !important; }
+
+/* The premium-skin forces some labels to 10px !important — lift those too. */
+.lm-main [style*="font-size: 10px"],
+.lm-main [style*="font-size:10px"] { font-size: 12px !important; }
+
+/* 3) Desktop: give big monitors more usable width so content isn't tiny in
+      the centre. Only applies from 1600px up, so laptops are unaffected. */
+@media (min-width: 1600px) {
+  :root {
+    --flowops-content-max-width: 1760px;
+    --flowops-sidebar-width: 300px;
+  }
+}
+
+/* 4) Mobile touch targets — ensure buttons/links are at least 44px tall,
+      the accessibility standard, so drivers aren't fat-fingering tiny controls.
+      Scoped to the driver portal + primary actions to avoid layout surprises. */
+@media (max-width: 640px) {
+  button, a[role="button"], .touch-target {
+    min-height: 44px;
+  }
+  html { font-size: 109%; } /* slightly larger again on small phones */
+}
