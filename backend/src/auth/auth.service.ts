@@ -216,16 +216,25 @@ export class AuthService {
   // ── Driver portal login (phone + 4-digit PIN) ────────────────────────
 
   async driverLogin(phone: string, pin: string, ctx?: LoginCtx) {
-    // Normalize phone: remove spaces, ensure +27 prefix
-    const normalised = phone.replace(/\s/g, '');
+    // Match on DIGITS ONLY so formatting never blocks login. Stored numbers may
+    // contain spaces (e.g. "+27 84 213 7942"), a leading "+", or a leading "0"
+    // (local format) while the driver may type any of those variants. We reduce
+    // both sides to their significant digits and compare the tail, so "+27 84
+    // 213 7942", "27842137942", "0842137942" and "842137942" all match.
+    const digitsOnly = (s: string) => (s || '').replace(/\D/g, '');
+    const inputDigits = digitsOnly(phone);
+    // Normalise a ZA number to its 9-digit national significant number
+    // (drop country code 27 or a leading 0) for a robust tail comparison.
+    const significant = (d: string) => d.replace(/^27/, '').replace(/^0/, '');
+    const inputSig = significant(inputDigits);
 
-    const driver = await this.prisma.driver.findFirst({
-      where: {
-        phone: { in: [normalised, normalised.replace(/^\+/, '')] },
-        isActive: true,
-      },
+    const candidates = await this.prisma.driver.findMany({
+      where: { isActive: true },
       include: { company: true },
     });
+    const driver = candidates.find(
+      (d) => inputSig.length >= 7 && significant(digitsOnly(d.phone || '')) === inputSig,
+    );
 
     if (!driver) throw new UnauthorizedException('Invalid phone number or PIN');
     if (!(driver as any).driverPin) throw new UnauthorizedException('PIN not set — contact dispatch to set your PIN');
