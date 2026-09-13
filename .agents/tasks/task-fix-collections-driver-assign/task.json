@@ -1,0 +1,7 @@
+{
+  "task_id": "task-fix-collections-driver-assign",
+  "task_description": "Hardening pass before the first paying customer: fix genuinely broken frontend->backend API calls in the Collections command center (driver assign/release/availability/workflow all hit non-existent routes and one throws with no try/catch). Add proper tenant-scoped backend endpoints on the collections resource (assign-driver, release-driver, workflow) with no Prisma schema changes, rewire Collections.tsx to the real endpoints and remove dead/unreachable code, and verify+document the remaining lower-priority audit hits (dead components, legacy workflow-builder API, stale owner login helper) as intentionally left alone. Leave confirmed false-positives untouched.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
+  "blocked_reason": null
+}

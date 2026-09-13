@@ -1,0 +1,31 @@
+{
+  "project_type": "FlowOps courier/logistics SaaS monorepo — NestJS + Prisma backend, React + Vite + TypeScript frontend",
+  "language": "TypeScript",
+  "build_system": "npm workspaces per package. backend: NestJS (@nestjs/cli). frontend: Vite. No node available in this sandbox — DO NOT run dev servers or builds here. Owner deploys via Docker to a VPS and verifies there.",
+  "test_framework": "None relevant to this task (no unit tests run in-sandbox).",
+  "build_command": "backend: `npm run build` (nest build); frontend: `npm run build` (vite build). NOT runnable in this sandbox (no node). All changes must be static-correct / build-safe.",
+  "test_command": "N/A in sandbox. Verification is static: TypeScript-consistency and NestJS route/DTO/Prisma pattern conformance by reading code.",
+  "verification_instructions": "Static verification only. Confirm: (1) new NestJS routes follow the existing @Controller() + @CurrentUser() u.companyId tenant-scoping pattern; (2) service methods use PrismaService and reuse findOne() ownership checks like the rest of collections.service.ts; (3) no new Prisma fields are introduced (assign/release map onto existing Collection.driverId + status); (4) frontend calls resolve to routes that now exist and dead fallbacks/unreachable code are removed; (5) TypeScript types remain consistent (no new compile errors introduced by edits).",
+  "snapshot_or_generated_files": "Prisma client is generated via `prisma generate` and DB is updated via `prisma db push` on deploy. This task requires NO schema changes, so no db push is needed.",
+  "setup_instructions": "N/A — no install/build in sandbox. Edits only.",
+  "environment_constraints": "No node/npm runtime in sandbox; cannot build or run. Network is repository-access only. All work must be static-correct and consistent with existing patterns. Owner commits/pushes/deploys and verifies on VPS.",
+  "contribution_requirements": "Multi-tenancy is mandatory: every backend endpoint must be company-scoped via @CurrentUser() u.companyId (see collections.controller.ts / drivers.controller.ts). Do not remove working code. Do not build speculative subsystems. Additive-only changes.",
+  "key_patterns": "Backend controllers use class-level @Controller() (some empty, path in each @Get/@Post) and inject a service; services take PrismaService and call this.findOne(id, companyId) as an ownership guard before mutating. Collection model has driverId String? and status CollectionStatus (PENDING/ASSIGNED/IN_PROGRESS/COLLECTED/FAILED/CANCELLED). DriverStatus = AVAILABLE/ON_ROUTE/... Frontend uses two axios clients: services/api (default import in Collections.tsx) and lib/api + api/client. Collections.tsx currently calls several NON-EXISTENT endpoints.",
+  "relevant_files": [
+    "frontend/src/components/Collections.tsx — CONFIRMED-REAL broken driver assign/release/fetch/workflow calls (fix)",
+    "backend/src/collections/collections.controller.ts — add assign-driver / release-driver / workflow routes here",
+    "backend/src/collections/collections.service.ts — add assignDriver/releaseDriver/getWorkflow methods (pattern: findOne ownership guard + prisma update)",
+    "backend/src/collections/dto/collection.dto.ts — DTO patterns (class-validator)",
+    "backend/src/drivers/drivers.controller.ts — GET /drivers (list; supports ?status filter) — reuse for availability",
+    "backend/src/drivers/drivers.service.ts — findAll supports query.status filter",
+    "backend/src/dashboard/dashboard.controller.ts — the ONLY collections-state-sync routes: dashboard, records, bulk-sync, sync/:id, suggest-driver/:id (NO auto-assign, NO release, NO workflow)",
+    "backend/src/dashboard/dashboard.service.ts — suggestDriver() returns { suggestion, candidates } shape",
+    "backend/prisma/schema.prisma — Collection + Driver models + CollectionStatus/DriverStatus enums (NO changes needed)",
+    "frontend/src/components/LeadCapture.tsx — DEAD (EarlyAccessForm not imported anywhere) — leave + note",
+    "frontend/src/components/ReceivingQueue.tsx — DEAD (not imported anywhere) — leave + note",
+    "frontend/src/api/owner.ts — stale unused ownerLogin duplicate — leave + note",
+    "frontend/src/lib/api.ts — legacy unused workflowApi (/workflows, /memory/*) only used by unrouted CreateWorkflow pages — leave + note",
+    "frontend/src/api/addressBookApi.ts — best-effort PATCH /address-book/:id/used (.catch no-op) — leave + note"
+  ],
+  "directory_structure": "backend/src/<domain>/<domain>.controller.ts|service.ts|module.ts (+dto/). collections/ handles /collections*. drivers/ handles /drivers*. dashboard/ owns the /collections-state-sync/* routes and /operations/*. frontend/src/components/ has page components; frontend/src/api/ + frontend/src/lib/ hold API client wrappers; frontend/src/services/api is the axios client used by Collections.tsx."
+}
