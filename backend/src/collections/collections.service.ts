@@ -192,6 +192,68 @@ export class CollectionsService {
     return this.update(id, companyId, { status: 'CANCELLED' });
   }
 
+  /**
+   * assignDriver — attach a driver to a collection and move it to ASSIGNED.
+   * Tenant-scoped: findOne() guards the collection ownership, and the driver
+   * must belong to the same company.
+   */
+  async assignDriver(id: string, companyId: string, driverId: string) {
+    await this.findOne(id, companyId);
+    const driver = await this.prisma.driver.findFirst({ where: { id: driverId, companyId } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    return this.prisma.collection.update({
+      where: { id },
+      data: { driverId, status: 'ASSIGNED' },
+      include: { driver: true },
+    });
+  }
+
+  /**
+   * releaseDriver — detach the driver from a collection. Only reset an ASSIGNED
+   * collection back to PENDING; leave IN_PROGRESS/COLLECTED/etc untouched so we
+   * don't clobber downstream state.
+   */
+  async releaseDriver(id: string, companyId: string) {
+    const collection = await this.findOne(id, companyId);
+    const data: any = { driverId: null };
+    if (collection.status === 'ASSIGNED') data.status = 'PENDING';
+    return this.prisma.collection.update({
+      where: { id },
+      data,
+      include: { driver: true },
+    });
+  }
+
+  /**
+   * getWorkflow — minimal, consistent read model for the Collections command
+   * center drawer. Only references the Collection.driver relation (no dispatch/
+   * pod/invoice relations exist on Collection). The frontend tolerates missing
+   * sub-objects, so a defensive minimal shape is sufficient.
+   */
+  async getWorkflow(id: string, companyId: string) {
+    const collection = await this.findOne(id, companyId);
+    return {
+      collection: {
+        id: collection.id,
+        reference: collection.id,
+        customerName: collection.clientName,
+        destination: collection.pickupAddress,
+        syncHealth: collection.status,
+        aiPriority: null,
+        driverName: collection.driver?.name ?? null,
+        driverId: collection.driverId ?? null,
+      },
+      driver: collection.driver
+        ? { id: collection.driver.id, name: collection.driver.name, vehicleType: collection.driver.vehicleType }
+        : null,
+      dispatch: null,
+      shipment: null,
+      pod: null,
+      invoice: null,
+      nextActions: [],
+    };
+  }
+
   async autoSuggest(id: string, companyId: string) {
     // Return available drivers as suggestions
     const drivers = await this.prisma.driver.findMany({

@@ -60,6 +60,31 @@ export class CollectionsController {
   }
 
   /**
+   * POST /collections/:id/assign-driver — attach a driver to the collection.
+   * Tenant-scoped: the collection and the driver must belong to the caller's company.
+   */
+  @Post('collections/:id/assign-driver')
+  assignDriver(@Param('id') id: string, @CurrentUser() u: any, @Body() body: { driverId: string }) {
+    return this.svc.assignDriver(id, u.companyId, body.driverId);
+  }
+
+  /**
+   * POST /collections/:id/release-driver — detach the driver; ASSIGNED → PENDING.
+   */
+  @Post('collections/:id/release-driver')
+  releaseDriver(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.releaseDriver(id, u.companyId);
+  }
+
+  /**
+   * GET /collections/:id/workflow — read model for the Collections command center drawer.
+   */
+  @Get('collections/:id/workflow')
+  workflow(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.getWorkflow(id, u.companyId);
+  }
+
+  /**
    * GET /companies/:companyId/collections — company-scoped collection list.
    * SECURITY: the :companyId path segment is IGNORED for tenant users — we only
    * ever return the authenticated caller's own company, so no one can read
