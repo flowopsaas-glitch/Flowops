@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { GROQ_MODEL } from '../ai/groq-model';
 
 export interface MarketTrendData {
   overview: {
@@ -98,7 +99,7 @@ Respond in JSON format: { "answer": string, "confidence": number, "keyPoints": s
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-70b-versatile',
+          model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           response_format: { type: 'json_object' },
@@ -152,7 +153,7 @@ Focus on real South African market dynamics: Aramex, The Courier Guy, Fastway, D
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-70b-versatile',
+          model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.2,
           response_format: { type: 'json_object' },
@@ -166,7 +167,7 @@ Focus on real South African market dynamics: Aramex, The Courier Guy, Fastway, D
       return {
         ...content,
         generatedAt: new Date().toISOString(),
-        model: 'groq/llama-3.1-70b',
+        model: GROQ_MODEL,
       };
     } catch (error) {
       this.logger.warn(`AI trends fetch failed: ${error.message}`);

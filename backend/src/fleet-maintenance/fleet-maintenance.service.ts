@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { GROQ_MODEL } from '../ai/groq-model';
 
 // ── Service type intervals (defaults for SA/African fleet operations) ──────
 const SERVICE_INTERVALS: Record<string, { km: number; days: number }> = {
@@ -425,7 +426,7 @@ Respond in JSON format: { healthScore, urgentItems: [{item, priority, estimatedC
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 1000,
@@ -443,7 +444,7 @@ Respond in JSON format: { healthScore, urgentItems: [{item, priority, estimatedC
       if (!content) return this.generateLocalAdvice(driver);
 
       const parsed = JSON.parse(content);
-      return { ...parsed, source: 'ai', model: 'llama-3.3-70b-versatile', driverId, vehicleReg: driver.vehicleReg };
+      return { ...parsed, source: 'ai', model: GROQ_MODEL, driverId, vehicleReg: driver.vehicleReg };
     } catch (e: any) {
       this.logger.warn(`AI advice failed: ${e?.message}`);
       return this.generateLocalAdvice(driver);

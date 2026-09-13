@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { AI_INTERNAL_PREAMBLE } from '../common/ai-security.util';
+import { GROQ_MODEL } from './groq-model';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -277,7 +278,7 @@ export class CompetitiveIntelligenceService {
         const res = await fetch(this.GROQ, {
           method: 'POST',
           headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
+          body: JSON.stringify({ model: GROQ_MODEL, messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
         });
         const data = (await res.json()) as any;
         const text = data?.choices?.[0]?.message?.content || '';
@@ -335,7 +336,7 @@ Return ONLY the JSON array, no other text. NEVER include commentary, explanation
           method: 'POST',
           headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
+            model: GROQ_MODEL,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user',   content: userMsg },
@@ -894,7 +895,7 @@ Return ONLY the JSON array, no other text. NEVER include commentary, explanation
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: user },

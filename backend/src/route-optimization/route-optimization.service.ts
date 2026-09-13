@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRouteOptimizationDto } from './dto/route-optimization.dto';
+import { GROQ_MODEL } from '../ai/groq-model';
 
 @Injectable()
 export class RouteOptimizationService {
@@ -103,7 +104,7 @@ export class RouteOptimizationService {
         const aiResult = await this.callGroqOptimization(waybills, drivers, opt.depot, groqApiKey);
         optimizedRoutes = aiResult.routes;
         aiInsights = aiResult.insights;
-        modelUsed = 'groq/llama-3.1-70b';
+        modelUsed = GROQ_MODEL;
       } else {
         // Fallback: nearest-neighbour heuristic
         optimizedRoutes = this.nearestNeighbourOptimize(waybills, drivers, opt.depot as any);
@@ -185,7 +186,7 @@ Return a JSON response with:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-70b-versatile',
+          model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.1,
           response_format: { type: 'json_object' },

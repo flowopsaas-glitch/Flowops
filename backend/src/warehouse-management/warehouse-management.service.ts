@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { GROQ_MODEL } from '../ai/groq-model';
 
 @Injectable()
 export class WarehouseManagementService {
@@ -680,7 +681,7 @@ Return ONLY valid JSON:
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3, max_tokens: 600,
         }),
