@@ -107,7 +107,7 @@ export default function DriverManifest() {
   // This state persists until the API returns data
   if (!job) {
     return (
-      <div className="min-h-screen bg-[#020817] flex items-center justify-center text-sky-500 font-black italic tracking-widest uppercase animate-pulse">
+      <div className="driver-portal-scope min-h-screen bg-[#020817] flex items-center justify-center text-sky-500 font-black italic tracking-widest uppercase animate-pulse">
         {t('syncing')}
       </div>
     );
@@ -177,7 +177,7 @@ export default function DriverManifest() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020817] text-white p-6 pb-32 text-left font-sans">
+    <div className="driver-portal-scope min-h-screen bg-[#020817] text-white p-6 pb-32 text-left font-sans">
       <button onClick={() => navigate('/driver/portal')} 
         className="mb-8 text-sky-500 font-black text-[10px] uppercase flex items-center gap-2"
       >

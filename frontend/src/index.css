@@ -197,3 +197,38 @@ html {
   }
   html { font-size: 109%; } /* slightly larger again on small phones */
 }
+
+
+
+/* ─── Driver portal — mobile-perfect readability ─────────────────────────────
+   Drivers use these screens one-handed, on the move, often in bright sunlight.
+   Everything under .driver-portal-scope gets a larger base size, higher
+   contrast (no faint greys), and 48px+ touch targets. Scoped so it can't
+   affect the rest of the platform. Add className="driver-portal-scope" to the
+   root <div> of the driver pages.
+   ────────────────────────────────────────────────────────────────────────── */
+.driver-portal-scope {
+  font-size: 17px;               /* comfortable base for phones */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Lift every tiny label to a legible floor on the driver screens. */
+.driver-portal-scope .text-\[10px\] { font-size: 13px !important; line-height: 1.4 !important; }
+.driver-portal-scope .text-\[11px\] { font-size: 13.5px !important; line-height: 1.4 !important; }
+.driver-portal-scope .text-xs      { font-size: 14px !important; line-height: 1.5 !important; }
+.driver-portal-scope .text-sm      { font-size: 15.5px !important; line-height: 1.55 !important; }
+
+/* Kill low-contrast greys that vanish in sunlight — bump faint text brighter. */
+.driver-portal-scope .text-slate-500 { color: #94a3b8 !important; }
+.driver-portal-scope .text-white\/40,
+.driver-portal-scope .text-white\/50 { color: rgba(255,255,255,0.72) !important; }
+
+/* Thumb-friendly touch targets: buttons + tappable rows at least 52px tall. */
+.driver-portal-scope button,
+.driver-portal-scope a[role="button"],
+.driver-portal-scope .tappable {
+  min-height: 52px;
+}
+
+/* Slightly larger primary headings so the screen reads clearly at arm's length. */
+.driver-portal-scope h1 { font-size: 1.6rem !important; }
