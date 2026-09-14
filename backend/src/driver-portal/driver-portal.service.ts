@@ -223,11 +223,11 @@ export class DriverPortalService {
   /**
    * confirmCollection — driver marks a collection as picked up.
    *
-   * Lifecycle:
+   * Lifecycle (chain of custody — no longer auto-dispatches for delivery):
    * 1. Marks Collection status → COLLECTED + pickedUpAt = now
-   * 2. Auto-creates a Waybill from the collection data
-   * 3. Auto-creates a Shipment linking the waybill to the same driver (IN_TRANSIT)
-   * 4. Returns the new waybill (so the driver portal can navigate to it for delivery/POD)
+   * 2. Creates a Waybill at status COLLECTED (NOT IN_TRANSIT)
+   * 3. Creates a Shipment (PENDING) against the collecting driver for custody
+   * 4. Parcel now awaits depot receive (AT_ORIGIN_HUB) before any onward leg
    */
   async confirmCollection(
     collectionId: string,
@@ -250,13 +250,13 @@ export class DriverPortalService {
       const existing = await this.prisma.waybill.findFirst({
         where: { companyId, senderName: collection.clientName, status: { not: 'DELIVERED' } },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, trackingNumber: true },
+        select: { id: true, trackingNumber: true, status: true },
       });
       return {
         success: true,
         alreadyConfirmed: true,
         collection: { id: collectionId, status: 'COLLECTED' },
-        waybill: existing ? { id: existing.id, trackingNumber: existing.trackingNumber, status: 'IN_TRANSIT' } : null,
+        waybill: existing ? { id: existing.id, trackingNumber: existing.trackingNumber, status: existing.status } : null,
         message: 'Collection was already confirmed.',
       };
     }
@@ -271,17 +271,23 @@ export class DriverPortalService {
       },
     });
 
-    // 3. Auto-create a Waybill from the collection data
+    // 3. Auto-create a Waybill from the collection data.
+    //    IMPORTANT (chain of custody): a freshly-collected parcel is NOT yet
+    //    "in transit". It becomes COLLECTED and must be RECEIVED at the depot
+    //    (warehouse clerk check-in → AT_ORIGIN_HUB) before it can be loaded
+    //    onto a linehaul or sent out for local delivery. We no longer jump it
+    //    straight to IN_TRANSIT and auto-assign a final-mile driver, because
+    //    that bypassed the depot + linehaul steps of real freight procedure.
     const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
     const waybill = await this.prisma.waybill.create({
       data: {
         trackingNumber,
         companyId,
-        status: 'IN_TRANSIT',
+        status: 'COLLECTED',
         senderName: collection.clientName,
         senderPhone: collection.clientPhone,
         senderAddress: collection.pickupAddress,
-        recipientName: collection.clientName, // same client — they'll update recipient on dispatch
+        recipientName: collection.clientName, // same client — dispatch sets the real recipient on dispatch
         recipientPhone: collection.clientPhone,
         recipientAddress: collection.pickupAddress, // placeholder until dispatch sets delivery address
         weight: 0,
@@ -290,42 +296,21 @@ export class DriverPortalService {
       },
     });
 
-    // 4. Auto-create Shipment → AI auto-assigns to the best available driver
-    // Logic: if the collecting driver is AVAILABLE/ON_ROUTE, assign to them
-    // (they already have the parcel). Otherwise, find the nearest available driver.
-    let assignedDriverId = driverId; // default: same driver who collected
-
-    try {
-      const collectingDriver = await this.prisma.driver.findUnique({
-        where: { id: driverId },
-        select: { status: true },
-      });
-
-      // If the collecting driver is already on another route or offline,
-      // AI finds the best alternative
-      if (collectingDriver?.status === 'OFFLINE') {
-        const availableDrivers = await this.prisma.driver.findMany({
-          where: { companyId, isActive: true, status: 'AVAILABLE' },
-          select: { id: true, name: true },
-          take: 1,
-        });
-        if (availableDrivers.length > 0) {
-          assignedDriverId = availableDrivers[0].id;
-          this.logger.log(`AI: Collecting driver offline → reassigned to ${availableDrivers[0].name}`);
-        }
-      }
-    } catch { /* fallback: keep the collecting driver */ }
-
+    // 4. Create the Shipment record linking waybill ↔ collecting driver, but as
+    //    PENDING (not auto-dispatched). The parcel is in the collecting driver's
+    //    possession en route to the depot; the depot receive step + dispatch
+    //    decide the onward leg. We keep the collecting driver on the shipment so
+    //    the parcel's current custody is traceable.
     await this.prisma.shipment.create({
       data: {
         waybillId: waybill.id,
         companyId,
-        driverId: assignedDriverId,
-        status: 'IN_TRANSIT',
+        driverId,
+        status: 'PENDING',
       },
     });
 
-    this.logger.log(`Collection ${collectionId} confirmed → Waybill ${trackingNumber} created → AI-assigned to driver ${assignedDriverId}`);
+    this.logger.log(`Collection ${collectionId} confirmed → Waybill ${trackingNumber} created as COLLECTED (awaiting depot receive) by driver ${driverId}`);
 
     // 5. Emit real-time update to dispatch board
     try {
@@ -333,18 +318,17 @@ export class DriverPortalService {
         collectionId,
         waybillId: waybill.id,
         trackingNumber,
-        driverId: assignedDriverId,
-        aiAssigned: assignedDriverId !== driverId,
+        driverId,
+        status: 'COLLECTED',
+        awaitingDepotReceive: true,
       });
     } catch { /* best-effort */ }
 
     return {
       success: true,
       collection: { id: collectionId, status: 'COLLECTED' },
-      waybill: { id: waybill.id, trackingNumber, status: 'IN_TRANSIT' },
-      assignedDriverId,
-      aiAssigned: assignedDriverId !== driverId,
-      message: `Collected! Waybill ${trackingNumber} created and AI-assigned for delivery.`,
+      waybill: { id: waybill.id, trackingNumber, status: 'COLLECTED' },
+      message: `Collected! Waybill ${trackingNumber} created. Take it to the depot to be received before it's loaded or delivered.`,
     };
   }
 

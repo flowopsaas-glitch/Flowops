@@ -265,12 +265,13 @@ export class CollectionsService {
 
   /**
    * confirmCollected — dispatch confirms a collection is picked up.
-   * Auto-creates a Waybill and AI-assigns the best driver for delivery.
    *
-   * Flow:
+   * Flow (chain of custody — no longer auto-dispatches):
    * 1. Collection → COLLECTED
-   * 2. Waybill auto-created from collection data + optional delivery address
-   * 3. Shipment created → AI picks the best available driver
+   * 2. Waybill created at status COLLECTED (captures delivery address if known)
+   * 3. Shipment created as PENDING against the collecting driver for custody
+   *    tracking. The parcel must be RECEIVED at the depot (AT_ORIGIN_HUB) before
+   *    being loaded onto a linehaul or dispatched for local delivery.
    */
   async confirmCollected(
     id: string,
@@ -288,13 +289,19 @@ export class CollectionsService {
       data: { status: 'COLLECTED', pickedUpAt: new Date() },
     });
 
-    // 2. Generate tracking number and create Waybill
+    // 2. Generate tracking number and create Waybill.
+    //    Chain of custody: the parcel is COLLECTED, not yet IN_TRANSIT. It must
+    //    be received at the depot (warehouse clerk → AT_ORIGIN_HUB) before it's
+    //    loaded onto a linehaul or dispatched for local delivery. We capture the
+    //    real delivery address here if the dispatcher provided one, but we do
+    //    NOT auto-dispatch a final-mile driver — the depot receive + dispatch
+    //    decide the onward leg.
     const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
     const waybill = await this.prisma.waybill.create({
       data: {
         trackingNumber,
         companyId,
-        status: 'IN_TRANSIT',
+        status: 'COLLECTED',
         senderName: collection.clientName,
         senderPhone: collection.clientPhone,
         senderEmail: collection.clientEmail ?? undefined,
@@ -308,23 +315,17 @@ export class CollectionsService {
       },
     });
 
-    // 3. AI-assign best driver: prefer collection's assigned driver, then find available
-    let assignedDriverId = collection.driverId;
-    if (!assignedDriverId) {
-      const available = await this.prisma.driver.findMany({
-        where: { companyId, isActive: true, status: 'AVAILABLE' },
-        take: 1,
-      });
-      assignedDriverId = available[0]?.id ?? null;
-    }
-
-    if (assignedDriverId) {
+    // 3. Create the Shipment linking waybill ↔ collecting driver as PENDING
+    //    (custody tracking), NOT auto-dispatched. If no driver collected it yet,
+    //    leave it unassigned for the depot to route.
+    const custodyDriverId = collection.driverId ?? null;
+    if (custodyDriverId) {
       await this.prisma.shipment.create({
         data: {
           waybillId: waybill.id,
           companyId,
-          driverId: assignedDriverId,
-          status: 'IN_TRANSIT',
+          driverId: custodyDriverId,
+          status: 'PENDING',
         },
       });
     }
@@ -332,9 +333,9 @@ export class CollectionsService {
     return {
       success: true,
       collection: { id, status: 'COLLECTED' },
-      waybill: { id: waybill.id, trackingNumber, status: 'IN_TRANSIT' },
-      assignedDriverId,
-      message: `Collected! Waybill ${trackingNumber} created and ${assignedDriverId ? 'AI-assigned for delivery' : 'awaiting driver assignment'}.`,
+      waybill: { id: waybill.id, trackingNumber, status: 'COLLECTED' },
+      awaitingDepotReceive: true,
+      message: `Collected! Waybill ${trackingNumber} created. Receive it at the depot before loading or delivery.`,
     };
   }
 }
