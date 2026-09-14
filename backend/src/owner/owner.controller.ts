@@ -31,6 +31,13 @@ export class OwnerController {
     return this.svc.listTenants(q);
   }
 
+  // NOTE: must be declared BEFORE 'tenants/:id' so the literal 'presence'
+  // segment isn't captured as an :id param.
+  @Get('tenants/presence')
+  tenantPresence() {
+    return this.svc.getTenantPresence();
+  }
+
   @Get('tenants/:id')
   getTenant(@Param('id') id: string) {
     return this.svc.getTenant(id);

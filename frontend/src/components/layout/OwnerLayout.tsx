@@ -70,6 +70,7 @@ export default function OwnerLayout() {
   const onUpgrades = location.pathname.startsWith("/owner/upgrades");
   const onQuote = location.pathname.startsWith("/owner/quote");
   const onOkrs = location.pathname.startsWith("/owner/okrs");
+  const onPresence = location.pathname.startsWith("/owner/presence");
   const onAccess = location.pathname.startsWith("/owner/access");
   const onOps = location.pathname.startsWith("/owner/ops");
   const onAudit = location.pathname.startsWith("/owner/audit");
@@ -106,6 +107,14 @@ export default function OwnerLayout() {
             >
               Tenants
               <ApprovalBadge />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/owner/presence")}
+              className={navButtonClass(onPresence)}
+            >
+              🟢 Presence
             </button>
 
             <button

@@ -304,6 +304,9 @@ model User {
   lastLoginAt        DateTime?
   lastLoginIp        String?
   lastLoginUserAgent String?
+  // Presence heartbeat — stamped (throttled) on authenticated requests so the
+  // owner console can show live online status. Distinct from lastLoginAt.
+  lastActiveAt       DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

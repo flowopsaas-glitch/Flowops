@@ -50,6 +50,109 @@ export class OwnerService {
     return { data: companies, total, page, limit };
   }
 
+  // ── Tenant presence (live online status for the owner console) ──────────
+  // Honest design: "online" is derived from lastActiveAt (a throttled heartbeat
+  // stamped on authenticated requests). Location is APPROXIMATE, from the last
+  // login IP (city-level via a best-effort geo lookup) — NOT precise GPS. We
+  // never claim to track a tenant admin's exact physical location.
+  private geoCache = new Map<string, { at: number; city: string | null; country: string | null }>();
+
+  /** Best-effort city/country from an IP. Never throws; returns nulls on failure. */
+  private async lookupIpCity(ip?: string | null): Promise<{ city: string | null; country: string | null }> {
+    if (!ip) return { city: null, country: null };
+    // Ignore private / localhost IPs — no meaningful geo.
+    if (/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1|fc|fd)/i.test(ip)) {
+      return { city: null, country: null };
+    }
+    const cached = this.geoCache.get(ip);
+    if (cached && Date.now() - cached.at < 24 * 60 * 60 * 1000) {
+      return { city: cached.city, country: cached.country };
+    }
+    try {
+      const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,city,country`);
+      const d: any = await res.json();
+      const out = d?.status === 'success'
+        ? { city: d.city ?? null, country: d.country ?? null }
+        : { city: null, country: null };
+      this.geoCache.set(ip, { at: Date.now(), ...out });
+      return out;
+    } catch {
+      return { city: null, country: null };
+    }
+  }
+
+  /**
+   * Presence snapshot across all tenants: for each company, an online status
+   * (green = a user active in the last 5 min, amber = active today, grey = idle),
+   * count of currently-active users, most-recent activity/login time, and the
+   * approximate city of the last login. Powers the owner "Presence" view.
+   */
+  async getTenantPresence() {
+    const ONLINE_MS = 5 * 60 * 1000;      // green: active in last 5 min
+    const RECENT_MS = 24 * 60 * 60 * 1000; // amber: active in last 24h
+    const now = Date.now();
+
+    const companies = await this.prisma.company.findMany({
+      select: {
+        id: true, name: true, isActive: true, plan: true,
+        users: {
+          select: { id: true, name: true, email: true, role: true, lastActiveAt: true, lastLoginAt: true, lastLoginIp: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const rows = await Promise.all(companies.map(async (c) => {
+      const users = c.users ?? [];
+      const activeNow = users.filter((u) => u.lastActiveAt && now - new Date(u.lastActiveAt).getTime() < ONLINE_MS);
+      // most recent activity across users
+      const mostRecentActive = users
+        .map((u) => (u.lastActiveAt ? new Date(u.lastActiveAt).getTime() : 0))
+        .reduce((a, b) => Math.max(a, b), 0);
+      const mostRecentLogin = users
+        .map((u) => (u.lastLoginAt ? new Date(u.lastLoginAt).getTime() : 0))
+        .reduce((a, b) => Math.max(a, b), 0);
+
+      let status: 'online' | 'recent' | 'idle' = 'idle';
+      if (activeNow.length > 0) status = 'online';
+      else if (mostRecentActive && now - mostRecentActive < RECENT_MS) status = 'recent';
+
+      // Approx location from the IP of the most-recently-logged-in user.
+      const latestLoginUser = users
+        .filter((u) => u.lastLoginAt)
+        .sort((a, b) => new Date(b.lastLoginAt!).getTime() - new Date(a.lastLoginAt!).getTime())[0];
+      const geo = await this.lookupIpCity(latestLoginUser?.lastLoginIp ?? null);
+
+      return {
+        companyId: c.id,
+        name: c.name,
+        plan: c.plan,
+        isActive: c.isActive,
+        status,
+        activeUsers: activeNow.length,
+        totalUsers: users.length,
+        lastActiveAt: mostRecentActive ? new Date(mostRecentActive).toISOString() : null,
+        lastLoginAt: mostRecentLogin ? new Date(mostRecentLogin).toISOString() : null,
+        location: {
+          approxCity: geo.city,
+          country: geo.country,
+          ip: latestLoginUser?.lastLoginIp ?? null,
+        },
+        activeUserNames: activeNow.map((u) => u.name || u.email),
+      };
+    }));
+
+    const summary = {
+      tenants: rows.length,
+      online: rows.filter((r) => r.status === 'online').length,
+      recent: rows.filter((r) => r.status === 'recent').length,
+      idle: rows.filter((r) => r.status === 'idle').length,
+      activeUsersTotal: rows.reduce((s, r) => s + r.activeUsers, 0),
+    };
+
+    return { generatedAt: new Date().toISOString(), summary, tenants: rows };
+  }
+
   async getTenant(id: string) {
     return this.prisma.company.findUniqueOrThrow({
       where: { id },
