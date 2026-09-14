@@ -118,12 +118,15 @@ log "Restore finished. Sanity-checking key tables in ${TEMP_DB}:"
 # Run the count query and CAPTURE the result. If the core tables don't exist
 # (i.e. the dump had no schema/data), psql exits non-zero and we FAIL — we do
 # NOT print a soft note and then claim success like the old version did.
+# NOTE: FlowOps' Prisma schema uses @@map() so the real Postgres tables are
+# snake_case/plural (companies, users, drivers, waybills, collections) — NOT the
+# PascalCase Prisma model names. Query the actual table names.
 COUNTS="$(docker exec "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d "$TEMP_DB" -t -A -F': ' -c "
-  SELECT 'companies', count(*) FROM \"Company\"
-  UNION ALL SELECT 'users', count(*) FROM \"User\"
-  UNION ALL SELECT 'drivers', count(*) FROM \"Driver\"
-  UNION ALL SELECT 'waybills', count(*) FROM \"Waybill\"
-  UNION ALL SELECT 'collections', count(*) FROM \"Collection\";
+  SELECT 'companies', count(*) FROM companies
+  UNION ALL SELECT 'users', count(*) FROM users
+  UNION ALL SELECT 'drivers', count(*) FROM drivers
+  UNION ALL SELECT 'waybills', count(*) FROM waybills
+  UNION ALL SELECT 'collections', count(*) FROM collections;
 " 2>/tmp/restore_verify_counts_err)" || {
   log "  Key-table query FAILED. stderr:"; tail -3 /tmp/restore_verify_counts_err 2>/dev/null || true
   die "core FlowOps tables are missing from this dump — the backup is NOT usable. Verify FAILED."
