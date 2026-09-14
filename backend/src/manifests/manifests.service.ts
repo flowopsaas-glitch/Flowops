@@ -92,11 +92,14 @@ export class ManifestsService {
 
   async receiveManifest(manifestId: string, companyId: string) {
     const manifest = await this.findOne(manifestId, companyId);
-    // Mark all waybills as COLLECTED
+    // A linehaul arriving at the destination depot means its parcels are now
+    // AT_DESTINATION_HUB (ready for last-mile dispatch) — NOT COLLECTED. The old
+    // code set COLLECTED, which moved the parcel backwards in the lifecycle and
+    // disagreed with the driver-portal linehaul-delivery path. Both now agree.
     const waybillIds = manifest.waybills.map((mw: any) => mw.waybillId);
     await this.prisma.waybill.updateMany({
-      where: { id: { in: waybillIds } },
-      data: { status: 'COLLECTED' },
+      where: { id: { in: waybillIds }, companyId },
+      data: { status: 'AT_DESTINATION_HUB' },
     });
     return this.update(manifestId, companyId, { dispatched: true, dispatchedAt: new Date() });
   }

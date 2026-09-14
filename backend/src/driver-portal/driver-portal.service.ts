@@ -192,7 +192,7 @@ export class DriverPortalService {
 
     this.logger.log(
       `Linehaul ${manifest.code} delivered by driver ${driverId} to branch ${manifest.branch?.name ?? manifestId}. ` +
-      `${waybillIds.length} waybills marked COLLECTED.`,
+      `${waybillIds.length} waybills marked AT_DESTINATION_HUB (ready for last-mile).`,
     );
 
     return {
