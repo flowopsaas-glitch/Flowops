@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { guardTransition } from '../waybills/waybill-status.machine';
+import { WaybillStatus } from '@prisma/client';
 
 /**
  * Logistics Operations Service — World-Class Features
@@ -228,6 +230,12 @@ export class LogisticsOpsService {
     const wb = await this.prisma.waybill.findFirst({ where: { id: waybillId, companyId } });
     if (!wb) throw new NotFoundException('Waybill not found');
 
+    // Chain of custody: a hub receive is a real lifecycle transition. Guard it
+    // against the state machine (log-only until strict mode is enabled).
+    guardTransition(wb.status, status as WaybillStatus, {
+      waybillId, trackingNumber: wb.trackingNumber, actor: user?.name ?? 'warehouse',
+    }, (msg) => { throw new BadRequestException(msg); });
+
     await this.prisma.waybill.update({ where: { id: waybillId }, data: { status: status as any } });
 
     const desc = status === 'AT_ORIGIN_HUB'
@@ -250,6 +258,62 @@ export class LogisticsOpsService {
     }
 
     return { success: true, status, waybillId };
+  }
+
+  /**
+   * pendingHubReceive — the warehouse clerk's inbound worklist: parcels that
+   * have been COLLECTED (a driver picked them up) but not yet received/checked
+   * into the depot. These are the parcels waiting on AT_ORIGIN_HUB scan-in.
+   */
+  async pendingHubReceive(companyId: string) {
+    const rows = await this.prisma.waybill.findMany({
+      where: { companyId, status: 'COLLECTED' },
+      orderBy: { updatedAt: 'asc' },
+      take: 200,
+      select: {
+        id: true, trackingNumber: true, senderName: true, senderAddress: true,
+        recipientName: true, recipientAddress: true, description: true, updatedAt: true,
+      },
+    });
+    return { count: rows.length, waybills: rows };
+  }
+
+  /**
+   * receiveAtHub — warehouse clerk checks a batch of parcels into the origin
+   * depot. Accepts tracking numbers OR waybill ids. Each parcel is guarded and
+   * transitioned COLLECTED → AT_ORIGIN_HUB with a WAREHOUSE audit event.
+   * Returns a per-parcel result so the clerk sees exactly what was received,
+   * what was already in, and what wasn't found.
+   */
+  async receiveAtHub(companyId: string, refs: string[], location?: string, user?: any) {
+    const received: string[] = [];
+    const already: string[] = [];
+    const notFound: string[] = [];
+    const rejected: { ref: string; reason: string }[] = [];
+
+    for (const rawRef of refs ?? []) {
+      const ref = String(rawRef ?? '').trim();
+      if (!ref) continue;
+      const wb = await this.prisma.waybill.findFirst({
+        where: { companyId, OR: [{ id: ref }, { trackingNumber: ref }] },
+        select: { id: true, trackingNumber: true, status: true },
+      });
+      if (!wb) { notFound.push(ref); continue; }
+      if (wb.status === 'AT_ORIGIN_HUB') { already.push(wb.trackingNumber); continue; }
+      try {
+        await this.transitionToHub(wb.id, companyId, 'AT_ORIGIN_HUB', location, user);
+        received.push(wb.trackingNumber);
+      } catch (err: any) {
+        rejected.push({ ref: wb.trackingNumber, reason: err?.message ?? 'transition rejected' });
+      }
+    }
+
+    return {
+      success: true,
+      receivedCount: received.length,
+      received, already, notFound, rejected,
+      message: `Received ${received.length} parcel(s) into ${location ?? 'the depot'}.`,
+    };
   }
 
   /**

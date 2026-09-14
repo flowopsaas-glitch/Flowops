@@ -92,6 +92,19 @@ export class LogisticsOpsController {
     return this.svc.transitionToHub(id, u.companyId, 'AT_ORIGIN_HUB', body?.location, u);
   }
 
+  /** GET /hub/pending-receive — clerk worklist: COLLECTED parcels awaiting depot check-in. */
+  @Get('hub/pending-receive')
+  pendingHubReceive(@CurrentUser() u: any) {
+    return this.svc.pendingHubReceive(u.companyId);
+  }
+
+  /** POST /hub/receive — clerk batch check-in (by tracking number or id → AT_ORIGIN_HUB). */
+  @Post('hub/receive')
+  receiveAtHub(@CurrentUser() u: any, @Body() body: { refs?: string[]; trackingNumbers?: string[]; location?: string }) {
+    const refs = body?.refs ?? body?.trackingNumbers ?? [];
+    return this.svc.receiveAtHub(u.companyId, refs, body?.location, u);
+  }
+
   /** POST /waybills/:id/hub-arrived — mark waybill as arrived at destination hub (AT_DESTINATION_HUB) */
   @Post('waybills/:id/hub-arrived')
   hubArrived(@Param('id') id: string, @CurrentUser() u: any, @Body() body?: { location?: string }) {
