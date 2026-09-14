@@ -31,7 +31,7 @@ export class CollectionsController {
   }
 
   @Patch('collections/:id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: CreateCollectionDto) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateCollectionDto) {
     return this.svc.update(id, u.companyId, body);
   }
 

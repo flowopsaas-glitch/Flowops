@@ -225,7 +225,10 @@ export default function DriverDispatch() {
           // which upserts a Shipment and advances the waybill status.
           await api.post(`/waybills/${job.raw.id}/assign`, { driverId: String(driverId) });
         } else {
-          await api.patch(`/collections/${job.raw.id}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
+          // Use the purpose-built assign-driver endpoint (validates the driver
+          // belongs to this tenant + sets status to ASSIGNED). The generic PATCH
+          // was rejecting a partial body against the create DTO.
+          await api.post(`/collections/${job.raw.id}/assign-driver`, { driverId: String(driverId) });
         }
         ok++;
       } catch { fail++; }
@@ -248,11 +251,17 @@ export default function DriverDispatch() {
         // which upserts a Shipment and advances the waybill status to COLLECTED.
         await api.post(`/waybills/${originalId}/assign`, { driverId: String(driverId) });
       } else {
-        await api.patch(`/collections/${originalId}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
+        // Purpose-built endpoint: validates tenant ownership + sets ASSIGNED.
+        await api.post(`/collections/${originalId}/assign-driver`, { driverId: String(driverId) });
       }
       showToast(`Assigned ${selectedJob.reference}`, "success");
       setRefreshTick(v => v + 1);
-    } catch { showToast("Failed to assign", "error"); }
+    } catch (err: any) {
+      // Surface the real backend message so failures are diagnosable, not a
+      // generic "Failed to assign" that hides the cause.
+      const msg = err?.response?.data?.message || err?.message || "Failed to assign";
+      showToast(Array.isArray(msg) ? msg.join(", ") : String(msg), "error");
+    }
     finally { setAssigning(false); }
   };
 
