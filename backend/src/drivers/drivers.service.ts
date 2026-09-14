@@ -60,13 +60,13 @@ export class DriversService {
   async create(companyId: string, dto: any) {
     await this.billing.assertCanCreate(companyId, 'driver');
     const data = await this.normaliseDriverData(dto);
-    return this.prisma.driver.create({ data: { ...data, companyId } });
+    return this.prisma.driver.create({ data: { ...data, companyId } as any });
   }
 
   async update(id: string, companyId: string, dto: any) {
     await this.findOne(id, companyId);
     const data = await this.normaliseDriverData(dto);
-    return this.prisma.driver.update({ where: { id }, data });
+    return this.prisma.driver.update({ where: { id }, data: data as any });
   }
 
   async updateLocation(id: string, companyId: string, lat: number, lng: number) {
