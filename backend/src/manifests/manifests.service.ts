@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -31,7 +31,44 @@ export class ManifestsService {
     return m;
   }
 
+  /**
+   * Chain-of-custody gate for loading a linehaul: a parcel may only be loaded
+   * onto a manifest once it has been RECEIVED at the origin depot
+   * (status AT_ORIGIN_HUB). This stops un-checked parcels being loaded onto a
+   * truck. Can be disabled per-deployment via MANIFEST_REQUIRE_HUB_RECEIVE=false
+   * (e.g. a pure direct-courier tenant that doesn't run depots).
+   */
+  private async assertLoadable(companyId: string, waybillIds: string[]) {
+    const requireHub = (process.env.MANIFEST_REQUIRE_HUB_RECEIVE ?? 'true') !== 'false';
+    if (!requireHub || waybillIds.length === 0) return;
+
+    const wbs = await this.prisma.waybill.findMany({
+      where: { id: { in: waybillIds }, companyId },
+      select: { id: true, trackingNumber: true, status: true },
+    });
+
+    // Any missing id, or any waybill not yet received at the origin hub, blocks the load.
+    const foundIds = new Set(wbs.map((w) => w.id));
+    const missing = waybillIds.filter((id) => !foundIds.has(id));
+    const notReceived = wbs.filter((w) => w.status !== 'AT_ORIGIN_HUB');
+
+    if (missing.length || notReceived.length) {
+      const parts: string[] = [];
+      if (notReceived.length) {
+        parts.push(
+          `not yet received at the depot: ${notReceived.map((w) => `${w.trackingNumber} (${w.status})`).join(', ')}`,
+        );
+      }
+      if (missing.length) parts.push(`unknown waybill(s): ${missing.join(', ')}`);
+      throw new BadRequestException(
+        `Cannot load linehaul — ${parts.join('; ')}. Receive parcels at the depot (Warehouse Hub → Receive at Depot) before loading.`,
+      );
+    }
+  }
+
   async create(companyId: string, dto: { waybillIds: string[]; branchId?: string; driverId?: string; destination?: string }) {
+    await this.assertLoadable(companyId, dto.waybillIds ?? []);
+
     const count = await this.prisma.manifest.count({ where: { companyId } });
     const code = `MAN-${String(count + 1).padStart(5, '0')}`;
 
