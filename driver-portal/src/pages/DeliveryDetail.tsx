@@ -3,6 +3,19 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { ArrowLeft, MapPin, Phone, Package, PenLine, Eraser, CheckCircle2, User } from 'lucide-react';
 import api from '../services/api';
+import { queueMutation } from '../services/offlineDB';
+
+/**
+ * True when a failed request was a connectivity problem (not a server rejection).
+ * The api interceptor turns errors into plain Error objects, so we also treat a
+ * missing HTTP status as "network" — that's the offline / timeout case where we
+ * want to queue the action rather than lose it.
+ */
+function isNetworkError(err: any): boolean {
+  if (!navigator.onLine) return true;
+  const status = err?.response?.status ?? err?.status;
+  return status == null; // no HTTP response came back
+}
 
 type Job = Record<string, any> & { id: string };
 
@@ -18,6 +31,7 @@ export default function DeliveryDetail() {
   const [parcelCount, setParcelCount] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const [queued, setQueued] = useState(false);
   const [error, setError] = useState('');
 
   const isDelivery = !!job.waybillId && job.type !== 'collection';
@@ -29,20 +43,30 @@ export default function DeliveryDetail() {
     setError('');
     if (!recipientName.trim()) { setError('Enter who received the parcel.'); return; }
     setSaving(true);
+    const signatureUrl = sigRef.current && !sigRef.current.isEmpty()
+      ? sigRef.current.toDataURL('image/png')
+      : undefined;
+    const payload = {
+      waybillId: job.waybillId,
+      recipientName: recipientName.trim(),
+      notes: notes.trim() || undefined,
+      signatureUrl,
+    };
     try {
-      const signatureUrl = sigRef.current && !sigRef.current.isEmpty()
-        ? sigRef.current.toDataURL('image/png')
-        : undefined;
-      await api.post('/driver-portal/pod', {
-        waybillId: job.waybillId,
-        recipientName: recipientName.trim(),
-        notes: notes.trim() || undefined,
-        signatureUrl,
-      });
+      await api.post('/driver-portal/pod', payload);
       setDone(true);
       setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
     } catch (err: any) {
-      setError(err?.message || 'Could not save proof of delivery');
+      // In a dead zone? Queue it locally and confirm to the driver — the sync
+      // engine replays it (idempotently) the moment signal returns.
+      if (isNetworkError(err)) {
+        await queueMutation('pod', '/driver-portal/pod', payload);
+        setQueued(true);
+        setDone(true);
+        setTimeout(() => navigate('/dashboard', { replace: true }), 1400);
+      } else {
+        setError(err?.message || 'Could not save proof of delivery');
+      }
     } finally {
       setSaving(false);
     }
@@ -51,15 +75,21 @@ export default function DeliveryDetail() {
   const submitCollection = async () => {
     setError('');
     setSaving(true);
+    const url = `/driver-portal/collect/${job.id}`;
+    const payload = { parcelCount, notes: notes.trim() || undefined };
     try {
-      await api.post(`/driver-portal/collect/${job.id}`, {
-        parcelCount,
-        notes: notes.trim() || undefined,
-      });
+      await api.post(url, payload);
       setDone(true);
       setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
     } catch (err: any) {
-      setError(err?.message || 'Could not confirm collection');
+      if (isNetworkError(err)) {
+        await queueMutation('collect', url, payload);
+        setQueued(true);
+        setDone(true);
+        setTimeout(() => navigate('/dashboard', { replace: true }), 1400);
+      } else {
+        setError(err?.message || 'Could not confirm collection');
+      }
     } finally {
       setSaving(false);
     }
@@ -101,9 +131,16 @@ export default function DeliveryDetail() {
         </div>
 
         {done ? (
-          <div className="bg-green-500/15 border border-green-500/30 rounded-2xl p-6 text-center">
-            <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-2" />
-            <p className="font-bold text-green-200">{job.type === 'collection' ? 'Collection confirmed' : 'Proof of delivery saved'}</p>
+          <div className={`rounded-2xl p-6 text-center border ${queued ? 'bg-amber-500/15 border-amber-500/30' : 'bg-green-500/15 border-green-500/30'}`}>
+            <CheckCircle2 className={`w-12 h-12 mx-auto mb-2 ${queued ? 'text-amber-400' : 'text-green-400'}`} />
+            <p className={`font-bold ${queued ? 'text-amber-200' : 'text-green-200'}`}>
+              {queued
+                ? (job.type === 'collection' ? 'Collection saved — will sync' : 'Delivery saved — will sync')
+                : (job.type === 'collection' ? 'Collection confirmed' : 'Proof of delivery saved')}
+            </p>
+            {queued && (
+              <p className="text-xs text-amber-300/80 mt-1">No signal right now. It's stored on your phone and uploads automatically when you're back online.</p>
+            )}
           </div>
         ) : isDelivery ? (
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">

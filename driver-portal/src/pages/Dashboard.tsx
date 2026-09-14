@@ -7,7 +7,8 @@ import {
 import api from '../services/api';
 import { clearSession, getStoredDriver } from '../services/auth';
 import { useGeolocation } from '../hooks/useGeolocation';
-import { cacheJobs, getCachedJobs } from '../services/offlineDB';
+import { cacheJobs, getCachedJobs, queueMutation } from '../services/offlineDB';
+import { onPendingChange, flushOutbox } from '../services/syncEngine';
 
 // Heavy, occasionally-used panels (leaflet maps, zxing camera scanner) are
 // code-split so the dashboard loads fast on mobile data; they fetch on demand.
@@ -33,6 +34,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>('all');
   const [online, setOnline] = useState(navigator.onLine);
   const [scanning, setScanning] = useState(false);
+  const [pending, setPending] = useState(0);
   const geo = useGeolocation(true, 30000);
 
   const userLocation = geo.latitude != null && geo.longitude != null
@@ -46,16 +48,29 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const on = () => setOnline(true);
+    const on = () => { setOnline(true); void flushOutbox(); void load(); };
     const off = () => setOnline(false);
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Track how many field actions are still waiting to upload.
+  useEffect(() => onPendingChange(setPending), []);
 
   useEffect(() => {
     if (geo.latitude != null && geo.longitude != null) {
-      api.post('/driver-portal/gps', { lat: geo.latitude, lng: geo.longitude, speed: geo.speed ?? 0 }).catch(() => undefined);
+      const body = { lat: geo.latitude, lng: geo.longitude, speed: geo.speed ?? 0 };
+      // GPS is high-frequency and only the latest fix matters, so we don't queue
+      // every ping when offline (that would flood the outbox). We only persist a
+      // ping locally when offline so the driver's last-known position still
+      // reaches dispatch once signal returns; live pings just fire-and-forget.
+      if (navigator.onLine) {
+        api.post('/driver-portal/gps', body).catch(() => undefined);
+      } else {
+        void queueMutation('gps', '/driver-portal/gps', body);
+      }
     }
   }, [geo.latitude, geo.longitude, geo.speed]);
 
@@ -140,6 +155,15 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 text-xs bg-white/5 border border-white/10 rounded-xl p-3">
             {online ? <Wifi className="w-4 h-4 text-green-400" /> : <WifiOff className="w-4 h-4 text-red-400" />}
             <span className="text-gray-300">{online ? 'Online' : 'Offline'}</span>
+            {pending > 0 && (
+              <span
+                onClick={() => { if (online) void flushOutbox(); }}
+                title={online ? 'Tap to sync now' : 'Will upload when back online'}
+                className="ml-auto flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-md px-1.5 py-0.5 cursor-pointer"
+              >
+                {pending} to sync
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs bg-white/5 border border-white/10 rounded-xl p-3">
             <Navigation className={`w-4 h-4 ${geo.latitude != null ? 'text-green-400 animate-pulse' : 'text-gray-400'}`} />

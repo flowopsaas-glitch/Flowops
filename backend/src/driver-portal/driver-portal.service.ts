@@ -242,8 +242,23 @@ export class DriverPortalService {
     if (!collection) {
       throw new Error('Collection not found or not assigned to this driver');
     }
+    // Idempotent: if this collection was already confirmed (e.g. an offline
+    // action being replayed by the driver app's sync engine after a flaky
+    // connection), don't error and don't create a second waybill — just report
+    // success so the queued mutation is cleared.
     if (collection.status === 'COLLECTED') {
-      throw new Error('This collection has already been confirmed');
+      const existing = await this.prisma.waybill.findFirst({
+        where: { companyId, senderName: collection.clientName, status: { not: 'DELIVERED' } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, trackingNumber: true },
+      });
+      return {
+        success: true,
+        alreadyConfirmed: true,
+        collection: { id: collectionId, status: 'COLLECTED' },
+        waybill: existing ? { id: existing.id, trackingNumber: existing.trackingNumber, status: 'IN_TRANSIT' } : null,
+        message: 'Collection was already confirmed.',
+      };
     }
 
     // 2. Mark as COLLECTED

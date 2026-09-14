@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { PrismaService } from './prisma/prisma.service';
 import { AuthService } from './auth/auth.service';
 import { HealthSentinelService } from './common/guards/health-sentinel.service';
@@ -44,8 +44,21 @@ export class AppController {
    * Also available as POST /auth/driver-portal/login in AuthController.
    */
   @Public()
+  // This controller is @SkipThrottle() for health probes, but a LOGIN route must
+  // still be rate-limited — re-enable throttling on just this method, matching
+  // the AuthController driver-login limit. Without this, this alias was a
+  // completely unthrottled PIN-guessing endpoint.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('driver-portal/login')
-  driverPortalLogin(@Body() body: { phone: string; pin: string }) {
-    return this.authService.driverLogin(body.phone, body.pin);
+  driverPortalLogin(@Body() body: { phone: string; pin: string }, @Req() req: any) {
+    const cf = req?.headers?.['cf-connecting-ip'];
+    const xff = req?.headers?.['x-forwarded-for'];
+    const ip = (cf && String(Array.isArray(cf) ? cf[0] : cf).trim())
+      || (xff && String(Array.isArray(xff) ? xff[0] : xff).split(',')[0].trim())
+      || req?.ip;
+    return this.authService.driverLogin(body.phone, body.pin, {
+      ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 }
