@@ -1,10 +1,37 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class DriversService {
   constructor(private prisma: PrismaService, private billing: BillingService) {}
+
+  /**
+   * Whitelist + normalise a driver payload from the UI into valid Prisma data.
+   * The create/update forms send a `pin` field (4–6 digits) which must be
+   * hashed into `driverPin` — spreading it raw made Prisma reject the whole
+   * request ("Unknown argument `pin`"). We also drop any other unknown keys so
+   * a stray field never crashes the write.
+   */
+  private async normaliseDriverData(dto: any): Promise<Record<string, any>> {
+    const allowed = [
+      'name', 'phone', 'email', 'vehicleType', 'vehicleReg', 'status', 'isActive',
+      'branchId', 'currentKm', 'nextServiceKm', 'nextServiceDate', 'vehicleNotes',
+    ];
+    const data: Record<string, any> = {};
+    for (const k of allowed) if (dto?.[k] !== undefined) data[k] = dto[k];
+
+    // Map the UI `pin` → hashed driverPin (only if a valid 4–6 digit PIN given).
+    const rawPin = dto?.pin ?? dto?.driverPin;
+    if (rawPin != null && String(rawPin).trim() !== '') {
+      const pin = String(rawPin).trim();
+      if (/^\d{4,6}$/.test(pin)) {
+        data.driverPin = await bcrypt.hash(pin, 12);
+      }
+    }
+    return data;
+  }
 
   async findAll(companyId: string, query?: any) {
     const where: any = { companyId };
@@ -32,12 +59,14 @@ export class DriversService {
 
   async create(companyId: string, dto: any) {
     await this.billing.assertCanCreate(companyId, 'driver');
-    return this.prisma.driver.create({ data: { ...dto, companyId } });
+    const data = await this.normaliseDriverData(dto);
+    return this.prisma.driver.create({ data: { ...data, companyId } });
   }
 
   async update(id: string, companyId: string, dto: any) {
     await this.findOne(id, companyId);
-    return this.prisma.driver.update({ where: { id }, data: dto });
+    const data = await this.normaliseDriverData(dto);
+    return this.prisma.driver.update({ where: { id }, data });
   }
 
   async updateLocation(id: string, companyId: string, lat: number, lng: number) {
