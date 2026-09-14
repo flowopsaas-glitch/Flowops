@@ -29,39 +29,26 @@ export default function AIOpsCopilot({ domain, title, context, onAction }: Props
     setError("");
     setBusy(true);
     try {
+      // Backend contract: POST /ai-ops/assist reads `query` and returns
+      // { success, data: { reply } } (wrapped again by the TransformInterceptor).
+      // Include the domain + context inline so the model has the operating
+      // context, but the field the backend actually reads is `query`.
+      const prompt = context
+        ? `[${domain}] ${input}\n\nContext: ${JSON.stringify(context)}`
+        : `[${domain}] ${input}`;
       const res = await axios.post(
         `${API_BASE}/ai-ops/assist`,
-        { domain, message: input, context },
+        { query: prompt },
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
-      setLast(res.data);
+      // Unwrap the TransformInterceptor envelope, then the handler's { success, data }.
+      const body = res.data?.data ?? res.data;
+      const reply = body?.reply ?? body?.data?.reply ?? "";
+      setLast({ summary: reply });
     } catch (e: any) {
       setError(e?.response?.data?.message || e?.message || "AI request failed");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function runAction(action: any) {
-    setError("");
-    try {
-      // First try backend allowlisted executor
-      const res = await axios.post(
-        `${API_BASE}/ai-ops/actions/execute`,
-        { action, context },
-        { headers: { Authorization: `Bearer ${getToken()}` } }
-      );
-
-      // Let the page handle client-side actions like selecting company / refresh, etc.
-      if (onAction) await onAction(action);
-
-      // Show backend result in the panel
-      setLast((prev: any) => ({
-        ...(prev || {}),
-        actionResult: res.data,
-      }));
-    } catch (e: any) {
-      setError(e?.response?.data?.message || e?.message || "Action failed");
     }
   }
 
@@ -97,50 +84,10 @@ export default function AIOpsCopilot({ domain, title, context, onAction }: Props
 
       {last && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Summary</div>
-          <div style={{ color: "#111827" }}>{last.summary}</div>
-
-          {Array.isArray(last.insights) && last.insights.length > 0 && (
-            <>
-              <div style={{ fontWeight: 900, marginTop: 12 }}>Insights</div>
-              <ul style={{ marginTop: 6 }}>
-                {last.insights.map((x: string, i: number) => (
-                  <li key={i}>{x}</li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {Array.isArray(last.questions) && last.questions.length > 0 && (
-            <>
-              <div style={{ fontWeight: 900, marginTop: 12 }}>Questions</div>
-              <ul style={{ marginTop: 6 }}>
-                {last.questions.map((x: string, i: number) => (
-                  <li key={i}>{x}</li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {Array.isArray(last.suggestedActions) && last.suggestedActions.length > 0 && (
-            <>
-              <div style={{ fontWeight: 900, marginTop: 12 }}>Suggested Actions</div>
-              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                {last.suggestedActions.map((a: any, i: number) => (
-                  <button key={i} style={btn()} onClick={() => runAction(a.action)}>
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {last.actionResult && (
-            <>
-              <div style={{ fontWeight: 900, marginTop: 12 }}>Action Result</div>
-              <pre style={pre()}>{JSON.stringify(last.actionResult, null, 2)}</pre>
-            </>
-          )}
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Answer</div>
+          <div style={{ color: "#111827", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+            {last.summary || "No response returned."}
+          </div>
         </div>
       )}
     </div>
@@ -178,7 +125,4 @@ function err() {
 }
 function warn() {
   return { marginTop: 10, background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", padding: 10, borderRadius: 12, fontWeight: 800 } as const;
-}
-function pre() {
-  return { marginTop: 8, background: "#0b1220", color: "#e5e7eb", padding: 10, borderRadius: 12, fontSize: 12, overflow: "auto" as const } as const;
 }
