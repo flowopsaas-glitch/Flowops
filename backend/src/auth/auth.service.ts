@@ -239,8 +239,39 @@ export class AuthService {
     if (!driver) throw new UnauthorizedException('Invalid phone number or PIN');
     if (!(driver as any).driverPin) throw new UnauthorizedException('PIN not set — contact dispatch to set your PIN');
 
+    // ── PIN brute-force lockout (per driver, IP-rotation-proof) ───────────
+    // After 5 consecutive wrong PINs the account is locked for 15 minutes.
+    const MAX_PIN_ATTEMPTS = 5;
+    const LOCK_MINUTES = 15;
+    const lockedUntil = (driver as any).pinLockedUntil as Date | null;
+    if (lockedUntil && lockedUntil > new Date()) {
+      const mins = Math.ceil((lockedUntil.getTime() - Date.now()) / 60000);
+      throw new UnauthorizedException(
+        `Too many incorrect PIN attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'} or contact dispatch.`,
+      );
+    }
+
     const pinOk = await bcrypt.compare(pin, (driver as any).driverPin);
-    if (!pinOk) throw new UnauthorizedException('Invalid phone number or PIN');
+    if (!pinOk) {
+      const attempts = ((driver as any).failedPinAttempts ?? 0) + 1;
+      const shouldLock = attempts >= MAX_PIN_ATTEMPTS;
+      await this.prisma.driver.update({
+        where: { id: driver.id },
+        data: {
+          failedPinAttempts: shouldLock ? 0 : attempts,
+          pinLockedUntil: shouldLock ? new Date(Date.now() + LOCK_MINUTES * 60000) : null,
+        } as any,
+      });
+      if (shouldLock) {
+        throw new UnauthorizedException(
+          `Too many incorrect PIN attempts. Account locked for ${LOCK_MINUTES} minutes.`,
+        );
+      }
+      const left = MAX_PIN_ATTEMPTS - attempts;
+      throw new UnauthorizedException(
+        `Invalid phone number or PIN. ${left} attempt${left === 1 ? '' : 's'} left before a temporary lock.`,
+      );
+    }
 
     // Single active session: a new login supersedes any other device. The sid
     // is embedded in the token and stored on the driver; stale tokens (sid
@@ -253,6 +284,9 @@ export class AuthService {
         lastLoginAt: new Date(),
         lastLoginIp: ctx?.ip ?? null,
         lastLoginUserAgent: ctx?.userAgent ?? null,
+        // Successful login clears any accumulated failed-PIN lockout state.
+        failedPinAttempts: 0,
+        pinLockedUntil: null,
       } as any,
     });
 

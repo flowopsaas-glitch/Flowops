@@ -217,9 +217,13 @@ export default function Collections() {
     setError("");
     try {
       const res: any = await api.get(`/collections/${id}/auto-suggest`);
-      const suggestion = res?.data ?? res;
-      if (suggestion && suggestion.id) {
-        setSuggestion(suggestion);
+      // Backend returns { drivers, suggestedDriver }. The recommendation card
+      // renders a single driver, so unwrap suggestedDriver (falling back to the
+      // first ranked driver) rather than treating the wrapper object as a driver.
+      const payload = res?.data ?? res;
+      const best = payload?.suggestedDriver ?? payload?.drivers?.[0] ?? null;
+      if (best && best.id) {
+        setSuggestion(best);
       } else {
         setError("AI: No suitable drivers found.");
       }

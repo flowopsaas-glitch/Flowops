@@ -551,6 +551,15 @@ model Driver {
   lastLoginIp        String?
   lastLoginUserAgent String?
 
+  // ── PIN brute-force lockout ───────────────────────────────────────────
+  // A 4-digit PIN has only 10k combinations, so IP-based throttling alone is
+  // not enough. We count consecutive failed PIN attempts per driver and lock
+  // the account for a cooldown once a threshold is hit; a successful login
+  // resets the counter. This is independent of the IP throttle, so rotating
+  // IPs cannot bypass it.
+  failedPinAttempts  Int       @default(0)
+  pinLockedUntil     DateTime?
+
   // Optional link to a User account — enables role-scoped job delivery
   userId    String? @unique
   user      User?   @relation(fields: [userId], references: [id])

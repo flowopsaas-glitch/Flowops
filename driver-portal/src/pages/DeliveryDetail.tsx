@@ -15,6 +15,7 @@ export default function DeliveryDetail() {
   const sigRef = useRef<SignatureCanvas>(null);
   const [recipientName, setRecipientName] = useState(job.recipientName ?? job.receiverName ?? '');
   const [notes, setNotes] = useState('');
+  const [parcelCount, setParcelCount] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
@@ -42,6 +43,23 @@ export default function DeliveryDetail() {
       setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
     } catch (err: any) {
       setError(err?.message || 'Could not save proof of delivery');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitCollection = async () => {
+    setError('');
+    setSaving(true);
+    try {
+      await api.post(`/driver-portal/collect/${job.id}`, {
+        parcelCount,
+        notes: notes.trim() || undefined,
+      });
+      setDone(true);
+      setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
+    } catch (err: any) {
+      setError(err?.message || 'Could not confirm collection');
     } finally {
       setSaving(false);
     }
@@ -85,7 +103,7 @@ export default function DeliveryDetail() {
         {done ? (
           <div className="bg-green-500/15 border border-green-500/30 rounded-2xl p-6 text-center">
             <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-2" />
-            <p className="font-bold text-green-200">Proof of delivery saved</p>
+            <p className="font-bold text-green-200">{job.type === 'collection' ? 'Collection confirmed' : 'Proof of delivery saved'}</p>
           </div>
         ) : isDelivery ? (
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
@@ -145,9 +163,34 @@ export default function DeliveryDetail() {
             </button>
           </div>
         ) : (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-gray-300">
-            {error && <div className="bg-red-500/20 border border-red-500/30 text-red-200 p-3 rounded-xl text-sm mb-2">{error}</div>}
-            This is a collection. Pick up the parcel from the address above, then capture it at the hub (Scan / Waybill Inbox).
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+            <div className="flex items-center gap-2 font-semibold text-amber-200"><Package className="w-4 h-4 text-amber-300" /> Confirm Collection</div>
+            <div className="text-sm text-gray-300 space-y-1">
+              <p>Pick up the parcel from <strong className="text-white">{job.recipientName ?? job.receiverName ?? 'the client'}</strong> at the address above.</p>
+              <p className="text-xs text-gray-400">Once you have it, confirm the pickup below. A waybill is created automatically and assigned for delivery.</p>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1"># of parcels</label>
+              <input
+                type="number" min={1} value={parcelCount}
+                onChange={(e) => setParcelCount(Math.max(1, Number(e.target.value) || 1))}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Notes (optional)</label>
+              <input
+                value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. 2 boxes, sealed"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            {error && <div className="bg-red-500/20 border border-red-500/30 text-red-200 p-3 rounded-xl text-sm">{error}</div>}
+            <button
+              onClick={submitCollection} disabled={saving}
+              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 py-4 rounded-xl font-bold text-lg disabled:opacity-50 transition shadow-lg flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 className="w-5 h-5" /> {saving ? 'Confirming…' : 'Confirm Pickup'}
+            </button>
           </div>
         )}
       </div>
