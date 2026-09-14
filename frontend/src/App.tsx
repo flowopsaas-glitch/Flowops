@@ -37,7 +37,7 @@ const BillingBatches = lazy(() => import("./pages/BillingBatches"));
 const FinanceDashboard = lazy(() => import("./pages/FinanceDashboard"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const Invoices = lazy(() => import("./pages/Invoices"));
-// Stub page — renders "coming soon" until the booking-portal backend ships.
+// Surfaces the tenant's shareable customer booking-portal + public tracking links.
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
 const CreditControl     = lazy(() => import("./pages/CreditControl"));
 const CODReconciliation = lazy(() => import("./pages/billing/CODReconciliation"));
@@ -317,7 +317,7 @@ export default function App() {
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
               <Route path="/accounting" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Accounting"><Accounting /></RequireFeature></RequirePermission>} />
               <Route path="/disbursements" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Disbursements"><Disbursements /></RequireFeature></RequirePermission>} />
-              {/* Client Portal Links — stub page shown until booking-portal backend ships */}
+              {/* Client Portal Links — shareable customer booking-portal + public tracking links */}
               <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
               <Route path="/credit-control" element={<RequirePermission perm="creditControl"><CreditControl /></RequirePermission>} />
               <Route path="/cod" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><CODReconciliation /></RequireFeature></RequirePermission>} />
