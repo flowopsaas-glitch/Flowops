@@ -130,18 +130,38 @@ services:
         reservations:
           memory: 32M
     # Dump every 6 hours; retain last 28 files (7 days x 4/day).
+    # Each dump is VALIDATED before it's kept: pg_dump must succeed AND the
+    # gzipped result must be a real size (>10KB). If Postgres isn't ready yet
+    # (e.g. mid-reboot) pg_dump would otherwise write an empty 20-byte file — we
+    # detect that, discard it, and retry shortly instead of poisoning the backup
+    # folder with a useless "latest" dump.
     command: >
       sh -c '
-        set -e
-        echo "Backup service started. Dumping every 6h, retaining 28 files."
+        MIN_BYTES=10240
+        echo "Backup service started. Dumping every 6h (validated), retaining 28 files."
         while true; do
-          FILE="/backups/flowops_$$(date +%Y%m%d_%H%M%S).sql.gz"
-          echo "Dumping to $$FILE ..."
-          pg_dump -h postgres -U $$POSTGRES_USER $$POSTGRES_DB | gzip > "$$FILE"
-          echo "Dump complete: $$(du -sh $$FILE | cut -f1)"
-          ls -t /backups/*.sql.gz 2>/dev/null | tail -n +29 | xargs -r rm -v
-          echo "Sleeping 6h..."
-          sleep 21600
+          TS="$$(date +%Y%m%d_%H%M%S)"
+          TMP="/backups/.flowops_$$TS.sql.gz.partial"
+          FINAL="/backups/flowops_$$TS.sql.gz"
+          echo "Dumping to $$FINAL ..."
+          if pg_dump -h postgres -U $$POSTGRES_USER $$POSTGRES_DB | gzip > "$$TMP"; then
+            SZ=$$(stat -c%s "$$TMP" 2>/dev/null || wc -c < "$$TMP")
+            if [ "$$SZ" -ge "$$MIN_BYTES" ] && gzip -t "$$TMP" 2>/dev/null; then
+              mv "$$TMP" "$$FINAL"
+              echo "Dump OK: $$(du -sh $$FINAL | cut -f1)"
+              ls -t /backups/flowops_*.sql.gz 2>/dev/null | tail -n +29 | xargs -r rm -v
+              echo "Sleeping 6h..."
+              sleep 21600
+            else
+              echo "REJECTED empty/short dump ($$SZ bytes) — DB likely not ready. Retrying in 60s."
+              rm -f "$$TMP"
+              sleep 60
+            fi
+          else
+            echo "pg_dump failed (DB not ready?). Retrying in 60s."
+            rm -f "$$TMP"
+            sleep 60
+          fi
         done
       '
 

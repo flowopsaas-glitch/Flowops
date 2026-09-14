@@ -47,9 +47,16 @@ done
 if [ "$DUMP" = "__LATEST__" ]; then
   BACKUP_CONTAINER="$(docker ps --format '{{.Names}}' | grep -m1 postgres-backup || true)"
   [ -n "$BACKUP_CONTAINER" ] || die "no postgres-backup container running; pass a dump path explicitly."
-  DUMP="$(docker exec "$BACKUP_CONTAINER" sh -c "ls -t ${BACKUP_VOLUME_PATH}/*.sql.gz 2>/dev/null | head -1")"
-  [ -n "$DUMP" ] || die "no *.sql.gz backups found in ${BACKUP_CONTAINER}:${BACKUP_VOLUME_PATH}"
-  log "Latest local backup: $DUMP (in ${BACKUP_CONTAINER})"
+  # Pick the newest dump that is actually a real size (>10KB) — skip any tiny
+  # broken artifact (e.g. a mid-reboot empty dump) so --latest-local verifies a
+  # backup you'd genuinely restore from, not the freshest-but-broken file.
+  DUMP="$(docker exec "$BACKUP_CONTAINER" sh -c \
+    "for f in \$(ls -t ${BACKUP_VOLUME_PATH}/*.sql.gz 2>/dev/null); do \
+       sz=\$(stat -c%s \"\$f\" 2>/dev/null || wc -c < \"\$f\"); \
+       if [ \"\$sz\" -ge 10240 ]; then echo \"\$f\"; break; fi; \
+     done")"
+  [ -n "$DUMP" ] || die "no healthy (>10KB) *.sql.gz backups found in ${BACKUP_CONTAINER}:${BACKUP_VOLUME_PATH}"
+  log "Latest HEALTHY local backup: $DUMP (in ${BACKUP_CONTAINER})"
   # Copy it out of the backup container to the host tmp, then into the pg container.
   TMP="$(mktemp).sql.gz"
   docker cp "${BACKUP_CONTAINER}:${DUMP}" "$TMP"
@@ -58,6 +65,21 @@ fi
 
 [ -n "$DUMP" ] || die "usage: $0 <dump.sql.gz> | --latest-local [--restore-live --i-understand]"
 [ -f "$DUMP" ] || die "dump file not found on host: $DUMP"
+
+# ── Reject an obviously-empty/broken dump BEFORE trusting it ──────────────────
+# A real FlowOps dump is tens of KB even near-empty. A tiny file (e.g. the
+# 20-byte artifact pg_dump writes if it runs mid-reboot while Postgres is still
+# starting) must FAIL loudly — a verify tool that greenlights an empty backup is
+# worse than no tool at all.
+MIN_BYTES="${MIN_BYTES:-10240}"   # 10 KB floor
+DUMP_BYTES="$(stat -c%s "$DUMP" 2>/dev/null || stat -f%z "$DUMP")"
+log "Dump: $DUMP (${DUMP_BYTES} bytes)"
+if [ "${DUMP_BYTES:-0}" -lt "$MIN_BYTES" ]; then
+  die "dump is only ${DUMP_BYTES} bytes (< ${MIN_BYTES}). This is an EMPTY/broken backup — verify FAILED."
+fi
+if ! gzip -t "$DUMP" 2>/dev/null; then
+  die "dump failed gzip integrity check — verify FAILED."
+fi
 
 # Stream the dump into the container's psql.
 feed_dump() { zcat "$DUMP"; }
@@ -93,13 +115,26 @@ if ! feed_dump | docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=0 -U "$
 fi
 
 log "Restore finished. Sanity-checking key tables in ${TEMP_DB}:"
-docker exec "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d "$TEMP_DB" -t -A -F': ' -c "
+# Run the count query and CAPTURE the result. If the core tables don't exist
+# (i.e. the dump had no schema/data), psql exits non-zero and we FAIL — we do
+# NOT print a soft note and then claim success like the old version did.
+COUNTS="$(docker exec "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d "$TEMP_DB" -t -A -F': ' -c "
   SELECT 'companies', count(*) FROM \"Company\"
   UNION ALL SELECT 'users', count(*) FROM \"User\"
   UNION ALL SELECT 'drivers', count(*) FROM \"Driver\"
   UNION ALL SELECT 'waybills', count(*) FROM \"Waybill\"
   UNION ALL SELECT 'collections', count(*) FROM \"Collection\";
-" 2>/dev/null || log "  (some tables missing — inspect the dump; table names are case-sensitive Prisma models)"
+" 2>/tmp/restore_verify_counts_err)" || {
+  log "  Key-table query FAILED. stderr:"; tail -3 /tmp/restore_verify_counts_err 2>/dev/null || true
+  die "core FlowOps tables are missing from this dump — the backup is NOT usable. Verify FAILED."
+}
 
-log "VERIFY PASSED: the backup restored into a temp DB and key tables were queryable."
+echo "$COUNTS" | sed 's/^/    /'
+# Require at least one company — an all-zero restore usually means an empty dump.
+COMPANY_COUNT="$(echo "$COUNTS" | awk -F': ' '/^companies/{print $2}')"
+if [ "${COMPANY_COUNT:-0}" = "0" ]; then
+  die "restore produced ZERO companies — this dump has no real tenant data. Verify FAILED."
+fi
+
+log "VERIFY PASSED: backup restored into a temp DB and core tables hold real data (${COMPANY_COUNT} companies)."
 log "This is your proof the backup is real. The temp DB is now dropped; live data untouched."
