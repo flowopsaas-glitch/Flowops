@@ -6,6 +6,7 @@ import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EcommerceService } from '../ecommerce/ecommerce.service';
 import { WaybillStatus } from '@prisma/client';
+import { guardTransition } from './waybill-status.machine';
 import { v4 as uuid } from 'uuid';
 import { BillingService } from '../billing/billing.service';
 import { EventsGateway } from '../gateway/events.gateway';
@@ -191,6 +192,13 @@ export class WaybillsService {
 
   async update(id: string, companyId: string, dto: any) {
     const existing = await this.findOne(id, companyId);
+    // Guard the lifecycle transition. Non-breaking in this phase: illegal jumps
+    // are logged (not blocked) until WAYBILL_STRICT_TRANSITIONS is enabled.
+    if (dto.status && dto.status !== existing.status) {
+      guardTransition(existing.status, dto.status, {
+        waybillId: id, trackingNumber: existing.trackingNumber, actor: 'waybills.update',
+      }, (msg) => { throw new BadRequestException(msg); });
+    }
     const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
     if (dto.status && dto.status !== existing.status) {
       void this.notifications.notifyWaybillStatus(updated);
