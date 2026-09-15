@@ -691,6 +691,8 @@ model ShipmentFile {
   pol          String? // port of loading (UN/LOCODE or name)
   pod          String? // port of discharge
   vesselVoyage String? // or flight number
+  vesselMmsi   String? // vessel MMSI (9-digit AIS id) — enables LIVE AISStream tracking
+  vesselImo    String? // vessel IMO number (optional, for reference)
   etd          DateTime?
   eta          DateTime?
 

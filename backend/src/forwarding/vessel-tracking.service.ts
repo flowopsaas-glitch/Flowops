@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { AisStreamService } from './ais-stream.service';
 
 /**
  * WORLD-CLASS VESSEL TRACKING + PORT INTELLIGENCE
@@ -30,7 +31,9 @@ export interface VesselPosition {
   destination?: string;
   eta?: string;
   lastUpdated: string;
-  source: string;
+  ageMinutes: number;   // how old this fix is (honest freshness)
+  isStale: boolean;     // true when the fix is too old to be considered "live"
+  source: string;       // 'AISStream (live)' etc.
 }
 
 export interface PortCongestion {
@@ -59,6 +62,13 @@ export interface VesselTrackingResult {
   daysAtSea: number;
   status: string;
   alerts: string[];
+  // Honest tracking-quality signal for the UI:
+  //  'LIVE'        — a fresh AIS fix
+  //  'STALE'       — we have a position but it's old (mid-ocean gap etc.)
+  //  'NO_MMSI'     — no MMSI on the file, so live tracking isn't possible
+  //  'AWAITING'    — MMSI set + feed on, but no fix received yet
+  //  'FEED_OFF'    — AISStream key not configured on this deployment
+  trackingQuality: 'LIVE' | 'STALE' | 'NO_MMSI' | 'AWAITING' | 'FEED_OFF';
 }
 
 // Major African port reference data
@@ -107,6 +117,7 @@ export class VesselTrackingService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private ais: AisStreamService,
   ) {}
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -117,7 +128,7 @@ export class VesselTrackingService {
     const file = await this.prisma.shipmentFile.findFirst({
       where: { id: fileId, companyId, mode: 'OCEAN' },
       select: {
-        id: true, fileNumber: true, vesselVoyage: true,
+        id: true, fileNumber: true, vesselVoyage: true, vesselMmsi: true,
         pol: true, pod: true, eta: true, etd: true, status: true,
         milestones: { orderBy: { reachedAt: 'desc' }, take: 1 },
       },
@@ -130,8 +141,25 @@ export class VesselTrackingService {
     // Parse vessel name from vesselVoyage field
     const vesselName = this.parseVesselName(file.vesselVoyage || '');
 
-    // Try to get vessel position from AIS
-    const vesselPosition = await this.getVesselPosition(vesselName);
+    // Try to get a LIVE vessel position from the AIS feed (needs an MMSI on the file).
+    const mmsi = String((file as any).vesselMmsi ?? '').trim();
+    const vesselPosition = await this.getVesselPosition(mmsi, vesselName);
+
+    // Honest tracking-quality signal (never present old/absent data as "live").
+    let trackingQuality: VesselTrackingResult['trackingQuality'];
+    if (!this.ais.isLive()) trackingQuality = 'FEED_OFF';
+    else if (!/^\d{7,9}$/.test(mmsi)) trackingQuality = 'NO_MMSI';
+    else if (!vesselPosition) trackingQuality = 'AWAITING';
+    else if (vesselPosition.isStale) trackingQuality = 'STALE';
+    else trackingQuality = 'LIVE';
+
+    if (trackingQuality === 'NO_MMSI') {
+      alerts.push('ℹ️ Add the vessel MMSI to enable live position tracking (find it on the vessel name at marinetraffic.com).');
+    } else if (trackingQuality === 'STALE' && vesselPosition) {
+      alerts.push(`⚠️ Last AIS position is ${vesselPosition.ageMinutes} min old — vessel may be out of receiver range (mid-ocean).`);
+    } else if (trackingQuality === 'AWAITING') {
+      alerts.push('ℹ️ Live tracking enabled — waiting for the first AIS position report for this vessel.');
+    }
 
     // Get port congestion for discharge port
     const portCongestion = this.getPortCongestion(file.pod || '');
@@ -170,6 +198,7 @@ export class VesselTrackingService {
       daysAtSea,
       status: file.status,
       alerts,
+      trackingQuality,
     };
   }
 
@@ -232,24 +261,51 @@ export class VesselTrackingService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // AIS VESSEL POSITION (free API fallback)
+  // AIS VESSEL POSITION — live from the AISStream feed (real data)
   // ══════════════════════════════════════════════════════════════════════════
 
-  private async getVesselPosition(vesselName: string): Promise<VesselPosition | null> {
-    if (!vesselName || vesselName.length < 3) return null;
+  // A fix older than this is flagged stale (AIS updates every few min near
+  // coasts, but mid-ocean gaps happen — we're honest about it rather than
+  // presenting an old fix as "live now").
+  private static readonly STALE_AFTER_MINUTES = 180; // 3h
 
-    // Try free AIS API (limited but functional)
-    try {
-      // Use a synthetic position based on route estimation
-      // In production, integrate with MarineTraffic API ($) or VesselFinder API ($)
-      // For now, return null — the system works without live position
-      // and provides value through port congestion + ETA prediction alone
-      this.logger.debug(`Vessel position lookup: ${vesselName} (AIS API not configured — using prediction model)`);
-      return null;
-    } catch (err: any) {
-      this.logger.debug(`AIS lookup failed for ${vesselName}: ${err.message}`);
+  /**
+   * Live vessel position from AISStream, looked up by the file's MMSI.
+   * Returns null (honest) when: no MMSI on the file, the AIS feed is disabled
+   * (no key), or we haven't yet received a position for that vessel. The caller
+   * then falls back to the carrier-ETA + port-congestion estimate.
+   */
+  private async getVesselPosition(mmsi?: string | null, vesselName = ''): Promise<VesselPosition | null> {
+    const id = String(mmsi ?? '').trim();
+    if (!/^\d{7,9}$/.test(id)) {
+      // No usable MMSI — can't track live. This is expected for files where the
+      // operator hasn't entered one; the ETA estimate still works.
       return null;
     }
+
+    // Ask the feed to start streaming this vessel (idempotent), then read cache.
+    this.ais.trackVessels([id]);
+    const live = this.ais.getPosition(id);
+    if (!live) {
+      this.logger.debug(`No live AIS fix yet for MMSI ${id} (${vesselName || 'unknown'})`);
+      return null;
+    }
+
+    const ageMinutes = Math.round((Date.now() - live.receivedAt) / 60000);
+    const isStale = ageMinutes > VesselTrackingService.STALE_AFTER_MINUTES;
+
+    return {
+      vesselName: live.shipName || vesselName || 'Vessel',
+      mmsi: id,
+      lat: live.lat,
+      lng: live.lng,
+      speed: live.speed,
+      heading: live.heading,
+      lastUpdated: new Date(live.receivedAt).toISOString(),
+      ageMinutes,
+      isStale,
+      source: 'AISStream (live)',
+    };
   }
 
   // ══════════════════════════════════════════════════════════════════════════
