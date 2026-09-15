@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import WebSocket from 'ws';
+// `ws` is a CommonJS module. With this project's tsconfig (allowSynthetic
+// DefaultImports:true but NO esModuleInterop), a default import compiles but is
+// `undefined` at runtime ("ws_1.default is not a constructor"). The import=require
+// form binds the actual constructor + its static members (OPEN, RawData) safely.
+import WebSocket = require('ws');
 
 /**
  * AISStream live vessel feed.
@@ -119,7 +123,7 @@ export class AisStreamService implements OnModuleInit, OnModuleDestroy {
       this.sendSubscription();
     });
 
-    this.ws.on('message', (data: WebSocket.RawData) => this.handleMessage(data));
+    this.ws.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => this.handleMessage(data));
 
     this.ws.on('error', (err: any) => {
       this.logger.warn(`AIS stream error: ${err?.message ?? err}`);
@@ -152,7 +156,7 @@ export class AisStreamService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private handleMessage(data: WebSocket.RawData): void {
+  private handleMessage(data: Buffer | ArrayBuffer | Buffer[]): void {
     let msg: any;
     try {
       msg = JSON.parse(data.toString());
