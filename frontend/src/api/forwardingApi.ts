@@ -35,6 +35,8 @@ export interface ShipmentFile {
   pol?: string | null;
   pod?: string | null;
   vesselVoyage?: string | null;
+  vesselMmsi?: string | null;
+  vesselImo?: string | null;
   etd?: string | null;
   eta?: string | null;
   aiRiskScore?: number | null;
@@ -263,3 +265,39 @@ export interface ForwardingOverview {
 
 export const getForwardingOverview = async (): Promise<ForwardingOverview> =>
   unwrap(await api.get(`/forwarding/overview`));
+
+// ── Live vessel tracking (AISStream) ───────────────────────────────────────
+
+export interface VesselPosition {
+  vesselName: string;
+  mmsi?: string;
+  lat: number;
+  lng: number;
+  speed: number;
+  heading: number;
+  lastUpdated: string;
+  ageMinutes: number;
+  isStale: boolean;
+  source: string;
+}
+export type VesselTrackingQuality = "LIVE" | "STALE" | "NO_MMSI" | "AWAITING" | "FEED_OFF";
+export interface VesselTracking {
+  fileId: string;
+  fileNumber: string;
+  vesselVoyage: string;
+  pol: string;
+  pod: string;
+  carrierEta: string | null;
+  predictedEta: string | null;
+  etaDifferenceDays: number | null;
+  vesselPosition: VesselPosition | null;
+  portCongestion: { portName: string; country: string; avgWaitDays: number; congestionLevel: string } | null;
+  distanceRemainingNm: number | null;
+  percentComplete: number;
+  daysAtSea: number;
+  status: string;
+  alerts: string[];
+  trackingQuality: VesselTrackingQuality;
+}
+export const trackVessel = async (id: string): Promise<VesselTracking> =>
+  unwrap(await api.get(`/forwarding/files/${id}/vessel-tracking`));
