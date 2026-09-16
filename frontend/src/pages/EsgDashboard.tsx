@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
-import { Leaf, TrendingDown, TrendingUp, Truck, Loader2, RefreshCw, AlertTriangle, BarChart3 } from "lucide-react";
+import { Leaf, TrendingDown, TrendingUp, Truck, Loader2, RefreshCw, AlertTriangle, BarChart3, TreePine, Plane, Home, Coins } from "lucide-react";
 import { api } from "../api/client";
+
+// Matches backend CarbonService.getFleetReport (FleetCarbonReport)
+type FleetCarbonReport = {
+  period: string;
+  totalShipments: number;
+  totalDistanceKm: number;
+  totalCo2Kg: number;
+  totalCo2Tonnes: number;
+  avgCo2PerShipment: number;
+  offsetCostZar: number;
+  equivalents: { treesNeeded: number; flightsJhbCpt: number; householdDays: number };
+};
 
 type CarbonReport = {
   period: string;
@@ -23,6 +35,7 @@ type Trend = { period: string; totalCo2Kg: number; totalDeliveries: number; co2P
 export default function EsgDashboard() {
   const [report, setReport] = useState<CarbonReport | null>(null);
   const [trends, setTrends] = useState<Trend[]>([]);
+  const [carbon, setCarbon] = useState<FleetCarbonReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -30,7 +43,11 @@ export default function EsgDashboard() {
     Promise.all([
       api.get("/esg/report").then((r: any) => r?.data ?? r),
       api.get("/esg/trends").then((r: any) => r?.data ?? r),
-    ]).then(([r, t]) => { setReport(r); setTrends(t); })
+      // Carbon engine (DEFRA 2024 factors) — separate controller, complementary
+      // detail: offset cost + real-world equivalents. Best-effort; ESG still
+      // renders if it fails.
+      api.get("/carbon/report").then((r: any) => r?.data ?? r).catch(() => null),
+    ]).then(([r, t, c]) => { setReport(r); setTrends(t); setCarbon(c); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -115,6 +132,53 @@ export default function EsgDashboard() {
             })}
           </div>
         </div>
+      </div>
+
+      {/* Carbon Footprint & Offset — DEFRA 2024 factors. The client-facing ESG
+          story: what your carbon actually equals, and what it costs to offset. */}
+      {carbon && (
+        <div className="rounded-2xl border border-emerald-400/15 bg-gradient-to-br from-emerald-500/[0.06] to-transparent p-6">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 className="text-sm font-black text-white flex items-center gap-2"><Leaf className="h-5 w-5 text-emerald-300" /> Carbon Footprint &amp; Offset</h2>
+            <span className="text-[10px] text-white/35">{carbon.period} · DEFRA 2024 + SA grid factors</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <KPI label="Total CO₂" value={`${carbon.totalCo2Tonnes.toLocaleString()} t`} icon={Leaf} color="bg-emerald-500/20 text-emerald-300" />
+            <KPI label="Per Shipment" value={`${carbon.avgCo2PerShipment} kg`} icon={Truck} color="bg-sky-500/20 text-sky-300" />
+            <KPI label="Offset Cost" value={`R${carbon.offsetCostZar.toLocaleString()}`} icon={Coins} color="bg-amber-500/20 text-amber-300" />
+            <KPI label="Shipments" value={carbon.totalShipments.toLocaleString()} icon={BarChart3} color="bg-violet-500/20 text-violet-300" />
+          </div>
+
+          {/* Relatable equivalents — the part clients actually remember */}
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Equivalent icon={TreePine} color="text-emerald-300"
+              value={carbon.equivalents.treesNeeded.toLocaleString()}
+              label="trees to absorb this in a year" />
+            <Equivalent icon={Plane} color="text-sky-300"
+              value={carbon.equivalents.flightsJhbCpt.toLocaleString()}
+              label="JHB → CPT flights' worth of CO₂" />
+            <Equivalent icon={Home} color="text-violet-300"
+              value={carbon.equivalents.householdDays.toLocaleString()}
+              label="days of an average SA household" />
+          </div>
+
+          <p className="mt-4 text-[11px] text-white/35">
+            Offset cost estimated at Gold Standard ~$15/tonne. Share this report with ESG-conscious clients as proof of your carbon accounting.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Equivalent({ icon: Icon, color, value, label }: { icon: any; color: string; value: string; label: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <Icon className={`h-6 w-6 shrink-0 ${color}`} />
+      <div>
+        <div className="text-lg font-black text-white leading-none">{value}</div>
+        <div className="text-[11px] text-white/45 mt-1">{label}</div>
       </div>
     </div>
   );
