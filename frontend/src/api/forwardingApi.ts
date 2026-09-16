@@ -301,3 +301,53 @@ export interface VesselTracking {
 }
 export const trackVessel = async (id: string): Promise<VesselTracking> =>
   unwrap(await api.get(`/forwarding/files/${id}/vessel-tracking`));
+
+// ── SADC corridor intelligence ─────────────────────────────────────────────
+
+export interface BorderPost {
+  code: string;
+  name: string;
+  countries: [string, string];
+  lat: number;
+  lng: number;
+  avgWaitHours: number;
+  peakWaitHours: number;
+  operatingHours: string;
+  is24Hour: boolean;
+  requiredDocs: string[];
+  congestionLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  notes: string;
+}
+export interface TradeCorridor {
+  code: string;
+  name: string;
+  origin: string;
+  destination: string;
+  distanceKm: number;
+  avgTransitDays: number;
+  borderPosts: string[];
+  countries: string[];
+  fuelCostEstimate: number;
+  tollCostEstimate: number;
+  riskLevel: "LOW" | "MEDIUM" | "HIGH";
+  keyRisks: string[];
+  alternativePort: string;
+}
+export interface WalvisVsDurban {
+  walvisBay: { transitDays: number; portWait: number; borderWait: number; totalDays: number; cost: number; risk: string };
+  durban: { transitDays: number; portWait: number; borderWait: number; totalDays: number; cost: number; risk: string };
+  recommendation: string;
+  savingsDays: number;
+  savingsCost: number;
+}
+
+export const getBorderPosts = async (): Promise<BorderPost[]> => {
+  const r = unwrap(await api.get(`/forwarding/sadc/border-posts`));
+  return Array.isArray(r) ? r : [];
+};
+export const getCorridors = async (): Promise<TradeCorridor[]> => {
+  const r = unwrap(await api.get(`/forwarding/sadc/corridors`));
+  return Array.isArray(r) ? r : [];
+};
+export const walvisVsDurban = async (destination: string): Promise<WalvisVsDurban> =>
+  unwrap(await api.get(`/forwarding/sadc/walvis-vs-durban?destination=${encodeURIComponent(destination)}`));
