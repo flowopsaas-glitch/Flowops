@@ -4,6 +4,7 @@ import SignatureCanvas from 'react-signature-canvas';
 import { ArrowLeft, MapPin, Phone, Package, PenLine, Eraser, CheckCircle2, User } from 'lucide-react';
 import api from '../services/api';
 import { queueMutation } from '../services/offlineDB';
+import PhotoCapture from '../components/PhotoCapture';
 
 /**
  * True when a failed request was a connectivity problem (not a server rejection).
@@ -28,6 +29,7 @@ export default function DeliveryDetail() {
   const sigRef = useRef<SignatureCanvas>(null);
   const [recipientName, setRecipientName] = useState(job.recipientName ?? job.receiverName ?? '');
   const [notes, setNotes] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
   const [parcelCount, setParcelCount] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
@@ -51,6 +53,7 @@ export default function DeliveryDetail() {
       recipientName: recipientName.trim(),
       notes: notes.trim() || undefined,
       signatureUrl,
+      imageUrl: photo || undefined, // proof photo → stored as waybill.podImageUrl
     };
     try {
       await api.post('/driver-portal/pod', payload);
@@ -165,6 +168,10 @@ export default function DeliveryDetail() {
                 <button onClick={() => sigRef.current?.clear()} className="text-xs text-gray-400 flex items-center gap-1 hover:text-white"><Eraser className="w-3.5 h-3.5" /> Clear</button>
               </div>
               <SignatureCanvas ref={sigRef} canvasProps={{ className: 'sig-canvas' }} penColor="#0f172a" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Photo (optional — proof of delivery / safe place)</label>
+              <PhotoCapture label="Take delivery photo" onCapture={setPhoto} />
             </div>
             {error && <div className="bg-red-500/20 border border-red-500/30 text-red-200 p-3 rounded-xl text-sm">{error}</div>}
             <button
