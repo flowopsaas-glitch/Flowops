@@ -605,6 +605,23 @@ model DriverRefreshToken {
   @@map("driver_refresh_tokens")
 }
 
+// Web-push subscription for the driver PWA — lets dispatch wake a driver's phone
+// with a "new job" notification. One row per browser/device the driver enabled
+// notifications on. Endpoint is unique (the browser's push endpoint URL).
+model DriverPushSubscription {
+  id        String   @id @default(cuid())
+  driverId  String
+  companyId String
+  endpoint  String   @unique
+  p256dh    String   // client public key (for future encrypted payloads)
+  auth      String   // client auth secret
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([driverId])
+  @@map("driver_push_subscriptions")
+}
+
 // ─── Branches ─────────────────────────────────────────────────────────────
 
 model Branch {

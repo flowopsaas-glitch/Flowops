@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../push/push.service';
 
 @Injectable()
 export class CollectionsService {
@@ -9,6 +10,7 @@ export class CollectionsService {
     private prisma: PrismaService,
     private geo: GeocodingService,
     private notifications: NotificationsService,
+    private push: PushService,
   ) {}
 
   async findAll(companyId: string, query?: any) {
@@ -201,11 +203,14 @@ export class CollectionsService {
     await this.findOne(id, companyId);
     const driver = await this.prisma.driver.findFirst({ where: { id: driverId, companyId } });
     if (!driver) throw new NotFoundException('Driver not found');
-    return this.prisma.collection.update({
+    const updated = await this.prisma.collection.update({
       where: { id },
       data: { driverId, status: 'ASSIGNED' },
       include: { driver: true },
     });
+    // Wake the driver's phone: "new job". Best-effort, never blocks the assign.
+    void this.push.notifyDriver(driverId);
+    return updated;
   }
 
   /**

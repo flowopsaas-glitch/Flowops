@@ -2,13 +2,14 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Truck, Package, MapPin, LogOut, RefreshCw, Navigation, Inbox,
-  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight, ScanLine,
+  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight, ScanLine, Bell, BellOff,
 } from 'lucide-react';
 import api from '../services/api';
 import { clearSession, getStoredDriver } from '../services/auth';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { cacheJobs, getCachedJobs, queueMutation } from '../services/offlineDB';
 import { onPendingChange, flushOutbox } from '../services/syncEngine';
+import { enablePush, pushSupported, pushPermission } from '../services/push';
 
 // Heavy, occasionally-used panels (leaflet maps, zxing camera scanner) are
 // code-split so the dashboard loads fast on mobile data; they fetch on demand.
@@ -35,7 +36,18 @@ export default function Dashboard() {
   const [online, setOnline] = useState(navigator.onLine);
   const [scanning, setScanning] = useState(false);
   const [pending, setPending] = useState(0);
+  const [pushOn, setPushOn] = useState(pushPermission() === 'granted');
   const geo = useGeolocation(true, 30000);
+
+  async function toggleNotifications() {
+    const result = await enablePush();
+    if (result === 'enabled') { setPushOn(true); alert('Notifications on — dispatch can now alert you to new jobs.'); }
+    else if (result === 'ios-install') alert('On iPhone: tap Share → "Add to Home Screen", open FlowOps from there, then enable notifications.');
+    else if (result === 'denied') alert('Notifications are blocked. Enable them for FlowOps in your browser/phone settings.');
+    else if (result === 'server-off') alert('Push isn\'t configured on the server yet. You\'ll still see jobs in the app.');
+    else if (result === 'unsupported') alert('This device doesn\'t support push notifications. You\'ll still see jobs in the app.');
+    else alert('Could not enable notifications right now — you\'ll still see jobs in the app.');
+  }
 
   const userLocation = geo.latitude != null && geo.longitude != null
     ? { lat: geo.latitude, lng: geo.longitude }
@@ -146,6 +158,11 @@ export default function Dashboard() {
             <button onClick={() => navigate('/chat')} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Chat with dispatch">
               <MessageCircle className="w-5 h-5 text-blue-300" />
             </button>
+            {pushSupported() && (
+              <button onClick={toggleNotifications} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title={pushOn ? 'Job notifications on' : 'Turn on job notifications'}>
+                {pushOn ? <Bell className="w-5 h-5 text-amber-300" /> : <BellOff className="w-5 h-5 text-gray-400" />}
+              </button>
+            )}
             <button onClick={logout} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Sign out">
               <LogOut className="w-5 h-5 text-gray-300" />
             </button>
