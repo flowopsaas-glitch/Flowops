@@ -171,6 +171,13 @@ services:
       # Get a free key at https://aisstream.io/authenticate. If unset, live
       # vessel tracking is simply disabled (platform runs normally).
       AISSTREAM_API_KEY: ${AISSTREAM_API_KEY:-}
+
+      # ── Driver web-push (VAPID) ───────────────────────────────────────
+      # Generate once: npx web-push generate-vapid-keys  (or any P-256 keypair,
+      # base64url). If unset, driver push is disabled (in-app job list still works).
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@flowop.work}
       TAVILY_TIMEOUT_MS: ${TAVILY_TIMEOUT_MS:-15000}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLAW_AGGRESSION_LEVEL: ${CLAW_AGGRESSION_LEVEL:-MEDIUM}
