@@ -31,8 +31,15 @@ export class CodController {
 
   @Post('collect/:waybillId')
   @RequireFeature('codReconciliation')
-  recordCollection(@Param('waybillId') waybillId: string, @CurrentUser() u: AuthenticatedUser) {
-    return this.svc.recordCollection(waybillId, u.companyId, u.id);
+  recordCollection(
+    @Param('waybillId') waybillId: string,
+    @CurrentUser() u: AuthenticatedUser,
+    @Body() body?: { collectedAmount?: number; note?: string },
+  ) {
+    return this.svc.recordCollection(waybillId, u.companyId, u.id, {
+      collectedAmount: body?.collectedAmount,
+      note: body?.note,
+    });
   }
 
   @Post('settle/:driverId')

@@ -112,7 +112,27 @@ describe('CodService', () => {
     it('returns collected amount and wallet balance on success', async () => {
       (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill());
       const result = await svc.recordCollection('wb1', 'co1');
-      expect(result).toMatchObject({ collected: 250, driverId: 'drv1', walletBalance: 250 });
+      // Default (no amount supplied) = exact collection of the owed amount.
+      expect(result).toMatchObject({ collected: 250, owed: 250, discrepancy: 0, exact: true });
+    });
+
+    it('records a SHORT collection with a negative discrepancy', async () => {
+      (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill()); // owed 250
+      const result = await svc.recordCollection('wb1', 'co1', undefined, { collectedAmount: 200 });
+      expect(result).toMatchObject({ collected: 200, owed: 250, discrepancy: -50, exact: false });
+    });
+
+    it('records an OVER collection with a positive discrepancy', async () => {
+      (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill()); // owed 250
+      const result = await svc.recordCollection('wb1', 'co1', undefined, { collectedAmount: 300 });
+      expect(result).toMatchObject({ collected: 300, owed: 250, discrepancy: 50, exact: false });
+    });
+
+    it('rejects a negative collected amount', async () => {
+      (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill());
+      await expect(
+        svc.recordCollection('wb1', 'co1', undefined, { collectedAmount: -10 }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
