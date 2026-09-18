@@ -6,8 +6,11 @@ import {
 import {
   CreateSalespersonDto, GenerateCommissionDto, UpdateSalespersonDto,
 } from './dto/commission.dto';
+import { Money } from '../common/money.util';
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+// Delegates to the shared integer-cents Money util so all accounting math is
+// exact to the cent (no float drift in notes, commissions, statements).
+const round2 = (n: number) => Money.round(n);
 
 @Injectable()
 export class AccountingService {
@@ -81,10 +84,10 @@ export class AccountingService {
     const cn = await this.getCreditNote(id, companyId);
     if (cn.status !== 'ISSUED') throw new BadRequestException('Only ISSUED credit notes can be applied');
 
-    const remaining = round2(cn.total - cn.appliedAmount);
-    const amount = round2(dto.amount != null ? dto.amount : remaining);
+    const remaining = Money.subtract(cn.total, cn.appliedAmount);
+    const amount = Money.round(dto.amount != null ? dto.amount : remaining);
     if (amount <= 0) throw new BadRequestException('Nothing left to apply on this credit note');
-    if (amount > remaining + 0.001) {
+    if (Money.isGreater(amount, remaining)) {
       throw new BadRequestException(`Cannot apply ${amount}; only ${remaining} remains`);
     }
 
@@ -94,8 +97,8 @@ export class AccountingService {
       if (!inv) throw new BadRequestException('Target invoice not found for this company');
     }
 
-    const newApplied = round2(cn.appliedAmount + amount);
-    const fullyApplied = newApplied >= round2(cn.total) - 0.001;
+    const newApplied = Money.add(cn.appliedAmount, amount);
+    const fullyApplied = !Money.isGreater(cn.total, newApplied); // newApplied >= total, exact
 
     return this.prisma.creditNote.update({
       where: { id },
@@ -365,14 +368,14 @@ export class AccountingService {
         const base = basis === 'total' ? i.total : (i.subtotal || i.total);
         return {
           companyId, salespersonId: sp.id, invoiceId: i.id,
-          periodMonth: dto.periodMonth, baseAmount: round2(base),
-          ratePct, amount: round2((base * ratePct) / 100),
+          periodMonth: dto.periodMonth, baseAmount: Money.round(base),
+          ratePct, amount: Money.percent(base, ratePct),
         };
       });
 
     if (toCreate.length) await this.prisma.commission.createMany({ data: toCreate });
 
-    const totalAmount = round2(toCreate.reduce((s, c) => s + c.amount, 0));
+    const totalAmount = Money.sum(toCreate.map((c) => c.amount));
     return {
       salesperson: sp.name,
       periodMonth: dto.periodMonth,
@@ -567,9 +570,9 @@ export class AccountingService {
     creditRisks.sort((a, b) => b.over - a.over);
 
     const unappliedCredits = creditNotes
-      .map((c) => ({ ...c, remaining: round2(c.total - c.appliedAmount) }))
+      .map((c) => ({ ...c, remaining: Money.subtract(c.total, c.appliedAmount) }))
       .filter((c) => c.remaining > 0);
-    const unappliedTotal = round2(unappliedCredits.reduce((s, c) => s + c.remaining, 0));
+    const unappliedTotal = Money.sum(unappliedCredits.map((c) => c.remaining));
 
     // Build prioritised recommendations.
     const recommendations: { priority: 'HIGH' | 'MEDIUM' | 'LOW'; title: string; detail: string }[] = [];
@@ -646,16 +649,16 @@ export class AccountingService {
   private lineItems(items: { description: string; quantity?: number; unitPrice: number }[]) {
     return items.map((it) => {
       const qty = it.quantity ?? 1;
-      return { description: it.description, quantity: qty, unitPrice: it.unitPrice, total: round2(qty * it.unitPrice) };
+      return { description: it.description, quantity: qty, unitPrice: it.unitPrice, total: Money.multiply(it.unitPrice, qty) };
     });
   }
 
   private computeTotals(dto: { items: { description: string; quantity?: number; unitPrice: number }[]; taxRate?: number }) {
     const items = this.lineItems(dto.items ?? []);
-    const subtotal = round2(items.reduce((s, it) => s + it.total, 0));
+    const subtotal = Money.sum(items.map((it) => it.total));
     const rate = dto.taxRate != null ? dto.taxRate : 15;
-    const tax = round2((subtotal * rate) / 100);
-    const total = round2(subtotal + tax);
+    const tax = Money.percent(subtotal, rate);
+    const total = Money.add(subtotal, tax);
     return { subtotal, tax, total, items };
   }
 
