@@ -202,7 +202,11 @@ export class WaybillsService {
     const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
     if (dto.status && dto.status !== existing.status) {
       void this.notifications.notifyWaybillStatus(updated);
-      void this.ecommerce.pushStatusToShopify(updated);
+      // Fire-and-forget: never let a Shopify push rejection become an
+      // unhandledRejection that could crash the process.
+      void this.ecommerce.pushStatusToShopify(updated).catch((e) =>
+        this.logger.warn(`Shopify status push failed: ${e?.message}`),
+      );
 
       // ── Keep Shipment in sync with Waybill status ─────────────────────
       // The Shipment model has its own status field. When the waybill
@@ -427,7 +431,11 @@ export class WaybillsService {
     });
     // Notify the customer their parcel was delivered + request rating.
     void this.notifications.notifyWaybillStatus(delivered);
-    void this.ecommerce.pushStatusToShopify(delivered);
+    // Fire-and-forget: never let a Shopify push rejection become an
+    // unhandledRejection that could crash the process.
+    void this.ecommerce.pushStatusToShopify(delivered).catch((e) =>
+      this.logger.warn(`Shopify status push failed: ${e?.message}`),
+    );
     // Auto-request rating after a short delay would happen via a cron job
     // For now, the dispatcher can trigger it manually via /rate-request
     return delivered;
