@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { guardTransition } from '../waybills/waybill-status.machine';
+import { Money } from '../common/money.util';
 
 @Injectable()
 export class CodService {
@@ -99,16 +100,16 @@ export class CodService {
     // over-pay, or exact). We record the real amount + the discrepancy so cash
     // handling reflects reality instead of assuming the driver always collected
     // exactly the owed amount. The WALLET accrues what was actually collected.
-    const owed = this.round2(waybill.codAmount);
+    const owed = Money.round(waybill.codAmount);
     let collected = owed; // default: exact collection when no amount is supplied
     if (opts?.collectedAmount !== undefined) {
       const c = Number(opts.collectedAmount);
       if (!Number.isFinite(c) || c < 0) {
         throw new BadRequestException('Collected amount must be a non-negative number');
       }
-      collected = this.round2(c);
+      collected = Money.round(c);
     }
-    const discrepancy = this.round2(collected - owed); // <0 short, >0 over, 0 exact
+    const discrepancy = Money.subtract(collected, owed); // <0 short, >0 over, 0 exact
 
     const discNote =
       discrepancy === 0 ? '' :
@@ -159,9 +160,9 @@ export class CodService {
     });
   }
 
-  /** Round a money value to 2 decimals (Float storage — curbs drift). */
+  /** Round a money value to 2 decimals via the shared integer-cents util. */
   private round2(n: number): number {
-    return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+    return Money.round(n);
   }
 
   // ── Settle driver (driver remits cash to company) ─────────────────────────
