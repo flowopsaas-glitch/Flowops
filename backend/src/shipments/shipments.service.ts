@@ -139,6 +139,9 @@ export class ShipmentsService {
   }
 
   async update(id: string, companyId: string, dto: any) {
+    // Tenant-scoped: verify the shipment belongs to the caller before mutating.
+    const owned = await this.prisma.shipment.findFirst({ where: { id, companyId }, select: { id: true } });
+    if (!owned) throw new NotFoundException('Shipment not found');
     const updated = await this.prisma.shipment.update({ where: { id }, data: dto });
     // Live-refresh the operations dashboard / live map (the frontend's
     // premium socket listens for `shipment-status-changed`).

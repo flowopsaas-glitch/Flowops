@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
@@ -31,10 +31,13 @@ export class NotificationsService {
   }
 
   async markRead(id: string, companyId: string) {
-    return this.prisma.notification.update({
-      where: { id },
+    // Tenant-scoped: a user can only mark their own company's notification read.
+    const res = await this.prisma.notification.updateMany({
+      where: { id, companyId },
       data: { read: true, readAt: new Date() },
     });
+    if (res.count === 0) throw new NotFoundException('Notification not found');
+    return { read: true };
   }
 
   async markAllRead(companyId: string) {

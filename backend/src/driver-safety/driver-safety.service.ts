@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';
@@ -249,14 +249,16 @@ export class DriverSafetyService {
   }
 
   async updateZone(id: string, companyId: string, dto: any) {
-    return this.prisma.safetyZone.update({
-      where: { id },
-      data: dto,
-    });
+    // Tenant-scoped: only edit a safety zone belonging to the caller's company.
+    const res = await this.prisma.safetyZone.updateMany({ where: { id, companyId }, data: dto });
+    if (res.count === 0) throw new NotFoundException('Safety zone not found');
+    return this.prisma.safetyZone.findFirst({ where: { id, companyId } });
   }
 
   async deleteZone(id: string, companyId: string) {
-    return this.prisma.safetyZone.delete({ where: { id } });
+    const res = await this.prisma.safetyZone.deleteMany({ where: { id, companyId } });
+    if (res.count === 0) throw new NotFoundException('Safety zone not found');
+    return { deleted: true };
   }
 
   // ══════════════════════════════════════════════════════════════════════════

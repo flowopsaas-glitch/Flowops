@@ -87,7 +87,10 @@ export class ManifestsService {
   }
 
   async update(id: string, companyId: string, dto: any) {
-    return this.prisma.manifest.update({ where: { id }, data: dto });
+    // Tenant-scoped: only mutate a manifest belonging to the caller's company.
+    const res = await this.prisma.manifest.updateMany({ where: { id, companyId }, data: dto });
+    if (res.count === 0) throw new NotFoundException('Manifest not found');
+    return this.prisma.manifest.findFirst({ where: { id, companyId } });
   }
 
   async receiveManifest(manifestId: string, companyId: string) {

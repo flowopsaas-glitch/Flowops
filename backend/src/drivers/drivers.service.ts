@@ -70,10 +70,13 @@ export class DriversService {
   }
 
   async updateLocation(id: string, companyId: string, lat: number, lng: number) {
-    return this.prisma.driver.update({
-      where: { id },
+    // Tenant-scoped: never let one company move another company's driver.
+    const res = await this.prisma.driver.updateMany({
+      where: { id, companyId },
       data: { lastLat: lat, lastLng: lng, lastSeen: new Date() },
     });
+    if (res.count === 0) throw new NotFoundException('Driver not found');
+    return { updated: true };
   }
 
   async remove(id: string, companyId: string) {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -33,7 +33,13 @@ export class QuotesService {
   }
 
   async accept(id: string, companyId: string) {
-    return this.prisma.quote.update({ where: { id }, data: { accepted: true } });
+    // Tenant-scoped: only accept a quote belonging to the caller's company.
+    const res = await this.prisma.quote.updateMany({
+      where: { id, companyId },
+      data: { accepted: true },
+    });
+    if (res.count === 0) throw new NotFoundException('Quote not found');
+    return this.prisma.quote.findFirst({ where: { id, companyId } });
   }
 
   /**

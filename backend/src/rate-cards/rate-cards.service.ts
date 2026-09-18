@@ -14,11 +14,16 @@ export class RateCardsService {
   }
 
   async update(id: string, companyId: string, dto: any) {
-    return this.prisma.rateCard.update({ where: { id }, data: dto });
+    // Tenant-scoped: only the owning company may edit its rate card.
+    const res = await this.prisma.rateCard.updateMany({ where: { id, companyId }, data: dto });
+    if (res.count === 0) throw new NotFoundException('Rate card not found');
+    return this.prisma.rateCard.findFirst({ where: { id, companyId } });
   }
 
   async remove(id: string, companyId: string) {
-    return this.prisma.rateCard.delete({ where: { id } });
+    const res = await this.prisma.rateCard.deleteMany({ where: { id, companyId } });
+    if (res.count === 0) throw new NotFoundException('Rate card not found');
+    return { deleted: true };
   }
 
   async calculate(companyId: string, dto: { fromZone?: string; toZone?: string; weight: number }) {
