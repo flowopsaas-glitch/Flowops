@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Cron } from '@nestjs/schedule';
+
+/** Round a monetary value to 2 decimals (banker-safe enough for ZAR display).
+ *  Money is stored as Float platform-wide; a follow-up migration to integer
+ *  cents is tracked separately. This at least stops compounding drift here. */
+function round2(n: number): number {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';
@@ -616,11 +623,28 @@ export class InvoicesService {
     const count = await this.prisma.invoice.count({ where: { companyId } });
     const year = new Date().getFullYear();
     const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
-    const { items, ...rest } = dto;
+    const { items, subtotal: _s, tax: _t, total: _tot, ...rest } = dto;
+
+    // SERVER-AUTHORITATIVE TOTALS. Previously subtotal/tax/total were spread
+    // straight from the client body — a caller could POST any total (e.g. a
+    // R10,000 invoice with total: 0). We now compute them from the line items
+    // and a validated VAT rate, ignoring any client-supplied totals.
+    const line = (items ?? []).map((it: any) => {
+      const quantity = Math.max(0, Number(it.quantity) || 0);
+      const unitPrice = Math.max(0, Number(it.unitPrice) || 0);
+      const lineTotal = round2(quantity * unitPrice);
+      return { ...it, quantity, unitPrice, total: lineTotal };
+    });
+    const subtotal = round2(line.reduce((s: number, it: any) => s + it.total, 0));
+    const vatRate = Number.isFinite(Number(dto.taxRate)) ? Number(dto.taxRate) : 15; // SA default 15%
+    const tax = round2(subtotal * (vatRate / 100));
+    const total = round2(subtotal + tax);
+
     return this.prisma.invoice.create({
       data: {
         ...rest, invoiceNumber, companyId,
-        items: items ? { create: items } : undefined,
+        subtotal, tax, total,
+        items: line.length ? { create: line } : undefined,
       },
       include: { items: true },
     });
@@ -672,12 +696,27 @@ export class InvoicesService {
       return inv; // idempotent — already paid, just return it
     }
 
+    // Validate the payment amount against the invoice total. Previously any
+    // client-supplied amount (or none) was stored verbatim, so a R10 payment
+    // could mark a R10,000 invoice fully PAID. Default to the invoice total;
+    // if an explicit amount is given it must be positive and must not exceed
+    // the total by more than a 1-cent rounding tolerance.
+    const amount = dto.amount !== undefined ? round2(Number(dto.amount)) : round2(inv.total);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Payment amount must be a positive number');
+    }
+    if (amount > round2(inv.total) + 0.01) {
+      throw new BadRequestException(
+        `Payment amount (R${amount.toFixed(2)}) exceeds the invoice total (R${round2(inv.total).toFixed(2)}).`,
+      );
+    }
+
     // Create an audit-trail payment record
     await this.prisma.payment.create({
       data: {
         reference: `MANUAL-${Date.now()}-${id.slice(-6)}`,
         status: 'SUCCESS',
-        amount: dto.amount ?? inv.total,
+        amount,
         currency: 'ZAR',
         description: dto.note ?? 'Manual payment approval',
         invoiceId: id,
