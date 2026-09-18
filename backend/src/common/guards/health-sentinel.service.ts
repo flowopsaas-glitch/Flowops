@@ -127,12 +127,35 @@ export class HealthSentinelService {
   private checkMemory(): 'healthy' | 'warning' | 'critical' {
     const usage = process.memoryUsage();
     const heapUsedMb = usage.heapUsed / 1024 / 1024;
-    const heapTotalMb = usage.heapTotal / 1024 / 1024;
-    const usagePct = (heapUsedMb / heapTotalMb) * 100;
 
-    if (heapUsedMb > 1500 || usagePct > 95) return 'critical';
-    if (heapUsedMb > 1000 || usagePct > 85) return 'warning';
+    // IMPORTANT: memory pressure must be measured against the V8 heap *limit*,
+    // NOT against process.memoryUsage().heapTotal. heapTotal is only the heap
+    // currently *allocated* by V8, which it keeps just above heapUsed — so
+    // heapUsed/heapTotal is almost always ~90%+ even on a perfectly idle
+    // process. The old code used that ratio and flagged "critical" at ~66MB of
+    // heap, marking the whole platform "degraded" for no reason.
+    //
+    // getHeapStatistics().heap_size_limit is the real ceiling (driven by
+    // --max-old-space-size / the container limit). We compare against that.
+    const heapLimitMb = this.getHeapLimitMb();
+    const usagePct = heapLimitMb > 0 ? (heapUsedMb / heapLimitMb) * 100 : 0;
+
+    // Absolute + relative guards. Either a hard MB ceiling or a high % of the
+    // real heap limit indicates genuine pressure.
+    if (heapUsedMb > 1500 || usagePct > 90) return 'critical';
+    if (heapUsedMb > 1000 || usagePct > 75) return 'warning';
     return 'healthy';
+  }
+
+  private getHeapLimitMb(): number {
+    try {
+      // Lazy require so this service has no hard dependency on v8 at import time.
+      const v8 = require('v8');
+      const limitBytes = v8.getHeapStatistics().heap_size_limit;
+      return limitBytes / 1024 / 1024;
+    } catch {
+      return 0; // Fall back to absolute-MB thresholds only.
+    }
   }
 
   private getMemoryUsageMb(): number {
