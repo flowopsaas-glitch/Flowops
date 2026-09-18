@@ -44,8 +44,11 @@ export default function RouteOptimizer() {
   const [route, setRoute] = useState<OptimizedRoute | null>(null);
   const [loading, setLoading] = useState(true);
   const [optimizing, setOptimizing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadCollections = () => {
+    setLoading(true);
+    setError(null);
     api
       .get("/collections")
       .then((raw: any) => {
@@ -57,7 +60,15 @@ export default function RouteOptimizer() {
         setCollections(list);
         setSelected(new Set(list.map((c) => c.id)));
       })
+      .catch((err: any) => {
+        // Don't leave the page silently blank — surface the failure with a retry.
+        setError(err?.message || "Couldn’t load collections. Please try again.");
+      })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadCollections();
   }, []);
 
   const toggle = (id: string) => {
@@ -74,12 +85,16 @@ export default function RouteOptimizer() {
 
   const optimize = async () => {
     setOptimizing(true);
+    setError(null);
     try {
       const raw: any = await api.post("/routing/optimize/collections", {
         collectionIds: Array.from(selected),
       });
       // TransformInterceptor wraps as {data, statusCode, message}
       setRoute(raw?.data ?? raw);
+    } catch (err: any) {
+      // Catch so the rejection never escapes as an unhandled error; show why.
+      setError(err?.message || "Route optimization failed. Please try again.");
     } finally {
       setOptimizing(false);
     }
@@ -113,6 +128,18 @@ export default function RouteOptimizer() {
           </p>
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <span>{error}</span>
+          <button
+            onClick={loadCollections}
+            className="shrink-0 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-100 hover:bg-rose-500/20 transition"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
         {/* Stop selector */}

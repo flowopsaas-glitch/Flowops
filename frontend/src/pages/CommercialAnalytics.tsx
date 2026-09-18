@@ -226,7 +226,7 @@ function ClientMatrixView({ data }: { data: any }) {
               {data.clients.map((c: any, i: number) => (
                 <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="p-3 font-medium">{c.clientName}</td>
-                  <td className="p-3 text-right text-emerald-400">R{c.revenue.toLocaleString()}</td>
+                  <td className="p-3 text-right text-emerald-400">R{(c.revenue ?? 0).toLocaleString()}</td>
                   <td className="p-3 text-right">{c.deliveryCount}</td>
                   <td className={`p-3 text-right font-bold ${c.marginPct >= 35 ? 'text-emerald-400' : c.marginPct >= 15 ? 'text-amber-400' : 'text-red-400'}`}>
                     {c.marginPct}%
@@ -282,9 +282,9 @@ function LaneView({ data }: { data: any }) {
                 <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="p-3 font-medium">{l.fromZone} → {l.toZone}</td>
                   <td className="p-3 text-right">{l.deliveries}</td>
-                  <td className="p-3 text-right text-emerald-400">R{l.revenue.toLocaleString()}</td>
-                  <td className="p-3 text-right text-red-300">R{l.estimatedCost.toLocaleString()}</td>
-                  <td className="p-3 text-right font-bold">R{l.grossProfit.toLocaleString()}</td>
+                  <td className="p-3 text-right text-emerald-400">R{(l.revenue ?? 0).toLocaleString()}</td>
+                  <td className="p-3 text-right text-red-300">R{(l.estimatedCost ?? 0).toLocaleString()}</td>
+                  <td className="p-3 text-right font-bold">R{(l.grossProfit ?? 0).toLocaleString()}</td>
                   <td className={`p-3 text-right font-bold ${l.marginPct >= 35 ? 'text-emerald-400' : l.marginPct >= 15 ? 'text-amber-400' : 'text-red-400'}`}>
                     {l.marginPct}%
                   </td>
@@ -304,7 +304,7 @@ function LaneView({ data }: { data: any }) {
 
 function ForecastView({ data }: { data: any }) {
   if (!data) return null;
-  const fmt = (v: number) => `R${v.toLocaleString()}`;
+  const fmt = (v: number) => `R${(v ?? 0).toLocaleString()}`;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -382,17 +382,17 @@ function IntelligenceView({ data }: { data: any }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label="Total CLV" value={`R${data.totalCLV.toLocaleString()}`} icon={Crown} color="purple" />
-        <KpiCard label="Avg CLV" value={`R${data.avgCLV.toLocaleString()}`} icon={DollarSign} color="blue" />
-        <KpiCard label="At Risk" value={data.atRiskCount} icon={ShieldAlert} color="red" />
-        <KpiCard label="Growing" value={data.growingCount} icon={TrendingUp} color="emerald" />
+        <KpiCard label="Total CLV" value={`R${(data.totalCLV ?? 0).toLocaleString()}`} icon={Crown} color="purple" />
+        <KpiCard label="Avg CLV" value={`R${(data.avgCLV ?? 0).toLocaleString()}`} icon={DollarSign} color="blue" />
+        <KpiCard label="At Risk" value={data.atRiskCount ?? 0} icon={ShieldAlert} color="red" />
+        <KpiCard label="Growing" value={data.growingCount ?? 0} icon={TrendingUp} color="emerald" />
       </div>
 
       {/* Tier distribution */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
         <h3 className="font-bold text-sm mb-3">CLV Tier Distribution</h3>
         <div className="flex gap-3 flex-wrap">
-          {Object.entries(data.tiers).map(([tier, count]) => (
+          {Object.entries(data.tiers ?? {}).map(([tier, count]) => (
             <div key={tier} className={`px-3 py-2 rounded-xl ${tierColor[tier.toUpperCase()] || 'bg-white/5 text-white/50'}`}>
               <div className="text-xs uppercase font-bold">{tier}</div>
               <div className="text-lg font-black">{count as number}</div>
@@ -423,13 +423,13 @@ function IntelligenceView({ data }: { data: any }) {
               {data.clients.slice(0, 15).map((c: any, i: number) => (
                 <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="p-3 font-medium">{c.clientName}</td>
-                  <td className="p-3 text-right text-emerald-400 font-bold">R{c.clv.toLocaleString()}</td>
+                  <td className="p-3 text-right text-emerald-400 font-bold">R{(c.clv ?? 0).toLocaleString()}</td>
                   <td className="p-3 text-center">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${tierColor[c.clvTier] || ''}`}>
                       {c.clvTier}
                     </span>
                   </td>
-                  <td className="p-3 text-right">R{c.monthlyAvg.toLocaleString()}</td>
+                  <td className="p-3 text-right">R{(c.monthlyAvg ?? 0).toLocaleString()}</td>
                   <td className="p-3 text-center flex items-center justify-center gap-1">
                     {trendIcon[c.volumeTrend]} <span className="text-xs">{c.volumeTrend}</span>
                   </td>
