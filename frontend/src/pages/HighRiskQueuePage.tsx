@@ -9,7 +9,6 @@ import {
   Search,
   ShieldAlert,
   XCircle,
-  Zap,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -183,7 +182,7 @@ export default function HighRiskQueuePage() {
   const resolve = async (id: string) => {
     setBusy(`resolve-${id}`);
     try {
-      await api.patch(`/ai-events/${id}/resolve`, {});
+      await api.post(`/ai-events/${id}/resolve`, {});
       await load();
     } finally {
       setBusy(null);
@@ -193,17 +192,7 @@ export default function HighRiskQueuePage() {
   const dismiss = async (id: string) => {
     setBusy(`dismiss-${id}`);
     try {
-      await api.patch(`/ai-events/${id}/dismiss`, {});
-      await load();
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const seedDemo = async () => {
-    setBusy("seed");
-    try {
-      await api.post("/ai-events/seed-demo", {});
+      await api.post(`/ai-events/${id}/dismiss`, {});
       await load();
     } finally {
       setBusy(null);
@@ -250,13 +239,6 @@ export default function HighRiskQueuePage() {
             <button onClick={load} className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-white hover:bg-white/10">
               <RefreshCw className="h-4 w-4" />
             </button>
-            {events.length === 0 && (
-              <button disabled={busy === "seed"} onClick={seedDemo}
-                className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60">
-                {busy === "seed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                Seed Demo Events
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -312,7 +294,7 @@ export default function HighRiskQueuePage() {
           <XCircle className="mx-auto h-10 w-10 text-white/10 mb-3" />
           <div className="text-white/40 font-bold">
             {events.length === 0
-              ? "No AI events yet. Click 'Seed Demo Events' to populate sample data."
+              ? "No AI events yet. Exceptions and alerts will appear here as they occur."
               : "No events match your filters."}
           </div>
         </div>

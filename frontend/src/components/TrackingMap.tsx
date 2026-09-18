@@ -9,7 +9,7 @@ import { getMapCenter } from '../lib/currency';
 // ── Dark-themed tile configuration ──────────────────────────────────────────
 // CartoDB Dark Matter — matches FlowOps dark UI perfectly.
 // Free, no API key required, excellent global coverage.
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTRIBUTION = '&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>';
 
 // Default center — resolved dynamically per tenant country

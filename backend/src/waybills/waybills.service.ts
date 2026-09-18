@@ -6,6 +6,7 @@ import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EcommerceService } from '../ecommerce/ecommerce.service';
 import { WaybillStatus } from '@prisma/client';
+import { guardTransition } from './waybill-status.machine';
 import { v4 as uuid } from 'uuid';
 import { BillingService } from '../billing/billing.service';
 import { EventsGateway } from '../gateway/events.gateway';
@@ -191,10 +192,21 @@ export class WaybillsService {
 
   async update(id: string, companyId: string, dto: any) {
     const existing = await this.findOne(id, companyId);
+    // Guard the lifecycle transition. Non-breaking in this phase: illegal jumps
+    // are logged (not blocked) until WAYBILL_STRICT_TRANSITIONS is enabled.
+    if (dto.status && dto.status !== existing.status) {
+      guardTransition(existing.status, dto.status, {
+        waybillId: id, trackingNumber: existing.trackingNumber, actor: 'waybills.update',
+      }, (msg) => { throw new BadRequestException(msg); });
+    }
     const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
     if (dto.status && dto.status !== existing.status) {
       void this.notifications.notifyWaybillStatus(updated);
-      void this.ecommerce.pushStatusToShopify(updated);
+      // Fire-and-forget: never let a Shopify push rejection become an
+      // unhandledRejection that could crash the process.
+      void this.ecommerce.pushStatusToShopify(updated).catch((e) =>
+        this.logger.warn(`Shopify status push failed: ${e?.message}`),
+      );
 
       // ── Keep Shipment in sync with Waybill status ─────────────────────
       // The Shipment model has its own status field. When the waybill
@@ -234,10 +246,14 @@ export class WaybillsService {
     if (!waybill) throw new NotFoundException('Waybill not found');
 
     // Get driver details for the dispatch notification
-    const driver = await this.prisma.driver.findUnique({
-      where: { id: driverId },
+    // Tenant-scoped: the driver being assigned MUST belong to the same company
+    // as the waybill (was findUnique by id only → could attach another tenant's
+    // driver and leak their name/phone via the dispatch notification).
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId },
       select: { name: true, phone: true, vehicleType: true, vehicleReg: true },
     });
+    if (!driver) throw new NotFoundException('Driver not found in your company');
 
     return this.prisma.$transaction(async (tx) => {
       // Upsert the linked shipment
@@ -295,6 +311,12 @@ export class WaybillsService {
         results.push({ trackingNumber: tn, result: 'unchanged', id: waybill.id });
         continue;
       }
+      // Enforce the lifecycle even on bulk warehouse scans, so a scan can't
+      // jump a parcel to an illegal state (e.g. PENDING → DELIVERED). Honours
+      // WAYBILL_STRICT_TRANSITIONS: logged-only until strict mode is enabled.
+      guardTransition(waybill.status, targetStatus as WaybillStatus, {
+        waybillId: waybill.id, trackingNumber: waybill.trackingNumber, actor: 'waybills.batchScan',
+      }, (msg) => { throw new BadRequestException(msg); });
       const updated = await this.prisma.waybill.update({
         where: { id: waybill.id },
         data: { status: targetStatus as any },
@@ -378,10 +400,17 @@ export class WaybillsService {
   async recordDelivery(
     id: string,
     companyId: string,
-    dto: { recipient: string; signatureBase64?: string },
+    dto: { recipient: string; signatureBase64?: string; scannedCodes?: string | string[] },
     file?: Express.Multer.File,
   ) {
     const waybill = await this.findOne(id, companyId);
+
+    // scannedCodes arrives as a JSON string from multipart form-data.
+    let scannedCodes: string[] = [];
+    if (dto.scannedCodes) {
+      if (Array.isArray(dto.scannedCodes)) scannedCodes = dto.scannedCodes;
+      else { try { scannedCodes = JSON.parse(dto.scannedCodes); } catch { scannedCodes = []; } }
+    }
 
     let podSignatureUrl: string | undefined;
     let podImageUrl: string | undefined;
@@ -407,11 +436,16 @@ export class WaybillsService {
         podDeliveredAt: new Date(),
         ...(podSignatureUrl && { podSignatureUrl }),
         ...(podImageUrl && { podImageUrl }),
+        ...(scannedCodes.length && { podScannedCodes: scannedCodes }),
       },
     });
     // Notify the customer their parcel was delivered + request rating.
     void this.notifications.notifyWaybillStatus(delivered);
-    void this.ecommerce.pushStatusToShopify(delivered);
+    // Fire-and-forget: never let a Shopify push rejection become an
+    // unhandledRejection that could crash the process.
+    void this.ecommerce.pushStatusToShopify(delivered).catch((e) =>
+      this.logger.warn(`Shopify status push failed: ${e?.message}`),
+    );
     // Auto-request rating after a short delay would happen via a cron job
     // For now, the dispatcher can trigger it manually via /rate-request
     return delivered;

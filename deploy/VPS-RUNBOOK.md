@@ -174,3 +174,91 @@ backends and two databases**: the SPA hit the empty/stale one while the real
 data lived in the other. Keeping everything in **one** compose project means
 there is exactly one backend and one Postgres volume — the failure mode simply
 cannot happen.
+
+
+---
+
+## Reliability & Disaster Recovery (added 2026-09)
+
+Everything below is **operational hardening** for running on one VPS. The app
+already dumps the DB every 6h into a Docker volume; these steps make backups
+survivable off-box, provable, and add disk self-healing.
+
+### A. Off-box backups to Cloudflare R2 — `deploy/backup-to-r2.sh`
+
+The `postgres-backup` container keeps 7 days of dumps **on the same disk** as
+the database. If the VPS/disk is lost, those go with it. This script copies a
+fresh, **verified** dump into Cloudflare R2 (uses the R2 keys already in `.env`).
+
+Prereqs on the host: Docker + `awscli` (`apt-get install -y awscli`).
+
+Install (run once):
+```bash
+sudo cp deploy/backup-to-r2.sh /usr/local/bin/flowops-backup-r2
+sudo chmod +x /usr/local/bin/flowops-backup-r2
+# make a dedicated bucket in the Cloudflare dashboard first, e.g. "flowops-backups"
+# daily 02:15, sourcing the compose .env so R2 creds are present:
+( crontab -l 2>/dev/null; \
+  echo '15 2 * * * set -a; . /root/FlowOps/.env; set +a; R2_BACKUP_BUCKET=flowops-backups /usr/local/bin/flowops-backup-r2 >> /var/log/flowops-backup.log 2>&1' \
+) | crontab -
+```
+Run it once by hand to confirm it works:
+```bash
+set -a; . /root/FlowOps/.env; set +a
+R2_BACKUP_BUCKET=flowops-backups flowops-backup-r2
+```
+It refuses to upload a dump that fails size/gzip/pg_dump-header checks — a bad
+backup never silently replaces a good one.
+
+### B. PROVE the backup restores — `deploy/restore-verify.sh`
+
+An untested backup is not a backup. This restores the newest dump into a
+**throwaway** temp database, counts key tables, then drops it. It never touches
+live data.
+
+```bash
+sudo cp deploy/restore-verify.sh /usr/local/bin/flowops-restore-verify
+sudo chmod +x /usr/local/bin/flowops-restore-verify
+# verify the latest local dump right now:
+flowops-restore-verify --latest-local
+# optional: weekly automated proof (Sundays 03:00)
+( crontab -l 2>/dev/null; echo '0 3 * * 0 /usr/local/bin/flowops-restore-verify --latest-local >> /var/log/flowops-restore-verify.log 2>&1' ) | crontab -
+```
+**Real disaster recovery** (overwrites live DB — only when actually recovering):
+```bash
+flowops-restore-verify --restore-live /path/to/dump.sql.gz --i-understand
+docker restart flowops-api-1
+```
+
+### C. Disk self-healing — `deploy/disk-guard.sh`
+
+A full disk stops Postgres writes = total outage. This prunes dangling Docker
+images/build-cache at 75% and gets aggressive at 85%. It **never** prunes
+volumes, so DB data and backups are safe.
+
+```bash
+sudo cp deploy/disk-guard.sh /usr/local/bin/flowops-disk-guard
+sudo chmod +x /usr/local/bin/flowops-disk-guard
+( crontab -l 2>/dev/null; echo '17 */4 * * * /usr/local/bin/flowops-disk-guard >> /var/log/flowops-disk.log 2>&1' ) | crontab -
+# one-off manual reclaim any time:
+flowops-disk-guard
+```
+
+### D. Disk + health visibility
+
+`GET /health` now includes disk usage. The in-app Health Sentinel logs a
+warning at 80% and an error at 90% (visible in `docker logs flowops-api-1` and
+the CLAW Observatory). Quick check:
+```bash
+curl -s http://localhost:8080/api/v1/health | jq   # or add ?full if exposed
+df -h /
+```
+
+### E. Reboot survival (already configured — just verify)
+
+All services use `restart: always` in `deploy/docker-compose.vps.yml`, so the
+stack comes back after a reboot. Confirm Docker itself starts on boot:
+```bash
+sudo systemctl enable docker
+docker ps            # after a test reboot, all flowops-* containers should be Up
+```

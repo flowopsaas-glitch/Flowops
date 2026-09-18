@@ -54,11 +54,41 @@ export class ApiError extends Error {
   }
 }
 
+// ── Network resilience config ─────────────────────────────
+// Our users are couriers/dispatchers on mobile data in low-signal areas, so
+// the client MUST survive a weak or flaky connection instead of failing hard.
+//   • REQUEST_TIMEOUT_MS — give up on a stalled request (never hang forever).
+//   • MAX_RETRIES / RETRY_BASE_DELAY_MS — retry transient network + timeout
+//     failures (and 502/503/504 from a briefly-unavailable server) with
+//     exponential backoff, so a momentary signal dip recovers automatically.
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 600;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A failure is transient (worth retrying) when the request never got a real
+ * answer — no response (network drop / DNS / connection refused), a timeout
+ * (ECONNABORTED), or the server briefly returned 502/503/504. A 4xx (bad
+ * request, 401, 404, validation) is NOT transient and must not be retried.
+ */
+function isTransient(error: any): boolean {
+  if (error?.code === 'ECONNABORTED') return true;            // axios timeout
+  if (error?.message === 'Network Error') return true;         // no response
+  if (!error?.response) return true;                           // never reached server
+  const s = error.response.status;
+  return s === 502 || s === 503 || s === 504;
+}
+
 // ── Axios instance ────────────────────────────────────────
 const api = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
+  // Never hang forever on a weak connection — fail cleanly after 30s so the
+  // retry logic (and, ultimately, a readable error) can take over.
+  timeout: REQUEST_TIMEOUT_MS,
 });
 
 // Request: attach JWT
@@ -98,7 +128,7 @@ api.interceptors.response.use(
         const resp = await axios.post(
           `${API_BASE}/auth/refresh`,
           { refreshToken: storedRefresh },
-          { withCredentials: true },
+          { withCredentials: true, timeout: REQUEST_TIMEOUT_MS },
         );
         // Unwrap the TransformInterceptor envelope: { data: { access_token, refresh_token }, ... }
         const body = resp.data?.data ?? resp.data ?? {};
@@ -116,7 +146,33 @@ api.interceptors.response.use(
       }
     }
 
-    const message = error.response?.data?.message || 'An infrastructure error occurred during data transmission.';
+    // ── Auto-retry transient network failures ──────────────────────────────
+    // A weak/dropped connection or a briefly-unavailable server (502/503/504)
+    // is retried up to MAX_RETRIES with exponential backoff, so login and every
+    // other request survive a momentary signal dip instead of failing outright.
+    // 4xx responses (invalid credentials, validation, 401/404) are NOT retried.
+    if (isTransient(error)) {
+      originalRequest._retryCount = (originalRequest._retryCount ?? 0) + 1;
+      if (originalRequest._retryCount <= MAX_RETRIES) {
+        const delay = RETRY_BASE_DELAY_MS * 2 ** (originalRequest._retryCount - 1); // 0.6s, 1.2s, 2.4s
+        await sleep(delay);
+        return api(originalRequest);
+      }
+    }
+
+    // ── Readable, honest error message ─────────────────────────────────────
+    // If the request never reached the server (no response after retries), the
+    // problem is the user's connection — say so plainly instead of the old,
+    // confusing "infrastructure error during data transmission".
+    let message: string;
+    if (error.response?.data?.message) {
+      message = error.response.data.message;                    // real server error
+    } else if (isTransient(error)) {
+      message =
+        'Can’t reach FlowOps — please check your internet connection and try again.';
+    } else {
+      message = 'Something went wrong. Please try again.';
+    }
     return Promise.reject(new ApiError(message, error.response?.status));
   },
 );
@@ -146,9 +202,22 @@ export const apiFetch = async <T>(url: string, opts?: RequestInit): Promise<T> =
     ...(opts?.headers as Record<string, string> || {}),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${url}`, { ...opts, headers });
-  if (!res.ok) throw new ApiError(res.statusText, res.status);
-  return res.json();
+  // Bound this raw fetch with the same 30s ceiling as the axios client so it
+  // can't hang forever on a weak connection.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${url}`, { ...opts, headers, signal: controller.signal });
+    if (!res.ok) throw new ApiError(res.statusText, res.status);
+    return res.json();
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new ApiError('Can’t reach FlowOps — please check your internet connection and try again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 export const getApiBaseUrl = () => API_BASE;

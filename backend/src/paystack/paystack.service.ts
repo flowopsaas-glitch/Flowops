@@ -158,8 +158,10 @@ export class PaystackService {
         break;
 
       case 'charge.failed':
+        // Idempotent + safe: never downgrade an already-SUCCESS payment to
+        // FAILED (a late/replayed failed event must not clobber a real success).
         await this.prisma.payment.updateMany({
-          where: { reference: data.reference },
+          where: { reference: data.reference, status: { not: 'SUCCESS' } },
           data: { status: 'FAILED', webhookPayload: rawPayload },
         });
         break;
@@ -185,6 +187,19 @@ export class PaystackService {
 
   private async handleChargeSuccess(tx: any) {
     const reference = tx.reference;
+
+    // IDEMPOTENCY: Paystack can deliver charge.success more than once (retries
+    // / replays). If the payment is already SUCCESS we've processed it — skip
+    // re-marking the invoice and (below) re-promoting the plan.
+    const existing = await this.prisma.payment.findFirst({
+      where: { reference },
+      select: { id: true, status: true, invoiceId: true, companyId: true },
+    });
+    if (existing?.status === 'SUCCESS') {
+      this.logger.log(`charge.success for ${reference} already processed — skipping (idempotent).`);
+      return;
+    }
+
     await this.prisma.payment.updateMany({
       where: { reference },
       data: {
@@ -217,11 +232,37 @@ export class PaystackService {
     const email    = data.customer?.email as string | undefined;
     if (!planCode || !email) return;
 
-    const company = await this.prisma.company.findFirst({
-      where: { email: email.toLowerCase() },
-      select: { id: true },
+    // Resolve the company from OUR OWN trusted records, not a bare email match.
+    // The subscription checkout recorded a Payment carrying the authenticated
+    // companyId (customerEmail + companyId). Matching on that is tenant-safe.
+    // A raw company.findFirst({ email }) was a cross-tenant hazard: a shared or
+    // spoofed company email could promote the wrong tenant's plan.
+    const emailLower = email.toLowerCase();
+    const payment = await this.prisma.payment.findFirst({
+      where: { customerEmail: emailLower },
+      orderBy: { createdAt: 'desc' },
+      select: { companyId: true },
     });
-    if (company) await this.promotePlanByCode(planCode, company.id);
+    if (payment?.companyId) {
+      await this.promotePlanByCode(planCode, payment.companyId);
+      return;
+    }
+
+    // Fallback: only promote by company email when it maps to EXACTLY ONE
+    // company (no ambiguity). If multiple companies share the email, refuse
+    // rather than risk promoting the wrong tenant.
+    const matches = await this.prisma.company.findMany({
+      where: { email: emailLower },
+      select: { id: true },
+      take: 2,
+    });
+    if (matches.length === 1) {
+      await this.promotePlanByCode(planCode, matches[0].id);
+    } else {
+      this.logger.warn(
+        `subscription.create for ${emailLower}: ${matches.length} company matches and no prior payment — skipping plan promotion to avoid cross-tenant upgrade.`,
+      );
+    }
   }
 
   /** Map a Paystack plan code → internal plan name and persist it. */

@@ -262,5 +262,33 @@ export class AiEventsService {
       },
     });
   }
+
+  /** Dismiss (hide) an event — tenant-scoped, soft (never deletes). */
+  async dismiss(id: number | string, companyId: number | string) {
+    const found = await this.prisma.aiEvent.findFirst({
+      where: { id: String(id), companyId: String(companyId) },
+      select: { id: true },
+    });
+    if (!found) return { dismissed: false };
+    await this.prisma.aiEvent.update({
+      where: { id: String(id) },
+      data: { dismissed: true },
+    });
+    return { dismissed: true };
+  }
+
+  /** Queue counters for the High Risk Queue header cards (tenant-scoped). */
+  async stats(companyId: number | string) {
+    const where = { companyId: String(companyId) } as const;
+    const [total, open, resolved, critical, high, dismissed] = await Promise.all([
+      this.prisma.aiEvent.count({ where }),
+      this.prisma.aiEvent.count({ where: { ...where, resolved: false, dismissed: false } }),
+      this.prisma.aiEvent.count({ where: { ...where, resolved: true } }),
+      this.prisma.aiEvent.count({ where: { ...where, severity: 'critical', resolved: false, dismissed: false } }),
+      this.prisma.aiEvent.count({ where: { ...where, severity: 'high', resolved: false, dismissed: false } }),
+      this.prisma.aiEvent.count({ where: { ...where, dismissed: true } }),
+    ]);
+    return { total, open, resolved, critical, high, dismissed };
+  }
 }
 

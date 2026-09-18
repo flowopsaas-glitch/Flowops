@@ -5,6 +5,7 @@ import { BillingService } from '../billing/billing.service';
 import { CopilotService } from '../copilot/copilot.service';
 import { AskSupportDto } from './dto/ask.dto';
 import { AI_SECURITY_PREAMBLE, sanitizeAiInput } from '../common/ai-security.util';
+import { GROQ_MODEL } from '../ai/groq-model';
 import { CreateTicketDto, UpdateTicketDto } from './dto/create-ticket.dto';
 
 interface KbArticle {
@@ -33,7 +34,7 @@ interface KbArticle {
 export class SupportService {
   private readonly logger = new Logger('CLAW_SUPPORT');
   private readonly GROQ = 'https://api.groq.com/openai/v1/chat/completions';
-  private readonly MODEL = 'llama-3.3-70b-versatile';
+  private readonly MODEL = GROQ_MODEL;
 
   constructor(
     private readonly prisma: PrismaService,

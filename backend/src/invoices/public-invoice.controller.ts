@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, NotFoundException } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -15,9 +15,14 @@ export class PublicInvoiceController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get(':id/view')
-  async viewInvoice(@Param('id') id: string, @Res() res: any) {
+  async viewInvoice(@Param('id') id: string, @Query('token') token: string, @Res() res: any) {
+    // Require an unguessable token that matches this invoice. This closes the
+    // previous IDOR where anyone could view any invoice (client name, email,
+    // amounts, company banking details) by its id alone. The share link the
+    // tenant generates includes ?token=<publicToken>.
+    if (!token) throw new NotFoundException('Invoice not found');
     const inv = await this.prisma.invoice.findFirst({
-      where: { id },
+      where: { id, publicToken: token },
       include: { items: true },
     });
     if (!inv) throw new NotFoundException('Invoice not found');

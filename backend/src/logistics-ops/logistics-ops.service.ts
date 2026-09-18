@@ -1,6 +1,16 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { guardTransition } from '../waybills/waybill-status.machine';
+import { WaybillStatus, FailedDeliveryReason } from '@prisma/client';
+
+/** Valid failed-delivery reason codes, mirrored from the Prisma enum for
+ *  runtime validation of client-supplied codes. */
+export const FAILED_DELIVERY_REASONS: readonly string[] = [
+  'CUSTOMER_NOT_HOME', 'CUSTOMER_REFUSED', 'INCORRECT_ADDRESS', 'ADDRESS_NOT_FOUND',
+  'ACCESS_RESTRICTED', 'BUSINESS_CLOSED', 'NO_SAFE_DROP_LOCATION', 'COD_PAYMENT_UNAVAILABLE',
+  'DAMAGED_IN_TRANSIT', 'WEATHER_OR_HAZARD', 'VEHICLE_BREAKDOWN', 'OUTSIDE_DELIVERY_WINDOW', 'OTHER',
+];
 
 /**
  * Logistics Operations Service — World-Class Features
@@ -65,9 +75,18 @@ export class LogisticsOpsService {
   // 2. DELIVERY ATTEMPTS (3x retry)
   // ══════════════════════════════════════════════════════════════════════════
 
-  async recordFailedAttempt(waybillId: string, companyId: string, dto: { reason: string; rescheduleHours?: number }) {
+  async recordFailedAttempt(
+    waybillId: string,
+    companyId: string,
+    dto: { reason: string; reasonCode?: string; rescheduleHours?: number },
+  ) {
     const wb = await this.prisma.waybill.findFirst({ where: { id: waybillId, companyId } });
     if (!wb) throw new NotFoundException('Waybill not found');
+
+    // Structured reason code (for analytics), validated against the enum.
+    // Free-text `reason` remains for driver detail; if a code is supplied it
+    // must be valid, otherwise we fall back to OTHER rather than reject.
+    const reasonCode = this.normaliseFailReason(dto.reasonCode);
 
     const newAttemptCount = (wb.attemptCount ?? 0) + 1;
     const maxAttempts = wb.maxAttempts ?? 3;
@@ -79,6 +98,7 @@ export class LogisticsOpsService {
     const data: any = {
       attemptCount: newAttemptCount,
       lastAttemptNote: dto.reason,
+      lastAttemptReasonCode: reasonCode,
       status: exhausted ? 'RETURNED' : 'FAILED_DELIVERY',
       returnToSender: exhausted,
       nextAttemptAt,
@@ -96,7 +116,7 @@ export class LogisticsOpsService {
       status: data.status,
       description: desc,
       actorType: 'DRIVER',
-      metadata: { attemptNumber: newAttemptCount, reason: dto.reason, nextAttemptAt },
+      metadata: { attemptNumber: newAttemptCount, reason: dto.reason, reasonCode, nextAttemptAt },
     });
 
     // Notify recipient about failed attempt
@@ -114,8 +134,18 @@ export class LogisticsOpsService {
       }).catch(() => {});
     }
 
-    this.logger.log(`Failed attempt ${newAttemptCount}/${maxAttempts} for ${wb.trackingNumber}: ${dto.reason}`);
-    return { ...updated, exhausted, nextAttemptAt };
+    this.logger.log(`Failed attempt ${newAttemptCount}/${maxAttempts} for ${wb.trackingNumber}: [${reasonCode}] ${dto.reason}`);
+    return { ...updated, exhausted, nextAttemptAt, reasonCode };
+  }
+
+  /** Coerce a client-supplied reason code to a valid FailedDeliveryReason.
+   *  Unknown/blank → OTHER (never rejects the failed-attempt record). */
+  private normaliseFailReason(code?: string): FailedDeliveryReason {
+    if (!code) return 'OTHER' as FailedDeliveryReason;
+    const upper = String(code).toUpperCase().trim();
+    return (FAILED_DELIVERY_REASONS as readonly string[]).includes(upper)
+      ? (upper as FailedDeliveryReason)
+      : ('OTHER' as FailedDeliveryReason);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -228,6 +258,12 @@ export class LogisticsOpsService {
     const wb = await this.prisma.waybill.findFirst({ where: { id: waybillId, companyId } });
     if (!wb) throw new NotFoundException('Waybill not found');
 
+    // Chain of custody: a hub receive is a real lifecycle transition. Guard it
+    // against the state machine (log-only until strict mode is enabled).
+    guardTransition(wb.status, status as WaybillStatus, {
+      waybillId, trackingNumber: wb.trackingNumber, actor: user?.name ?? 'warehouse',
+    }, (msg) => { throw new BadRequestException(msg); });
+
     await this.prisma.waybill.update({ where: { id: waybillId }, data: { status: status as any } });
 
     const desc = status === 'AT_ORIGIN_HUB'
@@ -250,6 +286,62 @@ export class LogisticsOpsService {
     }
 
     return { success: true, status, waybillId };
+  }
+
+  /**
+   * pendingHubReceive — the warehouse clerk's inbound worklist: parcels that
+   * have been COLLECTED (a driver picked them up) but not yet received/checked
+   * into the depot. These are the parcels waiting on AT_ORIGIN_HUB scan-in.
+   */
+  async pendingHubReceive(companyId: string) {
+    const rows = await this.prisma.waybill.findMany({
+      where: { companyId, status: 'COLLECTED' },
+      orderBy: { updatedAt: 'asc' },
+      take: 200,
+      select: {
+        id: true, trackingNumber: true, senderName: true, senderAddress: true,
+        recipientName: true, recipientAddress: true, description: true, updatedAt: true,
+      },
+    });
+    return { count: rows.length, waybills: rows };
+  }
+
+  /**
+   * receiveAtHub — warehouse clerk checks a batch of parcels into the origin
+   * depot. Accepts tracking numbers OR waybill ids. Each parcel is guarded and
+   * transitioned COLLECTED → AT_ORIGIN_HUB with a WAREHOUSE audit event.
+   * Returns a per-parcel result so the clerk sees exactly what was received,
+   * what was already in, and what wasn't found.
+   */
+  async receiveAtHub(companyId: string, refs: string[], location?: string, user?: any) {
+    const received: string[] = [];
+    const already: string[] = [];
+    const notFound: string[] = [];
+    const rejected: { ref: string; reason: string }[] = [];
+
+    for (const rawRef of refs ?? []) {
+      const ref = String(rawRef ?? '').trim();
+      if (!ref) continue;
+      const wb = await this.prisma.waybill.findFirst({
+        where: { companyId, OR: [{ id: ref }, { trackingNumber: ref }] },
+        select: { id: true, trackingNumber: true, status: true },
+      });
+      if (!wb) { notFound.push(ref); continue; }
+      if (wb.status === 'AT_ORIGIN_HUB') { already.push(wb.trackingNumber); continue; }
+      try {
+        await this.transitionToHub(wb.id, companyId, 'AT_ORIGIN_HUB', location, user);
+        received.push(wb.trackingNumber);
+      } catch (err: any) {
+        rejected.push({ ref: wb.trackingNumber, reason: err?.message ?? 'transition rejected' });
+      }
+    }
+
+    return {
+      success: true,
+      receivedCount: received.length,
+      received, already, notFound, rejected,
+      message: `Received ${received.length} parcel(s) into ${location ?? 'the depot'}.`,
+    };
   }
 
   /**

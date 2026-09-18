@@ -1,5 +1,13 @@
-import { Injectable, NotFoundException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Cron } from '@nestjs/schedule';
+import { Money } from '../common/money.util';
+
+/** Round a monetary value to 2 decimals. Delegates to the shared Money util
+ *  (integer-cents math) so all invoice money is exact to the cent. */
+function round2(n: number): number {
+  return Money.round(n);
+}
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';
@@ -67,6 +75,31 @@ export class InvoicesService {
     });
     if (!inv) throw new NotFoundException('Invoice not found');
     return inv;
+  }
+
+  /**
+   * Return a tokenised public share link for an invoice. Generates the
+   * unguessable publicToken on first use (lazy), so the public portal view
+   * can be opened without auth but ONLY by someone holding the token — closing
+   * the previous IDOR where any invoice was viewable by id alone.
+   * Tenant-scoped: only the owning company can mint/read the link.
+   */
+  async getShareLink(id: string, companyId: string): Promise<{ token: string; path: string }> {
+    const inv = await this.prisma.invoice.findFirst({
+      where: { id, companyId },
+      select: { id: true, publicToken: true },
+    });
+    if (!inv) throw new NotFoundException('Invoice not found');
+
+    let token = (inv as any).publicToken as string | null;
+    if (!token) {
+      token = randomUUID();
+      await this.prisma.invoice.update({
+        where: { id: inv.id },
+        data: { publicToken: token } as any,
+      });
+    }
+    return { token, path: `/api/v1/portal/invoices/${inv.id}/view?token=${token}` };
   }
 
   // ── AR Aging Report ────────────────────────────────────────────────────────
@@ -475,9 +508,9 @@ export class InvoicesService {
     const waybills = await this.getUnbilledWaybills(company.id);
     if (!waybills.length) return null;
 
-    const subtotal = waybills.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
-    const tax      = Math.round(subtotal * 0.15 * 100) / 100;
-    const total    = Math.round((subtotal + tax) * 100) / 100;
+    const subtotal = Money.sum(waybills.map((w) => w.totalAmount ?? 0));
+    const tax      = Money.percent(subtotal, 15); // SA VAT 15%
+    const total    = Money.add(subtotal, tax);
 
     const count         = await this.prisma.invoice.count({ where: { companyId: company.id } });
     const year          = new Date().getFullYear();
@@ -590,11 +623,28 @@ export class InvoicesService {
     const count = await this.prisma.invoice.count({ where: { companyId } });
     const year = new Date().getFullYear();
     const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
-    const { items, ...rest } = dto;
+    const { items, subtotal: _s, tax: _t, total: _tot, ...rest } = dto;
+
+    // SERVER-AUTHORITATIVE TOTALS. Previously subtotal/tax/total were spread
+    // straight from the client body — a caller could POST any total (e.g. a
+    // R10,000 invoice with total: 0). We now compute them from the line items
+    // and a validated VAT rate, ignoring any client-supplied totals.
+    const line = (items ?? []).map((it: any) => {
+      const quantity = Math.max(0, Number(it.quantity) || 0);
+      const unitPrice = Math.max(0, Number(it.unitPrice) || 0);
+      const lineTotal = Money.multiply(unitPrice, quantity); // exact to the cent
+      return { ...it, quantity, unitPrice, total: lineTotal };
+    });
+    const subtotal = Money.sum(line.map((it: any) => it.total));
+    const vatRate = Number.isFinite(Number(dto.taxRate)) ? Number(dto.taxRate) : 15; // SA default 15%
+    const tax = Money.percent(subtotal, vatRate);
+    const total = Money.add(subtotal, tax);
+
     return this.prisma.invoice.create({
       data: {
         ...rest, invoiceNumber, companyId,
-        items: items ? { create: items } : undefined,
+        subtotal, tax, total,
+        items: line.length ? { create: line } : undefined,
       },
       include: { items: true },
     });
@@ -618,7 +668,7 @@ export class InvoicesService {
 
     const result = await this.paystack.initializePayment({
       email,
-      amount: Math.round(inv.total * 100), // Paystack uses cents/kobo
+      amount: Money.toCents(inv.total), // Paystack uses cents/kobo (exact)
       companyId,
       invoiceId: id,
       description: `Invoice ${inv.invoiceNumber} — ${inv.clientName}`,
@@ -646,12 +696,28 @@ export class InvoicesService {
       return inv; // idempotent — already paid, just return it
     }
 
+    // Validate the payment amount against the invoice total. Previously any
+    // client-supplied amount (or none) was stored verbatim, so a R10 payment
+    // could mark a R10,000 invoice fully PAID. Default to the invoice total;
+    // if an explicit amount is given it must be positive and must not exceed
+    // the total by more than a 1-cent rounding tolerance.
+    const amount = dto.amount !== undefined ? Money.round(dto.amount) : Money.round(inv.total);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Payment amount must be a positive number');
+    }
+    // Exact cent comparison — no float tolerance fudge needed.
+    if (Money.isGreater(amount, inv.total)) {
+      throw new BadRequestException(
+        `Payment amount (R${amount.toFixed(2)}) exceeds the invoice total (R${Money.round(inv.total).toFixed(2)}).`,
+      );
+    }
+
     // Create an audit-trail payment record
     await this.prisma.payment.create({
       data: {
         reference: `MANUAL-${Date.now()}-${id.slice(-6)}`,
         status: 'SUCCESS',
-        amount: dto.amount ?? inv.total,
+        amount,
         currency: 'ZAR',
         description: dto.note ?? 'Manual payment approval',
         invoiceId: id,

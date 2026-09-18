@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { ApplyPlanDto, CreateCourierOrderDto, UpdateCourierOrderDto } from './dto/courier-order.dto';
 import { AI_INTERNAL_PREAMBLE } from '../common/ai-security.util';
+import { GROQ_MODEL } from '../ai/groq-model';
 
 const PRIORITY_RANK: Record<string, number> = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
 
@@ -25,7 +26,7 @@ const PRIORITY_RANK: Record<string, number> = { URGENT: 0, HIGH: 1, NORMAL: 2, L
 export class CourierManagementService {
   private readonly logger = new Logger('CLAW_COURIER');
   private readonly GROQ = 'https://api.groq.com/openai/v1/chat/completions';
-  private readonly MODEL = 'llama-3.3-70b-versatile';
+  private readonly MODEL = GROQ_MODEL;
 
   constructor(
     private readonly prisma: PrismaService,

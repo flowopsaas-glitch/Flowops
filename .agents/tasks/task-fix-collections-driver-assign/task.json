@@ -1,0 +1,14 @@
+{
+  "task_id": "task-fix-collections-driver-assign",
+  "task_description": "Hardening pass before the first paying customer: fix genuinely broken frontend->backend API calls in the Collections command center (driver assign/release/availability/workflow all hit non-existent routes and one threw with no try/catch). Added proper tenant-scoped backend endpoints on the collections resource (assign-driver, release-driver, workflow) with no Prisma schema changes, rewired Collections.tsx to the real endpoints and removed dead/unreachable code, and verified+documented the remaining lower-priority audit hits (dead components, legacy workflow-builder API, stale owner login helper) as intentionally left alone. Left confirmed false-positives untouched.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
+  "blocked_reason": null,
+  "verification": {
+    "build": "skipped",
+    "tests": "skipped",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "No node/npm runtime or network in the sandbox, so build/test/docker cannot run here (owner builds+deploys via Docker on a VPS). Static verification passed: (1) git diff shows only the 3 intended source files changed (collections.controller.ts +25, collections.service.ts +62, Collections.tsx net -24) with ZERO changes to prisma/schema.prisma; (2) the 3 new backend routes are tenant-scoped via @CurrentUser() u.companyId and the service methods reuse the findOne(id, companyId) ownership guard, matching existing patterns; assignDriver validates driver companyId; service references only existing Collection fields/relations; (3) frontend grep confirms ZERO remaining references to collection-ops, drivers/available, drivers/assign, collections-state-sync/auto-assign|release|workflow, and no unreachable code remains; (4) test_quality n/a-pass: the project runs no unit tests in this repo path and none were expected for this fix, so no low-value tests were introduced. New :id sub-routes (assign-driver/release-driver/workflow) are distinct suffixes so they are not shadowed by the existing GET collections/:id, consistent with the pre-existing confirm-collected/auto-suggest routes."
+  }
+}

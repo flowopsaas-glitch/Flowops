@@ -37,7 +37,7 @@ const BillingBatches = lazy(() => import("./pages/BillingBatches"));
 const FinanceDashboard = lazy(() => import("./pages/FinanceDashboard"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const Invoices = lazy(() => import("./pages/Invoices"));
-// Stub page — renders "coming soon" until the booking-portal backend ships.
+// Surfaces the tenant's shareable customer booking-portal + public tracking links.
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
 const CreditControl     = lazy(() => import("./pages/CreditControl"));
 const CODReconciliation = lazy(() => import("./pages/billing/CODReconciliation"));
@@ -54,7 +54,9 @@ const AIControlTower = lazy(() => import("./pages/AIControlTower"));
 const CompetitiveIntelligence = lazy(() => import("./pages/CompetitiveIntelligence"));
 const Observatory = lazy(() => import("./pages/Observatory"));
 const ForwardingConsole = lazy(() => import("./pages/forwarding/ForwardingConsole"));
+const RailOperations = lazy(() => import("./pages/RailOperations"));
 const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
+const SadcCorridorsPage = lazy(() => import("./pages/forwarding/SadcCorridors"));
 const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
 const SupportAgent = lazy(() => import("./pages/SupportAgent"));
 const CourierManagement = lazy(() => import("./pages/CourierManagement"));
@@ -84,6 +86,10 @@ const OwnerTenants = lazy(() => import("./pages/owner/OwnerTenants"));
 const OwnerAccessManager = lazy(() => import("./pages/owner/OwnerAccessManager"));
 const OwnerAudit = lazy(() => import("./pages/owner/OwnerAudit"));
 const OwnerTenantDetail = lazy(() => import("./pages/owner/OwnerTenantDetail"));
+const OwnerUpgradeRequests = lazy(() => import("./pages/owner/OwnerUpgradeRequests"));
+const OwnerQuoteMachine = lazy(() => import("./pages/owner/OwnerQuoteMachine"));
+const OwnerOkrs = lazy(() => import("./pages/owner/OwnerOkrs"));
+const OwnerPresence = lazy(() => import("./pages/owner/OwnerPresence"));
 const OwnerOpsMap = lazy(() => import("./pages/owner/OwnerOpsMap"));
 const WaybillCapture = lazy(() => import("./pages/WaybillCapture"));
 const BatchScan      = lazy(() => import("./pages/BatchScan"));
@@ -238,6 +244,10 @@ export default function App() {
               <Route path="/owner/dashboard" element={<SuperAdminDashboard />} />
               <Route path="/owner/tenants" element={<OwnerTenants />} />
               <Route path="/owner/tenants/:id" element={<OwnerTenantDetail />} />
+              <Route path="/owner/upgrades" element={<OwnerUpgradeRequests />} />
+              <Route path="/owner/quote" element={<OwnerQuoteMachine />} />
+              <Route path="/owner/okrs" element={<OwnerOkrs />} />
+              <Route path="/owner/presence" element={<OwnerPresence />} />
               <Route path="/owner/access" element={<OwnerAccessManager />} />
               <Route path="/owner/ops" element={<OwnerOpsMap />} />
               <Route path="/owner/audit" element={<OwnerAudit />} />
@@ -300,7 +310,9 @@ export default function App() {
               <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
               <Route path="/billing/callback" element={<BillingCallback />} />
               <Route path="/settings/billing" element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
+              <Route path="/rail" element={<RequirePermission adminOnly><RequireFeature feature="rail" name="Rail & Intermodal"><RailOperations /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
+              <Route path="/forwarding/sadc-corridors" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><SadcCorridorsPage /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/:id" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ShipmentFilePage /></RequireFeature></RequirePermission>} />
               <Route path="/autopilot" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="clawAutopilot" name="CLAW Autopilot"><AutopilotConsole /></RequireFeature></RequirePermission>} />
               <Route path="/settings/sso" element={<RequirePermission adminOnly><RequireFeature feature="sso" name="Single Sign-On"><SsoSettings /></RequireFeature></RequirePermission>} />
@@ -309,7 +321,7 @@ export default function App() {
               <Route path="/invoices" element={<RequirePermission perm="invoices"><Invoices /></RequirePermission>} />
               <Route path="/accounting" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Accounting"><Accounting /></RequireFeature></RequirePermission>} />
               <Route path="/disbursements" element={<RequirePermission perm="accounting"><RequireFeature feature="accounting" name="Disbursements"><Disbursements /></RequireFeature></RequirePermission>} />
-              {/* Client Portal Links — stub page shown until booking-portal backend ships */}
+              {/* Client Portal Links — shareable customer booking-portal + public tracking links */}
               <Route path="/billing/client-portal-links" element={<RequirePermission perm="creditControl"><ClientPortalLinks /></RequirePermission>} />
               <Route path="/credit-control" element={<RequirePermission perm="creditControl"><CreditControl /></RequirePermission>} />
               <Route path="/cod" element={<RequirePermission perm="billingBatches"><RequireFeature feature="codReconciliation" name="COD Reconciliation"><CODReconciliation /></RequireFeature></RequirePermission>} />

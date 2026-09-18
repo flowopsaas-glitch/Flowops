@@ -2,7 +2,24 @@ import { Injectable, NotFoundException, ForbiddenException, ConflictException } 
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { BillingService } from '../billing/billing.service';
+import { pickAllowed } from '../common/pick-allowed.util';
 import { v4 as uuid } from 'uuid';
+
+/**
+ * Fields a tenant may edit on their OWN company via self-service update.
+ * Profile + banking + branding + SLA only. Billing/platform-controlled fields
+ * (plan, trialStartedAt, trialEndsAt, isActive, featureOverrides,
+ * priceOverrideZar, autopilotEnabled, autopilotAggression) are intentionally
+ * excluded — those are set by the owner console / billing, never self-service.
+ */
+const COMPANY_SELF_EDITABLE_FIELDS = [
+  'name', 'tradingName', 'email', 'phone', 'address', 'city', 'country',
+  'currency', 'vatNumber', 'whatsappNumber',
+  'bankName', 'bankAccountHolder', 'bankAccountNumber', 'bankBranchCode', 'bankAccountType',
+  'logoUrl', 'brandName', 'primaryColor', 'secondaryColor', 'invoiceHeaderColor',
+  'portalBrandName', 'portalSubdomain', 'portalPrimaryColor', 'portalLogoUrl',
+  'slaWarningMinutes', 'slaBreachMinutes', 'slaEscalateMinutes',
+] as const;
 
 /**
  * Customer-facing white-label fields. Re-branding the public booking/tracking
@@ -32,13 +49,18 @@ export class CompaniesService {
   }
 
   async updateMyCompany(companyId: string, data: any) {
-    // Strip write-protected fields
-    const { id, createdAt, updatedAt, ...safe } = data;
+    // Allowlist tenant-editable profile/branding/banking/SLA fields ONLY.
+    // Billing/platform-controlled fields (plan, trialEndsAt, trialStartedAt,
+    // isActive, featureOverrides, priceOverrideZar, autopilot*) are DELIBERATELY
+    // excluded — a tenant must never self-upgrade their plan or flip
+    // entitlements via this self-service endpoint. (Previously it spread the
+    // whole body after only stripping id/createdAt/updatedAt.)
+    const safe = pickAllowed(data, COMPANY_SELF_EDITABLE_FIELDS);
 
     // Enforce white-label entitlement: block portal re-branding on plans that
     // don't include it (frontend also hides this, but it fails open on error).
     const touchesWhiteLabel = WHITE_LABEL_FIELDS.some(
-      (f) => safe[f] !== undefined && safe[f] !== null && safe[f] !== '',
+      (f) => (safe as any)[f] !== undefined && (safe as any)[f] !== null && (safe as any)[f] !== '',
     );
     if (touchesWhiteLabel && !(await this.billing.hasFeature(companyId, 'whiteLabel'))) {
       throw new ForbiddenException(

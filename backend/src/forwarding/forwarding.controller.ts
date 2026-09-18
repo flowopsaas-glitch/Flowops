@@ -24,10 +24,19 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { FeatureGuard } from '../billing/feature.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Freight Forwarding')
 @ApiBearerAuth()
-@UseGuards(RolesGuard)
+// Enterprise-gated: enforce the freightForwarding entitlement on EVERY route
+// (files, containers, cargo, customs, declarations, demurrage, vessel/port
+// intel AND the SARS-EDI credential endpoints). The frontend RequireFeature
+// gate fails open on error, and previously only file *creation* was gated at
+// the service layer — so without this a Professional/downgraded tenant could
+// call the rest of the forwarding surface directly. Mirrors ReturnsController.
+@UseGuards(RolesGuard, FeatureGuard)
+@RequireFeature('freightForwarding')
 @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
 @Controller('forwarding')
 export class ForwardingController {

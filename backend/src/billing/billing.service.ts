@@ -1,6 +1,11 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PLAN_ENTITLEMENTS, PlanId, normalizePlan } from './plan-entitlements';
+
+// Valid upgrade targets a tenant can request (must exist in PLAN_ENTITLEMENTS).
+const REQUESTABLE_PLANS: PlanId[] = [
+  'professional', 'professional_10', 'professional_25', 'professional_50', 'enterprise',
+];
 
 type Resource = 'waybill' | 'driver' | 'user' | 'branch';
 
@@ -227,6 +232,88 @@ export class BillingService {
             `You've reached that limit — upgrade your plan to add more.`,
         );
       }
+    });
+  }
+
+  // ── In-app plan upgrade requests (owner-approved, no payment provider) ──────
+
+  /**
+   * A tenant admin requests an upgrade to a higher tier. Creates a PENDING
+   * PlanUpgradeRequest and raises a critical AiEvent so the request surfaces on
+   * the owner console (GET /owner/ai-alerts). The owner approves/declines it —
+   * approval flips company.plan. No card, no Paystack.
+   */
+  async createUpgradeRequest(
+    companyId: string,
+    user: { id?: string; email?: string } | undefined,
+    requestedPlan: string,
+    note?: string,
+  ) {
+    const target = String(requestedPlan || '').toLowerCase();
+    if (!REQUESTABLE_PLANS.includes(target as PlanId)) {
+      throw new BadRequestException(`Unknown plan "${requestedPlan}".`);
+    }
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { name: true, plan: true },
+    });
+    if (!company) throw new BadRequestException('Company not found.');
+
+    const currentPlan = company.plan ?? 'starter';
+    if (currentPlan === target) {
+      throw new BadRequestException(`You are already on the ${PLAN_ENTITLEMENTS[target as PlanId].name} plan.`);
+    }
+
+    // Only one open request at a time.
+    const existing = await this.prisma.planUpgradeRequest.findFirst({
+      where: { companyId, status: 'PENDING' },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        'You already have an upgrade request awaiting approval. Please wait for it to be reviewed.',
+      );
+    }
+
+    const request = await this.prisma.planUpgradeRequest.create({
+      data: {
+        companyId,
+        currentPlan,
+        requestedPlan: target,
+        requestedById: user?.id ?? null,
+        requestedByEmail: user?.email ?? null,
+        note: note?.trim() || null,
+        status: 'PENDING',
+      },
+    });
+
+    // Alert the owner console (best-effort — never blocks the request).
+    try {
+      await this.prisma.aiEvent.create({
+        data: {
+          companyId,
+          type: 'PLAN_UPGRADE_REQUEST',
+          title: `${company.name}: upgrade request → ${PLAN_ENTITLEMENTS[target as PlanId].name}`,
+          body:
+            `${company.name} requested an upgrade from ${currentPlan} to ${target}.` +
+            (note?.trim() ? ` Note: ${note.trim()}` : ''),
+          severity: 'critical',
+          sourceType: 'plan_upgrade_request',
+          sourceId: request.id,
+          resolved: false,
+        },
+      });
+    } catch { /* best-effort */ }
+
+    return request;
+  }
+
+  /** The tenant's own upgrade requests (most recent first). */
+  async listMyUpgradeRequests(companyId: string) {
+    return this.prisma.planUpgradeRequest.findMany({
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
     });
   }
 }

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRouteOptimizationDto } from './dto/route-optimization.dto';
+import { GROQ_MODEL } from '../ai/groq-model';
 
 @Injectable()
 export class RouteOptimizationService {
@@ -97,13 +98,15 @@ export class RouteOptimizationService {
       const groqApiKey = this.config.get<string>('GROQ_API_KEY');
       let optimizedRoutes: any[] = [];
       let aiInsights: any = null;
-      let modelUsed = 'nearest-neighbour-2opt';
+      // Honest label: the fallback is a depot-distance sort heuristic, not a
+      // true nearest-neighbour + 2-opt solver (neither is implemented here).
+      let modelUsed = 'depot-distance-heuristic';
 
       if (groqApiKey) {
         const aiResult = await this.callGroqOptimization(waybills, drivers, opt.depot, groqApiKey);
         optimizedRoutes = aiResult.routes;
         aiInsights = aiResult.insights;
-        modelUsed = 'groq/llama-3.1-70b';
+        modelUsed = GROQ_MODEL;
       } else {
         // Fallback: nearest-neighbour heuristic
         optimizedRoutes = this.nearestNeighbourOptimize(waybills, drivers, opt.depot as any);
@@ -139,7 +142,7 @@ export class RouteOptimizationService {
             optimizedRoutes: optimizedRoutes as any,
             totalDistance,
             totalDuration,
-            savingsPercent: this.calculateSavings(waybills, totalDistance),
+            savingsPercent: this.calculateSavings(waybills, totalDistance, opt.depot as any),
             modelUsed,
             aiInsights: aiInsights as any,
           },
@@ -185,7 +188,7 @@ Return a JSON response with:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-70b-versatile',
+          model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.1,
           response_format: { type: 'json_object' },
@@ -263,10 +266,29 @@ Return a JSON response with:
     return deg * (Math.PI / 180);
   }
 
-  private calculateSavings(waybills: any[], optimizedDistance: number): number {
-    // Estimate naive distance (sum of individual trips from depot)
-    const naiveDistance = waybills.length * 15; // Assume avg 15km per round trip
-    if (naiveDistance <= 0) return 0;
-    return Math.round(((naiveDistance - optimizedDistance) / naiveDistance) * 100 * 10) / 10;
+  /**
+   * Savings % vs a real "unoptimised" baseline: dispatching each parcel as its
+   * own out-and-back trip from the depot (2 × the great-circle distance
+   * depot→stop). This is a genuine, computed baseline from the actual stop
+   * coordinates — not the old hardcoded `count × 15km` guess. Falls back to 0
+   * when coordinates are missing so we never report a fabricated number.
+   */
+  private calculateSavings(
+    waybills: any[],
+    optimizedDistance: number,
+    depot?: { lat?: number; lng?: number },
+  ): number {
+    const depotLat = depot?.lat ?? -26.2041; // Johannesburg CBD default
+    const depotLng = depot?.lng ?? 28.0473;
+    let naiveDistance = 0;
+    for (const w of waybills) {
+      if (w.recipientLat == null || w.recipientLng == null) continue;
+      // Out-and-back = 2 × one-way distance from the depot.
+      naiveDistance += 2 * this.haversine(depotLat, depotLng, w.recipientLat, w.recipientLng);
+    }
+    if (naiveDistance <= 0 || optimizedDistance <= 0) return 0;
+    const pct = ((naiveDistance - optimizedDistance) / naiveDistance) * 100;
+    // Clamp to [0, 95] — never report negative or implausibly perfect savings.
+    return Math.round(Math.min(95, Math.max(0, pct)) * 10) / 10;
   }
 }

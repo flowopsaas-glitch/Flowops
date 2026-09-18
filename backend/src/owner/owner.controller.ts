@@ -31,6 +31,13 @@ export class OwnerController {
     return this.svc.listTenants(q);
   }
 
+  // NOTE: must be declared BEFORE 'tenants/:id' so the literal 'presence'
+  // segment isn't captured as an :id param.
+  @Get('tenants/presence')
+  tenantPresence() {
+    return this.svc.getTenantPresence();
+  }
+
   @Get('tenants/:id')
   getTenant(@Param('id') id: string) {
     return this.svc.getTenant(id);
@@ -229,6 +236,26 @@ export class OwnerController {
     return this.svc.getFeatureCatalog();
   }
 
+  // ── Quote Machine ─────────────────────────────────────────────────────────
+  @Get('addon-catalog')
+  getAddonCatalog() {
+    return this.svc.getAddonCatalog();
+  }
+
+  @Post('quote')
+  buildQuote(
+    @Body()
+    body: {
+      plan?: string;
+      addons?: string[];
+      customPriceZar?: number | null;
+      companyName?: string | null;
+      billingInterval?: 'month' | 'year';
+    },
+  ) {
+    return this.svc.buildQuote(body);
+  }
+
   @Patch('plans')
   updatePlan(@Body() body: { tenantId: string; plan: string }, @CurrentUser() owner: any) {
     return this.svc.updateTenantPlan(body.tenantId, body.plan, owner);
@@ -250,6 +277,22 @@ export class OwnerController {
   @Post('approval-requests/:id/approve')
   approveRequest(@Param('id') id: string, @CurrentUser() owner: any) {
     return this.svc.approveRequest(id, owner);
+  }
+
+  // ── Plan upgrade requests (in-app, owner-approved) ────────────────────────
+  @Get('plan-upgrade-requests')
+  getUpgradeRequests(@Query() q: any) {
+    return this.svc.getUpgradeRequests(q);
+  }
+
+  @Post('plan-upgrade-requests/:id/approve')
+  approveUpgradeRequest(@Param('id') id: string, @CurrentUser() owner: any) {
+    return this.svc.approveUpgradeRequest(id, owner);
+  }
+
+  @Post('plan-upgrade-requests/:id/decline')
+  declineUpgradeRequest(@Param('id') id: string, @Body() body: { reason?: string }, @CurrentUser() owner: any) {
+    return this.svc.declineUpgradeRequest(id, body?.reason, owner);
   }
 
   @Post('approval-requests/:id/reject')

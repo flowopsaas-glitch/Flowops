@@ -11,6 +11,19 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
+/**
+ * Resolve the real client IP behind our proxy chain (Cloudflare -> nginx ->
+ * Docker). Cloudflare's CF-Connecting-IP is the most reliable; then the first
+ * entry of X-Forwarded-For; then Express's req.ip (trust-proxy resolved).
+ */
+function clientIp(req: any): string | undefined {
+  const cf = req?.headers?.['cf-connecting-ip'];
+  if (cf) return String(Array.isArray(cf) ? cf[0] : cf).trim();
+  const xff = req?.headers?.['x-forwarded-for'];
+  if (xff) return String(Array.isArray(xff) ? xff[0] : xff).split(',')[0].trim();
+  return req?.ip;
+}
+
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
@@ -24,7 +37,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Tenant login' })
   login(@Body() dto: LoginDto, @Req() req: any) {
     return this.authService.login(dto, {
-      ip: req?.ip,
+      ip: clientIp(req),
       userAgent: req?.headers?.['user-agent'],
     });
   }
@@ -75,7 +88,7 @@ export class AuthController {
   @Post('driver-portal/login')
   driverPortalLogin(@Body() body: { phone: string; pin: string }, @Req() req: any) {
     return this.authService.driverLogin(body.phone, body.pin, {
-      ip: req?.ip,
+      ip: clientIp(req),
       userAgent: req?.headers?.['user-agent'],
     });
   }
@@ -88,7 +101,7 @@ export class AuthController {
   @Post('driver-login')
   driverLogin(@Body() dto: { phone: string; pin: string }, @Req() req: any) {
     return this.authService.driverLogin(dto.phone, dto.pin, {
-      ip: req?.ip,
+      ip: clientIp(req),
       userAgent: req?.headers?.['user-agent'],
     });
   }

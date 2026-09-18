@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeDollarSign, Building2, Edit2, Mail, Package, Phone, Plus, RefreshCw,
-  Search, ShieldCheck, Trash2, User, X, AlertCircle,
+  Search, ShieldCheck, Trash2, User, X, AlertCircle, MessageCircle,
   CalendarClock, Wallet, TrendingUp, Users,
 } from "lucide-react";
 import api from "../api/client";
@@ -486,8 +486,10 @@ export default function ClientsPage() {
                 <div className="text-[10px] text-white/20">
                   Added {new Date(c.createdAt).toLocaleDateString("en-ZA")}
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {/* WhatsApp quick-dial — Freshdesk/CRM standard */}
+                <div className="flex gap-1.5 items-center">
+                  {/* Chat on WhatsApp — opens WhatsApp with a pre-filled message
+                      (click-to-chat). Always visible + labelled so it's clearly
+                      an intentional "message this client on WhatsApp" action. */}
                   {c.phone && (
                     <button
                       onClick={() => {
@@ -495,10 +497,10 @@ export default function ClientsPage() {
                         const text = `Hi ${c.name}, this is FlowOps Couriers. `;
                         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
                       }}
-                      title="WhatsApp client"
-                      className="rounded-xl border border-green-500/20 bg-green-500/10 p-1.5 text-green-400 hover:bg-green-500/20 transition"
+                      title="Chat with this client on WhatsApp"
+                      className="flex items-center gap-1.5 rounded-xl border border-green-500/25 bg-green-500/10 px-2.5 py-1.5 text-[11px] font-bold text-green-300 hover:bg-green-500/20 transition"
                     >
-                      💬
+                      <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
                     </button>
                   )}
                   <button

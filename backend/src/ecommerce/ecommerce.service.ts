@@ -226,28 +226,45 @@ export class EcommerceService {
     if (!match) return;
     const orderId = match[1];
 
-    // Tenant self-service credential first, then legacy env fallback.
-    const cred = await this.creds.getDecrypted(waybill.companyId, 'shopify');
-    const domain =
-      cred?.config?.shopDomain || this.config.get<string>(`SHOPIFY_DOMAIN_${waybill.companyId}`);
-    const accessToken =
-      cred?.secrets?.accessToken || this.config.get<string>(`SHOPIFY_ACCESS_TOKEN_${waybill.companyId}`);
-    if (!domain || !accessToken) return; // not configured — skip silently
-
-    const apiVersion = '2024-01';
-    const base       = `https://${domain}/admin/api/${apiVersion}`;
-    const headers    = {
-      'X-Shopify-Access-Token': accessToken,
-      'Content-Type': 'application/json',
-    };
-
+    // The ENTIRE remainder — credential decryption AND the Shopify HTTP calls —
+    // is wrapped so this method can NEVER reject. Previously getDecrypted() ran
+    // outside the try/catch, so a decryption/DB error rejected the promise; the
+    // fire-and-forget callers (waybills.service) then produced an
+    // unhandledRejection that could crash the process. Now every failure path
+    // is swallowed with a warning; a Shopify hiccup never breaks a waybill update.
     try {
+      // Tenant self-service credential first, then legacy env fallback.
+      const cred = await this.creds.getDecrypted(waybill.companyId, 'shopify');
+      const domain =
+        cred?.config?.shopDomain || this.config.get<string>(`SHOPIFY_DOMAIN_${waybill.companyId}`);
+      const accessToken =
+        cred?.secrets?.accessToken || this.config.get<string>(`SHOPIFY_ACCESS_TOKEN_${waybill.companyId}`);
+      if (!domain || !accessToken) return; // not configured — skip silently
+
+      const apiVersion = '2024-01';
+      const base       = `https://${domain}/admin/api/${apiVersion}`;
+      const headers    = {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json',
+      };
+
+      // Bound each Shopify call so a stalled endpoint can't hang the request.
+      const withTimeout = async (url: string, init: RequestInit) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10_000);
+        try {
+          return await fetch(url, { ...init, signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
       // Map FlowOps status to Shopify fulfillment status
       const shopifyStatus = this.mapToShopifyStatus(waybill.status);
 
       if (waybill.status === 'DELIVERED') {
         // Create a fulfillment on the Shopify order
-        await fetch(`${base}/orders/${orderId}/fulfillments.json`, {
+        await withTimeout(`${base}/orders/${orderId}/fulfillments.json`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -262,7 +279,7 @@ export class EcommerceService {
         this.logger.log(`Shopify fulfillment created for order ${orderId}`);
       } else if (['IN_TRANSIT', 'OUT_FOR_DELIVERY', 'FAILED_DELIVERY', 'RETURNED'].includes(waybill.status)) {
         // Add an order note so the merchant can see progress
-        await fetch(`${base}/orders/${orderId}.json`, {
+        await withTimeout(`${base}/orders/${orderId}.json`, {
           method: 'PUT',
           headers,
           body: JSON.stringify({
@@ -275,7 +292,8 @@ export class EcommerceService {
         this.logger.log(`Shopify order ${orderId} note updated: ${shopifyStatus}`);
       }
     } catch (err) {
-      // Network or Shopify API errors must NOT break the waybill update flow
+      // Any error — decryption, network, timeout, Shopify API — must NOT break
+      // the waybill update flow and must NOT reject this promise.
       this.logger.warn(`Shopify push-back failed for order ${orderId}: ${(err as Error).message}`);
     }
   }

@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-003",
+  "type": "docs",
+  "description": "Verify and DOCUMENT the remaining lower-priority audit hits without building speculative subsystems. All of these were confirmed during exploration to be dead/unused or intentionally best-effort. This feature produces a short AUDIT-NOTES.md in the task directory recording the decision (fix vs leave) and the evidence, so the owner has a clear record of what was intentionally left alone and why. NO backend subsystems are to be created for dead code.",
+  "status": "completed",
+  "steps": [
+    "Create .agents/tasks/task-fix-collections-driver-assign/AUDIT-NOTES.md documenting each item below with its verdict and evidence.",
+    "LeadCapture.tsx (exports EarlyAccessForm, POST /leads/quote): VERIFIED DEAD — grep shows EarlyAccessForm/LeadCapture is not imported by any other file in frontend/src. There is no /leads controller in backend. Decision: LEAVE as-is (unmounted). Note that if a public early-access form is wanted later, a minimal POST /leads endpoint would be needed; do not build it speculatively now.",
+    "ReceivingQueue.tsx (GET /branches/manifests/incoming): VERIFIED DEAD — not imported anywhere in frontend/src. The real inbound-manifests route is GET /branches/inbound (manifests.controller.ts), and its receive action POST /branches/manifest/:id/receive DOES exist. Decision: LEAVE as-is (unmounted). Note the correct endpoint mapping in case it is mounted later.",
+    "lib/api.ts workflowApi (/workflows) and /memory/* : VERIFIED legacy/unused — only referenced by frontend/src/pages/CreateWorkflow/* (e.g. MemoryView.tsx) which is not routed/mounted anywhere. No backend /workflows or /memory routes exist. Decision: LEAVE, DO NOT build backend. Note as dead workflow-builder scaffolding; safe to remove in a future cleanup but out of scope now.",
+    "api/owner.ts ownerLogin (POST /owner/auth/login): VERIFIED stale duplicate — the live owner login is api/authApi.ts ownerLogin used by pages/LoginPage.tsx and hits POST /auth/owner-login. The owner.ts helper is not used by LoginPage. Decision: LEAVE (harmless dead helper) OR the coder may remove the unused ownerLogin function from owner.ts if and only if it is confirmed unused by grep across frontend/src; document whichever was done.",
+    "api/addressBookApi.ts PATCH /address-book/:id/used: best-effort call wrapped in .catch(()=>{}) — harmless no-op if the route is absent. Decision: LEAVE (low priority, cannot cause a user-visible failure). Note that adding a tiny PATCH /address-book/:id/used route is optional future polish.",
+    "DEFINITE FALSE POSITIVES (do NOT touch): forwardingApi.ts /forwarding/files?..., railApi.ts /rail/consignments?..., Observatory.tsx /owner/observatory/errors?..., OwnerOkrs.tsx /owner/okrs?quarter=... — these work; the audit script mis-parsed query-string template literals. Record them as verified-working in the notes."
+  ],
+  "acceptance_criteria": [
+    "AUDIT-NOTES.md exists in the task directory and lists each of the 6 items (LeadCapture, ReceivingQueue, workflowApi/memory, owner.ts login, addressBookApi used, false-positives) with an explicit LEAVE/FIX verdict and one line of evidence each.",
+    "No new backend controller/module/route was created for any dead-code item (no /leads, no /workflows, no /memory).",
+    "If any dead code was removed, it is limited to confirmed-unused helpers and is documented in AUDIT-NOTES.md."
+  ],
+  "verification": [
+    "Read AUDIT-NOTES.md and confirm all 6 items are covered with verdict + evidence.",
+    "Run `git -C /projects/sandbox/Flowops status --porcelain` and confirm no unexpected new backend controllers were added for dead code.",
+    "Confirm the four false-positive files were not modified (git diff shows them untouched)."
+  ],
+  "blocked_reason": null,
+  "findings": "Wrote AUDIT-NOTES.md at the task dir documenting all 6 items with LEAVE/FIX verdict + one line of grep evidence each. All findings re-confirmed via grep: (1) LeadCapture/EarlyAccessForm only self-referenced, no /leads backend — LEAVE; (2) ReceivingQueue only self-referenced; real inbound route is GET /branches/inbound (manifests.controller.ts:49), receive is POST /branches/manifest/:id/receive (line 33) — LEAVE, mapping noted; (3) workflowApi/memoryApi in lib/api.ts only used by unrouted CreateWorkflow/*; the /workflows in DashboardSidebar is a React Router path not the API — LEAVE, no backend built; (4) api/owner.ts has ZERO importers across frontend/src (whole module dead, not just ownerLogin); live login is authApi.ts ownerLogin -> POST /auth/owner-login used by LoginPage.tsx — chose to LEAVE owner.ts untouched (removing one fn from a fully-dead module would leave it inconsistent + risks over-scoping) so NO code change made; (5) addressBookApi.markUsed is best-effort with .catch(()=>{}) — LEAVE; (6) forwarding/files, rail/consignments, observatory/errors, owner/okrs are working template-literal query strings (audit mis-parse) — verified working, NOT modified. No backend controllers/routes created. No frontend files modified. Static verification only (no node/npm in sandbox)."
+}

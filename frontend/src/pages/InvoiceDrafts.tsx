@@ -1,36 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FileText, ArrowRight, Wallet, CheckCircle2, Bot } from 'lucide-react';
+import { FileText, ArrowRight, Wallet, CheckCircle2, Bot, X, AlertTriangle, Loader2, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
-
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
 
 function money(v: number) {
   return `R${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function unwrap(r: any): any { return r?.data ?? r; }
+
 export default function InvoiceDrafts() {
   const [drafts, setDrafts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const [auditDraft, setAuditDraft] = useState<any | null>(null);
 
-  useEffect(() => {
-    const fetchDrafts = async () => {
-      try {
-        const res = await api.get('/invoice-drafts');
-        // api client already unwraps the TransformInterceptor envelope
-        const data = Array.isArray(res) ? res : Array.isArray((res as any)?.data) ? (res as any).data : [];
-        setDrafts(data);
-      } catch (err) {
-        console.error("Failed to fetch drafts", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchDrafts();
-  }, []);
+  const fetchDrafts = async () => {
+    try {
+      const res = await api.get('/invoice-drafts');
+      // api client already unwraps the TransformInterceptor envelope
+      const data = Array.isArray(res) ? res : Array.isArray((res as any)?.data) ? (res as any).data : [];
+      setDrafts(data);
+    } catch (err) {
+      console.error("Failed to fetch drafts", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchDrafts(); }, []);
 
   const stats = {
     totalValue: drafts.reduce((sum, d) => sum + (Number(d.total) || 0), 0),
@@ -92,7 +88,7 @@ export default function InvoiceDrafts() {
                     </div>
                     
                     <button 
-                      onClick={() => navigate(`/admin/billing/draft/${draft.id}`)}
+                      onClick={() => setAuditDraft(draft)}
                       className="bg-white text-black px-6 py-4 rounded-2xl font-black text-xs flex items-center gap-2 hover:bg-slate-200 hover:gap-3 transition-all shadow-xl shadow-white/5"
                     >
                       RUN Z-AUDIT <ArrowRight size={16} />
@@ -104,6 +100,143 @@ export default function InvoiceDrafts() {
           </div>
         </div>
         
+      </div>
+
+      {auditDraft && (
+        <ZAuditModal
+          draft={auditDraft}
+          onClose={() => setAuditDraft(null)}
+          onFinalized={() => { setAuditDraft(null); setLoading(true); void fetchDrafts(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Z-AI Compliance Audit modal — runs GET /invoice-drafts/:id/assist to check the
+ * draft, shows the issues/suggestions, then POST /invoice-drafts/:id/finalize to
+ * turn it into a real invoice. Replaces the old dead navigation to a page that
+ * never existed.
+ */
+function ZAuditModal({ draft, onClose, onFinalized }: { draft: any; onClose: () => void; onFinalized: () => void }) {
+  const [assist, setAssist] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [finalizing, setFinalizing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await api.get(`/invoice-drafts/${draft.id}/assist`);
+        if (alive) setAssist(unwrap(r));
+      } catch (err: any) {
+        if (alive) setError(err?.response?.data?.message || err?.message || 'Audit failed');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [draft.id]);
+
+  const issues: string[] = assist?.issues ?? [];
+  const clean = !loading && !error && issues.length === 0;
+  const completeness = Math.round((assist?.completeness ?? 0) * 100);
+
+  async function finalize() {
+    setFinalizing(true); setError(null);
+    try {
+      await api.post(`/invoice-drafts/${draft.id}/finalize`);
+      setDone(true);
+      setTimeout(onFinalized, 1200);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Could not finalize draft');
+    } finally {
+      setFinalizing(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0b1628] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-sky-500/15 ring-1 ring-sky-500/25">
+              <ShieldCheck className="h-5 w-5 text-sky-400" />
+            </div>
+            <div>
+              <div className="text-sm font-black text-white">Z-AI Compliance Audit</div>
+              <div className="text-[11px] text-white/45">{draft.clientName || 'FlowOps Client'} · {draft.periodKey} · {money(draft.total)}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-white/40 hover:bg-white/10 hover:text-white transition"><X className="h-5 w-5" /></button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {done ? (
+            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-6 text-center">
+              <CheckCircle2 className="h-12 w-12 text-emerald-400 mx-auto mb-2" />
+              <p className="font-black text-emerald-200">Invoice created</p>
+              <p className="text-xs text-emerald-300/70 mt-1">The draft was finalized into a real invoice.</p>
+            </div>
+          ) : loading ? (
+            <div className="flex items-center justify-center gap-3 py-10 text-white/50">
+              <Loader2 className="h-5 w-5 animate-spin" /> Running compliance checks…
+            </div>
+          ) : (
+            <>
+              {/* Completeness meter */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-white/45">Completeness</span>
+                  <span className={`text-[11px] font-black ${clean ? 'text-emerald-300' : 'text-amber-300'}`}>{completeness}%</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-white/8 overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${clean ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${completeness}%` }} />
+                </div>
+              </div>
+
+              {/* Issues / ready */}
+              {clean ? (
+                <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 text-sm font-bold text-emerald-200">
+                  <CheckCircle2 className="h-4 w-4" /> Draft is compliant and ready to finalize.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {issues.map((iss, i) => (
+                    <div key={i} className="flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-2.5 text-sm text-amber-200">
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" /> <span>{iss}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {error && (
+                <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-2.5 text-sm font-bold text-rose-300">{error}</div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!done && (
+          <div className="flex items-center justify-end gap-3 border-t border-white/10 px-6 py-4">
+            <button onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-bold text-white/60 hover:bg-white/10 hover:text-white transition">Cancel</button>
+            <button
+              onClick={finalize}
+              disabled={loading || finalizing}
+              title={!clean && !loading ? 'You can still finalize, but review the issues above first.' : undefined}
+              className="flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-black text-slate-950 transition hover:bg-emerald-400 disabled:opacity-40"
+            >
+              {finalizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {finalizing ? 'Finalizing…' : 'Finalize to Invoice'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

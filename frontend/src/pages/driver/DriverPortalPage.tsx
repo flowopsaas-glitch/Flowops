@@ -61,7 +61,7 @@ export default function DriverPortalPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020817] text-white p-6 flex flex-col">
+    <div className="driver-portal-scope min-h-screen bg-[#020817] text-white p-6 flex flex-col">
       {/* Language switcher in top-right */}
       <div className="flex justify-end">
         <LanguageSwitcher />

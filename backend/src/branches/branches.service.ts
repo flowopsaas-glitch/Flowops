@@ -30,6 +30,9 @@ export class BranchesService {
   }
 
   async update(id: string, companyId: string, dto: any) {
-    return this.prisma.branch.update({ where: { id }, data: dto });
+    // Tenant-scoped: only the owning company may edit its branch.
+    const res = await this.prisma.branch.updateMany({ where: { id, companyId }, data: dto });
+    if (res.count === 0) throw new NotFoundException('Branch not found');
+    return this.prisma.branch.findFirst({ where: { id, companyId } });
   }
 }

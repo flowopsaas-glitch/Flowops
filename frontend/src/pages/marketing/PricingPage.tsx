@@ -167,6 +167,17 @@ export default function PricingPage() {
           ))}
         </div>
 
+        {/* Add-on note */}
+        <div className="mx-auto mt-10 max-w-2xl rounded-[20px] border border-emerald-400/20 bg-emerald-500/[0.06] px-6 py-4 text-center">
+          <p className="text-sm font-bold text-emerald-200">
+            🚆 Rail &amp; Intermodal — add-on available on any plan
+          </p>
+          <p className="mt-1 text-xs text-white/50">
+            Rail consignment lifecycle, wagon register and road↔rail↔port corridor coordination
+            can be added to any base plan — you don't need full Enterprise. Contact us for rail pricing.
+          </p>
+        </div>
+
         {/* Flexible note */}
         <p className="mt-8 text-center text-sm text-white/30">
           Flexible pricing available for NGOs, government, and courier startups.

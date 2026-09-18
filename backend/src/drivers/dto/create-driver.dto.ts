@@ -2,7 +2,10 @@ import { IsString, IsOptional, IsBoolean, IsNumber } from 'class-validator';
 
 export class CreateDriverDto {
   @IsString() name: string;
-  @IsString() phone: string;
+  // Phone is strongly recommended (the driver portal logs in with phone + PIN),
+  // but not hard-required at create time — a dispatcher may add a driver before
+  // their number is confirmed. The UI flags it as needed for portal login.
+  @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() vehicleType?: string;
   @IsOptional() @IsString() vehicleReg?: string;

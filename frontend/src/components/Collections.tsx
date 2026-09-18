@@ -711,12 +711,7 @@ export default function Collections() {
   async function fetchDrivers() {
     setDriversLoading(true);
     try {
-      let res;
-      try {
-        res = await api.get("/drivers/available");
-      } catch {
-        res = await api.get("/collection-ops/driver-availability");
-      }
+      const res = await api.get("/drivers", { params: { status: "AVAILABLE" } });
       setDrivers(extractDrivers(res.data));
     } catch {
       setDrivers([]);
@@ -778,30 +773,21 @@ export default function Collections() {
   }
 
   async function autoAssignDriver(collectionId: string) {
-    const response = await api.post(`/collections-state-sync/auto-assign/${collectionId}`);
-      requestLiveRefresh();
+    const suggested = await getSuggestedDriver(collectionId);
+    const driverId = suggested?.suggestion?.id || drivers[0]?.id;
+    if (!driverId) {
+      throw new Error("No available driver to assign");
+    }
+    const response = await api.post(`/collections/${collectionId}/assign-driver`, { driverId });
     return response.data;
   }
 
   async function assignDriverToCollection(collectionId: string, driverId: string) {
-    try {
-      return await api.post(`/collections/${collectionId}/assign-driver`, { driverId });
-    } catch {
-      try {
-        return await api.post("/drivers/assign", { collectionId, driverId });
-      } catch {
-        return await api.post(`/collection-ops/assign-driver/${collectionId}`, { driverId });
-      }
-    }
+    return await api.post(`/collections/${collectionId}/assign-driver`, { driverId });
   }
 
   async function releaseDriverFromCollection(collectionId: string) {
-    try {
-      return await api.post(`/collection-ops/release-driver/${collectionId}`);
-    } catch {
-      return await api.post(`/collections-state-sync/release/${collectionId}`, { collectionId });
-      requestLiveRefresh();
-    }
+    return await api.post(`/collections/${collectionId}/release-driver`);
   }
 
   function closeWorkflowDrawer() {
@@ -942,7 +928,7 @@ export default function Collections() {
       const rememberedAnnouncement = driverAnnouncements[collectionKey] || "";
 
       const [workflowRes, suggestion] = await Promise.all([
-        api.get(`/collections-state-sync/workflow/${collectionKey}`),
+        api.get(`/collections/${collectionKey}/workflow`),
         getSuggestedDriver(collectionKey),
       ]);
 

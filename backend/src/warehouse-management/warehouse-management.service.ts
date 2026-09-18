@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { GROQ_MODEL } from '../ai/groq-model';
 
 @Injectable()
 export class WarehouseManagementService {
@@ -53,19 +54,28 @@ export class WarehouseManagementService {
     });
   }
 
-  async createBin(zoneId: string, dto: any) {
+  /** Load a zone only if it belongs to the caller's company (via warehouse). */
+  private async getOwnedZone(zoneId: string, companyId: string) {
+    const zone = await this.prisma.warehouseZone.findFirst({
+      where: { id: zoneId, warehouse: { companyId } },
+    });
+    if (!zone) throw new NotFoundException('Zone not found');
+    return zone;
+  }
+
+  async createBin(zoneId: string, companyId: string, dto: any) {
+    await this.getOwnedZone(zoneId, companyId); // tenant-scope guard
     return this.prisma.binLocation.create({
       data: { zoneId, ...dto },
     });
   }
 
-  async bulkCreateBins(zoneId: string, dto: {
+  async bulkCreateBins(zoneId: string, companyId: string, dto: {
     aisle: string; rack: string; levels: number; positions: number;
     binType?: string; maxWeightKg?: number;
   }) {
     const bins: any[] = [];
-    const zone = await this.prisma.warehouseZone.findUnique({ where: { id: zoneId } });
-    if (!zone) throw new NotFoundException('Zone not found');
+    const zone = await this.getOwnedZone(zoneId, companyId); // tenant-scope guard
 
     for (let level = 1; level <= dto.levels; level++) {
       for (let pos = 1; pos <= dto.positions; pos++) {
@@ -326,10 +336,13 @@ export class WarehouseManagementService {
   }
 
   async assignPicker(pickOrderId: string, companyId: string, userId: string) {
-    return this.prisma.pickOrder.update({
-      where: { id: pickOrderId },
+    // Tenant-scoped: only assign a pick order within the caller's company.
+    const res = await this.prisma.pickOrder.updateMany({
+      where: { id: pickOrderId, companyId },
       data: { assignedTo: userId, assignedAt: new Date(), status: 'ASSIGNED' },
     });
+    if (res.count === 0) throw new NotFoundException('Pick order not found');
+    return this.prisma.pickOrder.findFirst({ where: { id: pickOrderId, companyId } });
   }
 
   async confirmPick(pickOrderId: string, companyId: string, dto: {
@@ -680,7 +693,7 @@ Return ONLY valid JSON:
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3, max_tokens: 600,
         }),

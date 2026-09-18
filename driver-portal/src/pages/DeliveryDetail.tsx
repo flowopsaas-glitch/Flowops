@@ -3,6 +3,20 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { ArrowLeft, MapPin, Phone, Package, PenLine, Eraser, CheckCircle2, User } from 'lucide-react';
 import api from '../services/api';
+import { queueMutation } from '../services/offlineDB';
+import PhotoCapture from '../components/PhotoCapture';
+
+/**
+ * True when a failed request was a connectivity problem (not a server rejection).
+ * The api interceptor turns errors into plain Error objects, so we also treat a
+ * missing HTTP status as "network" — that's the offline / timeout case where we
+ * want to queue the action rather than lose it.
+ */
+function isNetworkError(err: any): boolean {
+  if (!navigator.onLine) return true;
+  const status = err?.response?.status ?? err?.status;
+  return status == null; // no HTTP response came back
+}
 
 type Job = Record<string, any> & { id: string };
 
@@ -15,8 +29,11 @@ export default function DeliveryDetail() {
   const sigRef = useRef<SignatureCanvas>(null);
   const [recipientName, setRecipientName] = useState(job.recipientName ?? job.receiverName ?? '');
   const [notes, setNotes] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [parcelCount, setParcelCount] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const [queued, setQueued] = useState(false);
   const [error, setError] = useState('');
 
   const isDelivery = !!job.waybillId && job.type !== 'collection';
@@ -28,20 +45,54 @@ export default function DeliveryDetail() {
     setError('');
     if (!recipientName.trim()) { setError('Enter who received the parcel.'); return; }
     setSaving(true);
+    const signatureUrl = sigRef.current && !sigRef.current.isEmpty()
+      ? sigRef.current.toDataURL('image/png')
+      : undefined;
+    const payload = {
+      waybillId: job.waybillId,
+      recipientName: recipientName.trim(),
+      notes: notes.trim() || undefined,
+      signatureUrl,
+      imageUrl: photo || undefined, // proof photo → stored as waybill.podImageUrl
+    };
     try {
-      const signatureUrl = sigRef.current && !sigRef.current.isEmpty()
-        ? sigRef.current.toDataURL('image/png')
-        : undefined;
-      await api.post('/driver-portal/pod', {
-        waybillId: job.waybillId,
-        recipientName: recipientName.trim(),
-        notes: notes.trim() || undefined,
-        signatureUrl,
-      });
+      await api.post('/driver-portal/pod', payload);
       setDone(true);
       setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
     } catch (err: any) {
-      setError(err?.message || 'Could not save proof of delivery');
+      // In a dead zone? Queue it locally and confirm to the driver — the sync
+      // engine replays it (idempotently) the moment signal returns.
+      if (isNetworkError(err)) {
+        await queueMutation('pod', '/driver-portal/pod', payload);
+        setQueued(true);
+        setDone(true);
+        setTimeout(() => navigate('/dashboard', { replace: true }), 1400);
+      } else {
+        setError(err?.message || 'Could not save proof of delivery');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitCollection = async () => {
+    setError('');
+    setSaving(true);
+    const url = `/driver-portal/collect/${job.id}`;
+    const payload = { parcelCount, notes: notes.trim() || undefined };
+    try {
+      await api.post(url, payload);
+      setDone(true);
+      setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        await queueMutation('collect', url, payload);
+        setQueued(true);
+        setDone(true);
+        setTimeout(() => navigate('/dashboard', { replace: true }), 1400);
+      } else {
+        setError(err?.message || 'Could not confirm collection');
+      }
     } finally {
       setSaving(false);
     }
@@ -83,9 +134,16 @@ export default function DeliveryDetail() {
         </div>
 
         {done ? (
-          <div className="bg-green-500/15 border border-green-500/30 rounded-2xl p-6 text-center">
-            <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-2" />
-            <p className="font-bold text-green-200">Proof of delivery saved</p>
+          <div className={`rounded-2xl p-6 text-center border ${queued ? 'bg-amber-500/15 border-amber-500/30' : 'bg-green-500/15 border-green-500/30'}`}>
+            <CheckCircle2 className={`w-12 h-12 mx-auto mb-2 ${queued ? 'text-amber-400' : 'text-green-400'}`} />
+            <p className={`font-bold ${queued ? 'text-amber-200' : 'text-green-200'}`}>
+              {queued
+                ? (job.type === 'collection' ? 'Collection saved — will sync' : 'Delivery saved — will sync')
+                : (job.type === 'collection' ? 'Collection confirmed' : 'Proof of delivery saved')}
+            </p>
+            {queued && (
+              <p className="text-xs text-amber-300/80 mt-1">No signal right now. It's stored on your phone and uploads automatically when you're back online.</p>
+            )}
           </div>
         ) : isDelivery ? (
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
@@ -110,6 +168,10 @@ export default function DeliveryDetail() {
                 <button onClick={() => sigRef.current?.clear()} className="text-xs text-gray-400 flex items-center gap-1 hover:text-white"><Eraser className="w-3.5 h-3.5" /> Clear</button>
               </div>
               <SignatureCanvas ref={sigRef} canvasProps={{ className: 'sig-canvas' }} penColor="#0f172a" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Photo (optional — proof of delivery / safe place)</label>
+              <PhotoCapture label="Take delivery photo" onCapture={setPhoto} />
             </div>
             {error && <div className="bg-red-500/20 border border-red-500/30 text-red-200 p-3 rounded-xl text-sm">{error}</div>}
             <button
@@ -145,9 +207,34 @@ export default function DeliveryDetail() {
             </button>
           </div>
         ) : (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-gray-300">
-            {error && <div className="bg-red-500/20 border border-red-500/30 text-red-200 p-3 rounded-xl text-sm mb-2">{error}</div>}
-            This is a collection. Pick up the parcel from the address above, then capture it at the hub (Scan / Waybill Inbox).
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+            <div className="flex items-center gap-2 font-semibold text-amber-200"><Package className="w-4 h-4 text-amber-300" /> Confirm Collection</div>
+            <div className="text-sm text-gray-300 space-y-1">
+              <p>Pick up the parcel from <strong className="text-white">{job.recipientName ?? job.receiverName ?? 'the client'}</strong> at the address above.</p>
+              <p className="text-xs text-gray-400">Once you have it, confirm the pickup below. A waybill is created automatically and assigned for delivery.</p>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1"># of parcels</label>
+              <input
+                type="number" min={1} value={parcelCount}
+                onChange={(e) => setParcelCount(Math.max(1, Number(e.target.value) || 1))}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Notes (optional)</label>
+              <input
+                value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. 2 boxes, sealed"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            {error && <div className="bg-red-500/20 border border-red-500/30 text-red-200 p-3 rounded-xl text-sm">{error}</div>}
+            <button
+              onClick={submitCollection} disabled={saving}
+              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 py-4 rounded-xl font-bold text-lg disabled:opacity-50 transition shadow-lg flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 className="w-5 h-5" /> {saving ? 'Confirming…' : 'Confirm Pickup'}
+            </button>
           </div>
         )}
       </div>

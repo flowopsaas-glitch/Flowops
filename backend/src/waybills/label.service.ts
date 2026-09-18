@@ -1,7 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import PDFDocument from 'pdfkit';
+// pdfkit is CommonJS — import=require binds the real constructor (a default
+// import is undefined at runtime under this tsconfig; see forwarding-pdf.service).
+import PDFDocument = require('pdfkit');
 import * as QRCode from 'qrcode';
 import * as bwipjs from 'bwip-js';
 

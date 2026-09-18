@@ -248,8 +248,11 @@ export default function OwnerTenants() {
               <select value={form.plan} onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value }))}
                 className="mt-1.5 w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-2.5 text-sm text-white outline-none focus:border-blue-400">
                 <option value="starter">Starter (Free)</option>
-                <option value="professional">Professional</option>
-                <option value="enterprise">Enterprise</option>
+                <option value="professional">Professional — 3 drivers (R5,999)</option>
+                <option value="professional_10">Professional — 10 drivers (R9,999)</option>
+                <option value="professional_25">Professional — 25 drivers (R19,999)</option>
+                <option value="professional_50">Professional — 50 drivers (R29,999)</option>
+                <option value="enterprise">Enterprise (Custom)</option>
               </select>
             </div>
           </div>
@@ -395,13 +398,22 @@ export default function OwnerTenants() {
                           <CheckCircle className="h-3 w-3" /> Activate
                         </button>
                       )}
-                      {/* Plan upgrade */}
-                      {(t.plan || "starter").toLowerCase() === "starter" ? (
-                        <button disabled={busy === `plan-${t.id}`} onClick={() => setPlan(t.id, t.name, "professional")}
-                          className="rounded-xl border border-blue-400/20 bg-blue-500/10 px-2.5 py-1.5 text-[11px] font-bold text-blue-200 hover:bg-blue-500/20 disabled:opacity-60">
-                          → Pro
-                        </button>
-                      ) : null}
+                      {/* Change plan — pick any tier for this tenant */}
+                      <select
+                        disabled={busy === `plan-${t.id}`}
+                        value={(t.plan || "starter").toLowerCase()}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => { e.stopPropagation(); setPlan(t.id, t.name, e.target.value); }}
+                        className="rounded-xl border border-blue-400/20 bg-blue-500/10 px-2.5 py-1.5 text-[11px] font-bold text-blue-200 outline-none hover:bg-blue-500/20 disabled:opacity-60"
+                        title="Change this tenant's plan"
+                      >
+                        <option value="starter">Starter</option>
+                        <option value="professional">Pro · 3 drivers</option>
+                        <option value="professional_10">Pro · 10 drivers</option>
+                        <option value="professional_25">Pro · 25 drivers</option>
+                        <option value="professional_50">Pro · 50 drivers</option>
+                        <option value="enterprise">Enterprise</option>
+                      </select>
                       {/* Delete */}
                       <button disabled={busy === `delete-${t.id}`} onClick={(e) => { e.stopPropagation(); deleteTenant(t.id, t.name); }}
                         className="inline-flex items-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-60">

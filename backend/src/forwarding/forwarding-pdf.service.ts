@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+// pdfkit is CommonJS. This project's tsconfig has no esModuleInterop, so
+// `import PDFDocument from 'pdfkit'` compiles but is undefined at runtime
+// ("pdfkit_1.default is not a constructor"). import=require binds the real
+// constructor. (The PDFKit.* type namespace remains available from @types/pdfkit.)
+import PDFDocument = require('pdfkit');
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomsService } from './customs.service';
 

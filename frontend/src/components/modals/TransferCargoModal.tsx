@@ -51,9 +51,10 @@ export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({
 
       onSuccess();
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Transfer error:", err);
-      showToast("System failed to generate manifest. Check backend logs.", "error");
+      const msg = err?.response?.data?.message || err?.message || "Failed to generate manifest.";
+      showToast(Array.isArray(msg) ? msg.join(", ") : String(msg), "error");
     } finally {
       setLoading(false);
     }

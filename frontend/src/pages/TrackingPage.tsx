@@ -258,7 +258,7 @@ export default function TrackingPage() {
                   attributionControl={false}
                 >
                   <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                    url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
                   {data.current && (
                     <Marker position={[data.current.lat, data.current.lng]} icon={pin("#3b82f6", "🚚")}>

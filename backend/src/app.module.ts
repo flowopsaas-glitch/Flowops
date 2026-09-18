@@ -47,11 +47,14 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
 import { AuditModule } from './audit/audit.module';
 import { DriverPortalModule } from './driver-portal/driver-portal.module';
+import { PushModule } from './push/push.module';
 import { AlertingModule } from './alerting/alerting.module';
 import { EmailHubModule } from './email-hub/email-hub.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { BillingModule } from './billing/billing.module';
 import { ForwardingModule } from './forwarding/forwarding.module';
+import { RailModule } from './rail/rail.module';
+import { OkrModule } from './okr/okr.module';
 import { CarriersModule } from './carriers/carriers.module';
 import { DisbursementsModule } from './disbursements/disbursements.module';
 import { AccountingIntegrationsModule } from './accounting-integrations/accounting-integrations.module';
@@ -110,6 +113,10 @@ import { DispatchModule } from './dispatch/dispatch.module';
 
     // Freight forwarding (import/export — Enterprise, feature-gated)
     ForwardingModule,
+    // Rail / intermodal coordination (RASA demo)
+    RailModule,
+    // OKRs — owner strategic cockpit
+    OkrModule,
     CarriersModule,
     DisbursementsModule,
 
@@ -123,6 +130,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
     GeocodingModule,
     CodModule,
     DriverPortalModule,
+    PushModule,
 
     // Route optimization (nearest-neighbour + 2-opt over geocoded stops)
     RoutingModule,

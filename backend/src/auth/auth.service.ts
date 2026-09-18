@@ -216,22 +216,62 @@ export class AuthService {
   // ── Driver portal login (phone + 4-digit PIN) ────────────────────────
 
   async driverLogin(phone: string, pin: string, ctx?: LoginCtx) {
-    // Normalize phone: remove spaces, ensure +27 prefix
-    const normalised = phone.replace(/\s/g, '');
+    // Match on DIGITS ONLY so formatting never blocks login. Stored numbers may
+    // contain spaces (e.g. "+27 84 213 7942"), a leading "+", or a leading "0"
+    // (local format) while the driver may type any of those variants. We reduce
+    // both sides to their significant digits and compare the tail, so "+27 84
+    // 213 7942", "27842137942", "0842137942" and "842137942" all match.
+    const digitsOnly = (s: string) => (s || '').replace(/\D/g, '');
+    const inputDigits = digitsOnly(phone);
+    // Normalise a ZA number to its 9-digit national significant number
+    // (drop country code 27 or a leading 0) for a robust tail comparison.
+    const significant = (d: string) => d.replace(/^27/, '').replace(/^0/, '');
+    const inputSig = significant(inputDigits);
 
-    const driver = await this.prisma.driver.findFirst({
-      where: {
-        phone: { in: [normalised, normalised.replace(/^\+/, '')] },
-        isActive: true,
-      },
+    const candidates = await this.prisma.driver.findMany({
+      where: { isActive: true },
       include: { company: true },
     });
+    const driver = candidates.find(
+      (d) => inputSig.length >= 7 && significant(digitsOnly(d.phone || '')) === inputSig,
+    );
 
     if (!driver) throw new UnauthorizedException('Invalid phone number or PIN');
     if (!(driver as any).driverPin) throw new UnauthorizedException('PIN not set — contact dispatch to set your PIN');
 
+    // ── PIN brute-force lockout (per driver, IP-rotation-proof) ───────────
+    // After 5 consecutive wrong PINs the account is locked for 15 minutes.
+    const MAX_PIN_ATTEMPTS = 5;
+    const LOCK_MINUTES = 15;
+    const lockedUntil = (driver as any).pinLockedUntil as Date | null;
+    if (lockedUntil && lockedUntil > new Date()) {
+      const mins = Math.ceil((lockedUntil.getTime() - Date.now()) / 60000);
+      throw new UnauthorizedException(
+        `Too many incorrect PIN attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'} or contact dispatch.`,
+      );
+    }
+
     const pinOk = await bcrypt.compare(pin, (driver as any).driverPin);
-    if (!pinOk) throw new UnauthorizedException('Invalid phone number or PIN');
+    if (!pinOk) {
+      const attempts = ((driver as any).failedPinAttempts ?? 0) + 1;
+      const shouldLock = attempts >= MAX_PIN_ATTEMPTS;
+      await this.prisma.driver.update({
+        where: { id: driver.id },
+        data: {
+          failedPinAttempts: shouldLock ? 0 : attempts,
+          pinLockedUntil: shouldLock ? new Date(Date.now() + LOCK_MINUTES * 60000) : null,
+        } as any,
+      });
+      if (shouldLock) {
+        throw new UnauthorizedException(
+          `Too many incorrect PIN attempts. Account locked for ${LOCK_MINUTES} minutes.`,
+        );
+      }
+      const left = MAX_PIN_ATTEMPTS - attempts;
+      throw new UnauthorizedException(
+        `Invalid phone number or PIN. ${left} attempt${left === 1 ? '' : 's'} left before a temporary lock.`,
+      );
+    }
 
     // Single active session: a new login supersedes any other device. The sid
     // is embedded in the token and stored on the driver; stale tokens (sid
@@ -244,6 +284,9 @@ export class AuthService {
         lastLoginAt: new Date(),
         lastLoginIp: ctx?.ip ?? null,
         lastLoginUserAgent: ctx?.userAgent ?? null,
+        // Successful login clears any accumulated failed-PIN lockout state.
+        failedPinAttempts: 0,
+        pinLockedUntil: null,
       } as any,
     });
 

@@ -100,6 +100,17 @@ export class InvoicesController {
   }
 
   /**
+   * GET /api/v1/invoices/:id/share-link
+   * Returns a tokenised public link the tenant can send to a client so they
+   * can view/print the invoice without logging in. The token is required by
+   * the public portal view, closing the previous IDOR.
+   */
+  @Get('invoices/:id/share-link')
+  getShareLink(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.getShareLink(id, u.companyId);
+  }
+
+  /**
    * GET /api/v1/invoices/:id/print-html
    * Returns a self-contained, print-optimised HTML page for the invoice.
    * Open in a new browser tab and call window.print() to get a PDF.

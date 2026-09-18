@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
+import { GROQ_MODEL } from '../ai/groq-model';
 import {
   AI_SECURITY_PREAMBLE,
   sanitizeAiInput,
@@ -79,7 +80,7 @@ export class WhatsAppInboxAiService {
       const response = await axios.post(
         this.GROQ_ENDPOINT,
         {
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           messages: [
             {
               role: 'system',
