@@ -34,6 +34,25 @@ enum WaybillStatus {
   CANCELLED
 }
 
+// Structured reason codes for a failed delivery attempt. Replaces free-text-only
+// failure reasons so failures can be reliably categorised and analysed
+// (e.g. "how many CUSTOMER_NOT_HOME vs REFUSED this month").
+enum FailedDeliveryReason {
+  CUSTOMER_NOT_HOME
+  CUSTOMER_REFUSED
+  INCORRECT_ADDRESS
+  ADDRESS_NOT_FOUND
+  ACCESS_RESTRICTED       // gated complex / security wouldn't allow entry
+  BUSINESS_CLOSED
+  NO_SAFE_DROP_LOCATION
+  COD_PAYMENT_UNAVAILABLE // recipient couldn't pay COD
+  DAMAGED_IN_TRANSIT
+  WEATHER_OR_HAZARD
+  VEHICLE_BREAKDOWN
+  OUTSIDE_DELIVERY_WINDOW
+  OTHER
+}
+
 enum CollectionStatus {
   PENDING
   ASSIGNED
@@ -1092,7 +1111,8 @@ model Waybill {
   attemptCount    Int       @default(0)   // Number of delivery attempts made
   maxAttempts     Int       @default(3)   // Max attempts before return (configurable)
   nextAttemptAt   DateTime?               // Scheduled next attempt (auto-set on failure)
-  lastAttemptNote String?                 // Reason for last failed attempt
+  lastAttemptNote String?                 // Free-text note for last failed attempt
+  lastAttemptReasonCode FailedDeliveryReason? // Structured reason for the last failed attempt (for analytics)
   returnToSender  Boolean   @default(false) // True when max attempts exhausted
 
   // Uploaded scan file (Cloudflare R2 key)
@@ -1272,6 +1292,11 @@ model Invoice {
   sentAt  DateTime?
 
   notes String?
+
+  // Unguessable token for the unauthenticated public/portal invoice view.
+  // Without this, the public view was an IDOR (any invoice readable by id).
+  // Generated lazily the first time a share link is requested.
+  publicToken String? @unique
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)

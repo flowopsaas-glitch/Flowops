@@ -2,7 +2,15 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { guardTransition } from '../waybills/waybill-status.machine';
-import { WaybillStatus } from '@prisma/client';
+import { WaybillStatus, FailedDeliveryReason } from '@prisma/client';
+
+/** Valid failed-delivery reason codes, mirrored from the Prisma enum for
+ *  runtime validation of client-supplied codes. */
+export const FAILED_DELIVERY_REASONS: readonly string[] = [
+  'CUSTOMER_NOT_HOME', 'CUSTOMER_REFUSED', 'INCORRECT_ADDRESS', 'ADDRESS_NOT_FOUND',
+  'ACCESS_RESTRICTED', 'BUSINESS_CLOSED', 'NO_SAFE_DROP_LOCATION', 'COD_PAYMENT_UNAVAILABLE',
+  'DAMAGED_IN_TRANSIT', 'WEATHER_OR_HAZARD', 'VEHICLE_BREAKDOWN', 'OUTSIDE_DELIVERY_WINDOW', 'OTHER',
+];
 
 /**
  * Logistics Operations Service — World-Class Features
@@ -67,9 +75,18 @@ export class LogisticsOpsService {
   // 2. DELIVERY ATTEMPTS (3x retry)
   // ══════════════════════════════════════════════════════════════════════════
 
-  async recordFailedAttempt(waybillId: string, companyId: string, dto: { reason: string; rescheduleHours?: number }) {
+  async recordFailedAttempt(
+    waybillId: string,
+    companyId: string,
+    dto: { reason: string; reasonCode?: string; rescheduleHours?: number },
+  ) {
     const wb = await this.prisma.waybill.findFirst({ where: { id: waybillId, companyId } });
     if (!wb) throw new NotFoundException('Waybill not found');
+
+    // Structured reason code (for analytics), validated against the enum.
+    // Free-text `reason` remains for driver detail; if a code is supplied it
+    // must be valid, otherwise we fall back to OTHER rather than reject.
+    const reasonCode = this.normaliseFailReason(dto.reasonCode);
 
     const newAttemptCount = (wb.attemptCount ?? 0) + 1;
     const maxAttempts = wb.maxAttempts ?? 3;
@@ -81,6 +98,7 @@ export class LogisticsOpsService {
     const data: any = {
       attemptCount: newAttemptCount,
       lastAttemptNote: dto.reason,
+      lastAttemptReasonCode: reasonCode,
       status: exhausted ? 'RETURNED' : 'FAILED_DELIVERY',
       returnToSender: exhausted,
       nextAttemptAt,
@@ -98,7 +116,7 @@ export class LogisticsOpsService {
       status: data.status,
       description: desc,
       actorType: 'DRIVER',
-      metadata: { attemptNumber: newAttemptCount, reason: dto.reason, nextAttemptAt },
+      metadata: { attemptNumber: newAttemptCount, reason: dto.reason, reasonCode, nextAttemptAt },
     });
 
     // Notify recipient about failed attempt
@@ -116,8 +134,18 @@ export class LogisticsOpsService {
       }).catch(() => {});
     }
 
-    this.logger.log(`Failed attempt ${newAttemptCount}/${maxAttempts} for ${wb.trackingNumber}: ${dto.reason}`);
-    return { ...updated, exhausted, nextAttemptAt };
+    this.logger.log(`Failed attempt ${newAttemptCount}/${maxAttempts} for ${wb.trackingNumber}: [${reasonCode}] ${dto.reason}`);
+    return { ...updated, exhausted, nextAttemptAt, reasonCode };
+  }
+
+  /** Coerce a client-supplied reason code to a valid FailedDeliveryReason.
+   *  Unknown/blank → OTHER (never rejects the failed-attempt record). */
+  private normaliseFailReason(code?: string): FailedDeliveryReason {
+    if (!code) return 'OTHER' as FailedDeliveryReason;
+    const upper = String(code).toUpperCase().trim();
+    return (FAILED_DELIVERY_REASONS as readonly string[]).includes(upper)
+      ? (upper as FailedDeliveryReason)
+      : ('OTHER' as FailedDeliveryReason);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

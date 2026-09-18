@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
@@ -67,6 +68,31 @@ export class InvoicesService {
     });
     if (!inv) throw new NotFoundException('Invoice not found');
     return inv;
+  }
+
+  /**
+   * Return a tokenised public share link for an invoice. Generates the
+   * unguessable publicToken on first use (lazy), so the public portal view
+   * can be opened without auth but ONLY by someone holding the token — closing
+   * the previous IDOR where any invoice was viewable by id alone.
+   * Tenant-scoped: only the owning company can mint/read the link.
+   */
+  async getShareLink(id: string, companyId: string): Promise<{ token: string; path: string }> {
+    const inv = await this.prisma.invoice.findFirst({
+      where: { id, companyId },
+      select: { id: true, publicToken: true },
+    });
+    if (!inv) throw new NotFoundException('Invoice not found');
+
+    let token = (inv as any).publicToken as string | null;
+    if (!token) {
+      token = randomUUID();
+      await this.prisma.invoice.update({
+        where: { id: inv.id },
+        data: { publicToken: token } as any,
+      });
+    }
+    return { token, path: `/api/v1/portal/invoices/${inv.id}/view?token=${token}` };
   }
 
   // ── AR Aging Report ────────────────────────────────────────────────────────
