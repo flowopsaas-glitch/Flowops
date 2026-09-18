@@ -74,3 +74,29 @@ Thumbs.db
 
 # Lockfiles ARE tracked — see frontend/package-lock.json. Removed from
 # ignore so `npm ci` is reproducible for every contributor.
+
+
+# ─── SSH keys / credentials (NEVER commit) ──
+*.key
+*.pem
+*.ppk
+id_rsa*
+id_ed25519*
+*-key.pub
+ssh-key-*
+
+# ─── Stray build-log fragments (from redirected docker/npm output) ──
+# These were accidentally committed once. Ignore the common fragment names
+# so a broken redirect can't re-add them.
+sha256:*
+exporting
+extracting
+unpacking
+transferring
+reading
+resolve
+naming
+nest
+CANCELED
+ERROR
+=
