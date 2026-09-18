@@ -1,6 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { CodService } from './cod.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EventsGateway } from '../gateway/events.gateway';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 // ── Minimal Prisma mock ──────────────────────────────────────────────────────
@@ -18,6 +20,10 @@ const makeWallet = (balance = 0) => ({
 
 function makePrisma(overrides: Record<string, unknown> = {}) {
   return {
+    driver: {
+      // Default: driver exists in the caller's company (tenant check passes).
+      findFirst: jest.fn().mockResolvedValue({ id: 'drv1' }),
+    },
     waybill: {
       findFirst:  jest.fn(),
       findMany:   jest.fn().mockResolvedValue([]),
@@ -27,10 +33,12 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     driverWallet: {
       upsert:          jest.fn(),
       findUnique:      jest.fn(),
+      findFirst:       jest.fn(),
       findUniqueOrThrow: jest.fn(),
       findMany:        jest.fn().mockResolvedValue([]),
       count:           jest.fn().mockResolvedValue(0),
       update:          jest.fn(),
+      updateMany:      jest.fn(),
     },
     codTransaction: {
       create:    jest.fn(),
@@ -39,10 +47,15 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     shipment: {
       findMany: jest.fn().mockResolvedValue([]),
     },
-    $transaction: jest.fn(async (fn: any) => fn({ // passes inner tx
+    // Inner tx: settleDriver reads the wallet, does a guarded updateMany, then
+    // re-reads. recordCollection upserts + re-reads. Defaults model a
+    // sufficient balance so the guarded decrement succeeds (count: 1).
+    $transaction: jest.fn(async (fn: any) => fn({
       driverWallet: {
         upsert:           jest.fn().mockResolvedValue(makeWallet(250)),
+        findUnique:       jest.fn().mockResolvedValue(makeWallet(300)),
         findUniqueOrThrow: jest.fn().mockResolvedValue(makeWallet(250)),
+        updateMany:       jest.fn().mockResolvedValue({ count: 1 }),
         update:           jest.fn().mockResolvedValue(makeWallet(0)),
       },
       codTransaction: { create: jest.fn() },
@@ -64,6 +77,8 @@ describe('CodService', () => {
       providers: [
         CodService,
         { provide: PrismaService, useValue: prisma },
+        { provide: NotificationsService, useValue: { notifyWaybillStatus: jest.fn() } },
+        { provide: EventsGateway, useValue: { emitShipmentUpdate: jest.fn() } },
       ],
     }).compile();
     svc = module.get(CodService);
@@ -104,23 +119,45 @@ describe('CodService', () => {
   // ── settleDriver ────────────────────────────────────────────────────────
 
   describe('settleDriver', () => {
-    it('throws NotFoundException when wallet does not exist', async () => {
-      (prisma.driverWallet.findUnique as jest.Mock).mockResolvedValue(null);
+    it('throws NotFoundException when the driver is not in the caller company', async () => {
+      (prisma.driver.findFirst as jest.Mock).mockResolvedValue(null); // tenant check fails
       await expect(svc.settleDriver('drv1', 100, 'co1')).rejects.toThrow(NotFoundException);
     });
 
-    it('throws BadRequestException when amount exceeds balance', async () => {
-      (prisma.driverWallet.findUnique as jest.Mock).mockResolvedValue(makeWallet(50));
+    it('throws NotFoundException when wallet does not exist', async () => {
+      // Driver in-company, but no wallet inside the transaction.
+      (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
+        driverWallet: { findUnique: jest.fn().mockResolvedValue(null) },
+        codTransaction: { create: jest.fn() },
+      }));
+      await expect(svc.settleDriver('drv1', 100, 'co1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException when amount exceeds balance (guarded decrement returns 0)', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
+        driverWallet: {
+          findUnique: jest.fn().mockResolvedValue(makeWallet(50)),
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }), // insufficient balance
+          findUniqueOrThrow: jest.fn(),
+        },
+        codTransaction: { create: jest.fn() },
+      }));
       await expect(svc.settleDriver('drv1', 100, 'co1')).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException on non-positive amount', async () => {
-      (prisma.driverWallet.findUnique as jest.Mock).mockResolvedValue(makeWallet(200));
       await expect(svc.settleDriver('drv1', 0, 'co1')).rejects.toThrow(BadRequestException);
     });
 
     it('returns settled amount and new balance', async () => {
-      (prisma.driverWallet.findUnique as jest.Mock).mockResolvedValue(makeWallet(300));
+      (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
+        driverWallet: {
+          findUnique: jest.fn().mockResolvedValue(makeWallet(100)),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          findUniqueOrThrow: jest.fn().mockResolvedValue(makeWallet(0)),
+        },
+        codTransaction: { create: jest.fn() },
+      }));
       const result = await svc.settleDriver('drv1', 100, 'co1');
       expect(result).toMatchObject({ settled: 100, newBalance: 0 });
     });

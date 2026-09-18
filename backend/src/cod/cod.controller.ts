@@ -70,8 +70,8 @@ export class CodController {
 
   @Get('wallets/:driverId')
   @RequireFeature('codReconciliation')
-  getWallet(@Param('driverId') driverId: string) {
-    return this.svc.getWallet(driverId);
+  getWallet(@Param('driverId') driverId: string, @CurrentUser() u: AuthenticatedUser) {
+    return this.svc.getWallet(driverId, u.companyId);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

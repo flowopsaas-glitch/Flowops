@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
+import { guardTransition } from '../waybills/waybill-status.machine';
 
 @Injectable()
 export class CodService {
@@ -125,21 +126,41 @@ export class CodService {
   // ── Settle driver (driver remits cash to company) ─────────────────────────
 
   async settleDriver(driverId: string, amount: number, companyId: string, note?: string) {
-    const wallet = await this.prisma.driverWallet.findUnique({ where: { driverId } });
-    if (!wallet) throw new NotFoundException('Driver wallet not found');
-    if (amount > wallet.balance)
-      throw new BadRequestException(`Settlement amount (${amount}) exceeds balance (${wallet.balance})`);
-    if (amount <= 0) throw new BadRequestException('Settlement amount must be positive');
+    if (!Number.isFinite(amount) || amount <= 0)
+      throw new BadRequestException('Settlement amount must be a positive number');
+
+    // Tenant safety: the wallet's driver MUST belong to the caller's company.
+    // Previously this looked up by driverId only, letting company A settle a
+    // driver in company B (cross-tenant cash operation).
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId },
+      select: { id: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.driverWallet.update({
-        where: { driverId },
+      const wallet = await tx.driverWallet.findUnique({ where: { driverId } });
+      if (!wallet) throw new NotFoundException('Driver wallet not found');
+
+      // Atomic, guarded decrement: only succeeds if the balance still covers
+      // the amount at write time. updateMany returns count 0 if the WHERE
+      // (balance >= amount) no longer holds — closing the TOCTOU race that let
+      // concurrent/double settlements drive the balance negative or double-spend.
+      const dec = await tx.driverWallet.updateMany({
+        where: { driverId, balance: { gte: amount } },
         data: {
           balance:       { decrement: amount },
           totalSettled:  { increment: amount },
           lastSettledAt: new Date(),
         },
       });
+      if (dec.count === 0) {
+        throw new BadRequestException(
+          `Settlement amount (${amount}) exceeds current balance (${wallet.balance}).`,
+        );
+      }
+
+      const updated = await tx.driverWallet.findUniqueOrThrow({ where: { driverId } });
 
       await tx.codTransaction.create({
         data: {
@@ -189,8 +210,18 @@ export class CodService {
     lng: number,
     radiusM = 500,
   ) {
+    // Validate client-supplied coordinates — a driver app posts these, so they
+    // are untrusted. Reject out-of-range values and clamp the radius so a
+    // caller can't pass a huge radius to force every waybill OUT_FOR_DELIVERY.
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 ||
+        !Number.isFinite(lng) || lng < -180 || lng > 180) {
+      throw new BadRequestException('Invalid GPS coordinates');
+    }
+    radiusM = Math.min(Math.max(Number(radiusM) || 500, 10), 2000); // 10m–2km
+
+    // Tenant + driver safety: only this company's shipments for this driver.
     const shipments = await this.prisma.shipment.findMany({
-      where: { driverId, status: { in: ['IN_TRANSIT'] } },
+      where: { driverId, companyId, status: { in: ['IN_TRANSIT'] } },
       include: {
         waybill: {
           select: {
@@ -213,11 +244,19 @@ export class CodService {
       const dist = this.haversineMetres(lat, lng, waybill.recipientLat, waybill.recipientLng);
       if (dist > radiusM) continue;
 
-      // Within geofence — advance to OUT_FOR_DELIVERY
+      // Within geofence — advance to OUT_FOR_DELIVERY through the state machine
+      // (was a raw update bypassing guardTransition). Honours
+      // WAYBILL_STRICT_TRANSITIONS: logged-only until strict mode is on.
+      guardTransition(waybill.status as any, 'OUT_FOR_DELIVERY', {
+        waybillId: waybill.id, trackingNumber: waybill.trackingNumber, actor: 'geofence',
+      });
       await this.prisma.waybill.update({
         where: { id: waybill.id },
         data: { status: 'OUT_FOR_DELIVERY' },
       });
+      // Note: the linked Shipment intentionally stays IN_TRANSIT — ShipmentStatus
+      // has no OUT_FOR_DELIVERY state; the shipment advances to DELIVERED/FAILED
+      // at POD/failed-attempt time. So there is no waybill/shipment split here.
       triggered.push(waybill.trackingNumber);
 
       // ── Close the loop ──────────────────────────────────────────────────
@@ -247,9 +286,12 @@ export class CodService {
   }
 
   // ── Single wallet detail + ledger ──────────────────────────────────────────
-  async getWallet(driverId: string) {
-    const wallet = await this.prisma.driverWallet.findUnique({
-      where: { driverId },
+  async getWallet(driverId: string, companyId: string) {
+    // Tenant safety: only expose a wallet whose driver belongs to the caller's
+    // company (was previously an unscoped findUnique by driverId → any tenant
+    // could read any driver's cash ledger).
+    const wallet = await this.prisma.driverWallet.findFirst({
+      where: { driverId, driver: { companyId } },
       include: {
         driver: { select: { id: true, name: true, phone: true, vehicleReg: true, status: true } },
         transactions: { orderBy: { createdAt: 'desc' }, take: 100 },
