@@ -1079,6 +1079,8 @@ model Waybill {
   codAmount   Float?
   codCollected    Boolean   @default(false)   // driver has physically collected the cash
   codCollectedAt  DateTime?
+  codCollectedAmount Float?                    // Amount ACTUALLY collected at the door (may differ from codAmount)
+  codDiscrepancy     Float?                    // collected - owed: negative = short-paid, positive = over-paid, 0/null = exact
 
   // Customer delivery rating (requested via /waybills/:id/rate-request after delivery)
   customerRating      Int?

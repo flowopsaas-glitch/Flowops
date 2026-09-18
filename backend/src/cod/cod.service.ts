@@ -74,7 +74,12 @@ export class CodService {
 
   // ── Record cash collection ─────────────────────────────────────────────────
 
-  async recordCollection(waybillId: string, companyId: string, actorId?: string) {
+  async recordCollection(
+    waybillId: string,
+    companyId: string,
+    actorId?: string,
+    opts?: { collectedAmount?: number; note?: string },
+  ) {
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, companyId },
       include: { shipments: { take: 1, include: { driver: true } } },
@@ -88,39 +93,75 @@ export class CodService {
     const driverId = waybill.shipments[0]?.driverId;
     if (!driverId) throw new BadRequestException('No driver assigned to this waybill');
 
+    // ── Over/under-collection ────────────────────────────────────────────
+    // The amount OWED is server-authoritative (waybill.codAmount). The driver
+    // may report a different amount ACTUALLY collected at the door (short-pay,
+    // over-pay, or exact). We record the real amount + the discrepancy so cash
+    // handling reflects reality instead of assuming the driver always collected
+    // exactly the owed amount. The WALLET accrues what was actually collected.
+    const owed = this.round2(waybill.codAmount);
+    let collected = owed; // default: exact collection when no amount is supplied
+    if (opts?.collectedAmount !== undefined) {
+      const c = Number(opts.collectedAmount);
+      if (!Number.isFinite(c) || c < 0) {
+        throw new BadRequestException('Collected amount must be a non-negative number');
+      }
+      collected = this.round2(c);
+    }
+    const discrepancy = this.round2(collected - owed); // <0 short, >0 over, 0 exact
+
+    const discNote =
+      discrepancy === 0 ? '' :
+      discrepancy < 0 ? ` (SHORT by R${Math.abs(discrepancy).toFixed(2)})` :
+      ` (OVER by R${discrepancy.toFixed(2)})`;
+
     return this.prisma.$transaction(async (tx) => {
-      // Upsert the driver wallet
-      let wallet = await tx.driverWallet.upsert({
+      // Accrue the ACTUAL collected amount to the driver's wallet.
+      await tx.driverWallet.upsert({
         where: { driverId },
         update: {
-          balance:        { increment: waybill.codAmount! },
-          totalCollected: { increment: waybill.codAmount! },
+          balance:        { increment: collected },
+          totalCollected: { increment: collected },
         },
         create: {
           driverId,
-          balance:        waybill.codAmount!,
-          totalCollected: waybill.codAmount!,
+          balance:        collected,
+          totalCollected: collected,
         },
       });
 
       // Re-fetch the updated balance for the transaction record
-      wallet = await tx.driverWallet.findUniqueOrThrow({ where: { driverId } });
+      const wallet = await tx.driverWallet.findUniqueOrThrow({ where: { driverId } });
 
       await tx.codTransaction.create({
         data: {
           walletId: wallet.id, waybillId, companyId,
-          type: 'COLLECTION', amount: waybill.codAmount!, balance: wallet.balance,
-          note: `Collected for ${waybill.trackingNumber}`,
+          type: 'COLLECTION', amount: collected, balance: wallet.balance,
+          note: (opts?.note ? `${opts.note} — ` : '') +
+                `Collected R${collected.toFixed(2)} for ${waybill.trackingNumber}${discNote}`,
         },
       });
 
       await tx.waybill.update({
         where: { id: waybillId },
-        data: { codCollected: true, codCollectedAt: new Date() },
+        data: {
+          codCollected: true,
+          codCollectedAt: new Date(),
+          codCollectedAmount: collected,
+          codDiscrepancy: discrepancy,
+        },
       });
 
-      return { collected: waybill.codAmount, driverId, walletBalance: wallet.balance };
+      return {
+        collected, owed, discrepancy, driverId, walletBalance: wallet.balance,
+        exact: discrepancy === 0,
+      };
     });
+  }
+
+  /** Round a money value to 2 decimals (Float storage — curbs drift). */
+  private round2(n: number): number {
+    return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
   }
 
   // ── Settle driver (driver remits cash to company) ─────────────────────────
