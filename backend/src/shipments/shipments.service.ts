@@ -1,6 +1,13 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
+import { pickAllowed } from '../common/pick-allowed.util';
+
+/** Client-writable Shipment fields (excludes id/companyId/timestamps). */
+const SHIPMENT_FIELDS = [
+  'status', 'waybillId', 'driverId', 'userId',
+  'currentLat', 'currentLng', 'estimatedDelivery', 'deliveredAt',
+] as const;
 
 @Injectable()
 export class ShipmentsService {
@@ -135,14 +142,16 @@ export class ShipmentsService {
   }
 
   async create(companyId: string, dto: any) {
-    return this.prisma.shipment.create({ data: { ...dto, companyId } });
+    return this.prisma.shipment.create({
+      data: { ...pickAllowed(dto, SHIPMENT_FIELDS), companyId } as any,
+    });
   }
 
   async update(id: string, companyId: string, dto: any) {
     // Tenant-scoped: verify the shipment belongs to the caller before mutating.
     const owned = await this.prisma.shipment.findFirst({ where: { id, companyId }, select: { id: true } });
     if (!owned) throw new NotFoundException('Shipment not found');
-    const updated = await this.prisma.shipment.update({ where: { id }, data: dto });
+    const updated = await this.prisma.shipment.update({ where: { id }, data: pickAllowed(dto, SHIPMENT_FIELDS) });
     // Live-refresh the operations dashboard / live map (the frontend's
     // premium socket listens for `shipment-status-changed`).
     this.safeEmit(() => this.gateway.emitShipmentUpdate(companyId, {

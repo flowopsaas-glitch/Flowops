@@ -594,10 +594,23 @@ export class PredictiveDeliveryService {
 
         const total = stats.reduce((s, x) => s + x._count._all, 0);
         const delivered = stats.find(s => s.status === 'DELIVERED')?._count._all || 0;
+        const failed = stats.find(s => s.status === 'FAILED_DELIVERY')?._count._all || 0;
+        const returned = stats.find(s => s.status === 'RETURNED')?._count._all || 0;
         const successRate = total > 0 ? Math.round((delivered / total) * 100) : 0;
 
         if (total > 0) {
-          this.logger.log(`Intelligence[${company.id.slice(-8)}]: ${total} deliveries (${successRate}% success, 90d window)`);
+          // PERSIST the snapshot so the "learning" is durable and queryable
+          // over time (was previously only logged — a no-op learning engine).
+          await this.prisma.deliveryIntelligenceStat.create({
+            data: {
+              companyId: company.id,
+              windowDays: 90,
+              totalDeliveries: total,
+              delivered, failed, returned,
+              successRate,
+            },
+          });
+          this.logger.log(`Intelligence[${company.id.slice(-8)}]: ${total} deliveries (${successRate}% success, 90d window) — persisted`);
         }
       } catch (err: any) {
         this.logger.warn(`Intelligence rebuild failed for ${company.id}: ${err.message}`);
