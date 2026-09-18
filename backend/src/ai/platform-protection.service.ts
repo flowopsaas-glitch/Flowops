@@ -76,18 +76,12 @@ export class PlatformProtectionService {
         );
       }
 
-      // Check for orphaned inventory (items without a bin assignment)
-      const orphanedItems = await this.prisma.inventoryItem.count({
-        where: { binId: null },
-      });
-
-      if (orphanedItems > 0) {
-        await this.raiseAlert('inventory_orphaned', 'warning',
-          `${orphanedItems} inventory items are not assigned to any bin`,
-          'Orphaned inventory may indicate deleted bins with remaining stock.',
-          { count: orphanedItems }
-        );
-      }
+      // NOTE: There is no "orphaned inventory" check here because binId is a
+      // required (non-nullable) field with an onDelete: Cascade relation to
+      // BinLocation. An InventoryItem cannot exist without a bin, and deleting
+      // a bin cascades the items away — so orphaned items are structurally
+      // impossible. A previous `where: { binId: null }` query threw a Prisma
+      // validation error ("Argument `binId` must not be null") on every sweep.
 
       // Check for massive single adjustments (potential fraud)
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
