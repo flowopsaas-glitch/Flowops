@@ -34,7 +34,7 @@ export class LogisticsOpsController {
   recordFailedAttempt(
     @Param('id') id: string,
     @CurrentUser() u: any,
-    @Body() body: { reason: string; rescheduleHours?: number },
+    @Body() body: { reason: string; reasonCode?: string; rescheduleHours?: number },
   ) {
     return this.svc.recordFailedAttempt(id, u.companyId, body);
   }
