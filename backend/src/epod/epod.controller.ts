@@ -16,7 +16,7 @@ export class EpodController {
 
   @Post('capture')
   capture(@CurrentUser() u: any, @Body() dto: CaptureEpodDto) {
-    return this.svc.capture(u.companyId, dto);
+    return this.svc.capture(u.companyId, dto, { userId: u.id ?? u.sub, role: u.role });
   }
 
   @Get()

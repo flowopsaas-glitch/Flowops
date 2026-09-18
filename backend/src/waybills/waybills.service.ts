@@ -307,6 +307,12 @@ export class WaybillsService {
         results.push({ trackingNumber: tn, result: 'unchanged', id: waybill.id });
         continue;
       }
+      // Enforce the lifecycle even on bulk warehouse scans, so a scan can't
+      // jump a parcel to an illegal state (e.g. PENDING → DELIVERED). Honours
+      // WAYBILL_STRICT_TRANSITIONS: logged-only until strict mode is enabled.
+      guardTransition(waybill.status, targetStatus as WaybillStatus, {
+        waybillId: waybill.id, trackingNumber: waybill.trackingNumber, actor: 'waybills.batchScan',
+      }, (msg) => { throw new BadRequestException(msg); });
       const updated = await this.prisma.waybill.update({
         where: { id: waybill.id },
         data: { status: targetStatus as any },
