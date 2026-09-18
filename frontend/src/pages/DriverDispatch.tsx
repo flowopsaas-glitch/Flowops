@@ -11,7 +11,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 // ── Standardised dark tile source (CartoDB Dark Matter) ──
-const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const DARK_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const DARK_TILE_ATTR = '&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>';
 
 import { api } from '../api/client';
@@ -225,7 +225,10 @@ export default function DriverDispatch() {
           // which upserts a Shipment and advances the waybill status.
           await api.post(`/waybills/${job.raw.id}/assign`, { driverId: String(driverId) });
         } else {
-          await api.patch(`/collections/${job.raw.id}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
+          // Use the purpose-built assign-driver endpoint (validates the driver
+          // belongs to this tenant + sets status to ASSIGNED). The generic PATCH
+          // was rejecting a partial body against the create DTO.
+          await api.post(`/collections/${job.raw.id}/assign-driver`, { driverId: String(driverId) });
         }
         ok++;
       } catch { fail++; }
@@ -248,11 +251,17 @@ export default function DriverDispatch() {
         // which upserts a Shipment and advances the waybill status to COLLECTED.
         await api.post(`/waybills/${originalId}/assign`, { driverId: String(driverId) });
       } else {
-        await api.patch(`/collections/${originalId}`, { driverId: String(driverId), status: 'IN_PROGRESS' });
+        // Purpose-built endpoint: validates tenant ownership + sets ASSIGNED.
+        await api.post(`/collections/${originalId}/assign-driver`, { driverId: String(driverId) });
       }
       showToast(`Assigned ${selectedJob.reference}`, "success");
       setRefreshTick(v => v + 1);
-    } catch { showToast("Failed to assign", "error"); }
+    } catch (err: any) {
+      // Surface the real backend message so failures are diagnosable, not a
+      // generic "Failed to assign" that hides the cause.
+      const msg = err?.response?.data?.message || err?.message || "Failed to assign";
+      showToast(Array.isArray(msg) ? msg.join(", ") : String(msg), "error");
+    }
     finally { setAssigning(false); }
   };
 
@@ -534,7 +543,7 @@ export default function DriverDispatch() {
           /* 🚀 MAP VIEW MODE */
           <div className="w-full h-[75vh] rounded-[32px] overflow-hidden border border-white/10 shadow-2xl relative animate-in fade-in zoom-in-95 duration-300">
             <MapContainer center={branchCenter} zoom={12} style={{ height: '100%', width: '100%', background: '#0b1a2b' }} zoomControl={false} attributionControl={false}>
-              <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+              <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <ChangeView center={selectedJob ? [selectedJob.lat, selectedJob.lng] : branchCenter} />
               
               {jobs.map(job => (

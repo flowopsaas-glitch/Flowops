@@ -86,8 +86,8 @@ id_ed25519*
 ssh-key-*
 
 # ─── Stray build-log fragments (from redirected docker/npm output) ──
-# These were accidentally committed once (commit beaab86). Ignore the
-# common fragment names so a broken redirect can't re-add them.
+# These were accidentally committed once. Ignore the common fragment names
+# so a broken redirect can't re-add them.
 sha256:*
 exporting
 extracting

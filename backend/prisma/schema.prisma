@@ -34,6 +34,25 @@ enum WaybillStatus {
   CANCELLED
 }
 
+// Structured reason codes for a failed delivery attempt. Replaces free-text-only
+// failure reasons so failures can be reliably categorised and analysed
+// (e.g. "how many CUSTOMER_NOT_HOME vs REFUSED this month").
+enum FailedDeliveryReason {
+  CUSTOMER_NOT_HOME
+  CUSTOMER_REFUSED
+  INCORRECT_ADDRESS
+  ADDRESS_NOT_FOUND
+  ACCESS_RESTRICTED       // gated complex / security wouldn't allow entry
+  BUSINESS_CLOSED
+  NO_SAFE_DROP_LOCATION
+  COD_PAYMENT_UNAVAILABLE // recipient couldn't pay COD
+  DAMAGED_IN_TRANSIT
+  WEATHER_OR_HAZARD
+  VEHICLE_BREAKDOWN
+  OUTSIDE_DELIVERY_WINDOW
+  OTHER
+}
+
 enum CollectionStatus {
   PENDING
   ASSIGNED
@@ -211,6 +230,7 @@ model Company {
   emailHubItems      EmailHubItem[]
   workflows          Workflow[]
   approvalRequest    ApprovalRequest?
+  planUpgradeRequests PlanUpgradeRequest[]
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
   codTransactions    CodTransaction[]
@@ -235,6 +255,7 @@ model Company {
   electronicPods        ElectronicPod[]
   liveTrackingSessions  LiveTrackingSession[]
   digitalPayments       DigitalPayment[]
+  deliveryIntelligenceStats DeliveryIntelligenceStat[]
 
   @@map("companies")
 }
@@ -303,6 +324,9 @@ model User {
   lastLoginAt        DateTime?
   lastLoginIp        String?
   lastLoginUserAgent String?
+  // Presence heartbeat — stamped (throttled) on authenticated requests so the
+  // owner console can show live online status. Distinct from lastLoginAt.
+  lastActiveAt       DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -390,6 +414,94 @@ model ApprovalRequest {
   @@map("approval_requests")
 }
 
+// In-app plan-upgrade request → owner approval (no payment provider).
+// A tenant admin requests a higher tier from inside the app; the platform
+// owner approves (which flips company.plan) or declines. Tenant-scoped.
+model PlanUpgradeRequest {
+  id        String         @id @default(cuid())
+  status    ApprovalStatus @default(PENDING)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  currentPlan   String  // tenant's plan when the request was raised (audit snapshot)
+  requestedPlan String  // target PlanId (professional / professional_10/25/50 / enterprise)
+
+  // Who raised it (tenant admin)
+  requestedById    String?
+  requestedByEmail String?
+  note             String? @db.Text // optional message from the tenant
+
+  // Owner decision
+  reviewedById    String?
+  reviewedByEmail String?
+  reviewedAt      DateTime?
+  decisionNote    String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@map("plan_upgrade_requests")
+}
+
+// ── OKRs (platform-owner strategic cockpit) ─────────────────────────────────
+// Objectives & Key Results for FlowOps itself (not tenant-scoped) — the owner
+// tracks quarterly objectives, each with measurable key results that roll up to
+// an auto-computed progress %. Owner-only; lives behind the owner console.
+enum OkrStatus {
+  ON_TRACK
+  AT_RISK
+  BEHIND
+  ACHIEVED
+  CANCELLED
+}
+
+enum KeyResultUnit {
+  NUMBER
+  PERCENT
+  CURRENCY
+}
+
+model Objective {
+  id          String     @id @default(cuid())
+  title       String
+  description String?    @db.Text
+  quarter     String     // e.g. "2026-Q4"
+  owner       String?    // person accountable
+  status      OkrStatus  @default(ON_TRACK)
+  sortOrder   Int        @default(0)
+
+  keyResults  KeyResult[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([quarter])
+  @@map("objectives")
+}
+
+model KeyResult {
+  id          String        @id @default(cuid())
+  objectiveId String
+  objective   Objective     @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  title       String
+  unit        KeyResultUnit @default(NUMBER)
+  startValue  Float         @default(0)
+  targetValue Float
+  currentValue Float        @default(0)
+  status      OkrStatus     @default(ON_TRACK)
+  sortOrder   Int           @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([objectiveId])
+  @@map("key_results")
+}
+
 model NotificationPreference {
   id     String @id @default(cuid())
   userId String @unique
@@ -459,6 +571,15 @@ model Driver {
   lastLoginIp        String?
   lastLoginUserAgent String?
 
+  // ── PIN brute-force lockout ───────────────────────────────────────────
+  // A 4-digit PIN has only 10k combinations, so IP-based throttling alone is
+  // not enough. We count consecutive failed PIN attempts per driver and lock
+  // the account for a cooldown once a threshold is hit; a successful login
+  // resets the counter. This is independent of the IP throttle, so rotating
+  // IPs cannot bypass it.
+  failedPinAttempts  Int       @default(0)
+  pinLockedUntil     DateTime?
+
   // Optional link to a User account — enables role-scoped job delivery
   userId    String? @unique
   user      User?   @relation(fields: [userId], references: [id])
@@ -504,6 +625,23 @@ model DriverRefreshToken {
   @@map("driver_refresh_tokens")
 }
 
+// Web-push subscription for the driver PWA — lets dispatch wake a driver's phone
+// with a "new job" notification. One row per browser/device the driver enabled
+// notifications on. Endpoint is unique (the browser's push endpoint URL).
+model DriverPushSubscription {
+  id        String   @id @default(cuid())
+  driverId  String
+  companyId String
+  endpoint  String   @unique
+  p256dh    String   // client public key (for future encrypted payloads)
+  auth      String   // client auth secret
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([driverId])
+  @@map("driver_push_subscriptions")
+}
+
 // ─── Branches ─────────────────────────────────────────────────────────────
 
 model Branch {
@@ -537,6 +675,7 @@ enum FreightMode {
   OCEAN
   AIR
   ROAD
+  RAIL
 }
 
 enum FreightDirection {
@@ -589,6 +728,8 @@ model ShipmentFile {
   pol          String? // port of loading (UN/LOCODE or name)
   pod          String? // port of discharge
   vesselVoyage String? // or flight number
+  vesselMmsi   String? // vessel MMSI (9-digit AIS id) — enables LIVE AISStream tracking
+  vesselImo    String? // vessel IMO number (optional, for reference)
   etd          DateTime?
   eta          DateTime?
 
@@ -939,6 +1080,8 @@ model Waybill {
   codAmount   Float?
   codCollected    Boolean   @default(false)   // driver has physically collected the cash
   codCollectedAt  DateTime?
+  codCollectedAmount Float?                    // Amount ACTUALLY collected at the door (may differ from codAmount)
+  codDiscrepancy     Float?                    // collected - owed: negative = short-paid, positive = over-paid, 0/null = exact
 
   // Customer delivery rating (requested via /waybills/:id/rate-request after delivery)
   customerRating      Int?
@@ -956,6 +1099,8 @@ model Waybill {
   podImageUrl     String?
   podRecipient    String?
   podDeliveredAt  DateTime?
+  // Barcodes scanned at handover — audit trail of exactly what was delivered.
+  podScannedCodes String[]
 
   // Proof of collection (SENDER + DRIVER signatures at pickup — Leg 1)
   // Complete chain of custody: sender confirms handover → driver acknowledges receipt
@@ -969,7 +1114,8 @@ model Waybill {
   attemptCount    Int       @default(0)   // Number of delivery attempts made
   maxAttempts     Int       @default(3)   // Max attempts before return (configurable)
   nextAttemptAt   DateTime?               // Scheduled next attempt (auto-set on failure)
-  lastAttemptNote String?                 // Reason for last failed attempt
+  lastAttemptNote String?                 // Free-text note for last failed attempt
+  lastAttemptReasonCode FailedDeliveryReason? // Structured reason for the last failed attempt (for analytics)
   returnToSender  Boolean   @default(false) // True when max attempts exhausted
 
   // Uploaded scan file (Cloudflare R2 key)
@@ -1150,6 +1296,15 @@ model Invoice {
 
   notes String?
 
+  // Unguessable token for the unauthenticated public/portal invoice view.
+  // Without this, the public view was an IDOR (any invoice readable by id).
+  // Generated lazily the first time a share link is requested.
+  // NOT @unique: adding a unique constraint on an existing table blocks
+  // `prisma db push` (it can't prove no duplicates), and uniqueness is
+  // unnecessary here — the token is a random UUID and the public lookup
+  // already matches on BOTH id AND token. A plain index keeps lookups fast.
+  publicToken String?
+
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -1163,6 +1318,7 @@ model Invoice {
   commissions Commission[]
 
   @@unique([invoiceNumber, companyId])
+  @@index([publicToken])
   @@map("invoices")
 }
 
@@ -3633,4 +3789,170 @@ model DigitalPayment {
   @@index([companyId, createdAt])
   @@index([waybillId])
   @@map("digital_payments")
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RAIL / INTERMODAL OPERATIONS
+//
+// FlowOps sits ABOVE the rail network as a coordination + intelligence layer —
+// it is NOT a signalling / slot-allocation / marshalling control system.
+// A RailConsignment is the central record for cargo moving (in whole or part)
+// by rail. Wagons/rakes, intermodal legs (road<->rail<->port handoffs) and a
+// status event timeline hang off it. Additive; mirrors the ShipmentFile design.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum RailConsignmentStatus {
+  PLANNED          // booked / slot requested
+  WAGONS_ALLOCATED // rolling stock assigned
+  LOADING          // at origin siding / terminal
+  DEPARTED         // left origin
+  IN_TRANSIT       // on the corridor
+  AT_INTERCHANGE   // handoff point (border / yard / port)
+  ARRIVED          // reached destination siding / terminal
+  OFFLOADED        // cargo discharged
+  COMPLETED        // consignment closed
+  CANCELLED
+}
+
+enum WagonType {
+  FLAT           // container / breakbulk
+  GONDOLA        // bulk minerals (coal, manganese)
+  TANK           // liquids / fuel
+  BOXCAR         // covered general freight
+  HOPPER         // free-flowing bulk
+  CONTAINER_CAR  // intermodal container flats
+}
+
+enum IntermodalLegMode {
+  ROAD
+  RAIL
+  PORT
+}
+
+enum IntermodalLegStatus {
+  PENDING
+  IN_PROGRESS
+  HANDED_OVER
+  COMPLETED
+  DELAYED
+}
+
+model RailConsignment {
+  id                String                @id @default(cuid())
+  consignmentNumber String // RAIL-2026-00042 (unique per tenant)
+  status            RailConsignmentStatus @default(PLANNED)
+
+  // Commercial / cargo
+  clientName    String?
+  commodity     String  // Copper cathodes | Coal | Manganese | Containers | Fuel...
+  tonnage       Float?  // total planned tonnage
+  wagonsPlanned Int?    // planned number of wagons/rake size
+
+  // Corridor / routing
+  corridor          String? // North-South | Maputo | Copperbelt | Coal Line...
+  originSiding      String? // origin terminal / siding / mine
+  destinationSiding String? // destination terminal / siding / port
+  railOperator      String? // train operating company (TOC)
+  serviceRef        String? // rail service / path / slot reference
+  interchangePoint  String? // primary handoff (border / yard / port)
+
+  // Schedule
+  plannedDeparture DateTime?
+  plannedArrival   DateTime?
+  actualDeparture  DateTime?
+  actualArrival    DateTime?
+
+  // Coordination intelligence (FlowOps' value)
+  slaHours     Int?    // target corridor transit SLA
+  riskLevel    RiskLevel?
+  riskNote     String? @db.Text
+
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wagons Wagon[]
+  legs   IntermodalLeg[]
+  events RailConsignmentEvent[]
+
+  @@unique([consignmentNumber, companyId])
+  @@index([companyId, status])
+  @@map("rail_consignments")
+}
+
+model Wagon {
+  id             String    @id @default(cuid())
+  consignmentId  String
+  consignment    RailConsignment @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  wagonNumber    String    // rolling-stock ID e.g. SAR-064213
+  type           WagonType @default(CONTAINER_CAR)
+  tareTonnes     Float?    // empty weight
+  loadedTonnes   Float?    // cargo weight on this wagon
+  commodity      String?
+  sealNumbers    String?
+  lastKnownSiding String?  // location snapshot (coordination, not signalling)
+  loadedAt       DateTime?
+  offloadedAt    DateTime?
+
+  @@index([consignmentId])
+  @@map("wagons")
+}
+
+// Road <-> Rail <-> Port handoffs — "the gap nobody owns".
+model IntermodalLeg {
+  id            String              @id @default(cuid())
+  consignmentId String
+  consignment   RailConsignment     @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  sequence      Int                 // 1,2,3... order of legs in the journey
+  mode          IntermodalLegMode
+  status        IntermodalLegStatus @default(PENDING)
+  fromLocation  String?
+  toLocation    String?
+  handler       String?             // carrier / operator responsible for this leg
+  plannedStart  DateTime?
+  plannedEnd    DateTime?
+  actualStart   DateTime?
+  actualEnd     DateTime?
+  dwellHours    Float?              // dwell/idle time at the handoff (computed)
+  note          String?             @db.Text
+
+  @@index([consignmentId])
+  @@map("intermodal_legs")
+}
+
+model RailConsignmentEvent {
+  id            String                @id @default(cuid())
+  consignmentId String
+  consignment   RailConsignment       @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  status        RailConsignmentStatus
+  note          String?               @db.Text
+  location      String?
+  reachedAt     DateTime              @default(now())
+
+  @@index([consignmentId])
+  @@map("rail_consignment_events")
+}
+
+
+
+// Persisted delivery-intelligence snapshot — written by the daily
+// rebuildIntelligence cron so the "learning" is durable (queryable trends over
+// time) instead of only being logged. One row per company per rebuild.
+model DeliveryIntelligenceStat {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  windowDays    Int      @default(90)   // rolling window the stats were computed over
+  totalDeliveries Int    @default(0)
+  delivered     Int      @default(0)
+  failed        Int      @default(0)
+  returned      Int      @default(0)
+  successRate   Float    @default(0)    // delivered / total × 100
+
+  computedAt    DateTime @default(now())
+
+  @@index([companyId, computedAt])
+  @@map("delivery_intelligence_stats")
 }

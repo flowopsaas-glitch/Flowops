@@ -59,7 +59,7 @@ api.interceptors.response.use(
       
       // Attempt to notify the backend to "Auto-Upgrade" or fix the route
       try {
-        await api.post("/ai-ops/repair-route", {
+        await api.post("/ai/repair-route", {
           failedPath: error.config.url,
           error: error.message,
           timestamp: new Date().toISOString()

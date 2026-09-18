@@ -3,7 +3,7 @@ import {
   Package, Truck, BarChart3, MessageCircle, Shield,
   MapPin, FileText, Scan, Wallet, Route, Bell, Users,
   CheckCircle2, ArrowRight, Zap, Bot, ShieldCheck, Ship, Mail, RotateCcw,
-  Activity, TrendingUp, Target, LifeBuoy, PackageCheck,
+  Activity, TrendingUp, Target, LifeBuoy, PackageCheck, Train,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
@@ -290,6 +290,16 @@ const sections = [
           "Container (ISO 6346), cargo, charges & margin tracking",
           "SA customs estimator (ATV-based VAT) + AI HS classification",
           "Commercial invoice, packing list, B/L & SAD500 PDFs",
+        ],
+      },
+      {
+        icon: Train,
+        title: "Rail & Intermodal",
+        points: [
+          "Rail consignment lifecycle — planned → loaded → in-transit → offloaded",
+          "Wagon/rake register with tonnage, seals & last-known siding",
+          "Road↔rail↔port intermodal handoffs with dwell-time tracking",
+          "SADC corridor KPIs — on-time %, transit time & interchange dwell",
         ],
       },
       {

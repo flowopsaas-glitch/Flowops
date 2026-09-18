@@ -53,13 +53,13 @@ export class WarehouseController {
   }
 
   @Post('zones/:zoneId/bins')
-  createBin(@Param('zoneId') zoneId: string, @Body() dto: any) {
-    return this.wms.createBin(zoneId, dto);
+  createBin(@CurrentUser() u: any, @Param('zoneId') zoneId: string, @Body() dto: any) {
+    return this.wms.createBin(zoneId, u.companyId, dto);
   }
 
   @Post('zones/:zoneId/bins/bulk')
-  bulkCreateBins(@Param('zoneId') zoneId: string, @Body() dto: any) {
-    return this.wms.bulkCreateBins(zoneId, dto);
+  bulkCreateBins(@CurrentUser() u: any, @Param('zoneId') zoneId: string, @Body() dto: any) {
+    return this.wms.bulkCreateBins(zoneId, u.companyId, dto);
   }
 
   // ── Inventory ──────────────────────────────────────────────────────────

@@ -7,6 +7,15 @@ import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { DriverPortalService } from './driver-portal.service';
 import { AuthService } from '../auth/auth.service';
 
+/** Real client IP behind Cloudflare -> nginx -> Docker (see auth.controller). */
+function clientIp(req: any): string | undefined {
+  const cf = req?.headers?.['cf-connecting-ip'];
+  if (cf) return String(Array.isArray(cf) ? cf[0] : cf).trim();
+  const xff = req?.headers?.['x-forwarded-for'];
+  if (xff) return String(Array.isArray(xff) ? xff[0] : xff).split(',')[0].trim();
+  return req?.ip;
+}
+
 @Controller('driver-portal')
 export class DriverPortalController {
   constructor(
@@ -22,7 +31,7 @@ export class DriverPortalController {
   async login(@Body() body: { phone: string; pin: string }, @Req() req: any) {
     if (!body.phone || !body.pin) throw new UnauthorizedException('Phone and PIN are required');
     return this.auth.driverLogin(body.phone, String(body.pin), {
-      ip: req?.ip,
+      ip: clientIp(req),
       userAgent: req?.headers?.['user-agent'],
     });
   }
@@ -176,11 +185,13 @@ export class DriverPortalController {
   /** GET /driver-portal/dispatch/messages/:driverId — thread with a specific driver. */
   @Get('dispatch/messages/:driverId')
   getDriverThread(
+    @CurrentUser() u: any,
     @Param('driverId') driverId: string,
     @Query('limit') limit?: string,
     @Query('skip') skip?: string,
   ) {
-    return this.svc.getMessages(driverId, Number(limit) || 50, Number(skip) || 0);
+    // Tenant-scoped: dispatch may only read chats for drivers in their company.
+    return this.svc.getMessagesForCompany(driverId, u.companyId, Number(limit) || 50, Number(skip) || 0);
   }
 
   /** POST /driver-portal/dispatch/messages/:driverId — dispatch sends to driver. */

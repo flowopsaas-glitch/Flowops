@@ -25,8 +25,9 @@ export const ManifestManager: React.FC<Props> = ({ selectedIds, companyId, onSuc
       alert(`✅ Manifest created for ${selectedIds.length} parcels!`);
       setDestination('');
       onSuccess(); // This clears checkboxes and refreshes the list
-    } catch (err) {
-      alert("Failed to create manifest. Check backend logs.");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to create manifest.";
+      alert(Array.isArray(msg) ? msg.join(", ") : String(msg));
     } finally {
       setLoading(false);
     }

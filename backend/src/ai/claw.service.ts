@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiWatchdog } from './ai.watchdog';
+import { GROQ_MODEL } from './groq-model';
 import {
   AI_SECURITY_PREAMBLE,
   sanitizeAiInput,
@@ -103,7 +104,7 @@ BEHAVIORAL RULES:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           messages: [
             { role: 'system', content: systemPrompt }, 
             { role: 'user', content: `[OPERATOR QUERY]\n${inputCheck.sanitized}` }

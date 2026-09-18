@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+// The Groq model the platform actually calls — single source of truth in
+// ai/groq-model.ts (overridable via GROQ_MODEL env). The sentinel verifies this
+// exact model is still live so a silent decommission/Enterprise-gating is
+// caught proactively.
+import { GROQ_MODEL as EXPECTED_GROQ_MODEL } from './groq-model';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,11 +21,6 @@ export interface IntegrationCheck {
   detail: string;       // what's wrong / confirmation
   latencyMs: number;
 }
-
-// The Groq model the platform actually calls (keep in sync with claw.service +
-// competitive-intelligence). The sentinel verifies this is still live so a
-// silent decommission (the llama3-8b-8192 incident) is caught proactively.
-const EXPECTED_GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 @Injectable()
 export class IntegrationSentinelService {

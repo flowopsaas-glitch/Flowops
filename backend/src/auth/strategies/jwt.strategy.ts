@@ -38,6 +38,19 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('Your account was signed in on another device');
     }
 
+    // ── Presence heartbeat (throttled) ──────────────────────────────────────
+    // Stamp lastActiveAt so the owner console can show live online status.
+    // Only write if it's been >2 min since the last stamp — this runs on every
+    // authenticated request, so the throttle keeps it to ~one cheap write per
+    // active user per 2 min. Fire-and-forget: never block or fail the request.
+    const HEARTBEAT_MS = 2 * 60 * 1000;
+    const last = (user as any).lastActiveAt as Date | null;
+    if (!last || Date.now() - new Date(last).getTime() > HEARTBEAT_MS) {
+      void this.prisma.user
+        .update({ where: { id: user.id }, data: { lastActiveAt: new Date() } })
+        .catch(() => undefined);
+    }
+
     return user;
   }
 }

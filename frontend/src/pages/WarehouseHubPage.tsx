@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight, Box, CheckCircle2, ClipboardList, FileText, Layers,
-  Package, RefreshCw, ScanLine, ShieldAlert, Truck, Upload, Zap,
+  Package, RefreshCw, ScanLine, ShieldAlert, Truck, Upload, Zap, PackageCheck,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -52,6 +52,126 @@ function StatCard({ label, value, sub, icon: Icon, color }: {
       </div>
       <div className="text-3xl font-black text-white leading-none">{value}</div>
       {sub && <div className="text-[11px] text-white/35">{sub}</div>}
+    </div>
+  );
+}
+
+/**
+ * DepotReceivePanel — the warehouse clerk's inbound check-in station.
+ * Shows COLLECTED parcels awaiting depot receive and lets the clerk scan/enter
+ * tracking numbers to receive them (COLLECTED → AT_ORIGIN_HUB). A parcel MUST
+ * be received here before it can be loaded onto a linehaul.
+ */
+function DepotReceivePanel() {
+  const [pending, setPending] = useState<any[]>([]);
+  const [scan, setScan] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadPending = useCallback(async () => {
+    try {
+      const r: any = await api.get("/hub/pending-receive");
+      const d = r?.data ?? r;
+      setPending(Array.isArray(d?.waybills) ? d.waybills : []);
+    } catch { /* best-effort */ }
+  }, []);
+
+  useEffect(() => { void loadPending(); }, [loadPending]);
+
+  async function receive(refs: string[]) {
+    const clean = refs.map((s) => s.trim()).filter(Boolean);
+    if (clean.length === 0) return;
+    setBusy(true); setError(null); setResult(null);
+    try {
+      const r: any = await api.post("/hub/receive", { refs: clean });
+      const d = r?.data ?? r;
+      const parts: string[] = [];
+      if (d?.receivedCount) parts.push(`${d.receivedCount} received`);
+      if (d?.already?.length) parts.push(`${d.already.length} already in`);
+      if (d?.notFound?.length) parts.push(`${d.notFound.length} not found`);
+      if (d?.rejected?.length) parts.push(`${d.rejected.length} rejected`);
+      setResult(parts.join(" · ") || "Done");
+      setScan("");
+      await loadPending();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || "Receive failed");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.3)]">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-500/15 ring-1 ring-cyan-500/20">
+            <PackageCheck className="h-4 w-4 text-cyan-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-white">Receive at Depot</h3>
+            <p className="text-[11px] text-white/40">{pending.length} collected parcel(s) awaiting check-in</p>
+          </div>
+        </div>
+        <button onClick={() => void loadPending()}
+          className="flex items-center gap-1.5 text-xs font-bold text-cyan-300 hover:text-cyan-200 transition">
+          <RefreshCw className="h-3.5 w-3.5" /> Refresh
+        </button>
+      </div>
+
+      {/* Scan / enter waybill to receive */}
+      <form
+        onSubmit={(e) => { e.preventDefault(); void receive([scan]); }}
+        className="flex gap-2 mb-4"
+      >
+        <input
+          value={scan} onChange={(e) => setScan(e.target.value)}
+          placeholder="Scan or type tracking number…"
+          className="flex-1 rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:ring-2 focus:ring-cyan-500/50"
+        />
+        <button type="submit" disabled={busy || !scan.trim()}
+          className="rounded-xl bg-cyan-500 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-400 disabled:opacity-40">
+          {busy ? "…" : "Receive"}
+        </button>
+      </form>
+
+      {result && <div className="mb-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-300">{result}</div>}
+      {error && <div className="mb-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-2 text-xs font-bold text-rose-300">{error}</div>}
+
+      {/* Pending worklist */}
+      <div className="space-y-2 max-h-[280px] overflow-y-auto">
+        {pending.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 rounded-2xl border border-dashed border-white/10 text-center">
+            <PackageCheck className="h-7 w-7 text-white/10 mb-2" />
+            <p className="text-sm text-white/25">No parcels awaiting depot receive</p>
+          </div>
+        ) : (
+          <>
+            {pending.length > 1 && (
+              <button
+                onClick={() => void receive(pending.map((w) => w.trackingNumber))}
+                disabled={busy}
+                className="w-full mb-1 rounded-xl border border-cyan-500/30 bg-cyan-500/10 py-2.5 text-xs font-black text-cyan-200 hover:bg-cyan-500/20 transition disabled:opacity-40"
+              >
+                Receive all {pending.length}
+              </button>
+            )}
+            {pending.map((w) => (
+              <div key={w.id}
+                className="flex items-center justify-between rounded-2xl border border-white/6 bg-black/25 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-white truncate">{w.trackingNumber}</div>
+                  <div className="text-[10px] text-white/35 truncate">
+                    {w.senderName ?? "—"}{w.senderAddress ? ` · ${w.senderAddress}` : ""}
+                  </div>
+                </div>
+                <button onClick={() => void receive([w.trackingNumber])} disabled={busy}
+                  className="shrink-0 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-black text-cyan-200 hover:bg-cyan-500/20 transition disabled:opacity-40">
+                  Receive
+                </button>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -150,6 +270,9 @@ export default function WarehouseHubPage() {
           <StatCard label="Manifests Open"  value={stats.manifestsPending} sub={`${stats.manifestsWaybills} total waybills`} icon={ClipboardList} color="border-amber-500/20" />
           <StatCard label="POD Rate"        value={`${podRate}%`}          sub={`${stats.podCompleted} of ${stats.podCompleted + stats.podPending}`} icon={CheckCircle2} color="border-emerald-500/20" />
         </div>
+
+        {/* Depot receive — clerk inbound check-in (COLLECTED → AT_ORIGIN_HUB) */}
+        <DepotReceivePanel />
 
         {/* 2-col: waybill intake + manifests summary */}
         <div className="grid gap-4 lg:grid-cols-2">

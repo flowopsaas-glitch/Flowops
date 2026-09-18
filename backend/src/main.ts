@@ -19,9 +19,16 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log'],
   });
 
-  // Trust the proxy chain (Cloudflare tunnel -> nginx) so req.ip reflects the
-  // forwarded client address — required for accurate rate-limit tracking.
-  app.set('trust proxy', 1);
+  // Trust the FULL internal proxy chain (Cloudflare tunnel -> nginx -> Docker
+  // bridge) so req.ip reflects the real forwarded client address — needed for
+  // accurate rate-limit tracking, login-IP audit and tenant presence geo.
+  //
+  // `trust proxy: 1` only strips ONE hop, which in this stack lands on the
+  // Docker gateway (172.18.0.x) instead of the client. Trusting loopback +
+  // private ranges makes Express walk back through every internal hop to the
+  // first PUBLIC address in X-Forwarded-For — which can't be spoofed by the
+  // client because everything in front of the app is our own trusted infra.
+  app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 
   const config = app.get(ConfigService);
 

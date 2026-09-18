@@ -26,7 +26,7 @@ export class BranchesController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: CreateBranchDto) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateBranchDto) {
     return this.svc.update(id, u.companyId, body);
   }
 }

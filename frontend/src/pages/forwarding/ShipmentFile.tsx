@@ -108,6 +108,9 @@ export default function ShipmentFilePage() {
           </div>
         </Section>
 
+        {/* Live vessel tracking (ocean only) */}
+        {file.mode === "OCEAN" && <VesselTrackingPanel fileId={id} file={file} onChange={load} />}
+
         {/* Cross-border details */}
         <CrossBorderPanel fileId={id} file={file} onChange={load} />
 
@@ -821,6 +824,123 @@ function DGCargoEditor({ fileId, cargo, onChange }: { fileId: string; cargo: fwd
           );
         })}
       </div>
+    </Section>
+  );
+}
+
+
+// ── Live vessel tracking (AISStream) ─────────────────────────────────────────
+// Honest by design: we only ever show a real, timestamped AIS fix. When there's
+// no MMSI, no key, or no fix yet, we say exactly that — never a fake position.
+const TRACK_BADGE: Record<fwd.VesselTrackingQuality, { label: string; cls: string }> = {
+  LIVE:     { label: "● LIVE",        cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
+  STALE:    { label: "● STALE",       cls: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
+  AWAITING: { label: "◌ AWAITING FIX",cls: "border-sky-500/30 bg-sky-500/10 text-sky-300" },
+  NO_MMSI:  { label: "○ NO MMSI",     cls: "border-white/15 bg-white/5 text-white/50" },
+  FEED_OFF: { label: "○ FEED OFF",    cls: "border-white/15 bg-white/5 text-white/50" },
+};
+
+function VesselTrackingPanel({ fileId, file, onChange }: { fileId: string; file: fwd.ShipmentFile; onChange: () => void }) {
+  const { showToast } = useToast();
+  const [track, setTrack] = useState<fwd.VesselTracking | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mmsi, setMmsi] = useState(file.vesselMmsi ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setTrack(await fwd.trackVessel(fileId)); }
+    catch { /* endpoint may 404 on non-ocean; panel is ocean-only anyway */ }
+    finally { setLoading(false); }
+  }, [fileId]);
+
+  useEffect(() => { void load(); }, [load]);
+  // Auto-refresh the live position every 60s while the page is open.
+  useEffect(() => {
+    const t = setInterval(() => { void load(); }, 60_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const saveMmsi = async () => {
+    const clean = mmsi.trim();
+    if (clean && !/^\d{7,9}$/.test(clean)) { showToast("MMSI must be 7–9 digits", "error"); return; }
+    setSaving(true);
+    try {
+      await fwd.updateFile(fileId, { vesselMmsi: clean || null });
+      showToast(clean ? "MMSI saved — live tracking enabled" : "MMSI cleared", "success");
+      onChange();
+      await load();
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || e?.message || "Could not save MMSI", "error");
+    } finally { setSaving(false); }
+  };
+
+  const q = track?.trackingQuality ?? (file.vesselMmsi ? "AWAITING" : "NO_MMSI");
+  const badge = TRACK_BADGE[q];
+  const pos = track?.vesselPosition ?? null;
+
+  return (
+    <Section title="Live vessel tracking" icon={Globe}>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${badge.cls}`}>{badge.label}</span>
+        {loading && <Loader2 className="h-4 w-4 animate-spin text-white/40" />}
+        {track?.vesselVoyage && <span className="text-xs text-white/50">{track.vesselVoyage}</span>}
+      </div>
+
+      {/* MMSI input — the operator enters the vessel's AIS id to enable live tracking */}
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <input
+          className={`${inputCls} w-40`}
+          placeholder="Vessel MMSI (9 digits)"
+          value={mmsi}
+          onChange={(e) => setMmsi(e.target.value.replace(/\D/g, "").slice(0, 9))}
+        />
+        <button onClick={saveMmsi} disabled={saving}
+          className="rounded-lg border border-cyan-500/30 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-200 disabled:opacity-40">
+          {saving ? "Saving…" : "Save MMSI"}
+        </button>
+        <a
+          href={`https://www.marinetraffic.com/en/ais/home/${file.vesselVoyage ? `search:${encodeURIComponent(file.vesselVoyage)}` : ""}`}
+          target="_blank" rel="noreferrer"
+          className="text-[11px] text-sky-300 underline underline-offset-2 hover:text-sky-200"
+        >
+          find MMSI on MarineTraffic →
+        </a>
+      </div>
+
+      {/* Live position (only when we actually have a real fix) */}
+      {pos ? (
+        <div className="grid sm:grid-cols-2 gap-3 text-sm">
+          <Field label="Position" value={`${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`} />
+          <Field label="Speed / heading" value={`${pos.speed.toFixed(1)} kn · ${Math.round(pos.heading)}°`} />
+          <Field label="Last AIS fix" value={pos.ageMinutes < 1 ? "just now" : `${pos.ageMinutes} min ago`} />
+          <Field label="Source" value={pos.source} />
+          {track?.distanceRemainingNm != null && <Field label="Distance to port" value={`${track.distanceRemainingNm} nm`} />}
+          {track?.predictedEta && <Field label="Predicted ETA" value={new Date(track.predictedEta).toLocaleDateString("en-ZA")} />}
+          <a
+            className="sm:col-span-2 inline-flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/20 w-fit"
+            href={`https://www.marinetraffic.com/en/ais/home/centerx:${pos.lng.toFixed(3)}/centery:${pos.lat.toFixed(3)}/zoom:8`}
+            target="_blank" rel="noreferrer"
+          >
+            <Globe className="h-3.5 w-3.5" /> View on MarineTraffic map
+          </a>
+        </div>
+      ) : (
+        <p className="text-xs text-white/40">
+          {q === "NO_MMSI" && "Enter the vessel MMSI above to start live position tracking."}
+          {q === "FEED_OFF" && "Live AIS feed is not configured on this server (set AISSTREAM_API_KEY). ETA still uses port-congestion estimates."}
+          {q === "AWAITING" && "Live tracking is on — waiting for the vessel's first AIS position report (can take a few minutes, or longer mid-ocean)."}
+        </p>
+      )}
+
+      {/* Honest alerts from the backend */}
+      {track?.alerts?.length ? (
+        <div className="mt-3 space-y-1">
+          {track.alerts.map((a, i) => (
+            <p key={i} className="text-[11px] text-white/55">{a}</p>
+          ))}
+        </div>
+      ) : null}
     </Section>
   );
 }

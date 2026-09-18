@@ -31,7 +31,7 @@ export class CollectionsController {
   }
 
   @Patch('collections/:id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: CreateCollectionDto) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateCollectionDto) {
     return this.svc.update(id, u.companyId, body);
   }
 
@@ -57,6 +57,31 @@ export class CollectionsController {
   @Get('collections/:id/auto-suggest')
   autoSuggest(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.autoSuggest(id, u.companyId);
+  }
+
+  /**
+   * POST /collections/:id/assign-driver — attach a driver to the collection.
+   * Tenant-scoped: the collection and the driver must belong to the caller's company.
+   */
+  @Post('collections/:id/assign-driver')
+  assignDriver(@Param('id') id: string, @CurrentUser() u: any, @Body() body: { driverId: string }) {
+    return this.svc.assignDriver(id, u.companyId, body.driverId);
+  }
+
+  /**
+   * POST /collections/:id/release-driver — detach the driver; ASSIGNED → PENDING.
+   */
+  @Post('collections/:id/release-driver')
+  releaseDriver(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.releaseDriver(id, u.companyId);
+  }
+
+  /**
+   * GET /collections/:id/workflow — read model for the Collections command center drawer.
+   */
+  @Get('collections/:id/workflow')
+  workflow(@Param('id') id: string, @CurrentUser() u: any) {
+    return this.svc.getWorkflow(id, u.companyId);
   }
 
   /**

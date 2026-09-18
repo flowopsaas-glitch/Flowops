@@ -119,7 +119,11 @@ export default function DriversManagement() {
       } else {
         payload.status = "AVAILABLE";
         await api.post("/drivers", payload);
-        setSuccess("Driver added to fleet");
+        setSuccess(
+          payload.phone
+            ? "Driver added to fleet"
+            : "Driver added — add a phone number + PIN so they can log into the driver app.",
+        );
       }
       setShowForm(false);
       void loadDrivers();

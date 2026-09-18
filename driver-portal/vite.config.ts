@@ -33,6 +33,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // Never cache API calls — the app handles its own offline cache (Dexie).
         navigateFallbackDenylist: [/^\/api/, /^\/socket\.io/],
+        // Pull in the push/notification handlers without hand-writing the whole
+        // SW (keeps the generated offline caching intact).
+        importScripts: ['/push-sw.js'],
       },
     }),
   ],

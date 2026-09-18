@@ -2,10 +2,11 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
-import { ChevronLeft, Package, CheckCircle, Square, PenTool, X, MapPin } from 'lucide-react';
+import { ChevronLeft, Package, CheckCircle, Square, PenTool, X, ScanLine, Camera } from 'lucide-react';
 import { useToast } from "../../components/ToastProvider"; 
 import SignatureCanvas from 'react-signature-canvas';
-import { queuePod, syncPodQueue, getPodQueue, registerPodAutoSync } from '../../lib/offlinePod';
+import BarcodeScanner from '../../components/BarcodeScanner';
+import { queuePod, registerPodAutoSync } from '../../lib/offlinePod';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import '../../i18n';
 
@@ -18,6 +19,13 @@ export default function DriverManifest() {
   const [showSig, setShowSig] = useState(false);
   const sigPad = useRef<any>(null);
   const { showToast } = useToast();
+
+  // ── New POD capture state ────────────────────────────────────────────────
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannedCodes, setScannedCodes] = useState<string[]>([]);
+  const [recipientName, setRecipientName] = useState("");
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Flush any deliveries captured offline as soon as we're back online.
   useEffect(() => {
@@ -76,10 +84,30 @@ export default function DriverManifest() {
     setShowSig(true);
   }, [triggerGeofence]);
 
+  /** Record a scanned parcel: mark the next unconfirmed unit + keep the code. */
+  const handleScan = useCallback((code: string) => {
+    setScannedCodes((prev) => (prev.includes(code) ? prev : [...prev, code]));
+    setConfirmed((prev) => {
+      const total = job?.quantity || 1;
+      const next = prev.length; // confirm the next unit in sequence
+      if (next < total && !prev.includes(next)) return [...prev, next];
+      return prev;
+    });
+  }, [job]);
+
+  /** Capture (or retake) the delivery photo — parcel at the door. */
+  const handlePhoto = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhotoDataUrl(String(reader.result));
+    reader.readAsDataURL(f);
+  }, []);
+
   // This state persists until the API returns data
   if (!job) {
     return (
-      <div className="min-h-screen bg-[#020817] flex items-center justify-center text-sky-500 font-black italic tracking-widest uppercase animate-pulse">
+      <div className="driver-portal-scope min-h-screen bg-[#020817] flex items-center justify-center text-sky-500 font-black italic tracking-widest uppercase animate-pulse">
         {t('syncing')}
       </div>
     );
@@ -95,38 +123,61 @@ export default function DriverManifest() {
 
     const canvas = sigPad.current.getTrimmedCanvas();
     const signatureDataUrl: string = canvas.toDataURL("image/png");
+    const waybillNumber = job.trackingNumber ?? job.waybillNumber ?? String(id);
 
-    // Offline-first: if there's no connectivity, queue the POD locally and let
-    // it sync automatically when the driver is back online — never lose a POD.
+    // Offline-first: if there's no connectivity, queue the FULL POD locally
+    // (signature + photo + recipient + scanned codes) and let it sync
+    // automatically when the driver is back online — never lose a POD.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      queuePod({ waybillId: String(id), waybillNumber: job.trackingNumber ?? job.waybillNumber ?? String(id), signatureDataUrl });
+      queuePod({
+        waybillId: String(id),
+        waybillNumber,
+        signatureDataUrl,
+        recipient: recipientName.trim() || undefined,
+        photoDataUrl: photoDataUrl ?? undefined,
+        scannedCodes: scannedCodes.length ? scannedCodes : undefined,
+      });
       showToast(t('saved_offline'), "success");
       navigate("/driver/portal");
       return;
     }
 
-    canvas.toBlob(async (blob: Blob | null) => {
-      if (!blob) return;
+    // Online: signature travels as signatureBase64; the delivery photo (if the
+    // driver took one) travels as the `photo` file. Both are stored distinctly.
+    const formData = new FormData();
+    formData.append('signatureBase64', signatureDataUrl);
+    if (recipientName.trim()) formData.append('recipient', recipientName.trim());
+    if (scannedCodes.length) formData.append('scannedCodes', JSON.stringify(scannedCodes));
+    if (photoDataUrl) {
+      const [meta, b64] = photoDataUrl.split(',');
+      const mime = meta.match(/:(.*?);/)?.[1] || 'image/jpeg';
+      const bin = atob(b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      formData.append('photo', new File([buf], `POD_PHOTO_${waybillNumber}.jpg`, { type: mime }));
+    }
 
-      const formData = new FormData();
-      // Field name MUST be 'photo' — matches FileInterceptor('photo') in the controller
-      formData.append('photo', new File([blob], `POD_${job.trackingNumber ?? id}.png`, { type: 'image/png' }));
-
-      try {
-        await api.post(`/waybills/${id}/deliver`, formData);
-        showToast(t('delivery_confirmed'), "success");
-        navigate('/driver/portal');
-      } catch (err) {
-        // Network/other failure → queue offline instead of losing the POD.
-        queuePod({ waybillId: String(id), waybillNumber: job.waybillNumber, signatureDataUrl });
-        showToast(t('saved_offline_sync'), "success");
-        navigate('/driver/portal');
-      }
-    }, 'image/png');
+    try {
+      await api.post(`/waybills/${id}/deliver`, formData);
+      showToast(t('delivery_confirmed'), "success");
+      navigate('/driver/portal');
+    } catch (err) {
+      // Network/other failure → queue offline instead of losing the POD.
+      queuePod({
+        waybillId: String(id),
+        waybillNumber,
+        signatureDataUrl,
+        recipient: recipientName.trim() || undefined,
+        photoDataUrl: photoDataUrl ?? undefined,
+        scannedCodes: scannedCodes.length ? scannedCodes : undefined,
+      });
+      showToast(t('saved_offline_sync'), "success");
+      navigate('/driver/portal');
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#020817] text-white p-6 pb-32 text-left font-sans">
+    <div className="driver-portal-scope min-h-screen bg-[#020817] text-white p-6 pb-32 text-left font-sans">
       <button onClick={() => navigate('/driver/portal')} 
         className="mb-8 text-sky-500 font-black text-[10px] uppercase flex items-center gap-2"
       >
@@ -190,8 +241,16 @@ export default function DriverManifest() {
         </div>
       )}
 
-      {/* Parcel Audit List */}
-      <section className="space-y-3 my-10">
+      {/* Scan parcels — primary action */}
+      <button
+        onClick={() => setShowScanner(true)}
+        className="mt-8 flex w-full items-center justify-center gap-3 rounded-[28px] border border-sky-500/40 bg-sky-500/15 py-6 text-sm font-black uppercase tracking-widest text-sky-200 active:scale-95"
+      >
+        <ScanLine size={22} /> Scan parcel ({confirmed.length}/{job.quantity || 1})
+      </button>
+
+      {/* Parcel Audit List — scan fills these; tap still works as manual fallback */}
+      <section className="space-y-3 my-6">
         {Array.from({ length: job.quantity || 1 }).map((_, i) => (
           <button 
             key={i} 
@@ -206,7 +265,12 @@ export default function DriverManifest() {
           >
             <div className="flex items-center gap-4">
               <Package size={22}/>
-            <span className="font-black text-sm uppercase">{t('item_id')}: {i + 1}</span>
+              <div className="text-left">
+                <span className="font-black text-sm uppercase block">{t('item_id')}: {i + 1}</span>
+                {scannedCodes[i] && (
+                  <span className="text-[10px] font-mono text-emerald-300/70 lowercase">{scannedCodes[i]}</span>
+                )}
+              </div>
             </div>
             {confirmed.includes(i) ? (
               <CheckCircle size={24} className="fill-emerald-500 text-slate-950"/>
@@ -246,7 +310,40 @@ export default function DriverManifest() {
              </button>
           </div>
           
-          <div className="flex-1 bg-white rounded-[40px] overflow-hidden shadow-inner">
+          {/* Recipient name */}
+          <input
+            value={recipientName}
+            onChange={(e) => setRecipientName(e.target.value)}
+            placeholder="Received by (name)"
+            className="mb-4 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-white/30 outline-none focus:border-sky-500/50"
+          />
+
+          {/* Delivery photo capture */}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handlePhoto}
+            className="hidden"
+          />
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            className={`mb-4 flex w-full items-center justify-center gap-2 rounded-2xl border py-3 text-xs font-black uppercase tracking-widest transition ${
+              photoDataUrl
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                : 'border-white/10 bg-white/5 text-white/60'
+            }`}
+          >
+            {photoDataUrl ? <CheckCircle size={16} /> : <Camera size={16} />}
+            {photoDataUrl ? 'Delivery photo attached — retake' : 'Take delivery photo (optional)'}
+          </button>
+          {photoDataUrl && (
+            <img src={photoDataUrl} alt="Delivery proof" className="mb-4 h-24 w-full rounded-2xl object-cover" />
+          )}
+
+          <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-white/45">Signature</p>
+          <div className="flex-1 bg-white rounded-[40px] overflow-hidden shadow-inner min-h-[180px]">
             <SignatureCanvas 
               ref={sigPad} 
               penColor="black" 
@@ -256,11 +353,21 @@ export default function DriverManifest() {
 
           <button 
             onClick={submitPOD} 
-            className="w-full mt-10 bg-emerald-500 py-6 rounded-3xl font-black text-xs uppercase tracking-widest text-white shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
+            className="w-full mt-6 bg-emerald-500 py-6 rounded-3xl font-black text-xs uppercase tracking-widest text-white shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
           >
             {t('confirm_complete')}
           </button>
         </div>
+      )}
+
+      {/* Barcode scanner overlay */}
+      {showScanner && (
+        <BarcodeScanner
+          title="Scan parcels"
+          alreadyScanned={scannedCodes}
+          onScan={handleScan}
+          onClose={() => setShowScanner(false)}
+        />
       )}
     </div>
   );

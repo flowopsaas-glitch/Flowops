@@ -58,17 +58,12 @@ export async function getAIEventStats() {
   return res.data;
 }
 
-export async function seedAIEventsDemo() {
-  const res = await api.post<{ created: number }>("/ai-events/seed-demo");
+export async function resolveAIEvent(id: number | string, note?: string) {
+  const res = await api.post(`/ai-events/${id}/resolve`, { note });
   return res.data;
 }
 
-export async function resolveAIEvent(id: number, resolutionNote?: string) {
-  const res = await api.patch(`/ai-events/${id}/resolve`, { resolutionNote });
-  return res.data;
-}
-
-export async function dismissAIEvent(id: number, resolutionNote?: string) {
-  const res = await api.patch(`/ai-events/${id}/dismiss`, { resolutionNote });
+export async function dismissAIEvent(id: number | string) {
+  const res = await api.post(`/ai-events/${id}/dismiss`);
   return res.data;
 }

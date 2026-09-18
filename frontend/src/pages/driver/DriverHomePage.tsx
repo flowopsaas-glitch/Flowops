@@ -292,7 +292,7 @@ export default function DriverHomePage() {
   }
 
   return (
-    <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(30,80,140,0.12),transparent_30%),linear-gradient(180deg,#07111f,#0b1530)] p-4 sm:p-6">
+    <div className="driver-portal-scope min-h-full bg-[radial-gradient(circle_at_top,rgba(30,80,140,0.12),transparent_30%),linear-gradient(180deg,#07111f,#0b1530)] p-4 sm:p-6">
       <div className="mx-auto max-w-2xl space-y-5">
 
         {/* ── Header card ── */}

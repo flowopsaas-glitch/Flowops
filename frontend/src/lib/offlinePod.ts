@@ -16,6 +16,10 @@ export type QueuedPod = {
   waybillNumber: string;
   recipient?: string;
   signatureDataUrl: string;
+  /** Optional delivery photo (parcel-at-door) captured as a data URL. */
+  photoDataUrl?: string;
+  /** Barcodes scanned at handover — the audit trail of exactly what was delivered. */
+  scannedCodes?: string[];
   queuedAt: string;
 };
 
@@ -62,14 +66,20 @@ export async function syncPodQueue(): Promise<number> {
   for (const item of queue) {
     try {
       const formData = new FormData();
-      // Field must be 'photo' — matches @UploadedFile('photo') in the NestJS controller
-      formData.append(
-        "photo",
-        new File([dataUrlToBlob(item.signatureDataUrl)], `POD_${item.waybillNumber || item.waybillId}.png`, {
-          type: "image/png",
-        }),
-      );
+      // Signature travels as `signatureBase64` in the body (backend stores it as
+      // podSignatureUrl). The delivery PHOTO travels as the `photo` file (backend
+      // @UploadedFile('photo') → podImageUrl). This keeps the two proofs distinct.
+      formData.append("signatureBase64", item.signatureDataUrl);
+      if (item.photoDataUrl) {
+        formData.append(
+          "photo",
+          new File([dataUrlToBlob(item.photoDataUrl)], `POD_PHOTO_${item.waybillNumber || item.waybillId}.jpg`, {
+            type: "image/jpeg",
+          }),
+        );
+      }
       if (item.recipient) formData.append("recipient", item.recipient);
+      if (item.scannedCodes?.length) formData.append("scannedCodes", JSON.stringify(item.scannedCodes));
       // Endpoint is /waybills/:id/deliver — NOT /complete (that route does not exist)
       await api.post(`/waybills/${item.waybillId}/deliver`, formData);
       synced++;

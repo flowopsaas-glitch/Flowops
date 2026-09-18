@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { GROQ_ENDPOINT, GROQ_MODEL } from '../ai/groq-model';
 
 export interface CaptureInput {
   source?: 'backend' | 'frontend' | 'integrity';
@@ -13,9 +14,6 @@ export interface CaptureInput {
   companyId?: string | null;
   userId?: string | null;
 }
-
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 @Injectable()
 export class ObservabilityService {

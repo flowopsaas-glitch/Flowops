@@ -31,8 +31,15 @@ export class CodController {
 
   @Post('collect/:waybillId')
   @RequireFeature('codReconciliation')
-  recordCollection(@Param('waybillId') waybillId: string, @CurrentUser() u: AuthenticatedUser) {
-    return this.svc.recordCollection(waybillId, u.companyId, u.id);
+  recordCollection(
+    @Param('waybillId') waybillId: string,
+    @CurrentUser() u: AuthenticatedUser,
+    @Body() body?: { collectedAmount?: number; note?: string },
+  ) {
+    return this.svc.recordCollection(waybillId, u.companyId, u.id, {
+      collectedAmount: body?.collectedAmount,
+      note: body?.note,
+    });
   }
 
   @Post('settle/:driverId')
@@ -70,8 +77,8 @@ export class CodController {
 
   @Get('wallets/:driverId')
   @RequireFeature('codReconciliation')
-  getWallet(@Param('driverId') driverId: string) {
-    return this.svc.getWallet(driverId);
+  getWallet(@Param('driverId') driverId: string, @CurrentUser() u: AuthenticatedUser) {
+    return this.svc.getWallet(driverId, u.companyId);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

@@ -18,6 +18,7 @@ import {
   Star,
   Ship,
   Activity,
+  Train,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
 import PublicFooter from "../../components/layout/PublicFooter";
@@ -273,6 +274,13 @@ function Features() {
       color: "cyan",
       title: "Freight Forwarding",
       desc: "Import/export shipment files across ocean, air & road — containers, customs (SA duty/VAT + AI HS codes), SAD500/B-L docs and demurrage, bridged to the domestic last mile.",
+      tag: "Enterprise",
+    },
+    {
+      icon: Train,
+      color: "emerald",
+      title: "Rail & Intermodal",
+      desc: "Coordinate cargo across the SADC rail network — consignment lifecycle, wagon/rake register and road↔rail↔port handoffs with dwell tracking, plus corridor KPIs (on-time %, transit time, interchange dwell).",
       tag: "Enterprise",
     },
     {

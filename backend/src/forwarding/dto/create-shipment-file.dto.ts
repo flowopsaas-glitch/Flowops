@@ -30,6 +30,8 @@ export class CreateShipmentFileDto {
   @IsOptional() @IsString() pol?: string;
   @IsOptional() @IsString() pod?: string;
   @IsOptional() @IsString() vesselVoyage?: string;
+  @IsOptional() @IsString() vesselMmsi?: string;
+  @IsOptional() @IsString() vesselImo?: string;
   @IsOptional() @IsDateString() etd?: string;
   @IsOptional() @IsDateString() eta?: string;
 

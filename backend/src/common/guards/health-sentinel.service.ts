@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * HEALTH SENTINEL — World-Class Self-Healing & Monitoring
@@ -23,6 +27,8 @@ interface HealthStatus {
   database: 'healthy' | 'degraded' | 'down';
   memory: 'healthy' | 'warning' | 'critical';
   eventLoop: 'healthy' | 'slow' | 'blocked';
+  disk: 'healthy' | 'warning' | 'critical' | 'unknown';
+  diskUsedPct: number | null;
   uptime: number;
   lastCheck: string;
   issues: string[];
@@ -33,8 +39,13 @@ export class HealthSentinelService {
   private readonly logger = new Logger('HEALTH_SENTINEL');
   private lastStatus: HealthStatus = {
     database: 'healthy', memory: 'healthy', eventLoop: 'healthy',
+    disk: 'unknown', diskUsedPct: null,
     uptime: 0, lastCheck: new Date().toISOString(), issues: [],
   };
+  // Disk thresholds: on a small VPS a full disk stops Postgres writes = total
+  // outage, so we warn early and shout loudly before it gets critical.
+  private static readonly DISK_WARN_PCT = 80;
+  private static readonly DISK_CRITICAL_PCT = 90;
   private consecutiveDbFailures = 0;
   private static readonly DB_FAILURE_THRESHOLD = 3; // Alert after 3 consecutive failures
 
@@ -76,11 +87,22 @@ export class HealthSentinelService {
       issues.push(`Event loop: ${eventLoopStatus}`);
     }
 
+    // 4. Disk space — a full disk on a small VPS = Postgres write failure = outage.
+    const { status: diskStatus, usedPct: diskUsedPct } = await this.checkDisk();
+    if (diskStatus === 'critical') {
+      issues.push(`Disk: CRITICAL (${diskUsedPct}% used — free space NOW: docker image prune -f)`);
+      this.logger.error(`CRITICAL: disk ${diskUsedPct}% full. Postgres writes will fail when full. Run: docker image prune -f`);
+    } else if (diskStatus === 'warning') {
+      issues.push(`Disk: warning (${diskUsedPct}% used)`);
+    }
+
     // Update status
     this.lastStatus = {
       database: dbStatus,
       memory: memStatus,
       eventLoop: eventLoopStatus,
+      disk: diskStatus,
+      diskUsedPct,
       uptime: process.uptime(),
       lastCheck: new Date().toISOString(),
       issues,
@@ -160,6 +182,31 @@ export class HealthSentinelService {
 
   private getMemoryUsageMb(): number {
     return Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+  }
+
+  /**
+   * Real disk-usage check for the filesystem holding the app/DB data.
+   * Uses `df` (available in the alpine-based container) and parses the used %.
+   * Falls back to 'unknown' if df isn't available or output can't be parsed —
+   * we never want the health check itself to throw.
+   */
+  private async checkDisk(): Promise<{ status: 'healthy' | 'warning' | 'critical' | 'unknown'; usedPct: number | null }> {
+    try {
+      // -P = POSIX output (single line per fs, stable columns). Check the root
+      // fs; in the container that maps to the Docker overlay/host disk.
+      const { stdout } = await execFileAsync('df', ['-P', '/'], { timeout: 4000 });
+      const lines = stdout.trim().split('\n');
+      const dataLine = lines[lines.length - 1] ?? '';
+      const match = dataLine.match(/(\d+)%/);
+      if (!match) return { status: 'unknown', usedPct: null };
+      const usedPct = Number(match[1]);
+      if (!Number.isFinite(usedPct)) return { status: 'unknown', usedPct: null };
+      if (usedPct >= HealthSentinelService.DISK_CRITICAL_PCT) return { status: 'critical', usedPct };
+      if (usedPct >= HealthSentinelService.DISK_WARN_PCT) return { status: 'warning', usedPct };
+      return { status: 'healthy', usedPct };
+    } catch {
+      return { status: 'unknown', usedPct: null };
+    }
   }
 
   private async checkEventLoop(): Promise<'healthy' | 'slow' | 'blocked'> {

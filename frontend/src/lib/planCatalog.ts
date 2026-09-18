@@ -84,6 +84,7 @@ export const PLAN_CATALOG: PlanCatalogEntry[] = [
       "Warehouse Management System — inventory, bins, pick/pack, cycle count, AI put-away",
       "CLAW Autopilot — autonomous ops (auto-assign, SLA escalation, COD checks)",
       "Freight Forwarding — import/export, containers, customs & last-mile",
+      "Rail & Intermodal — consignment lifecycle, wagon register & road↔rail↔port corridor coordination",
       "AI Support Agent — in-app help grounded in your live data",
       "Courier Management — multi-carrier order orchestration",
       "OIDC Single Sign-On (Okta, Azure AD, Google Workspace, Auth0)",
