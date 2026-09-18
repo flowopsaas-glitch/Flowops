@@ -1296,7 +1296,11 @@ model Invoice {
   // Unguessable token for the unauthenticated public/portal invoice view.
   // Without this, the public view was an IDOR (any invoice readable by id).
   // Generated lazily the first time a share link is requested.
-  publicToken String? @unique
+  // NOT @unique: adding a unique constraint on an existing table blocks
+  // `prisma db push` (it can't prove no duplicates), and uniqueness is
+  // unnecessary here — the token is a random UUID and the public lookup
+  // already matches on BOTH id AND token. A plain index keeps lookups fast.
+  publicToken String?
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1311,6 +1315,7 @@ model Invoice {
   commissions Commission[]
 
   @@unique([invoiceNumber, companyId])
+  @@index([publicToken])
   @@map("invoices")
 }
 
