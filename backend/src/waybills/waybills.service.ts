@@ -246,10 +246,14 @@ export class WaybillsService {
     if (!waybill) throw new NotFoundException('Waybill not found');
 
     // Get driver details for the dispatch notification
-    const driver = await this.prisma.driver.findUnique({
-      where: { id: driverId },
+    // Tenant-scoped: the driver being assigned MUST belong to the same company
+    // as the waybill (was findUnique by id only → could attach another tenant's
+    // driver and leak their name/phone via the dispatch notification).
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId },
       select: { name: true, phone: true, vehicleType: true, vehicleReg: true },
     });
+    if (!driver) throw new NotFoundException('Driver not found in your company');
 
     return this.prisma.$transaction(async (tx) => {
       // Upsert the linked shipment

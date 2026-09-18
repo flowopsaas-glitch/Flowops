@@ -98,23 +98,21 @@ export class CustomerPortalController {
   @Get(':companyId/invoices')
   async getInvoices(
     @Param('companyId') companyId: string,
-    @Query('phone') phone?: string,
     @Query('email') email?: string,
-    @Query('clientName') clientName?: string,
   ) {
-    if (!phone && !email && !clientName) {
-      return { invoices: [], message: 'Provide client name, phone, or email to search.' };
-    }
-
-    const where: any = { companyId };
-    if (clientName) {
-      where.clientName = { contains: clientName, mode: 'insensitive' };
-    } else if (email) {
-      where.clientEmail = { equals: email, mode: 'insensitive' };
+    // Security: this is a PUBLIC endpoint. It must require an EXACT client
+    // email match — never a free-text `clientName contains` search, which let
+    // anyone enumerate a tenant's invoices (e.g. ?clientName=a returned every
+    // invoice whose name contains "a", exposing client names/emails/amounts).
+    // Matching on the exact email a client already knows is the minimum bar for
+    // an unauthenticated lookup.
+    const trimmed = (email ?? '').trim();
+    if (!trimmed || !trimmed.includes('@')) {
+      return { invoices: [], count: 0, message: 'Provide the exact client email to view invoices.' };
     }
 
     const invoices = await this.prisma.invoice.findMany({
-      where,
+      where: { companyId, clientEmail: { equals: trimmed, mode: 'insensitive' } },
       select: {
         id: true, invoiceNumber: true, status: true,
         clientName: true, clientEmail: true,

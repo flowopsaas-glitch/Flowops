@@ -185,11 +185,13 @@ export class DriverPortalController {
   /** GET /driver-portal/dispatch/messages/:driverId — thread with a specific driver. */
   @Get('dispatch/messages/:driverId')
   getDriverThread(
+    @CurrentUser() u: any,
     @Param('driverId') driverId: string,
     @Query('limit') limit?: string,
     @Query('skip') skip?: string,
   ) {
-    return this.svc.getMessages(driverId, Number(limit) || 50, Number(skip) || 0);
+    // Tenant-scoped: dispatch may only read chats for drivers in their company.
+    return this.svc.getMessagesForCompany(driverId, u.companyId, Number(limit) || 50, Number(skip) || 0);
   }
 
   /** POST /driver-portal/dispatch/messages/:driverId — dispatch sends to driver. */

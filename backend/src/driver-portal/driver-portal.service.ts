@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
@@ -334,11 +334,29 @@ export class DriverPortalService {
 
   async recordPod(body: {
     waybillId: string;
+    driverId?: string;
+    companyId?: string;
     signatureUrl?: string;
     imageUrl?: string;
     recipientName?: string;
     notes?: string;
   }) {
+    // Chain of custody + tenant isolation: a driver may only POD a waybill that
+    // belongs to their company AND is dispatched to them. Previously this
+    // updated ANY waybill by client-supplied id → any driver could mark any
+    // tenant's parcel DELIVERED. driverId/companyId come from the driver token.
+    const waybill = await this.prisma.waybill.findFirst({
+      where: {
+        id: body.waybillId,
+        ...(body.companyId ? { companyId: body.companyId } : {}),
+        ...(body.driverId ? { shipments: { some: { driverId: body.driverId } } } : {}),
+      },
+      select: { id: true },
+    });
+    if (!waybill) {
+      throw new NotFoundException('Waybill not found or not assigned to you');
+    }
+
     const updated = await this.prisma.waybill.update({
       where: { id: body.waybillId },
       data: {
@@ -385,6 +403,20 @@ export class DriverPortalService {
       skip,
     });
     return msgs;
+  }
+
+  /**
+   * Tenant-scoped chat read for the DISPATCH side. Dispatch users may only read
+   * the thread of a driver in THEIR company (the driverId is a route param, so
+   * without this scope a tenant could read another tenant's driver chat).
+   */
+  async getMessagesForCompany(driverId: string, companyId: string, limit = 50, skip = 0) {
+    return this.prisma.driverChatMessage.findMany({
+      where: { driverId, companyId },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+      skip,
+    });
   }
 
   async sendMessage(driverId: string, companyId: string, message: string, senderType = 'driver', attachmentUrl?: string, attachmentType?: string) {
