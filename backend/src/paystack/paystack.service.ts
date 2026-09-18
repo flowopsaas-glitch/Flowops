@@ -158,8 +158,10 @@ export class PaystackService {
         break;
 
       case 'charge.failed':
+        // Idempotent + safe: never downgrade an already-SUCCESS payment to
+        // FAILED (a late/replayed failed event must not clobber a real success).
         await this.prisma.payment.updateMany({
-          where: { reference: data.reference },
+          where: { reference: data.reference, status: { not: 'SUCCESS' } },
           data: { status: 'FAILED', webhookPayload: rawPayload },
         });
         break;
@@ -185,6 +187,19 @@ export class PaystackService {
 
   private async handleChargeSuccess(tx: any) {
     const reference = tx.reference;
+
+    // IDEMPOTENCY: Paystack can deliver charge.success more than once (retries
+    // / replays). If the payment is already SUCCESS we've processed it — skip
+    // re-marking the invoice and (below) re-promoting the plan.
+    const existing = await this.prisma.payment.findFirst({
+      where: { reference },
+      select: { id: true, status: true, invoiceId: true, companyId: true },
+    });
+    if (existing?.status === 'SUCCESS') {
+      this.logger.log(`charge.success for ${reference} already processed — skipping (idempotent).`);
+      return;
+    }
+
     await this.prisma.payment.updateMany({
       where: { reference },
       data: {
