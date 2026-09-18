@@ -255,6 +255,7 @@ model Company {
   electronicPods        ElectronicPod[]
   liveTrackingSessions  LiveTrackingSession[]
   digitalPayments       DigitalPayment[]
+  deliveryIntelligenceStats DeliveryIntelligenceStat[]
 
   @@map("companies")
 }
@@ -3931,4 +3932,27 @@ model RailConsignmentEvent {
 
   @@index([consignmentId])
   @@map("rail_consignment_events")
+}
+
+
+
+// Persisted delivery-intelligence snapshot — written by the daily
+// rebuildIntelligence cron so the "learning" is durable (queryable trends over
+// time) instead of only being logged. One row per company per rebuild.
+model DeliveryIntelligenceStat {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  windowDays    Int      @default(90)   // rolling window the stats were computed over
+  totalDeliveries Int    @default(0)
+  delivered     Int      @default(0)
+  failed        Int      @default(0)
+  returned      Int      @default(0)
+  successRate   Float    @default(0)    // delivered / total × 100
+
+  computedAt    DateTime @default(now())
+
+  @@index([companyId, computedAt])
+  @@map("delivery_intelligence_stats")
 }

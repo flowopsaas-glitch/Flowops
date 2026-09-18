@@ -1,5 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { pickAllowed } from '../common/pick-allowed.util';
+
+/** Client-writable RateCard fields (excludes id/companyId/timestamps). */
+const RATE_CARD_FIELDS = [
+  'name', 'fromZone', 'toZone', 'minWeight', 'maxWeight',
+  'basePrice', 'pricePerKg', 'currency', 'isActive',
+] as const;
 
 @Injectable()
 export class RateCardsService {
@@ -10,12 +17,19 @@ export class RateCardsService {
   }
 
   async create(companyId: string, dto: any) {
-    return this.prisma.rateCard.create({ data: { ...dto, companyId } });
+    // Allowlist client input — never let a client set id/companyId/timestamps.
+    return this.prisma.rateCard.create({
+      data: { ...pickAllowed(dto, RATE_CARD_FIELDS), companyId } as any,
+    });
   }
 
   async update(id: string, companyId: string, dto: any) {
-    // Tenant-scoped: only the owning company may edit its rate card.
-    const res = await this.prisma.rateCard.updateMany({ where: { id, companyId }, data: dto });
+    // Tenant-scoped + allowlisted: only the owning company may edit, and only
+    // whitelisted fields (no id/companyId/timestamp tampering).
+    const res = await this.prisma.rateCard.updateMany({
+      where: { id, companyId },
+      data: pickAllowed(dto, RATE_CARD_FIELDS),
+    });
     if (res.count === 0) throw new NotFoundException('Rate card not found');
     return this.prisma.rateCard.findFirst({ where: { id, companyId } });
   }
