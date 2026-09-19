@@ -5,7 +5,7 @@ import {
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
   ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, BarChart3, Activity, Box, Globe, Building2,
-  AlertTriangle, Zap, Bot, ShieldCheck, Ship, Train, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
+  AlertTriangle, Zap, Bot, ShieldCheck, Ship, Train, Handshake, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight, PieChart, Brain,
 } from "lucide-react";
 
@@ -375,6 +375,7 @@ export default function AppLayout() {
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
     { section: "OPS", label: "Rail & Intermodal", desc: "Consignment lifecycle & road↔rail↔port (Enterprise)", to: "/rail", icon: Train, adminOnly: true, entitlement: "rail" },
+    { section: "OPS", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, adminOnly: true, entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
     
