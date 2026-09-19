@@ -93,6 +93,7 @@
   },
   "overrides": {
     "dompurify": "3.4.10",
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "tar": "^6.2.2"
   }
 }
