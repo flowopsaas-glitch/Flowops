@@ -44,7 +44,7 @@ export default function CarrierManagement() {
       showToast(e?.message ?? "Could not load carriers", "error");
     } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { void load();   }, []);
 
   const visible = useMemo(() => {
     if (!q.trim()) return carriers;

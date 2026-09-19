@@ -45,7 +45,7 @@ export default function Disbursements() {
       showToast(e?.message ?? "Could not load disbursements", "error");
     } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [statusFilter]);
+  useEffect(() => { void load();   }, [statusFilter]);
 
   const visible = useMemo(() => {
     if (!q.trim()) return rows;
