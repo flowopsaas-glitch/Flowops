@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RailController } from './rail.controller';
 import { RailService } from './rail.service';
+import { RailHandshakeController } from './rail-handshake.controller';
+import { RailHandshakeService } from './rail-handshake.service';
 
 /**
  * Rail / Intermodal Operations.
@@ -15,8 +17,8 @@ import { RailService } from './rail.service';
  */
 @Module({
   imports: [PrismaModule],
-  controllers: [RailController],
-  providers: [RailService],
-  exports: [RailService],
+  controllers: [RailController, RailHandshakeController],
+  providers: [RailService, RailHandshakeService],
+  exports: [RailService, RailHandshakeService],
 })
 export class RailModule {}

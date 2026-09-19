@@ -3934,6 +3934,158 @@ model RailConsignmentEvent {
   @@map("rail_consignment_events")
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DAILY HANDSHAKE (Transnet Network Statement — Annexure 28)
+//
+// Under rail open-access, every 24 hours the Infrastructure Manager (IM) and
+// each Train Operating Company (TOC) must reconcile all deviations from the
+// planned schedule (ITP) over the past 24h. Each deviation is linked to a
+// Train/Slot + Order number, categorised, given a root cause and a responsible
+// party (IM | this TOC | another IM | external | force majeure). The IM builds
+// a daily 08:00 report; the TOC reviews and either agrees or flags OPEN items;
+// unresolved red-flagged items climb an escalation ladder (24h → 48h → 72h →
+// Route Logistics Forum → Regulator dispute). FlowOps gives the TOC the clean,
+// timestamped, defensible audit trail to win those disputes and avoid paying
+// for delays it did not cause.
+//
+// This is TOC-side (our tenant's view). It does NOT replace the IM's TOMS.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model RailHandshakeReport {
+  id            String                @id @default(cuid())
+  reportNumber  String // HS-2026-00042 (unique per tenant)
+  status        HandshakeReportStatus @default(DRAFT)
+
+  // The 24h window this report reconciles (IM issues at 08:00 daily).
+  reportDate    DateTime              // the operating day being reconciled
+  windowStart   DateTime
+  windowEnd     DateTime
+
+  // Counterparty context (who we are handshaking with).
+  railOperator  String?               // IM / TOC counterparty name (e.g. TRIM)
+  corridor      String?               // North / Cape / Ore / Container ...
+
+  // Sign-off (Annexure 28 steps 11-12).
+  signedOffAt   DateTime?
+  signedOffBy   String?               // name/role of TOC signatory
+  imReference   String?               // IM's TOL report reference
+
+  notes         String?               @db.Text
+
+  companyId     String
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  deviations    RailHandshakeDeviation[]
+
+  @@unique([reportNumber, companyId])
+  @@index([companyId, status])
+  @@index([companyId, reportDate])
+  @@map("rail_handshake_reports")
+}
+
+model RailHandshakeDeviation {
+  id            String   @id @default(cuid())
+  reportId      String
+  report        RailHandshakeReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  // Linkage (Annexure 28: every deviation ties to Train/Slot + Order).
+  trainSlotRef  String   // Train / Slot reference
+  orderNumber   String?  // TOC order number
+  consignmentId String?  // optional link to a RailConsignment we already track
+
+  // What happened.
+  category      DeviationCategory   @default(OTHER)
+  reason        String              @db.Text   // preliminary reason
+  rootCause     String?             @db.Text   // determined root cause
+  location      String?
+  occurredAt    DateTime?
+  delayMinutes  Int?                // total delay attributed to this deviation
+
+  // Accountability (Annexure 28: allocated responsible party).
+  responsibleParty ResponsibleParty @default(UNDETERMINED)
+
+  // Impact on slots (Annexure 28 step 6).
+  slotImpact    SlotImpact          @default(NONE)
+
+  // Financial resolution (Annexure 28: debited within 24h of resolution).
+  costZar       Float?              // rand impact / charge under dispute
+  costRecovered Boolean             @default(false)
+
+  // Handshake agreement + escalation ladder.
+  status        DeviationStatus     @default(LOGGED)
+  escalationStage EscalationStage   @default(NONE)
+  disputeReason String?             @db.Text   // TOC's reason for flagging OPEN
+  resolutionNote String?            @db.Text
+  resolvedAt    DateTime?
+
+  // Deadlines derived from the report window (24/48/72/96h ladder).
+  escalatedAt   DateTime?           // when it last moved up the ladder
+
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([reportId])
+  @@index([status])
+  @@index([escalationStage])
+  @@map("rail_handshake_deviations")
+}
+
+enum HandshakeReportStatus {
+  DRAFT        // being assembled / deviations being logged
+  PENDING_TOC  // IM issued, awaiting TOC review + sign-off
+  SIGNED_OFF   // TOC signed off (may still contain OPEN items)
+  DISPUTED     // one or more items lodged with the Regulator
+  CLOSED       // all items resolved and filed
+}
+
+enum DeviationCategory {
+  CANCELLATION       // slot cancelled
+  DELAY              // slot delayed
+  NO_SHOW            // slot not taken up / not used
+  RESCHEDULE         // slot re-scheduled
+  INFRASTRUCTURE     // track / signalling / power fault
+  ROLLING_STOCK      // loco / wagon fault
+  OPERATIONAL        // crew / yard / handover
+  SECURITY           // theft / vandalism / cable
+  WEATHER            // environmental
+  OTHER
+}
+
+enum ResponsibleParty {
+  UNDETERMINED
+  IM              // Infrastructure Manager (Transnet)
+  THIS_TOC        // our tenant
+  ANOTHER_TOC     // a different operator's knock-on
+  EXTERNAL        // parties external to Transnet
+  FORCE_MAJEURE
+}
+
+enum SlotImpact {
+  NONE
+  NOT_USED     // slot not taken up
+  CANCELLED    // slot cancelled
+  RESCHEDULED  // slot moved
+  DELAYED      // slot ran late
+}
+
+enum DeviationStatus {
+  LOGGED       // captured, not yet agreed
+  AGREED       // both parties agree cause/party/impact
+  OPEN         // TOC disagrees — red-flagged open item
+  RESOLVED     // agreement reached after escalation
+  DISPUTED     // lodged with the Regulator
+}
+
+// Annexure 28 escalation ladder for unresolved red-flagged (OPEN) items.
+enum EscalationStage {
+  NONE                    // within tolerance / agreed
+  LIAISON_MANAGER_24H     // 24h: IM Customer Liaison Manager
+  HEAD_LIAISON_48H        // +24h (48h): IM Head of Customer Liaison
+  ROUTE_LOGISTICS_FORUM   // +48h (72h): Route Logistics Forum
+  REGULATOR_DISPUTE       // unresolved after RLF: dispute with Regulator
+}
+
 
 
 // Persisted delivery-intelligence snapshot — written by the daily
