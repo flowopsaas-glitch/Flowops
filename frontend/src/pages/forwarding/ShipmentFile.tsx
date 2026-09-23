@@ -315,7 +315,7 @@ function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.C
   const [busy, setBusy] = useState<string | null>(null);
 
   const loadEst = async () => { try { setEst(await fwd.getCustomsEstimate(fileId)); } catch { /* none yet */ } };
-  useEffect(() => { void loadEst(); /* eslint-disable-next-line */ }, [fileId]);
+  useEffect(() => { void loadEst();   }, [fileId]);
 
   const dl = async (type: fwd.ForwardingDocType) => {
     setBusy(type);
@@ -442,7 +442,7 @@ function DeclarationPanel({ fileId }: { fileId: string }) {
       if (d) await loadMsgs(d.id);
     } catch { /* none */ }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [fileId]);
+  useEffect(() => { void load();   }, [fileId]);
 
   const act = async (key: string, fn: () => Promise<any>, ok: string) => {
     setBusy(key);
@@ -538,7 +538,7 @@ function DemurragePanel({ fileId, containers }: { fileId: string; containers: fw
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = async () => { try { setDem(await fwd.getDemurrage(fileId)); } catch { /* none */ } };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [fileId]);
+  useEffect(() => { void load();   }, [fileId]);
 
   if (containers.length === 0) return null;
 
@@ -615,7 +615,7 @@ function ConsolidationPanel({ file, onChange }: { file: fwd.ShipmentFile; onChan
       setView(v); setCandidates(c);
     } catch { /* none */ }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [file.id, file.isMaster]);
+  useEffect(() => { void load();   }, [file.id, file.isMaster]);
 
   const act = async (key: string, fn: () => Promise<any>, ok: string) => {
     setBusy(key);

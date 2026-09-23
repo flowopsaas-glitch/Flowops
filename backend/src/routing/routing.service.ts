@@ -62,9 +62,9 @@ export class RoutingService {
 
   constructor(
     private prisma: PrismaService,
-    private config: ConfigService,
+    private config?: ConfigService,
   ) {
-    this.OSRM_BASE = config.get<string>('OSRM_BASE_URL', 'https://router.project-osrm.org');
+    this.OSRM_BASE = this.config?.get<string>('OSRM_BASE_URL', 'https://router.project-osrm.org') ?? 'https://router.project-osrm.org';
   }
 
   private dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {

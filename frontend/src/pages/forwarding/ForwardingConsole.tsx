@@ -68,7 +68,7 @@ export default function ForwardingConsole() {
   }, []);
 
   const reload = async () => setFiles(await listFiles(filter).catch(() => []));
-  useEffect(() => { if (entitled) void reload(); /* eslint-disable-next-line */ }, [filter.direction, filter.status]);
+  useEffect(() => { if (entitled) void reload();   }, [filter.direction, filter.status]);
 
   const kpis = useMemo(() => {
     const open = files.filter((f) => !["DELIVERED", "CANCELLED"].includes(f.status)).length;

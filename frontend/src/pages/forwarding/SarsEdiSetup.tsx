@@ -44,7 +44,7 @@ export default function SarsEdiSetup() {
     } catch { /* none configured */ }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { void load();   }, []);
 
   const save = async () => {
     if (path === "CLEARING_AGENT_HANDOFF" && !form.agentEmail.trim()) {

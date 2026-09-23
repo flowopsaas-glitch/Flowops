@@ -161,7 +161,7 @@ export default function NotificationPreferences() {
   useEffect(() => {
     void load();
     // load() is stable in this component; intentional empty deps for once-on-mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const isDirty = useMemo(
