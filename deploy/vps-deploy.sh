@@ -34,7 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+COMPOSE="docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml"
 log()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -138,9 +138,9 @@ Deploy complete.
   • One Postgres, one volume (postgres-data) — no parallel DBs.
 
 Next:
-  • Confirm the Cloudflare tunnel maps app.flowop.work -> http://localhost:8080
+  • Confirm Cloudflare ingress maps app.flowop.work -> frontend:80
   • Owner login: OWNER_SEED_EMAIL / OWNER_SEED_PASSWORD from .env
-  • Tail logs:   docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api
+  • Tail logs:   docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml logs -f api
 
 New in this batch (#140/#141):
   • Usage meters / plan enforcement  → Billing ▸ Plans (live immediately)
