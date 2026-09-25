@@ -87,9 +87,20 @@ export class RailHandshakeService {
   private async getDeviationOrThrow(companyId: string, reportId: string, deviationId: string) {
     const dev = await this.prisma.railHandshakeDeviation.findFirst({
       where: { id: deviationId, reportId, report: { companyId } },
+      include: { report: { select: { status: true } } },
     });
     if (!dev) throw new NotFoundException('Deviation not found');
     return dev;
+  }
+
+  private assertReportStatus(
+    status: HandshakeReportStatus,
+    allowed: HandshakeReportStatus[],
+    action: string,
+  ): void {
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(`${action} is not available while the report is ${status}.`);
+    }
   }
 
   // ── Reports ────────────────────────────────────────────────────────────────
@@ -160,9 +171,11 @@ export class RailHandshakeService {
   async updateReport(companyId: string, reportId: string, dto: UpdateHandshakeReportDto) {
     await this.assertEntitled(companyId);
     const report = await this.getReportOrThrow(companyId, reportId);
-    if (report.status === HandshakeReportStatus.CLOSED) {
-      throw new BadRequestException('Closed reports cannot be edited.');
-    }
+    this.assertReportStatus(
+      report.status,
+      [HandshakeReportStatus.DRAFT, HandshakeReportStatus.PENDING_TOC],
+      'Report metadata updates',
+    );
     return this.prisma.railHandshakeReport.update({
       where: { id: reportId },
       data: {
@@ -224,9 +237,11 @@ export class RailHandshakeService {
   async logDeviation(companyId: string, reportId: string, dto: LogDeviationDto) {
     await this.assertEntitled(companyId);
     const report = await this.getReportOrThrow(companyId, reportId);
-    if (report.status === HandshakeReportStatus.CLOSED) {
-      throw new BadRequestException('Cannot add deviations to a closed report.');
-    }
+    this.assertReportStatus(
+      report.status,
+      [HandshakeReportStatus.DRAFT, HandshakeReportStatus.PENDING_TOC],
+      'Adding deviations',
+    );
 
     // If a consignmentId is supplied, verify it belongs to this tenant.
     if (dto.consignmentId) {
@@ -261,8 +276,13 @@ export class RailHandshakeService {
   ) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
-    if (dev.status === DeviationStatus.RESOLVED || dev.status === DeviationStatus.DISPUTED) {
-      throw new BadRequestException('Resolved or disputed deviations cannot be edited.');
+    this.assertReportStatus(
+      dev.report.status,
+      [HandshakeReportStatus.DRAFT, HandshakeReportStatus.PENDING_TOC],
+      'Editing deviations',
+    );
+    if (dev.status !== DeviationStatus.LOGGED) {
+      throw new BadRequestException('Only an unreviewed deviation can be edited.');
     }
     return this.prisma.railHandshakeDeviation.update({
       where: { id: deviationId },
@@ -291,6 +311,10 @@ export class RailHandshakeService {
   ) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
+    this.assertReportStatus(dev.report.status, [HandshakeReportStatus.PENDING_TOC], 'Reviewing deviations');
+    if (dev.status !== DeviationStatus.LOGGED) {
+      throw new BadRequestException('Only a logged deviation can be reviewed.');
+    }
 
     if (dto.agree) {
       return this.prisma.railHandshakeDeviation.update({
@@ -408,8 +432,13 @@ export class RailHandshakeService {
   ) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
-    if (dev.status === DeviationStatus.RESOLVED) {
-      throw new BadRequestException('Deviation is already resolved.');
+    this.assertReportStatus(
+      dev.report.status,
+      [HandshakeReportStatus.PENDING_TOC, HandshakeReportStatus.SIGNED_OFF],
+      'Resolving deviations',
+    );
+    if (dev.status !== DeviationStatus.OPEN) {
+      throw new BadRequestException('Only an OPEN deviation can be resolved.');
     }
     return this.prisma.railHandshakeDeviation.update({
       where: { id: deviationId },
@@ -432,8 +461,16 @@ export class RailHandshakeService {
   async lodgeDispute(companyId: string, reportId: string, deviationId: string) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
+    this.assertReportStatus(
+      dev.report.status,
+      [HandshakeReportStatus.PENDING_TOC, HandshakeReportStatus.SIGNED_OFF, HandshakeReportStatus.DISPUTED],
+      'Lodging disputes',
+    );
     if (dev.status !== DeviationStatus.OPEN) {
       throw new BadRequestException('Only an OPEN (red-flagged) item can be lodged as a dispute.');
+    }
+    if (![EscalationStage.ROUTE_LOGISTICS_FORUM, EscalationStage.REGULATOR_DISPUTE].includes(dev.escalationStage)) {
+      throw new BadRequestException('A dispute can only be lodged after the item reaches the Route Logistics Forum stage.');
     }
     const updated = await this.prisma.railHandshakeDeviation.update({
       where: { id: deviationId },
@@ -450,8 +487,13 @@ export class RailHandshakeService {
   async removeDeviation(companyId: string, reportId: string, deviationId: string) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
-    if (dev.status === DeviationStatus.DISPUTED) {
-      throw new BadRequestException('A disputed item cannot be deleted — resolve the dispute first.');
+    this.assertReportStatus(
+      dev.report.status,
+      [HandshakeReportStatus.DRAFT, HandshakeReportStatus.PENDING_TOC],
+      'Deleting deviations',
+    );
+    if (dev.status !== DeviationStatus.LOGGED) {
+      throw new BadRequestException('Only an unreviewed deviation can be deleted.');
     }
     await this.prisma.railHandshakeDeviation.delete({ where: { id: deviationId } });
     return { deleted: true };

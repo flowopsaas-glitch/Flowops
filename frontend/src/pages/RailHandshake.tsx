@@ -89,6 +89,9 @@ const PARTIES: ResponsibleParty[] = [
 ];
 const IMPACTS: SlotImpact[] = ["NONE", "NOT_USED", "CANCELLED", "RESCHEDULED", "DELAYED"];
 
+const canLodgeRegulatorDispute = (stage: string) =>
+  stage === "ROUTE_LOGISTICS_FORUM" || stage === "REGULATOR_DISPUTE";
+
 const inputCls =
   "w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none";
 
@@ -324,7 +327,8 @@ function ReportDrawer({
   onDispute: (dev: HandshakeDeviation) => void;
 }) {
   const devs = report.deviations ?? [];
-  const editable = report.status !== "CLOSED";
+  const editable = report.status !== "CLOSED" && report.status !== "DISPUTED";
+  const canLogDeviation = report.status === "DRAFT" || report.status === "PENDING_TOC";
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
       <div
@@ -354,7 +358,7 @@ function ReportDrawer({
 
         {/* Report actions */}
         <div className="mb-5 flex flex-wrap gap-2">
-          {editable && (
+          {canLogDeviation && (
             <button onClick={onLogDeviation}
               className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/[0.07]">
               <Plus className="h-3.5 w-3.5" /> Log deviation
@@ -436,10 +440,12 @@ function ReportDrawer({
                           className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-50">
                           Resolve
                         </button>
-                        <button onClick={() => onDispute(d)} disabled={busy === `dis-${d.id}`}
-                          className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50">
-                          Lodge dispute
-                        </button>
+                        {canLodgeRegulatorDispute(d.escalationStage) && (
+                          <button onClick={() => onDispute(d)} disabled={busy === `dis-${d.id}`}
+                            className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50">
+                            Lodge dispute
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
