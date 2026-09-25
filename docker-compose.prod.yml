@@ -6,6 +6,10 @@
 # This file overrides only the values that differ in production (real domain,
 # no host port bindings for the API, resource limits). Everything else is
 # inherited from docker-compose.yml.
+#
+# REQUIRES Docker Compose v2.24.4+ — the `!override` / `!reset` tags below are
+# ignored-or-fatal on older releases, and without them Compose APPENDS port
+# lists instead of replacing them (see the notes on each service).
 
 name: flowops
 
@@ -19,25 +23,33 @@ services:
     # In production the frontend container is exposed on port 80 and reached
     # via the Cloudflare tunnel (or a reverse proxy). We bind to 127.0.0.1 so
     # only cloudflared / nginx on the host can reach it directly.
-    ports:
+    #
+    # !override (Compose 2.24.4+) REPLACES the base file's port list instead of
+    # appending to it. Without the tag the base "8080:80" (bound to 0.0.0.0)
+    # and this "127.0.0.1:8080:80" are two distinct entries — Compose keeps
+    # both, and Docker then fails to start with "address already in use"
+    # while the merged config still publishes 8080 on every interface.
+    ports: !override
       - "127.0.0.1:8080:80"
 
   api:
     restart: always
     # Do NOT expose the API port to the host in production — traffic flows
     # through the frontend nginx proxy only.
-    ports: []
+    # `!reset []` (not `[]`) so this also clears any binding a future base-file
+    # change might add — see deploy/docker-compose.vps.yml for the full note.
+    ports: !reset []
     environment:
       NODE_ENV: production
 
   postgres:
     restart: always
     # Postgres is internal-only — never exposed to the host in production.
-    ports: []
+    ports: !reset []
 
   redis:
     restart: always
-    ports: []
+    ports: !reset []
 
   # ── Automated database backup ──────────────────────────────────────────
   # Runs pg_dump every 6 hours, keeps 28 files (7 days × 4/day) locally in

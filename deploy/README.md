@@ -20,13 +20,21 @@ Production deployment for FlowOps on a single VPS using Docker Compose + Cloudfl
 Internet → Cloudflare Edge (CDN + DDoS + SSL)
          → Cloudflare Tunnel (encrypted, outbound-only)
          → VPS (no open ports except SSH)
-           ├── cloudflared (tunnel client)
-           ├── frontend (nginx SPA) :8080 → app.flowop.work / www / platform
-           ├── driver-portal (nginx SPA) :8081 → driver.flowop.work
+           ├── cloudflared (tunnel client) ──► frontend:80      (compose network)
+           │                                ──► driver-portal:80
+           ├── frontend (nginx SPA)      → app.flowop.work / www / platform
+           ├── driver-portal (nginx SPA) → driver.flowop.work
            ├── api (NestJS) :3000 (internal only, proxied by frontend nginx)
            ├── postgres :5432 (internal only)
            └── redis :6379 (internal only)
 ```
+
+> **No host ports are published.** The VPS overlay unbinds every host port with
+> `ports: !reset []`, so cloudflared must reach containers by **Docker service
+> name** (`http://frontend:80`, `http://driver-portal:80`) — `localhost:8080`
+> does not exist. This requires **Docker Compose v2.24.4+** (older releases
+> merge port lists instead of resetting them; `vps-deploy.sh` enforces it).
+> See [VPS-PORT-RESET-ROLLOUT.md](VPS-PORT-RESET-ROLLOUT.md) for the reasoning.
 
 ## Quick Start
 
@@ -67,9 +75,22 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --bu
 ### 5. Verify
 
 ```bash
-docker compose ps
+docker compose ps                                   # PORTS column must be empty
 docker compose logs -f api
-curl http://localhost:8080/healthz
+
+# From INSIDE the network — there is no host port to curl from outside:
+docker compose exec frontend curl -fsS localhost/healthz
+docker compose exec frontend curl -fsS localhost/api/v1/health
+
+# From OUTSIDE the VPS — this must now be refused (that is the point):
+curl -m 8 http://<VPS_IP>:8080/healthz              # → connection refused
+curl -sS -o /dev/null -w '%{http_code}\n' https://app.flowop.work/   # → 200
+```
+
+To assert the merged config publishes nothing (same check `vps-deploy.sh` runs):
+
+```bash
+./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml
 ```
 
 ## Files
@@ -136,5 +157,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --bu
 |-------|-----|
 | Services OOM killed | Check `docker stats`, reduce API memory if frontend unused |
 | Tunnel not connecting | `cloudflared tunnel info flowops-app`, check credentials path |
+| Site 502s right after adopting `!reset` | The tunnel ingress still points at `http://127.0.0.1:8080` / `http://localhost:8080`. Switch it to `http://frontend:80` / `http://driver-portal:80` and restart cloudflared |
+| `docker compose up` fails with "address already in use" on 8080 | You are on the prod overlay with Compose < 2.24.4, so the base `8080:80` and the override's `127.0.0.1:8080:80` both got published. Upgrade Compose |
 | Database connection refused | `docker compose logs postgres`, ensure healthy |
 | Frontend 502 | API not healthy yet — wait 30s after start, check `docker compose logs api` |
