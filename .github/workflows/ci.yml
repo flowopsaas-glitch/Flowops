@@ -89,6 +89,12 @@ jobs:
             -f docker-compose.yml \
             -f docker-compose.prod.yml
 
+      - name: TEMP DEBUG - dump merged prod ports
+        if: always()
+        run: |
+          CFG="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml config --format json || true)"
+          echo "::error::$(printf '%s' "$CFG" | jq -c '.services | to_entries | map({svc: .key, ports: (.value.ports // [])})')"
+
       - name: Observability overlay is valid
         run: docker compose -f docker-compose.yml -f docker-compose.otel.yml config --quiet
 
