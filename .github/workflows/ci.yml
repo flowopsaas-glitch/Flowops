@@ -140,6 +140,9 @@ jobs:
       - name: Lint
         run: npm run lint --if-present
 
+      - name: Build
+        run: npm run build
+
       - name: Unit tests
         run: npm test
 
