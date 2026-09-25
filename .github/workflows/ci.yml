@@ -56,6 +56,14 @@ jobs:
   compose:
     name: Compose Config
     runs-on: ubuntu-latest
+    env:
+      # Only needed so `docker compose config` can interpolate the base file
+      # (docker-compose.yml marks these as required with ${VAR:?...}). These are
+      # throwaway values — nothing is built, run or connected to here.
+      POSTGRES_PASSWORD: ci-placeholder
+      JWT_SECRET: ci-placeholder
+      JWT_REFRESH_SECRET: ci-placeholder
+      OWNER_SEED_PASSWORD: ci-placeholder
     steps:
       - uses: actions/checkout@v4
 
