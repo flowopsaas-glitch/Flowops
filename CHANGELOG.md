@@ -9,9 +9,10 @@
   `ports: []` entries in `deploy/docker-compose.vps.yml` were a no-op and the
   base bindings (`0.0.0.0:8080` frontend, `0.0.0.0:8081` driver-portal) stayed
   live — reachable on the public IP, bypassing Cloudflare. The overlays now use
-  `ports: !reset []` (and `ports: !override` for the prod frontend, whose
-  `127.0.0.1:8080:80` was previously *added* to the base `8080:80` and conflicted
-  with it). Requires **Docker Compose v2.24.4+**.
+  `ports: !reset []` (and `ports: !override` for the prod frontend and
+  driver-portal, whose loopback bindings were previously *added* to the base
+  `8080:80` / `8081:80` instead of replacing them). Requires
+  **Docker Compose v2.24.4+**.
 - New `scripts/check-compose-ports.sh` — renders the merged config and fails if
   anything is published on a non-loopback interface. Runs in CI (new `compose`
   job) and as a pre-flight gate in `deploy/vps-deploy.sh`, which also now

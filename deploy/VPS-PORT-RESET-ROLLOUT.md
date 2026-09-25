@@ -47,15 +47,19 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml config \
 | File | Change |
 |---|---|
 | `deploy/docker-compose.vps.yml` | `ports: []` → `ports: !reset []` on frontend, driver-portal, api, postgres, redis + header note explaining the merge rule |
-| `docker-compose.prod.yml` | frontend `ports:` → `ports: !override ["127.0.0.1:8080:80"]` (the old value **appended** to the base `8080:80`, so prod published 8080 on `0.0.0.0` *and* `127.0.0.1` — a binding conflict); api/postgres/redis `[]` → `!reset []` |
+| `docker-compose.prod.yml` | frontend `ports:` → `ports: !override ["127.0.0.1:8080:80"]` (the old value **appended** to the base `8080:80`, so prod published 8080 on `0.0.0.0` *and* `127.0.0.1` — a binding conflict); driver-portal → `ports: !override ["127.0.0.1:8081:80"]` (the base `8081:80` was left published on `0.0.0.0` — **found by the new CI `compose` job on its first run**); api/postgres/redis `[]` → `!reset []` |
 | `scripts/check-compose-ports.sh` | **New.** Renders the merged config and exits non-zero if anything is published on a non-loopback interface; also enforces Compose ≥ 2.24.4 |
 | `deploy/vps-deploy.sh` | Pre-flight: Compose version gate, Cloudflare Tunnel target gate, merged-config port check. Post-deploy: runtime assertion that no container publishes `0.0.0.0:*` |
 | `.github/workflows/ci.yml` | **New `compose` job** — regression test: renders base, VPS (no ports), prod (loopback only) and otel overlays |
 | `deploy/README.md`, `deploy/VPS-RUNBOOK.md` | Tunnel targets corrected to Docker service names; "no host ports" documented |
 
 **Not affected:** the Oracle / `docker-compose.prod.yml` path deliberately keeps
-`127.0.0.1:8080:80`, so `deploy/oracle-setup.sh` and `ORACLE-MIGRATION.md`
-(which point cloudflared at `http://127.0.0.1:8080`) stay valid.
+loopback bindings (`127.0.0.1:8080` frontend, `127.0.0.1:8081` driver-portal),
+so `deploy/oracle-setup.sh` and `ORACLE-MIGRATION.md` (which point cloudflared
+at `http://127.0.0.1:8080`) stay valid. Note their driver ingress points at
+`127.0.0.1:8083` while the compose default is `8081` — a pre-existing
+inconsistency (set `DRIVER_PORTAL_HOST_PORT=8083` or fix the ingress); tracked
+as a follow-up below.
 
 ---
 
@@ -218,6 +222,10 @@ and re-plan. If the tunnel config is the problem, the cheaper fix is to correct
 4. **External uptime checks** should hit `https://app.flowop.work` (edge), not
    the VPS IP — anything still polling `:8080` will start alerting after this
    deploy.
+5. **Oracle driver ingress port mismatch** — `oracle-setup.sh` /
+   `ORACLE-MIGRATION.md` route `driver.flowop.work` to `127.0.0.1:8083`, but
+   the compose default (`DRIVER_PORTAL_HOST_PORT`) is `8081`. Pick one and
+   align the tunnel config with the env var.
 
 ---
 
