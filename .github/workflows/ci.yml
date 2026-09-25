@@ -383,28 +383,47 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: flowops-frontend:smoke-test
-          format: table
-          output: trivy-frontend-critical.txt
+          format: json
+          output: trivy-frontend-critical.json
           severity: 'CRITICAL'
           exit-code: '1'
           vuln-type: 'os,library'
           ignore-unfixed: true
 
-      # Keep the complete Trivy table as a downloadable artifact. This is
-      # deliberately separate from the SARIF upload: this repository does not
-      # have code scanning enabled, while the critical gate must remain hard.
+      # Keep the machine-readable Trivy report as a downloadable artifact and
+      # mirror each finding into the run annotations/summary. This repository
+      # does not have code scanning enabled, so the annotations make the
+      # blocking finding reviewable even when the SARIF upload has nowhere to
+      # display it.
+      - name: Publish frontend critical scan details
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s trivy-frontend-critical.json ]; then
+            echo "Trivy did not produce a frontend critical report."
+            exit 0
+          fi
+          {
+            echo "## Frontend image critical findings"
+            echo
+            echo '| ID | Package | Installed | Fixed | Severity |'
+            echo '| --- | --- | --- | --- | --- |'
+            jq -r '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // \"not fixed\") | \(.Severity) |"' trivy-frontend-critical.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.Results[]?.Vulnerabilities[]? | "::error title=Frontend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // \"no fixed version\")"' trivy-frontend-critical.json
+
       - name: Upload frontend critical scan
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy-frontend-critical
-          path: trivy-frontend-critical.txt
+          path: trivy-frontend-critical.json
           if-no-files-found: warn
 
       - name: Fail on critical frontend image vulnerabilities
         if: steps.frontend_image_critical_gate.outcome == 'failure'
         run: |
-          echo "A CRITICAL frontend image vulnerability was found. Download the trivy-frontend-critical artifact for the full table."
+          echo "A CRITICAL frontend image vulnerability was found. Review the annotations, summary, or trivy-frontend-critical artifact."
           exit 1
 
       # Step 2: multi-arch build & push. Reuses the BuildKit cache from
@@ -771,25 +790,42 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: flowops-backend:smoke-test
-          format: table
-          output: trivy-backend-critical.txt
+          format: json
+          output: trivy-backend-critical.json
           severity: 'CRITICAL'
           exit-code: '1'
           vuln-type: 'os,library'
           ignore-unfixed: true
+
+      - name: Publish backend critical scan details
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s trivy-backend-critical.json ]; then
+            echo "Trivy did not produce a backend critical report."
+            exit 0
+          fi
+          {
+            echo "## Backend image critical findings"
+            echo
+            echo '| ID | Package | Installed | Fixed | Severity |'
+            echo '| --- | --- | --- | --- | --- |'
+            jq -r '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // \"not fixed\") | \(.Severity) |"' trivy-backend-critical.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.Results[]?.Vulnerabilities[]? | "::error title=Backend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // \"no fixed version\")"' trivy-backend-critical.json
 
       - name: Upload backend critical scan
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy-backend-critical
-          path: trivy-backend-critical.txt
+          path: trivy-backend-critical.json
           if-no-files-found: warn
 
       - name: Fail on critical backend image vulnerabilities
         if: steps.backend_image_critical_gate.outcome == 'failure'
         run: |
-          echo "A CRITICAL backend image vulnerability was found. Download the trivy-backend-critical artifact for the full table."
+          echo "A CRITICAL backend image vulnerability was found. Review the annotations, summary, or trivy-backend-critical artifact."
           exit 1
 
       - name: Build & push (multi-arch)
