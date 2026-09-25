@@ -21,7 +21,7 @@ test.describe('Onboarding', () => {
   test('setup → status flow', async ({ page }) => {
     await page.goto('/setup');
     // Fill form
-    await page.getByPlaceholder(/acme/i).fill('Test Company');
+    await page.getByPlaceholder('Acme Logistics', { exact: true }).fill('Test Company');
     await page.getByPlaceholder(/admin@/i).fill('test@example.com');
     await page.getByPlaceholder(/\+27/i).fill('+27821234567');
     await page.getByRole('button', { name: /submit/i }).click();
