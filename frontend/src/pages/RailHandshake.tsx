@@ -327,8 +327,11 @@ function ReportDrawer({
   onDispute: (dev: HandshakeDeviation) => void;
 }) {
   const devs = report.deviations ?? [];
-  const editable = report.status !== "CLOSED" && report.status !== "DISPUTED";
   const canLogDeviation = report.status === "DRAFT" || report.status === "PENDING_TOC";
+  const canReviewDeviation = report.status === "PENDING_TOC";
+  const canResolveDeviation = report.status === "PENDING_TOC" || report.status === "SIGNED_OFF";
+  const canLodgeDisputeForReport =
+    report.status === "PENDING_TOC" || report.status === "SIGNED_OFF" || report.status === "DISPUTED";
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
       <div
@@ -420,9 +423,11 @@ function ReportDrawer({
                 </div>
 
                 {/* Deviation actions */}
-                {editable && (
+                {((canReviewDeviation && d.status === "LOGGED") ||
+                  (canResolveDeviation && d.status === "OPEN") ||
+                  (canLodgeDisputeForReport && d.status === "OPEN" && canLodgeRegulatorDispute(d.escalationStage))) && (
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-white/5 pt-3">
-                    {(d.status === "LOGGED") && (
+                    {canReviewDeviation && d.status === "LOGGED" && (
                       <>
                         <button onClick={() => onReview(d, true)} disabled={busy === `rev-${d.id}`}
                           className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">
@@ -434,19 +439,17 @@ function ReportDrawer({
                         </button>
                       </>
                     )}
-                    {d.status === "OPEN" && (
-                      <>
-                        <button onClick={() => onResolve(d)} disabled={busy === `res-${d.id}`}
-                          className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-50">
-                          Resolve
-                        </button>
-                        {canLodgeRegulatorDispute(d.escalationStage) && (
-                          <button onClick={() => onDispute(d)} disabled={busy === `dis-${d.id}`}
-                            className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50">
-                            Lodge dispute
-                          </button>
-                        )}
-                      </>
+                    {canResolveDeviation && d.status === "OPEN" && (
+                      <button onClick={() => onResolve(d)} disabled={busy === `res-${d.id}`}
+                        className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-50">
+                        Resolve
+                      </button>
+                    )}
+                    {canLodgeDisputeForReport && d.status === "OPEN" && canLodgeRegulatorDispute(d.escalationStage) && (
+                      <button onClick={() => onDispute(d)} disabled={busy === `dis-${d.id}`}
+                        className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50">
+                        Lodge dispute
+                      </button>
                     )}
                   </div>
                 )}
