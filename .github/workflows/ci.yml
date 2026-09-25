@@ -304,10 +304,13 @@ jobs:
           fi
           echo "PASS: /healthz returned 'ok'"
 
-          # Index page renders an HTML doctype.
-          if ! curl -fsS http://localhost:8080/ | head -c 200 | grep -qi "<!doctype html>"; then
+          # Index page renders an HTML doctype. Capture the response before
+          # grepping so `set -o pipefail` does not turn curl's expected
+          # SIGPIPE (from `head`) into a false smoke-test failure.
+          index_body=$(curl -fsS http://localhost:8080/)
+          if ! printf '%s' "$index_body" | grep -qi "<!doctype html>"; then
             echo "FAIL: / did not return an HTML index"
-            curl -fsS http://localhost:8080/ | head -c 500
+            printf '%s' "$index_body" | head -c 500
             docker logs flowops-frontend-smoke
             exit 1
           fi
@@ -341,17 +344,27 @@ jobs:
           format: sarif
           output: trivy-image-results.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'os,library'
           ignore-unfixed: true
-        continue-on-error: false
 
       - name: Upload image SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-image-results.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-image-results.sarif
           category: trivy-image
+
+      - name: Enforce critical image vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: flowops-frontend:smoke-test
+          format: table
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
 
       # Step 2: multi-arch build & push. Reuses the BuildKit cache from
       # step 1, so the amd64 layers don't rebuild — only arm64 is added.
@@ -458,7 +471,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The report scan is non-blocking so both lockfiles are scanned and
+      # uploaded even when one contains a finding. The explicit CRITICAL-only
+      # gates below enforce the policy documented above; HIGH findings remain
+      # visible in SARIF and in the human-readable summaries.
       - name: Scan frontend for CVEs (Trivy)
+        id: frontend_dependency_report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -466,18 +484,20 @@ jobs:
           format: sarif
           output: trivy-fs-frontend.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'library'
           ignore-unfixed: true
 
       - name: Upload frontend SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-fs-frontend.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-fs-frontend.sarif
           category: trivy-frontend
 
       - name: Scan backend for CVEs (Trivy)
+        id: backend_dependency_report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -485,16 +505,53 @@ jobs:
           format: sarif
           output: trivy-fs-backend.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'library'
           ignore-unfixed: true
 
       - name: Upload backend SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-fs-backend.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-fs-backend.sarif
           category: trivy-backend-deps
+
+      - name: Enforce critical frontend dependency findings
+        id: frontend_dependency_gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./frontend
+          format: table
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'library'
+          ignore-unfixed: true
+        continue-on-error: true
+
+      - name: Enforce critical backend dependency findings
+        id: backend_dependency_gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./backend
+          format: table
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'library'
+          ignore-unfixed: true
+        continue-on-error: true
+
+      - name: Fail on critical dependency findings
+        if: always()
+        shell: bash
+        run: |
+          if [[ "${{ steps.frontend_dependency_gate.outcome }}" == "failure" || \
+                "${{ steps.backend_dependency_gate.outcome }}" == "failure" ]]; then
+            echo "A CRITICAL dependency vulnerability was found. See the Trivy report above."
+            exit 1
+          fi
 
       # Human-readable table for the workflow logs (informational, no fail)
       - name: Print frontend CVE summary
@@ -655,17 +712,27 @@ jobs:
           format: sarif
           output: trivy-backend-results.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'os,library'
           ignore-unfixed: true
-        continue-on-error: false
 
       - name: Upload backend SARIF
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-backend-results.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-backend-results.sarif
           category: trivy-backend
+
+      - name: Enforce critical backend image vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: flowops-backend:smoke-test
+          format: table
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
 
       - name: Build & push (multi-arch)
         if: github.event_name == 'push'
