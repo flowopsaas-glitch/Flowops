@@ -408,9 +408,9 @@ jobs:
             echo
             echo '| ID | Package | Installed | Fixed | Severity |'
             echo '| --- | --- | --- | --- | --- |'
-            jq -r '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // \"not fixed\") | \(.Severity) |"' trivy-frontend-critical.json
+            jq -r --arg nofix "not fixed" '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // $nofix) | \(.Severity) |"' trivy-frontend-critical.json
           } >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.Results[]?.Vulnerabilities[]? | "::error title=Frontend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // \"no fixed version\")"' trivy-frontend-critical.json
+          jq -r --arg nofix "no fixed version" '.Results[]?.Vulnerabilities[]? | "::error title=Frontend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // $nofix)"' trivy-frontend-critical.json
 
       - name: Upload frontend critical scan
         if: always()
@@ -810,9 +810,9 @@ jobs:
             echo
             echo '| ID | Package | Installed | Fixed | Severity |'
             echo '| --- | --- | --- | --- | --- |'
-            jq -r '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // \"not fixed\") | \(.Severity) |"' trivy-backend-critical.json
+            jq -r --arg nofix "not fixed" '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // $nofix) | \(.Severity) |"' trivy-backend-critical.json
           } >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.Results[]?.Vulnerabilities[]? | "::error title=Backend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // \"no fixed version\")"' trivy-backend-critical.json
+          jq -r --arg nofix "no fixed version" '.Results[]?.Vulnerabilities[]? | "::error title=Backend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // $nofix)"' trivy-backend-critical.json
 
       - name: Upload backend critical scan
         if: always()
