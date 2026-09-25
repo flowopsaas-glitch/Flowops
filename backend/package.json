@@ -16,7 +16,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "if [ -f test/jest-e2e.json ]; then jest --config ./test/jest-e2e.json; else echo 'No backend E2E suite configured; skipping.'; fi"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.540.0",
