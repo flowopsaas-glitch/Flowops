@@ -4,7 +4,7 @@ test.describe('Onboarding', () => {
   test('setup page loads with form fields', async ({ page }) => {
     await page.goto('/setup');
     await expect(page.getByText(/Register/i)).toBeVisible();
-    await expect(page.getByPlaceholder(/acme/i)).toBeVisible();
+    await expect(page.getByPlaceholder('Acme Logistics', { exact: true })).toBeVisible();
     await expect(page.getByPlaceholder(/admin@/i)).toBeVisible();
     await expect(page.getByPlaceholder(/\+27/i)).toBeVisible();
   });
