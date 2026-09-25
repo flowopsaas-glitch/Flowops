@@ -16,7 +16,7 @@ test.describe('Legal Pages', () => {
 
   test('privacy page loads and has content', async ({ page }) => {
     await page.goto('/legal/privacy');
-    await expect(page.getByText(/Privacy/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Privacy notice', exact: true })).toBeVisible();
     // Should link to terms
     const termsLink = page.getByRole('link', { name: /terms/i });
     if (await termsLink.isVisible()) {

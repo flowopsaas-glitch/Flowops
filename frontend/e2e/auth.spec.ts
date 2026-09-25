@@ -7,12 +7,12 @@ test.describe('Authentication', () => {
 
   test('login page loads correctly', async ({ page }) => {
     await expect(page).toHaveTitle(/flowops/i);
-    await expect(page.getByText('Sign In')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   });
 
   test('shows error on empty submit', async ({ page }) => {
     // Click sign in without filling fields
-    const submitBtn = page.getByRole('button', { name: /sign in/i });
+    const submitBtn = page.getByRole('button', { name: 'Sign in', exact: true });
     if (await submitBtn.isVisible()) {
       // The form might require checkbox agreement first
       const checkbox = page.getByRole('checkbox');

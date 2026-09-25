@@ -485,10 +485,16 @@ export class DriverPortalService {
     });
   }
 
-  /** Dispatch sends a message to a specific driver */
+  /** Dispatch sends a message to a specific driver, scoped to the tenant. */
   async dispatchSend(driverId: string, companyId: string, message: string) {
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+
     return this.prisma.driverChatMessage.create({
-      data: { driverId, companyId, message, senderType: 'dispatch' },
+      data: { driverId: driver.id, companyId, message, senderType: 'dispatch' },
     });
   }
 }

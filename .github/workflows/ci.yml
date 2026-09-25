@@ -140,6 +140,27 @@ jobs:
       - name: Lint
         run: npm run lint --if-present
 
+      - name: Build
+        shell: bash
+        run: |
+          set +e
+          npm run build 2>&1 | tee backend-build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            while IFS= read -r line; do
+              echo "::error::${line}"
+            done < backend-build.log
+            exit "$status"
+          fi
+
+      - name: Upload backend build log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build-log
+          path: backend/backend-build.log
+          retention-days: 7
+
       - name: Unit tests
         run: npm test
 
@@ -304,10 +325,13 @@ jobs:
           fi
           echo "PASS: /healthz returned 'ok'"
 
-          # Index page renders an HTML doctype.
-          if ! curl -fsS http://localhost:8080/ | head -c 200 | grep -qi "<!doctype html>"; then
+          # Index page renders an HTML doctype. Capture the response before
+          # grepping so `set -o pipefail` does not turn curl's expected
+          # SIGPIPE (from `head`) into a false smoke-test failure.
+          index_body=$(curl -fsS http://localhost:8080/)
+          if ! printf '%s' "$index_body" | grep -qi "<!doctype html>"; then
             echo "FAIL: / did not return an HTML index"
-            curl -fsS http://localhost:8080/ | head -c 500
+            printf '%s' "$index_body" | head -c 500
             docker logs flowops-frontend-smoke
             exit 1
           fi
@@ -341,17 +365,66 @@ jobs:
           format: sarif
           output: trivy-image-results.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'os,library'
           ignore-unfixed: true
-        continue-on-error: false
 
       - name: Upload image SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-image-results.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-image-results.sarif
           category: trivy-image
+
+      - name: Enforce critical image vulnerabilities
+        id: frontend_image_critical_gate
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: flowops-frontend:smoke-test
+          format: json
+          output: trivy-frontend-critical.json
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+
+      # Keep the machine-readable Trivy report as a downloadable artifact and
+      # mirror each finding into the run annotations/summary. This repository
+      # does not have code scanning enabled, so the annotations make the
+      # blocking finding reviewable even when the SARIF upload has nowhere to
+      # display it.
+      - name: Publish frontend critical scan details
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s trivy-frontend-critical.json ]; then
+            echo "Trivy did not produce a frontend critical report."
+            exit 0
+          fi
+          {
+            echo "## Frontend image critical findings"
+            echo
+            echo '| ID | Package | Installed | Fixed | Severity |'
+            echo '| --- | --- | --- | --- | --- |'
+            jq -r --arg nofix "not fixed" '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // $nofix) | \(.Severity) |"' trivy-frontend-critical.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r --arg nofix "no fixed version" '.Results[]?.Vulnerabilities[]? | "::error title=Frontend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // $nofix)"' trivy-frontend-critical.json
+
+      - name: Upload frontend critical scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-frontend-critical
+          path: trivy-frontend-critical.json
+          if-no-files-found: warn
+
+      - name: Fail on critical frontend image vulnerabilities
+        if: steps.frontend_image_critical_gate.outcome == 'failure'
+        run: |
+          echo "A CRITICAL frontend image vulnerability was found. Review the annotations, summary, or trivy-frontend-critical artifact."
+          exit 1
 
       # Step 2: multi-arch build & push. Reuses the BuildKit cache from
       # step 1, so the amd64 layers don't rebuild — only arm64 is added.
@@ -458,7 +531,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The report scan is non-blocking so both lockfiles are scanned and
+      # uploaded even when one contains a finding. The explicit CRITICAL-only
+      # gates below enforce the policy documented above; HIGH findings remain
+      # visible in SARIF and in the human-readable summaries.
       - name: Scan frontend for CVEs (Trivy)
+        id: frontend_dependency_report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -466,18 +544,20 @@ jobs:
           format: sarif
           output: trivy-fs-frontend.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'library'
           ignore-unfixed: true
 
       - name: Upload frontend SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-fs-frontend.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-fs-frontend.sarif
           category: trivy-frontend
 
       - name: Scan backend for CVEs (Trivy)
+        id: backend_dependency_report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -485,16 +565,53 @@ jobs:
           format: sarif
           output: trivy-fs-backend.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'library'
           ignore-unfixed: true
 
       - name: Upload backend SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-fs-backend.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-fs-backend.sarif
           category: trivy-backend-deps
+
+      - name: Enforce critical frontend dependency findings
+        id: frontend_dependency_gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./frontend
+          format: table
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'library'
+          ignore-unfixed: true
+        continue-on-error: true
+
+      - name: Enforce critical backend dependency findings
+        id: backend_dependency_gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./backend
+          format: table
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'library'
+          ignore-unfixed: true
+        continue-on-error: true
+
+      - name: Fail on critical dependency findings
+        if: always()
+        shell: bash
+        run: |
+          if [[ "${{ steps.frontend_dependency_gate.outcome }}" == "failure" || \
+                "${{ steps.backend_dependency_gate.outcome }}" == "failure" ]]; then
+            echo "A CRITICAL dependency vulnerability was found. See the Trivy report above."
+            exit 1
+          fi
 
       # Human-readable table for the workflow logs (informational, no fail)
       - name: Print frontend CVE summary
@@ -655,17 +772,61 @@ jobs:
           format: sarif
           output: trivy-backend-results.sarif
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           vuln-type: 'os,library'
           ignore-unfixed: true
-        continue-on-error: false
 
       - name: Upload backend SARIF
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-backend-results.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: trivy-backend-results.sarif
           category: trivy-backend
+
+      - name: Enforce critical backend image vulnerabilities
+        id: backend_image_critical_gate
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: flowops-backend:smoke-test
+          format: json
+          output: trivy-backend-critical.json
+          severity: 'CRITICAL'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+
+      - name: Publish backend critical scan details
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s trivy-backend-critical.json ]; then
+            echo "Trivy did not produce a backend critical report."
+            exit 0
+          fi
+          {
+            echo "## Backend image critical findings"
+            echo
+            echo '| ID | Package | Installed | Fixed | Severity |'
+            echo '| --- | --- | --- | --- | --- |'
+            jq -r --arg nofix "not fixed" '.Results[]?.Vulnerabilities[]? | "| \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // $nofix) | \(.Severity) |"' trivy-backend-critical.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r --arg nofix "no fixed version" '.Results[]?.Vulnerabilities[]? | "::error title=Backend image \(.VulnerabilityID)::\(.PkgName) \(.InstalledVersion) is \(.Severity); fixed in \(.FixedVersion // $nofix)"' trivy-backend-critical.json
+
+      - name: Upload backend critical scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-backend-critical
+          path: trivy-backend-critical.json
+          if-no-files-found: warn
+
+      - name: Fail on critical backend image vulnerabilities
+        if: steps.backend_image_critical_gate.outcome == 'failure'
+        run: |
+          echo "A CRITICAL backend image vulnerability was found. Review the annotations, summary, or trivy-backend-critical artifact."
+          exit 1
 
       - name: Build & push (multi-arch)
         if: github.event_name == 'push'

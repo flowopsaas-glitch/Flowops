@@ -146,7 +146,7 @@ export class RailHandshakeController {
   }
 
   @Delete('reports/:id/deviations/:deviationId')
-  @ApiOperation({ summary: 'Remove a deviation line (not allowed once disputed)' })
+  @ApiOperation({ summary: 'Remove an unreviewed deviation line' })
   removeDeviation(
     @CurrentUser() u: AuthenticatedUser,
     @Param('id') id: string,

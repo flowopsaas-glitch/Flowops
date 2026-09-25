@@ -10,6 +10,7 @@ test.describe('Route Guards', () => {
   });
 
   test('/owner redirects without owner token', async ({ page }) => {
+    await page.goto('/login');
     await page.evaluate(() => localStorage.clear());
     await page.goto('/owner');
     await expect(page).toHaveURL(/login/, { timeout: 5000 });
