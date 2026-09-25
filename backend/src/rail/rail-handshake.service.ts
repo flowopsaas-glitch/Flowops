@@ -469,7 +469,8 @@ export class RailHandshakeService {
     if (dev.status !== DeviationStatus.OPEN) {
       throw new BadRequestException('Only an OPEN (red-flagged) item can be lodged as a dispute.');
     }
-    if (![EscalationStage.ROUTE_LOGISTICS_FORUM, EscalationStage.REGULATOR_DISPUTE].includes(dev.escalationStage)) {
+    const regulatorStages = [EscalationStage.ROUTE_LOGISTICS_FORUM, EscalationStage.REGULATOR_DISPUTE];
+    if (!regulatorStages.some((stage) => stage === dev.escalationStage)) {
       throw new BadRequestException('A dispute can only be lodged after the item reaches the Route Logistics Forum stage.');
     }
     const updated = await this.prisma.railHandshakeDeviation.update({
