@@ -29,9 +29,14 @@ WORKDIR /app
 # Without it, Prisma prints "failed to detect libssl" and refuses to start.
 RUN apk add --no-cache openssl
 
-# Only production deps
+# Only production deps. npm is needed to install the runtime tree, but it is
+# not needed by the compiled NestJS process or the Prisma CLI at runtime.
+# Remove the bundled npm tree afterwards so its stale transitive tar package
+# cannot become part of the production image's attack surface.
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --only=production \
+ && npm cache clean --force \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 # Prisma schema + generated client + ALL engine binaries
 COPY --from=builder /app/node_modules/.prisma /app/node_modules/.prisma

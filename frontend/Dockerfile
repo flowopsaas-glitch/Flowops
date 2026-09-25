@@ -87,7 +87,8 @@ FROM nginx:${NGINX_VERSION} AS production
 
 # `gettext` ships envsubst, which the nginx alpine entrypoint uses to render
 # /etc/nginx/templates/*.template at start. `curl` is for HEALTHCHECK.
-RUN apk add --no-cache gettext curl && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache gettext curl && \
     rm -rf /etc/nginx/conf.d/default.conf
 
 # Static SPA bundle.
