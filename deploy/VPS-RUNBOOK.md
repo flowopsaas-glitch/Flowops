@@ -13,13 +13,13 @@ backends/DBs in dev).
                         ┌──────────────────────────────────────────┐
  Internet ──Cloudflare──┤  cloudflared tunnel on the VPS           │
                         └──────────────────────────────────────────┘
-   app.flowop.work      ─────────────────►  http://localhost:8080
-   platform.flowop.work ─────────────────►  http://localhost:8080
-   api.flowop.work       (optional/direct) ► http://localhost:8080  (same nginx; /api/* proxied)
-   driver.flowop.work   ─────────────────►  http://localhost:8083  (driver PWA container)
+   app.flowop.work      ─────────────────►  http://frontend:80
+   platform.flowop.work ─────────────────►  http://frontend:80
+   api.flowop.work       (optional/direct) ► http://frontend:80    (same nginx; /api/* proxied)
+   driver.flowop.work   ─────────────────►  http://driver-portal:80
 
    ┌──────────── docker compose: project "flowops" ────────────┐
-   │  frontend (nginx + SPA)   127.0.0.1:8080 -> :80            │
+   │  frontend (nginx + SPA)   no host port (compose network)   │
    │     location /         -> SPA                              │
    │     location /api/      -> http://api:3000   (same-origin) │
    │     location /socket.io/-> http://api:3000                 │
@@ -33,6 +33,14 @@ backends/DBs in dev).
 The SPA calls **`/api/v1/*`** (relative, same-origin); nginx proxies it to the
 `api` service. No cross-origin, no CORS headaches, no second backend.
 
+**Second invariant — no host ports.** The VPS overlay (`deploy/docker-compose.vps.yml`)
+unbinds every host port with `ports: !reset []`, so the ONLY way in is the
+tunnel, which must target **Docker service names** (`http://frontend:80`,
+`http://driver-portal:80`) — never `localhost:8080`. Compose merges port lists
+by *appending*, so a plain `ports: []` in an overlay is a no-op; that bug is
+what made the app reachable on `http://<VPS_IP>:8080`. Requires **Compose
+v2.24.4+**. Details and rollout plan: [`VPS-PORT-RESET-ROLLOUT.md`](VPS-PORT-RESET-ROLLOUT.md).
+
 ---
 
 ## 2. One-time VPS setup
@@ -44,7 +52,7 @@ git clone https://github.com/flowopsaas-glitch/Flowops.git ~/FlowOps && cd ~/Flo
 ./deploy/vps-bootstrap.sh app.flowop.work   # installs Docker, creates .env,
                                             # generates secrets, wires the domain
 nano .env                                   # fill OWNER_SEED_*, GROQ_API_KEY, etc.
-# point the Cloudflare tunnel:  <domain> -> http://localhost:8080
+# point the Cloudflare tunnel:  <domain> -> http://frontend:80
 ./deploy/vps-deploy.sh --seed               # first deploy (with demo data)
 ```
 
@@ -84,7 +92,7 @@ cp .env.production.example .env
 
 # 2.4 Cloudflare tunnel (if not already running)
 #   cloudflared tunnel route dns <tunnel> app.flowop.work
-#   Ingress: app.flowop.work -> http://localhost:8080
+#   Ingress: app.flowop.work -> http://frontend:80
 nano ~/.cloudflared/config.yml
 
 # 2.5 First deploy WITH demo seed
@@ -128,12 +136,13 @@ cat backup_2026-06-25.sql | $C exec -T postgres psql -U flowops flowops
 
 ## 5. Driver PWA (separate container)
 
-The standalone driver portal (`driver.flowop.work` → `:8083`) is **not** part
+The standalone driver portal (`driver.flowop.work` → `http://driver-portal:80`
+on the compose network) is **not** part
 of this compose stack and has **no build tooling** in the repo — it ships as a
 prebuilt `dist/`. It must call the API at **`https://api.flowop.work/api/v1`**
 (absolute, cross-origin), so:
 
-- `api.flowop.work` must reach the same backend (tunnel → `:8080`, nginx
+- `api.flowop.work` must reach the same backend (tunnel → `http://frontend:80`, nginx
   proxies `/api/`), **and**
 - `CORS_ORIGINS` in `.env` **must include** `https://driver.flowop.work`.
 
@@ -153,6 +162,8 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **Driver app CORS error** | `driver.flowop.work` not in `CORS_ORIGINS` | Add it, `restart api` |
 | **AI features dead (Support Agent, Courier orchestrate, copilot, intel) — only fallback replies** | `GROQ_API_KEY` not reaching the container | Set it in `.env`; the compose `api` service forwards it — rebuild/`up -d`. Confirm with `docker compose ... exec api printenv GROQ_API_KEY` |
 | **Fresh instance flags a "clone" in Observatory** | New domain not in `VITE_CANONICAL_HOSTS` (tripwire false-fire) | Set `VITE_CANONICAL_HOSTS=<your-domain>` + rebuild frontend |
+| **Site 502s (or vps-deploy.sh refuses to start) after the port-reset change** | Tunnel ingress still targets `http://127.0.0.1:8080` / `http://localhost:8080`, and nothing listens there any more | Point ingress at `http://frontend:80` / `http://driver-portal:80`, then `docker compose ... restart cloudflared` |
+| **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
 | **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
 
 ---
@@ -250,7 +261,10 @@ flowops-disk-guard
 warning at 80% and an error at 90% (visible in `docker logs flowops-api-1` and
 the CLAW Observatory). Quick check:
 ```bash
-curl -s http://localhost:8080/api/v1/health | jq   # or add ?full if exposed
+# No host port is published, so run it from inside the frontend container
+# (nginx proxies /api/ to the backend):
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  exec -T frontend wget -qO- http://localhost/api/v1/health | jq
 df -h /
 ```
 

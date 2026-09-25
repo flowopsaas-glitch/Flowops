@@ -42,6 +42,56 @@ jobs:
             echo "has_backend=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # ────────────────────────────────────────────────────────────────────────
+  # Compose config guard.
+  #
+  # The VPS / production overlays remove host port bindings so that the only
+  # way in is the Cloudflare tunnel. Compose APPENDS list fields across -f
+  # files, so `ports: []` in an overlay silently does nothing and the base
+  # file's 0.0.0.0:8080 / 0.0.0.0:8081 bindings survive. The overlays use
+  # `!reset []` / `!override` for that, and this job is the regression test
+  # for it: it resolves the REAL merged config with the runner's Compose and
+  # fails if anything is still published on a non-loopback interface.
+  # ────────────────────────────────────────────────────────────────────────
+  compose:
+    name: Compose Config
+    runs-on: ubuntu-latest
+    env:
+      # Only needed so `docker compose config` can interpolate the base file
+      # (docker-compose.yml marks these as required with ${VAR:?...}). These are
+      # throwaway values — nothing is built, run or connected to here.
+      POSTGRES_PASSWORD: ci-placeholder
+      JWT_SECRET: ci-placeholder
+      JWT_REFRESH_SECRET: ci-placeholder
+      OWNER_SEED_PASSWORD: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Compose version
+        run: docker compose version
+
+      - name: Base compose file is valid
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: VPS overlay publishes no host ports
+        run: |
+          chmod +x scripts/check-compose-ports.sh
+          ./scripts/check-compose-ports.sh \
+            -f docker-compose.yml \
+            -f deploy/docker-compose.vps.yml
+
+      - name: Production overlay publishes no non-loopback ports
+        env:
+          ALLOW_LOOPBACK: "1"
+        run: |
+          chmod +x scripts/check-compose-ports.sh
+          ./scripts/check-compose-ports.sh \
+            -f docker-compose.yml \
+            -f docker-compose.prod.yml
+
+      - name: Observability overlay is valid
+        run: docker compose -f docker-compose.yml -f docker-compose.otel.yml config --quiet
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

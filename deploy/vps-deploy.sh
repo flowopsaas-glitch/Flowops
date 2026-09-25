@@ -8,7 +8,7 @@
 # on the dev box).
 #
 # Architecture (single VPS):
-#   cloudflared ──> 127.0.0.1:8080 ──> frontend (nginx, SPA)
+#   cloudflared ──> frontend:80 (compose network) ──> frontend (nginx, SPA)
 #                                         │  location /api/      ─┐
 #                                         │  location /socket.io/ │ (same-origin proxy)
 #                                         └────────────────────────┘──> api:3000  (NestJS)
@@ -25,7 +25,10 @@
 # Prereqs (one-time, see deploy/VPS-RUNBOOK.md):
 #   - Docker + Docker Compose v2 installed
 #   - A real .env at repo root (copy from .env.production.example and fill in)
-#   - cloudflared tunnel routing app.flowop.work -> http://localhost:8080
+#   - cloudflared tunnel routing app.flowop.work -> http://frontend:80
+#     (Docker service name — no host port is published, so localhost:8080
+#      does NOT work; the deploy script refuses to run if your tunnel config
+#      still points at 127.0.0.1/localhost)
 #
 set -euo pipefail
 
@@ -53,6 +56,48 @@ done
 command -v docker >/dev/null      || die "docker not installed"
 docker compose version >/dev/null || die "docker compose v2 not installed"
 [[ -f .env ]] || die "No .env at repo root. Copy .env.production.example -> .env and fill it in."
+
+# ── 0b. Compose version gate ─────────────────────────────────────────────────
+# docker-compose.vps.yml unbinds host ports with `ports: !reset []`. That tag
+# needs Compose 2.24+ — on older releases Compose APPENDS the base file's port
+# list instead of clearing it, which silently re-publishes 8080/8081 on
+# 0.0.0.0 and defeats the tunnel-only design. Check before touching the stack.
+COMPOSE_MIN_VERSION="2.24.4"
+COMPOSE_VERSION="$(docker compose version --short 2>/dev/null || true)"
+COMPOSE_VERSION="${COMPOSE_VERSION#v}"
+[[ -n "$COMPOSE_VERSION" ]] || die "Could not determine the Docker Compose version"
+if ! printf '%s\n%s\n' "$COMPOSE_MIN_VERSION" "$COMPOSE_VERSION" | sort -V -C; then
+  die "Docker Compose >= ${COMPOSE_MIN_VERSION} required, found ${COMPOSE_VERSION}.
+       deploy/docker-compose.vps.yml uses !reset to unbind host ports.
+       Upgrade: sudo apt-get update && sudo apt-get install -y docker-compose-plugin"
+fi
+ok "Docker Compose ${COMPOSE_VERSION} (>= ${COMPOSE_MIN_VERSION})"
+
+# ── 0c. Cloudflare tunnel must target Docker service names ───────────────────
+# With host ports unbound there is nothing listening on 127.0.0.1:8080. If the
+# live tunnel config still points at localhost/127.0.0.1, unbinding the ports
+# takes the whole site offline — so refuse to deploy until it is fixed.
+CF_CONFIG="${CLOUDFLARED_CONFIG:-/etc/cloudflared/config.yml}"
+if [[ -f "$CF_CONFIG" ]]; then
+  if grep -Eq 'service:[[:space:]]*https?://(127\.0\.0\.1|localhost)(:[0-9]+)?' "$CF_CONFIG"; then
+    die "${CF_CONFIG} routes to 127.0.0.1/localhost, but this stack no longer publishes host ports.
+       Point each ingress rule at the Docker service name instead, e.g.:
+           - hostname: app.flowop.work
+             service: http://frontend:80
+           - hostname: driver.flowop.work
+             service: http://driver-portal:80
+       Then run:  docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml restart cloudflared"
+  fi
+  ok "Cloudflare tunnel targets Docker service names (${CF_CONFIG})"
+else
+  printf '\033[1;33m! %s not found — skipping tunnel target check.\033[0m\n' "$CF_CONFIG"
+fi
+
+# ── 0d. Merged config must publish no host ports ─────────────────────────────
+# Renders the merged compose model and fails if any service still publishes a
+# port on a non-loopback interface. Cheap, and it runs BEFORE the stack moves.
+log "Verifying merged compose config publishes no host ports"
+./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml
 
 # Critical env sanity — these are the exact traps that bit us in dev.
 grep -q '^VITE_API_URL=/api/v1' .env \
@@ -125,6 +170,19 @@ fi
 log "Verifying"
 sleep 3
 $COMPOSE ps
+
+# Runtime assertion: nothing in this project may be published on a public
+# interface. Catches the case where a container kept a stale port binding.
+LEAKED_PORTS="$(docker ps \
+  --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-flowops}" \
+  --format '{{.Names}}\t{{.Ports}}' \
+  | awk -F'\t' '$2 ~ /0\.0\.0\.0:/ { print $1" -> "$2 }')"
+if [[ -n "$LEAKED_PORTS" ]]; then
+  printf '\033[1;31m✗ Containers are still publishing public ports:\033[0m\n%s\n' "$LEAKED_PORTS"
+  printf '  Re-check: docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml config | grep -A2 ports:\n'
+  exit 1
+fi
+ok "No container publishes a port on 0.0.0.0"
 HEALTH=$($COMPOSE exec -T api sh -c 'wget -qO- http://localhost:3000/health 2>/dev/null || true')
 echo "api /health -> ${HEALTH:-<no response>}"
 
@@ -133,12 +191,18 @@ cat <<'EOF'
 ──────────────────────────────────────────────────────────────────────
 Deploy complete.
 
-  • Frontend (SPA + proxy):  http://127.0.0.1:8080   (point cloudflared here)
+  • Frontend (SPA + proxy):  reachable ONLY as http://frontend:80 on the
+                             compose network (cloudflared uses this — NOT
+                             127.0.0.1:8080, no host port is bound)
+  • Driver portal:           http://driver-portal:80 (compose network only)
   • API (internal only):     api:3000 inside the compose network
   • One Postgres, one volume (postgres-data) — no parallel DBs.
 
 Next:
-  • Confirm Cloudflare ingress maps app.flowop.work -> frontend:80
+  • Confirm Cloudflare ingress maps app.flowop.work -> http://frontend:80
+  • Debug the frontend from the host with:
+      docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+        exec frontend curl -fsS localhost:80/healthz
   • Owner login: OWNER_SEED_EMAIL / OWNER_SEED_PASSWORD from .env
   • Tail logs:   docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml logs -f api
 

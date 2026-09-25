@@ -6,9 +6,21 @@
 # This file extends the base docker-compose.yml with:
 #   - Memory limits tuned for 2GB RAM
 #   - Cloudflare Tunnel sidecar (cloudflared)
-#   - All ports bound to 127.0.0.1 (traffic goes through tunnel only)
+#   - No host port bindings at all (traffic goes through the tunnel only)
 #   - Driver-portal service included
 #   - Automated database backups
+#
+# REQUIRES Docker Compose v2.24+ (deploy/vps-deploy.sh enforces this).
+#
+# Why `!reset []` instead of `ports: []`:
+#   Compose merges LIST fields (ports, volumes, expose, dns, ...) by APPENDING
+#   the override's entries to the base file's entries — it does not replace
+#   them. So `ports: []` is a silent no-op: the base docker-compose.yml
+#   bindings ("${FRONTEND_HOST_PORT:-8080}:80" for frontend,
+#   "${DRIVER_PORTAL_HOST_PORT:-8081}:80" for driver-portal) stayed published
+#   on 0.0.0.0, defeating the whole point of the tunnel-only design.
+#   `!reset []` (Compose 2.24+) clears the inherited value instead of appending
+#   to it. See https://docs.docker.com/reference/compose-file/merge/
 
 name: flowops
 
@@ -18,7 +30,9 @@ services:
     # No host port binding — cloudflared reaches frontend via Docker network.
     # This avoids the docker-proxy port binding bug on Ubuntu 26.04 kernels.
     # For local debugging: docker compose exec frontend curl localhost:80/healthz
-    ports: []
+    # !reset is REQUIRED here: a plain `ports: []` would be merged (appended)
+    # into the base file's "8080:80" binding and leave the port published.
+    ports: !reset []
     deploy:
       resources:
         limits:
@@ -28,7 +42,8 @@ services:
 
   driver-portal:
     restart: always
-    ports: []
+    # Clears the base file's "8081:80" binding (see the !reset note at the top).
+    ports: !reset []
     deploy:
       resources:
         limits:
@@ -39,7 +54,7 @@ services:
   api:
     restart: always
     # No host port — traffic flows through frontend nginx proxy
-    ports: []
+    ports: !reset []
     environment:
       NODE_ENV: production
       APP_URL: https://app.flowop.work
@@ -54,7 +69,7 @@ services:
 
   postgres:
     restart: always
-    ports: []
+    ports: !reset []
     deploy:
       resources:
         limits:
@@ -75,7 +90,7 @@ services:
 
   redis:
     restart: always
-    ports: []
+    ports: !reset []
     # Cap Redis memory — evicts LRU keys if hit
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
     deploy:
