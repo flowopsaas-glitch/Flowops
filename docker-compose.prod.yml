@@ -32,6 +32,15 @@ services:
     ports: !override
       - "127.0.0.1:8080:80"
 
+  driver-portal:
+    restart: always
+    # Same trap as the frontend above: the base file publishes "8081:80" on
+    # 0.0.0.0 and a plain `ports:` here would ADD to it rather than replace
+    # it. !override keeps the driver PWA reachable on loopback only (for
+    # cloudflared or a host reverse proxy) instead of every interface.
+    ports: !override
+      - "127.0.0.1:8081:80"
+
   api:
     restart: always
     # Do NOT expose the API port to the host in production — traffic flows
