@@ -4,8 +4,8 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
 # This file overrides only the values that differ in production (real domain,
-# no host port bindings for the API, resource limits). Everything else is
-# inherited from docker-compose.yml.
+# host ports bound to 127.0.0.1 only, no host port for the API, resource
+# limits). Everything else is inherited from docker-compose.yml.
 #
 # REQUIRES Docker Compose v2.24.4+ — the `!override` / `!reset` tags below are
 # ignored-or-fatal on older releases, and without them Compose APPENDS port
