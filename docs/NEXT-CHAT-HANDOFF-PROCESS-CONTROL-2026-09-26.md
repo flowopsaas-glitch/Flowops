@@ -128,7 +128,8 @@ from this branch, and validate with `npm run schema:validate:offline` before gen
 | Frontend `tsc --noEmit` | ✅ clean |
 | Frontend `vite build` | ✅ built |
 | Frontend `vitest run` | ✅ 8 files, 59 tests |
-| `prisma generate` with real engines in this sandbox | ❌ blocked (`binaries.prisma.sh` unreachable; a placeholder-engine workaround exists **for type-checking only** — see the status doc §2.2) |
+| `prisma generate` with real engines **in CI** | ✅ — CI run `36239977356` passed Generate Prisma client, Build, Lint, Unit tests, E2E tests (backend) and TypeScript check, Lint, Unit tests, Build (frontend) |
+| `prisma generate` in this sandbox | ❌ blocked (`binaries.prisma.sh` unreachable; the placeholder-engine workaround is **for type-checking only** — see the status doc §2.2) |
 | Database-backed integration tests | ❌ not run — no PostgreSQL in the sandbox |
 | Migration generated/applied | ❌ not attempted, by design |
 
@@ -143,10 +144,10 @@ Pre-existing environment issue, unrelated: `src/users/users.service.spec.ts` can
 
 ## 6. Next exact sequence
 
-1. **Run the real Prisma toolchain** in a network-capable environment or CI:
-   `npx prisma validate && npx prisma generate`, then rebuild and re-run the backend tests with
-   the generated client. (Opening a PR against `main` triggers `FlowOps CI`, which does exactly
-   this.)
+1. ~~Run the real Prisma toolchain~~ — **done**: `FlowOps CI` on PR #436 ran
+   `prisma generate` with real engines and the backend built and tested against the generated
+   client. Keep the CI job green; do not re-introduce the placeholder-engine workaround outside
+   local iteration.
 2. **Migration review.** `backend/prisma/migrations` does not exist — there is no committed
    migration history. Generate against a **disposable** database, review every statement for
    destructive operations, and write explicit backfill scripts for

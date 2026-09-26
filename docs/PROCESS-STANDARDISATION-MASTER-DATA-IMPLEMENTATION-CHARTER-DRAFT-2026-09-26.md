@@ -208,7 +208,7 @@ entitlement; both render an explicit "switched off" state when the flags are off
 | Area | State |
 | --- | --- |
 | Charter / design | **Substantially progressed** (this document) |
-| Prisma schema | **Validated** with the schema engine's WASM validator; **`prisma generate` / database migration not yet possible in the build sandbox** (no network access to the engine CDN) |
+| Prisma schema | **Validated** both offline (WASM validator) and by the real Prisma toolchain in CI, where client generation, backend build, unit tests and E2E tests all pass. **No migration has been created or applied.** |
 | Backend modules | **Implemented, non-production** — builds clean; 148 tests across 6 suites (pure policy + service-level against an in-memory Prisma double) |
 | Goods-receipt bridge | **Implemented, non-production, flags off** — not yet exercised against a live warehouse |
 | Frontend pages | **Implemented** — type-check, build and unit tests pass |

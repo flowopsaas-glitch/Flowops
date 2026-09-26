@@ -71,6 +71,28 @@ engine.** It must never be used for a deployed build. Type-checking and unit tes
 against this generated client; a real `prisma generate` in a network-capable environment is
 still required (production gate 1).
 
+### 2.2b CI runs the real toolchain — the authoritative check for the schema
+
+This branch is pushed and CI (`FlowOps CI`, run `36239977356`) passed every step:
+
+| Job | Step | Result |
+| --- | --- | --- |
+| Backend | `npm ci` | ✅ |
+| Backend | **Generate Prisma client** (real engines) | ✅ |
+| Backend | Run migrations (`migrate deploy`, no migrations present → no-op) | ✅ |
+| Backend | Lint | ✅ |
+| Backend | Build | ✅ |
+| Backend | Unit tests | ✅ |
+| Backend | E2E tests | ✅ |
+| Frontend | TypeScript check · Lint · Unit tests · Build | ✅ |
+
+So the schema **does** validate and generate with the real Prisma toolchain, and the backend
+builds and tests against that generated client. The sandbox limitation described in §2.2 only
+affects local iteration; the placeholder-engine trick must never be used for anything else.
+
+Note: "Run migrations" succeeding means *no migrations were found* — the migration gate below is
+still open, and no schema was created anywhere by this workstream.
+
 ### 2.3 Migration — NOT DONE, deliberately
 
 `backend/prisma/migrations` does not exist in this repository: there is **no committed migration
@@ -178,7 +200,7 @@ Modified: `App.tsx` (two lazy routes), `components/layout/AppLayout.tsx` (two na
 | `npx tsc --noEmit` (frontend) | ✅ clean |
 | `npx vite build` (frontend) | ✅ built |
 | `npx vitest run` (frontend) | ✅ 8 files, 59 tests |
-| `prisma generate` with real engines | ❌ blocked by network (see §2.2) |
+| `prisma generate` with real engines | ✅ in CI (run `36239977356`); ❌ blocked in the sandbox (see §2.2/§2.2b) |
 | Database-backed integration tests | ❌ not run — no PostgreSQL in the sandbox |
 | Migration generated/applied | ❌ not attempted (by design) |
 
