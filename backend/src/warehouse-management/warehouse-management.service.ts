@@ -246,6 +246,13 @@ export class WarehouseManagementService {
       }
     }
 
+    // Whether this tenant governs SKUs at all decides if an unresolved code is
+    // an exception: a receipt of codes the tenant has never onboarded must not
+    // slip through simply because *none* of them matched.
+    const governsSkus =
+      variantsBySku.size > 0 ||
+      (await this.prisma.productVariant.count({ where: { companyId, sku: { not: null } } })) > 0;
+
     let totalReceived = 0, totalDamaged = 0;
 
     for (const line of dto.lines) {
@@ -305,7 +312,7 @@ export class WarehouseManagementService {
             putAwayBinId: line.putAwayBinId ?? null,
             // Only asserted when the tenant actually governs SKUs in master
             // data; a tenant without master data must not be blocked by it.
-            knownVariant: knownSkus.size === 0 ? undefined : knownSkus.has(line.sku),
+            knownVariant: governsSkus ? knownSkus.has(line.sku) : undefined,
           };
         }),
         actorFrom(dto),

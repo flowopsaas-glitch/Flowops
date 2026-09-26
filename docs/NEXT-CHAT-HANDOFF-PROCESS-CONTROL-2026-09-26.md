@@ -130,7 +130,8 @@ from this branch, and validate with `npm run schema:validate:offline` before gen
 | Frontend `vitest run` | ✅ 8 files, 59 tests |
 | `prisma generate` with real engines **in CI** | ✅ — CI run `36239977356` passed Generate Prisma client, Build, Lint, Unit tests, E2E tests (backend) and TypeScript check, Lint, Unit tests, Build (frontend) |
 | `prisma generate` in this sandbox | ❌ blocked (`binaries.prisma.sh` unreachable; the placeholder-engine workaround is **for type-checking only** — see the status doc §2.2) |
-| Database-backed integration tests | ❌ not run — no PostgreSQL in the sandbox |
+| Database-backed integration tests | ✅ 34 tests, 3 suites, real PostgreSQL (`npm run test:integration`); also wired into CI |
+| Schema applied to a real PostgreSQL | ✅ 133 tables (CI `db push`, and locally from the CI-generated DDL) |
 | Migration generated/applied | ❌ not attempted, by design |
 
 The service tests run against an in-memory Prisma double. They prove logic (tenant scoping,
@@ -152,11 +153,22 @@ Pre-existing environment issue, unrelated: `src/users/users.service.spec.ts` can
    migration history. Generate against a **disposable** database, review every statement for
    destructive operations, and write explicit backfill scripts for
    `InventoryItem.productVariantId` (link only after a duplicate/unknown review — never
-   automatically). Do not backfill `GoodsReceipt.processInstanceId`.
-3. **Database-backed integration tests** for the gate list in the charter (§9.3): tenant
-   isolation, approval ordering, concurrent SKU allocation, alias uniqueness, version lifecycle,
-   instance idempotency, evidence gating, blocking incidents, outcome rules, goods-receipt clean
-   and exception paths, cross-tenant access, production flag denial.
+   automatically). Do not backfill `GoodsReceipt.processInstanceId`. The reviewed SQL must also be
+   rehearsed: apply it to a clean disposable database (`scripts/ephemeral-db.mjs sql <file>`) and
+   re-run the integration suite against the migrated database, not a `db push`ed one. Then add the
+   CI guard that fails while `prisma/migrations` is empty.
+   *The generated DDL and the integration suite are already in place; what remains is the migration
+   file itself, its review, and the rehearsal.*
+3. ~~Database-backed integration tests~~ — **done** (34 tests, 3 suites; CI + local). They run
+   against real PostgreSQL and already found four defects, all fixed: the `startInstance` insert
+   race, put-away not linking `InventoryItem.productVariantId`, parallel approvals burning SKU
+   numbers, and unknown SKUs slipping through when none of a receipt's codes were governed. The
+   in-memory double stays for fast logic tests; the database suite is the one that proves locking,
+   constraint and cascade behaviour.
+3b. **Not yet covered by the database suite** — keep these on the list: alias uniqueness and
+   resolution, `proposeSolution`/`reviewChange` end-to-end improvement flow, the `retry`/`attempt`
+   path on step instances, cross-tenant access for warehouse and process reads, the production
+   flag-denial assertions against a real database, and cascade behaviour when a tenant is deleted.
 4. **Pilot.** One controlled non-production warehouse pilot with the bridge enabled and
    enforcement **off**. Review the incidents it raises — if the rules produce noise, fix the rules
    before switching enforcement on. Measure receipt cycle time, unknown-SKU rate, variance,

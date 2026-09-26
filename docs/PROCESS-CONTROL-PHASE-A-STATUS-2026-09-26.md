@@ -201,7 +201,8 @@ Modified: `App.tsx` (two lazy routes), `components/layout/AppLayout.tsx` (two na
 | `npx vite build` (frontend) | ✅ built |
 | `npx vitest run` (frontend) | ✅ 8 files, 59 tests |
 | `prisma generate` with real engines | ✅ in CI (run `36239977356`); ❌ blocked in the sandbox (see §2.2/§2.2b) |
-| Database-backed integration tests | ❌ not run — no PostgreSQL in the sandbox |
+| Schema applied to a real PostgreSQL | ✅ 133 tables created from the CI-generated DDL (and ✅ `prisma db push` in CI) |
+| Database-backed integration tests | ✅ 34 tests, 3 suites — real PostgreSQL, real Prisma client |
 | Migration generated/applied | ❌ not attempted (by design) |
 
 Known environment-only failure, unrelated to this work: `src/users/users.service.spec.ts` fails
@@ -225,12 +226,80 @@ require the database-backed suite in the charter's gate list.
 
 ## 6. Next steps, in order
 
-1. Run `prisma validate` and `prisma generate` with real engines in a network-capable environment
-   (or CI), then re-run the backend build and tests against the real client.
-2. Generate and review the migration on a **disposable** database; write the explicit backfill
-   scripts; do not touch production data.
-3. Port/extend the service tests into database-backed integration tests (the list is in the
-   charter, §9.3). The in-memory double stays for fast logic tests.
-4. Run one controlled non-production warehouse pilot with the bridge enabled and enforcement **off**;
+1. Keep the database-backed suite green in CI (native engine) *and* locally (wasm engine), and treat
+   any failure of either as a blocker.
+2. Generate and review the migration on a **disposable** database; inspect every statement for
+   destructive operations; write the explicit backfill scripts; do not touch production data.
+3. Add the CI guard that fails when `prisma/migrations` is empty, so the migration cannot be
+   forgotten between the tested schema and the merge.
+4. Rehearse the migration: apply the reviewed `migration.sql` to a clean disposable database
+   (`scripts/ephemeral-db.mjs sql <file>`), then run the integration suite against the migrated
+   database rather than a `db push`ed one.
+5. Run one controlled non-production warehouse pilot with the bridge enabled and enforcement **off**;
    review the incidents it raises before considering enforcement.
-5. Keep every flag false in production until the gates are signed off.
+6. Keep every flag false in production until the gates are signed off.
+
+---
+
+## 7. Database-backed integration suite (added after the first CI run)
+
+`backend/test/integration/*.integration.spec.ts`, run with `npm run test:integration`
+(`test/jest-integration.json`, serial execution). It drives the **real services** through the
+**real Prisma client** against a **real PostgreSQL** — 34 tests, 3 suites:
+
+* **Process control** — approved versions keep an immutable content hash and ordered steps; invalid
+  lifecycle transitions and post-approval edits are refused; six concurrent starts on one business
+  key produce exactly one instance; steps advance only through configured successors; blocking
+  incidents stop completion until resolved; outcomes require every step and are recorded once; every
+  material transition is audited.
+* **Product master** — concurrent approvals allocate distinct sequential SKUs; the same variant
+  approved concurrently keeps one SKU; duplicate normalised attributes are refused; a variant cannot
+  be approved before its product; cross-tenant reads and writes are refused; master-data audit
+  records are written.
+* **Goods receipt** — a clean receipt walks the standard to completion and is recorded right first
+  time; short shipment and damage are recorded as exceptions (the policy's severities, not
+  "blocking"); all-damaged stock blocks; a receipt with no put-away is never closed out; known SKUs
+  link to their variant; unknown SKUs stay controlled exceptions; one instance per receipt.
+
+### Four defects the suite found, and how they were fixed
+
+1. **`startInstance` could surface a unique-constraint error.** Two callers both passed the
+   idempotency check and one then lost the insert race. The loser now returns the winner's instance,
+   which is what "idempotent on the business key" promises a duplicated webhook or a double-tap.
+2. **Put-away could not link governed master data.** SKUs were resolved *after* stock moved, so
+   `InventoryItem.productVariantId` — the column added for exactly this — was never written.
+   Resolution now happens before anything moves, and existing stock is linked when the variant
+   becomes known (never re-pointed).
+3. **Approving one variant twice in parallel burned SKU numbers.** `allocateSku` now re-reads the
+   variant *inside* the sequence lock, so the second caller returns the SKU the first allocated.
+4. **Unknown SKUs could slip through.** The "does this tenant govern SKUs?" test only looked at the
+   SKUs on that receipt, so a receipt of entirely unknown codes was treated as ungoverned. It now
+   checks whether the tenant has any allocated SKU, so unknown codes raise a blocking exception.
+
+### How to run it locally (including offline)
+
+```bash
+# 1. a disposable PostgreSQL; the suite refuses any database whose name does not
+#    end in _test/_ci/_ephemeral/_shadow, and refuses non-local hosts
+export EPHEMERAL_DB=1
+export EPHEMERAL_DB_URL='postgresql://user:pass@localhost:5432/flowops_test'
+
+# 2. a schema. With network: `npx prisma db push`.
+#    Offline: apply the DDL that CI generates (job "Schema SQL (review artifact)",
+#    also published to the ci/schema-sql scratch branch):
+node scripts/ephemeral-db.mjs reset
+node scripts/ephemeral-db.mjs sql path/to/schema.sql
+
+# 3. the suite
+INTEGRATION_DATABASE_URL="$EPHEMERAL_DB_URL" npm run test:integration
+```
+
+The suite picks its engine automatically: the generated native library engine when present (CI and
+production), otherwise the WebAssembly query engine over `@prisma/adapter-pg` (offline workstations,
+where `binaries.prisma.sh` is unreachable). Both talk to real PostgreSQL; the engine used is printed
+at the start of each suite.
+
+**Still not proven:** the migration itself (none exists), the pilot, and anything about a real
+warehouse. Local runs use the wasm engine transport, so a defect that lives only in the native
+engine's transport would not appear locally — which is why CI runs the suite on the native engine as
+well.

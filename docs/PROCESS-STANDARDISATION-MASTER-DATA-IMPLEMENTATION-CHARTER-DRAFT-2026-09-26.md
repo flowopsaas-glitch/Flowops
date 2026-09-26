@@ -212,7 +212,7 @@ entitlement; both render an explicit "switched off" state when the flags are off
 | Backend modules | **Implemented, non-production** — builds clean; 148 tests across 6 suites (pure policy + service-level against an in-memory Prisma double) |
 | Goods-receipt bridge | **Implemented, non-production, flags off** — not yet exercised against a live warehouse |
 | Frontend pages | **Implemented** — type-check, build and unit tests pass |
-| Database-backed integration tests | **Not yet run** (no PostgreSQL in the sandbox) |
+| Database-backed integration tests | **Run and passing** — 34 tests, 3 suites, against real PostgreSQL (`npm run test:integration`); wired into CI on the native engine, runnable locally on the wasm engine. Coverage gaps are listed in the handoff doc §6.3b. |
 | Migration | **Not created, not applied** — deliberately deferred until generated against a disposable database |
 | Production readiness | **Not achieved** |
 

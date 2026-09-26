@@ -499,6 +499,18 @@ export class ProductMasterService {
       const sequence = rows[0];
       if (!sequence) throw new ConflictException('SKU sequence unavailable — retry');
 
+      // We now hold the tenant's allocation lock, so any concurrent allocation
+      // has committed or is waiting. Re-read the variant here — inside the lock
+      // — so approving the same variant twice in parallel returns the SKU the
+      // first call allocated instead of burning a second number.
+      const current = await tx.productVariant.findUnique({
+        where: { id: variantId },
+        select: { sku: true },
+      });
+      if (current?.sku) {
+        return { sku: current.sku, number: null, alreadyAllocated: true as const };
+      }
+
       const allocation = buildSkuAllocation({
         nextNumber: Number(sequence.nextNumber),
         prefix: sequence.prefix,
@@ -515,8 +527,17 @@ export class ProductMasterService {
         data: { sku: allocation.sku, skuAllocatedAt: new Date() },
       });
 
-      return { sku: allocation.sku, number: allocation.number, variant: updated };
+      return {
+        sku: allocation.sku,
+        number: allocation.number,
+        alreadyAllocated: false as const,
+        variant: updated,
+      };
     });
+
+    if (allocated.alreadyAllocated) {
+      return { sku: allocated.sku, allocated: false, variantId };
+    }
 
     await this.audit(companyId, actor, {
       variantId,

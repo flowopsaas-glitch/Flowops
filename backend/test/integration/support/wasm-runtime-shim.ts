@@ -21,7 +21,24 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GENERATED_CLIENT_DIR } from './prisma-client';
 
-const actual = jest.requireActual('@prisma/client/runtime/wasm.js') as Record<string, unknown>;
+// Loaded by absolute path on purpose: `jest.requireActual('@prisma/client/
+// runtime/wasm.js')` still goes through moduleNameMapper, which maps that
+// specifier to *this* file — the shim would import itself and every runtime
+// export would be undefined.
+const REAL_RUNTIME_PATH = path.join(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  'node_modules',
+  '@prisma',
+  'client',
+  'runtime',
+  'wasm.js',
+);
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const actual = require(REAL_RUNTIME_PATH) as Record<string, unknown>;
 
 const WASM_ENGINE_PATH = path.join(GENERATED_CLIENT_DIR, 'query_engine_bg.wasm');
 

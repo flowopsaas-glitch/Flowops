@@ -12,8 +12,10 @@ import { PrismaClient } from '@prisma/client';
  * model cannot silently escape the wipe and leak state into the next test.
  */
 export async function truncateAll(prisma: PrismaClient): Promise<void> {
+  // `::text` matters: catalog columns come back as PostgreSQL's internal `name`
+  // type, which the driver-adapter path cannot deserialize.
   const rows = await prisma.$queryRaw<Array<{ tablename: string }>>`
-    SELECT tablename FROM pg_tables
+    SELECT tablename::text AS tablename FROM pg_tables
     WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
   `;
 

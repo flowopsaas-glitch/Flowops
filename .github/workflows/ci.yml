@@ -284,6 +284,7 @@ jobs:
       # branch where a plain `git fetch` can read it. Force-pushed every run; it
       # only ever contains generated SQL and is never merged.
       - name: Publish SQL to scratch branch
+        working-directory: ${{ github.workspace }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
