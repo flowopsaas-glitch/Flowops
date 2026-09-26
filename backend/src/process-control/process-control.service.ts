@@ -520,52 +520,67 @@ export class ProcessControlService {
     const firstStep = version.steps[0];
     const now = new Date();
 
-    const instance = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.processInstance.create({
-        data: {
-          companyId,
-          definitionId: definition.id,
-          versionId: version.id,
-          businessKey: dto.businessKey,
-          status: 'IN_PROGRESS',
-          currentStepId: firstStep.id,
-          context: dto.context ?? undefined,
-          startedById: actor.userId ?? null,
-          startedAt: now,
-          goodsReceiptId: dto.goodsReceiptId ?? null,
-        },
-      });
+    let instanceId: string;
+    try {
+      instanceId = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.processInstance.create({
+          data: {
+            companyId,
+            definitionId: definition.id,
+            versionId: version.id,
+            businessKey: dto.businessKey,
+            status: 'IN_PROGRESS',
+            currentStepId: firstStep.id,
+            context: dto.context ?? undefined,
+            startedById: actor.userId ?? null,
+            startedAt: now,
+            goodsReceiptId: dto.goodsReceiptId ?? null,
+          },
+        });
 
-      await tx.processStepInstance.create({
-        data: {
-          companyId,
-          instanceId: created.id,
-          stepDefinitionId: firstStep.id,
-          stepNumber: firstStep.stepNumber,
-          code: firstStep.code,
-          name: firstStep.name,
-          attempt: 1,
-          status: 'IN_PROGRESS',
-          startedAt: now,
-          executedById: actor.userId ?? null,
-          executedByName: actor.name ?? null,
-        },
-      });
+        await tx.processStepInstance.create({
+          data: {
+            companyId,
+            instanceId: created.id,
+            stepDefinitionId: firstStep.id,
+            stepNumber: firstStep.stepNumber,
+            code: firstStep.code,
+            name: firstStep.name,
+            attempt: 1,
+            status: 'IN_PROGRESS',
+            startedAt: now,
+            executedById: actor.userId ?? null,
+            executedByName: actor.name ?? null,
+          },
+        });
 
-      return created;
-    });
+        return created.id;
+      });
+    } catch (err) {
+      // Two callers can race past the idempotency check above: both see no
+      // instance, both attempt the insert, and the unique index on
+      // (companyId, businessKey) lets exactly one win. The loser must return the
+      // winner's instance — an idempotent start is a promise to the caller, and
+      // a duplicated webhook must not surface a constraint error to the dock.
+      const winner = await this.prisma.processInstance.findFirst({
+        where: { companyId, businessKey: dto.businessKey },
+        include: { currentStep: true },
+      });
+      if (winner) return winner;
+      throw err;
+    }
 
     await this.audit(companyId, actor, {
       definitionId: definition.id,
       versionId: version.id,
-      instanceId: instance.id,
+      instanceId,
       eventType: 'INSTANCE_STARTED',
       description: `Started ${definition.code} v${version.versionNumber} for ${dto.businessKey}`,
       afterState: { businessKey: dto.businessKey, firstStep: firstStep.code },
     });
 
     return this.prisma.processInstance.findUnique({
-      where: { id: instance.id },
+      where: { id: instanceId },
       include: { currentStep: true },
     });
   }

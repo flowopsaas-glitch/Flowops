@@ -232,6 +232,20 @@ export class WarehouseManagementService {
     });
     if (!gr) throw new NotFoundException('Goods receipt not found');
 
+    // Resolve the received SKUs against governed master data up front: the
+    // put-away below links stock to the variant it actually belongs to, and the
+    // Process Control bridge needs to tell an unknown code from a known one.
+    const variantsBySku = new Map<string, string>();
+    if (dto.lines.length > 0) {
+      const variants = await this.prisma.productVariant.findMany({
+        where: { companyId, sku: { in: dto.lines.map((l) => l.sku) } },
+        select: { id: true, sku: true },
+      });
+      for (const variant of variants) {
+        if (variant.sku) variantsBySku.set(variant.sku, variant.id);
+      }
+    }
+
     let totalReceived = 0, totalDamaged = 0;
 
     for (const line of dto.lines) {
@@ -261,6 +275,10 @@ export class WarehouseManagementService {
           batchNumber: line.batchNumber,
           expiryDate: line.expiryDate ? new Date(line.expiryDate) : undefined,
           goodsReceiptId: id, performedBy: dto.receivedBy,
+          // Null for a SKU that master data does not govern — the receipt is
+          // then carried by the process as a controlled exception, not silently
+          // booked against a variant that does not exist.
+          productVariantId: variantsBySku.get(line.sku),
         });
       }
     }
@@ -270,18 +288,9 @@ export class WarehouseManagementService {
     // with blocking exceptions is refused here — before the WMS calls it done.
     let bridgeResult: any = null;
     if (this.receiptBridge?.isEnabled()) {
-      // Resolve each received SKU against governed master data. Unknown codes
-      // become reconcile exceptions instead of being booked silently.
-      const knownSkus = new Set(
-        (
-          await this.prisma.productVariant.findMany({
-            where: { companyId, sku: { in: dto.lines.map((l: any) => l.sku) } },
-            select: { sku: true },
-          })
-        )
-          .map((v) => v.sku)
-          .filter((sku): sku is string => !!sku),
-      );
+      // Unknown codes (no governed variant) become reconcile exceptions instead
+      // of being booked silently. Resolved above, before any stock moved.
+      const knownSkus = new Set(variantsBySku.keys());
 
       bridgeResult = await this.receiptBridge.onGoodsReceived(
         companyId,
@@ -331,6 +340,7 @@ export class WarehouseManagementService {
   private async putAwayStock(companyId: string, dto: {
     binId: string; sku: string; quantity: number; batchNumber?: string;
     expiryDate?: Date; goodsReceiptId?: string; performedBy?: string;
+    productVariantId?: string;
   }) {
     // Find or create inventory item at this bin
     const item = await this.prisma.inventoryItem.findFirst({
@@ -344,6 +354,11 @@ export class WarehouseManagementService {
           quantityOnHand: { increment: dto.quantity },
           quantityAvailable: { increment: dto.quantity },
           lastMovedAt: new Date(),
+          // Link stock to governed master data once it is known, but never
+          // re-point an item that already resolves to a variant.
+          ...(dto.productVariantId && !item.productVariantId
+            ? { productVariantId: dto.productVariantId }
+            : {}),
         },
       });
     } else {
@@ -354,6 +369,7 @@ export class WarehouseManagementService {
           quantityOnHand: dto.quantity, quantityAvailable: dto.quantity,
           batchNumber: dto.batchNumber, expiryDate: dto.expiryDate,
           status: 'AVAILABLE', lastMovedAt: new Date(),
+          productVariantId: dto.productVariantId ?? null,
         },
       });
     }
