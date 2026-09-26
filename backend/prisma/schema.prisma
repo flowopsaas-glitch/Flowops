@@ -247,6 +247,11 @@ model Company {
   courierOrders         CourierOrder[]
   integrationCredentials IntegrationCredential[]
 
+  // Process Control (Process Book) + Product master data
+  processDefinitions    ProcessDefinition[]
+  processInstances      ProcessInstance[]
+  products              Product[]
+
   // CLAW Intel features
   routeOptimizations    RouteOptimization[]
   deliveryNotes         DeliveryNote[]
@@ -2661,6 +2666,12 @@ model InventoryItem {
   // Product identification
   sku           String        // Stock Keeping Unit
   barcode       String?       // EAN/UPC barcode
+
+  // Optional link to governed master data. Nullable on purpose: existing stock
+  // rows are NOT back-filled automatically — they are linked only after a
+  // duplicate/unknown review, so we never silently rewrite stock history.
+  productVariantId String?
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
   description   String
   category      String?       // Product category
 
@@ -2701,6 +2712,7 @@ model InventoryItem {
   @@index([binId])
   @@index([companyId, status])
   @@index([expiryDate])
+  @@index([productVariantId])
   @@map("inventory_items")
 }
 
@@ -2780,6 +2792,11 @@ model GoodsReceipt {
   updatedAt DateTime @updatedAt
 
   lines GoodsReceiptLine[]
+
+  // Process Control bridge: set when a goods receipt is executed under the
+  // WMS.GOODS_RECEIPT standard. Nullable — receipts predating Process Control
+  // (or created while the flag is off) legitimately have no instance.
+  processInstance ProcessInstance?
 
   @@unique([companyId, receiptNumber])
   @@index([companyId, status])
@@ -4107,4 +4124,764 @@ model DeliveryIntelligenceStat {
 
   @@index([companyId, computedAt])
   @@map("delivery_intelligence_stats")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROCESS CONTROL — Process Book (versioned SOPs) → execution → evidence →
+// exception ownership → outcome → controlled improvement.
+//
+// Design rules (see docs/PROCESS-STANDARDISATION-MASTER-DATA-IMPLEMENTATION-
+// CHARTER-DRAFT-2026-09-26.md):
+//   • An APPROVED ProcessVersion is immutable — changes are made by creating a
+//     new version, never by editing history.
+//   • Every execution is a ProcessInstance keyed by a tenant-scoped business key
+//     that is never reused, so re-delivered events cannot create a second
+//     instance for the same physical event.
+//   • Evidence, incidents, solutions, outcomes and change proposals are records,
+//     not free text, so they can be measured and audited.
+//   • Automation is draft/assist-only for high-consequence steps: a rule may
+//     raise an incident or notify, but a human resolves it.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum ProcessLifecycleStatus {
+  DRAFT
+  PILOT
+  APPROVED
+  RETIRED
+}
+
+enum ProcessStepType {
+  MANUAL
+  AUTOMATED
+  DECISION
+  INSPECTION
+  APPROVAL
+  HANDOFF
+  WAIT
+}
+
+enum ProcessInstanceStatus {
+  IN_PROGRESS
+  BLOCKED        // a blocking incident is open — the process cannot advance
+  COMPLETED
+  ABANDONED
+  FAILED
+}
+
+enum ProcessStepInstanceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  FAILED
+  BLOCKED
+}
+
+enum ProcessIncidentSeverity {
+  MINOR
+  MAJOR
+  BLOCKING
+  CRITICAL
+}
+
+enum ProcessIncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  ESCALATED
+}
+
+enum ProcessSolutionStatus {
+  PROPOSED
+  APPROVED
+  IMPLEMENTED
+  REJECTED
+}
+
+enum ProcessOutcomeStatus {
+  COMPLETED
+  COMPLETED_WITH_EXCEPTIONS
+  ABANDONED
+  FAILED
+}
+
+enum ChangeProposalStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  IMPLEMENTED
+}
+
+enum ProductApprovalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  RETIRED
+}
+
+enum VariantApprovalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  RETIRED
+}
+
+model ProcessDefinition {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  code        String   // stable SOP key, e.g. "WMS.GOODS_RECEIPT"
+  name        String
+  description String?  @db.Text
+
+  // Display / grouping only — never used as an identity key.
+  category    String?
+  ownerRole   String?  // role accountable for the standard
+
+  isActive    Boolean  @default(true)
+
+  currentVersionId String?         @unique
+  currentVersion   ProcessVersion? @relation("CurrentProcessVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions        ProcessVersion[]
+  instances       ProcessInstance[]
+  changeProposals ProcessChangeProposal[]
+  auditEvents     ProcessAuditEvent[]
+
+  @@unique([companyId, code])
+  @@index([companyId, isActive])
+  @@map("process_definitions")
+}
+
+model ProcessVersion {
+  id           String   @id @default(cuid())
+  companyId    String
+  definitionId String
+  definition   ProcessDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  versionNumber Int                    // sequential per definition, never reused
+  status        ProcessLifecycleStatus @default(DRAFT)
+
+  // SHA-256 over the ordered step definitions + automation rules. Lets an audit
+  // prove exactly what standard was in force when a process executed.
+  contentHash String
+
+  // Lifecycle facts (who/when), kept alongside the status so the Process Book
+  // can show provenance instead of just a flag.
+  createdById     String?
+  submittedForApprovalAt DateTime?
+  approvedById    String?
+  approvedAt      DateTime?
+  pilotStartedAt  DateTime?
+  retiredAt       DateTime?
+  retiredById     String?
+
+  // Immutability marker. Set when the version reaches APPROVED; the service
+  // refuses step/rule edits on an immutable version.
+  isImmutable Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps            ProcessStepDefinition[]
+  automationRules  ProcessAutomationRule[]
+  instances        ProcessInstance[]
+  implementedProposals ProcessChangeProposal[] @relation("ImplementedInVersion")
+  currentForDefinitions ProcessDefinition[]    @relation("CurrentProcessVersion")
+  auditEvents      ProcessAuditEvent[]
+
+  @@unique([definitionId, versionNumber])
+  @@index([companyId, status])
+  @@map("process_versions")
+}
+
+model ProcessStepDefinition {
+  id        String   @id @default(cuid())
+  companyId String
+  versionId String
+  version   ProcessVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  stepNumber  Int                     // 1..n, execution order within the version
+  code        String                  // stable per version, e.g. "INSPECT_QUANTITY"
+  name        String
+  description String?                 @db.Text
+  type        ProcessStepType         @default(MANUAL)
+
+  // Automation intent. `requiresHumanApproval` defaults to true: for
+  // high-consequence warehouse/rail decisions the system may prepare an action
+  // but a human must confirm it.
+  isAutomated          Boolean @default(false)
+  requiresHumanApproval Boolean @default(true)
+
+  // Evidence contract and completion rules evaluated by the service.
+  requiresEvidence Boolean @default(false)
+  evidenceSchema   Json?   // JSON Schema-ish description of accepted evidence
+  validationRules  Json?   // machine-checkable completion rules
+
+  // Transitions (step codes within the same version).
+  nextStepOnSuccess   String?
+  nextStepOnFailure   String?
+  nextStepOnException String?
+
+  allowedRoles String[] @default([])
+  slaMinutes   Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stepInstances       ProcessStepInstance[]
+  currentStepForInstances ProcessInstance[] @relation("CurrentProcessStep")
+  automationRules     ProcessAutomationRule[]
+
+  @@unique([versionId, stepNumber])
+  @@unique([versionId, code])
+  @@index([companyId])
+  @@map("process_step_definitions")
+}
+
+model ProcessAutomationRule {
+  id        String   @id @default(cuid())
+  companyId String
+  versionId String
+  version   ProcessVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  stepDefinitionId String?
+  stepDefinition   ProcessStepDefinition? @relation(fields: [stepDefinitionId], references: [id], onDelete: Cascade)
+
+  code        String   // e.g. "AUTO_RAISE_VARIANCE_INCIDENT"
+  name        String
+  description String?  @db.Text
+
+  triggerType   String // STEP_COMPLETED | STEP_FAILED | EVIDENCE_SUBMITTED | TIMEOUT | INCIDENT_RAISED
+  triggerConfig Json
+
+  actionType   String // RAISE_INCIDENT | NOTIFY_ROLE | ADVANCE_STEP | CREATE_TASK
+  actionConfig Json
+
+  // Guardrails.
+  maxRunsPerInstance Int     @default(1)
+  requiresHumanApproval Boolean @default(true)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  runs AutomationRun[]
+
+  @@unique([versionId, code])
+  @@index([companyId, isActive])
+  @@map("process_automation_rules")
+}
+
+model ProcessInstance {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  definitionId String
+  definition   ProcessDefinition @relation(fields: [definitionId], references: [id])
+
+  versionId String
+  version   ProcessVersion @relation(fields: [versionId], references: [id])
+
+  // Idempotency: one instance per real-world event, per tenant, forever.
+  // The service returns the existing instance when this key is replayed.
+  businessKey String
+
+  status ProcessInstanceStatus @default(IN_PROGRESS)
+
+  currentStepId String?
+  currentStep   ProcessStepDefinition? @relation("CurrentProcessStep", fields: [currentStepId], references: [id])
+
+  // Snapshot of the inputs that started the instance (goodsReceiptId, PO number,
+  // supplier, warehouse …). Written once, never mutated by step execution.
+  context Json?
+
+  startedById String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  blockedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stepInstances ProcessStepInstance[]
+  incidents     ProcessIncident[]
+  automationRuns AutomationRun[]
+  outcome       ProcessOutcome?
+  auditEvents   ProcessAuditEvent[]
+
+  // Optional bridge to the WMS goods-receipt record this instance governs.
+  goodsReceiptId String?       @unique
+  goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id])
+
+  @@unique([companyId, businessKey])
+  @@index([companyId, definitionId])
+  @@index([versionId])
+  @@index([companyId, status])
+  @@map("process_instances")
+}
+
+model ProcessStepInstance {
+  id        String   @id @default(cuid())
+  companyId String
+
+  instanceId String
+  instance   ProcessInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  stepDefinitionId String
+  stepDefinition   ProcessStepDefinition @relation(fields: [stepDefinitionId], references: [id])
+
+  stepNumber Int
+  code       String
+  name       String
+
+  // Rework loops are normal in operations, so a step can be executed more than
+  // once; `attempt` keeps each execution distinct and auditable.
+  attempt Int @default(1)
+
+  status ProcessStepInstanceStatus @default(PENDING)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  executedById String?
+  executedByName String?
+
+  evidence Json?   // captured per the step's evidenceSchema
+  result   Json?   // structured result of the step
+  notes    String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  incidents ProcessIncident[]
+
+  @@unique([instanceId, stepDefinitionId, attempt])
+  @@index([instanceId, stepNumber])
+  @@index([companyId])
+  @@map("process_step_instances")
+}
+
+model ProcessIncident {
+  id        String   @id @default(cuid())
+  companyId String
+
+  instanceId String
+  instance   ProcessInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  // The step execution that surfaced the incident (null = raised against the
+  // instance as a whole, e.g. by an automation rule or a supervisor).
+  stepInstanceId String?
+  stepInstance   ProcessStepInstance? @relation(fields: [stepInstanceId], references: [id])
+
+  code        String // e.g. "QUANTITY_VARIANCE", "DAMAGED_GOODS", "PUT_AWAY_MISSING"
+  name        String
+  description String? @db.Text
+
+  severity ProcessIncidentSeverity @default(MINOR)
+  status   ProcessIncidentStatus   @default(OPEN)
+
+  // A blocking incident stops the process; the instance moves to BLOCKED and
+  // step execution is refused until a human resolves it.
+  isBlocking Boolean @default(false)
+
+  evidence   Json?
+  detectedBy String? // user id or "AUTOMATION"
+  detectedAt DateTime @default(now())
+
+  resolvedById   String?
+  resolvedByName String?
+  resolvedAt     DateTime?
+  resolution     String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  solutions       ProcessSolution[]
+  changeProposals ProcessChangeProposal[]
+
+  @@index([instanceId, status])
+  @@index([companyId, severity])
+  @@map("process_incidents")
+}
+
+model ProcessSolution {
+  id        String   @id @default(cuid())
+  companyId String
+
+  incidentId String
+  incident   ProcessIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  code        String
+  name        String
+  description String @db.Text
+
+  proposedById   String?
+  proposedByName String?
+  proposedAt     DateTime @default(now())
+
+  status ProcessSolutionStatus @default(PROPOSED)
+
+  approvedById    String?
+  approvedAt      DateTime?
+  implementedById String?
+  implementedAt   DateTime?
+  evidence        Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([incidentId])
+  @@index([companyId, status])
+  @@map("process_solutions")
+}
+
+model ProcessOutcome {
+  id        String   @id @default(cuid())
+  companyId String
+
+  instanceId String         @unique
+  instance   ProcessInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  status ProcessOutcomeStatus @default(COMPLETED)
+
+  // Measured facts — the raw material for proactive operations.
+  completedSteps         Int     @default(0)
+  totalSteps             Int     @default(0)
+  incidentCount          Int     @default(0)
+  blockingIncidentCount  Int     @default(0)
+  durationMinutes        Int?
+  firstTimeRight         Boolean @default(false)
+
+  evidence  Json?
+  artifacts Json?
+
+  lessonsLearned String? @db.Text
+
+  completedById   String?
+  completedByName String?
+  completedAt     DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  changeProposals ProcessChangeProposal[]
+
+  @@index([companyId, status])
+  @@index([companyId, completedAt])
+  @@map("process_outcomes")
+}
+
+model ProcessChangeProposal {
+  id        String   @id @default(cuid())
+  companyId String
+
+  definitionId String
+  definition   ProcessDefinition @relation(fields: [definitionId], references: [id])
+
+  // What triggered the proposal: a measured outcome, a recurring incident, or
+  // both. Proposals are the only sanctioned route to changing a standard.
+  outcomeId String?
+  outcome   ProcessOutcome? @relation(fields: [outcomeId], references: [id])
+
+  incidentId String?
+  incident   ProcessIncident? @relation(fields: [incidentId], references: [id])
+
+  title           String
+  description     String @db.Text
+  proposedChanges Json   // structured diff of steps / rules
+
+  proposedById   String?
+  proposedByName String?
+  proposedAt     DateTime @default(now())
+
+  status ChangeProposalStatus @default(DRAFT)
+
+  reviewedById   String?
+  reviewedByName String?
+  reviewedAt     DateTime?
+  reviewNotes    String? @db.Text
+
+  implementedInVersionId String?
+  implementedInVersion   ProcessVersion? @relation("ImplementedInVersion", fields: [implementedInVersionId], references: [id])
+  implementedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([definitionId, status])
+  @@index([companyId, status])
+  @@map("process_change_proposals")
+}
+
+model AutomationRun {
+  id        String   @id @default(cuid())
+  companyId String
+
+  ruleId String
+  rule   ProcessAutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  instanceId String
+  instance   ProcessInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  stepInstanceId String?
+
+  triggerData  Json
+  actionResult Json?
+  success      Boolean
+  error        String? @db.Text
+
+  executedAt DateTime @default(now())
+
+  @@index([instanceId])
+  @@index([ruleId])
+  @@index([companyId, executedAt])
+  @@map("automation_runs")
+}
+
+model ProcessAuditEvent {
+  id        String   @id @default(cuid())
+  companyId String
+
+  definitionId String?
+  definition   ProcessDefinition? @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  versionId    String?
+  version      ProcessVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  instanceId   String?
+  instance     ProcessInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  // CREATED | VERSION_CREATED | VERSION_SUBMITTED | VERSION_APPROVED | VERSION_PILOTED
+  // | VERSION_RETIRED | INSTANCE_STARTED | STEP_STARTED | STEP_COMPLETED | STEP_FAILED
+  // | INCIDENT_RAISED | INCIDENT_RESOLVED | SOLUTION_PROPOSED | SOLUTION_APPROVED
+  // | OUTCOME_RECORDED | CHANGE_PROPOSED | CHANGE_APPROVED | CHANGE_IMPLEMENTED
+  // | AUTOMATION_RUN | ACCESS_DENIED
+  eventType String
+
+  actorId   String // user id, or "SYSTEM" / "AUTOMATION"
+  actorName String?
+
+  beforeState Json?
+  afterState  Json?
+
+  description String  @db.Text
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([definitionId])
+  @@index([instanceId])
+  @@map("process_audit_events")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRODUCT MASTER — Product / ProductVariant / SKU separation with approval and
+// immutable audit history.
+//
+// Design rules:
+//   • A Product is the commercial item; a ProductVariant is the physical thing
+//     that carries stock; a SKU is a tenant-scoped allocated number that is
+//     never reused once issued.
+//   • No rows are pre-created for future stock — a variant exists when someone
+//     onboards it, not when a spreadsheet predicts it.
+//   • Approved master data is changed through a new state, never by silently
+//     rewriting the old one; every change writes a MasterDataAuditEvent.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Product {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  code        String // tenant-scoped product code, e.g. "PROD-001"
+  name        String
+  description String? @db.Text
+
+  category      String?
+  subCategory   String?
+  brand         String?
+  unitOfMeasure String  @default("EA")
+
+  status ProductApprovalStatus @default(DRAFT)
+
+  approvedById   String?
+  approvedByName String?
+  approvedAt     DateTime?
+
+  // Master-data revisions: a material change creates a new revision linked to
+  // the one it supersedes, so history is never overwritten.
+  revision         Int      @default(1)
+  previousRevisionId String?  @unique
+  previousRevision   Product? @relation("ProductRevisions", fields: [previousRevisionId], references: [id])
+  supersededBy       Product? @relation("ProductRevisions")
+
+  // Normalised fingerprint of the defining attributes (name/category/brand/UoM)
+  // used to detect near-duplicate onboarding.
+  attributeFingerprint String?
+
+  weightKg   Float?
+  volumeCbm  Float?
+  dimensions String?
+
+  isActive               Boolean @default(true)
+  isHazardous            Boolean @default(false)
+  hazardousClass         String?
+  requiresBatchTracking  Boolean @default(false)
+  requiresSerialTracking Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  variants    ProductVariant[]
+  aliases     ProductAlias[]
+  auditEvents MasterDataAuditEvent[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@index([companyId, attributeFingerprint])
+  @@map("products")
+}
+
+model ProductVariant {
+  id        String   @id @default(cuid())
+  companyId String
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  code        String // tenant-scoped variant code, e.g. "PROD-001-RED-L"
+  name        String
+  description String? @db.Text
+
+  // Defining attributes (colour, size, pack size, spec …). The fingerprint is a
+  // SHA-256 over the *normalised* attribute set so that "RED " and "red" do not
+  // create two variants of the same thing.
+  attributes           Json
+  attributeFingerprint String
+
+  // SKU is allocated from a tenant-scoped sequence and is never reused.
+  sku            String?
+  skuAllocatedAt DateTime?
+
+  status VariantApprovalStatus @default(DRAFT)
+
+  approvedById   String?
+  approvedByName String?
+  approvedAt     DateTime?
+
+  weightKg   Float?
+  volumeCbm  Float?
+  dimensions String?
+
+  isActive        Boolean @default(true)
+  reorderPoint    Int?
+  reorderQuantity Int?
+
+  // Optimistic concurrency guard — master-data edits are rejected when the
+  // caller's revision is stale.
+  revision Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  aliases        ProductAlias[]
+  inventoryItems InventoryItem[]
+  auditEvents    MasterDataAuditEvent[]
+
+  @@unique([companyId, code])
+  @@unique([companyId, sku])
+  @@unique([companyId, attributeFingerprint])
+  @@index([companyId, productId])
+  @@index([companyId, status])
+  @@map("product_variants")
+}
+
+model ProductAlias {
+  id        String   @id @default(cuid())
+  companyId String
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  // BARCODE | SUPPLIER_CODE | CUSTOMER_CODE | INTERNAL | LEGACY
+  type  String
+  value String
+
+  // Optional context — the same supplier code can mean different things for
+  // different suppliers, resolved by supplierRef.
+  supplierRef String?
+  customerRef String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, type, value, supplierRef, customerRef])
+  @@index([companyId, productId])
+  @@index([companyId, variantId])
+  @@map("product_aliases")
+}
+
+// Tenant-scoped SKU allocator. One row per tenant; `nextNumber` only ever moves
+// forward. Allocation happens inside a transaction with a row lock, so two
+// concurrent onboardings can never be handed the same SKU.
+model SkuSequence {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  nextNumber Int    @default(1)
+  prefix     String @default("SKU")
+  // e.g. "SKU-00001"
+  format     String @default("SKU-{number:05d}")
+
+  updatedAt DateTime @updatedAt
+
+  @@map("sku_sequences")
+}
+
+model MasterDataAuditEvent {
+  id        String   @id @default(cuid())
+  companyId String
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  // PRODUCT_CREATED | PRODUCT_UPDATED | PRODUCT_SUBMITTED | PRODUCT_APPROVED
+  // | PRODUCT_REJECTED | PRODUCT_RETIRED | VARIANT_CREATED | VARIANT_UPDATED
+  // | VARIANT_APPROVED | VARIANT_REJECTED | VARIANT_RETIRED | SKU_ALLOCATED
+  // | ALIAS_ADDED | ALIAS_REMOVED | DUPLICATE_FINGERPRINT_BLOCKED
+  // | CONCURRENT_EDIT_REJECTED | ACCESS_DENIED
+  eventType String
+
+  actorId   String
+  actorName String?
+
+  beforeState Json?
+  afterState  Json?
+
+  description String  @db.Text
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([productId])
+  @@index([variantId])
+  @@map("master_data_audit_events")
 }
