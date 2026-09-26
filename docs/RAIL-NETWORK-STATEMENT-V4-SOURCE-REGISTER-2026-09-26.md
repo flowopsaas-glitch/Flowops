@@ -104,6 +104,11 @@ Repository statuses verified in the working tree on 2026-09-26 (`backend/src/rai
 | Ch 6; Annexure 35 (Dispute Resolution Process) | RAIL-014 | **nothing** |
 | Ch 7; Annexure 40 (Ancillary Services Catalogue) | not in the supplied mapping | **nothing** |
 
+Annexures named for the traceability workstream but not yet in this map: **26** (Environmental
+analysis), **27** (Risk analysis guidelines) and **44** (Table of changes). The rest of that list lines
+up with the rows above. Conceptually the first two are already touched by the access prerequisites in
+§4 (environmental plan, risk analysis); they get their own rows when the traceability track opens.
+
 Outside the annexures: `RailService` covers consignments, wagons and intermodal legs (create /
 list / update / cancel / advance status, tenant-scoped numbering), gated behind the Enterprise
 `rail` entitlement. The access → capacity → agreement → order → KPI half of the chain has no
