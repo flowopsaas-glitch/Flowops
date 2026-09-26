@@ -89,7 +89,7 @@ back, and the decision rules are at the end of this document.
 | --- | --- | --- |
 | `clean` | The target holds none of the objects the migration creates. | Apply normally (`prisma migrate deploy`). |
 | `baseline` | The target already matches the migration exactly (typical of `prisma db push`). | Mark the migration as applied (`prisma migrate resolve --applied 20260926130650_init`), then `prisma migrate deploy` for later migrations. **Do not run the SQL** — every `CREATE` would fail. |
-| `already-applied` | The migration name is present in `_prisma_migrations`. | Nothing to adopt; verify the rest of the report for drift. |
+| `already-applied` | The migration name is present in `_prisma_migrations`. | Verify the ledger and that the schema matches the migration; then nothing to adopt. |
 | `drift` | The target is behind and/or holds objects the migration does not know about. | If the report says *additive*, resolve the baseline and add a reviewed delta migration. Otherwise plan a data-preserving alteration for the objects that differ. |
 
 The report also lists, in both directions: tables, enums, columns, indexes,
@@ -114,9 +114,11 @@ either `blocking` or `unknown`:
 Checks only run against tables that already exist in the clone; a table the
 migration creates is created empty, so there is nothing to endanger.
 
-Resolve every blocking finding **before** applying anything, and record what was
-done. A backfill (for example, repairing orphan rows) is a separate, reviewed
-step — the rehearsal tool never edits data.
+Treat both severities as stop conditions: **a `blocking` or an `unknown` finding
+stops the run here.** Resolve them — and record what was done — before applying
+anything. A backfill (for example, repairing orphan rows) is a separate, reviewed
+step, and the rehearsal tool never edits data. `--mode apply` enforces this: it
+refuses on a `blocking` finding *and* on an `unknown` one.
 
 ## Step 5 — apply, only on a clean clone
 
@@ -128,7 +130,8 @@ node scripts/migrate-rehearsal.mjs --url "$CLONE_URL" --mode apply --confirm-app
 ```
 
 It refuses unless all of the following hold: `--mode apply`, the verdict is
-`clean`, there are no blocking findings, and `--confirm-apply` is present. After
+`clean`, there are no `blocking` **and no `unknown`** findings, and
+`--confirm-apply` is present. After
 applying it re-introspects the clone and reports whether it now matches the
 migration exactly.
 
@@ -171,8 +174,8 @@ above is worth trusting:
   drifted and `already-applied` could never fire. The ledger is now excluded from
   the comparison but still reported.
 
-Unit tests: `npm run migrations:rehearsal:test` (11 tests — parsing,
-normalisation, comparison, verdicts, target guards).
+Unit tests: `npm run migrations:rehearsal:test` (12 tests — parsing,
+normalisation, comparison, verdicts, target guards, apply refusals).
 
 ## Limits, stated honestly
 
@@ -224,12 +227,13 @@ Step 3 has the detail; in short:
 | --- | --- |
 | `clean` | The migration is structurally compatible with the clone. Proceed to staging review. |
 | `baseline` | The database already matches. Record the migration as **applied** (`prisma migrate resolve --applied 20260926130650_init`) rather than executing it as a table-creation migration. |
-| `already-applied` | The ledger already has it. Check the rest of the report for drift; nothing to adopt. |
+| `already-applied` | The ledger already records it — verify the ledger **and** that the schema matches the migration, then there is nothing to adopt. |
 | `drift` | Understand every difference first, then generate a reviewed delta migration. |
 
-**Blocking findings stop the run.** Duplicate rows, orphan rows or `NULL`s that
-would break a new unique index, foreign key or `NOT NULL` mean the migration
-cannot adopt this database as it stands. That is not a reason to edit data: the
+**Blocking or unverified findings stop the run.** Duplicate rows, orphan rows or
+`NULL`s that would break a new unique index, foreign key or `NOT NULL` mean the
+migration cannot adopt this database as it stands — and an `unknown` finding means
+the check never ran, which is not the same as passing. That is not a reason to edit data: the
 next artefact is a reviewed **backfill / remediation plan**, with its own dry run,
 report and approval, applied separately from the migration. The rehearsal tool
 never modifies data, and nothing modifies a non-disposable database without that

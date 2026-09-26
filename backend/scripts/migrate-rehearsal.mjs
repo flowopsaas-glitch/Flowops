@@ -799,6 +799,30 @@ const group = (specs) => {
   return body || '- none';
 };
 
+/**
+ * Whether `--mode apply` may proceed, and if not, why.
+ *
+ * Applying is only ever a rehearsal on a disposable clone, but it still refuses
+ * two things beyond a non-`clean` verdict: a `blocking` finding, which means the
+ * SQL would fail, and an `unknown` finding, which means the check never ran.
+ * Unverified is not the same as safe — see the runbook's decision rules.
+ */
+export function applyRefusal({ verdict, findings = [] }) {
+  if (verdict !== 'clean') return `the verdict is "${verdict}"`;
+  const blocking = findings.filter((finding) => finding.severity === 'blocking');
+  if (blocking.length > 0) {
+    return `${blocking.length} blocking finding(s) must be resolved first`;
+  }
+  const unverifiable = findings.filter((finding) => finding.severity !== 'blocking');
+  if (unverifiable.length > 0) {
+    return (
+      `${unverifiable.length} finding(s) could not be verified — resolve or explain them ` +
+      'before applying'
+    );
+  }
+  return null;
+}
+
 export function renderReport({ target, migrationPath, inventory, comparison, decision, findings, mode }) {
   const { host, database } = target ?? describeTarget('');
   const emptyTarget = inventory.tables.length === 0 && inventory.enums.length === 0;
@@ -972,7 +996,7 @@ async function main(argv) {
         '',
         'Options:',
         '  --url <clone-url>     Connection string of the disposable clone (or REHEARSAL_DATABASE_URL).',
-        '  --mode <mode>         inspect (default, read-only) | apply (writes, and only on a clean clone).',
+        '  --mode <mode>         inspect (default, read-only) | apply (writes, and only on a clean, fully checked clone).',
         '  --migration <path>    Migration to rehearse (default: latest under prisma/migrations).',
         '  --report <file>       Where to write the markdown report (default: rehearsal-report.md).',
         '  --i-have-a-clone      Required for non-local hosts; acknowledges the target is disposable.',
@@ -1044,14 +1068,12 @@ async function main(argv) {
     console.log(report);
 
     if (mode === 'apply') {
-      if (decision.verdict !== 'clean') {
+      const refusal = applyRefusal({ verdict: decision.verdict, findings });
+      if (refusal) {
         console.error(
-          `::error::Not applying: the verdict is "${decision.verdict}". ${decision.summary}`,
+          `::error::Not applying: ${refusal}.` +
+            (decision.verdict === 'clean' ? '' : ` ${decision.summary}`),
         );
-        return 1;
-      }
-      if (findings.some((finding) => finding.severity === 'blocking')) {
-        console.error('::error::Not applying: blocking findings above must be resolved first.');
         return 1;
       }
       console.log('Applying the migration to the clone…');

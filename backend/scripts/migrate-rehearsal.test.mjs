@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applyRefusal,
   assertDisposableTarget,
   compareInventory,
   decide,
@@ -375,5 +376,26 @@ test('refuses anything that is not unmistakably a disposable clone', () => {
   assert.throws(
     () => assertDisposableTarget('postgresql://u:p@db.example.com:5432/flowops_clone'),
     /--i-have-a-clone/,
+  );
+});
+
+test('--mode apply refuses anything unverified, not just blocking findings', () => {
+  assert.equal(applyRefusal({ verdict: 'clean', findings: [] }), null);
+  assert.match(applyRefusal({ verdict: 'baseline', findings: [] }), /verdict/);
+  assert.match(
+    applyRefusal({ verdict: 'clean', findings: [{ severity: 'blocking' }] }),
+    /blocking/,
+  );
+  assert.match(
+    applyRefusal({ verdict: 'clean', findings: [{ severity: 'unknown' }] }),
+    /could not be verified/,
+  );
+  // Blocking wins when both are present: name what will actually fail first.
+  assert.match(
+    applyRefusal({
+      verdict: 'clean',
+      findings: [{ severity: 'unknown' }, { severity: 'blocking' }],
+    }),
+    /blocking/,
   );
 });
