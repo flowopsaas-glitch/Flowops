@@ -80,7 +80,8 @@ node scripts/migrate-rehearsal.mjs --url "$CLONE_URL" --i-have-a-clone --report 
 ```
 
 The full report is written to the file and printed. `--mode inspect` is the
-default and never writes.
+default and never writes. The operator checklist, the exact payload to send
+back, and the decision rules are at the end of this document.
 
 ## Step 3 — read the verdict
 
@@ -184,3 +185,74 @@ normalisation, comparison, verdicts, target guards).
   database.
 - Running it against a real clone is still outstanding; the synthetic runs above
   prove the verdicts and findings, not the clone's actual contents.
+
+## Handover — running this against the real staging clone
+
+The clone is reachable from the operator's network, not from the sandbox where the
+tool was written, so this run belongs to whoever holds the clone.
+
+Rules for the run:
+
+- **Disposable clone only, never production.** The tool refuses any database name
+  or host containing `prod`, and any name without a disposable suffix, but the
+  intent matters more than the guard.
+- **No credentials in chat.** They are not needed for review and are not written
+  into the report. Pass the URL through a variable — `--url "$CLONE_URL"` — so it
+  stays out of shell history and scrollback.
+- **Connect with owner privileges.** With a limited role the safety checks degrade
+  to `unknown`, which the report states rather than hides (Step 0).
+- **Take a backup first**, of anything that is not disposable. The tool never edits
+  data; a later backfill will.
+
+Send back, and nothing else is needed to act on it:
+
+1. the verdict — `clean` / `baseline` / `already-applied` / `drift`;
+2. the report file (`rehearsal-report.md` is git-ignored — attach it, or paste the
+   summary and findings sections);
+3. the target identity: host, database name, and the role used — never the
+   password;
+4. every `blocking` and every `unknown` finding, verbatim;
+5. the command as run, with credentials removed.
+
+The report contains schema object names and row estimates, not row contents.
+
+## Decision rules for the verdict
+
+Step 3 has the detail; in short:
+
+| Verdict | Decision |
+| --- | --- |
+| `clean` | The migration is structurally compatible with the clone. Proceed to staging review. |
+| `baseline` | The database already matches. Record the migration as **applied** (`prisma migrate resolve --applied 20260926130650_init`) rather than executing it as a table-creation migration. |
+| `already-applied` | The ledger already has it. Check the rest of the report for drift; nothing to adopt. |
+| `drift` | Understand every difference first, then generate a reviewed delta migration. |
+
+**Blocking findings stop the run.** Duplicate rows, orphan rows or `NULL`s that
+would break a new unique index, foreign key or `NOT NULL` mean the migration
+cannot adopt this database as it stands. That is not a reason to edit data: the
+next artefact is a reviewed **backfill / remediation plan**, with its own dry run,
+report and approval, applied separately from the migration. The rehearsal tool
+never modifies data, and nothing modifies a non-disposable database without that
+approval.
+
+Remember what this gate does and does not prove. A clean disposable database
+proves the migration can **build** a database. Only the staging-clone run above
+speaks to whether it can safely **adopt** the existing one.
+
+## Exit criteria — what still gates PR #436
+
+PR #436 stays open until all five hold:
+
+1. the staging-clone rehearsal passes;
+2. the baseline-versus-migration decision is documented for that clone;
+3. the remaining database-backed coverage is added — alias uniqueness and
+   resolution; `proposeSolution` / `reviewChange`; automation retries and attempt
+   limits; cross-tenant warehouse reads; cross-tenant Process Control reads;
+   production feature-flag denial against a real database; cascade behaviour on
+   tenant deletion; the current SKU backfill dry run; unknown and duplicate SKU
+   reports;
+4. the backfill strategy is reviewed;
+5. an owner approves the migration path.
+
+Only then is staging deployment considered. Production comes last, on its own
+rehearsal, with every flag still false until the pilot gate passes.
