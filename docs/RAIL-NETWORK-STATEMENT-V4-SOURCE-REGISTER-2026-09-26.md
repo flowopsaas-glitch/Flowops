@@ -99,7 +99,7 @@ Repository statuses verified in the working tree on 2026-09-26 (`backend/src/rai
 | Ch 6; Annexure 21 (Clearinghouse) | RAIL-014 | **partial** — `DeviationStatus` carries `LOGGED` / `AGREED` / `OPEN` / `RESOLVED` / `DISPUTED` and `EscalationStage.REGULATOR_DISPUTE` exists; there is no clearinghouse process or ledger |
 | Ch 6; Annexure 18 (Occurrence Management), Annexure 41 (Occurrence Reporting Procedure) | RAIL-015 | **partial** — deviations carry cause category, responsible party and status; no occurrence register, no external reporting trail |
 | Ch 6 §6.6.1.14; Annexure 39 (Resolve Handshake Disputes) | RAIL-011 / RAIL-014 | **partial** — see §6.1 (ladder) |
-| Ch 6; Annexure 43 (Key Performance Indicators) | RAIL-012 / performance management | **nothing** for rail — no KPI model on the handshake |
+| Ch 6; Annexure 43 (Key Performance Indicators) | RAIL-012 / performance management | **nothing** for rail — no KPI model on the handshake. The workbook's content is captured in §10, unvalidated |
 | Ch 6; Annexure 36 (Emergency Response Plan / Tribunal Process) | RAIL-012 / RAIL-014 | **nothing** |
 | Ch 6; Annexure 35 (Dispute Resolution Process) | RAIL-014 | **nothing** |
 | Ch 7; Annexure 40 (Ancillary Services Catalogue) | not in the supplied mapping | **nothing** |
@@ -242,13 +242,109 @@ escalation (24/48/72/96) · KPI reconciliation.
    `STAKEHOLDER_SOURCE_COPY`.
 3. **RAIL-005 … RAIL-015:** where does that register live?
 4. **Reviewer:** assign one. Validation is independent review, not a self-check — §4 and §5 are
-   transcription, and §2.1 says so.
+   transcription, and §2.1 says so. Approval evidence to record before any Rail requirement is
+   called approved: process owner · independent reviewer · the source-period decision · the
+   unresolved-exception list · approval date · effective period.
 
-## 10. Honest status
+## 10. Source capture — Annexure 43, KPI workbook (sheets 1–3 of 12)
+
+Pasted into the session on 2026-09-26 as text extracted from a workbook named
+`Annexure 43 KPIs (1).xlsx`. The workbook is **not** in this workspace and must not be
+committed; this section is the capture, so the content is not lost between sessions. It
+is **unvalidated**: nobody has yet checked it against the workbook or the annexure, and
+the extract is reported as 12 sheets while 3 arrived.
+
+### 10.1 Framework marked under development / pilot — not measured today
+
+| Category | Measure | Unit | Attribution | Frequency / level |
+| --- | --- | --- | --- | --- |
+| Reliability | Services exiting the network on schedule within a 30-minute tolerance (OTD, SPRINT data) | % of total services | IM + TOC | Quarterly / route |
+| Reliability | Services entering the network on schedule within tolerance (OTA, SPRINT data) | % of total services | IM + TOC | Quarterly / route |
+| Delay attribution | Delay minutes per train — IM causes | minutes/train | IM | Quarterly / route |
+| Delay attribution | Delay minutes per train — TOC causes | minutes/train | TOC | Quarterly / route |
+| Slot modification | Requests to change an allocated slot | count + % accepted | TOC (request) / IM (decision) | Per request / period |
+| Slot modification | Cancellation after IM rejects a modification request | count / % of slots | TOC | Per request / period |
+| IM non-compliance | Failure to honour an allocated slot due to IM fault | % of cancelled slots | IM | Period / train path |
+| IM non-compliance | Failure to meet disclosure / notification obligations | count of breaches | IM | Period / train path |
+| TOC non-usage | Cancellation at least **xx** days before departure | % of cancelled slots | TOC | Per request / period |
+| TOC non-usage | Failure to cancel (no-show) | % of cancelled slots | TOC | Per request / period |
+| IM unit costs | Train control costs | R/track-km | IM | Quarterly / route |
+
+The extract marks parts of this framework as under development (NRP, "next reporting
+phase") or pilot-only and not currently measured.
+
+### 10.2 Framework measured today
+
+| Category | Measure | Unit | Attribution | Frequency / level |
+| --- | --- | --- | --- | --- |
+| Transit speeds | Route scheduled train throughput times — average transit times | hours (values given as HH:MM:SS) | IM + TOC | Annual / train path |
+| Track service quality | Track under temporary speed restriction at period end | km and % of total track | IM | Quarterly / route |
+| Track service quality | Number of speed restrictions at period end | count | IM | Quarterly / route |
+| Track service quality | Number of manual train authorisations at period end | count | IM | Quarterly / route |
+| Track condition | Track quality index | 50th percentile TQI | IM | Quarterly / route |
+| Track condition | Overhead traction quality index | index value | IM | Quarterly / route |
+| Track condition | Traction substation availability | % | IM | Quarterly / route |
+
+### 10.3 Route targets and baselines as extracted — Ore and Manganese
+
+| Route | Measure | Baseline | Target | Comment |
+| --- | --- | --- | --- | --- |
+| Ore (SAZ–SIS, forward) | Transit time | 03:07:00 | 00:43:00 | |
+| Ore (SIS–SAZ, return) | Transit time | 02:15:00 | 23:51:00 | |
+| Ore | Track under temporary speed restriction | 0.025 | 1.6% of network | 100% reduction by end of FY |
+| Ore | Number of speed restrictions | 7 | — | Keep TSRs within 1.6% of STK |
+| Ore | Manual train authorisations | 15,291 | 11,691 | 23% reduction — arithmetic checks out (23.5%) |
+| Ore | Track quality index | 55 | TQI within range | |
+| Ore | Overhead traction quality index | — | — | under development |
+| Ore | Traction substation availability | 1.00 (100%) | 1.00 (100%) | all traction feeder stations on-load |
+| Manganese (HTZ–PE, forward) | Transit time | 09:45:00 | 08:00:00 | |
+| Manganese (PE–HTZ, return) | Transit time | 21:00:00 | 17:16:00 | |
+| Manganese | Track under temporary speed restriction | 0.017 | 1.6% of network | 100% reduction by end of FY |
+| Manganese | Number of speed restrictions | 19 | — | Keep TSRs within 1.6% of STK |
+| Manganese | Manual train authorisations | 534,928 | 323,728 | 39% reduction — arithmetic checks out (39.5%) |
+| Manganese | Track quality index | 6.48 | TQI within range | |
+| Manganese | Overhead traction quality index | — | — | under development |
+| Manganese | Traction substation availability | 0.94 (94%) | 0.97 (97%) | 5 units off under the PE depot; restore at least 3 this FY |
+
+### 10.4 Exception candidates from this extract
+
+Logged for independent review. None is resolved here, and none may be turned into a rule
+by guessing.
+
+1. **Unset threshold.** "Cancellation ≥ **xx** days before departure" carries a literal
+   `xx`. V4 §5.2.10.9 has a 72-hour cancellation rule; that may or may not be this one.
+   The number must come from the workbook, not from inference.
+2. **Speed-restriction units.** Ore 0.025 and Manganese 0.017 sit against a target of
+   "1.6% of network" with "100% reduction". If the baselines are also percentages, the
+   target is a large *increase*, not a reduction — so at least one value is in different
+   units or in a different column.
+3. **Speed-restriction counts.** 7 and 19 look small for a network, and the paired
+   comment speaks of a share of STK. Count and proportion appear to be mixed.
+4. **Transit-time representation.** The unit says hours, the values are HH:MM:SS, and one
+   target (23:51:00 against a 02:15:00 baseline) is worse than its own baseline — these
+   read as clock times rather than durations. Not modellable until re-checked.
+5. **Percentages versus unit counts.** Manganese availability 94% → 97% is paired with
+   "5 units off"; the conversion between the two is unstated.
+6. **Data-source systems.** SPRINT is named for reliability; the V4 text also refers to
+   IIMS and TEMS. The FlowOps-versus-IM system-of-record boundary stays open.
+7. **Enforceability.** Part of the framework is explicitly under development or
+   pilot-only, consistent with the V4 position that KPIs become enforceable service
+   levels only once the TER is satisfied.
+
+### 10.5 Still to arrive
+
+Sheets 4–12 of the workbook, and the corridor baselines those sheets presumably carry.
+Nothing in this section may become a requirement, a versioned rule or a `RAIL-0xx`
+identifier before the workbook is re-checked and an independent reviewer signs the
+capture.
+
+## 11. Honest status
 
 Captured, and the parts that touch this repository are now verified against the working tree. Rail
 is **not** implemented and must not be described as complete: the access/capacity/agreement/order/KPI
 half of the chain is unmodelled, the escalation ladder does not match the source, two mandated
 deviation fields are missing, the system-of-record boundary is unresolved, there are no Rail tests,
 and none of it has had independent review, interface testing or pilot evidence. The migration chain
-remains the active workstream.
+remains the active workstream. Annexure 43's KPI framework is captured in §10 — sheets 1–3
+of 12, unvalidated, with seven exception candidates — which is source material, not a
+requirement set.

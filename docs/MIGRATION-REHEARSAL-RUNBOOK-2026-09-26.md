@@ -209,15 +209,36 @@ Rules for the run:
 
 Send back, and nothing else is needed to act on it:
 
-1. the verdict — `clean` / `baseline` / `already-applied` / `drift`;
-2. the report file (`rehearsal-report.md` is git-ignored — attach it, or paste the
-   summary and findings sections);
-3. the target identity: host, database name, and the role used — never the
-   password;
-4. every `blocking` and every `unknown` finding, verbatim;
-5. the command as run, with credentials removed.
+| Field | Notes |
+| --- | --- |
+| Verdict | `clean` / `baseline` / `already-applied` / `drift` |
+| Host | the host only, never credentials |
+| Database name | the disposable clone |
+| Role used | owner — a limited role degrades the safety checks to `unknown` |
+| Clone created from | e.g. "staging backup 2026-09-26 04:00", `pg_dump`/`TEMPLATE`, and where it lives |
+| Command as run | with credentials removed |
+| Report file | `rehearsal-report.md` is git-ignored: attach it, or paste its summary and findings |
+| `blocking` findings | verbatim, with the SQL each one prints |
+| `unknown` findings | verbatim — unverified is not passing |
+| Other findings | anything else the report flagged |
+| Post-apply verification | only if `--mode apply` was used on the clone |
 
-The report contains schema object names and row estimates, not row contents.
+Depending on the verdict, also send:
+
+- **`baseline` or `already-applied`** — the `_prisma_migrations` rows/status for
+  this migration, the schema-match result, the migration name (and its checksum if
+  the ledger is readable), and one sentence confirming the target was not
+  production;
+- **`drift`** — the drift listing in both directions (tables, columns, indexes,
+  foreign keys), any delta SQL generated, and any rows the report says need a
+  backfill. Do not apply a delta migration before it has been reviewed.
+
+**Never send:** passwords, connection strings containing credentials, private
+keys, tokens, a production dump, or customer data.
+
+The report itself contains schema object names and row estimates, not row
+contents — but read it before sharing anyway, since a database name can carry a
+host or client name.
 
 ## Decision rules for the verdict
 
@@ -260,3 +281,11 @@ PR #436 stays open until all five hold:
 
 Only then is staging deployment considered. Production comes last, on its own
 rehearsal, with every flag still false until the pilot gate passes.
+
+### Documents the production gate needs, in one place
+
+Reviewed migration SQL · the baseline-versus-migration decision for the real clone ·
+the staging-clone rehearsal report · backfill dry-run reports (with the review that
+approved each one) · a rollback plan · database-owner approval · security sign-off ·
+pilot results · and the production go/no-go decision. None of these is waived by a
+green CI run.
