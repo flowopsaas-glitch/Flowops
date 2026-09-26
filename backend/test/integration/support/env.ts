@@ -9,6 +9,27 @@
  */
 
 const ALLOWED_DB_SUFFIXES = ['_test', '_ci', '_ephemeral', '_shadow'];
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
+
+/**
+ * Reduce a host (and optional port) to its name: `localhost:5432` → `localhost`,
+ * `[::1]:5432` → `::1`, `/var/run/postgresql` → itself, bare IPv6 untouched.
+ *
+ * Without this, a perfectly ordinary CI URL —
+ * `postgresql://user:pass@localhost:5432/flowops_test` — was refused as
+ * "non-local host localhost:5432", failing every test in the suite.
+ */
+function hostName(host: string): string {
+  if (host.startsWith('/')) return host; // unix socket directory
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']');
+    return end === -1 ? host : host.slice(1, end);
+  }
+  const first = host.indexOf(':');
+  const last = host.lastIndexOf(':');
+  if (first !== -1 && first === last) return host.slice(0, last); // name:port
+  return host; // bare IPv6 literal or plain name
+}
 
 export function resolveIntegrationDatabaseUrl(): string {
   const url = process.env.INTEGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -31,10 +52,10 @@ export function resolveIntegrationDatabaseUrl(): string {
 
   const query = new URLSearchParams(match.groups.query ?? '');
   const dbName = decodeURIComponent(match.groups.db || '');
-  const host = query.get('host') || match.groups.hostport || '';
+  const host = hostName(query.get('host') || match.groups.hostport || '');
   const isLocal =
     host === '' ||
-    ['localhost', '127.0.0.1', '::1'].includes(host) ||
+    LOCAL_HOSTS.includes(host) ||
     host.startsWith('/') ||
     host.endsWith('.local');
 
