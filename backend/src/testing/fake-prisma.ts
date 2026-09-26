@@ -133,9 +133,13 @@ export class FakePrisma {
 
   // ── Prisma surface ───────────────────────────────────────────────────────
 
-  private model(name: string) {
-    const table = this.tables[name] ?? (this.tables[name] = []);
-    const self = this;
+  /**
+   * `self` is passed in rather than aliased with `const self = this` (which the
+   * lint rule forbids) because the table closures below are object methods, not
+   * arrow functions, so they cannot see the class instance through `this`.
+   */
+  private modelFor(name: string, self: FakePrisma) {
+    const table = self.tables[name] ?? (self.tables[name] = []);
 
     const matches = (row: Row, where: any): boolean => matchesWhere(row, where);
 
@@ -235,55 +239,55 @@ export class FakePrisma {
   }
 
   get processDefinition() {
-    return this.model('processDefinition');
+    return this.modelFor('processDefinition', this);
   }
   get processVersion() {
-    return this.model('processVersion');
+    return this.modelFor('processVersion', this);
   }
   get processStepDefinition() {
-    return this.model('processStepDefinition');
+    return this.modelFor('processStepDefinition', this);
   }
   get processAutomationRule() {
-    return this.model('processAutomationRule');
+    return this.modelFor('processAutomationRule', this);
   }
   get processInstance() {
-    return this.model('processInstance');
+    return this.modelFor('processInstance', this);
   }
   get processStepInstance() {
-    return this.model('processStepInstance');
+    return this.modelFor('processStepInstance', this);
   }
   get processIncident() {
-    return this.model('processIncident');
+    return this.modelFor('processIncident', this);
   }
   get processSolution() {
-    return this.model('processSolution');
+    return this.modelFor('processSolution', this);
   }
   get processOutcome() {
-    return this.model('processOutcome');
+    return this.modelFor('processOutcome', this);
   }
   get processChangeProposal() {
-    return this.model('processChangeProposal');
+    return this.modelFor('processChangeProposal', this);
   }
   get automationRun() {
-    return this.model('automationRun');
+    return this.modelFor('automationRun', this);
   }
   get processAuditEvent() {
-    return this.model('processAuditEvent');
+    return this.modelFor('processAuditEvent', this);
   }
   get product() {
-    return this.model('product');
+    return this.modelFor('product', this);
   }
   get productVariant() {
-    return this.model('productVariant');
+    return this.modelFor('productVariant', this);
   }
   get productAlias() {
-    return this.model('productAlias');
+    return this.modelFor('productAlias', this);
   }
   get masterDataAuditEvent() {
-    return this.model('masterDataAuditEvent');
+    return this.modelFor('masterDataAuditEvent', this);
   }
   get goodsReceipt() {
-    return this.model('goodsReceipt');
+    return this.modelFor('goodsReceipt', this);
   }
 
   private transactionQueue: Promise<void> = Promise.resolve();

@@ -141,7 +141,7 @@ export class ProcessControlService {
   async getProcessBook(companyId: string) {
     this.assertEnabled();
 
-    const [definitions, instanceStats, recentIncidents, recentOutcomes] = await Promise.all([
+    const [definitions, instanceStats] = await Promise.all([
       this.prisma.processDefinition.findMany({
         where: { companyId },
         orderBy: { code: 'asc' },
@@ -157,17 +157,6 @@ export class ProcessControlService {
         by: ['definitionId', 'status'],
         where: { companyId },
         _count: { _all: true },
-      }),
-      this.prisma.processIncident.findMany({
-        where: { companyId },
-        orderBy: { detectedAt: 'desc' },
-        take: 20,
-        include: { instance: { select: { businessKey: true, definitionId: true } } },
-      }),
-      this.prisma.processOutcome.findMany({
-        where: { companyId },
-        orderBy: { completedAt: 'desc' },
-        take: 20,
       }),
     ]);
 

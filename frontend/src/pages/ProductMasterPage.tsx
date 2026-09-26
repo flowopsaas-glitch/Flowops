@@ -281,12 +281,16 @@ export default function ProductMasterPage() {
               run(
                 'create-variant',
                 async () => {
-                  let attributes: Record<string, unknown> = {};
-                  try {
-                    attributes = JSON.parse(variantForm.attributes || '{}');
-                  } catch {
-                    throw new Error('Attributes must be valid JSON, e.g. {"colour":"Red"}');
-                  }
+                  // Parsed inline so a malformed payload fails before any request
+                  // is sent, with a message the operator can act on.
+                  const attributes = (() => {
+                    try {
+                      return JSON.parse(variantForm.attributes || '{}') as Record<string, unknown>;
+                    } catch {
+                      throw new Error('Attributes must be valid JSON, e.g. {"colour":"Red"}');
+                    }
+                  })();
+
                   await productMasterApi.createVariant(variantForm.productId, {
                     code: variantForm.code,
                     name: variantForm.name,
