@@ -208,12 +208,12 @@ entitlement; both render an explicit "switched off" state when the flags are off
 | Area | State |
 | --- | --- |
 | Charter / design | **Substantially progressed** (this document) |
-| Prisma schema | **Validated** both offline (WASM validator) and by the real Prisma toolchain in CI, where client generation, backend build, unit tests and E2E tests all pass. **No migration has been created or applied.** |
+| Prisma schema | **Validated** both offline (WASM validator) and by the real Prisma toolchain in CI, where client generation, backend build, unit tests and E2E tests all pass. 133 models / 72 enums; the reviewed initial migration reconstructs it exactly (CI drift guard). |
 | Backend modules | **Implemented, non-production** — builds clean; 148 tests across 6 suites (pure policy + service-level against an in-memory Prisma double) |
 | Goods-receipt bridge | **Implemented, non-production, flags off** — not yet exercised against a live warehouse |
 | Frontend pages | **Implemented** — type-check, build and unit tests pass |
-| Database-backed integration tests | **Run and passing** — 34 tests, 3 suites, against real PostgreSQL (`npm run test:integration`); wired into CI on the native engine, runnable locally on the wasm engine. Coverage gaps are listed in the handoff doc §6.3b. |
-| Migration | **Not created, not applied** — deliberately deferred until generated against a disposable database |
+| Database-backed integration tests | **Run and passing** — 43 tests, 4 suites, against real PostgreSQL (`npm run test:integration`); wired into CI on the native engine, runnable locally on the wasm engine, and run against the migrated database rather than a `db push`ed one. Coverage gaps are listed in the handoff doc §6.3b. |
+| Migration | **Created, reviewed, rehearsed — not applied to any live database.** `20260926130650_init` comes from the pinned Prisma 5.22 toolchain in CI; `npm run migrations:review` classifies all 584 statements (no destructive operations, 133 models ↔ 133 tables); applied to a clean disposable database and the suite re-run against it. `migrations:verify` fails CI while the directory is empty, and a drift guard fails if migrations and `schema.prisma` disagree. |
 | Production readiness | **Not achieved** |
 
 ---

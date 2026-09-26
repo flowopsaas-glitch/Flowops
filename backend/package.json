@@ -20,7 +20,10 @@
     "test:cov": "jest --coverage",
     "test:e2e": "if [ -f test/jest-e2e.json ]; then jest --config ./test/jest-e2e.json; else echo 'No backend E2E suite configured; skipping.'; fi",
     "schema:validate:offline": "node scripts/prisma-validate-offline.mjs",
-    "db:ephemeral": "node scripts/ephemeral-db.mjs"
+    "db:ephemeral": "node scripts/ephemeral-db.mjs",
+    "migrations:verify": "node scripts/verify-migrations.mjs",
+    "migrations:review": "node scripts/review-migration.mjs",
+    "migrations:test": "node --test scripts/migrations.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.540.0",

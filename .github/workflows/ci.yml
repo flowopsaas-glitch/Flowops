@@ -186,8 +186,49 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      # An empty prisma/migrations makes `migrate deploy` exit 0 having done
+      # nothing, so a job that is supposed to prepare a database reports success
+      # while nothing is migrated. Refuse to run at all in that state.
+      - name: Verify migrations exist
+        run: npm run migrations:verify
+
       - name: Run migrations
         run: npx prisma migrate deploy || npx prisma migrate dev
+
+      # The integration database is now prepared by the migrations above. This
+      # guard proves the migrations really do reconstruct prisma/schema.prisma,
+      # so a missing or incomplete migration cannot hide behind the test suite.
+      - name: Verify migrations match the schema (drift guard)
+        shell: bash
+        run: |
+          SHADOW_URL="${DATABASE_URL%/*}/flowops_shadow_test"
+          node -e "
+            const { Client } = require('pg');
+            const url = new URL(process.env.DATABASE_URL);
+            url.pathname = '/postgres';
+            const admin = new Client({ connectionString: url.toString() });
+            admin
+              .connect()
+              .then(() => admin.query('DROP DATABASE IF EXISTS flowops_shadow_test'))
+              .then(() => admin.query('CREATE DATABASE flowops_shadow_test'))
+              .then(() => admin.end())
+              .catch((error) => {
+                console.error('Could not create the shadow database:', error.message);
+                process.exit(1);
+              });
+          "
+          set +e
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_URL" \
+            --exit-code
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Migration drift guard failed (exit $status). Either prisma/migrations no longer reconstruct prisma/schema.prisma — run 'npx prisma migrate dev' against a disposable database and commit the migration it generates — or the guard itself could not run (shadow database $SHADOW_URL)."
+            exit 1
+          fi
 
       - name: Lint
         run: npm run lint --if-present
@@ -219,14 +260,12 @@ jobs:
       - name: E2E tests
         run: npm run test:e2e --if-present
 
-      # The database-backed integration suite. It needs a real schema, so the
-      # schema is pushed onto the (ephemeral, CI-only) postgres service first —
-      # `db push` against a throwaway database, never against a real one.
-      # These tests are what prove row locks, unique-constraint races and
-      # cascade behaviour that the in-memory unit-test double cannot.
-      - name: Prepare integration database
-        run: npx prisma db push --skip-generate --accept-data-loss
-
+      # The database-backed integration suite runs against the database the
+      # migrations above built — no `db push`, so an incomplete migration fails
+      # the tests instead of being silently repaired. These tests are what prove
+      # row locks, unique-constraint races and cascade behaviour that the
+      # in-memory unit-test double cannot.
+      #
       # Job logs and artifacts live on blob storage that is not reachable from
       # every network this project is worked from, but check-run annotations
       # are reachable through the API. So a failing run explains itself twice:
