@@ -23,7 +23,9 @@
     "db:ephemeral": "node scripts/ephemeral-db.mjs",
     "migrations:verify": "node scripts/verify-migrations.mjs",
     "migrations:review": "node scripts/review-migration.mjs",
-    "migrations:test": "node --test scripts/migrations.test.mjs"
+    "migrations:test": "node --test scripts/migrations.test.mjs",
+    "migrations:rehearsal:test": "node --test scripts/migrate-rehearsal.test.mjs",
+    "migrations:rehearse": "node scripts/migrate-rehearsal.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.540.0",

@@ -241,6 +241,14 @@ require the database-backed suite in the charter's gate list.
 3. ~~Rehearse the migration~~ — **done**: applied to a clean disposable database with `psql`
    (133 tables, 72 enums, 1.0 s) and the whole suite re-run against that database. CI does the same
    rehearsal through `prisma migrate deploy` on its service database.
+   The other half of the rehearsal — what the migration does to a database that **already holds
+   data** — now has a tool: `backend/scripts/migrate-rehearsal.mjs`. It is read-only by default,
+   refuses any target that is not unmistakably a disposable clone, and reports whether the migration
+   can simply be applied, must be marked as an already-applied baseline, or needs a data-preserving
+   delta — plus whether duplicate rows, orphan rows or NULLs would block the constraints it adds.
+   It is validated against synthetic clones (see [the runbook](MIGRATION-REHEARSAL-RUNBOOK-2026-09-26.md)).
+   **Running it against a clone of staging is the next outstanding step**, and it is the operator's
+   to run: no staging credentials are available here.
 4. **Backfill scripts are still outstanding for a database that already holds data.** They are not
    needed to create a schema (this migration is initial, and every environment it has been rehearsed
    on was empty), but before any production rollout: link
