@@ -15,6 +15,8 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:process-control": "jest src/process-control src/product-master src/warehouse-management",
+    "schema:validate:offline": "node scripts/prisma-validate-offline.mjs",
     "test:cov": "jest --coverage",
     "test:e2e": "if [ -f test/jest-e2e.json ]; then jest --config ./test/jest-e2e.json; else echo 'No backend E2E suite configured; skipping.'; fi"
   },
@@ -59,6 +61,7 @@
     "@nestjs/cli": "^10.3.2",
     "@nestjs/schematics": "^10.1.1",
     "@nestjs/testing": "^10.3.0",
+    "@prisma/prisma-schema-wasm": "5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2",
     "@types/bcrypt": "^5.0.2",
     "@types/compression": "^1.7.5",
     "@types/cookie-parser": "^1.4.7",

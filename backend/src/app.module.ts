@@ -71,7 +71,9 @@ import { CustomerPortalModule } from './customer-portal/customer-portal.module';
 import { LogisticsAnalyticsModule } from './logistics-analytics/logistics-analytics.module';
 import { CommercialAnalyticsModule } from './commercial-analytics/commercial-analytics.module';
 import { OtpModule } from './otp/otp.module';
-import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module';
+import { WarehouseManagementModule } from './warehouse-management/warehouse-management.module'
+import { ProcessControlModule } from './process-control/process-control.module'
+import { ProductMasterModule } from './product-master/product-master.module';
 import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence.module';
 import { FleetMaintenanceModule } from './fleet-maintenance/fleet-maintenance.module';
 import { DriverSafetyModule } from './driver-safety/driver-safety.module';
@@ -165,6 +167,8 @@ import { DispatchModule } from './dispatch/dispatch.module';
     LogisticsAnalyticsModule,
     CommercialAnalyticsModule,
     WarehouseManagementModule,
+    ProcessControlModule,
+    ProductMasterModule,
     FleetIntelligenceModule,
     FleetMaintenanceModule,
     DriverSafetyModule,

@@ -1,7 +1,8 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
+import { GoodsReceiptProcessBridge } from './goods-receipt-process.bridge';
 
 @Injectable()
 export class WarehouseManagementService {
@@ -10,6 +11,10 @@ export class WarehouseManagementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    // Optional so the WMS keeps working in any context that constructs this
+    // service without the Process Control bridge (and because the bridge is
+    // inert unless its feature flags are set).
+    @Optional() private readonly receiptBridge?: GoodsReceiptProcessBridge,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -191,7 +196,7 @@ export class WarehouseManagementService {
     const count = await this.prisma.goodsReceipt.count({ where: { companyId } });
     const receiptNumber = `GR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
 
-    return this.prisma.goodsReceipt.create({
+    const receipt = await this.prisma.goodsReceipt.create({
       data: {
         companyId, warehouseId, receiptNumber,
         poNumber: dto.poNumber, supplierName: dto.supplierName,
@@ -202,6 +207,19 @@ export class WarehouseManagementService {
       },
       include: { lines: true },
     });
+
+    // Process Control bridge — off unless PROCESS_CONTROL_ENABLED and
+    // PROCESS_CONTROL_WMS_RECEIPT_ENABLED are both true. Starting the standard
+    // must never be able to fail a goods receipt, so it is fire-and-logged.
+    if (this.receiptBridge?.isEnabled()) {
+      await this.receiptBridge.onReceiptCreated(
+        companyId,
+        receipt,
+        actorFrom(dto),
+      );
+    }
+
+    return receipt;
   }
 
   async receiveGoods(id: string, companyId: string, dto: {
@@ -247,6 +265,45 @@ export class WarehouseManagementService {
       }
     }
 
+    // Process Control bridge: reconcile the receipt against the standard and
+    // raise the exceptions it finds. While the bridge is enforcing, a receipt
+    // with blocking exceptions is refused here — before the WMS calls it done.
+    let bridgeResult: any = null;
+    if (this.receiptBridge?.isEnabled()) {
+      // Resolve each received SKU against governed master data. Unknown codes
+      // become reconcile exceptions instead of being booked silently.
+      const knownSkus = new Set(
+        (
+          await this.prisma.productVariant.findMany({
+            where: { companyId, sku: { in: dto.lines.map((l: any) => l.sku) } },
+            select: { sku: true },
+          })
+        )
+          .map((v) => v.sku)
+          .filter((sku): sku is string => !!sku),
+      );
+
+      bridgeResult = await this.receiptBridge.onGoodsReceived(
+        companyId,
+        { id, receiptNumber: gr.receiptNumber, expectedQty: gr.expectedQty, receivedQty: totalReceived },
+        dto.lines.map((line: any) => {
+          const grLine = gr.lines.find((l) => l.sku === line.sku);
+          return {
+            sku: line.sku,
+            expectedQty: grLine?.expectedQty ?? null,
+            receivedQty: line.receivedQty,
+            damagedQty: line.damagedQty ?? 0,
+            putAwayBinId: line.putAwayBinId ?? null,
+            // Only asserted when the tenant actually governs SKUs in master
+            // data; a tenant without master data must not be blocked by it.
+            knownVariant: knownSkus.size === 0 ? undefined : knownSkus.has(line.sku),
+          };
+        }),
+        actorFrom(dto),
+      );
+      this.receiptBridge.assertCompletionAllowed(bridgeResult.blockDecision);
+    }
+
     await this.prisma.goodsReceipt.update({
       where: { id },
       data: {
@@ -257,7 +314,18 @@ export class WarehouseManagementService {
       },
     });
 
-    return { receiptNumber: gr.receiptNumber, received: totalReceived, damaged: totalDamaged };
+    return {
+      receiptNumber: gr.receiptNumber,
+      received: totalReceived,
+      damaged: totalDamaged,
+      processControl: bridgeResult
+        ? {
+            instanceId: bridgeResult.instanceId,
+            outcome: bridgeResult.reconciliation?.outcome,
+            incidents: bridgeResult.reconciliation?.incidents?.map((i: any) => i.code) ?? [],
+          }
+        : undefined,
+    };
   }
 
   private async putAwayStock(companyId: string, dto: {
@@ -1181,4 +1249,18 @@ Return ONLY valid JSON:
 
     return result;
   }
+}
+
+/**
+ * Minimal actor context for the Process Control bridge. The WMS DTOs carry the
+ * acting user as `receivedBy`/`performedBy` rather than a JWT payload, so the
+ * bridge is given the same identifiers the WMS already records.
+ */
+function actorFrom(dto: any) {
+  return {
+    userId: dto?.receivedBy ?? dto?.performedBy ?? null,
+    name: dto?.receivedByName ?? dto?.receivedBy ?? null,
+    role: dto?.actorRole ?? 'WAREHOUSE',
+    permissions: null,
+  };
 }
