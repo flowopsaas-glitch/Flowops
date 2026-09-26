@@ -7,6 +7,13 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > page count, the annexure list and the escalation ladder as unverified. Revision 2 is checked
 > against the primary text supplied in conversation on 2026-09-26. Corrections are recorded in
 > §6.1 and §5 rather than silently folded in.
+>
+> **Revision 3 — 2026-09-26.** The project owner attests that **all material supplied this session is
+> valid Transnet source** — the Volume 4 text, its annexure list, and the Annexure 43 KPI extract.
+> That attestation is recorded in §1, provenance now reads as established rather than presumed, and
+> §2.1, §5 and §10.4 are reframed accordingly. Revision 2 called the KPI capture "unvalidated"; that
+> was the wrong word for provenance and the right instinct about transcription, and the distinction is
+> now stated explicitly instead of blurred.
 
 Agreed order (unchanged): finish the migration chain first — staging-clone rehearsal → remaining
 database-backed coverage → backfill dry-runs → pilot approval — and only then start the Rail
@@ -33,6 +40,8 @@ the Rail requirements baseline.
 | Pages | **203 — confirmed** (the supplied text runs "Page 2 of 203" … "Page 203 of 203") |
 | Effective operating periods | 2026/27 and 2027/28 timetable periods (§1.7) |
 | State | `RECEIVED / VALIDATION_REQUIRED` |
+| Provenance attestation | **Attested.** The project owner supplied this content directly on 2026-09-26 and attests that it is valid Transnet source: the Volume 4 text and its annexure list, and the Annexure 43 KPI extract from the workbook `Annexure 43 KPIs (1).xlsx`. Retrieval provenance is therefore recorded as an owner attestation rather than an assumption. |
+| Transcription fidelity | **Unverified, and unverifiable from here.** Every item arrived as text pasted into a chat session, which flattens spreadsheet columns and can elide values. This is a limit of the channel, **not** a doubt about the source: the reviewer reconciles values against the binary/workbook, and where a value still cannot be read unambiguously it is logged in §5 or §10.4 rather than guessed. |
 | Classification | **`PUBLIC_OFFICIAL_SOURCE_COPY` (recommended)** — §1.7 records that the statement is published by the TRIM on its website, free of charge. Downgrade to `STAKEHOLDER_SOURCE_COPY` if this copy did not come from that route. Confirm before recording. |
 | SHA-256 | **PENDING** — the binary is not in this workspace |
 | Filename | **PENDING** |
@@ -64,17 +73,24 @@ Two provenance points follow directly from the sections cited elsewhere in this 
 
 ### 2.1 Content confidence
 
-The full text was supplied as conversation text, not as a file. It is therefore **not retained in
-this workspace and cannot be re-read from the repository**. Consequences, stated plainly:
+Provenance is settled: the owner attests this is valid Transnet source (§1). What differs between the
+sections below is **how the content is held**, and that is worth keeping straight:
 
-- §3 (coverage map) and §6 (reconciliation to code) are **code-verified** — they were checked
-  against the working tree, and `EscalationStage` / `DeviationStatus` / `DeviationCategory` were
-  read directly from `backend/prisma/schema.prisma`.
-- §4 (rules) and §5 (exceptions) are a **first-pass transcription of the supplied text**. They are
-  useful as a checklist for validation. They are **not validated** and must not be quoted as
-  source-of-truth until the reviewer has reproduced each value against the binary — that is
-  precisely the `VALIDATION_REQUIRED` step, and it is why the register is in that state rather than
-  `VALIDATED`.
+- §3 (coverage map) and §6 (reconciliation to code) are **code-verified** — checked against the
+  working tree, with `EscalationStage` / `DeviationStatus` / `DeviationCategory` read directly from
+  `backend/prisma/schema.prisma`. Authoritative about this repository; they assert nothing about
+  Transnet beyond what §4–§5 record.
+- §4 (rules) and §5 (source decisions) are read from the attested text. They are the working basis
+  for the workstream. The residual caveat is narrow and specific: where a value arrived flattened by
+  chat — columns run together, a token like `xx` where a number belongs — the reviewer re-reads it
+  against the binary before it becomes a machine-readable rule. That is editing care, not
+  authenticity.
+- Nothing here is retained as a file, so **the register is what survives**: the source cannot be
+  re-read from this repository, only from controlled storage. Bulk text and the workbook stay out of
+  Git.
+- Independent review is still outstanding. The register stays `RECEIVED / VALIDATION_REQUIRED`
+  until the binary, its hash and URL, and a reviewer's sign-off are recorded — which is the owner's
+  own gate, not a hedge on the content.
 
 ## 3. Coverage map — source areas against this repository
 
@@ -99,7 +115,7 @@ Repository statuses verified in the working tree on 2026-09-26 (`backend/src/rai
 | Ch 6; Annexure 21 (Clearinghouse) | RAIL-014 | **partial** — `DeviationStatus` carries `LOGGED` / `AGREED` / `OPEN` / `RESOLVED` / `DISPUTED` and `EscalationStage.REGULATOR_DISPUTE` exists; there is no clearinghouse process or ledger |
 | Ch 6; Annexure 18 (Occurrence Management), Annexure 41 (Occurrence Reporting Procedure) | RAIL-015 | **partial** — deviations carry cause category, responsible party and status; no occurrence register, no external reporting trail |
 | Ch 6 §6.6.1.14; Annexure 39 (Resolve Handshake Disputes) | RAIL-011 / RAIL-014 | **partial** — see §6.1 (ladder) |
-| Ch 6; Annexure 43 (Key Performance Indicators) | RAIL-012 / performance management | **nothing** for rail — no KPI model on the handshake. The workbook's content is captured in §10, unvalidated |
+| Ch 6; Annexure 43 (Key Performance Indicators) | RAIL-012 / performance management | **nothing** for rail — no KPI model on the handshake. The workbook's content is captured in §10, attested source |
 | Ch 6; Annexure 36 (Emergency Response Plan / Tribunal Process) | RAIL-012 / RAIL-014 | **nothing** |
 | Ch 6; Annexure 35 (Dispute Resolution Process) | RAIL-014 | **nothing** |
 | Ch 7; Annexure 40 (Ancillary Services Catalogue) | not in the supplied mapping | **nothing** |
@@ -138,8 +154,9 @@ never a hard-coded permanent assumption.
 
 ## 5. Source exceptions for independent review (`RailSourceException`)
 
-Do not silently normalise any of these. Each entry must be reproduced against the binary during
-validation before it is recorded as a confirmed source exception (see §2.1).
+Do not silently normalise any of these. They are points where the source itself, or the act of
+passing it through chat, leaves something a machine-readable rule cannot resolve without a decision.
+They are **not** doubts about authenticity — that is attested in §1.
 
 | # | Exception | Why it needs review |
 | --- | --- | --- |
@@ -150,12 +167,12 @@ validation before it is recorded as a confirmed source exception (see §2.1).
 | 5 | System-of-record boundary: the statement refers to IM-side systems (e.g. IIMS) alongside cancellations recorded in more than one place | A FlowOps-vs-IM system boundary is a design decision, not an assumption |
 | 6 | Glossary/defined-term quality: truncated definitions and place-name spelling variants | Terminology extraction needs human review |
 
-**Items observed during the first pass that still need reproduction before they can be logged:**
-apparent inconsistency in a crossing-loop wagon/train-length figure between two corridors; two
-different maximum planned-occupation durations (12 hours vs 13 hours) for the same obligation;
-corridor shutdown text appearing under the wrong corridor heading; a mislabelled table and a
-repeated section heading in the corridor chapters; duplicate section numbers and at least one
-broken cross-reference; the published annexure list not covering every annexure referenced in the
+**Items from the first reading that still need a second pass against the binary before they can be
+logged as confirmed source exceptions:** an apparent crossing-loop wagon/train-length inconsistency
+between two corridors; two different maximum planned-occupation durations (12 hours vs 13 hours) for
+the same obligation; corridor shutdown text appearing under the wrong corridor heading; a mislabelled
+table and a repeated section heading in the corridor chapters; duplicate section numbers and at least
+one broken cross-reference; the published annexure list not covering every annexure referenced in the
 body; and a set of annexures withheld from public download pending signature of the NDA.
 
 ## 6. Verified gaps between the source and the current implementation
@@ -253,11 +270,17 @@ escalation (24/48/72/96) · KPI reconciliation.
 
 ## 10. Source capture — Annexure 43, KPI workbook (sheets 1–3 of 12)
 
-Pasted into the session on 2026-09-26 as text extracted from a workbook named
-`Annexure 43 KPIs (1).xlsx`. The workbook is **not** in this workspace and must not be
-committed; this section is the capture, so the content is not lost between sessions. It
-is **unvalidated**: nobody has yet checked it against the workbook or the annexure, and
-the extract is reported as 12 sheets while 3 arrived.
+Supplied directly by the project owner on 2026-09-26 as an extract from the Transnet workbook
+`Annexure 43 KPIs (1).xlsx`, and attested as valid Transnet source (§1). The workbook is **not** in
+this workspace and must not be committed; this section is the capture, so the content is not lost
+between sessions.
+
+Two caveats, both about handling rather than about the source. First, the extract as reported covers
+12 sheets and three arrived here — sheets 4–12 are outstanding. Second, a spreadsheet pasted through
+chat loses its column boundaries (the raw text shows this plainly: "Forward: SAZ-SIS03:07:0000:43:00"
+is four cells run together), so a value read out of it may be a column shift rather than a value the
+workbook holds. The items in §10.4 are that kind of question — how to read and encode what the
+workbook says — not a challenge to whether Transnet published it.
 
 ### 10.1 Framework marked under development / pilot — not measured today
 
@@ -311,14 +334,17 @@ phase") or pilot-only and not currently measured.
 | Manganese | Overhead traction quality index | — | — | under development |
 | Manganese | Traction substation availability | 0.94 (94%) | 0.97 (97%) | 5 units off under the PE depot; restore at least 3 this FY |
 
-### 10.4 Exception candidates from this extract
+### 10.4 Reading and encoding questions raised by the extract
 
-Logged for independent review. None is resolved here, and none may be turned into a rule
-by guessing.
+Raised for the reviewer to settle against the workbook. None is resolved here, and none may be turned
+into a rule by guessing. Most are probably artefacts of flattened columns or elided cells; the point is
+that a rule cannot be written either way until someone reads the workbook. Sources are attested valid
+(§1) — this list is not a challenge to that.
 
-1. **Unset threshold.** "Cancellation ≥ **xx** days before departure" carries a literal
-   `xx`. V4 §5.2.10.9 has a 72-hour cancellation rule; that may or may not be this one.
-   The number must come from the workbook, not from inference.
+1. **Unread threshold.** "Cancellation ≥ **xx** days before departure" arrived with `xx` where a
+   number belongs — either the cell was elided in transit or the workbook shows it that way. V4
+   §5.2.10.9 has a 72-hour cancellation rule and this may be the same measure, but the number comes
+   from the workbook, not from inference.
 2. **Speed-restriction units.** Ore 0.025 and Manganese 0.017 sit against a target of
    "1.6% of network" with "100% reduction". If the baselines are also percentages, the
    target is a large *increase*, not a reduction — so at least one value is in different
@@ -339,9 +365,11 @@ by guessing.
 ### 10.5 Still to arrive
 
 Sheets 4–12 of the workbook, and the corridor baselines those sheets presumably carry.
-Nothing in this section may become a requirement, a versioned rule or a `RAIL-0xx`
-identifier before the workbook is re-checked and an independent reviewer signs the
-capture.
+
+This section is the retained basis of the KPI track, and it may become requirements and versioned
+rules once the reading questions in §10.4 are settled against the workbook and a reviewer signs the
+capture. What it may **not** do is acquire a `RAIL-0xx` identifier and then be quoted as though a
+number had been read out of a spreadsheet that is not in this repository.
 
 ## 11. Honest status
 
@@ -350,6 +378,6 @@ is **not** implemented and must not be described as complete: the access/capacit
 half of the chain is unmodelled, the escalation ladder does not match the source, two mandated
 deviation fields are missing, the system-of-record boundary is unresolved, there are no Rail tests,
 and none of it has had independent review, interface testing or pilot evidence. The migration chain
-remains the active workstream. Annexure 43's KPI framework is captured in §10 — sheets 1–3
-of 12, unvalidated, with seven exception candidates — which is source material, not a
-requirement set.
+remains the active workstream. Annexure 43's KPI framework is captured in §10 as attested Transnet
+source — sheets 1–3 of 12, with seven reading questions to settle against the workbook — which is
+source material awaiting independent review, not a requirement set.
