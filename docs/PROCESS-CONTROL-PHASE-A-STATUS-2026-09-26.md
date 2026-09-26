@@ -347,6 +347,11 @@ Created 2026-09-26 and reviewed with the tooling added alongside it. Provenance 
 | Applied to a clean disposable database? | Yes: `psql -f` on an empty `flowops_migrate_test` → 133 tables, 72 enums in 1.0 s, then the full 43-test suite against that database. CI also runs `prisma migrate deploy` against its service database on every push. |
 | Can it be forgotten/skipped? | No: `npm run migrations:verify` fails the Backend job while `prisma/migrations` is empty, and the integration suite now runs against the **migrated** database — the `db push` step that used to paper over an incomplete migration is gone. |
 
+CI evidence (run `36244383527`, commit `54b81394`): "Verify migrations exist" ✅, "Run
+migrations" (`prisma migrate deploy` against a clean service database) ✅, "Verify migrations match
+the schema (drift guard)" ✅, "Integration tests (PostgreSQL)" against the migrated database ✅,
+"Schema SQL (review artifact)" ✅ — all ten jobs green.
+
 One repository-level fix was required to make any of this possible: `.gitignore` ignored `*.sql`,
 which would have silently excluded `migration.sql` from every commit — migrations are now explicitly
 un-ignored (`!backend/prisma/migrations/**/*.sql`), and `verify-migrations` fails when the directory
