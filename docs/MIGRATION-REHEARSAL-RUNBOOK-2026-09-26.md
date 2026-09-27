@@ -87,10 +87,11 @@ back, and the decision rules are at the end of this document.
 
 | Verdict | Meaning | What to do |
 | --- | --- | --- |
-| `clean` | The target holds none of the objects the migration creates. | Apply normally (`prisma migrate deploy`). |
+| `clean` | The target holds none of the objects the migration creates. | Proceed to **staging migration review** — a clean clone is evidence for that review, not authorisation to apply. The migration reaches staging only once the review is done and the path is approved (Exit criteria 2 and 5). |
 | `baseline` | The target already matches the migration exactly (typical of `prisma db push`). | Mark the migration as applied (`prisma migrate resolve --applied 20260926130650_init`), then `prisma migrate deploy` for later migrations. **Do not run the SQL** — every `CREATE` would fail. |
 | `already-applied` | The migration name is present in `_prisma_migrations`. | Verify the ledger and that the schema matches the migration; then nothing to adopt. |
-| `drift` | The target is behind and/or holds objects the migration does not know about. | If the report says *additive*, resolve the baseline and add a reviewed delta migration. Otherwise plan a data-preserving alteration for the objects that differ. |
+| `drift` | The target is behind and/or holds objects the migration does not know about. | A *reviewed* delta migration. If the report says *additive*, resolve the baseline and add that delta. Otherwise plan a data-preserving alteration for the objects that differ. |
+| *any* verdict with a `blocking` or an `unknown` finding | The clone's existing rows contradict the migration, or the check could not be run. | **Stop.** Prepare a remediation and backfill plan; do not apply. This outranks the verdict — a clean structural diff is not a pass while either severity is present. |
 
 The report also lists, in both directions: tables, enums, columns, indexes,
 foreign keys and primary keys, plus everything that differs *in place* (column
@@ -216,7 +217,7 @@ Send back, and nothing else is needed to act on it:
 | Database name | the disposable clone |
 | Role used | owner — a limited role degrades the safety checks to `unknown` |
 | Clone created from | e.g. "staging backup 2026-09-26 04:00", `pg_dump`/`TEMPLATE`, and where it lives |
-| Command as run | with credentials removed |
+| Command with credentials removed | the exact command as run, credentials stripped |
 | Report file | `rehearsal-report.md` is git-ignored: attach it, or paste its summary and findings |
 | `blocking` findings | verbatim, with the SQL each one prints |
 | `unknown` findings | verbatim — unverified is not passing |
