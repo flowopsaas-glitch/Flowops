@@ -720,6 +720,8 @@ The two sources keep their own periods and must not be merged (§11.0): V4 gover
 financial years. What the capacity capture gave the design is an **explainable, independently
 checkable model** — the arithmetic was verified against the source's own formulas rather than taken on
 trust, which is more than transcription. It is not an engine: no capacity computation exists in the
-codebase, no fixture or test exists, the route-to-corridor mapping is unconfirmed, and the RAIL-0xx
-requirement identifiers still do not exist. Calling this a working capacity engine would be the same
+codebase, no fixture or test exists, the route-to-corridor mapping is unconfirmed, and no RAIL-005–RAIL-015
+requirement **definition** or traceability matrix has been authored. The identifiers that appear in
+§3's coverage map are cross-references from the owner's supplied mapping — §3 says so in its own column
+heading — not an authored, reviewed and approved requirement register. Calling this a working capacity engine would be the same
 category of overstatement as calling Rail complete.

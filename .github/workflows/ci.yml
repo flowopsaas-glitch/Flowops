@@ -192,6 +192,17 @@ jobs:
       - name: Verify migrations exist
         run: npm run migrations:verify
 
+      # The two tooling suites below gate the migration: `migrations:test` covers the
+      # verify/review scripts, and `migrations:rehearsal:test` covers the rehearsal tool an
+      # operator runs against a staging clone. Neither needs a database, and until now
+      # neither was run by CI — so a regression in the tooling that decides whether a
+      # migration may be adopted would have been invisible here. This is the gate's own
+      # gate, and it belongs in the same job as the migration it protects.
+      - name: Test the migration tooling (no database required)
+        run: |
+          npm run migrations:test
+          npm run migrations:rehearsal:test
+
       - name: Run migrations
         run: npx prisma migrate deploy || npx prisma migrate dev
 
