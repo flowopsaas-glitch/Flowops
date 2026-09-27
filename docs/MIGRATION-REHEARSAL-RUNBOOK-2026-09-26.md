@@ -224,6 +224,10 @@ Send back, and nothing else is needed to act on it:
 | Other findings | anything else the report flagged |
 | Post-apply verification | only if `--mode apply` was used on the clone |
 
+The owner's checklist names the same fields in short form — **Verdict · Database · Role · Clone source ·
+Redacted command**, plus the findings. Either naming is accepted; where the short form would be
+ambiguous, use the fuller heading from the table so the returned report maps to it without guessing.
+
 Depending on the verdict, also send:
 
 - **`baseline` or `already-applied`** — the `_prisma_migrations` rows/status for

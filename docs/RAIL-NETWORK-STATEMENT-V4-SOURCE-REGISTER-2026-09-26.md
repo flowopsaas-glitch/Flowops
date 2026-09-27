@@ -8,6 +8,13 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > against the primary text supplied in conversation on 2026-09-26. Corrections are recorded in
 > §6.1 and §5 rather than silently folded in.
 >
+> **Revision 8 — 2026-09-27.** The owner reordered the post-rehearsal Rail queue: the formal
+> RAIL-005–RAIL-015 requirement register and traceability matrix comes **first**, followed by
+> independent review, with the metadata, exception-records, fixture, unit-test and route-mapping items
+> queued behind it (§9 item 5). Recorded as a reordering rather than a replacement — the other five are
+> still required, and nothing here is production implementation. The capacity model stays
+> unimplemented and the migration decision still gates all of it.
+>
 > **Revision 7 — 2026-09-27.** The project owner attests that the **capacity source is valid**: the
 > Annexure 33 capacity-statement workbook is now named in §1's provenance attestation, which previously
 > listed only the Volume 4 text, its annexure list and the Annexure 43 KPI extract. This was a real gap —
@@ -298,6 +305,15 @@ escalation (24/48/72/96) · KPI reconciliation.
 5. **Rail work after the staging-clone report is accepted — sequence agreed with the owner.** The
    rehearsal remains the blocker: nothing below starts, and no capacity rule is implemented, until
    that report is accepted (§12; runbook Exit criteria).
+
+   **First, on the owner's later instruction (2026-09-27): the formal RAIL-005–RAIL-015 requirement
+   register and traceability matrix, followed by independent review.** This promotes what was item 6
+   below to the front of the Rail queue, ahead of items 1–5. Authoring is not approval: the register
+   is written as a proposal and then reviewed independently, and identifiers that come from the
+   authoritative Rail register are used as given rather than re-invented here (§9 item 3). Independent
+   review stays a separate step from authoring, whichever sequence is used.
+
+   The remaining five items stay queued **behind** the register and are not dropped:
    1. Store the workbook metadata — hash, owner, effective period (and filename/URL/retrieval date,
       §9 item 1).
    2. Convert the eleven §11.6 exceptions into controlled source-review records.
@@ -307,8 +323,8 @@ escalation (24/48/72/96) · KPI reconciliation.
       · TOC allocations · minimum-spare bottleneck selection · financial-year versioning · the float
       decomposition exceptions.
    5. Confirm the route-to-corridor mapping (§11.4) with an independent reviewer.
-   6. Create the RAIL-005–RAIL-015 requirement identifiers and the traceability matrix.
-   Every figure these steps produce stays bound to its own source period (§11.0).
+   Every figure these steps produce stays bound to its own source period (§11.0). Nothing below is
+   production implementation, and none of it starts before the migration decision is complete.
 
 ## 10. Source capture — Annexure 43, KPI workbook (Transnet)
 
