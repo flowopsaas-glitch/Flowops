@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { BillingService } from '../billing/billing.service';
@@ -195,7 +195,7 @@ export class CompaniesService {
    * as they naturally use the platform.
    */
   async getOnboardingStatus(companyId: string) {
-    const [company, driversCount, waybillsCount, collectionsCount] = await Promise.all([
+    const [company, driversCount, waybillsCount] = await Promise.all([
       this.prisma.company.findUnique({
         where: { id: companyId },
         select: {

@@ -7,8 +7,6 @@ import { AiService } from './ai.service';
 import { AiDiscoveryService } from './ai-discovery.service';
 import { AiDevOpsService } from './ai-devops.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('FlowOps Core & AI Operations')
 @Throttle({ default: { limit: 30, ttl: 60_000 } }) // cap expensive LLM calls per user
@@ -78,7 +76,7 @@ export class AiController {
   // ======================================================
   @Get('whatsapp-threads-mock') // 💡 Patched: Unique endpoint name to prevent collisions with your native WhatsAppController
   
-  async getWhatsAppThreads(@Request() req: any) {
+  async getWhatsAppThreads(@Request() _req: any) {
     return [
       { id: '1', phone: '+27123456789', lastMessage: 'Where is my parcel?', timestamp: new Date() }
     ];
@@ -86,7 +84,7 @@ export class AiController {
 
   @Post('whatsapp-send-mock') // 💡 Patched: Pre-empts collision warnings across active communication gateways
   
-  async sendWhatsApp(@Body() data: { to: string; message: string }) {
+  async sendWhatsApp(@Body() _data: { to: string; message: string }) {
     return { success: true, messageId: 'wa_mock_' + Date.now() };
   }
 

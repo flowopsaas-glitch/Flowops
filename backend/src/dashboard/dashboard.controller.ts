@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -65,7 +65,7 @@ export class DashboardController {
   }
 
   @Post('collections-state-sync/sync/:id')
-  syncOne(@CurrentUser() u: any, @Param('id') id: string) {
+  syncOne(@CurrentUser() u: any, @Param('id') _id: string) {
     return this.svc.bulkSync(u.companyId); // same logic for single
   }
 

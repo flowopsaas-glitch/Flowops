@@ -206,7 +206,6 @@ export class RoutingService {
 
     // Build points array (start + stops)
     const allPoints = start ? [start, ...valid] : [...valid];
-    const startIdx = start ? 0 : -1; // -1 means first stop IS the start
 
     // Get real road distances via OSRM
     const { distances, durations, engine } = await this.getDistanceMatrix(allPoints);
@@ -214,14 +213,12 @@ export class RoutingService {
     // Priority-weighted nearest-neighbour construction
     const remaining = valid.map((_, i) => i);
     const ordered: number[] = [];
-    let currentIdx = start ? 0 : 0; // Index in allPoints
 
     if (!start) {
       // Start from highest-priority stop
       const bestStart = remaining.reduce((best, i) =>
         (valid[i].priority ?? 0) > (valid[best].priority ?? 0) ? i : best, 0);
       ordered.push(remaining.splice(remaining.indexOf(bestStart), 1)[0]);
-      currentIdx = start ? bestStart + 1 : bestStart;
     }
 
     while (remaining.length > 0) {

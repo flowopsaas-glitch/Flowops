@@ -378,7 +378,7 @@ export class ForwardingPdfService {
   }
 
 
-  private zimForm47(doc: PDFKit.PDFDocument, file: any, estimate: any) {
+  private zimForm47(doc: PDFKit.PDFDocument, file: any, _estimate: any) {
     this.africanCustomsDeclaration(doc, file, {
       title: 'ZIMRA Form 47 — Zimbabwe Import Declaration (Draft)',
       authority: 'Zimbabwe Revenue Authority (ZIMRA)',

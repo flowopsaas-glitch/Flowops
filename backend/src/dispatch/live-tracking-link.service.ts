@@ -72,7 +72,7 @@ export class LiveTrackingLinkService {
   async generateLink(
     companyId: string,
     waybillId: string,
-    opts?: { sendSms?: boolean; sendWhatsApp?: boolean },
+    _opts?: { sendSms?: boolean; sendWhatsApp?: boolean },
   ): Promise<{ url: string; token: string; sent: boolean }> {
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, companyId },

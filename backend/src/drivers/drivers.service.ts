@@ -130,7 +130,7 @@ export class DriversService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [drivers, activeCollections, activeShipments, deliveredToday] = await Promise.all([
+    const [drivers, activeCollections, activeShipments] = await Promise.all([
       this.prisma.driver.findMany({
         where: { companyId, isActive: true },
         orderBy: [{ status: 'asc' }, { name: 'asc' }],

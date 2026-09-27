@@ -189,7 +189,7 @@ export class AccountingService {
   }
 
   async voidDebitNote(id: string, companyId: string) {
-    const dn = await this.getDebitNote(id, companyId);
+    await this.getDebitNote(id, companyId); // existence/tenancy check (throws 404)
     return this.prisma.debitNote.update({ where: { id }, data: { status: 'VOID' }, include: { items: true } });
   }
 

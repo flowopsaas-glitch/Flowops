@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
+import { withCompanyId } from '../common/security/tenant.util';
 
 @Injectable()
 export class CommercialAnalyticsService {
@@ -32,8 +33,8 @@ export class CommercialAnalyticsService {
   async updateConfig(companyId: string, dto: any) {
     return this.prisma.commercialConfig.upsert({
       where: { companyId },
-      create: { companyId, ...dto },
-      update: dto,
+      create: withCompanyId(companyId, dto),
+      update: withCompanyId(companyId, dto),
     });
   }
 
@@ -122,13 +123,6 @@ export class CommercialAnalyticsService {
       select: { clientName: true, total: true, status: true, paidAt: true,
         sentAt: true, dueDate: true, items: { select: { waybillId: true } } },
     });
-
-    const waybillsByClient = await this.prisma.waybill.groupBy({
-      by: ['companyId'],
-      where: { companyId, status: 'DELIVERED', createdAt: { gte: start, lt: end } },
-      _count: { _all: true },
-    });
-    const totalDeliveries = waybillsByClient[0]?._count._all || 0;
 
     // Build per-client profitability
     const clientMap: Record<string, any> = {};

@@ -31,7 +31,9 @@ export class WarehouseManagementService {
 
   async createWarehouse(companyId: string, dto: any) {
     return this.prisma.warehouse.create({
-      data: { companyId, ...dto },
+      // withCompanyId strips a client-supplied companyId: the spread used to
+      // come second, so a body could create a warehouse in another tenant.
+      data: withCompanyId(companyId, dto),
     });
   }
 
@@ -811,7 +813,7 @@ Return ONLY valid JSON:
     reason?: string; performedBy?: string;
   }) {
     await this.prisma.stockMovement.create({
-      data: { companyId, ...dto, performedAt: new Date() } as any,
+      data: { ...withCompanyId(companyId, dto), performedAt: new Date() } as any,
     });
   }
 
@@ -1085,7 +1087,7 @@ Return ONLY valid JSON:
   // AI SLOTTING OPTIMIZATION (Place Fast-Movers Near Dispatch)
   // ═══════════════════════════════════════════════════════════════════════
 
-  async aiSlottingOptimization(companyId: string, warehouseId: string) {
+  async aiSlottingOptimization(companyId: string, _warehouseId: string) {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
 
     // Get pick frequency per SKU (last 30 days)

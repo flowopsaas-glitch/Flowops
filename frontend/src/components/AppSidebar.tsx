@@ -20,7 +20,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { base44 } from "@/api/base44Client";
+import { base44 } from "@/api";
 import { clearSession } from "@/lib/session";
 
 const navigation = [

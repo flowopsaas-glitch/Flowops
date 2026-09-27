@@ -1,9 +1,7 @@
-import { Controller, Get, Patch, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Body, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CommercialAnalyticsService } from './commercial-analytics.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { FeatureGuard } from '../billing/feature.guard';
-import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Commercial Analytics')
 @ApiBearerAuth()

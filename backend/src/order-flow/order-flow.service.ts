@@ -173,7 +173,7 @@ export class OrderFlowService {
     });
   }
 
-  private async autoDispatchWaybill(waybillId: string, companyId: string, rules: any) {
+  private async autoDispatchWaybill(waybillId: string, companyId: string, _rules: any) {
     try {
       // Find available driver
       const driver = await this.prisma.driver.findFirst({

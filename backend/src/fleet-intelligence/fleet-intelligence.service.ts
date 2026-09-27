@@ -374,11 +374,6 @@ export class FleetIntelligenceService {
       select: { originBranchId: true, status: true },
     });
 
-    const drivers = await this.prisma.driver.findMany({
-      where: { companyId, isActive: true },
-      select: { id: true },
-    });
-
     const branchStats = branches.map(branch => {
       const branchWaybills = waybills.filter(w => w.originBranchId === branch.id);
       const delivered = branchWaybills.filter(w => w.status === 'DELIVERED').length;

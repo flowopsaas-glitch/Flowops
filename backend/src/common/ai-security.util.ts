@@ -265,7 +265,7 @@ export interface AnomalyReport {
 export function detectAnomalies(
   input: string,
   output: any,
-  context: { endpoint: string },
+  _context: { endpoint: string },
 ): AnomalyReport {
   const reasons: string[] = [];
 

@@ -51,7 +51,7 @@ export class WhatsAppInboxAiService {
    *
    * SECURITY: Input is sanitized, output is schema-validated, anomalies are detected.
    */
-  async analyzeMessage(messageBody: string, senderPhone: string, senderName?: string): Promise<ExtractedCollectionData> {
+  async analyzeMessage(messageBody: string, senderPhone: string, _senderName?: string): Promise<ExtractedCollectionData> {
     const groqKey = this.config.get<string>('GROQ_API_KEY');
 
     if (!groqKey) {
