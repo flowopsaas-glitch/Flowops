@@ -13,8 +13,8 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > context, while the capacity workbook carries its own financial years (**FY26/27, FY27/28, FY29/30 and
 > others**). Workbook values must never be substituted into a V4 source period, and vice versa. Two
 > consequences are recorded rather than glossed: the FY behind §11.3's displayed rows is not pinned in
-> the capture (now exception 11), the Annexure 43 KPI extract is period-unestablished because neither
-> extract carried a period label, and the six-step post-rehearsal Rail sequence is added to §9.
+> the capture (now exception 11), and the Annexure 43 KPI extract is period-unestablished because neither
+> extract carried a period label. The six-step post-rehearsal Rail sequence is added to §9.
 >
 > **Revision 5 — 2026-09-27.** The Annexure 33 capacity-statement workbook arrived and is captured in
 > §11 — its model, its arithmetic (checked, §11.3), its route and depot identity (§11.4) and ten
@@ -330,8 +330,13 @@ Network totals from the first extract reconcile exactly against the second: see 
 | **Network total** | **2,912,768** | **2,107,648** | **27.64%** | **27.64%** |
 
 The stated and computed columns are shown together because they are the cheapest possible check on a
-paste: every corridor reconciles within rounding, and two are truncated rather than rounded (Ore
-23.54% → "23.0%", Manganese 39.48% → "39.4%").
+paste — and re-deriving every corridor from the pair printed beside it is what caught the one figure
+that does not hold. **Manganese is a truncation rather than a rounding** (39.48% → "39.4%", where
+rounding gives 39.5%), and **Ore's stated 23.0% is not derivable from Ore's own pair at all** (23.54%
+rounds *and* truncates to 23.5%). That is eight corridors reconciling by ordinary rounding, one by
+truncation, and one needing a source-level explanation — question 9 in §10.4. The re-derivation is
+reproducible: `python3 docs/tools/verify-rail-register-arithmetic.py` (it also checks the capacity
+model's own formulas in §11.3; it checks this register, not the workbook, which remains the authority).
 
 | Corridor | TSR baseline | TSR target | Active TSRs | Manual auths | Stated reduction |
 | --- | --- | --- | --- | --- | --- |
@@ -474,6 +479,14 @@ the first capture got them wrong:
    position that KPIs become enforceable service levels only once the TER is satisfied.
 8. **Not-applicable sections.** Non-electrified and decommissioned corridors need an explicit "not
    applicable", distinct from missing data, in any schema that stores this.
+9. **Ore's stated reduction does not follow from Ore's own numbers.** The corridor's pair is
+   15,291 → 11,691, which is 23.54%; rounded or truncated to one decimal that is **23.5%**, not the
+   stated **23.0%**. A stated 23.0% is consistent with a pair of about 15,291 → 11,774, so either the
+   percentage or one of the two counts is wrong, and the workbook decides which. Two candidate
+   explanations were tested and rejected: it appears as 23.0% in *both* §10 tables, so it is not a
+   single misplaced cell, and no other corridor's computed reduction is near 23.0%, so a row-shift in
+   the paste is not supported either. An earlier reading of that table recorded two truncations (Ore
+   and Manganese); only Manganese's is a truncation, and this note corrects that reading.
 
 ### 10.5 Still outstanding
 
@@ -510,7 +523,7 @@ corridor ↔ V4 corridor; depot ↔ substation), not period mappings. Each ident
 *per FY* — a route that exists in FY29/30 is not thereby established for FY26/27, and section
 theoretical capacities already differ between FYs (§11.5).
 
-**Two states the capture is in, both recorded rather than assumed:**
+**Three states the capture is in, all recorded rather than assumed:**
 
 - **Unpinned display period.** The rows in §11.3 were read from the workbook's *display* sheet, whose
   selected FY (`$B$1`) was not captured. Those values are therefore **period-unpinned** and must not
@@ -589,6 +602,12 @@ Worked example — the workbook's selected case, **FY29/30, General Freight: Joh
 route spare capacity **49**, bottleneck **CHAILEY (I) - DALTON (E)**. That reconciles: 11 × 0.65 = 7.15
 → 7 → 7 × 7 = 49, and 11 is the lowest theoretical capacity on the route (every other section is 13+),
 with no TOC allocations on it.
+
+One inconsistency is recorded rather than smoothed over. This worked case is labelled **FY29/30** in the
+capture, while exception 11 says the display sheet's FY selector (`$B$1`) was not captured. Both cannot
+be true of the same sheet, so **no figure in §11.3 carries an attributed financial year** until the
+workbook is re-read with the FY recorded — the label above is *as captured*, not verified. This is the
+same rule §11.0 states, applied to the one place where the capture appears to contradict itself.
 
 ### 11.4 Route identity across the sources
 
@@ -678,7 +697,10 @@ reviewed → only then system rules.
     reproduced here** and must be read from the workbook before use.
 11. **Unpinned display period.** The FY selected on the display sheet (`$B$1`) was not captured, so the
     values transcribed in §11.3 cannot be attributed to a financial year. Re-read them with the FY
-    recorded before any of them is used; until then they are period-unpinned (§11.0).
+    recorded before any of them is used; until then they are period-unpinned (§11.0). This includes the
+    worked case in §11.3, which the capture labels FY29/30 while the selector value itself is not part of
+    the capture — reconcile that label against the workbook when re-reading; until then it is as-captured,
+    not verified.
 
 ## 12. Honest status
 
@@ -689,7 +711,7 @@ deviation fields are missing, the system-of-record boundary is unresolved, there
 and none of it has had independent review, interface testing or pilot evidence. The migration chain
 remains the active workstream. Annexure 43's KPI framework (§10) and the Annexure 33 capacity model
 (§11) are captured as attested Transnet source: the KPI extract has ten corridors whose network totals
-reconcile exactly but eight unsettled questions, and the capacity model's arithmetic reproduces
+reconcile exactly but nine unsettled questions, and the capacity model's arithmetic reproduces
 exactly from its own formulas while carrying eleven exceptions. Both are source material awaiting
 independent review — neither is a requirement set, and none of it is implemented.
 
