@@ -14,7 +14,10 @@ import {
   type LoginMode,
 } from '../lib/session';
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+// Single base-URL resolution for all API traffic: lib/env is the documented
+// source of truth (27 modules already import it). Split-brain resolution
+// (this file vs lib/env) meant the same app could hit two different hosts.
+import { FLOWOPS_API_URL as API_BASE } from '../lib/env';
 
 // ── Token storage (delegates to lib/session.ts; aliases preserved for callers) ─
 export const getToken = (): string | null => getAccessToken();
@@ -81,6 +84,25 @@ function isTransient(error: any): boolean {
   return s === 502 || s === 503 || s === 504;
 }
 
+// ── Shared-refresh queue ──────────────────────────────────────────────────
+// Concurrent 401s must share ONE refresh call. Parallel refreshes can race a
+// rotating refresh token and kill the whole session (each response invalidates
+// the other's token) — the failure mode drivers hit on flaky mobile data.
+let isRefreshing = false;
+let refreshSubscribers: Array<{
+  onSuccess: (token: string) => void;
+  onError: (err: unknown) => void;
+}> = [];
+const flushRefreshQueue = (token: string | null, err?: unknown): void => {
+  const subs = refreshSubscribers;
+  refreshSubscribers = [];
+  isRefreshing = false;
+  for (const sub of subs) {
+    if (token) sub.onSuccess(token);
+    else sub.onError(err);
+  }
+};
+
 // ── Axios instance ────────────────────────────────────────
 const api = axios.create({
   baseURL: API_BASE,
@@ -124,6 +146,21 @@ api.interceptors.response.use(
         clearAuth();
         return Promise.reject(new ApiError('Session expired. Please log in again.', 401));
       }
+      // A refresh is already in flight — queue behind it instead of firing a
+      // parallel one (see shared-refresh queue above).
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          refreshSubscribers.push({
+            onSuccess: (token) => {
+              originalRequest.headers = originalRequest.headers || {};
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              resolve(api(originalRequest));
+            },
+            onError: (err) => reject(err),
+          });
+        });
+      }
+      isRefreshing = true;
       try {
         const resp = await axios.post(
           `${API_BASE}/auth/refresh`,
@@ -138,9 +175,11 @@ api.interceptors.response.use(
         if (newRefresh) sessionSetRefreshToken(newRefresh);
         setMemoryToken(newAccess);
         setToken(newAccess);
+        flushRefreshQueue(newAccess);
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
         return api(originalRequest);
-      } catch (refreshError) {
+      } catch {
+        flushRefreshQueue(null, new ApiError('Session expired. Please log in again.', 401));
         clearAuth();
         return Promise.reject(new ApiError('Session expired. Please log in again.', 401));
       }
