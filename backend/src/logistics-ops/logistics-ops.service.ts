@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { guardTransition } from '../waybills/waybill-status.machine';
 import { WaybillStatus, FailedDeliveryReason } from '@prisma/client';
+import { withCompanyId } from '../common/security/tenant.util';
 
 /** Valid failed-delivery reason codes, mirrored from the Prisma enum for
  *  runtime validation of client-supplied codes. */
@@ -172,7 +173,7 @@ export class LogisticsOpsService {
     return this.prisma.addressBookEntry.update({ where: { id }, data: dto });
   }
 
-  async deleteAddress(id: string, companyId: string) {
+  async deleteAddress(id: string, _companyId: string) {
     return this.prisma.addressBookEntry.update({ where: { id }, data: { isActive: false } });
   }
 
@@ -409,7 +410,7 @@ export class LogisticsOpsService {
     metadata?: any;
   }) {
     return this.prisma.trackingEvent.create({
-      data: { waybillId, companyId, ...data },
+      data: { waybillId, ...withCompanyId(companyId, data) },
     }).catch((err) => {
       this.logger.warn(`Failed to create tracking event: ${err?.message}`);
     });

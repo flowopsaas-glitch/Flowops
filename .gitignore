@@ -100,3 +100,12 @@ nest
 CANCELED
 ERROR
 =
+
+# Private operator evidence and local audit scratch (never commit clone reports)
+/.cache/
+**/rehearsal-evidence/
+rehearsal-report*.md
+rehearsal-report*.json
+
+# Advisory audit scanner output (CI artifact)
+audit-reports/

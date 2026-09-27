@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards, UnauthorizedException,
+  Body, Controller, Get, Param, Post, Query, Req, UseGuards, UnauthorizedException,
 } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';

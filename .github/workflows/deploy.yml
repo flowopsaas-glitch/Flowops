@@ -1,1 +1,36 @@
-# Disabled — FlowOps deploys via SSH + Docker Compose manually
+# Deploy workflow — intentionally NOT wired to any automatic trigger.
+#
+# FlowOps deploys via SSH + Docker Compose (see deploy/VPS-RUNBOOK.md).
+# This file previously contained only comments, which GitHub still parsed as a
+# workflow and reported a failed run on every push. It is now a valid workflow
+# that can only be started manually, and it refuses to do anything until a real
+# deployment target is configured.
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Manual deploy (not configured)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Refuse to run until a deployment target is configured
+        run: |
+          echo "::warning::Automated deployment is not configured for this repository."
+          echo "Deploy with SSH + Docker Compose: see deploy/VPS-RUNBOOK.md."
+          echo "Requested environment: ${{ inputs.environment }}"
+          exit 1

@@ -3,6 +3,8 @@ import { Search, Sparkles } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import type { NavItem } from "../../lib/nav";
+import api from "../../services/api";
+import { FLOWOPS_HTTP_ORIGIN } from "../../lib/env";
 
 type Props = {
   open: boolean;
@@ -58,9 +60,60 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
     return { navMatches: navMatches.slice(0, 10), actionMatches: actionMatches.slice(0, 6) };
   }, [items, query]);
 
+  async function runOpsHealth() {
+    // Live check: API/DB health plus the three risks this action promises —
+    // stale tracking, SLA risk, and delivered-without-POD. Replaces the old
+    // "coming soon" placeholder that advertised a workflow which never ran.
+    setMessage("Running Ops Health Check…");
+    try {
+      const [health, wb] = await Promise.all([
+        fetch(`${FLOWOPS_HTTP_ORIGIN}/health`)
+          .then((r) => r.json())
+          .catch(() => null),
+        api.get("/waybills").then((r: any) => {
+          const raw = r?.data ?? r;
+          return Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+        }),
+      ]);
+
+      const now = Date.now();
+      const STALE_MS = 24 * 60 * 60 * 1000; // no tracking update in 24h
+      const ACTIVE = new Set([
+        "PENDING",
+        "COLLECTED",
+        "AT_ORIGIN_HUB",
+        "IN_TRANSIT",
+        "AT_DESTINATION_HUB",
+        "OUT_FOR_DELIVERY",
+      ]);
+      let stale = 0;
+      let sla = 0;
+      let pod = 0;
+      for (const w of wb as any[]) {
+        const updatedAt = new Date(w?.updatedAt ?? 0).getTime();
+        if (ACTIVE.has(w?.status) && now - updatedAt > STALE_MS) stale += 1;
+        const retryMissed = w?.nextAttemptAt && new Date(w.nextAttemptAt).getTime() < now;
+        const undelivered = w?.status !== "DELIVERED" && w?.status !== "CANCELLED" && w?.status !== "RETURNED";
+        if (undelivered && ((w?.attemptCount ?? 0) >= 2 || retryMissed)) sla += 1;
+        if (w?.status === "DELIVERED" && !w?.podSignatureUrl && !w?.podImageUrl) pod += 1;
+      }
+
+      const apiState = health?.status === "ok" ? "API + DB OK" : `API ${health?.status ?? "unreachable"}`;
+      setMessage(
+        `Ops Health — ${apiState} · stale tracking: ${stale} · SLA risk: ${sla} · POD risk: ${pod} (of ${wb.length} waybills)`,
+      );
+    } catch (err: any) {
+      setMessage(`Ops Health Check failed: ${err?.message ?? "unknown error"}`);
+    }
+  }
+
   function runAction(id: string) {
-    // Free AI placeholder actions are currently in preview mode.
-    if (id === "ops_health") setMessage("Ops Health Check is currently available as a preview workflow. Full data wiring is coming soon.");
+    if (id === "ops_health") {
+      void runOpsHealth();
+      return;
+    }
+    // The remaining FREE AI actions are still preview workflows — say so
+    // honestly rather than implying they ran.
     if (id === "billing_audit") setMessage("Billing Audit is in preview mode. Full invoice and waybill analysis will be available in the next release.");
     if (id === "route_whatif") setMessage("Route What-If is currently a preview action. Route optimizer integration is planned for the next upgrade.");
   }
@@ -159,7 +212,7 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
                   </div>
                 ) : (
                   <div className="mt-2 text-xs text-slate-500">
-                    These actions are currently preview workflows. Full backend integration is planned for the next release.
+                    Ops Health Check runs live. The remaining actions are preview workflows pending full backend integration.
                   </div>
                 )}
               </div>

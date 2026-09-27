@@ -19,6 +19,7 @@ export class PaystackService {
   ) {
     this.secretKey = config.get<string>('PAYSTACK_SECRET_KEY', '');
     this.webhookIps = config.get<string>('PAYSTACK_WEBHOOK_IPS', '').split(',').map(s => s.trim()).filter(Boolean);
+    this.warnIfWebhookIpsUnset();
   }
 
   private get headers() {
@@ -134,6 +135,17 @@ export class PaystackService {
 
   // ── Webhook ───────────────────────────────────────────────────────────
 
+  /** Called once at boot: surface an unset IP allowlist instead of skipping it silently. */
+  warnIfWebhookIpsUnset(): void {
+    if (!this.webhookIps.length) {
+      this.logger.warn(
+        'PAYSTACK_WEBHOOK_IPS is not set — webhook IP allowlisting is DISABLED ' +
+          '(HMAC signature verification still applies). Set it to restrict ' +
+          'webhooks to Paystack source IPs.',
+      );
+    }
+  }
+
   verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {
     if (!this.secretKey) return false;
     const hash = createHmac('sha512', this.secretKey).update(rawBody).digest('hex');
@@ -145,7 +157,12 @@ export class PaystackService {
   }
 
   verifyWebhookIp(ip: string): boolean {
-    if (!this.webhookIps.length) return true; // no restriction configured
+    if (!this.webhookIps.length) {
+      // Deliberately permissive: the HMAC signature is the real gate, and
+      // failing closed here would drop webhooks for anyone who has not set
+      // PAYSTACK_WEBHOOK_IPS. Warn at boot so it is a conscious choice.
+      return true;
+    }
     return this.webhookIps.includes(ip);
   }
 

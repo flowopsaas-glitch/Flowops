@@ -95,7 +95,7 @@ export class CodController {
   @Post('guardian/alert')
   @RequireFeature('codReconciliation')
   @ApiOperation({ summary: 'Manually trigger Cash Flow Guardian WhatsApp alert to owner' })
-  triggerAlert(@CurrentUser() u: AuthenticatedUser) {
+  triggerAlert(@CurrentUser() _u: AuthenticatedUser) {
     return this.guardian.dailyCashPositionAlert();
   }
 }

@@ -2,7 +2,7 @@ import {
   IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min,
 } from 'class-validator';
 import {
-  DeviationCategory, ResponsibleParty, SlotImpact, DeviationStatus,
+  DeviationCategory, ResponsibleParty, SlotImpact,
 } from '@prisma/client';
 
 /**

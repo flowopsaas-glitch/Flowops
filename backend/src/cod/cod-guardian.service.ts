@@ -190,7 +190,7 @@ export class CodGuardianService {
   // DRIVER RISK SCORING (0-100)
   // ══════════════════════════════════════════════════════════════════════════
 
-  private async scoreDriver(wallet: any, companyId: string): Promise<DriverCashRisk> {
+  private async scoreDriver(wallet: any, _companyId: string): Promise<DriverCashRisk> {
     const factors: string[] = [];
     let score = 0;
 

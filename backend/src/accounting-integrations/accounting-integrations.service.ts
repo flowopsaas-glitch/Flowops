@@ -9,7 +9,6 @@ import { PastelProvider } from './providers/pastel.provider';
 import { AccountingDoc, AccountingProviderAdapter, ProviderConnection } from './providers/types';
 
 type ProviderKey = 'XERO' | 'SAGE' | 'PASTEL';
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const money = (n: number) =>
   `R${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query, Res, NotFoundException } from '@nestjs/c
 import { ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
+import { escapeHtml, safeCssColor, safeHexForSuffix } from '../common/security/html.util';
 
 /**
  * Public invoice view — allows clients to view/print invoices from the
@@ -32,16 +33,22 @@ export class PublicInvoiceController {
       select: { name: true, tradingName: true, email: true, phone: true, address: true, city: true, vatNumber: true, logoUrl: true, primaryColor: true },
     });
 
+    // Coerce to Number first: toLocaleString on a string returns that string
+    // unchanged, so a non-numeric value would be interpolated verbatim.
+    const esc = escapeHtml;
     const fmt = (v?: number | null) =>
-      `ZAR ${(v ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      `ZAR ${Number(v ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const fmtDate = (d?: string | Date | null) =>
       d ? new Date(d).toLocaleDateString('en-ZA') : '—';
 
-    const accent = company?.primaryColor ?? '#10b981';
+    // Tenant-controlled colour, interpolated into CSS: must be a plain colour
+    // value — `red;background:url(...)` would break out of the rule.
+    const accent = safeCssColor(company?.primaryColor);
+    const accentHex = safeHexForSuffix(company?.primaryColor);
     const rows = (inv.items ?? []).map((it: any) =>
       `<tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${it.description}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${it.quantity}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${esc(it.description)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${esc(it.quantity)}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${fmt(it.unitPrice)}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600">${fmt(it.total)}</td>
       </tr>`
@@ -49,7 +56,7 @@ export class PublicInvoiceController {
 
     const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Invoice ${inv.invoiceNumber}</title>
+<title>Invoice ${esc(inv.invoiceNumber)}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
@@ -62,7 +69,7 @@ export class PublicInvoiceController {
   .section{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:32px 0}
   .label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;margin-bottom:4px}
   .value{font-size:14px;color:#111827}
-  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;background:${accent}22;color:${accent};border:1px solid ${accent}55}
+  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#${accentHex}22;color:${accent};border:1px solid #${accentHex}55}
   table{width:100%;border-collapse:collapse;margin:24px 0;font-size:13px}
   thead{background:#f9fafb}
   th{padding:10px 12px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;border-bottom:2px solid #e5e7eb}
@@ -78,21 +85,21 @@ export class PublicInvoiceController {
 </style></head><body>
   <div class="header">
     <div>
-      <div class="brand-name">${company?.tradingName ?? company?.name ?? 'FlowOps'}</div>
-      <div class="brand-sub">${company?.email ?? ''}${company?.phone ? ' · ' + company.phone : ''}</div>
-      ${company?.vatNumber ? `<div class="brand-sub">VAT: ${company.vatNumber}</div>` : ''}
+      <div class="brand-name">${esc(company?.tradingName ?? company?.name ?? 'FlowOps')}</div>
+      <div class="brand-sub">${esc(company?.email ?? '')}${company?.phone ? ' · ' + esc(company.phone) : ''}</div>
+      ${company?.vatNumber ? `<div class="brand-sub">VAT: ${esc(company.vatNumber)}</div>` : ''}
     </div>
     <div style="text-align:right">
       <div class="inv-title">INVOICE</div>
-      <div class="inv-meta">${inv.invoiceNumber}</div>
-      <div style="margin-top:8px"><span class="badge">${inv.status}</span></div>
+      <div class="inv-meta">${esc(inv.invoiceNumber)}</div>
+      <div style="margin-top:8px"><span class="badge">${esc(inv.status)}</span></div>
     </div>
   </div>
   <div class="section">
     <div>
       <div class="label">Bill To</div>
-      <div class="value" style="font-weight:700">${inv.clientName}</div>
-      ${inv.clientEmail ? `<div class="value" style="color:#6b7280">${inv.clientEmail}</div>` : ''}
+      <div class="value" style="font-weight:700">${esc(inv.clientName)}</div>
+      ${inv.clientEmail ? `<div class="value" style="color:#6b7280">${esc(inv.clientEmail)}</div>` : ''}
     </div>
     <div>
       <div class="label">Invoice Details</div>
@@ -108,7 +115,7 @@ export class PublicInvoiceController {
     <tr><td>VAT (15%)</td><td>${fmt(inv.tax)}</td></tr>
     <tr class="grand"><td>Total</td><td>${fmt(inv.total)}</td></tr>
   </table>
-  <div class="footer">Thank you for your business. Reference <strong>${inv.invoiceNumber}</strong> when making payment.</div>
+  <div class="footer">Thank you for your business. Reference <strong>${esc(inv.invoiceNumber)}</strong> when making payment.</div>
   <div class="actions no-print">
     <a href="javascript:window.print()">Download / Print PDF</a>
   </div>

@@ -368,18 +368,6 @@ const AIRPORTS: Record<string, {
 };
 
 
-// ── IATA Airline Prefixes (for AWB validation) ──────────────────────────────
-const AIRLINE_PREFIXES: Record<string, string> = {
-  '083': 'South African Airways', '071': 'Ethiopian Airlines', '706': 'Kenya Airways',
-  '172': 'Gulf Air', '014': 'Air Canada', '057': 'Air France', '074': 'KLM',
-  '020': 'Lufthansa', '125': 'British Airways', '176': 'Emirates',
-  '157': 'Qatar Airways', '618': 'Singapore Airlines', '160': 'Cathay Pacific',
-  '131': 'Japan Airlines', '988': 'Korean Air', '297': 'China Southern',
-  '999': 'China Airlines', '784': 'FedEx', '023': 'UPS Airlines',
-  '580': 'DHL Aviation', '139': 'Cargolux', '235': 'Turkish Airlines',
-  '054': 'Air India', '695': 'Airlink', '738': 'FlySafair',
-};
-
 // ── ULD Types Reference (IATA ULD Technical Manual) ─────────────────────────
 const ULD_TYPES: Record<string, { description: string; maxGrossKg: number; tareKg: number; volume: string }> = {
   'AKE': { description: 'LD3 Container', maxGrossKg: 1588, tareKg: 80, volume: '4.3 m3' },

@@ -175,7 +175,7 @@ Focus on real South African market dynamics: Aramex, The Courier Guy, Fastway, D
     }
   }
 
-  private getStaticMarketData(query?: any): MarketTrendData {
+  private getStaticMarketData(_query?: any): MarketTrendData {
     return {
       overview: {
         marketSize: 'R 25.4 billion',

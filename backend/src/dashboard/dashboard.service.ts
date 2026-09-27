@@ -631,7 +631,7 @@ export class DashboardService {
   }
 
   // POST /collections-state-sync/bulk-sync
-  async bulkSync(companyId: string) {
+  async bulkSync(_companyId: string) {
     // Trigger re-assignment logic (stub — plugs into real routing later)
     return { synced: true, ts: new Date().toISOString() };
   }

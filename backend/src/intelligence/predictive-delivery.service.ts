@@ -276,11 +276,10 @@ export class PredictiveDeliveryService {
     companyId: string,
     address: string,
     zone: string,
-    lat?: number,
-    lng?: number,
+    _lat?: number,
+    _lng?: number,
   ): Promise<AddressIntel> {
     // Query historical deliveries to this zone
-    const zonePattern = `%${zone}%`;
     const deliveries = await this.prisma.waybill.findMany({
       where: {
         companyId,
@@ -297,7 +296,6 @@ export class PredictiveDeliveryService {
 
     const total = deliveries.length;
     const successes = deliveries.filter(d => d.status === 'DELIVERED').length;
-    const failures = deliveries.filter(d => d.status === 'FAILED_DELIVERY' || d.status === 'RETURNED').length;
     const successRate = total > 0 ? Math.round((successes / total) * 100) : 75;
 
     // Detect patterns from failure notes

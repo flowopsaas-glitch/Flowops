@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -407,7 +407,6 @@ export class PlatformProtectionService {
 
   async getProtectionStatus(): Promise<any> {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const [recentAlerts, criticalAlerts, unresolvedAlerts] = await Promise.all([
       this.prisma.platformAlert.count({ where: { createdAt: { gte: oneHourAgo } } }),

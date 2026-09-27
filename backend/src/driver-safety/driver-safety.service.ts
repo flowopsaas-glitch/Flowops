@@ -274,7 +274,7 @@ export class DriverSafetyService {
     });
   }
 
-  async acknowledgeAlert(alertId: string, driverId: string) {
+  async acknowledgeAlert(alertId: string, _driverId: string) {
     return this.prisma.safetyAlert.update({
       where: { id: alertId },
       data: { acknowledged: true, acknowledgedAt: new Date() },

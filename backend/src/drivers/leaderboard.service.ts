@@ -45,7 +45,7 @@ export class LeaderboardService {
 
     // Parallel data fetching for all metrics
     const [
-      shipmentsByDriver,
+      _shipmentsByDriver, // fetched for positional parity in Promise.all
       deliveredByDriver,
       failedByDriver,
       ratingsByDriver,

@@ -10,8 +10,10 @@ on:
   push:
     branches: [main, develop]
     tags: ['v*']
+  # Feature branches got no CI at all: only PRs targeting main ran. Run the
+  # suite for pull requests against any branch so work is validated before it
+  # reaches a release branch.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -184,8 +186,14 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Run migrations
-        run: npx prisma migrate deploy || npx prisma migrate dev
+      - name: Release safety regressions (no database connection)
+        run: npm run release:safety:test
+
+      - name: Prepare disposable CI schema (not staging adoption evidence)
+        # This branch does not import PR #436's initial migration. Until it is
+        # reviewed and integrated, schema push here is explicit CI fixture setup.
+        # When migrations exist, migrate deploy failures are fatal: no fallback.
+        run: node scripts/prepare-ci-schema.mjs
 
       - name: Lint
         run: npm run lint --if-present
@@ -213,6 +221,29 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Advisory RBAC + tenant-scope reports (non-blocking)
+        # These scanners cannot see runtime control flow, so they inform review
+        # rather than fail the build. Legitimate hits exist (platform-admin
+        # endpoints, token lookups, writes to rows already proven in-tenant).
+        run: |
+          mkdir -p audit-reports
+          npm run rbac:inventory --silent > audit-reports/rbac-inventory.txt
+          npm run tenant-scope:audit --silent > audit-reports/tenant-scope-audit.txt
+          echo "--- RBAC inventory (tail) ---"
+          tail -12 audit-reports/rbac-inventory.txt
+          echo "--- Tenant-scope audit (tail) ---"
+          tail -12 audit-reports/tenant-scope-audit.txt
+
+      - name: Upload advisory audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: advisory-audit-reports
+          # upload-artifact resolves paths from the repo root, while the run
+          # steps above execute with working-directory: backend.
+          path: backend/audit-reports/
+          retention-days: 14
 
       - name: E2E tests
         run: npm run test:e2e --if-present
@@ -294,8 +325,41 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          # CR_PAT (optional fine-grained PAT with 'Packages: write') works
+          # around user-owned GHCR packages that reject the job token; falls
+          # back to GITHUB_TOKEN when the secret is absent.
+          password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+
+      # GHCR publish preflight — surface registry-authorisation problems
+      # BEFORE the long multi-arch build. The 2026-09-27 main failures were
+      # GHCR authorisation ("denied: permission_denied: read_package") at
+      # push time — NOT QEMU/arm64 — and only surfaced at the end of the job.
+      #   200/404 -> package readable, or absent (first push creates it): OK
+      #   401/403 -> token cannot publish: fail fast with the remediation
+      - name: GHCR publish preflight
+        if: github.event_name == 'push'
+        env:
+          REG_TOKEN: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          pkg="${GITHUB_REPOSITORY,,}-frontend"
+          code=$(curl -s -o /tmp/ghcr_probe.json -w '%{http_code}' \
+            -H "Authorization: Bearer $REG_TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/$pkg/manifests/main" || true)
+          code="${code:-000}"
+          echo "GHCR preflight: GET ghcr.io/v2/$pkg/manifests/main -> HTTP $code"
+          case "$code" in
+            200|404)
+              echo "Preflight OK ($code): package readable or absent (first push creates it)." ;;
+            401|403)
+              echo "::error title=GHCR publish preflight::ghcr.io/$pkg denied (HTTP $code) — this job's token cannot publish. Fix ONE of: (1) repo Settings > Actions > General > Workflow permissions > 'Read and write permissions'; (2) if the package already exists, its Package settings > 'Manage Actions access' > grant THIS repository Write; (3) add secret CR_PAT (fine-grained PAT with Packages: write) — login falls back to it."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true
+              exit 1 ;;
+            *)
+              echo "Preflight inconclusive (HTTP $code) — continuing; the push step will re-check authorisation."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true ;;
+          esac
 
       - name: Compute image tags & labels
         id: meta
@@ -721,8 +785,41 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          # CR_PAT (optional fine-grained PAT with 'Packages: write') works
+          # around user-owned GHCR packages that reject the job token; falls
+          # back to GITHUB_TOKEN when the secret is absent.
+          password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+
+      # GHCR publish preflight — surface registry-authorisation problems
+      # BEFORE the long multi-arch build. The 2026-09-27 main failures were
+      # GHCR authorisation ("denied: permission_denied: read_package") at
+      # push time — NOT QEMU/arm64 — and only surfaced at the end of the job.
+      #   200/404 -> package readable, or absent (first push creates it): OK
+      #   401/403 -> token cannot publish: fail fast with the remediation
+      - name: GHCR publish preflight
+        if: github.event_name == 'push'
+        env:
+          REG_TOKEN: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          pkg="${GITHUB_REPOSITORY,,}-backend"
+          code=$(curl -s -o /tmp/ghcr_probe.json -w '%{http_code}' \
+            -H "Authorization: Bearer $REG_TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/$pkg/manifests/main" || true)
+          code="${code:-000}"
+          echo "GHCR preflight: GET ghcr.io/v2/$pkg/manifests/main -> HTTP $code"
+          case "$code" in
+            200|404)
+              echo "Preflight OK ($code): package readable or absent (first push creates it)." ;;
+            401|403)
+              echo "::error title=GHCR publish preflight::ghcr.io/$pkg denied (HTTP $code) — this job's token cannot publish. Fix ONE of: (1) repo Settings > Actions > General > Workflow permissions > 'Read and write permissions'; (2) if the package already exists, its Package settings > 'Manage Actions access' > grant THIS repository Write; (3) add secret CR_PAT (fine-grained PAT with Packages: write) — login falls back to it."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true
+              exit 1 ;;
+            *)
+              echo "Preflight inconclusive (HTTP $code) — continuing; the push step will re-check authorisation."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true ;;
+          esac
 
       - name: Compute image tags
         id: meta
@@ -755,6 +852,11 @@ jobs:
           # Spin up a throw-away Postgres so Prisma can connect and the NestJS
           # module graph fully initialises — catches broken imports, missing
           # providers, and schema mismatches the old plain-http stub missed.
+          cleanup() {
+            docker stop flowops-backend-smoke smoke-postgres 2>/dev/null || true
+            docker network rm smoke-net 2>/dev/null || true
+          }
+          trap cleanup EXIT
           docker network create smoke-net
 
           docker run --rm -d \
@@ -774,6 +876,24 @@ jobs:
             sleep 1
           done
 
+          # Explicit fixture creation against this throw-away container only.
+          # Never depend on application startup to create/alter schema, and do
+          # not treat this smoke fixture as migration/adoption evidence.
+          docker run --rm --network smoke-net \
+            -e DATABASE_URL="postgresql://smoke:smoke@smoke-postgres:5432/smoke" \
+            --entrypoint /app/node_modules/.bin/prisma \
+            flowops-backend:smoke-test db push --skip-generate
+
+          # Runtime must boot with CRUD privileges, not schema ownership/DDL.
+          docker exec smoke-postgres psql -U smoke -d smoke -v ON_ERROR_STOP=1 -c "
+            REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+            CREATE ROLE smoke_app LOGIN PASSWORD 'smoke_app' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            GRANT CONNECT ON DATABASE smoke TO smoke_app;
+            GRANT USAGE ON SCHEMA public TO smoke_app;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO smoke_app;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO smoke_app;
+          "
+
           # Generate unique secrets so the startup same-secret guard doesn't trip
           ACC_SECRET="smoke-access-$(openssl rand -hex 8)"
           REF_SECRET="smoke-refresh-$(openssl rand -hex 8)"
@@ -781,8 +901,8 @@ jobs:
           docker run --rm -d \
             --name flowops-backend-smoke \
             --network smoke-net \
-            -p 3001:3000 \
-            -e DATABASE_URL="postgresql://smoke:smoke@smoke-postgres:5432/smoke" \
+            -p 127.0.0.1:3001:3000 \
+            -e DATABASE_URL="postgresql://smoke_app:smoke_app@smoke-postgres:5432/smoke" \
             -e JWT_SECRET="$ACC_SECRET" \
             -e JWT_REFRESH_SECRET="$REF_SECRET" \
             -e OWNER_SEED_EMAIL="smoke@test.local" \

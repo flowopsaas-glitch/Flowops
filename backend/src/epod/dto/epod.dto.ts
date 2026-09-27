@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsArray, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsArray } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CaptureEpodDto {

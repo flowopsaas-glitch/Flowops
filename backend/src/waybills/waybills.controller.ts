@@ -219,8 +219,8 @@ export class WaybillsController {
 
   @Public()
   @Get('waybills/public/:id')
-  publicView(@Param('id') id: string) {
-    return this.svc.getPublicView(id);
+  publicView(@Param('id') id: string, @Query('t') token?: string) {
+    return this.svc.getPublicView(id, token);
   }
 
   // ── Inbox (AI extraction) ────────────────────────────────────────

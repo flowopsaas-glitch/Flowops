@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Inject } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';

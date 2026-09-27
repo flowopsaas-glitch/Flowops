@@ -5,8 +5,6 @@ import {
   Post, 
   Body, 
   Param, 
-  Query, 
-  ParseIntPipe,
   HttpCode,
   HttpStatus
 } from '@nestjs/common';
@@ -32,48 +30,55 @@ export class AiEventsController {
   @Post('ask')
   @HttpCode(HttpStatus.OK)
   async askCopilot(
-    @Body('companyId') companyId: number,
+    @CurrentUser() user: { companyId: string },
     @Body('prompt') prompt: string,
   ) {
     if (!prompt) {
       throw new BadRequestException('Prompt is required');
     }
-    
-    // We return a structured mock response so the UI stops crashing. 
-    // You can wire this directly into your actual AI logic later.
+
+    // Stub: the copilot backend is not wired up. Say so explicitly instead of
+    // returning a fabricated answer that looks like a real AI response.
     return {
-      status: 'success',
-      reply: `FlowOps AI: I received your request. Integrating live logic for: "${prompt}"`,
-      timestamp: new Date().toISOString()
+      status: 'stub',
+      stub: true,
+      companyId: user.companyId,
+      reply:
+        'The FlowOps AI copilot is not connected yet. This endpoint returns a placeholder and no analysis was performed.',
+      timestamp: new Date().toISOString(),
     };
   }
 
   @Post('action/verify-pod')
   @HttpCode(HttpStatus.OK)
-  async verifyPod(@Body('companyId') companyId: number) {
-    return this.aiEventsService.verifyCompliance(companyId);
+  async verifyPod(@CurrentUser() user: { companyId: string }) {
+    return this.aiEventsService.verifyCompliance(user.companyId as any);
   }
 
   @Post('action/repair-billing')
   @HttpCode(HttpStatus.OK)
-  async repairBilling(@Body('companyId') companyId: number) {
-    return this.aiEventsService.repairInvoicing(companyId);
+  async repairBilling(@CurrentUser() user: { companyId: string }) {
+    return this.aiEventsService.repairInvoicing(user.companyId as any);
   }
 
   @Post('logic/learn')
   @HttpCode(HttpStatus.CREATED)
   async learn(
-    @Body() body: { 
-      companyId: number; 
-      type: string; 
-      old: string; 
-      new: string; 
-    }
+    @CurrentUser() user: { companyId: string },
+    @Body() body: {
+      type: string;
+      old: string;
+      new: string;
+    },
   ) {
-    const { companyId, ...patternData } = body;
-    
+    // Tenant comes from the token. A body-supplied companyId let any
+    // authenticated user teach the model using another tenant's context, so
+    // only the pattern fields are read from the body.
+    const patternData = { type: body?.type, old: body?.old, new: body?.new };
+    const companyId = user.companyId;
+
     if (!companyId) {
-      throw new BadRequestException('companyId is required for pattern learning');
+      throw new BadRequestException('Tenant context is required for pattern learning');
     }
 
     if (!patternData.type || !patternData.new) {

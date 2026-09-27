@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { base44 } from "@/api";
 
 type Command = {
   key: string; // page key used by App.tsx dynamic loader

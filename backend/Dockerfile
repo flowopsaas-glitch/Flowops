@@ -43,9 +43,9 @@ COPY --from=builder /app/node_modules/.prisma /app/node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma /app/node_modules/@prisma
 COPY prisma ./prisma
 
-# Prisma CLI — lives in devDeps so it's not installed above; copy it from
-# the builder stage so we can run `prisma db push` at startup.
-# This repo uses db push (no migrations folder), so migrate deploy would fail.
+# Prisma CLI is used for image-build client generation and explicit isolated
+# CI fixture setup only. The application startup command never invokes it.
+# Adoption/migration of existing data requires a separately approved operator job.
 COPY --from=builder /app/node_modules/prisma /app/node_modules/prisma
 COPY --from=builder /app/node_modules/.bin/prisma /app/node_modules/.bin/prisma
 
@@ -69,8 +69,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
 
-# Sync schema then start the app.
-# This repo uses `prisma db push` (no migrations folder), so `migrate deploy`
-# would fail. `db push` applies the schema diff non-destructively and is safe
-# to run on every container start (idempotent — no-ops when already in sync).
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push --skip-generate && node dist/main"]
+# Start the application only. Never mutate schema on boot/restart/rollback.
+# An empty or incompatible database is a deployment prerequisite failure, not
+# permission to run db push, migrate dev, or baseline resolution automatically.
+CMD ["node", "dist/main"]
