@@ -8,6 +8,11 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > against the primary text supplied in conversation on 2026-09-26. Corrections are recorded in
 > §6.1 and §5 rather than silently folded in.
 >
+> **Revision 5 — 2026-09-27.** The Annexure 33 capacity-statement workbook arrived and is captured in
+> §11 — its model, its arithmetic (checked, §11.3), its route and depot identity (§11.4) and ten
+> exceptions (§11.6). It corroborates the 65% factor as *implemented* and supplies direct evidence that
+> capacity is versioned by financial year.
+>
 > **Revision 4 — 2026-09-27.** A second, fuller Annexure 43 extract arrived (executive summary plus all
 ten corridors) and replaces §10's first, flattened capture; §10.4 lists what it settled, including
 three errors in the first capture that are corrected there rather than quietly deleted.
@@ -106,7 +111,7 @@ Repository statuses verified in the working tree on 2026-09-26 (`backend/src/rai
 | Ch 3 access requirements; Annexure 15 (Rail Access Agreement) | RAIL-010 | **nothing** — no agreement model |
 | Ch 3; Annexure 31 (Non-Disclosure Agreement) | RAIL-006 / controlled documents | **nothing** — no controlled-document register |
 | Ch 3; Annexure 30 (Credit Application) | RAIL-006 / RAIL-011 | **nothing** on the Rail side |
-| Ch 4; Annexure 33 (Network Register), 33a (Running Times), 33b (Capacity Statement) | RAIL-002 / 003 / 004 / 007 | **nothing** — no capacity or network-register model |
+| Ch 4; Annexure 33 (Network Register), 33a (Running Times), 33b (Capacity Statement) | RAIL-002 / 003 / 004 / 007 | **nothing** — no capacity or network-register model. The capacity model is captured in §11 (attested source, arithmetic checked) |
 | Ch 4; Annexure 25 (Self-Screening Checklist) | RAIL-005 / RAIL-006 | **nothing** |
 | Ch 4; Annexure 29a (Network Access Application Form) | RAIL-005 | **nothing** — no access-application model |
 | Ch 4; Annexure 32 (Ad-hoc Train Path Application) | RAIL-012 | **nothing** — no train-path model |
@@ -452,14 +457,162 @@ versioned rules once the §10.4 questions are settled against the workbook and a
 may **not** acquire a `RAIL-0xx` identifier and then be quoted as though those numbers had been read
 out of a spreadsheet that is not in this repository.
 
-## 11. Honest status
+## 11. Source capture — Annexure 33 capacity statement (Transnet workbook)
+
+Supplied by the project owner on 2026-09-27 and attested as valid Transnet source (§1). Workbook
+`Annexure33CapacityStatement.xlsm`, three sheets. Unlike the KPI extract in §10, this one is
+**arithmetic**, so most of it could be checked rather than merely transcribed — see §11.3.
+
+### 11.1 Sheet inventory
+
+| Sheet | Used range | What it is |
+| --- | --- | --- |
+| Capacity Statement | A1:AE51 | selector (FY, route, capacity factor) plus 41 result rows for the selected route |
+| Capacity_DB | A1:Z1416 | the data layer: 5 financial years × 10 routes × sections, keyed `Year\|Route\|Section Order` |
+| Lists | A1:B11 | the 5 financial years and the 10 canonical route names |
+
+The display sheet is a query layer over `Capacity_DB`: every cell is an `XLOOKUP` on the composite key
+(or a formula over other looked-up cells). That split is itself worth mirroring — reference data in a
+keyed table, presentation derived from it.
+
+### 11.2 The capacity model, as implemented
+
+Verbatim from the extract (`$B$3` is the capacity factor cell, `$B$1` the selected FY, `$B$2` the
+selected route):
+
+```
+B3  Capacity factor         0.65
+E   Practical daily         =ROUND(D*$B$3, 0)                      D = theoretical daily capacity
+H   Train paths lost to TSR =XLOOKUP(...Capacity_DB!$H:$H, 0)
+I   Train paths lost to MA  =XLOOKUP(...Capacity_DB!$I:$I, 0)
+J   Recovered via upgrades  =XLOOKUP(...Capacity_DB!$J:$J, 0)
+K   Recovered unused TOC    =XLOOKUP(...Capacity_DB!$K:$K, 0)
+J   Daily available         =MAX(0, E - F - G + H + I)             F = lost to TSR, G = lost to MA
+K   Weekly practical        =IF(J="", "", IF(ISNUMBER(SEARCH("Line Closed", C)), 0, J*7))
+AB  Weekly spare            =MAX(0, K - AA)                        AA = Σ TOC 1…15 allocations (L:Z)
+B4  Route spare capacity    =AGGREGATE(15, 6, AB8:AB47 / ((B8:B47<>"")*(B8:B47<>"N/A")*(ISERROR(SEARCH("Line Closed", C8:C47)))), 1)
+B5  Bottleneck section(s)   =TEXTJOIN(", ", TRUE, IF((AB8:AB47=B4)*(...same filters...), B8:B47, ""))
+AC  Constraint indicator    =IF(AB=$B$4, "BOTTLENECK: "&TEXT(AB,"0"), "")
+```
+
+So capacity flows: **theoretical daily → × 0.65 (rounded) → less losses, plus recovery → × 7 weekly →
+less TOC allocations → spare**; the route's spare capacity is the **minimum spare across sections**,
+and the section(s) at that minimum are labelled the bottleneck.
+
+The workbook uses a single capacity factor for every route. V4 §4.2 presents the 65% as a planning
+guideline that can differ per route — see §11.6.
+
+### 11.3 Checked against the extract
+
+Predictions from the formulas above, against the values the extract shows (all matched):
+
+| Section | Theoretical | Practical | `ROUND(th×0.65)` | Weekly | `practical×7` |
+| --- | --- | --- | --- | --- | --- |
+| CITY DEEP - JUPITER | 72 | 47 | 47 | 329 | 329 |
+| ROOIKOP (I) - RIETVALLEI (E) | 42 | 27 | 27 | 189 | 189 |
+| GLENCOE (E) - VRYHEID (I) | 14 | 9 | 9 | 63 | 63 |
+| CATO RIDGE (E) - PINETOWN (I) — line closed | 15 | 10 | 10 | **0** | 0 by rule |
+| CHAILEY (I) - DALTON (E) | 11 | 7 | 7 | 49 | 49 |
+
+The line-closed rule is confirmed by the arithmetic, not assumed: CATO RIDGE–PINETOWN has a practical
+daily capacity of 10 and a weekly practical of 0, which only the `SEARCH("Line Closed", depot)` branch
+produces.
+
+Worked example — the workbook's selected case, **FY29/30, General Freight: Johannesburg to Durban**:
+route spare capacity **49**, bottleneck **CHAILEY (I) - DALTON (E)**. That reconciles: 11 × 0.65 = 7.15
+→ 7 → 7 × 7 = 49, and 11 is the lowest theoretical capacity on the route (every other section is 13+),
+with no TOC allocations on it.
+
+### 11.4 Route identity across the sources
+
+The three supplied sources name the same ten routes differently. Canonical name from the workbook's
+`Lists` sheet, matched to §10's KPI corridors and V4's corridors:
+
+| Workbook route (canonical) | §10 KPI corridor | V4 corridor |
+| --- | --- | --- |
+| General Freight: Johannesburg to Durban | Johannesburg–Durban (City Deep–Kingsrest) | Container / North corridor |
+| General Freight: Johannesburg to Cape Town | Johannesburg–Cape Town (City Deep–Bellville) | Cape corridor |
+| Manganese | Manganese (HTZ–PE) | North corridor |
+| Magnetite | Magnetite (PHW–RBQ) | North-East corridor |
+| General Freight & Export Coal: Lephalale to Richards Bay | Lephalale–Richards Bay | North corridor |
+| General Freight: Musina - Pyramid South/Hoedspruit | Musina–Pyramid / Hoedspruit | North corridor |
+| Eastern Mainline: Rayton to Komatipoort/Richards Bay | Rayton–Komatipoort / Richards Bay | North-East corridor |
+| General Freight: Mafikeng to Beaconsfield/Potchefstroom | Mafikeng–Beaconsfield / Potch | Central corridor |
+| General Freight: Vereeniging/Danskraal to East London | Vereeniging/Danskraal–East London | Cape corridor |
+| Ore | Ore (SAZ–SIS) | Ore corridor |
+
+Ten routes in both, one-to-one — but the V4 column above is **indicative only**: mapping a route to a
+V4 chapter corridor is an interpretation that has to be confirmed, because the workbook's route names
+are service paths, not the chapters' corridor boundaries. A canonical route identifier is needed before
+any rule, KPI or capacity figure is joined across sources.
+
+The **depot** field is the accountability dimension (20 depots appear: Witbank, Nelspruit, Ermelo,
+Vryheid, Isando, Koedoespoort, Krugersdorp, Vereeniging, Heidelberg, Ladysmith, Durban, Bloemfontein,
+Kimberley North, Kimberley South, East London, Bellville, Saldanha, Port Elizabeth, Polokwane,
+Empangeni). Six of them are the same depots §10's substation targets name — Bellville, Koedoespoort,
+Krugersdorp, Port Elizabeth, Witbank, Nelspruit — so depot is a joinable entity across both workbooks.
+
+### 11.5 Capacity changes between financial years
+
+Sections carry the same name but different theoretical capacity across FYs (for example on the
+Johannesburg–Durban route, DONNYBROOK–FRANKLIN 15 → 16, FRANKLIN–MATATIELE 12 → 13,
+BETHLEHEM–ARLINGTON 19 → 24, ARLINGTON–GUNHILL 27 → 21, GUNHILL SOUTH–KROONSTAD 12 → 22, and
+CHAILEY–KRANSKOP 14 → 15 between FY26/27 and FY27/28). This is direct source evidence for the
+requirement the workstream already carries: **capacity is versioned by financial year**, and a rule
+without an effective period would be wrong.
+
+### 11.6 Exceptions and open questions — for `RailSourceException` review
+
+1. **Status embedded in a name.** "Line Closed" appears inside the **Depot** value (`NELSPRUIT (Line
+   Closed)`, `DURBAN (Line Closed)`, `ERMELO (Line Closed)`, `VEREENIGING (Line Closed)`,
+   `EAST LONDON (Line Closed)`, `HEIDELBERG (Line Closed)`, `KRUGERSDORP (Line Closed)`), and the
+   weekly-capacity formula recovers it with a text search. A closed section should be an explicit
+   attribute, not a substring of a depot name.
+2. **Non-countable "train paths lost".** CHAILEY–DALTON carries TSR 0.1853419071158129 and MA
+   **−0.1853419071158129**; BOOTH–CLAIRWOOD carries 7.8 and 0.2. Both pairs net to whole numbers
+   (0 and 8 exactly), so they look like float decompositions of a percentage-derived figure — but a
+   *negative* number of train paths lost is not a count, and neither is 7.8. Resolve before a rule
+   consumes these columns. (Note: on the bottleneck section the two artefacts cancel, so the reported
+   spare of 49 is unaffected — the defect is in the column's meaning, not that result.)
+3. **One capacity factor for all routes.** `B3 = 0.65` is applied to every route, while V4 §4.2
+   describes the factor as a guideline that may vary by route. Corroboration of the arithmetic is not
+   confirmation that a single constant is correct.
+4. **Undefined section notation.** Section names carry `(I)`, `(E)`, `(S)`, `(N)` markers
+   (`RAYTON (I) - WITBANK (E)`, `DANSKRAAL-SUID (S) - HARRISMITH (E)`) with no definition in the
+   extract. Do not guess their meaning.
+5. **Section identity is positional.** Sections are identified by `Section Order` within route and FY,
+   and the display layer looks up on it. If the number of sections changes between years, the key
+   still resolves — but section identity itself is not stable, so a rule or a KPI cannot be keyed to
+   "section 17" across years.
+6. **"Spare" is a minimum over spare, not over utilisation.** A low-capacity section that is barely
+   used reports as the bottleneck (that is exactly what happens here: CHAILEY–DALTON has theoretical 11
+   and no allocations). The label is therefore about the tightest *section*, not the tightest
+   *constraint*; confirm the intended reading before using "bottleneck" in any operational decision.
+7. **Formula ranges versus row count.** The route-spare and bottleneck formulas span `B8:B47` / `AB8:AB47`
+   (40 rows) while the Johannesburg–Durban route lists **41** sections. If those rows are laid out as
+   shown, the 41st section (BAYHEAD) sits outside the min and bottleneck computation. Verify in the
+   workbook — this affects a reported figure.
+8. **Weekly = daily × 7.** The model assumes seven operating days; the only exclusion is "Line Closed".
+   V4 provides for occupations and an annual shutdown, so the weekly figure's relationship to actual
+   operating days needs confirmation.
+9. **Annexure numbering.** The filename says `Annexure33…` while the annexure list supplied earlier
+   calls this **33b** (33 = Network Register, 33a = point-to-point running times). Record which is
+   authoritative.
+10. **Extract completeness.** `Capacity_DB` has 1,416 rows; the extract shows the FY26/27 blocks in
+    full for some routes and only a partial column set for others, and the FY27/28–FY30/31 blocks show
+    the theoretical column only. Some of that may be genuine (the workbook may only maintain detail
+    for the current year) and some may be elision in transit. **The full 1,416-row dataset is not
+    reproduced here** and must be read from the workbook before use.
+
+## 12. Honest status
 
 Captured, and the parts that touch this repository are now verified against the working tree. Rail
 is **not** implemented and must not be described as complete: the access/capacity/agreement/order/KPI
 half of the chain is unmodelled, the escalation ladder does not match the source, two mandated
 deviation fields are missing, the system-of-record boundary is unresolved, there are no Rail tests,
 and none of it has had independent review, interface testing or pilot evidence. The migration chain
-remains the active workstream. Annexure 43's KPI framework is captured in §10 as attested Transnet
-source — all ten corridors, network totals that reconcile exactly, and eight source-level questions
-(§10.4) still to settle against the workbook — which is source material awaiting independent review,
-not a requirement set.
+remains the active workstream. Annexure 43's KPI framework (§10) and the Annexure 33 capacity model
+(§11) are captured as attested Transnet source: the KPI extract has ten corridors whose network totals
+reconcile exactly but eight unsettled questions, and the capacity model's arithmetic reproduces
+exactly from its own formulas while carrying ten exceptions. Both are source material awaiting
+independent review — neither is a requirement set, and none of it is implemented.
