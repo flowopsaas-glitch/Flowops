@@ -124,13 +124,6 @@ export class CommercialAnalyticsService {
         sentAt: true, dueDate: true, items: { select: { waybillId: true } } },
     });
 
-    const waybillsByClient = await this.prisma.waybill.groupBy({
-      by: ['companyId'],
-      where: { companyId, status: 'DELIVERED', createdAt: { gte: start, lt: end } },
-      _count: { _all: true },
-    });
-    const totalDeliveries = waybillsByClient[0]?._count._all || 0;
-
     // Build per-client profitability
     const clientMap: Record<string, any> = {};
     for (const inv of invoices) {

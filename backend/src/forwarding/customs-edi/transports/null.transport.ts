@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CustomsEdiTransport, CustomsEdiTransportResult, DecryptedCredential } from '../customs-edi-transport';
+import { CustomsEdiTransport, CustomsEdiTransportResult } from '../customs-edi-transport';
 
 /**
  * Fallback when a tenant has configured no transmission method. Preserves the

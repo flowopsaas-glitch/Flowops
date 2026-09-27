@@ -173,7 +173,7 @@ export class LogisticsOpsService {
     return this.prisma.addressBookEntry.update({ where: { id }, data: dto });
   }
 
-  async deleteAddress(id: string, companyId: string) {
+  async deleteAddress(id: string, _companyId: string) {
     return this.prisma.addressBookEntry.update({ where: { id }, data: { isActive: false } });
   }
 

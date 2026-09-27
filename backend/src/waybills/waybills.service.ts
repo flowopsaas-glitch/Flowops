@@ -403,7 +403,7 @@ export class WaybillsService {
     dto: { recipient: string; signatureBase64?: string; scannedCodes?: string | string[] },
     file?: Express.Multer.File,
   ) {
-    const waybill = await this.findOne(id, companyId);
+    await this.findOne(id, companyId); // existence/tenancy check (throws 404)
 
     // scannedCodes arrives as a JSON string from multipart form-data.
     let scannedCodes: string[] = [];

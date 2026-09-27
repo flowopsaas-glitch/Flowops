@@ -4,13 +4,10 @@ import {
   Patch, 
   Body, 
   NotFoundException, 
-  UseGuards, 
   BadRequestException 
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WaybillStatus } from '@prisma/client';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
 
 // 💡 Patched: Changed from 'api/ai-diagnostics' to 'ai-diagnostics' 
 // This avoids the /api/api/ path mirroring since the global prefix is already 'api'

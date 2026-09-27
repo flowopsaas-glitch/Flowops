@@ -1,5 +1,5 @@
 import {
-  Controller, Post, Get, Body, Req, UseGuards, HttpCode, HttpStatus, Query,
+  Controller, Post, Get, Body, Req, HttpCode, HttpStatus, Query,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -9,7 +9,6 @@ import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 /**
  * Resolve the real client IP behind our proxy chain (Cloudflare -> nginx ->

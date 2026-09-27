@@ -458,7 +458,6 @@ Respond in JSON format: { healthScore, urgentItems: [{item, priority, estimatedC
     const now = new Date();
 
     const urgentItems: any[] = [];
-    const serviceTypes = [...new Set(services.map((s: any) => s.serviceType))];
 
     for (const type of Object.keys(SERVICE_INTERVALS)) {
       const records = services.filter((s: any) => s.serviceType === type);

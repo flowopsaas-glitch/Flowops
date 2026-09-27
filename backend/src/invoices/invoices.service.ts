@@ -3,11 +3,6 @@ import { randomUUID } from 'crypto';
 import { Cron } from '@nestjs/schedule';
 import { Money } from '../common/money.util';
 
-/** Round a monetary value to 2 decimals. Delegates to the shared Money util
- *  (integer-cents math) so all invoice money is exact to the cent. */
-function round2(n: number): number {
-  return Money.round(n);
-}
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';

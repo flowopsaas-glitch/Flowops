@@ -997,7 +997,7 @@ Return ONLY valid JSON:
   // AI SLOTTING OPTIMIZATION (Place Fast-Movers Near Dispatch)
   // ═══════════════════════════════════════════════════════════════════════
 
-  async aiSlottingOptimization(companyId: string, warehouseId: string) {
+  async aiSlottingOptimization(companyId: string, _warehouseId: string) {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
 
     // Get pick frequency per SKU (last 30 days)
