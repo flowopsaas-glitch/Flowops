@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
+import { withCompanyId } from '../common/security/tenant.util';
 
 @Injectable()
 export class CommercialAnalyticsService {
@@ -32,8 +33,8 @@ export class CommercialAnalyticsService {
   async updateConfig(companyId: string, dto: any) {
     return this.prisma.commercialConfig.upsert({
       where: { companyId },
-      create: { companyId, ...dto },
-      update: dto,
+      create: withCompanyId(companyId, dto),
+      update: withCompanyId(companyId, dto),
     });
   }
 

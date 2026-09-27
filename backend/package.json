@@ -19,7 +19,9 @@
     "test:e2e": "if [ -f test/jest-e2e.json ]; then jest --config ./test/jest-e2e.json; else echo 'No backend E2E suite configured; skipping.'; fi",
     "migrations:rehearse": "node scripts/migrate-rehearsal.mjs",
     "migrations:rehearsal:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/migrate-rehearsal-safety.test.mjs",
-    "release:safety:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/migrate-rehearsal-safety.test.mjs scripts/release-startup.test.mjs"
+    "release:safety:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/migrate-rehearsal-safety.test.mjs scripts/release-startup.test.mjs",
+    "rbac:inventory": "node scripts/rbac-inventory.mjs",
+    "rbac:inventory:json": "node scripts/rbac-inventory.mjs --format json"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.540.0",

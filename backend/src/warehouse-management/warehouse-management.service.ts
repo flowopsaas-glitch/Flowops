@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
+import { withCompanyId } from '../common/security/tenant.util';
 
 @Injectable()
 export class WarehouseManagementService {
@@ -26,7 +27,9 @@ export class WarehouseManagementService {
 
   async createWarehouse(companyId: string, dto: any) {
     return this.prisma.warehouse.create({
-      data: { companyId, ...dto },
+      // withCompanyId strips a client-supplied companyId: the spread used to
+      // come second, so a body could create a warehouse in another tenant.
+      data: withCompanyId(companyId, dto),
     });
   }
 
@@ -720,7 +723,7 @@ Return ONLY valid JSON:
     reason?: string; performedBy?: string;
   }) {
     await this.prisma.stockMovement.create({
-      data: { companyId, ...dto, performedAt: new Date() } as any,
+      data: { ...withCompanyId(companyId, dto), performedAt: new Date() } as any,
     });
   }
 

@@ -13,6 +13,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuthService } from '../auth/auth.service';
+import { withCompanyId } from '../common/security/tenant.util';
 
 const VALID_ROLES = [
   'ADMIN', 'COMPANY_ADMIN', 'MANAGER', 'DISPATCH', 'WAREHOUSE',
@@ -98,7 +99,7 @@ export class SsoService {
     const conn = await (this.prisma as any).ssoConnection.upsert({
       where: { companyId },
       update: data,
-      create: { companyId, ...data },
+      create: withCompanyId(companyId, data),
     });
     return this.mask(conn);
   }

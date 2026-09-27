@@ -334,8 +334,8 @@ export class DriverPortalService {
 
   async recordPod(body: {
     waybillId: string;
-    driverId?: string;
-    companyId?: string;
+    driverId: string;
+    companyId: string;
     signatureUrl?: string;
     imageUrl?: string;
     recipientName?: string;
@@ -345,11 +345,17 @@ export class DriverPortalService {
     // belongs to their company AND is dispatched to them. Previously this
     // updated ANY waybill by client-supplied id → any driver could mark any
     // tenant's parcel DELIVERED. driverId/companyId come from the driver token.
+    // companyId and driverId are REQUIRED, not optional spreads: if a future
+    // caller forgets one, the filter used to collapse to "any waybill by id",
+    // which is the cross-tenant hole this block was written to close.
+    if (!body.companyId || !body.driverId) {
+      throw new BadRequestException('Driver and tenant context are required to capture POD');
+    }
     const waybill = await this.prisma.waybill.findFirst({
       where: {
         id: body.waybillId,
-        ...(body.companyId ? { companyId: body.companyId } : {}),
-        ...(body.driverId ? { shipments: { some: { driverId: body.driverId } } } : {}),
+        companyId: body.companyId,
+        shipments: { some: { driverId: body.driverId } },
       },
       select: { id: true },
     });

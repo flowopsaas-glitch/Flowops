@@ -451,11 +451,19 @@ export class WaybillsService {
     return delivered;
   }
 
-  async getPublicView(id: string) {
+  /**
+   * Public POD view — unauthenticated.
+   *
+   * It used to return recipient name/address, sender name and POD signature and
+   * image URLs for ANY waybill id: a customer PII leak. Without the share token
+   * it now returns tracking status only; full detail requires the token.
+   */
+  async getPublicView(id: string, token?: string) {
     const waybill = await this.prisma.waybill.findFirst({
       where: { id },
       select: {
         id: true, trackingNumber: true, status: true,
+        ratingToken: true,
         recipientName: true, recipientAddress: true,
         senderName: true, podDeliveredAt: true,
         podSignatureUrl: true, podImageUrl: true, podRecipient: true,
@@ -463,7 +471,19 @@ export class WaybillsService {
       },
     });
     if (!waybill) throw new NotFoundException('Waybill not found');
-    return waybill;
+
+    const { ratingToken, ...rest } = waybill;
+    if (token && ratingToken && token === ratingToken) return rest;
+
+    return {
+      id: rest.id,
+      trackingNumber: rest.trackingNumber,
+      status: rest.status,
+      podDeliveredAt: rest.podDeliveredAt,
+      company: rest.company,
+      restricted: true,
+      message: 'Proof of delivery detail requires the share token from your delivery link.',
+    };
   }
 
   async getReceipt(id: string, companyId: string) {

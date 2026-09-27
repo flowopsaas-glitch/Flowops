@@ -10,8 +10,10 @@ on:
   push:
     branches: [main, develop]
     tags: ['v*']
+  # Feature branches got no CI at all: only PRs targeting main ran. Run the
+  # suite for pull requests against any branch so work is validated before it
+  # reaches a release branch.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:

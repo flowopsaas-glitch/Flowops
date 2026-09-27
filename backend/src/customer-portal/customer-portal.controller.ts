@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { Public } from '../common/decorators/public.decorator';
+import { buildWaybillTrackWhere } from '../common/security/portal-lookup.util';
 
 /**
  * Customer Self-Service Portal — PUBLIC endpoints (no auth).
@@ -60,19 +61,17 @@ export class CustomerPortalController {
       return { waybills: [], message: 'Provide phone, email, or tracking number to search.' };
     }
 
-    const where: any = { companyId };
-    if (tracking) {
-      where.trackingNumber = tracking;
-    } else {
-      where.OR = [];
-      if (phone) {
-        const cleanPhone = phone.replace(/\s+/g, '');
-        where.OR.push({ senderPhone: { contains: cleanPhone } });
-        where.OR.push({ recipientPhone: { contains: cleanPhone } });
-      }
-      if (email) {
-        where.OR.push({ recipientEmail: { equals: email, mode: 'insensitive' } });
-      }
+    // Unauthenticated endpoint: the filter is the only thing protecting a
+    // tenant's shipment data. buildWaybillTrackWhere returns null when the
+    // caller supplied no usable filter (a whitespace-only phone used to
+    // normalise to `contains: ''` and match every row in the tenant).
+    const where = buildWaybillTrackWhere(companyId, { phone, email, tracking });
+    if (!where) {
+      return {
+        waybills: [],
+        count: 0,
+        message: 'Provide a tracking number, a full phone number, or the exact client email.',
+      };
     }
 
     const waybills = await this.prisma.waybill.findMany({

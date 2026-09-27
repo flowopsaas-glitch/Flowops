@@ -13,7 +13,21 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (!requiredRoles || requiredRoles.length === 0) return true;
+    // A route with no @Roles metadata is reachable by ANY authenticated role
+    // (576 of 668 routes today). Enforcing globally would lock out real users
+    // until every route has deliberate role metadata, so strict mode is opt-in:
+    // set RBAC_STRICT=true once `npm run rbac:inventory` shows none missing.
+    //
+    // This branch MUST stay above the user check: @Public routes pass through
+    // this guard with no authenticated user and must not be rejected here.
+    if (!requiredRoles || requiredRoles.length === 0) {
+      if (process.env.RBAC_STRICT === 'true') {
+        throw new ForbiddenException(
+          'This route has no @Roles metadata and RBAC_STRICT is enabled',
+        );
+      }
+      return true;
+    }
 
     const { user } = context.switchToHttp().getRequest();
     if (!user) throw new ForbiddenException('Access denied');

@@ -232,9 +232,25 @@ export class AiEventsService {
     }, 'CLAW_1');
   }
 
+  /**
+   * Invoicing repair — NOT implemented.
+   *
+   * This used to log a line and return `{ status: 'repaired' }` without
+   * touching any data, so the UI reported a successful billing repair that
+   * never happened. It now reports honestly so the event goes to a human.
+   */
   async repairInvoicing(companyId: number) {
-    this.logger.warn(`[Claw 2] Executing Invoicing Repair for Company ${companyId}`);
-    return { status: 'repaired', mode: this.aggressionLevel, timestamp: new Date().toISOString() };
+    this.logger.warn(
+      `[Claw 2] Invoicing repair requested for company ${companyId} — automated repair is not implemented; manual review required`,
+    );
+    return {
+      status: 'manual_review_required',
+      automated: false,
+      reason: 'Automated invoicing repair is not implemented. A human must review this event.',
+      companyId,
+      mode: this.aggressionLevel,
+      timestamp: new Date().toISOString(),
+    };
   }
 
   async resolve(id: number, companyId: number, resolutionNote: string) {
@@ -244,13 +260,26 @@ export class AiEventsService {
       select: { metadata: true },
     });
 
+    // The tenant-scoped lookup is the authorisation check: if it found nothing,
+    // the event belongs to another tenant (or does not exist) and we must stop.
+    // The update used to run by id alone, so a caller could resolve and rewrite
+    // metadata on another tenant's event.
+    if (!current) {
+      this.logger.warn(
+        `ai-events.resolve refused: event ${id} is not visible to company ${companyId}`,
+      );
+      throw new NotFoundException('AI event not found');
+    }
+
     const currentMeta =
-      current?.metadata && typeof current.metadata === 'object'
+      current.metadata && typeof current.metadata === 'object'
         ? (current.metadata as Record<string, any>)
         : {};
 
-    return this.prisma.aiEvent.update({
-      where: { id: String(id) },
+    // Scope the write too: defence in depth if the row changes between read and
+    // write.
+    const result = await this.prisma.aiEvent.updateMany({
+      where: { id: String(id), companyId: String(companyId) },
       data: {
         resolved: true,
         resolvedAt: new Date(),
@@ -261,6 +290,8 @@ export class AiEventsService {
         } as any,
       },
     });
+    if (result.count === 0) throw new NotFoundException('AI event not found');
+    return { id: String(id), resolved: true };
   }
 
   /** Dismiss (hide) an event — tenant-scoped, soft (never deletes). */
