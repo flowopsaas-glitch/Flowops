@@ -8,6 +8,13 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > against the primary text supplied in conversation on 2026-09-26. Corrections are recorded in
 > §6.1 and §5 rather than silently folded in.
 >
+> **Revision 6 — 2026-09-27.** Period separation between the two sources is made explicit in §11.0,
+> on the owner's instruction: the V4 Network Statement governs the **2026/27 and 2027/28** operating
+> context, while the capacity workbook carries its own financial years (**FY26/27, FY27/28, FY29/30 and
+> others**). Workbook values must never be substituted into a V4 source period, and vice versa. Two
+> consequences are recorded rather than glossed: the FY behind §11.3's displayed rows is not pinned in
+> the capture (now exception 11), and the six-step post-rehearsal Rail sequence is added to §9.
+>
 > **Revision 5 — 2026-09-27.** The Annexure 33 capacity-statement workbook arrived and is captured in
 > §11 — its model, its arithmetic (checked, §11.3), its route and depot identity (§11.4) and ten
 > exceptions (§11.6). It corroborates the 65% factor as *implemented* and supplies direct evidence that
@@ -276,6 +283,20 @@ escalation (24/48/72/96) · KPI reconciliation.
    transcription, and §2.1 says so. Approval evidence to record before any Rail requirement is
    called approved: process owner · independent reviewer · the source-period decision · the
    unresolved-exception list · approval date · effective period.
+5. **Rail work after the staging-clone report is accepted — sequence agreed with the owner.** The
+   rehearsal remains the blocker: nothing below starts, and no capacity rule is implemented, until
+   that report is accepted (§12; runbook Exit criteria).
+   1. Store the workbook metadata — hash, owner, effective period (and filename/URL/retrieval date,
+      §9 item 1).
+   2. Convert the eleven §11.6 exceptions into controlled source-review records.
+   3. Create **small synthetic capacity fixtures** rather than committing the full `Capacity_DB`
+      (which stays out of Git, per the source-handling constraint).
+   4. Add unit tests for: 65% rounding · Line Closed → zero · TSR and manual-authorisation deductions
+      · TOC allocations · minimum-spare bottleneck selection · financial-year versioning · the float
+      decomposition exceptions.
+   5. Confirm the route-to-corridor mapping (§11.4) with an independent reviewer.
+   6. Create the RAIL-005–RAIL-015 requirement identifiers and the traceability matrix.
+   Every figure these steps produce stays bound to its own source period (§11.0).
 
 ## 10. Source capture — Annexure 43, KPI workbook (Transnet)
 
@@ -463,6 +484,38 @@ Supplied by the project owner on 2026-09-27 and attested as valid Transnet sourc
 `Annexure33CapacityStatement.xlsm`, three sheets. Unlike the KPI extract in §10, this one is
 **arithmetic**, so most of it could be checked rather than merely transcribed — see §11.3.
 
+### 11.0 Period separation — the two sources are not interchangeable
+
+V4 and the capacity workbook do **not** share a source period, and the difference is not cosmetic:
+
+| Source | Its periods | What that means here |
+| --- | --- | --- |
+| Network Statement V4 (September 2026) | **2026/27 and 2027/28** timetable periods (1 April – 31 March) | V4's rules, planning factor and operating context are scoped to these periods |
+| Annexure 33 capacity workbook | **FY26/27, FY27/28, FY29/30 and other workbook financial years** (5 FYs × 10 routes in `Capacity_DB`, chosen by the selector in `$B$1`) | Every workbook figure belongs to the FY it was read from — no more, no less |
+
+**Binding rule.** Do not silently substitute the FY29/30 workbook values into the V4 2026/27 or
+2027/28 source period. A workbook figure may only be used together with the FY it was read from, and
+a V4 rule may only be used within V4's periods. Overlap of a year label is **not** agreement: FY26/27
+appears in both sources as a *separate source period each*, and where two sources speak to the same
+financial year the values must be compared explicitly and the comparison recorded — never assumed
+equal because the label matches.
+
+This also means the cross-source joins in §11.4 are **identity** mappings (workbook route ↔ KPI
+corridor ↔ V4 corridor; depot ↔ substation), not period mappings. Each identity has to be resolved
+*per FY* — a route that exists in FY29/30 is not thereby established for FY26/27, and section
+theoretical capacities already differ between FYs (§11.5).
+
+**Two states the capture is in, both recorded rather than assumed:**
+
+- **Unpinned display period.** The rows in §11.3 were read from the workbook's *display* sheet, whose
+  selected FY (`$B$1`) was not captured. Those values are therefore **period-unpinned** and must not
+  be attributed to FY26/27 (or any FY) until re-read with the FY recorded. This is exception 11 in
+  §11.6. (The arithmetic checks in §11.3 are unaffected — they test the formulas' behaviour, which is
+  FY-independent.)
+- **One factor, all routes, all years.** The workbook's `0.65` is a single constant applied to every
+  route in every FY it computes, whereas V4 §4.2 presents 65% as a planning guideline that may vary by
+  route and belongs to V4's periods. Neither reading transfers to the other source (§11.6 item 3).
+
 ### 11.1 Sheet inventory
 
 | Sheet | Used range | What it is |
@@ -518,6 +571,11 @@ The line-closed rule is confirmed by the arithmetic, not assumed: CATO RIDGE–P
 daily capacity of 10 and a weekly practical of 0, which only the `SEARCH("Line Closed", depot)` branch
 produces.
 
+The rows above come from the workbook's display sheet; **the FY selected there was not captured**, so
+these values are period-unpinned (§11.0). What the checks establish is that the formulas behave as
+read — `ROUND(x×0.65)`, `×7`, and zero for a closed line — and that holds in any FY. To use a figure,
+re-read it with its FY.
+
 Worked example — the workbook's selected case, **FY29/30, General Freight: Johannesburg to Durban**:
 route spare capacity **49**, bottleneck **CHAILEY (I) - DALTON (E)**. That reconciles: 11 × 0.65 = 7.15
 → 7 → 7 × 7 = 49, and 11 is the lowest theoretical capacity on the route (every other section is 13+),
@@ -557,11 +615,17 @@ Krugersdorp, Port Elizabeth, Witbank, Nelspruit — so depot is a joinable entit
 Sections carry the same name but different theoretical capacity across FYs (for example on the
 Johannesburg–Durban route, DONNYBROOK–FRANKLIN 15 → 16, FRANKLIN–MATATIELE 12 → 13,
 BETHLEHEM–ARLINGTON 19 → 24, ARLINGTON–GUNHILL 27 → 21, GUNHILL SOUTH–KROONSTAD 12 → 22, and
-CHAILEY–KRANSKOP 14 → 15 between FY26/27 and FY27/28). This is direct source evidence for the
-requirement the workstream already carries: **capacity is versioned by financial year**, and a rule
-without an effective period would be wrong.
+CHAILEY–KRANSKOP 14 → 15 between FY26/27 and FY27/28). These are **workbook** financial years, not
+V4's operating periods (§11.0). This is direct source evidence for the requirement the workstream
+already carries: **capacity is versioned by financial year**, and a rule without an effective period
+would be wrong. It is not evidence that V4's 2026/27–2027/28 rules changed — and a workbook FY change
+must not be read as a V4 rule change.
 
 ### 11.6 Exceptions and open questions — for `RailSourceException` review
+
+Eleven items, none resolved. Under the workstream's pipeline these become **controlled source-review
+records** (step 2 of §9 item 5), not code: captured → reconciled → questions logged → independently
+reviewed → only then system rules.
 
 1. **Status embedded in a name.** "Line Closed" appears inside the **Depot** value (`NELSPRUIT (Line
    Closed)`, `DURBAN (Line Closed)`, `ERMELO (Line Closed)`, `VEREENIGING (Line Closed)`,
@@ -603,6 +667,9 @@ without an effective period would be wrong.
     the theoretical column only. Some of that may be genuine (the workbook may only maintain detail
     for the current year) and some may be elision in transit. **The full 1,416-row dataset is not
     reproduced here** and must be read from the workbook before use.
+11. **Unpinned display period.** The FY selected on the display sheet (`$B$1`) was not captured, so the
+    values transcribed in §11.3 cannot be attributed to a financial year. Re-read them with the FY
+    recorded before any of them is used; until then they are period-unpinned (§11.0).
 
 ## 12. Honest status
 
@@ -614,5 +681,14 @@ and none of it has had independent review, interface testing or pilot evidence. 
 remains the active workstream. Annexure 43's KPI framework (§10) and the Annexure 33 capacity model
 (§11) are captured as attested Transnet source: the KPI extract has ten corridors whose network totals
 reconcile exactly but eight unsettled questions, and the capacity model's arithmetic reproduces
-exactly from its own formulas while carrying ten exceptions. Both are source material awaiting
+exactly from its own formulas while carrying eleven exceptions. Both are source material awaiting
 independent review — neither is a requirement set, and none of it is implemented.
+
+The two sources keep their own periods and must not be merged (§11.0): V4 governs the 2026/27 and
+2027/28 operating context; the capacity workbook carries FY26/27, FY27/28, FY29/30 and other workbook
+financial years. What the capacity capture gave the design is an **explainable, independently
+checkable model** — the arithmetic was verified against the source's own formulas rather than taken on
+trust, which is more than transcription. It is not an engine: no capacity computation exists in the
+codebase, no fixture or test exists, the route-to-corridor mapping is unconfirmed, and the RAIL-0xx
+requirement identifiers still do not exist. Calling this a working capacity engine would be the same
+category of overstatement as calling Rail complete.
