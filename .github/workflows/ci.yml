@@ -184,8 +184,14 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Run migrations
-        run: npx prisma migrate deploy || npx prisma migrate dev
+      - name: Release safety regressions (no database connection)
+        run: npm run release:safety:test
+
+      - name: Prepare disposable CI schema (not staging adoption evidence)
+        # This branch does not import PR #436's initial migration. Until it is
+        # reviewed and integrated, schema push here is explicit CI fixture setup.
+        # When migrations exist, migrate deploy failures are fatal: no fallback.
+        run: node scripts/prepare-ci-schema.mjs
 
       - name: Lint
         run: npm run lint --if-present
@@ -755,6 +761,11 @@ jobs:
           # Spin up a throw-away Postgres so Prisma can connect and the NestJS
           # module graph fully initialises — catches broken imports, missing
           # providers, and schema mismatches the old plain-http stub missed.
+          cleanup() {
+            docker stop flowops-backend-smoke smoke-postgres 2>/dev/null || true
+            docker network rm smoke-net 2>/dev/null || true
+          }
+          trap cleanup EXIT
           docker network create smoke-net
 
           docker run --rm -d \
@@ -774,6 +785,24 @@ jobs:
             sleep 1
           done
 
+          # Explicit fixture creation against this throw-away container only.
+          # Never depend on application startup to create/alter schema, and do
+          # not treat this smoke fixture as migration/adoption evidence.
+          docker run --rm --network smoke-net \
+            -e DATABASE_URL="postgresql://smoke:smoke@smoke-postgres:5432/smoke" \
+            --entrypoint /app/node_modules/.bin/prisma \
+            flowops-backend:smoke-test db push --skip-generate
+
+          # Runtime must boot with CRUD privileges, not schema ownership/DDL.
+          docker exec smoke-postgres psql -U smoke -d smoke -v ON_ERROR_STOP=1 -c "
+            REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+            CREATE ROLE smoke_app LOGIN PASSWORD 'smoke_app' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            GRANT CONNECT ON DATABASE smoke TO smoke_app;
+            GRANT USAGE ON SCHEMA public TO smoke_app;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO smoke_app;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO smoke_app;
+          "
+
           # Generate unique secrets so the startup same-secret guard doesn't trip
           ACC_SECRET="smoke-access-$(openssl rand -hex 8)"
           REF_SECRET="smoke-refresh-$(openssl rand -hex 8)"
@@ -781,8 +810,8 @@ jobs:
           docker run --rm -d \
             --name flowops-backend-smoke \
             --network smoke-net \
-            -p 3001:3000 \
-            -e DATABASE_URL="postgresql://smoke:smoke@smoke-postgres:5432/smoke" \
+            -p 127.0.0.1:3001:3000 \
+            -e DATABASE_URL="postgresql://smoke_app:smoke_app@smoke-postgres:5432/smoke" \
             -e JWT_SECRET="$ACC_SECRET" \
             -e JWT_REFRESH_SECRET="$REF_SECRET" \
             -e OWNER_SEED_EMAIL="smoke@test.local" \
