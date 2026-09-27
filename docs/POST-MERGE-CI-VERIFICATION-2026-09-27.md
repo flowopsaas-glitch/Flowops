@@ -102,6 +102,41 @@ once blocker A is fixed. **Gate 2 cannot go green until blocker B is resolved**,
 even after the fix PR merges. Do not work around it by pushing images from a
 workstation as “the” release — gate 3 needs digests produced by CI.
 
+### 2.3 Merge-regression findings (the #436 squash vs #437)
+
+The two CI failures above are not independent — the squash-merge of PR #436
+(built on a base older than PR #437) dropped several #437 changes. Checked
+systematically: all 112 files only #437 touched are byte-identical at
+`9abeab1`; the damage is confined to the 7 files both PRs touched. Found:
+
+| # | Loss | Effect | Status |
+|---|---|---|---|
+| 1 | `withCompanyId` import in `warehouse-management.service.ts` | Backend build failed (2.1) | **fixed in this PR** |
+| 2 | `backend/package.json` scripts `rbac:inventory(:json)`, `tenant-scope:audit(:json)`, `release:safety:test`; `migrations:rehearsal:test` lost `migrate-rehearsal-safety.test.mjs` | “Advisory RBAC + tenant-scope reports” step could not run (missing scripts) and failed the job; the release-safety suite stopped running in CI | **fixed in this PR** (scanners verified exit 0 on `9abeab1` code; see 2.4 for the one exception) |
+| 3 | CI regained `npx prisma migrate deploy \|\| npx prisma migrate dev` and lost the “Release safety regressions” step | `migrate dev` in CI can generate-and-apply SQL over a broken migration and hide it — exactly the policy `release-startup.test.mjs` exists to enforce; that suite was no longer running | **fixed in this PR** (deploy-only restored, step reinstated, policy test updated where `prepare-ci-schema.mjs` was superseded by the real migration) |
+| 4 | The #437 safety-hardening layer of `migrate-rehearsal.mjs` (identity refusal for connected database/role, read-only inspection snapshot with rollback, `checkedQuery` savepoint recovery, ledger HOLD evidence, report write immutability/credential hygiene, `parseOptions` CLI guards) and its 30-test suite `migrate-rehearsal-safety.test.mjs` | The staging-clone rehearsal tool lost operational-safety guards; the suite that pins them cannot run against the rewritten tool (import-level API mismatch) and is **unwired** | **OPEN — see 2.4** |
+
+### 2.4 Open item — rehearsal-tool safety port (blocks checklist step 4)
+
+`migrate-rehearsal.mjs` was rewritten by #436 around the runbook verdicts
+(`clean`/`baseline`/`drift`/`already-applied`, `applyRefusal`, pg_catalog
+inventory, data-level `safetyChecks` — duplicates, orphans, NOT NULL). The
+#437 operational-safety layer around it was lost (finding 4 above), and with
+it the 30 guarded properties in `migrate-rehearsal-safety.test.mjs`
+(kept in-tree, unwired, currently failing at import). `release:safety:test`
+therefore currently runs the 28 tests that do target the live code
+(12 rehearsal + 16 release-startup); the safety suite is **not** silently
+deleted, and its coverage is **not** claimed.
+
+**The staging-clone rehearsal (step 4) must not start until this port lands
+and the suite is re-wired.** The tool decides whether a migration may be
+adopted against real data; #437's guards (especially: refuse the wrong
+connected database/role before introspection, inspect in a read-only
+transaction, keep credentials out of reports and refuse report overwrite) are
+part of why an operator can safely point it at a staging clone. A reference
+implementation of the lost layer is in git history at `ac7686d`
+(`backend/scripts/migrate-rehearsal.mjs` + the suite beside it).
+
 ## 3. Published image digests — NONE (record)
 
 | Image | Digest at post-merge `9abeab1` |
@@ -119,7 +154,7 @@ Once CI publishes successfully, record here as `image@sha256:…` from the run's
 
 | # | Gate | Status | Evidence / what is outstanding |
 |---|---|---|---|
-| 4 | Staging-clone rehearsal | **NOT RUN** | [STAGING-CLONE-REHEARSAL-REPORT.md](STAGING-CLONE-REHEARSAL-REPORT.md): verdict `unknown`, Hold. Needs a named staging DB operator + DB owner and the operator return per the runbook. |
+| 4 | Staging-clone rehearsal | **NOT RUN** | [STAGING-CLONE-REHEARSAL-REPORT.md](STAGING-CLONE-REHEARSAL-REPORT.md): verdict `unknown`, Hold. Needs a named staging DB operator + DB owner and the operator return per the runbook. **Precondition:** the rehearsal-tool safety port (2.4) must land first — the tool lost its operational-safety layer in the #436 squash. |
 | 5 | Migration baseline/adoption decision | **gated on 4** | Runbook verdicts `clean` / `baseline` / `drift` and adoption commands are defined; single migration `20260926130650_init`; reviewed DDL at `ci/schema-sql` @ `457089e` (generated from the post-merge SHA). A clean clone is evidence for the staging migration review, not authorisation to apply. |
 | 6 | Migration against staging only | not run (correct) | Blocked on 4–5. |
 | 7 | DB-backed integration suite vs migrated staging | not run (correct) | CI integration suite is CI-only evidence; must be re-run against migrated staging after 6. |
@@ -134,13 +169,16 @@ Once CI publishes successfully, record here as `image@sha256:…` from the run's
 
 The checklist order stands. The VPS remains unchanged. In order:
 
-1. Merge the fix PR for blocker A after its CI is green (Backend, unit tests,
-   E2E, integration suite).
+1. Merge the fix PR (this work) after its CI is green — it restores the
+   backend build (2.1), the advisory scanner wiring, and the deploy-only
+   migration policy + release-safety suite (2.3, findings 1–3).
 2. Owner resolves blocker B (GHCR authorization) by one of the three options.
 3. Re-run / follow the next `main` push CI to green across **all five** named
    checks (backend, frontend, E2E, dependency scan, multi-arch image build and
    push), then record the published digests in section 3.
-4. Only then proceed to the staging-clone rehearsal (4) with a named operator
+4. Land the rehearsal-tool safety port (2.4) — independent review recommended,
+   it touches the adoption-decision tool.
+5. Only then proceed to the staging-clone rehearsal (4) with a named operator
    and DB owner, and continue down the gates.
 
 **No merge of release-critical work, staging apply, live VPS change, flag
