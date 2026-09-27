@@ -90,16 +90,25 @@ change: `withCompanyId` now returns `T & { companyId: string }` instead of
 `Record<string, any>` (an index signature does not satisfy Prisma's named
 model inputs), and `driver-portal.service.ts` imports `BadRequestException`.
 
-## Deliberately NOT changed
+## Punch-list close-out (second pass, 2026-09-27)
 
-Each of these risks breaking production if done blind:
+The first pass's "Deliberately NOT changed" items, each now either fixed with
+evidence or deferred with an exact reason and next step. Nothing dropped.
 
-- **Hard default-deny RBAC** — needs the 576-route inventory reviewed and roles assigned per route first. Tooling is in place; the flip is a one-line env change once you approve the assignments.
-- **`ApiShieldGuard` regex rules** — tightening SQLi/XSS patterns could 400 legitimate logistics text; loosening them removes protection. Needs real traffic sampling.
-- **Multi-arch image publish failure** (both image jobs on `main`) — amd64 build, NestJS boot smoke test and Trivy all pass; only `Build & push (multi-arch)` fails. I have no access to the job logs to tell whether it is QEMU/arm64 or GHCR permissions.
-- **`tsconfig` strictness** — enabling `strict`/`noImplicitAny` would produce hundreds of errors and cannot be verified here (no Prisma client).
-- **Frontend API-client consolidation** (4 overlapping clients) — behavioural refactor, needs its own PR with e2e coverage.
-- **82 eslint warnings / deploy script sprawl / `driver-mobile` native scaffolding** — cosmetic or require SDKs not available here.
+| Item | State | Evidence / next step |
+|---|---|---|
+| `ApiShieldGuard` regex rules | **FIXED** `5a92eb1` | Attack-*shape* detection (quote adjacency, tautologies, separators, code sinks) instead of attack words; behaviour pinned BOTH ways by `api-shield.guard.spec.ts` (22 attack cases must 400, 12 legitimate-logistics cases — "select reefer from the yard", O'Brien, and/or, R&D, "javascript: the good parts" — must pass; 36/36). Also fixed: bot detection was counting toward the block threshold (10 curl health-checks in 15 min = self-429); X-Forwarded-For took the spoofable first entry; `/health` prefix matched `/healthz-private`. **Residual:** extend the corpora from real traffic before any further pattern change — the spec is the review surface. |
+| Multi-arch image publish failure | **CONFIRMED + fail-fast** `1de11f8` | Diagnosis settled: **GHCR authorisation, not QEMU** — check-run annotations on run `36131148873` (jobs `108058994914`/`108059046808`) show `denied: permission_denied: read_package` at `Build & push (multi-arch)`; amd64 build, boot smoke and Trivy all pass. Both jobs already declare `packages: write`, so the token is held to account settings. **Owner action (settings — I must not flip these):** one of (1) Settings → Actions → General → Workflow permissions → "Read and write permissions"; (2) if the package already exists: Package settings → "Manage Actions access" → grant this repo Write; (3) add secret `CR_PAT` (fine-grained PAT, Packages: write) — login now falls back to it. Both image jobs now run a GHCR preflight probe that fails fast with these exact remediations annotated on the run. |
+| Frontend API-client consolidation | **DONE** `19be494` | `api/api.ts` turned out to be dead (zero importers) and was deleted with its divergent cookie-refresh/redirect behaviour; the live bugs were split-brain base-URL resolution (client.ts vs lib/env — one app, two resolvers) and unbounded parallel 401 refreshes (rotating refresh tokens could kill the session). One client (`api/client.ts`), one base URL (lib/env), shared-refresh queue. 59/59 vitest, tsc clean. `base44Client` stub folded into the `api/index.ts` barrel. |
+| 82 eslint warnings | **FIXED (backend)** `28506d1` | The 82 was the backend count (actual: 80, all `no-unused-vars`) — now **0/0**, with standard intentional-unused conventions (`_` prefix, rest siblings) documented in `.eslintrc.js`. tsc clean, 114/114 jest. **DEFERRED (frontend, new):** 1591 warnings remain — 939 `no-explicit-any`, 204 `no-unused-vars`, 127 `label-has-associated-control`, 114 `set-state-in-effect`, 59 `no-static-element-interactions`, plus small tails. That is a multi-PR typed-APIs + a11y campaign, not a mechanical sweep; it needs its own budget and review. |
+| `driver-mobile` native scaffolding | **SCAFFOLD VERIFIED** `bca01c7` | Real defects fixed: `package-lock.json` was missing (`npm ci` could not run at all) and `typescript` was missing from devDependencies (Capacitor CLI needs it to load `capacitor.config.ts`); pinned `^5.5.4` because Capacitor 6's CLI crashes on typescript@7.x (`Cannot read properties of undefined (reading 'CommonJS')`). Verified end-to-end on a real driver-portal build: `prepare:web` (SW neutralised) → `cap add android` → `cap sync` (plugins wired) all green. **SDK-gated remainder (not doable here):** iOS project generation needs macOS/Xcode/CocoaPods; android/ios **builds** need Android Studio/Xcode + signing; `npm run assets` needs the `sharp` prebuilt binary (its download fails behind this sandbox's TLS chain — works on a normal dev machine); store listings/signing are owner steps. |
+| 97 audit entries owner review | **PACK DELIVERED** `bca01c7` | `docs/TENANT-SCOPE-OWNER-REVIEW-2026-09-27.md`: all 97 unscoped entries (audit totals 296 findings = 97 unscoped + 199 probably-guarded, counts asserted against the tool) grouped by module with four dispositions (A platform-admin / S needs company scope / V verified in-tenant upstream / U unclear), owner-note and initial columns, and a two-role sign-off block. **The review itself is an owner action** — the scanner cannot see runtime control flow; nobody but the flow owners can decide these rows. Until signed off, none of these entries may be cited as tenant-isolation evidence. |
+
+### Still deferred (unchanged from the first pass)
+
+- **Hard default-deny RBAC** — `npm run rbac:inventory`: 576 routes without `@Roles`, 60 public, 75 controllers with none. Same review pattern as the tenant-scope pack; `RBAC_STRICT` stays false and the flip stays a one-line env change until the assignments are approved.
+- **`tsconfig` strictness** — enabling `strict`/`noImplicitAny` would produce hundreds of errors and cannot be verified here (no Prisma client). Needs its own migration plan.
+- **Deploy script sprawl** — cosmetic; untouched.
 - **`infra/` and `legal/`** — not touched, per your rule. `infra/terraform` has active `production` and `staging` environments I have not reviewed.
 
 ## Open questions
