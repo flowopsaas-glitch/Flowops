@@ -24,12 +24,15 @@ export const OWNED_BY_SERVER = [
 export function withCompanyId<T extends Record<string, any>>(
   companyId: string,
   data?: T | null,
-): Record<string, any> {
+): T & { companyId: string } {
   const safe: Record<string, any> = {};
   for (const [key, value] of Object.entries(data ?? {})) {
     if ((OWNED_BY_SERVER as readonly string[]).includes(key)) continue;
     safe[key] = value;
   }
   safe.companyId = companyId;
-  return safe;
+  // Honest cast: T's entries minus server-owned keys, plus the pinned tenant.
+  // Returning `Record<string, any>` instead breaks assignability to Prisma's
+  // model inputs (an index signature does not satisfy named required fields).
+  return safe as T & { companyId: string };
 }

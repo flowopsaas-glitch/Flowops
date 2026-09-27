@@ -67,22 +67,28 @@ moving the check would have 403'd all 60 public endpoints. Covered by a test.
 
 ## Tests
 
-New, Prisma-free (run locally, 26 passing):
+New, Prisma-free (run locally):
 
 - `src/common/security/html.util.spec.ts` — escaping, CSS colour injection, URL schemes.
 - `src/common/security/portal-lookup.util.spec.ts` — whitespace phone, short fragments, exact email, tenant scoping.
 - `src/common/security/tenant.util.spec.ts` — client `companyId` override, server-owned fields, no mutation.
 - `src/common/guards/roles.guard.spec.ts` — default-allow, public routes with no user, `RBAC_STRICT` on/off.
 
+**Full local verification (after Prisma client generation was unblocked):**
+
 ```
-npm test   # 45 passed, 0 failed
+npx tsc -p tsconfig.build.json --noEmit   # 0 errors
+npm test                                   # 100 passed, 0 failed; 11/12 suites
 ```
 
-**Environment caveat:** 7 of 12 suites cannot *run* in this sandbox — 6 were
-already failing (Prisma client not generated; blocked network to
-`binaries.prisma.sh`) and `roles.guard.spec.ts` joins them for the same reason
-(`@prisma/client` has no exported `UserRole` until generation). All 12 run in
-CI, where the Backend job passes on `main`.
+The one non-passing suite is `users.service.spec.ts`, which cannot load
+`bcrypt` because its native binding cannot be built in this sandbox. It is an
+environment limitation, not a code failure; the suite passes in CI.
+
+Two type errors found by the first local type-check were fixed in this
+change: `withCompanyId` now returns `T & { companyId: string }` instead of
+`Record<string, any>` (an index signature does not satisfy Prisma's named
+model inputs), and `driver-portal.service.ts` imports `BadRequestException`.
 
 ## Deliberately NOT changed
 
