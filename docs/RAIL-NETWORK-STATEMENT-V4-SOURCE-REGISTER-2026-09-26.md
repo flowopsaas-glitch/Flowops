@@ -8,6 +8,10 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > against the primary text supplied in conversation on 2026-09-26. Corrections are recorded in
 > §6.1 and §5 rather than silently folded in.
 >
+> **Revision 4 — 2026-09-27.** A second, fuller Annexure 43 extract arrived (executive summary plus all
+ten corridors) and replaces §10's first, flattened capture; §10.4 lists what it settled, including
+three errors in the first capture that are corrected there rather than quietly deleted.
+>
 > **Revision 3 — 2026-09-26.** The project owner attests that **all material supplied this session is
 > valid Transnet source** — the Volume 4 text, its annexure list, and the Annexure 43 KPI extract.
 > That attestation is recorded in §1, provenance now reads as established rather than presumed, and
@@ -115,7 +119,7 @@ Repository statuses verified in the working tree on 2026-09-26 (`backend/src/rai
 | Ch 6; Annexure 21 (Clearinghouse) | RAIL-014 | **partial** — `DeviationStatus` carries `LOGGED` / `AGREED` / `OPEN` / `RESOLVED` / `DISPUTED` and `EscalationStage.REGULATOR_DISPUTE` exists; there is no clearinghouse process or ledger |
 | Ch 6; Annexure 18 (Occurrence Management), Annexure 41 (Occurrence Reporting Procedure) | RAIL-015 | **partial** — deviations carry cause category, responsible party and status; no occurrence register, no external reporting trail |
 | Ch 6 §6.6.1.14; Annexure 39 (Resolve Handshake Disputes) | RAIL-011 / RAIL-014 | **partial** — see §6.1 (ladder) |
-| Ch 6; Annexure 43 (Key Performance Indicators) | RAIL-012 / performance management | **nothing** for rail — no KPI model on the handshake. The workbook's content is captured in §10, attested source |
+| Ch 6; Annexure 43 (Key Performance Indicators) | RAIL-012 / performance management | **nothing** for rail — no KPI model on the handshake. Workbook content captured in §10 (attested source, all ten corridors) |
 | Ch 6; Annexure 36 (Emergency Response Plan / Tribunal Process) | RAIL-012 / RAIL-014 | **nothing** |
 | Ch 6; Annexure 35 (Dispute Resolution Process) | RAIL-014 | **nothing** |
 | Ch 7; Annexure 40 (Ancillary Services Catalogue) | not in the supplied mapping | **nothing** |
@@ -257,9 +261,9 @@ escalation (24/48/72/96) · KPI reconciliation.
 
 ## 9. Open items — decisions or inputs needed
 
-1. **Binary and provenance:** SHA-256, filename, source URL and retrieval date are still pending.
-   Make the PDF readable somewhere that is *not* the repository tree (and is not committed), or
-   supply the values directly.
+1. **Binary and provenance:** SHA-256, filename, source URL and retrieval date are still pending for
+   both source files — the Volume 4 PDF and the Annexure 43 workbook. Put them somewhere that is
+   *not* the repository tree (and is not committed), or supply the values directly.
 2. **Classification:** confirm `PUBLIC_OFFICIAL_SOURCE_COPY` (recommended) or
    `STAKEHOLDER_SOURCE_COPY`.
 3. **RAIL-005 … RAIL-015:** where does that register live?
@@ -268,108 +272,185 @@ escalation (24/48/72/96) · KPI reconciliation.
    called approved: process owner · independent reviewer · the source-period decision · the
    unresolved-exception list · approval date · effective period.
 
-## 10. Source capture — Annexure 43, KPI workbook (sheets 1–3 of 12)
+## 10. Source capture — Annexure 43, KPI workbook (Transnet)
 
-Supplied directly by the project owner on 2026-09-26 as an extract from the Transnet workbook
-`Annexure 43 KPIs (1).xlsx`, and attested as valid Transnet source (§1). The workbook is **not** in
-this workspace and must not be committed; this section is the capture, so the content is not lost
-between sessions.
+Supplied by the project owner, attested as valid Transnet source (§1). Two extracts have arrived from
+the workbook `Annexure 43 KPIs (1).xlsx`; the second (2026-09-27) covers the executive summary and all
+ten corridors and **supersedes the first (2026-09-26)**, which arrived flattened by the paste. The
+workbook is not in this workspace and must not be committed — this section is the capture, and §10.4
+records what the second extract settled and what is still open.
 
-Two caveats, both about handling rather than about the source. First, the extract as reported covers
-12 sheets and three arrived here — sheets 4–12 are outstanding. Second, a spreadsheet pasted through
-chat loses its column boundaries (the raw text shows this plainly: "Forward: SAZ-SIS03:07:0000:43:00"
-is four cells run together), so a value read out of it may be a column shift rather than a value the
-workbook holds. The items in §10.4 are that kind of question — how to read and encode what the
-workbook says — not a challenge to whether Transnet published it.
+Network totals from the first extract reconcile exactly against the second: see §10.4.
 
-### 10.1 Framework marked under development / pilot — not measured today
+### 10.1 Network summary — manual authorisations, speed restrictions, substations
 
-| Category | Measure | Unit | Attribution | Frequency / level |
+| Corridor / train path | Manual auths baseline | Target | Reduction (stated) | Reduction (computed) |
 | --- | --- | --- | --- | --- |
-| Reliability | Services exiting the network on schedule within a 30-minute tolerance (OTD, SPRINT data) | % of total services | IM + TOC | Quarterly / route |
-| Reliability | Services entering the network on schedule within tolerance (OTA, SPRINT data) | % of total services | IM + TOC | Quarterly / route |
-| Delay attribution | Delay minutes per train — IM causes | minutes/train | IM | Quarterly / route |
-| Delay attribution | Delay minutes per train — TOC causes | minutes/train | TOC | Quarterly / route |
-| Slot modification | Requests to change an allocated slot | count + % accepted | TOC (request) / IM (decision) | Per request / period |
-| Slot modification | Cancellation after IM rejects a modification request | count / % of slots | TOC | Per request / period |
-| IM non-compliance | Failure to honour an allocated slot due to IM fault | % of cancelled slots | IM | Period / train path |
-| IM non-compliance | Failure to meet disclosure / notification obligations | count of breaches | IM | Period / train path |
-| TOC non-usage | Cancellation at least **xx** days before departure | % of cancelled slots | TOC | Per request / period |
-| TOC non-usage | Failure to cancel (no-show) | % of cancelled slots | TOC | Per request / period |
-| IM unit costs | Train control costs | R/track-km | IM | Quarterly / route |
+| Ore (SAZ–SIS) | 15,291 | 11,691 | 23.0% | 23.54% |
+| Manganese (HTZ–PE) | 534,928 | 323,728 | 39.4% | 39.48% |
+| Magnetite (PHW–RBQ) | 61,324 | 29,743 | 51.5% | 51.50% |
+| Musina–Pyramid / Hoedspruit | 1,282 | 1,154 | 10.0% | 9.98% |
+| Vereeniging/Danskraal–East London | 99,078 | 97,441 | 1.7% | 1.65% |
+| Mafikeng–Beaconsfield / Potch | 208,130 | 186,054 | 10.6% | 10.61% |
+| Lephalale–Richards Bay | 392,474 | 221,649 | 43.5% | 43.53% |
+| Johannesburg–Durban | 721,324 | 648,192 | 10.1% | 10.14% |
+| Rayton–Komatipoort / Richards Bay | 267,358 | 178,493 | 33.2% | 33.24% |
+| Johannesburg–Cape Town | 611,579 | 409,503 | 33.0% | 33.04% |
+| **Network total** | **2,912,768** | **2,107,648** | **27.64%** | **27.64%** |
 
-The extract marks parts of this framework as under development (NRP, "next reporting
-phase") or pilot-only and not currently measured.
+The stated and computed columns are shown together because they are the cheapest possible check on a
+paste: every corridor reconciles within rounding, and two are truncated rather than rounded (Ore
+23.54% → "23.0%", Manganese 39.48% → "39.4%").
 
-### 10.2 Framework measured today
+| Corridor | TSR baseline | TSR target | Active TSRs | Manual auths | Stated reduction |
+| --- | --- | --- | --- | --- | --- |
+| Ore (SAZ–SIS) | 2.5% | 100% to 1.6% STK | 7 | 15,291 → 11,691 | 23.0% |
+| Manganese (HTZ–PE) | 1.7% | 100% to 1.6% STK | 19 | 534,928 → 323,728 | 39.4% |
+| Magnetite (PHW–RBQ) | 4.0% | 18% to 1.6% STK | 6 | 61,324 → 29,743 | 51.5% |
+| Musina–Pyramid / Hoedspruit | 0.8% | not stated | 6 | 1,282 → 1,154 | 10.0% |
+| Vereeniging/Danskraal–East London | 2.2% | 97% to 1.6% STK | 27 | 99,078 → 97,441 | 1.7% |
+| Mafikeng–Beaconsfield / Potch | 2.8% | 88% to 1.6% STK | 1 | 208,130 → 186,054 | 10.6% |
+| Lephalale–Richards Bay | 1.7% | 93% to 1.6% STK | 25 | 392,474 → 221,649 | 43.5% |
+| Johannesburg–Durban | 1.4% | 56% to 1.6% STK | 21 | 721,324 → 648,192 | 10.1% |
+| Rayton–Komatipoort / Richards Bay | 5.0% | 66% to 1.6% STK | 14 | 267,358 → 178,493 | 33.2% |
+| Johannesburg–Cape Town | 1.5% | 100% to 1.6% STK | 4 | 611,579 → 409,503 | 33.0% |
+| **Total** | — | keep within **1.6% of STK** network-wide | **130** | 2,912,768 → 2,107,648 | 27.64% |
 
-| Category | Measure | Unit | Attribution | Frequency / level |
-| --- | --- | --- | --- | --- |
-| Transit speeds | Route scheduled train throughput times — average transit times | hours (values given as HH:MM:SS) | IM + TOC | Annual / train path |
-| Track service quality | Track under temporary speed restriction at period end | km and % of total track | IM | Quarterly / route |
-| Track service quality | Number of speed restrictions at period end | count | IM | Quarterly / route |
-| Track service quality | Number of manual train authorisations at period end | count | IM | Quarterly / route |
-| Track condition | Track quality index | 50th percentile TQI | IM | Quarterly / route |
-| Track condition | Overhead traction quality index | index value | IM | Quarterly / route |
-| Track condition | Traction substation availability | % | IM | Quarterly / route |
+Traction substation availability across electrified corridors is targeted at **90–100%**, and requires
+units to be brought back on-load at: Bellville (18 of 23 off-load units), Koedoespoort (at least 6 of
+7), Port Elizabeth (at least 3 of 5), Krugersdorp (at least 3 between Potchefstroom and Veertien
+Stroom), Witbank (1) and Nelspruit (1). Magnetite and Musina–Pyramid/Hoedspruit are **not electrified**;
+the Vereeniging–East London corridor has decommissioned, vandalised OHTE/substations between
+Wolwehoek–Danskraal and Wolwehoek–East London, with no electric traction operating there and 4 units
+on-load at East London depot.
 
-### 10.3 Route targets and baselines as extracted — Ore and Manganese
+### 10.2 KPI framework — current and future
 
-| Route | Measure | Baseline | Target | Comment |
-| --- | --- | --- | --- | --- |
-| Ore (SAZ–SIS, forward) | Transit time | 03:07:00 | 00:43:00 | |
-| Ore (SIS–SAZ, return) | Transit time | 02:15:00 | 23:51:00 | |
-| Ore | Track under temporary speed restriction | 0.025 | 1.6% of network | 100% reduction by end of FY |
-| Ore | Number of speed restrictions | 7 | — | Keep TSRs within 1.6% of STK |
-| Ore | Manual train authorisations | 15,291 | 11,691 | 23% reduction — arithmetic checks out (23.5%) |
-| Ore | Track quality index | 55 | TQI within range | |
-| Ore | Overhead traction quality index | — | — | under development |
-| Ore | Traction substation availability | 1.00 (100%) | 1.00 (100%) | all traction feeder stations on-load |
-| Manganese (HTZ–PE, forward) | Transit time | 09:45:00 | 08:00:00 | |
-| Manganese (PE–HTZ, return) | Transit time | 21:00:00 | 17:16:00 | |
-| Manganese | Track under temporary speed restriction | 0.017 | 1.6% of network | 100% reduction by end of FY |
-| Manganese | Number of speed restrictions | 19 | — | Keep TSRs within 1.6% of STK |
-| Manganese | Manual train authorisations | 534,928 | 323,728 | 39% reduction — arithmetic checks out (39.5%) |
-| Manganese | Track quality index | 6.48 | TQI within range | |
-| Manganese | Overhead traction quality index | — | — | under development |
-| Manganese | Traction substation availability | 0.94 (94%) | 0.97 (97%) | 5 units off under the PE depot; restore at least 3 this FY |
+**Current (measured).** Transit speeds — route scheduled train throughput times, annual, per train path,
+attributed jointly to IM + TOC. Track service quality — track under TSR (km and % of total track),
+count of speed restrictions, and count of manual train authorisations, quarterly per route, IM. Track
+condition — TQI at the 50th percentile, overhead traction quality index, and traction substation
+availability, quarterly per route, IM. Status flags: **NRP** = next reporting phase (under development);
+**Pilot** = not currently measured, part of the pilot phase.
 
-### 10.4 Reading and encoding questions raised by the extract
+**Future (expanded).** Reliability — on-time departure and arrival within a 30-minute tolerance from
+SPRINT data. Delay attribution — delay minutes per train split into IM and TOC causes. Slot modification
+— count and acceptance rate of modification requests, and cancellations following an IM rejection.
+TOC non-usage — cancellation at least **xx** days before departure, and no-show. IM non-compliance —
+failure to honour an allocated slot from IM fault, and disclosure/notification breaches. Unit costs —
+train control cost in R/track-km.
 
-Raised for the reviewer to settle against the workbook. None is resolved here, and none may be turned
-into a rule by guessing. Most are probably artefacts of flattened columns or elided cells; the point is
-that a rule cannot be written either way until someone reads the workbook. Sources are attested valid
-(§1) — this list is not a challenge to that.
+### 10.3 Corridor detail
 
-1. **Unread threshold.** "Cancellation ≥ **xx** days before departure" arrived with `xx` where a
-   number belongs — either the cell was elided in transit or the workbook shows it that way. V4
-   §5.2.10.9 has a 72-hour cancellation rule and this may be the same measure, but the number comes
-   from the workbook, not from inference.
-2. **Speed-restriction units.** Ore 0.025 and Manganese 0.017 sit against a target of
-   "1.6% of network" with "100% reduction". If the baselines are also percentages, the
-   target is a large *increase*, not a reduction — so at least one value is in different
-   units or in a different column.
-3. **Speed-restriction counts.** 7 and 19 look small for a network, and the paired
-   comment speaks of a share of STK. Count and proportion appear to be mixed.
-4. **Transit-time representation.** The unit says hours, the values are HH:MM:SS, and one
-   target (23:51:00 against a 02:15:00 baseline) is worse than its own baseline — these
-   read as clock times rather than durations. Not modellable until re-checked.
-5. **Percentages versus unit counts.** Manganese availability 94% → 97% is paired with
-   "5 units off"; the conversion between the two is unstated.
-6. **Data-source systems.** SPRINT is named for reliability; the V4 text also refers to
-   IIMS and TEMS. The FlowOps-versus-IM system-of-record boundary stays open.
-7. **Enforceability.** Part of the framework is explicitly under development or
-   pilot-only, consistent with the V4 position that KPIs become enforceable service
-   levels only once the TER is satisfied.
+Transit times — route scheduled train throughput times, baseline → target (source writes "27h 07m";
+shown here as 27h07):
 
-### 10.5 Still to arrive
 
-Sheets 4–12 of the workbook, and the corridor baselines those sheets presumably carry.
+| Corridor | Leg | Baseline | Target |
+| --- | --- | --- | --- |
+| Ore (SAZ–SIS) | Forward SAZ–SIS | 27h07 | 24h43 |
+| Ore (SAZ–SIS) | Return SIS–SAZ | 26h15 | 23h51 |
+| Manganese (HTZ–PE) | Forward HTZ–PE | 33h45 | 32h00 |
+| Manganese (HTZ–PE) | Return PE–HTZ | 45h00 | 41h16 |
+| Magnetite (PHW–RBQ) | Forward PHW–RBQ | 39h50 | 33h32 |
+| Magnetite (PHW–RBQ) | "Forward" RBQ–PHW | 35h00 | 33h55 |
+| Musina–Pyramid / Hoedspruit | Forward Musina–Pyramid | 19h56 | 18h44 |
+| Musina–Pyramid / Hoedspruit | Forward Musina–Hoedspruit | 17h29 | 15h05 |
+| Musina–Pyramid / Hoedspruit | Return Pyramid–Musina | 18h29 | 17h17 |
+| Musina–Pyramid / Hoedspruit | Return Hoedspruit–Musina | 20h07 | 17h43 |
+| Vereeniging/Danskraal–East London | Forward Danskraal–East London | 44h35 | 39h47 |
+| Vereeniging/Danskraal–East London | Forward Vereeniging–East London | 38h19 | 32h19 |
+| Vereeniging/Danskraal–East London | Return East London–Danskraal | 40h34 | 35h46 |
+| Vereeniging/Danskraal–East London | Return East London–Vereeniging | 35h24 | 29h24 |
+| Mafikeng–Beaconsfield / Potch | Forward Mafikeng–Potchefstroom | 30h20 | 23h20 |
+| Mafikeng–Beaconsfield / Potch | Forward Mafikeng–Beaconsfield | 18h13 | 14h37 |
+| Mafikeng–Beaconsfield / Potch | Return Potchefstroom–Mafikeng | 32h18 | 31h20 |
+| Mafikeng–Beaconsfield / Potch | Return Beaconsfield–Mafikeng | 17h51 | 14h15 |
+| Lephalale–Richards Bay | Forward Lephalale–Richards Bay | 53h05 | 44h41 |
+| Lephalale–Richards Bay | Forward Trichardt–Richards Bay | 21h55 | 18h19 |
+| Lephalale–Richards Bay | Return Richards Bay–Lephalale | 60h58 | 52h34 |
+| Lephalale–Richards Bay | Return Richards Bay–Trichardt | 21h08 | 17h32 |
+| Johannesburg–Durban | Forward Johannesburg–Durban | 38h06 | 29h00 |
+| Johannesburg–Durban | Return Durban–Johannesburg | 33h07 | 29h00 |
+| Rayton–Komatipoort / Richards Bay | Forward Rayton–Komatipoort | 28h02 | 23h14 |
+| Rayton–Komatipoort / Richards Bay | Forward Rayton–Richards Bay | 29h48 | 23h48 |
+| Rayton–Komatipoort / Richards Bay | Forward Steelpoort–Komatipoort | 31h10 | 26h22 |
+| Rayton–Komatipoort / Richards Bay | Return Komatipoort–Rayton | 27h01 | 22h13 |
+| Rayton–Komatipoort / Richards Bay | Return Richards Bay–Rayton | 29h15 | 23h15 |
+| Rayton–Komatipoort / Richards Bay | Return Komatipoort–Steelpoort | 31h43 | 26h55 |
+| Johannesburg–Cape Town | Forward City Deep–Bellville | 78h08 | 59h18 |
+| Johannesburg–Cape Town | Return Bellville–City Deep | 56h55 | 53h05 |
 
-This section is the retained basis of the KPI track, and it may become requirements and versioned
-rules once the reading questions in §10.4 are settled against the workbook and a reviewer signs the
-capture. What it may **not** do is acquire a `RAIL-0xx` identifier and then be quoted as though a
-number had been read out of a spreadsheet that is not in this repository.
+Track quality index by corridor:
+
+
+| Corridor | TQI baseline | TQI target | Direction |
+| --- | --- | --- | --- |
+| Ore | 5 | 5 | unchanged, "within target range" |
+| Manganese | 6.4 | 8 | up |
+| Magnetite | 8.2 | 8 | down |
+| Musina–Pyramid / Hoedspruit | 7.4 (N2) / 10.6 (N3) | 9 (N2) / 12 (N3) | up |
+| Vereeniging/Danskraal–East London | 8.1 | 9 | up |
+| Mafikeng–Beaconsfield / Potch | 8.2 | 9 | up |
+| Lephalale–Richards Bay | 7.5 (N1) / 5.7 (S) | 8 (N1) / 6 (S) | up |
+| Johannesburg–Durban | 10 | 8 | down |
+| Rayton–Komatipoort / Richards Bay | 8.8 | 8 | down |
+| Johannesburg–Cape Town | 6.3 (N1) / 6.3 (N2) | 8 (N1) / 9 (N2) | up |
+
+
+Two operational notes carried in the source: Johannesburg–Durban has all four responsible depots
+(Vereeniging, Heidelberg, Ladysmith, Durban) below 90% and requiring substation restoration; and the
+Mafikeng manual-authorisation target covers the Mafikeng–Veertien Stroom section, with PCM to
+Beaconsfield counted under Johannesburg–Cape Town.
+
+### 10.4 What the second extract settled — and what is still open
+
+**Settled.** Each of these was an artefact of the first, flattened paste, and they are recorded because
+the first capture got them wrong:
+
+| First capture | Actually |
+| --- | --- |
+| Ore transit `03:07:00 → 00:43:00`, unit "hours" | **27h07 → 24h43** — a leading digit was lost, making a target look worse than its own baseline |
+| Manganese transit `09:45:00 → 08:00:00` | **33h45 → 32h00** |
+| TSR baselines `0.025` and `0.017` | **2.5%** and **1.7%** — decimal point displaced, and they are percentages against the 1.6% STK objective |
+| Ore TQI "55"; Manganese "6.48" | **5 → 5** and **6.4 → 8** — adjacent cells had merged |
+| "Speed restriction counts of 7 and 19 look small" | Genuine counts; the ten corridors sum to exactly **130**, the stated network total |
+| "12 sheets, 3 arrived" | 10 corridor tables + the current and future framework = 12; the second extract carries all ten |
+
+**Still open — source-level, for independent review, never silently normalised:**
+
+1. **The cancellation threshold is still a placeholder.** "Cancellation ≥ **xx** days before departure"
+   appears in both extracts, so it is not an artefact of the paste. It cannot be filled in from V4
+   §5.2.10.9's 72-hour rule by inference — the number comes from the workbook.
+2. **TSR reduction targets do not reconcile with the 1.6% STK objective.** Applying each corridor's
+   stated reduction to its own baseline gives: Ore 0%, Manganese 0%, Magnetite 3.28%, Vereeniging
+   0.07%, Mafikeng 0.34%, Lephalale 0.12%, Johannesburg–Durban 0.62%, Rayton 1.70%, Johannesburg–Cape
+   Town 0%. Only Rayton lands on 1.6%. Either the reduction is measured against a denominator the
+   extract does not show (TSR kilometres rather than % of STK, or a prior-year figure), or the columns
+   come from different versions of the framework. No single rule reproduces them as extracted.
+3. **TQI improvement direction is not consistent.** Targets rise for seven corridors (Manganese
+   6.4 → 8, Vereeniging 8.1 → 9, Johannesburg–Cape Town 6.3 → 8), fall for three (Magnetite 8.2 → 8,
+   Johannesburg–Durban 10 → 8, Rayton 8.8 → 8), and Ore is unchanged at 5. "Within target range"
+   implies a band, so whether a higher TQI is better or worse must be confirmed before any rule is
+   written — seven corridors and three corridors cannot both be improvements under one convention.
+4. **Musina–Pyramid/Hoedspruit carries no TSR target**, only a 0.8% baseline. A gap, not a zero.
+5. **Cross-corridor attribution.** The Mafikeng target is qualified as covering Mafikeng–Veertien
+   Stroom with PCM–Beaconsfield counted under Johannesburg–Cape Town; KPI attribution needs that scope
+   rule explicit.
+6. **Data sources.** SPRINT is named for reliability; V4 also refers to IIMS and TEMS. The
+   FlowOps-versus-IM system-of-record boundary stays open.
+7. **Enforceability.** Part of the framework is under development or pilot-only, consistent with V4's
+   position that KPIs become enforceable service levels only once the TER is satisfied.
+8. **Not-applicable sections.** Non-electrified and decommissioned corridors need an explicit "not
+   applicable", distinct from missing data, in any schema that stores this.
+
+### 10.5 Still outstanding
+
+The workbook and the Volume 4 binary (for hashing into controlled storage), the annexure set, the
+`RAIL-0xx` identifier register, and independent review. This capture may become requirements and
+versioned rules once the §10.4 questions are settled against the workbook and a reviewer signs it; it
+may **not** acquire a `RAIL-0xx` identifier and then be quoted as though those numbers had been read
+out of a spreadsheet that is not in this repository.
 
 ## 11. Honest status
 
@@ -379,5 +460,6 @@ half of the chain is unmodelled, the escalation ladder does not match the source
 deviation fields are missing, the system-of-record boundary is unresolved, there are no Rail tests,
 and none of it has had independent review, interface testing or pilot evidence. The migration chain
 remains the active workstream. Annexure 43's KPI framework is captured in §10 as attested Transnet
-source — sheets 1–3 of 12, with seven reading questions to settle against the workbook — which is
-source material awaiting independent review, not a requirement set.
+source — all ten corridors, network totals that reconcile exactly, and eight source-level questions
+(§10.4) still to settle against the workbook — which is source material awaiting independent review,
+not a requirement set.
