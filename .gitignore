@@ -106,3 +106,6 @@ ERROR
 **/rehearsal-evidence/
 rehearsal-report*.md
 rehearsal-report*.json
+
+# Advisory audit scanner output (CI artifact)
+audit-reports/

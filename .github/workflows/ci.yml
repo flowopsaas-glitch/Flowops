@@ -222,6 +222,29 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Advisory RBAC + tenant-scope reports (non-blocking)
+        # These scanners cannot see runtime control flow, so they inform review
+        # rather than fail the build. Legitimate hits exist (platform-admin
+        # endpoints, token lookups, writes to rows already proven in-tenant).
+        run: |
+          mkdir -p audit-reports
+          npm run rbac:inventory --silent > audit-reports/rbac-inventory.txt
+          npm run tenant-scope:audit --silent > audit-reports/tenant-scope-audit.txt
+          echo "--- RBAC inventory (tail) ---"
+          tail -12 audit-reports/rbac-inventory.txt
+          echo "--- Tenant-scope audit (tail) ---"
+          tail -12 audit-reports/tenant-scope-audit.txt
+
+      - name: Upload advisory audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: advisory-audit-reports
+          # upload-artifact resolves paths from the repo root, while the run
+          # steps above execute with working-directory: backend.
+          path: backend/audit-reports/
+          retention-days: 14
+
       - name: E2E tests
         run: npm run test:e2e --if-present
 
