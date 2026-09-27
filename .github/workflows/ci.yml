@@ -325,8 +325,41 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          # CR_PAT (optional fine-grained PAT with 'Packages: write') works
+          # around user-owned GHCR packages that reject the job token; falls
+          # back to GITHUB_TOKEN when the secret is absent.
+          password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+
+      # GHCR publish preflight — surface registry-authorisation problems
+      # BEFORE the long multi-arch build. The 2026-09-27 main failures were
+      # GHCR authorisation ("denied: permission_denied: read_package") at
+      # push time — NOT QEMU/arm64 — and only surfaced at the end of the job.
+      #   200/404 -> package readable, or absent (first push creates it): OK
+      #   401/403 -> token cannot publish: fail fast with the remediation
+      - name: GHCR publish preflight
+        if: github.event_name == 'push'
+        env:
+          REG_TOKEN: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          pkg="${GITHUB_REPOSITORY,,}-frontend"
+          code=$(curl -s -o /tmp/ghcr_probe.json -w '%{http_code}' \
+            -H "Authorization: Bearer $REG_TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/$pkg/manifests/main" || true)
+          code="${code:-000}"
+          echo "GHCR preflight: GET ghcr.io/v2/$pkg/manifests/main -> HTTP $code"
+          case "$code" in
+            200|404)
+              echo "Preflight OK ($code): package readable or absent (first push creates it)." ;;
+            401|403)
+              echo "::error title=GHCR publish preflight::ghcr.io/$pkg denied (HTTP $code) — this job's token cannot publish. Fix ONE of: (1) repo Settings > Actions > General > Workflow permissions > 'Read and write permissions'; (2) if the package already exists, its Package settings > 'Manage Actions access' > grant THIS repository Write; (3) add secret CR_PAT (fine-grained PAT with Packages: write) — login falls back to it."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true
+              exit 1 ;;
+            *)
+              echo "Preflight inconclusive (HTTP $code) — continuing; the push step will re-check authorisation."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true ;;
+          esac
 
       - name: Compute image tags & labels
         id: meta
@@ -752,8 +785,41 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          # CR_PAT (optional fine-grained PAT with 'Packages: write') works
+          # around user-owned GHCR packages that reject the job token; falls
+          # back to GITHUB_TOKEN when the secret is absent.
+          password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+
+      # GHCR publish preflight — surface registry-authorisation problems
+      # BEFORE the long multi-arch build. The 2026-09-27 main failures were
+      # GHCR authorisation ("denied: permission_denied: read_package") at
+      # push time — NOT QEMU/arm64 — and only surfaced at the end of the job.
+      #   200/404 -> package readable, or absent (first push creates it): OK
+      #   401/403 -> token cannot publish: fail fast with the remediation
+      - name: GHCR publish preflight
+        if: github.event_name == 'push'
+        env:
+          REG_TOKEN: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          pkg="${GITHUB_REPOSITORY,,}-backend"
+          code=$(curl -s -o /tmp/ghcr_probe.json -w '%{http_code}' \
+            -H "Authorization: Bearer $REG_TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/$pkg/manifests/main" || true)
+          code="${code:-000}"
+          echo "GHCR preflight: GET ghcr.io/v2/$pkg/manifests/main -> HTTP $code"
+          case "$code" in
+            200|404)
+              echo "Preflight OK ($code): package readable or absent (first push creates it)." ;;
+            401|403)
+              echo "::error title=GHCR publish preflight::ghcr.io/$pkg denied (HTTP $code) — this job's token cannot publish. Fix ONE of: (1) repo Settings > Actions > General > Workflow permissions > 'Read and write permissions'; (2) if the package already exists, its Package settings > 'Manage Actions access' > grant THIS repository Write; (3) add secret CR_PAT (fine-grained PAT with Packages: write) — login falls back to it."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true
+              exit 1 ;;
+            *)
+              echo "Preflight inconclusive (HTTP $code) — continuing; the push step will re-check authorisation."
+              cat /tmp/ghcr_probe.json 2>/dev/null || true ;;
+          esac
 
       - name: Compute image tags
         id: meta
