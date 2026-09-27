@@ -42,7 +42,16 @@ test("CI does not use migrate dev as a fallback and runs the regression suite", 
   );
   assert.ok(!/migrate deploy\s*\|\|/.test(workflow));
   assert.ok(workflow.includes("npm run release:safety:test"));
-  assert.ok(workflow.includes("node scripts/prepare-ci-schema.mjs"));
+  // prepare-ci-schema.mjs was the fixture path while prisma/migrations was
+  // empty. Migrations now exist and are the schema's history: CI must verify
+  // they exist, deploy them (deploy-only, no fallback), prove they reconstruct
+  // the schema, and run the migration tooling suites. The fixture push must
+  // not return as a substitute for that.
+  assert.ok(workflow.includes("npm run migrations:verify"));
+  assert.ok(workflow.includes("npm run migrations:test"));
+  assert.ok(workflow.includes("npm run migrations:rehearsal:test"));
+  assert.ok(workflow.includes("npx prisma migrate deploy"));
+  assert.ok(!workflow.includes("node scripts/prepare-ci-schema.mjs"));
 });
 test("image smoke fixture is explicit and the application role lacks schema ownership", () => {
   const workflow = readFileSync(

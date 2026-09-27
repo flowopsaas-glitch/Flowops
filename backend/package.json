@@ -25,7 +25,12 @@
     "migrations:review": "node scripts/review-migration.mjs",
     "migrations:test": "node --test scripts/migrations.test.mjs",
     "migrations:rehearsal:test": "node --test scripts/migrate-rehearsal.test.mjs",
-    "migrations:rehearse": "node scripts/migrate-rehearsal.mjs"
+    "migrations:rehearse": "node scripts/migrate-rehearsal.mjs",
+    "release:safety:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/release-startup.test.mjs",
+    "rbac:inventory": "node scripts/rbac-inventory.mjs",
+    "rbac:inventory:json": "node scripts/rbac-inventory.mjs --format json",
+    "tenant-scope:audit": "node scripts/tenant-scope-audit.mjs",
+    "tenant-scope:audit:json": "node scripts/tenant-scope-audit.mjs --format json"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.540.0",
