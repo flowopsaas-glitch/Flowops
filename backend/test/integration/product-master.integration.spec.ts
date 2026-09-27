@@ -115,6 +115,57 @@ describe('Product Master (PostgreSQL)', () => {
       expect(sequence.nextNumber).toBe(6);
     });
 
+    /**
+     * The bootstrap race, repeated. `sku_sequences` has two unique arbiters — the primary
+     * key on `id` and the unique index on `companyId` — and the bootstrap insert used to
+     * name only `("companyId")`. A caller that lost the creation race could then be
+     * reported as a `sku_sequences_pkey` violation (23505) instead of falling through to
+     * the row lock and reading the winner's row. Untargeted `ON CONFLICT DO NOTHING`
+     * covers both arbiters. Each round drops the sequence row, so every round starts
+     * exactly where a tenant's first-ever allocation does.
+     */
+    it('bootstraps the tenant sequence once however many first allocations race', async () => {
+      const product = await approvedProduct('PROD-BOOTSTRAP');
+      const variants = [];
+      for (let i = 1; i <= 5; i++) {
+        variants.push(
+          await service.createVariant(companyId, clerk, product.id, {
+            code: `PROD-BOOTSTRAP-${i}`,
+            name: `Bootstrap variant ${i}`,
+            attributes: { packSize: 100 + i, unit: 'box' },
+          }),
+        );
+      }
+
+      for (let round = 0; round < 10; round++) {
+        await prisma.skuSequence.deleteMany({ where: { companyId } });
+        await prisma.productVariant.updateMany({
+          where: { companyId, productId: product.id },
+          data: { sku: null, skuAllocatedAt: null },
+        });
+
+        const results = await Promise.allSettled(
+          variants.map((variant) => service.allocateSku(companyId, admin, variant.id)),
+        );
+
+        expect(
+          results
+            .filter((r) => r.status === 'rejected')
+            .map((r) => String((r as PromiseRejectedResult).reason?.message)),
+        ).toEqual([]);
+
+        const skus = results.map(
+          (r) => (r as PromiseFulfilledResult<{ sku: string }>).value.sku,
+        );
+        expect(skus.filter((sku) => !sku)).toEqual([]);
+        expect(new Set(skus).size).toBe(5);
+        expect(skus.every((sku) => /^SKU-\d{5}$/.test(sku))).toBe(true);
+
+        // Losing the race must never leave a second sequence row behind.
+        expect(await prisma.skuSequence.count({ where: { companyId } })).toBe(1);
+      }
+    });
+
     it('never hands the same SKU to two tenants, and keeps counters per tenant', async () => {
       const other = await seedTenant(prisma, 'Second Tenant');
 

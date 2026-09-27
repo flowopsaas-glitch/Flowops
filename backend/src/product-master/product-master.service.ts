@@ -478,6 +478,17 @@ export class ProductMasterService {
    * `SELECT … FOR UPDATE` inside a transaction, so parallel allocations
    * serialise and each caller gets a distinct number. The counter only ever
    * moves forward — a deleted variant does not return its SKU to the pool.
+   *
+   * The bootstrap insert below is deliberately `ON CONFLICT DO NOTHING` with
+   * **no conflict target**. `sku_sequences` has two unique arbiters — the
+   * primary key on `id` and the unique index on `companyId` — and naming only
+   * `("companyId")` leaves the primary key uncovered: a caller that loses the
+   * creation race can then be reported as a `sku_sequences_pkey` violation
+   * (SQLSTATE 23505) instead of falling through to the lock and reading the
+   * row the winner created. Untargeted `DO NOTHING` covers both arbiters, so
+   * the first allocation for a tenant is idempotent however many callers race
+   * for it. Reproduced and fixed against PostgreSQL 16 (see the integration
+   * suite's bootstrap-race case).
    */
   async allocateSku(companyId: string, actor: ActorContext, variantId: string) {
     this.assertEnabled();
@@ -489,7 +500,7 @@ export class ProductMasterService {
       await tx.$executeRaw`
         INSERT INTO sku_sequences (id, "companyId", "nextNumber", prefix, format, "updatedAt")
         VALUES (${`seq_${companyId}`}, ${companyId}, 1, 'SKU', 'SKU-{number:05d}', NOW())
-        ON CONFLICT ("companyId") DO NOTHING
+        ON CONFLICT DO NOTHING
       `;
 
       const rows = await tx.$queryRaw<

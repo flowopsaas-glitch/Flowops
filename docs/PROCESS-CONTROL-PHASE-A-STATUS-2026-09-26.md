@@ -108,8 +108,13 @@ and **every** integration test failed with the guard's message; `7233957c` added
 from the repository root but copied `../schema-sql/schema.sql` — one level *above* the checkout; it now
 copies `schema-sql/schema.sql`, where the generator actually writes it. The two service-side defects
 found locally (SKU-allocation race, unknown-SKU governance) were fixed in `31156800`. Every run since
-`7233957c` has passed all ten jobs: `36243550452`, `36244383527`, `36244856949`, `36246066463`,
-`36247002719`, `36247674008`.
+`7233957c` passed all ten jobs — thirteen in a row, `36243550452` through `36300015374`.
+
+**The fifth red run was the intermittent kind.** `f78d8bd` (a documentation-only commit) failed the
+integration step alone, with `duplicate key value violates unique constraint "sku_sequences_pkey"`.
+The commits either side of it passed, including a documentation commit immediately after, which is
+what a concurrency defect looks like rather than a broken build. It was then reproduced deliberately
+and fixed — defect 5 in §7.
 
 ### 2.3 Migration — superseded: created and rehearsed, not yet adopted
 
@@ -303,7 +308,7 @@ regression test for the target guard described below):
   "blocking"); all-damaged stock blocks; a receipt with no put-away is never closed out; known SKUs
   link to their variant; unknown SKUs stay controlled exceptions; one instance per receipt.
 
-### Four defects the suite found, and how they were fixed
+### Five defects the suite found, and how they were fixed
 
 1. **`startInstance` could surface a unique-constraint error.** Two callers both passed the
    idempotency check and one then lost the insert race. The loser now returns the winner's instance,
@@ -317,6 +322,16 @@ regression test for the target guard described below):
 4. **Unknown SKUs could slip through.** The "does this tenant govern SKUs?" test only looked at the
    SKUs on that receipt, so a receipt of entirely unknown codes was treated as ungoverned. It now
    checks whether the tenant has any allocated SKU, so unknown codes raise a blocking exception.
+5. **The SKU sequence bootstrap could fail under concurrency** (found by CI, then reproduced locally).
+   Defect 3 fixed the *counter* race but not the *creation* race. `sku_sequences` has two unique
+   arbiters — the primary key on `id` and the unique index on `companyId` — and the bootstrap insert
+   named only `("companyId")`, so a caller that lost the creation race could be reported as a
+   `sku_sequences_pkey` violation (23505) instead of falling through to the row lock and reading the
+   row the winner had just created. Untargeted `ON CONFLICT DO NOTHING` covers both arbiters.
+   Measured against PostgreSQL 16.2 with five concurrent first allocations per round: with the named
+   target, **4 of 200 attempts failed** on the primary key; untargeted, **0 of 200** — and one sequence
+   row in every round either way. The integration suite now repeats the race (ten rounds per run) so a
+   regression is caught rather than waited for.
 
 ### How to run it locally (including offline)
 
