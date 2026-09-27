@@ -8,6 +8,15 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > against the primary text supplied in conversation on 2026-09-26. Corrections are recorded in
 > §6.1 and §5 rather than silently folded in.
 >
+> **Revision 7 — 2026-09-27.** The project owner attests that the **capacity source is valid**: the
+> Annexure 33 capacity-statement workbook is now named in §1's provenance attestation, which previously
+> listed only the Volume 4 text, its annexure list and the Annexure 43 KPI extract. This was a real gap —
+> §11 cited §1 for an attestation §1 did not contain. Provenance is now explicit for all three sources.
+> Nothing else moves: §11.6's eleven exceptions, the unpinned financial year and the period-separation
+> rule in §11.0 are all questions of reading and encoding, unaffected by provenance, and the register
+> stays `RECEIVED / VALIDATION_REQUIRED` because the binary, hash, effective period and independent
+> review are still outstanding.
+>
 > **Revision 6 — 2026-09-27.** Period separation between the two sources is made explicit in §11.0,
 > on the owner's instruction: the V4 Network Statement governs the **2026/27 and 2027/28** operating
 > context, while the capacity workbook carries its own financial years (**FY26/27, FY27/28, FY29/30 and
@@ -57,7 +66,7 @@ the Rail requirements baseline.
 | Pages | **203 — confirmed** (the supplied text runs "Page 2 of 203" … "Page 203 of 203") |
 | Effective operating periods | 2026/27 and 2027/28 timetable periods (§1.7) |
 | State | `RECEIVED / VALIDATION_REQUIRED` |
-| Provenance attestation | **Attested.** The project owner supplied this content directly on 2026-09-26 and attests that it is valid Transnet source: the Volume 4 text and its annexure list, and the Annexure 43 KPI extract from the workbook `Annexure 43 KPIs (1).xlsx`. Retrieval provenance is therefore recorded as an owner attestation rather than an assumption. |
+| Provenance attestation | **Attested.** The project owner supplied this content directly and attests that it is valid Transnet source: the Volume 4 text and its annexure list, and the Annexure 43 KPI extract from the workbook `Annexure 43 KPIs (1).xlsx` (2026-09-26); and the Annexure 33 capacity-statement workbook `Annexure33CapacityStatement.xlsm`, re-affirmed as valid source on 2026-09-27. Retrieval provenance is therefore recorded as an owner attestation rather than an assumption. |
 | Transcription fidelity | **Unverified, and unverifiable from here.** Every item arrived as text pasted into a chat session, which flattens spreadsheet columns and can elide values. This is a limit of the channel, **not** a doubt about the source: the reviewer reconciles values against the binary/workbook, and where a value still cannot be read unambiguously it is logged in §5 or §10.4 rather than guessed. |
 | Classification | **`PUBLIC_OFFICIAL_SOURCE_COPY` (recommended)** — §1.7 records that the statement is published by the TRIM on its website, free of charge. Downgrade to `STAKEHOLDER_SOURCE_COPY` if this copy did not come from that route. Confirm before recording. |
 | SHA-256 | **PENDING** — the binary is not in this workspace |
@@ -274,9 +283,11 @@ escalation (24/48/72/96) · KPI reconciliation.
 
 ## 9. Open items — decisions or inputs needed
 
-1. **Binary and provenance:** SHA-256, filename, source URL and retrieval date are still pending for
-   both source files — the Volume 4 PDF and the Annexure 43 workbook. Put them somewhere that is
-   *not* the repository tree (and is not committed), or supply the values directly.
+1. **Binary and retrieval record:** SHA-256, filename, source URL and retrieval date are still pending
+   for all three source files — the Volume 4 PDF, the Annexure 43 KPI workbook and the Annexure 33
+   capacity workbook. *Validity* of these sources is attested by the owner (§1); what is missing is the
+   retrieval record — the hash of the actual binary, where it came from and when. Put the files somewhere
+   that is *not* the repository tree (and is not committed), or supply the values directly.
 2. **Classification:** confirm `PUBLIC_OFFICIAL_SOURCE_COPY` (recommended) or
    `STAKEHOLDER_SOURCE_COPY`.
 3. **RAIL-005 … RAIL-015:** where does that register live?
@@ -498,8 +509,14 @@ out of a spreadsheet that is not in this repository.
 
 ## 11. Source capture — Annexure 33 capacity statement (Transnet workbook)
 
-Supplied by the project owner on 2026-09-27 and attested as valid Transnet source (§1). Workbook
-`Annexure33CapacityStatement.xlsm`, three sheets. Unlike the KPI extract in §10, this one is
+Supplied by the project owner on 2026-09-27 and attested as valid Transnet source — the attestation is
+recorded in §1, which now names this workbook explicitly rather than leaving §11 to cite §1 for
+something §1 did not list. Workbook `Annexure33CapacityStatement.xlsm`, three sheets.
+
+Provenance being attested does **not** answer the questions in §11.6 or pin the periods in §11.0: those
+are about *reading and encoding* the source (which FY a value came from, what a negative "train paths
+lost" means), not about whether it is genuine Transnet material. The attestation therefore leaves
+exception 11, the non-countable values, the single-factor question and the rest exactly as they are. Unlike the KPI extract in §10, this one is
 **arithmetic**, so most of it could be checked rather than merely transcribed — see §11.3.
 
 ### 11.0 Period separation — the two sources are not interchangeable
