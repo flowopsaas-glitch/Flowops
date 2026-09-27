@@ -1,0 +1,15 @@
+{
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testMatch": ["<rootDir>/test/integration/**/*.spec.ts"],
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleNameMapper": {
+    "^@prisma/client/runtime/wasm\\.js$": "<rootDir>/test/integration/support/wasm-runtime-shim.ts"
+  },
+  "testTimeout": 90000,
+  "maxWorkers": 1,
+  "forceExit": true
+}

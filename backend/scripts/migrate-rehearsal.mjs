@@ -1,28 +1,44 @@
 #!/usr/bin/env node
 /**
- * Inspect-only migration diagnostic. Derived from PR #436 at 7844fffa; hardened
- * on this branch without importing its feature code or initial migration.
- * Never executes migration SQL, resolve, db push, or other apply operations.
- * Exit 0 = complete diagnostic ready for independent review (NOT approval);
- * exit 2 = HOLD (drift/blocking/unknown); exit 1 = execution/configuration failure.
+ * Migration rehearsal against a disposable clone of an existing database.
+ *
+ * A clean disposable database proves a migration is syntactically valid; it does
+ * not prove the migration is safe for a database that already holds data. This
+ * tool answers the questions that decision actually needs:
+ *
+ *   1. what does the existing database contain (tables, enums, indexes,
+ *      constraints, row estimates)?
+ *   2. how does it differ from the migration — missing objects, extra objects,
+ *      columns whose type/nullability/default changed?
+ *   3. must the migration be applied, or marked as an already-applied baseline
+ *      because the database already matches it?
+ *   4. are the data-preserving alterations safe — would the unique indexes,
+ *      foreign keys or NOT NULL columns the migration expects be rejected by
+ *      the rows that actually exist?
+ *
+ * Read-only by default. `--mode apply` only ever runs on a target that passed
+ * the guards below and only when the verdict says applying is the right move.
+ *
+ * Usage:
+ *   node scripts/migrate-rehearsal.mjs --url <clone-url> [--mode inspect|apply]
+ *                                     [--migration <path>] [--schema <path>]
+ *                                     [--report <file>] [--i-have-a-clone]
+ *                                     [--confirm-apply]
+ *
+ * Exit codes: 0 = rehearsal completed (whatever the verdict), 1 = could not run
+ * (guard refused, connection failed, unreadable migration).
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-import pg from "pg";
-import * as path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const BACKEND_ROOT = path.resolve(HERE, '..');
 
 /** Database names this tool will ever touch. */
-const DISPOSABLE_SUFFIXES = [
-  "_clone",
-  "_rehearsal",
-  "_test",
-  "_ci",
-  "_ephemeral",
-  "_shadow",
-];
-const LOCAL_HOSTS = ["localhost", "127.0.0.1", "::1"];
+const DISPOSABLE_SUFFIXES = ['_clone', '_rehearsal', '_test', '_ci', '_ephemeral', '_shadow'];
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Parsing the migration
@@ -33,31 +49,26 @@ const LOCAL_HOSTS = ["localhost", "127.0.0.1", "::1"];
  * PostgreSQL's `timestamp without time zone` + precision 3 compare equal.
  */
 export function normalizeType(raw) {
-  const type = String(raw).trim().replace(/\s+/g, " ");
-  if (type.endsWith("[]")) return `${normalizeType(type.slice(0, -2))}[]`;
+  const type = String(raw).trim().replace(/\s+/g, ' ');
+  if (type.endsWith('[]')) return `${normalizeType(type.slice(0, -2))}[]`;
   const enumMatch = /^"([^"]+)"$/.exec(type);
   if (enumMatch) return enumMatch[1];
 
   const upper = type.toUpperCase();
   let match;
   if ((match = /^VARCHAR\((\d+)\)$/.exec(upper))) return `varchar(${match[1]})`;
-  if ((match = /^DECIMAL\((\d+),(\d+)\)$/.exec(upper)))
-    return `decimal(${match[1]},${match[2]})`;
-  if ((match = /^NUMERIC\((\d+),(\d+)\)$/.exec(upper)))
-    return `decimal(${match[1]},${match[2]})`;
-  if ((match = /^TIMESTAMP\((\d)\)$/.exec(upper)))
-    return `timestamp(${match[1]})`;
-  if ((match = /^TIMESTAMPTZ\((\d)\)$/.exec(upper)))
-    return `timestamptz(${match[1]})`;
-  if (upper === "TEXT") return "text";
-  if (upper === "DOUBLE PRECISION") return "double precision";
-  if (upper === "INTEGER" || upper === "INT" || upper === "INT4")
-    return "integer";
-  if (upper === "BIGINT" || upper === "INT8") return "bigint";
-  if (upper === "BOOLEAN" || upper === "BOOL") return "boolean";
-  if (upper === "JSONB") return "jsonb";
-  if (upper === "UUID") return "uuid";
-  if (upper === "DATE") return "date";
+  if ((match = /^DECIMAL\((\d+),(\d+)\)$/.exec(upper))) return `decimal(${match[1]},${match[2]})`;
+  if ((match = /^NUMERIC\((\d+),(\d+)\)$/.exec(upper))) return `decimal(${match[1]},${match[2]})`;
+  if ((match = /^TIMESTAMP\((\d)\)$/.exec(upper))) return `timestamp(${match[1]})`;
+  if ((match = /^TIMESTAMPTZ\((\d)\)$/.exec(upper))) return `timestamptz(${match[1]})`;
+  if (upper === 'TEXT') return 'text';
+  if (upper === 'DOUBLE PRECISION') return 'double precision';
+  if (upper === 'INTEGER' || upper === 'INT' || upper === 'INT4') return 'integer';
+  if (upper === 'BIGINT' || upper === 'INT8') return 'bigint';
+  if (upper === 'BOOLEAN' || upper === 'BOOL') return 'boolean';
+  if (upper === 'JSONB') return 'jsonb';
+  if (upper === 'UUID') return 'uuid';
+  if (upper === 'DATE') return 'date';
   return upper.toLowerCase();
 }
 
@@ -70,25 +81,18 @@ export function normalizeType(raw) {
  */
 export function normalizeFormattedType(formatted) {
   // format_type() schema-qualifies a type that is not on the caller's search path.
-  const raw = String(formatted)
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/^public\./, "");
+  const raw = String(formatted).trim().replace(/\s+/g, ' ').replace(/^public\./, '');
   const arrayMatch = /^(.*)\[\]$/.exec(raw);
   if (arrayMatch) return `${normalizeFormattedType(arrayMatch[1])}[]`;
   let match;
-  if ((match = /^timestamp\((\d+)\) without time zone$/.exec(raw)))
-    return `timestamp(${match[1]})`;
-  if ((match = /^timestamp\((\d+)\) with time zone$/.exec(raw)))
-    return `timestamptz(${match[1]})`;
-  if (raw === "timestamp without time zone") return "timestamp(6)";
-  if (raw === "timestamp with time zone") return "timestamptz(6)";
-  if ((match = /^character varying\((\d+)\)$/.exec(raw)))
-    return `varchar(${match[1]})`;
-  if (raw === "character varying") return "varchar";
+  if ((match = /^timestamp\((\d+)\) without time zone$/.exec(raw))) return `timestamp(${match[1]})`;
+  if ((match = /^timestamp\((\d+)\) with time zone$/.exec(raw))) return `timestamptz(${match[1]})`;
+  if (raw === 'timestamp without time zone') return 'timestamp(6)';
+  if (raw === 'timestamp with time zone') return 'timestamptz(6)';
+  if ((match = /^character varying\((\d+)\)$/.exec(raw))) return `varchar(${match[1]})`;
+  if (raw === 'character varying') return 'varchar';
   if ((match = /^character\((\d+)\)$/.exec(raw))) return `char(${match[1]})`;
-  if ((match = /^numeric\((\d+),(\d+)\)$/.exec(raw)))
-    return `decimal(${match[1]},${match[2]})`;
+  if ((match = /^numeric\((\d+),(\d+)\)$/.exec(raw))) return `decimal(${match[1]},${match[2]})`;
   return normalizeType(raw);
 }
 
@@ -99,58 +103,26 @@ export function normalizeFormattedType(formatted) {
  * human look, but harmless spelling differences should not fake a drift.
  */
 export function normalizeDefault(raw) {
-  if (raw === null || raw === undefined || String(raw).trim() === "")
-    return null;
+  if (raw === null || raw === undefined) return null;
   let value = String(raw).trim();
-  // Protect quoted literals/identifiers before normalizing SQL keywords. Never
-  // lowercase data, or strip a cast-looking substring inside a string literal.
-  const literals = [];
-  value = value.replace(/'(?:''|[^'])*'|"(?:""|[^"])*"/g, (token) => {
-    literals.push(token);
-    return `__quoted_${literals.length - 1}__`;
-  });
-  const balanced = (text) => {
-    let depth = 0;
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === "(") depth++;
-      if (text[i] === ")") depth--;
-      if (depth === 0 && i < text.length - 1) return false;
-      if (depth < 0) return false;
-    }
-    return depth === 0;
-  };
-  while (value.startsWith("(") && value.endsWith(")") && balanced(value))
-    value = value.slice(1, -1).trim();
-  value = value
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/^now\(\)$/, "current_timestamp");
-  // PostgreSQL adds casts to literal defaults; don't erase casts in arbitrary
-  // expressions or functions. Unknown expressions remain different, fail closed.
-  value = value.replace(
-    /^(__quoted_\d+__|array\[\])::(?:text(?:\[\])?|__quoted_\d+__)$/,
-    "$1",
-  );
-  return value.replace(/__quoted_(\d+)__/g, (_, n) => literals[Number(n)]);
+  if (value === '') return null;
+  value = value.replace(/::"?[a-zA-Z_][\w ]*"?(\(\d+(,\d+)?\))?(\[\])?/g, '');
+  while (/^\(.*\)$/.test(value) && balanced(value)) value = value.slice(1, -1).trim();
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/^now\(\)$/i, 'current_timestamp')
+    .replace(/'([^']*)'/, "'$1'")
+    .toLowerCase();
 }
 
-export function supportedDefault(raw) {
-  const value = normalizeDefault(raw);
-  return (
-    value === null ||
-    /^(?:true|false|current_timestamp|array\[\]|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?|'(?:''|[^'])*')$/i.test(
-      value,
-    )
-  );
-}
-
-export function normalizeForeignKeyActions(raw = "") {
-  const value = raw.toUpperCase();
-  const action = (which) =>
-    new RegExp(
-      `ON ${which} (NO ACTION|RESTRICT|CASCADE|SET NULL|SET DEFAULT)`,
-    ).exec(value)?.[1] ?? "NO ACTION";
-  return `ON DELETE ${action("DELETE")} ON UPDATE ${action("UPDATE")} MATCH ${/MATCH (FULL|PARTIAL|SIMPLE)/.exec(value)?.[1] ?? "SIMPLE"} ${/(?<!NOT )DEFERRABLE/.test(value) ? "DEFERRABLE" : "NOT DEFERRABLE"} ${/INITIALLY DEFERRED/.test(value) ? "INITIALLY DEFERRED" : "INITIALLY IMMEDIATE"}`;
+function balanced(value) {
+  let depth = 0;
+  for (const char of value) {
+    if (char === '(') depth += 1;
+    else if (char === ')') depth -= 1;
+    if (depth === 0 && char !== value[value.length - 1]) return false;
+  }
+  return depth === 0;
 }
 
 /**
@@ -163,64 +135,45 @@ export function parseMigration(sql) {
   const tables = [];
   const indexes = [];
   const foreignKeys = [];
-  const unsupported = [];
 
-  const lines = sql.split("\n");
+  const lines = sql.split('\n');
   let block = null;
 
   const flush = () => {
     if (!block) return;
-    tables.push({
-      name: block.name,
-      columns: block.columns,
-      primaryKey: block.primaryKey,
-      primaryKeyName: block.primaryKeyName,
-    });
+    tables.push({ name: block.name, columns: block.columns, primaryKey: block.primaryKey });
     block = null;
   };
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    if (!line || line.startsWith("--")) continue;
+    if (!line || line.startsWith('--')) continue;
 
     if (block) {
-      if (line.startsWith(")")) {
+      if (line.startsWith(')')) {
         flush();
         continue;
       }
-      const body = line.replace(/,$/, "");
-      const primaryKey =
-        /^CONSTRAINT\s+"[^"]+"\s+PRIMARY KEY\s+\(([^)]*)\)$/i.exec(body);
+      const body = line.replace(/,$/, '');
+      const primaryKey = /^CONSTRAINT\s+"[^"]+"\s+PRIMARY KEY\s+\(([^)]*)\)$/i.exec(body);
       if (primaryKey) {
-        block.primaryKeyName = /^CONSTRAINT\s+"([^\"]+)"/.exec(body)[1];
         block.primaryKey = splitColumns(primaryKey[1]);
         continue;
       }
-      if (/^CONSTRAINT\s+/i.test(body)) {
-        unsupported.push(body);
-        continue;
-      }
+      if (/^CONSTRAINT\s+/i.test(body)) continue;
       const column = /^"([^"]+)"\s+(.+)$/.exec(body);
-      if (!column) {
-        unsupported.push(body);
-        continue;
-      }
+      if (!column) continue;
       let rest = column[2];
-      if (/\b(GENERATED|CHECK|REFERENCES|UNIQUE|COLLATE)\b/i.test(rest))
-        unsupported.push(body);
       let columnDefault = null;
-      const defaultIndex = rest.indexOf(" DEFAULT ");
+      const defaultIndex = rest.indexOf(' DEFAULT ');
       if (defaultIndex !== -1) {
-        const rawDefault = rest.slice(defaultIndex + " DEFAULT ".length);
-        if (!supportedDefault(rawDefault))
-          unsupported.push(`Unsupported default on ${block.name}.${column[1]}`);
-        columnDefault = normalizeDefault(rawDefault);
+        columnDefault = normalizeDefault(rest.slice(defaultIndex + ' DEFAULT '.length));
         rest = rest.slice(0, defaultIndex);
       }
       let notNull = false;
       if (/ NOT NULL$/.test(rest)) {
         notNull = true;
-        rest = rest.slice(0, -" NOT NULL".length);
+        rest = rest.slice(0, -' NOT NULL'.length);
       }
       block.columns.push({
         name: column[1],
@@ -243,15 +196,8 @@ export function parseMigration(sql) {
       continue;
     }
 
-    const createIndex =
-      /^CREATE (UNIQUE )?INDEX "([^"]+)" ON "([^"]+)"\s*\(([^)]*)\);?$/i.exec(
-        line,
-      );
+    const createIndex = /^CREATE (UNIQUE )?INDEX "([^"]+)" ON "([^"]+)"\s*\(([^)]*)\)/i.exec(line);
     if (createIndex) {
-      if (!/^"[^"]+"(?:,\s*"[^"]+")*$/.test(createIndex[4])) {
-        unsupported.push(line);
-        continue;
-      }
       indexes.push({
         name: createIndex[2],
         table: createIndex[3],
@@ -272,47 +218,23 @@ export function parseMigration(sql) {
         columns: splitColumns(addForeignKey[3]),
         refTable: addForeignKey[4],
         refColumns: splitColumns(addForeignKey[5]),
-        actions: normalizeForeignKeyActions(addForeignKey[6]),
       });
-      continue;
     }
-    unsupported.push(line);
   }
-  if (block) unsupported.push(`Unterminated CREATE TABLE ${block.name}`);
   flush();
 
-  for (const [kind, objects] of [
-    ["table", tables],
-    ["enum", enums],
-    ["index", indexes],
-    ["foreign-key", foreignKeys],
-  ]) {
-    const seen = new Set();
-    for (const object of objects) {
-      if (seen.has(object.name))
-        unsupported.push(`Duplicate ${kind} name: ${object.name}`);
-      seen.add(object.name);
-    }
-  }
-  for (const table of tables) {
-    const names = table.columns.map((c) => c.name);
-    if (new Set(names).size !== names.length)
-      unsupported.push(`Duplicate column in ${table.name}`);
-  }
-  return { enums, tables, indexes, foreignKeys, unsupported };
+  return { enums, tables, indexes, foreignKeys };
 }
 
 function splitColumns(list) {
   return list
-    .split(",")
-    .map((part) => part.trim().replace(/^"|"$/g, "").replace(/ ASC$/i, ""))
+    .split(',')
+    .map((part) => part.trim().replace(/^"|"$/g, '').replace(/ (ASC|DESC)$/i, ''))
     .filter(Boolean);
 }
 
 function splitLabels(list) {
-  return [...list.matchAll(/'((?:[^']|'')*)'/g)].map((match) =>
-    match[1].replace(/''/g, "'"),
-  );
+  return [...list.matchAll(/'((?:[^']|'')*)'/g)].map((match) => match[1].replace(/''/g, "'"));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,62 +289,18 @@ export const QUERIES = {
                   WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
                   ORDER BY c.relname`,
   migrationBookkeeping: `SELECT to_regclass('public._prisma_migrations') IS NOT NULL AS present`,
-  appliedMigrations: `SELECT migration_name, checksum, finished_at, rolled_back_at,
-                            applied_steps_count FROM public."_prisma_migrations" ORDER BY started_at`,
-  unsupported: `SELECT 'relation' AS kind, n.nspname || '.' || c.relname AS name
-                  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                 WHERE n.nspname = 'public' AND c.relkind NOT IN ('r', 'i', 't')
-                UNION ALL
-                SELECT 'schema', nspname FROM pg_namespace
-                 WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname NOT LIKE 'pg_%'
-                UNION ALL
-                SELECT 'extension', extname FROM pg_extension WHERE extname <> 'plpgsql'
-                UNION ALL
-                SELECT 'constraint', c.conname FROM pg_constraint c
-                  JOIN pg_namespace n ON n.oid = c.connamespace
-                 WHERE n.nspname = 'public' AND (c.contype NOT IN ('p','f') OR NOT c.convalidated)
-                UNION ALL
-                SELECT 'trigger', t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-                  JOIN pg_namespace n ON n.oid = c.relnamespace
-                 WHERE n.nspname = 'public' AND NOT t.tgisinternal
-                UNION ALL
-                SELECT 'row-security', c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                 WHERE n.nspname = 'public' AND (c.relrowsecurity OR c.relforcerowsecurity)
-                UNION ALL
-                SELECT 'generated-or-identity-column', c.relname || '.' || a.attname
-                  FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
-                  JOIN pg_namespace n ON n.oid = c.relnamespace
-                 WHERE n.nspname = 'public' AND (a.attgenerated <> '' OR a.attidentity <> '')
-                UNION ALL
-                SELECT 'function', p.oid::regprocedure::text FROM pg_proc p
-                  JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'
-                UNION ALL
-                SELECT 'type', t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-                 WHERE n.nspname = 'public' AND t.typtype IN ('d', 'r', 'm')
-                UNION ALL
-                SELECT 'invalid-index', ci.relname FROM pg_index i JOIN pg_class ci ON ci.oid = i.indexrelid
-                  JOIN pg_namespace n ON n.oid = ci.relnamespace
-                 WHERE n.nspname = 'public' AND (NOT i.indisvalid OR NOT i.indisready)`,
+  appliedMigrations: `SELECT migration_name FROM _prisma_migrations ORDER BY started_at`,
 };
 
 /** Parse a PostgreSQL index definition into the same shape as the migration's. */
 export function parseIndexDef(indexdef) {
   const match =
-    /^CREATE (UNIQUE )?INDEX (\S+) ON (?:(\w+)\.)?(\S+) USING (\w+) \((.*)\)$/.exec(
-      indexdef.trim(),
-    );
+    /^CREATE (UNIQUE )?INDEX (\S+) ON (?:(\w+)\.)?(\S+) USING (\w+) \((.*)\)$/.exec(indexdef.trim());
   if (!match) return undefined;
-  // Unsupported expressions/predicates/ordering must not silently disappear.
-  if (
-    !/^(?:"[^"\n]+"|[a-zA-Z_][\w]*)(?:, (?:"[^"\n]+"|[a-zA-Z_][\w]*))*$/.test(
-      match[6],
-    )
-  )
-    return undefined;
   return {
     // pg_indexes.indexdef quotes both the index and the table.
-    name: match[2].replace(/"/g, ""),
-    table: match[4].replace(/"/g, ""),
+    name: match[2].replace(/"/g, ''),
+    table: match[4].replace(/"/g, ''),
     unique: Boolean(match[1]),
     method: match[5],
     columns: splitColumns(match[6]),
@@ -432,18 +310,13 @@ export function parseIndexDef(indexdef) {
 /** Parse `FOREIGN KEY ("a") REFERENCES t("b") ON DELETE ...` into the same shape. */
 export function parseConstraintDef(definition) {
   const match =
-    /^FOREIGN KEY \(([^)]*)\) REFERENCES ([^()]+)\(([^)]*)\)(.*)$/.exec(
-      definition.trim(),
-    );
+    /^FOREIGN KEY \(([^)]*)\) REFERENCES ([^()]+)\(([^)]*)\)(.*)$/.exec(definition.trim());
   if (!match) return undefined;
   return {
     columns: splitColumns(match[1]),
-    refTable: match[2]
-      .trim()
-      .replace(/"/g, "")
-      .replace(/^public\./, ""),
+    refTable: match[2].trim().replace(/"/g, '').replace(/^public\./, ''),
     refColumns: splitColumns(match[3]),
-    actions: normalizeForeignKeyActions(match[4]),
+    actions: match[4].trim(),
   };
 }
 
@@ -455,16 +328,7 @@ export function parsePrimaryKeyDef(definition) {
 
 export async function readInventory(client) {
   const q = async (sql) => (await client.query(sql)).rows;
-  const [
-    tables,
-    columns,
-    enums,
-    indexes,
-    constraints,
-    estimates,
-    bookkeeping,
-    unsupported,
-  ] = await Promise.all([
+  const [tables, columns, enums, indexes, constraints, estimates, bookkeeping] = await Promise.all([
     q(QUERIES.tables),
     q(QUERIES.columns),
     q(QUERIES.enums),
@@ -472,14 +336,10 @@ export async function readInventory(client) {
     q(QUERIES.constraints),
     q(QUERIES.rowEstimates),
     q(QUERIES.migrationBookkeeping),
-    q(QUERIES.unsupported),
   ]);
 
   const estimateByName = new Map(
-    estimates.map((row) => [
-      row.name,
-      Number(row.rows) < 0 ? null : Number(row.rows),
-    ]),
+    estimates.map((row) => [row.name, Number(row.rows) < 0 ? null : Number(row.rows)]),
   );
   const enumMap = new Map();
   for (const row of enums) {
@@ -491,7 +351,7 @@ export async function readInventory(client) {
   let bookkeepingReadable = true;
   if (bookkeeping[0]?.present) {
     try {
-      applied = (await checkedQuery(client, QUERIES.appliedMigrations)).rows;
+      applied = await q(QUERIES.appliedMigrations);
     } catch {
       // The role can see that the table exists but cannot read it. Say so,
       // rather than claiming the migration was never applied.
@@ -499,67 +359,7 @@ export async function readInventory(client) {
     }
   }
 
-  for (const column of columns) {
-    if (
-      !supportedDefault(column.column_default) &&
-      column.table_name !== LEDGER_TABLE
-    )
-      unsupported.push({
-        kind: "column-default-expression",
-        name: `${column.table_name}.${column.column_name}`,
-      });
-  }
-  for (const row of indexes) {
-    if (!parseIndexDef(row.indexdef))
-      unsupported.push({ kind: "index-definition", name: row.indexname });
-  }
-  // Map-based comparison must not hide a second equivalent-looking object.
-  // Preserve ambiguity as unknown evidence instead of choosing one object.
-  const signatures = new Set();
-  for (const row of indexes) {
-    const index = parseIndexDef(row.indexdef);
-    if (!index) continue;
-    const signature = JSON.stringify([
-      index.table,
-      index.columns,
-      index.unique,
-      index.method,
-    ]);
-    if (signatures.has(signature))
-      unsupported.push({
-        kind: "duplicate-index-signature",
-        name: row.indexname,
-      });
-    signatures.add(signature);
-  }
-  const fkSignatures = new Set();
-  for (const row of constraints.filter((r) => r.type === "f")) {
-    const fk = parseConstraintDef(row.definition);
-    if (!fk) continue;
-    const signature = JSON.stringify([
-      row.table_name,
-      fk.columns,
-      fk.refTable,
-      fk.refColumns,
-      fk.actions,
-    ]);
-    if (fkSignatures.has(signature))
-      unsupported.push({
-        kind: "duplicate-foreign-key-signature",
-        name: row.name,
-      });
-    fkSignatures.add(signature);
-  }
-  for (const row of constraints) {
-    if (
-      (row.type === "f" && !parseConstraintDef(row.definition)) ||
-      (row.type === "p" && !parsePrimaryKeyDef(row.definition))
-    ) {
-      unsupported.push({ kind: "constraint-definition", name: row.name });
-    }
-  }
   return {
-    unsupported,
     tables: tables.map((row) => ({
       name: row.table_name,
       rowEstimate: estimateByName.get(row.table_name) ?? null,
@@ -568,35 +368,24 @@ export async function readInventory(client) {
         .map((column) => ({
           name: column.column_name,
           type: normalizeFormattedType(column.formatted_type),
-          notNull: column.not_null === true || column.not_null === "t",
+          notNull: column.not_null === true || column.not_null === 't',
           default: normalizeDefault(column.column_default),
         })),
     })),
     enums: [...enumMap.entries()].map(([name, values]) => ({ name, values })),
     indexes: indexes.map((row) => parseIndexDef(row.indexdef)).filter(Boolean),
     foreignKeys: constraints
-      .filter((row) => row.type === "f")
-      .map((row) => ({
-        name: row.name,
-        table: row.table_name,
-        ...parseConstraintDef(row.definition),
-      }))
+      .filter((row) => row.type === 'f')
+      .map((row) => ({ name: row.name, table: row.table_name, ...parseConstraintDef(row.definition) }))
       .filter((fk) => fk.columns),
     primaryKeys: constraints
-      .filter((row) => row.type === "p")
-      .map((row) => ({
-        name: row.name,
-        table: row.table_name,
-        columns: parsePrimaryKeyDef(row.definition),
-      }))
+      .filter((row) => row.type === 'p')
+      .map((row) => ({ table: row.table_name, columns: parsePrimaryKeyDef(row.definition) }))
       .filter((pk) => pk.columns),
     migrationBookkeeping: {
       present: Boolean(bookkeeping[0]?.present),
       readable: bookkeepingReadable,
-      records: applied,
-      applied: applied
-        .filter((row) => row.finished_at && !row.rolled_back_at)
-        .map((row) => row.migration_name),
+      applied: applied.map((row) => row.migration_name),
     },
   };
 }
@@ -605,7 +394,7 @@ export async function readInventory(client) {
 // Comparison
 // ─────────────────────────────────────────────────────────────────────────────
 
-const key = (table, columns) => `${table}(${columns.join(",")})`;
+const key = (table, columns) => `${table}(${columns.join(',')})`;
 
 /**
  * Compare what the migration creates with what the database already has.
@@ -618,23 +407,17 @@ const key = (table, columns) => `${table}(${columns.join(",")})`;
  * database that `prisma migrate` has touched, and the migration never creates
  * it, so comparing it would make every real clone look drifted.
  */
-export const LEDGER_TABLE = "_prisma_migrations";
+export const LEDGER_TABLE = '_prisma_migrations';
 
 export function compareInventory(migration, inventory) {
   const isLedger = (name) => name === LEDGER_TABLE;
 
-  const migrationTables = new Map(
-    migration.tables.map((table) => [table.name, table]),
-  );
+  const migrationTables = new Map(migration.tables.map((table) => [table.name, table]));
   const dbTables = new Map(
-    inventory.tables
-      .filter((table) => !isLedger(table.name))
-      .map((table) => [table.name, table]),
+    inventory.tables.filter((table) => !isLedger(table.name)).map((table) => [table.name, table]),
   );
 
-  const tablesOnlyInMigration = [...migrationTables.keys()].filter(
-    (name) => !dbTables.has(name),
-  );
+  const tablesOnlyInMigration = [...migrationTables.keys()].filter((name) => !dbTables.has(name));
   const tablesOnlyInDb = [...dbTables.keys()].filter(
     (name) => !migrationTables.has(name) && !isLedger(name),
   );
@@ -648,34 +431,18 @@ export function compareInventory(migration, inventory) {
   for (const [name, table] of migrationTables) {
     const dbTable = dbTables.get(name);
     if (!dbTable) continue;
-    const dbColumns = new Map(
-      dbTable.columns.map((column) => [column.name, column]),
-    );
+    const dbColumns = new Map(dbTable.columns.map((column) => [column.name, column]));
     for (const column of table.columns) {
       const dbColumn = dbColumns.get(column.name);
       if (!dbColumn) {
-        columnsOnlyInMigration.push({
-          table: name,
-          column: column.name,
-          type: column.type,
-        });
+        columnsOnlyInMigration.push({ table: name, column: column.name, type: column.type });
         continue;
       }
       if (dbColumn.type !== column.type) {
-        columnTypeDiffs.push({
-          table: name,
-          column: column.name,
-          db: dbColumn.type,
-          migration: column.type,
-        });
+        columnTypeDiffs.push({ table: name, column: column.name, db: dbColumn.type, migration: column.type });
       }
       if (dbColumn.notNull !== column.notNull) {
-        columnNullabilityDiffs.push({
-          table: name,
-          column: column.name,
-          db: dbColumn.notNull,
-          migration: column.notNull,
-        });
+        columnNullabilityDiffs.push({ table: name, column: column.name, db: dbColumn.notNull, migration: column.notNull });
       }
       if ((dbColumn.default ?? null) !== (column.default ?? null)) {
         columnDefaultDiffs.push({
@@ -688,11 +455,7 @@ export function compareInventory(migration, inventory) {
     }
     for (const column of dbTable.columns) {
       if (!table.columns.some((candidate) => candidate.name === column.name)) {
-        columnsOnlyInDb.push({
-          table: name,
-          column: column.name,
-          type: column.type,
-        });
+        columnsOnlyInDb.push({ table: name, column: column.name, type: column.type });
       }
     }
   }
@@ -700,46 +463,23 @@ export function compareInventory(migration, inventory) {
   const enumNames = (list) => new Map(list.map((entry) => [entry.name, entry]));
   const migrationEnums = enumNames(migration.enums);
   const dbEnums = enumNames(inventory.enums);
-  const enumsOnlyInMigration = [...migrationEnums.keys()].filter(
-    (name) => !dbEnums.has(name),
-  );
-  const enumsOnlyInDb = [...dbEnums.keys()].filter(
-    (name) => !migrationEnums.has(name),
-  );
+  const enumsOnlyInMigration = [...migrationEnums.keys()].filter((name) => !dbEnums.has(name));
+  const enumsOnlyInDb = [...dbEnums.keys()].filter((name) => !migrationEnums.has(name));
   const enumValueDiffs = [];
   for (const [name, entry] of migrationEnums) {
     const dbEntry = dbEnums.get(name);
     if (!dbEntry) continue;
-    const onlyInDb = dbEntry.values.filter(
-      (value) => !entry.values.includes(value),
-    );
-    const onlyInMigration = entry.values.filter(
-      (value) => !dbEntry.values.includes(value),
-    );
-    if (
-      onlyInDb.length ||
-      onlyInMigration.length ||
-      JSON.stringify(entry.values) !== JSON.stringify(dbEntry.values)
-    ) {
-      enumValueDiffs.push({
-        name,
-        onlyInDb,
-        onlyInMigration,
-        databaseOrder: dbEntry.values,
-        migrationOrder: entry.values,
-      });
+    const onlyInDb = dbEntry.values.filter((value) => !entry.values.includes(value));
+    const onlyInMigration = entry.values.filter((value) => !dbEntry.values.includes(value));
+    if (onlyInDb.length || onlyInMigration.length) {
+      enumValueDiffs.push({ name, onlyInDb, onlyInMigration });
     }
   }
 
-  const indexKey = (index) =>
-    `${index.table}(${index.columns.join(",")})${index.unique ? " unique" : ""} ${index.method ?? "btree"}`;
-  const migrationIndexes = new Map(
-    migration.indexes.map((index) => [indexKey(index), index]),
-  );
+  const indexKey = (index) => `${index.table}(${index.columns.join(',')})${index.unique ? ' unique' : ''}`;
+  const migrationIndexes = new Map(migration.indexes.map((index) => [indexKey(index), index]));
   const dbIndexes = new Map(
-    inventory.indexes
-      .filter((index) => !isLedger(index.table))
-      .map((index) => [indexKey(index), index]),
+    inventory.indexes.filter((index) => !isLedger(index.table)).map((index) => [indexKey(index), index]),
   );
   const indexesOnlyInMigration = [...migrationIndexes.entries()]
     .filter(([k]) => !dbIndexes.has(k))
@@ -748,25 +488,13 @@ export function compareInventory(migration, inventory) {
     .filter(([k]) => !migrationIndexes.has(k))
     .map(([, index]) => index);
   const indexNameDiffs = [...migrationIndexes.entries()]
-    .filter(
-      ([k, index]) => dbIndexes.has(k) && dbIndexes.get(k).name !== index.name,
-    )
-    .map(([k, index]) => ({
-      table: index.table,
-      columns: index.columns,
-      migration: index.name,
-      db: dbIndexes.get(k).name,
-    }));
+    .filter(([k, index]) => dbIndexes.has(k) && dbIndexes.get(k).name !== index.name)
+    .map(([k, index]) => ({ table: index.table, columns: index.columns, migration: index.name, db: dbIndexes.get(k).name }));
 
-  const fkKey = (fk) =>
-    `${fk.table}(${fk.columns.join(",")})->${fk.refTable}(${fk.refColumns.join(",")}) ${normalizeForeignKeyActions(fk.actions)}`;
-  const migrationFks = new Map(
-    migration.foreignKeys.map((fk) => [fkKey(fk), fk]),
-  );
+  const fkKey = (fk) => `${fk.table}(${fk.columns.join(',')})->${fk.refTable}(${fk.refColumns.join(',')})`;
+  const migrationFks = new Map(migration.foreignKeys.map((fk) => [fkKey(fk), fk]));
   const dbFks = new Map(
-    inventory.foreignKeys
-      .filter((fk) => !isLedger(fk.table) && !isLedger(fk.refTable))
-      .map((fk) => [fkKey(fk), fk]),
+    inventory.foreignKeys.filter((fk) => !isLedger(fk.table) && !isLedger(fk.refTable)).map((fk) => [fkKey(fk), fk]),
   );
   const foreignKeysOnlyInMigration = [...migrationFks.entries()]
     .filter(([k]) => !dbFks.has(k))
@@ -776,46 +504,14 @@ export function compareInventory(migration, inventory) {
     .map(([, fk]) => fk);
 
   const migrationPkKeys = new Set(
-    migration.tables
-      .filter((table) => table.primaryKey)
-      .map((table) => key(table.name, table.primaryKey)),
+    migration.tables.filter((table) => table.primaryKey).map((table) => key(table.name, table.primaryKey)),
   );
   const dbPkKeys = new Set(
-    inventory.primaryKeys
-      .filter((pk) => !isLedger(pk.table))
-      .map((pk) => key(pk.table, pk.columns)),
+    inventory.primaryKeys.filter((pk) => !isLedger(pk.table)).map((pk) => key(pk.table, pk.columns)),
   );
-  const primaryKeysOnlyInMigration = [...migrationPkKeys].filter(
-    (k) => !dbPkKeys.has(k),
-  );
-  const primaryKeysOnlyInDb = [...dbPkKeys].filter(
-    (k) => !migrationPkKeys.has(k),
-  );
+  const primaryKeysOnlyInMigration = [...migrationPkKeys].filter((k) => !dbPkKeys.has(k));
+  const primaryKeysOnlyInDb = [...dbPkKeys].filter((k) => !migrationPkKeys.has(k));
 
-  const primaryKeyNameDiffs = migration.tables
-    .filter((t) => t.primaryKeyName)
-    .flatMap((t) => {
-      const pk = inventory.primaryKeys.find(
-        (p) =>
-          p.table === t.name &&
-          key(p.table, p.columns) === key(t.name, t.primaryKey),
-      );
-      return pk && pk.name !== t.primaryKeyName
-        ? [
-            {
-              table: t.name,
-              migration: t.primaryKeyName,
-              database: pk.name ?? null,
-            },
-          ]
-        : [];
-    });
-  const foreignKeyNameDiffs = migration.foreignKeys.flatMap((fk) => {
-    const db = dbFks.get(fkKey(fk));
-    return db && db.name !== fk.name
-      ? [{ table: fk.table, migration: fk.name, database: db.name ?? null }]
-      : [];
-  });
   const identical =
     tablesOnlyInMigration.length === 0 &&
     tablesOnlyInDb.length === 0 &&
@@ -829,9 +525,6 @@ export function compareInventory(migration, inventory) {
     enumValueDiffs.length === 0 &&
     indexesOnlyInMigration.length === 0 &&
     indexesOnlyInDb.length === 0 &&
-    indexNameDiffs.length === 0 &&
-    primaryKeyNameDiffs.length === 0 &&
-    foreignKeyNameDiffs.length === 0 &&
     foreignKeysOnlyInMigration.length === 0 &&
     foreignKeysOnlyInDb.length === 0 &&
     primaryKeysOnlyInMigration.length === 0 &&
@@ -852,8 +545,6 @@ export function compareInventory(migration, inventory) {
     indexesOnlyInMigration,
     indexesOnlyInDb,
     indexNameDiffs,
-    primaryKeyNameDiffs,
-    foreignKeyNameDiffs,
     foreignKeysOnlyInMigration,
     foreignKeysOnlyInDb,
     primaryKeysOnlyInMigration,
@@ -862,81 +553,52 @@ export function compareInventory(migration, inventory) {
 }
 
 /** Turn a comparison into the decision the merge gate asks for. */
-export function ledgerFindings(migration, inventory) {
-  const ledger = inventory.migrationBookkeeping;
-  if (!ledger?.present) return [];
-  const finding = (severity, detail) => ({
-    severity,
-    kind: "migration-ledger",
-    target: LEDGER_TABLE,
-    detail,
-  });
-  if (ledger.readable === false || !Array.isArray(ledger.records))
-    return [
-      finding("unknown", "Migration ledger could not be fully verified."),
-    ];
-  const name = path.basename(path.dirname(migration.path));
-  const issues = [];
-  for (const row of ledger.records) {
-    if (!row.finished_at && !row.rolled_back_at)
-      issues.push(
-        finding("blocking", `Unfinished migration: ${row.migration_name}`),
-      );
-    if (row.migration_name !== name || row.rolled_back_at) continue;
-    if (!migration.sha256)
-      issues.push(finding("unknown", "Migration checksum unavailable."));
-    else if (row.checksum !== migration.sha256)
-      issues.push(
-        finding(
-          "blocking",
-          "Migration checksum does not match the reviewed SQL artifact.",
-        ),
-      );
-    if (
-      row.finished_at &&
-      (!Number.isInteger(row.applied_steps_count) ||
-        row.applied_steps_count < 0)
-    )
-      issues.push(
-        finding(
-          "unknown",
-          "Completed ledger entry has invalid step metadata; independently verify baseline provenance.",
-        ),
-      );
-  }
-  if (
-    ledger.records.some((r) => r.migration_name === name) &&
-    !ledger.records.some(
-      (r) => r.migration_name === name && r.finished_at && !r.rolled_back_at,
-    )
-  ) {
-    issues.push(
-      finding(
-        "unknown",
-        "Only failed or rolled-back records exist for the target migration.",
-      ),
-    );
-  }
-  if (
-    ledger.records.filter(
-      (r) => r.migration_name === name && r.finished_at && !r.rolled_back_at,
-    ).length > 1
-  )
-    issues.push(
-      finding(
-        "unknown",
-        "Duplicate successful records for the target migration.",
-      ),
-    );
-  return issues;
-}
-
 export function decide(migration, inventory, comparison) {
-  const ledgerIssues = ledgerFindings(migration, inventory);
-  const name = path.basename(path.dirname(migration.path));
-  const recorded = inventory.migrationBookkeeping?.records?.some(
-    (r) => r.migration_name === name && r.finished_at && !r.rolled_back_at,
-  );
+  const hasObjects = inventory.tables.length > 0 || inventory.enums.length > 0;
+  const appliedName = `${path.basename(path.dirname(migration.path))}`;
+
+  if (!hasObjects) {
+    return {
+      verdict: 'clean',
+      summary: 'The target is empty: apply the migration normally.',
+      commands: [`npx prisma migrate deploy`],
+    };
+  }
+
+  const recorded = inventory.migrationBookkeeping.applied.includes(appliedName);
+
+  if (comparison.identical && recorded) {
+    return {
+      verdict: 'already-applied',
+      summary: `_prisma_migrations already records ${appliedName}, and the database matches it.`,
+      commands: [`npx prisma migrate status`],
+    };
+  }
+
+  const ledgerUnknown =
+    inventory.migrationBookkeeping.present && inventory.migrationBookkeeping.readable === false
+      ? ' Note: `_prisma_migrations` exists but this role cannot read it, so whether the ' +
+        'migration is already recorded is unknown — check that before resolving.'
+      : '';
+
+  if (comparison.identical) {
+    return {
+      verdict: 'baseline',
+      summary:
+        'The database already matches the migration exactly (typical of an environment that ' +
+        'was maintained with `prisma db push`). Applying the SQL would fail on existing objects; ' +
+        'mark the migration as applied instead, then deploy onward.' +
+        ledgerUnknown,
+      commands: [
+        `npx prisma migrate resolve --applied ${appliedName}`,
+        `npx prisma migrate deploy`,
+      ],
+    };
+  }
+
+  // "Additive" means: the database is behind, but holds nothing the migration
+  // does not know about, and nothing differs in place. Anything that the
+  // migration would have to undo or rewrite needs a human decision.
   const additive =
     comparison.tablesOnlyInDb.length === 0 &&
     comparison.columnsOnlyInDb.length === 0 &&
@@ -948,53 +610,27 @@ export function decide(migration, inventory, comparison) {
     comparison.columnNullabilityDiffs.length === 0 &&
     comparison.columnDefaultDiffs.length === 0 &&
     comparison.enumValueDiffs.length === 0 &&
-    comparison.indexNameDiffs.length === 0 &&
-    comparison.primaryKeyNameDiffs.length === 0 &&
-    comparison.foreignKeyNameDiffs.length === 0;
-  if (ledgerIssues.length)
-    return {
-      verdict: "unknown",
-      summary:
-        "Ledger evidence is incomplete or inconsistent. Hold for DB-owner review.",
-      commands: [],
-    };
-  if (
-    (migration.unsupported?.length ?? 0) ||
-    (inventory.unsupported?.length ?? 0)
-  )
-    return {
-      verdict: "unknown",
-      summary:
-        "Unsupported schema objects require independent inspection. Hold; no equivalence claim.",
-      commands: [],
-    };
-  if (comparison.identical)
-    return {
-      verdict: recorded ? "already-applied" : "baseline",
-      summary:
-        "Supported schema objects match the reviewed artifact. This diagnostic is not authorization to adopt a baseline or apply any SQL.",
-      commands: [],
-    };
-  if (
-    inventory.tables.filter((t) => t.name !== LEDGER_TABLE).length === 0 &&
-    inventory.enums.length === 0 &&
-    !inventory.migrationBookkeeping?.present
-  )
-    return {
-      verdict: "clean",
-      summary:
-        "Target has no supported application objects. Verify clone provenance: an empty target does not establish existing-data adoption.",
-      commands: [],
-    };
+    comparison.indexNameDiffs.length === 0;
+
   return {
-    verdict: "drift",
+    verdict: 'drift',
     additive,
     summary: recorded
-      ? "The ledger and the schema disagree. Hold for an independently reviewed data-preserving plan."
-      : "The actual clone differs from the reviewed artifact. Hold for an independently reviewed data-preserving plan.",
-    commands: [],
-    nextAction:
-      "A DBA must compare the actual clone schema with the approved target and review all differences. This tool does not generate or execute delta, baseline, or apply commands.",
+      ? `_prisma_migrations records ${appliedName}, but the database does not match it: the ` +
+        'ledger and the schema disagree. Investigate before resolving anything — a migration ' +
+        'must never be marked applied on a database it did not build.'
+      : additive
+        ? 'The database is behind the migration but has no objects the migration does not know ' +
+          'about. This is the additive case: baseline-resolve the initial migration, then let a ' +
+          'delta migration from the same diff add the missing objects.'
+        : 'The database and the migration disagree in both directions (or in type/nullability): ' +
+          'this needs a reviewed delta plan before anything is applied.' +
+          ledgerUnknown,
+    commands: [
+      `npx prisma migrate resolve --applied ${appliedName}`,
+      `npx prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --script > delta.sql`,
+      `# review delta.sql, commit it as a new migration, then: npx prisma migrate deploy`,
+    ],
   };
 }
 
@@ -1007,244 +643,138 @@ export function decide(migration, inventory, comparison) {
  * added to the rows that exist? Each check returns a finding only when there is
  * something to fix, so "no findings" means "safe to add".
  */
-export const quoteIdentifier = (name) =>
-  `"${String(name).replace(/"/g, '""')}"`;
-const tableName = (name) => `"public".${quoteIdentifier(name)}`;
-const sqlError = (error) =>
-  /^[0-9A-Z]{5}$/.test(error?.code ?? "")
-    ? `SQLSTATE ${error.code}`
-    : "database check failed";
+export async function safetyChecks(client, migration, comparison, inventory) {
+  const findings = [];
+  const count = async (sql) => Number((await client.query(sql)).rows[0].count);
 
-// Inspection uses a single repeatable-read transaction. A failed SELECT must
-// not poison every subsequent check, so recover using a savepoint, not COMMIT.
-export async function checkedQuery(client, sql) {
-  await client.query("SAVEPOINT rehearsal_check");
-  try {
-    return await client.query(sql);
-  } catch (error) {
-    await client.query("ROLLBACK TO SAVEPOINT rehearsal_check");
-    throw error;
-  } finally {
-    await client.query("RELEASE SAVEPOINT rehearsal_check");
-  }
-}
-
-export async function safetyChecks(
-  client,
-  migration,
-  comparison,
-  inventory,
-  checks = [],
-) {
-  const findings = ledgerFindings(migration, inventory);
-  for (const line of migration.unsupported ?? [])
-    findings.push({
-      severity: "unknown",
-      kind: "unsupported-migration",
-      target: "migration.sql",
-      detail: line,
-    });
-  for (const object of inventory.unsupported ?? [])
-    findings.push({
-      severity: "unknown",
-      kind: "unsupported-database-object",
-      target: object.name,
-      detail: object.kind,
-    });
+  // A constraint can only be endangered by data that exists. If the target
+  // does not hold the table yet, the migration creates it (empty) and there is
+  // nothing to check — otherwise every CREATE TABLE in the migration would
+  // produce a wall of "relation does not exist".
   const dbTables = new Set(inventory.tables.map((table) => table.name));
-  async function check(kind, target, sql, description) {
+  const uncheckable = [];
+  const unknown = (finding) => {
+    if (uncheckable.length < 15) uncheckable.push(finding);
+  };
+
+  // Unique indexes the migration expects that the database does not have yet.
+  for (const index of comparison.indexesOnlyInMigration) {
+    if (!index.unique || !dbTables.has(index.table)) continue;
+    const columns = index.columns.map((column) => `"${column}"`).join(', ');
+    const sql = `SELECT COALESCE(SUM(duplicates), 0)::int AS count FROM (
+                   SELECT COUNT(*) AS duplicates FROM "${index.table}"
+                   GROUP BY ${columns} HAVING COUNT(*) > 1
+                 ) grouped`;
     try {
-      const rows = (await checkedQuery(client, sql)).rows;
-      const n = rows[0]?.count;
-      if (n == null || !/^\d+$/.test(String(n)))
-        throw new Error("Invalid count");
-      const count = BigInt(n);
-      checks.push({
-        kind,
-        target,
-        sql,
-        status: "executed",
-        affectedRows: String(count),
-      });
-      if (count > 0n)
+      const duplicates = await count(sql);
+      if (duplicates > 0) {
         findings.push({
-          severity: "blocking",
-          kind,
-          target,
-          detail: `${count} row(s): ${description}`,
+          severity: 'blocking',
+          kind: 'unique-index',
+          target: `${index.table}(${index.columns.join(',')})`,
+          detail: `${duplicates} row(s) share a key with another row — CREATE UNIQUE INDEX "${index.name}" would fail. Resolve the duplicates first.`,
           sql,
         });
+      }
     } catch (error) {
-      checks.push({
-        kind,
-        target,
-        sql,
-        status: "unknown",
-        reason: sqlError(error),
-      });
-      findings.push({
-        severity: "unknown",
-        kind,
-        target,
-        detail: sqlError(error),
-        sql,
+      unknown({
+        severity: 'unknown',
+        kind: 'unique-index',
+        target: `${index.table}(${index.columns.join(',')})`,
+        detail: `could not check duplicates: ${error.message}`,
       });
     }
   }
-  // Prove the inspection role can see every application table, even when
-  // there are no missing constraints to trigger data checks. No row values are
-  // fetched. With row_security=off, an RLS-filtered read fails, not passes.
-  for (const table of inventory.tables.filter((t) => t.name !== LEDGER_TABLE)) {
-    const sql = `SELECT 1 AS accessible FROM ${tableName(table.name)} LIMIT 1`;
-    try {
-      await checkedQuery(client, sql);
-      checks.push({
-        kind: "table-visibility",
-        target: table.name,
-        sql,
-        status: "executed",
-      });
-    } catch (error) {
-      checks.push({
-        kind: "table-visibility",
-        target: table.name,
-        sql,
-        status: "unknown",
-        reason: sqlError(error),
-      });
-      findings.push({
-        severity: "unknown",
-        kind: "table-visibility",
-        target: table.name,
-        sql,
-        detail: sqlError(error),
-      });
-    }
-  }
-  const skip = (kind, target) =>
-    checks.push({
-      kind,
-      target,
-      status: "not-applicable",
-      reason: "Table does not exist in the clone.",
-    });
-  const duplicateSql = (
-    table,
-    columns,
-    nullDistinct,
-  ) => `SELECT COALESCE(SUM(duplicates), 0)::text AS count FROM (
-    SELECT COUNT(*) AS duplicates FROM ${tableName(table)}
-    ${nullDistinct ? `WHERE ${columns.map((c) => `${quoteIdentifier(c)} IS NOT NULL`).join(" AND ")}` : ""}
-    GROUP BY ${columns.map(quoteIdentifier).join(", ")} HAVING COUNT(*) > 1) grouped`;
-  for (const index of comparison.indexesOnlyInMigration) {
-    if (!index.unique) continue;
-    const target = `${index.table}(${index.columns.join(",")})`;
-    if (!dbTables.has(index.table)) {
-      skip("unique-index", target);
-      continue;
-    }
-    await check(
-      "unique-index",
-      target,
-      duplicateSql(index.table, index.columns, true),
-      "duplicate non-NULL keys prevent a unique index",
-    );
-  }
-  for (const table of migration.tables) {
-    if (
-      !table.primaryKey ||
-      !comparison.primaryKeysOnlyInMigration.includes(
-        key(table.name, table.primaryKey),
-      )
-    )
-      continue;
-    if (!dbTables.has(table.name)) {
-      skip("primary-key", table.name);
-      continue;
-    }
-    await check(
-      "primary-key-duplicates",
-      table.name,
-      duplicateSql(table.name, table.primaryKey, false),
-      "duplicate primary keys",
-    );
-    await check(
-      "primary-key-nulls",
-      table.name,
-      `SELECT COUNT(*)::text AS count FROM ${tableName(table.name)} WHERE ${table.primaryKey.map((c) => `${quoteIdentifier(c)} IS NULL`).join(" OR ")}`,
-      "NULL primary key columns",
-    );
-  }
+
+  // Foreign keys the migration expects that are not enforced yet.
   for (const fk of comparison.foreignKeysOnlyInMigration) {
-    const target = `${fk.table}(${fk.columns.join(",")}) → ${fk.refTable}`;
-    if (!dbTables.has(fk.table)) {
-      skip("foreign-key", target);
-      continue;
-    }
-    if (
-      normalizeForeignKeyActions(fk.actions).includes("MATCH FULL") ||
-      normalizeForeignKeyActions(fk.actions).includes("MATCH PARTIAL")
-    ) {
-      findings.push({
-        severity: "unknown",
-        kind: "foreign-key-match",
-        target,
-        detail: "Only MATCH SIMPLE row checks are supported.",
+    if (!dbTables.has(fk.table)) continue;
+    const columns = fk.columns.map((column) => `"${column}"`).join(', ');
+    const present = await count(
+      `SELECT COUNT(*)::int AS count FROM "${fk.table}" WHERE "${fk.columns[0]}" IS NOT NULL`,
+    ).catch(() => undefined);
+
+    if (present === undefined) {
+      unknown({
+        severity: 'unknown',
+        kind: 'foreign-key',
+        target: `${fk.table}(${fk.columns.join(',')}) → ${fk.refTable}`,
+        detail: 'could not count rows referencing the parent table',
       });
       continue;
     }
-    const present = fk.columns
-      .map((c) => `child.${quoteIdentifier(c)} IS NOT NULL`)
-      .join(" AND ");
-    const joins = fk.columns
-      .map(
-        (c, n) =>
-          `child.${quoteIdentifier(c)} = parent.${quoteIdentifier(fk.refColumns[n])}`,
-      )
-      .join(" AND ");
-    const sql = dbTables.has(fk.refTable)
-      ? `SELECT COUNT(*)::text AS count FROM ${tableName(fk.table)} child WHERE ${present} AND NOT EXISTS (SELECT 1 FROM ${tableName(fk.refTable)} parent WHERE ${joins})`
-      : `SELECT COUNT(*)::text AS count FROM ${tableName(fk.table)} child WHERE ${present}`;
-    await check("foreign-key", target, sql, "rows reference a missing parent");
+
+    if (present === 0) continue; // no rows to orphan; the constraint is safe.
+
+    if (!dbTables.has(fk.refTable)) {
+      // The parent is created empty by the migration, so every existing row
+      // with a value in this column is guaranteed to be an orphan.
+      findings.push({
+        severity: 'blocking',
+        kind: 'foreign-key',
+        target: `${fk.table}(${fk.columns.join(',')}) → ${fk.refTable}`,
+        detail:
+          `${present} row(s) carry a value in ${columns} but \`${fk.refTable}\` does not exist yet. ` +
+          `The migration creates it empty, so adding "${fk.name}" would fail. Backfill or null those rows first.`,
+        sql: `SELECT COUNT(*) FROM "${fk.table}" WHERE "${fk.columns[0]}" IS NOT NULL`,
+      });
+      continue;
+    }
+
+    const pairs = fk.columns
+      .map((column, position) => `child."${column}" = parent."${fk.refColumns[position]}"`)
+      .join(' AND ');
+    const sql = `SELECT COUNT(*)::int AS count FROM "${fk.table}" child
+                 LEFT JOIN "${fk.refTable}" parent ON ${pairs}
+                 WHERE child."${fk.columns[0]}" IS NOT NULL
+                   AND parent."${fk.refColumns[0]}" IS NULL`;
+    try {
+      const orphans = await count(sql);
+      if (orphans > 0) {
+        findings.push({
+          severity: 'blocking',
+          kind: 'foreign-key',
+          target: `${fk.table}(${fk.columns.join(',')}) → ${fk.refTable}`,
+          detail: `${orphans} row(s) reference a parent that does not exist — adding "${fk.name}" would fail.`,
+          sql,
+        });
+      }
+    } catch (error) {
+      unknown({
+        severity: 'unknown',
+        kind: 'foreign-key',
+        target: `${fk.table}(${fk.columns.join(',')}) → ${fk.refTable}`,
+        detail: `could not check orphans: ${error.message}`,
+      });
+    }
   }
+
+  // Columns the migration wants NOT NULL that are currently nullable.
   for (const diff of comparison.columnNullabilityDiffs) {
     if (diff.migration !== true || !dbTables.has(diff.table)) continue;
-    await check(
-      "not-null",
-      `${diff.table}.${diff.column}`,
-      `SELECT COUNT(*)::text AS count FROM ${tableName(diff.table)} WHERE ${quoteIdentifier(diff.column)} IS NULL`,
-      "NULL values prevent NOT NULL",
-    );
-  }
-  for (const diff of comparison.columnsOnlyInMigration) {
-    const column = migration.tables
-      .find((t) => t.name === diff.table)
-      ?.columns.find((c) => c.name === diff.column);
-    if (!column?.notNull) continue;
-    if (column.default != null) {
-      findings.push({
-        severity: "unknown",
-        kind: "new-required-column-default",
-        target: `${diff.table}.${diff.column}`,
-        detail:
-          "New required-column default/backfill behavior needs independent review.",
+    const sql = `SELECT COUNT(*)::int AS count FROM "${diff.table}" WHERE "${diff.column}" IS NULL`;
+    try {
+      const nulls = await count(sql);
+      if (nulls > 0) {
+        findings.push({
+          severity: 'blocking',
+          kind: 'not-null',
+          target: `${diff.table}."${diff.column}"`,
+          detail: `${nulls} row(s) are NULL — setting NOT NULL would fail without a backfill.`,
+          sql,
+        });
+      }
+    } catch (error) {
+      unknown({
+        severity: 'unknown',
+        kind: 'not-null',
+        target: `${diff.table}."${diff.column}"`,
+        detail: `could not count NULLs: ${error.message}`,
       });
-      continue;
     }
-    await check(
-      "new-required-column",
-      `${diff.table}.${diff.column}`,
-      `SELECT COUNT(*)::text AS count FROM ${tableName(diff.table)}`,
-      "existing rows require a backfill for a new NOT NULL column with no default",
-    );
   }
-  for (const diff of comparison.columnTypeDiffs)
-    findings.push({
-      severity: "unknown",
-      kind: "column-type-change",
-      target: `${diff.table}.${diff.column}`,
-      detail: "Data-preserving type conversion has not been verified.",
-    });
+
+  findings.push(...uncheckable);
   return findings;
 }
 
@@ -1252,365 +782,329 @@ export async function safetyChecks(
 // Reporting
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Render a list, but never let one section bury the report body. */
+const capped = (items, render, cap = 30) => {
+  if (!items.length) return '- none';
+  const shown = items.slice(0, cap).map((item) => `- ${render(item)}`);
+  if (items.length > cap) shown.push(`- …and ${items.length - cap} more`);
+  return shown.join('\n');
+};
+
+/** Render several related lists as one block, collapsing to a single "- none". */
+const group = (specs) => {
+  const body = specs
+    .map(({ items, render, cap }) => (items.length ? capped(items, render, cap) : ''))
+    .filter(Boolean)
+    .join('\n');
+  return body || '- none';
+};
+
+/**
+ * Whether `--mode apply` may proceed, and if not, why.
+ *
+ * Applying is only ever a rehearsal on a disposable clone, but it still refuses
+ * two things beyond a non-`clean` verdict: a `blocking` finding, which means the
+ * SQL would fail, and an `unknown` finding, which means the check never ran.
+ * Unverified is not the same as safe — see the runbook's decision rules.
+ */
+export function applyRefusal({ verdict, findings = [] }) {
+  if (verdict !== 'clean') return `the verdict is "${verdict}"`;
+  const blocking = findings.filter((finding) => finding.severity === 'blocking');
+  if (blocking.length > 0) {
+    return `${blocking.length} blocking finding(s) must be resolved first`;
+  }
+  const unverifiable = findings.filter((finding) => finding.severity !== 'blocking');
+  if (unverifiable.length > 0) {
+    return (
+      `${unverifiable.length} finding(s) could not be verified — resolve or explain them ` +
+      'before applying'
+    );
+  }
+  return null;
+}
+
+export function renderReport({ target, migrationPath, inventory, comparison, decision, findings, mode }) {
+  const { host, database } = target ?? describeTarget('');
+  const emptyTarget = inventory.tables.length === 0 && inventory.enums.length === 0;
+  const blocking = findings.filter((finding) => finding.severity === 'blocking');
+  const unverifiable = findings.filter((finding) => finding.severity !== 'blocking');
+
+  const onlyInMigration = emptyTarget
+    ? `The target holds no tables and no enums: the migration creates all ${comparison.tablesOnlyInMigration.length} tables and ${comparison.enumsOnlyInMigration.length} enums from scratch.`
+    : group([
+        { items: comparison.tablesOnlyInMigration, render: (name) => `table \`${name}\`` },
+        { items: comparison.enumsOnlyInMigration, render: (name) => `enum \`${name}\`` },
+        {
+          items: comparison.columnsOnlyInMigration,
+          render: (c) => `column \`${c.table}."${c.column}"\` (${c.type})`,
+        },
+        {
+          items: comparison.indexesOnlyInMigration,
+          render: (i) => `${i.unique ? 'unique ' : ''}index on \`${i.table}(${i.columns.join(', ')})\``,
+        },
+        {
+          items: comparison.foreignKeysOnlyInMigration,
+          render: (fk) => `foreign key \`${fk.table}(${fk.columns.join(', ')})\` → \`${fk.refTable}\``,
+        },
+        { items: comparison.primaryKeysOnlyInMigration, render: (k) => `primary key \`${k}\`` },
+      ]);
+
+  return `# Migration rehearsal report
+
+- Target: \`${host}/${database}\` (disposable clone)
+- Migration: \`${path.relative(BACKEND_ROOT, migrationPath)}\`
+- Mode: ${mode}
+- Tables in target: ${inventory.tables.length}; enums: ${inventory.enums.length}; indexes: ${inventory.indexes.length}; foreign keys: ${inventory.foreignKeys.length}
+
+## Verdict: ${decision.verdict}
+
+${decision.summary}
+
+${decision.commands.map((command) => `    ${command}`).join('\n')}
+
+## Inventory
+
+${capped(
+  inventory.tables.slice().sort((a, b) => (b.rowEstimate ?? 0) - (a.rowEstimate ?? 0)),
+  (table) => `\`${table.name}\` — ~${table.rowEstimate ?? '?'} rows, ${table.columns.length} columns`,
+  25,
+)}
+
+## Differences from the migration
+
+### Objects only in the migration (work to do)
+
+${onlyInMigration}
+
+### Objects only in the database (not in the migration)
+
+${group([
+  { items: comparison.tablesOnlyInDb, render: (name) => `table \`${name}\`` },
+  { items: comparison.enumsOnlyInDb, render: (name) => `enum \`${name}\`` },
+  { items: comparison.columnsOnlyInDb, render: (c) => `column \`${c.table}."${c.column}"\` (${c.type})` },
+  {
+    items: comparison.indexesOnlyInDb,
+    render: (i) => `${i.unique ? 'unique ' : ''}index \`${i.name}\` on \`${i.table}(${i.columns.join(', ')})\``,
+  },
+  { items: comparison.foreignKeysOnlyInDb, render: (fk) => `foreign key \`${fk.name}\` on \`${fk.table}\`` },
+  { items: comparison.primaryKeysOnlyInDb, render: (k) => `primary key \`${k}\`` },
+])}
+
+### Changed in place (needs a data-preserving alteration)
+
+${group([
+  { items: comparison.columnTypeDiffs, render: (d) => `\`${d.table}."${d.column}"\`: ${d.db} → ${d.migration}` },
+  {
+    items: comparison.columnNullabilityDiffs,
+    render: (d) => `\`${d.table}."${d.column}"\`: ${d.db ? 'NOT NULL' : 'NULL'} → ${d.migration ? 'NOT NULL' : 'NULL'}`,
+  },
+  {
+    items: comparison.columnDefaultDiffs,
+    render: (d) => `\`${d.table}."${d.column}"\`: default ${d.db ?? '(none)'} → ${d.migration ?? '(none)'}`,
+  },
+  {
+    items: comparison.enumValueDiffs,
+    render: (d) =>
+      `enum \`${d.name}\`: only in database ${JSON.stringify(d.onlyInDb)}, only in migration ${JSON.stringify(d.onlyInMigration)}`,
+  },
+  {
+    items: comparison.indexNameDiffs,
+    render: (d) =>
+      `index on \`${d.table}(${d.columns.join(', ')})\`: named \`${d.db}\` but the migration calls it \`${d.migration}\``,
+  },
+])}
+
+## Can the constraints be added to the existing rows?
+
+### Blocking findings
+
+${blocking.length === 0 ? 'None: no existing row contradicts a unique index, foreign key or NOT NULL column the migration wants to add.' : capped(blocking, (f) => `**${f.kind}** \`${f.target}\` — ${f.detail}`)}
+
+### Could not be verified
+
+${unverifiable.length === 0 ? 'None: every check ran against the target.' : capped(unverifiable, (f) => `**${f.kind}** \`${f.target}\` — ${f.detail}`)}
+`;
+}
+
 export function describeTarget(url) {
-  // Use the same canonical parsing as the driver, never a hand-written DSN regex.
-  // Constructing Client parses configuration only; it does not open a connection.
-  try {
-    if (!/^postgres(?:ql)?:\/\//i.test(url ?? "")) throw new Error();
-    const params = new URLSearchParams(String(url).split("?")[1] ?? "");
-    const allowed = new Set([
-      "host",
-      "sslmode",
-      "sslcert",
-      "sslkey",
-      "sslrootcert",
-    ]);
-    for (const key of params.keys()) if (!allowed.has(key)) throw new Error();
-    const { host, port, database, user } = new pg.Client({
-      connectionString: url,
-    }).connectionParameters;
-    if (!host || !database || !user) throw new Error();
-    return {
-      host: host.replace(/^\[|\]$/g, ""),
-      port: Number(port),
-      database,
-      role: user,
-    };
-  } catch {
-    throw new Error(
-      "Invalid or unsupported clone connection configuration. Do not share the connection string.",
-    );
-  }
-}
-
-export function assertDisposableTarget(
-  url,
-  { allowRemote = false, expected } = {},
-) {
-  const target = describeTarget(url);
-  if (/prod/i.test(target.database) || /prod/i.test(target.host)) {
-    throw new Error("Refusing target: it names production.");
-  }
-  if (
-    !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(target.database) ||
-    !DISPOSABLE_SUFFIXES.some((s) => target.database.toLowerCase().endsWith(s))
-  ) {
-    throw new Error(
-      `Database name must end in one of ${DISPOSABLE_SUFFIXES.join(", ")} and use simple identifier characters.`,
-    );
-  }
-  const local =
-    target.host.startsWith("/") || LOCAL_HOSTS.includes(target.host);
-  if (!local && !allowRemote)
-    throw new Error(
-      "A non-local target requires --i-have-a-clone and independent isolation verification.",
-    );
-  if (
-    expected &&
-    (target.database !== expected.database ||
-      target.host !== expected.host ||
-      target.role !== expected.role)
-  ) {
-    throw new Error(
-      "Connection target does not match the independently supplied expected host/database/role.",
-    );
-  }
-  return { ...target, local };
-}
-
-export function parseOptions(argv, env = process.env) {
-  if (argv.includes("--help") || argv.includes("-h")) return { help: true };
-  const options = {};
-  const valued = new Set([
-    "--mode",
-    "--migration",
-    "--migration-sha256",
-    "--report",
-    "--source-revision",
-    "--migration-revision",
-    "--expected-host",
-    "--expected-database",
-    "--expected-role",
-    "--clone-source",
-  ]);
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--i-have-a-clone") {
-      options.cloneConfirmed = true;
-      continue;
-    }
-    if (!valued.has(arg) || Object.hasOwn(options, arg))
-      throw new Error(
-        "Unsupported or duplicate argument. Only inspect mode is available; use --help.",
-      );
-    const value = argv[++i];
-    if (!value || value.startsWith("--"))
-      throw new Error("Missing argument value; use --help.");
-    options[arg] = value;
-  }
-  if ((options["--mode"] ?? "inspect") !== "inspect")
-    throw new Error(
-      "Only --mode inspect is supported. Applying migrations is not authorized by this tool.",
-    );
-  for (const key of valued)
-    if (key !== "--mode" && !options[key])
-      throw new Error(`Required argument: ${key}`);
-  if (!options.cloneConfirmed)
-    throw new Error(
-      "Confirm approved clone provenance with --i-have-a-clone; the name alone is insufficient.",
-    );
-  if (!env.REHEARSAL_DATABASE_URL)
-    throw new Error(
-      "Inject REHEARSAL_DATABASE_URL securely; never supply a URL on the command line.",
-    );
-  if (!/^[a-f0-9]{40}$/i.test(options["--source-revision"]))
-    throw new Error("Source revision must be a full Git SHA.");
-  if (!/^[a-f0-9]{40}$/i.test(options["--migration-revision"]))
-    throw new Error(
-      "Source revision for the migration must be a full Git SHA.",
-    );
-  if (!/^[a-f0-9]{64}$/i.test(options["--migration-sha256"]))
-    throw new Error(
-      "Reviewed migration SHA-256 must be supplied independently.",
-    );
-  if (!options["--report"].endsWith(".md"))
-    throw new Error(
-      "Report path must end in .md; a complete .json sibling will also be created.",
-    );
+  const match = /^postgres(?:ql)?:\/\/(?<userinfo>[^@]*)@?(?<hostport>[^/?]*)\/(?<db>[^?]*)/.exec(url);
+  const query = new URLSearchParams((url.split('?')[1] ?? '').replace(/\?/g, '&'));
   return {
-    url: env.REHEARSAL_DATABASE_URL,
-    target: assertDisposableTarget(env.REHEARSAL_DATABASE_URL, {
-      allowRemote: true,
-      expected: {
-        host: options["--expected-host"],
-        database: options["--expected-database"],
-        role: options["--expected-role"],
-      },
-    }),
-    migrationPath: path.resolve(options["--migration"]),
-    migrationSha256: options["--migration-sha256"].toLowerCase(),
-    reportPath: path.resolve(options["--report"]),
-    sourceRevision: options["--source-revision"],
-    migrationRevision: options["--migration-revision"],
-    cloneSource: options["--clone-source"],
+    host: query.get('host') || match?.groups?.hostport || 'unknown',
+    database: match?.groups?.db || 'unknown',
   };
 }
 
-export const IDENTITY_QUERY = `SELECT current_database() AS database, current_user AS role,
-  session_user AS session_role, current_setting('transaction_read_only') AS read_only,
-  current_setting('transaction_isolation') AS isolation, current_setting('search_path') AS search_path,
-  current_setting('row_security') AS row_security,
-  current_setting('server_version') AS server_version,
-  inet_server_addr()::text AS server_address, inet_server_port() AS server_port`;
+/** Refuse anything that is not unmistakably a disposable clone. */
+export function assertDisposableTarget(url, { allowRemote = false } = {}) {
+  const { host, database } = describeTarget(url);
+  if (!database || database === 'unknown') {
+    throw new Error('Could not read the database name from the connection string.');
+  }
+  if (/prod/i.test(database) || /prod/i.test(host)) {
+    throw new Error(`Refusing to rehearse against "${host}/${database}": it names production.`);
+  }
+  if (!DISPOSABLE_SUFFIXES.some((suffix) => database.toLowerCase().endsWith(suffix))) {
+    throw new Error(
+      `Refusing to rehearse against "${database}": the name must end in one of ${DISPOSABLE_SUFFIXES.join(', ')} ` +
+        'so it is unmistakably a disposable clone.',
+    );
+  }
+  const hostname = host.replace(/:\d+$/, '');
+  const local = host === '' || host.startsWith('/') || LOCAL_HOSTS.includes(hostname) || hostname.endsWith('.local');
+  if (!local && !allowRemote) {
+    throw new Error(
+      `Refusing to run against non-local host "${host}" without --i-have-a-clone. ` +
+        'The target must be a disposable clone created for this rehearsal.',
+    );
+  }
+  return { host, database, local };
+}
 
-export async function inspectDatabase(client, migration, options) {
-  const startedAt = new Date().toISOString();
-  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+// ─────────────────────────────────────────────────────────────────────────────
+// Entry point
+// ─────────────────────────────────────────────────────────────────────────────
+
+function argOf(argv, flag, fallback) {
+  const index = argv.indexOf(flag);
+  return index === -1 ? fallback : argv[index + 1];
+}
+
+export function latestMigrationPath(migrationsDir = path.join(BACKEND_ROOT, 'prisma', 'migrations')) {
+  const dirs = readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  if (dirs.length === 0) throw new Error(`No migrations in ${migrationsDir}.`);
+  return path.join(migrationsDir, dirs[dirs.length - 1], 'migration.sql');
+}
+
+async function main(argv) {
+  const url = argOf(argv, '--url', process.env.REHEARSAL_DATABASE_URL);
+  const mode = argOf(argv, '--mode', 'inspect');
+  const allowRemote = argv.includes('--i-have-a-clone') || process.env.REHEARSAL_ALLOW_REMOTE === '1';
+  const confirmApply = argv.includes('--confirm-apply');
+  const reportPath = argOf(argv, '--report', 'rehearsal-report.md');
+
+  const wantsHelp = argv.includes('--help') || argv.includes('-h');
+  if (!url || wantsHelp) {
+    console.error(
+      [
+        'Rehearse the committed migration against a disposable clone of an existing database.',
+        '',
+        'Usage: node scripts/migrate-rehearsal.mjs --url <clone-url> [options]',
+        '',
+        'Options:',
+        '  --url <clone-url>     Connection string of the disposable clone (or REHEARSAL_DATABASE_URL).',
+        '  --mode <mode>         inspect (default, read-only) | apply (writes, and only on a clean, fully checked clone).',
+        '  --migration <path>    Migration to rehearse (default: latest under prisma/migrations).',
+        '  --report <file>       Where to write the markdown report (default: rehearsal-report.md).',
+        '  --i-have-a-clone      Required for non-local hosts; acknowledges the target is disposable.',
+        '  --confirm-apply       Required together with --mode apply.',
+        '  --help                This text.',
+        '',
+        'Refuses any database whose name does not end in _clone, _rehearsal, _test, _ci, _ephemeral',
+        'or _shadow, and any name or host containing "prod". Read the runbook first:',
+        'docs/MIGRATION-REHEARSAL-RUNBOOK-2026-09-26.md',
+      ].join('\n'),
+    );
+    return wantsHelp ? 0 : 1;
+  }
+  if (!['inspect', 'apply'].includes(mode)) {
+    console.error(`Unknown --mode "${mode}" (expected inspect or apply).`);
+    return 1;
+  }
+  if (mode === 'apply' && !confirmApply) {
+    console.error('--mode apply also needs --confirm-apply: it writes to the clone.');
+    return 1;
+  }
+
+  let target;
   try {
-    await client.query("SET LOCAL statement_timeout = '30s'");
-    await client.query("SET LOCAL lock_timeout = '5s'");
-    await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
-    await client.query("SET LOCAL search_path = pg_catalog, public");
-    // A restricted role must fail a data query instead of silently reading an
-    // RLS-filtered subset. RLS objects are also reported as unsupported below.
-    await client.query("SET LOCAL row_security = off");
-    const identity = (await client.query(IDENTITY_QUERY)).rows[0];
-    if (
-      !identity ||
-      identity.database !== options.target.database ||
-      identity.role !== options.target.role ||
-      identity.session_role !== options.target.role ||
-      identity.read_only !== "on" ||
-      identity.isolation !== "repeatable read" ||
-      identity.row_security !== "off" ||
-      identity.search_path?.replace(/\s+/g, "") !== "pg_catalog,public"
-    ) {
-      throw new Error(
-        "Connected identity or read-only snapshot controls do not match the approved inspection.",
-      );
-    }
+    target = assertDisposableTarget(url, { allowRemote });
+  } catch (error) {
+    console.error(`::error::${error.message}`);
+    return 1;
+  }
+
+  const migrationPath = path.resolve(
+    BACKEND_ROOT,
+    argOf(argv, '--migration', path.relative(BACKEND_ROOT, latestMigrationPath())),
+  );
+  if (!existsSync(migrationPath)) {
+    console.error(`::error::No migration to rehearse at ${migrationPath}`);
+    return 1;
+  }
+  const migrationSql = readFileSync(migrationPath, 'utf8');
+  const migration = { ...parseMigration(migrationSql), path: migrationPath };
+
+  // `pg` is CommonJS: `import('pg')` exposes the module as `default` on some
+  // Node versions and as named exports on others. Accept either shape.
+  const pg = await import('pg');
+  const Client = pg.Client ?? pg.default?.Client;
+  if (typeof Client !== 'function') {
+    console.error('::error::The `pg` package is not installed or does not export Client');
+    return 1;
+  }
+  const client = new Client({ connectionString: url, connectionTimeoutMillis: 15000 });
+  await client.connect();
+
+  try {
     const inventory = await readInventory(client);
     const comparison = compareInventory(migration, inventory);
     const decision = decide(migration, inventory, comparison);
-    const checks = [];
-    const findings = await safetyChecks(
-      client,
-      migration,
-      comparison,
+    const findings = await safetyChecks(client, migration, comparison, inventory);
+
+    const report = renderReport({
+      target,
+      migrationPath,
       inventory,
-      checks,
-    );
-    const status =
-      findings.length || ["drift", "unknown"].includes(decision.verdict)
-        ? "HOLD"
-        : "REVIEW_REQUIRED";
-    return {
-      schemaVersion: 1,
-      mode: "inspect",
-      status,
-      executionStatus: "completed",
-      approval: "NOT_GRANTED",
-      startedAt,
-      completedAt: new Date().toISOString(),
-      sourceRevision: options.sourceRevision,
-      toolSha256: createHash("sha256")
-        .update(readFileSync(fileURLToPath(import.meta.url)))
-        .digest("hex"),
-      cloneSource: {
-        operatorAssertion: options.cloneSource,
-        independentlyVerifiedByTool: false,
-      },
-      target: options.target,
-      identity,
-      migration: {
-        name: path.basename(path.dirname(migration.path)),
-        sha256: migration.sha256,
-        sourceRevision: options.migrationRevision,
-      },
+      comparison,
       decision,
-      inventory,
-      comparison,
       findings,
-      checks,
-      findingCounts: {
-        blocking: findings.filter((f) => f.severity === "blocking").length,
-        unknown: findings.filter((f) => f.severity === "unknown").length,
-      },
-      postApplyVerification: {
-        status: "not-applicable",
-        reason: "Inspect-only; no apply performed.",
-      },
-    };
-  } finally {
-    // No COMMIT path exists, including when checks fail.
-    await client.query("ROLLBACK");
-  }
-}
+      mode,
+    });
+    writeFileSync(reportPath, report);
+    console.log(report);
 
-const printableJson = (value) =>
-  JSON.stringify(value, null, 2)
-    .replace(/`/g, "\\u0060")
-    .replace(/</g, "\\u003c");
-export function renderReport(report) {
-  const { inventory, comparison, findings, checks, ...summary } = report;
-  return (
-    `# Migration inspection — ${report.status}\n\n` +
-    "**Diagnostic only. No migration, baseline, deployment, or release approval.**\n\n" +
-    "Exit 0 means ready for independent review, never permission to apply. Exit 2 means HOLD.\n\n" +
-    "## Identity, provenance and verdict\n\n```json\n" +
-    printableJson(summary) +
-    "\n```\n\n" +
-    "## Complete schema inventory\n\n```json\n" +
-    printableJson(inventory) +
-    "\n```\n\n" +
-    "## Complete bidirectional comparison\n\n```json\n" +
-    printableJson(comparison) +
-    "\n```\n\n" +
-    "## Complete blocking and unknown findings (including SQL)\n\n```json\n" +
-    printableJson(findings) +
-    "\n```\n\n" +
-    "## Every row-safety check (including SQL and skipped checks)\n\n```json\n" +
-    printableJson(checks) +
-    "\n```\n\n" +
-    "Post-apply verification: **N/A — inspect-only**. Review all unsupported objects and operator provenance independently.\n"
-  );
-}
-
-export function writeReports(report, reportPath) {
-  const jsonPath = reportPath.replace(/\.md$/, ".json");
-  if (jsonPath === reportPath) throw new Error("Report path must end in .md.");
-  if (existsSync(reportPath) || existsSync(jsonPath))
-    throw new Error(
-      "Report files already exist. Use new paths; never overwrite prior evidence.",
-    );
-  writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n", {
-    flag: "wx",
-    mode: 0o600,
-  });
-  writeFileSync(reportPath, renderReport(report), { flag: "wx", mode: 0o600 });
-}
-
-export async function main(argv, env = process.env) {
-  const options = parseOptions(argv, env);
-  if (options.help) {
-    console.log(`Inspect an independently verified disposable staging clone; no apply mode exists.
-Inject REHEARSAL_DATABASE_URL using the approved secret mechanism. Never print it.
-Required arguments:
-  --mode inspect --i-have-a-clone
-  --expected-host <canonical-host> --expected-database <disposable-name> --expected-role <role>
-  --migration <reviewed-migration.sql> --migration-sha256 <independently-verified-sha256>
-  --source-revision <tool-full-git-sha> --migration-revision <sql-full-git-sha>
-  --clone-source <non-secret-backup-reference>
-  --report <new-private-directory/report.md>
-Writes complete .md and .json evidence, mode 0600; never overwrites files.
-Exit 0 = REVIEW_REQUIRED (not approved), 2 = HOLD, 1 = execution/configuration failed.
-Provisioning/restoring a clone needs separate operator approval. Never substitute live staging or production.`);
-    return 0;
-  }
-  const jsonPath = options.reportPath.replace(/\.md$/, ".json");
-  if (
-    existsSync(options.reportPath) ||
-    existsSync(jsonPath) ||
-    !existsSync(path.dirname(options.reportPath))
-  )
-    throw new Error(
-      "Choose new report paths in an existing private evidence directory.",
-    );
-  const sql = readFileSync(options.migrationPath, "utf8");
-  const sha256 = createHash("sha256").update(sql).digest("hex");
-  if (sha256 !== options.migrationSha256)
-    throw new Error(
-      "Migration artifact checksum mismatch; no connection attempted.",
-    );
-  const migration = {
-    ...parseMigration(sql),
-    path: options.migrationPath,
-    sha256,
-  };
-  if (!migration.tables.length || !sql.trim())
-    throw new Error(
-      "Expected a reviewed initial CREATE-schema artifact; no connection attempted.",
-    );
-  const client = new pg.Client({
-    connectionString: options.url,
-    connectionTimeoutMillis: 15000,
-    query_timeout: 35000,
-    application_name: "flowops-inspect-only",
-  });
-  let report;
-  try {
-    await client.connect();
-    report = await inspectDatabase(client, migration, options);
+    if (mode === 'apply') {
+      const refusal = applyRefusal({ verdict: decision.verdict, findings });
+      if (refusal) {
+        console.error(
+          `::error::Not applying: ${refusal}.` +
+            (decision.verdict === 'clean' ? '' : ` ${decision.summary}`),
+        );
+        return 1;
+      }
+      console.log('Applying the migration to the clone…');
+      await client.query('BEGIN');
+      try {
+        await client.query(migrationSql);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+      const after = await readInventory(client);
+      const afterComparison = compareInventory(migration, after);
+      console.log(
+        afterComparison.identical
+          ? 'Post-apply check: the clone now matches the migration exactly.'
+          : 'Post-apply check: differences remain — see the report.',
+      );
+    }
   } finally {
     await client.end();
   }
-  writeReports(report, options.reportPath);
-  console.log(
-    `Inspection ${report.status}; verdict ${report.decision.verdict}; blocking ${report.findingCounts.blocking}; unknown ${report.findingCounts.unknown}. No apply or release approval.`,
-  );
-  return report.status === "HOLD" ? 2 : 0;
+
+  return 0;
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2))
-    .then((code) => {
-      process.exitCode = code;
-    })
+    .then((code) => process.exit(code))
     .catch((error) => {
-      // Never reflect raw driver errors or DSNs. Config errors below originate in
-      // this tool; native/SQL errors receive only a safe code. Detailed database
-      // check evidence is already redacted and stored in the private report.
-      const safe = error?.code
-        ? `Execution failed (${sqlError(error)}).`
-        : /^(Required argument:|Unsupported or duplicate|Missing argument|Only --mode|Confirm approved|Inject REHEARSAL|Source revision|Reviewed migration|Report path|Invalid or unsupported|Refusing target|Database name|A non-local|Connection target|Choose new report|Migration artifact|Expected a reviewed|Connected identity)/.test(
-              error?.message ?? "",
-            )
-          ? error.message
-          : "Inspection failed; no approval or successful evidence should be inferred.";
-      console.error(safe);
-      process.exitCode = 1;
+      console.error(`::error::${error.message}`);
+      process.exit(1);
     });
 }

@@ -46,6 +46,10 @@ coverage/
 *.backup
 *.pg_dump
 
+# ...but Prisma migrations are the schema's history, not a dump: they must be
+# committed, or deployments silently apply nothing (see scripts/verify-migrations.mjs).
+!backend/prisma/migrations/**/*.sql
+
 # ─── Uploads ──
 uploads/
 

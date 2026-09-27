@@ -1,8 +1,8 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
-import { withCompanyId } from '../common/security/tenant.util';
+import { GoodsReceiptProcessBridge } from './goods-receipt-process.bridge';
 
 @Injectable()
 export class WarehouseManagementService {
@@ -11,6 +11,10 @@ export class WarehouseManagementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    // Optional so the WMS keeps working in any context that constructs this
+    // service without the Process Control bridge (and because the bridge is
+    // inert unless its feature flags are set).
+    @Optional() private readonly receiptBridge?: GoodsReceiptProcessBridge,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -194,7 +198,7 @@ export class WarehouseManagementService {
     const count = await this.prisma.goodsReceipt.count({ where: { companyId } });
     const receiptNumber = `GR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
 
-    return this.prisma.goodsReceipt.create({
+    const receipt = await this.prisma.goodsReceipt.create({
       data: {
         companyId, warehouseId, receiptNumber,
         poNumber: dto.poNumber, supplierName: dto.supplierName,
@@ -205,6 +209,19 @@ export class WarehouseManagementService {
       },
       include: { lines: true },
     });
+
+    // Process Control bridge — off unless PROCESS_CONTROL_ENABLED and
+    // PROCESS_CONTROL_WMS_RECEIPT_ENABLED are both true. Starting the standard
+    // must never be able to fail a goods receipt, so it is fire-and-logged.
+    if (this.receiptBridge?.isEnabled()) {
+      await this.receiptBridge.onReceiptCreated(
+        companyId,
+        receipt,
+        actorFrom(dto),
+      );
+    }
+
+    return receipt;
   }
 
   async receiveGoods(id: string, companyId: string, dto: {
@@ -216,6 +233,27 @@ export class WarehouseManagementService {
       where: { id, companyId }, include: { lines: true },
     });
     if (!gr) throw new NotFoundException('Goods receipt not found');
+
+    // Resolve the received SKUs against governed master data up front: the
+    // put-away below links stock to the variant it actually belongs to, and the
+    // Process Control bridge needs to tell an unknown code from a known one.
+    const variantsBySku = new Map<string, string>();
+    if (dto.lines.length > 0) {
+      const variants = await this.prisma.productVariant.findMany({
+        where: { companyId, sku: { in: dto.lines.map((l) => l.sku) } },
+        select: { id: true, sku: true },
+      });
+      for (const variant of variants) {
+        if (variant.sku) variantsBySku.set(variant.sku, variant.id);
+      }
+    }
+
+    // Whether this tenant governs SKUs at all decides if an unresolved code is
+    // an exception: a receipt of codes the tenant has never onboarded must not
+    // slip through simply because *none* of them matched.
+    const governsSkus =
+      variantsBySku.size > 0 ||
+      (await this.prisma.productVariant.count({ where: { companyId, sku: { not: null } } })) > 0;
 
     let totalReceived = 0, totalDamaged = 0;
 
@@ -246,8 +284,42 @@ export class WarehouseManagementService {
           batchNumber: line.batchNumber,
           expiryDate: line.expiryDate ? new Date(line.expiryDate) : undefined,
           goodsReceiptId: id, performedBy: dto.receivedBy,
+          // Null for a SKU that master data does not govern — the receipt is
+          // then carried by the process as a controlled exception, not silently
+          // booked against a variant that does not exist.
+          productVariantId: variantsBySku.get(line.sku),
         });
       }
+    }
+
+    // Process Control bridge: reconcile the receipt against the standard and
+    // raise the exceptions it finds. While the bridge is enforcing, a receipt
+    // with blocking exceptions is refused here — before the WMS calls it done.
+    let bridgeResult: any = null;
+    if (this.receiptBridge?.isEnabled()) {
+      // Unknown codes (no governed variant) become reconcile exceptions instead
+      // of being booked silently. Resolved above, before any stock moved.
+      const knownSkus = new Set(variantsBySku.keys());
+
+      bridgeResult = await this.receiptBridge.onGoodsReceived(
+        companyId,
+        { id, receiptNumber: gr.receiptNumber, expectedQty: gr.expectedQty, receivedQty: totalReceived },
+        dto.lines.map((line: any) => {
+          const grLine = gr.lines.find((l) => l.sku === line.sku);
+          return {
+            sku: line.sku,
+            expectedQty: grLine?.expectedQty ?? null,
+            receivedQty: line.receivedQty,
+            damagedQty: line.damagedQty ?? 0,
+            putAwayBinId: line.putAwayBinId ?? null,
+            // Only asserted when the tenant actually governs SKUs in master
+            // data; a tenant without master data must not be blocked by it.
+            knownVariant: governsSkus ? knownSkus.has(line.sku) : undefined,
+          };
+        }),
+        actorFrom(dto),
+      );
+      this.receiptBridge.assertCompletionAllowed(bridgeResult.blockDecision);
     }
 
     await this.prisma.goodsReceipt.update({
@@ -260,12 +332,24 @@ export class WarehouseManagementService {
       },
     });
 
-    return { receiptNumber: gr.receiptNumber, received: totalReceived, damaged: totalDamaged };
+    return {
+      receiptNumber: gr.receiptNumber,
+      received: totalReceived,
+      damaged: totalDamaged,
+      processControl: bridgeResult
+        ? {
+            instanceId: bridgeResult.instanceId,
+            outcome: bridgeResult.reconciliation?.outcome,
+            incidents: bridgeResult.reconciliation?.incidents?.map((i: any) => i.code) ?? [],
+          }
+        : undefined,
+    };
   }
 
   private async putAwayStock(companyId: string, dto: {
     binId: string; sku: string; quantity: number; batchNumber?: string;
     expiryDate?: Date; goodsReceiptId?: string; performedBy?: string;
+    productVariantId?: string;
   }) {
     // Find or create inventory item at this bin
     const item = await this.prisma.inventoryItem.findFirst({
@@ -279,6 +363,11 @@ export class WarehouseManagementService {
           quantityOnHand: { increment: dto.quantity },
           quantityAvailable: { increment: dto.quantity },
           lastMovedAt: new Date(),
+          // Link stock to governed master data once it is known, but never
+          // re-point an item that already resolves to a variant.
+          ...(dto.productVariantId && !item.productVariantId
+            ? { productVariantId: dto.productVariantId }
+            : {}),
         },
       });
     } else {
@@ -289,6 +378,7 @@ export class WarehouseManagementService {
           quantityOnHand: dto.quantity, quantityAvailable: dto.quantity,
           batchNumber: dto.batchNumber, expiryDate: dto.expiryDate,
           status: 'AVAILABLE', lastMovedAt: new Date(),
+          productVariantId: dto.productVariantId ?? null,
         },
       });
     }
@@ -1184,4 +1274,18 @@ Return ONLY valid JSON:
 
     return result;
   }
+}
+
+/**
+ * Minimal actor context for the Process Control bridge. The WMS DTOs carry the
+ * acting user as `receivedBy`/`performedBy` rather than a JWT payload, so the
+ * bridge is given the same identifiers the WMS already records.
+ */
+function actorFrom(dto: any) {
+  return {
+    userId: dto?.receivedBy ?? dto?.performedBy ?? null,
+    name: dto?.receivedByName ?? dto?.receivedBy ?? null,
+    role: dto?.actorRole ?? 'WAREHOUSE',
+    permissions: null,
+  };
 }

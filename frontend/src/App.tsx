@@ -67,6 +67,8 @@ const FleetIntelligence = lazy(() => import("./pages/FleetIntelligence"));
 const SafetyZones = lazy(() => import("./pages/SafetyZones"));
 const WarehouseManagement = lazy(() => import("./pages/WarehouseManagement"));
 const WmsCrossDocking = lazy(() => import("./pages/wms/CrossDocking"));
+const ProcessBookPage = lazy(() => import("./pages/ProcessBookPage"));
+const ProductMasterPage = lazy(() => import("./pages/ProductMasterPage"));
 const WmsWavePlanning = lazy(() => import("./pages/wms/WavePlanning"));
 const WmsAISlotting = lazy(() => import("./pages/wms/AISlotting"));
 const WmsBarcodeScan = lazy(() => import("./pages/wms/BarcodeScan"));
@@ -344,6 +346,11 @@ export default function App() {
               <Route path="/wms/waves" element={<RequireFeature feature="warehouseManagement" name="Wave Planning"><WmsWavePlanning /></RequireFeature>} />
               <Route path="/wms/slotting" element={<RequireFeature feature="warehouseManagement" name="AI Slotting"><WmsAISlotting /></RequireFeature>} />
               <Route path="/wms/scan" element={<RequireFeature feature="warehouseManagement" name="Barcode Scan"><WmsBarcodeScan /></RequireFeature>} />
+              {/* Process Control: versioned standards + execution evidence, and the governed
+                  product/variant/SKU master data that receipt validation depends on. Both are
+                  feature-flagged off by default and render an explicit "switched off" state. */}
+              <Route path="/process-book" element={<RequireFeature feature="warehouseManagement" name="Process Book"><ProcessBookPage /></RequireFeature>} />
+              <Route path="/product-master" element={<RequireFeature feature="warehouseManagement" name="Product Master"><ProductMasterPage /></RequireFeature>} />
               <Route path="/carriers" element={<RequirePermission perm="rateCards"><CarrierManagement /></RequirePermission>} />
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />

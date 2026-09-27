@@ -132,6 +132,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: detect
     if: needs.detect.outputs.has_backend == 'true'
+    permissions:
+      contents: write # only to publish an integration failure log to a scratch branch
     defaults:
       run:
         working-directory: backend
@@ -186,14 +188,60 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Release safety regressions (no database connection)
-        run: npm run release:safety:test
+      # An empty prisma/migrations makes `migrate deploy` exit 0 having done
+      # nothing, so a job that is supposed to prepare a database reports success
+      # while nothing is migrated. Refuse to run at all in that state.
+      - name: Verify migrations exist
+        run: npm run migrations:verify
 
-      - name: Prepare disposable CI schema (not staging adoption evidence)
-        # This branch does not import PR #436's initial migration. Until it is
-        # reviewed and integrated, schema push here is explicit CI fixture setup.
-        # When migrations exist, migrate deploy failures are fatal: no fallback.
-        run: node scripts/prepare-ci-schema.mjs
+      # The two tooling suites below gate the migration: `migrations:test` covers the
+      # verify/review scripts, and `migrations:rehearsal:test` covers the rehearsal tool an
+      # operator runs against a staging clone. Neither needs a database, and until now
+      # neither was run by CI — so a regression in the tooling that decides whether a
+      # migration may be adopted would have been invisible here. This is the gate's own
+      # gate, and it belongs in the same job as the migration it protects.
+      - name: Test the migration tooling (no database required)
+        run: |
+          npm run migrations:test
+          npm run migrations:rehearsal:test
+
+      - name: Run migrations
+        run: npx prisma migrate deploy || npx prisma migrate dev
+
+      # The integration database is now prepared by the migrations above. This
+      # guard proves the migrations really do reconstruct prisma/schema.prisma,
+      # so a missing or incomplete migration cannot hide behind the test suite.
+      - name: Verify migrations match the schema (drift guard)
+        shell: bash
+        run: |
+          SHADOW_URL="${DATABASE_URL%/*}/flowops_shadow_test"
+          node -e "
+            const { Client } = require('pg');
+            const url = new URL(process.env.DATABASE_URL);
+            url.pathname = '/postgres';
+            const admin = new Client({ connectionString: url.toString() });
+            admin
+              .connect()
+              .then(() => admin.query('DROP DATABASE IF EXISTS flowops_shadow_test'))
+              .then(() => admin.query('CREATE DATABASE flowops_shadow_test'))
+              .then(() => admin.end())
+              .catch((error) => {
+                console.error('Could not create the shadow database:', error.message);
+                process.exit(1);
+              });
+          "
+          set +e
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_URL" \
+            --exit-code
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Migration drift guard failed (exit $status). Either prisma/migrations no longer reconstruct prisma/schema.prisma — run 'npx prisma migrate dev' against a disposable database and commit the migration it generates — or the guard itself could not run (shadow database $SHADOW_URL)."
+            exit 1
+          fi
 
       - name: Lint
         run: npm run lint --if-present
@@ -247,6 +295,119 @@ jobs:
 
       - name: E2E tests
         run: npm run test:e2e --if-present
+
+      # The database-backed integration suite runs against the database the
+      # migrations above built — no `db push`, so an incomplete migration fails
+      # the tests instead of being silently repaired. These tests are what prove
+      # row locks, unique-constraint races and cascade behaviour that the
+      # in-memory unit-test double cannot.
+      #
+      # Job logs and artifacts live on blob storage that is not reachable from
+      # every network this project is worked from, but check-run annotations
+      # are reachable through the API. So a failing run explains itself twice:
+      # as annotations (see scripts/ci-annotate-failures.mjs) and as the raw
+      # log on the ci/integration-log scratch branch.
+      - name: Integration tests (PostgreSQL)
+        shell: bash
+        run: |
+          set +e
+          npm run test:integration -- --json --outputFile integration-report.json 2>&1 | tee integration-tests.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            node scripts/ci-annotate-failures.mjs integration-report.json
+          fi
+          exit "$status"
+
+      - name: Publish integration failure log
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f backend/integration-tests.log ]; then
+            echo "No integration log was written - nothing to publish."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --detach
+          git checkout -B ci/integration-log
+          mkdir -p ci/logs
+          cp backend/integration-tests.log ci/logs/integration-tests.log
+          git add -f ci/logs/integration-tests.log
+          git commit -m "chore(ci): integration failure log from ${GITHUB_SHA}"
+          git push --force origin ci/integration-log
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Schema SQL, generated by the toolchain this project pins (Prisma 5.22).
+  #
+  # Emitted as an artifact so the SQL that a migration would run can be read
+  # and reviewed before any migration directory is created, and so the exact
+  # same DDL can be applied to a disposable database for rehearsal. This job
+  # only reads the schema — it never touches a database.
+  # ────────────────────────────────────────────────────────────────────────
+  schema-sql:
+    name: Schema SQL (review artifact)
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.has_backend == 'true'
+    permissions:
+      contents: write # only to publish the generated SQL to the ci/schema-sql scratch branch
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Generate schema SQL from empty database
+        run: |
+          mkdir -p ../schema-sql
+          npx prisma migrate diff \
+            --from-empty \
+            --to-schema-datamodel prisma/schema.prisma \
+            --script > ../schema-sql/schema.sql
+          echo "----- first lines -----"
+          head -20 ../schema-sql/schema.sql
+          echo "----- statement count -----"
+          grep -c ';' ../schema-sql/schema.sql || true
+
+      - name: Upload schema SQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-sql
+          path: schema-sql/schema.sql
+          retention-days: 30
+
+      # Artifacts live on blob storage that agent sandboxes and some locked-down
+      # networks cannot reach, so the same file is also published to a throwaway
+      # branch where a plain `git fetch` can read it. Force-pushed every run; it
+      # only ever contains generated SQL and is never merged.
+      - name: Publish SQL to scratch branch
+        working-directory: ${{ github.workspace }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --detach
+          git checkout -B ci/schema-sql
+          mkdir -p backend/prisma/schema-sql
+          # the step runs from the workspace root, where the generator wrote it
+          cp schema-sql/schema.sql backend/prisma/schema-sql/schema.sql
+          git add -f backend/prisma/schema-sql/schema.sql
+          git commit -m "chore(ci): generated schema SQL from ${GITHUB_SHA}"
+          git push --force origin ci/schema-sql
 
   e2e:
     name: E2E Tests
