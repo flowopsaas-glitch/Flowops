@@ -13,7 +13,8 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > context, while the capacity workbook carries its own financial years (**FY26/27, FY27/28, FY29/30 and
 > others**). Workbook values must never be substituted into a V4 source period, and vice versa. Two
 > consequences are recorded rather than glossed: the FY behind §11.3's displayed rows is not pinned in
-> the capture (now exception 11), and the six-step post-rehearsal Rail sequence is added to §9.
+> the capture (now exception 11), the Annexure 43 KPI extract is period-unestablished because neither
+> extract carried a period label, and the six-step post-rehearsal Rail sequence is added to §9.
 >
 > **Revision 5 — 2026-09-27.** The Annexure 33 capacity-statement workbook arrived and is captured in
 > §11 — its model, its arithmetic (checked, §11.3), its route and depot identity (§11.4) and ten
@@ -306,6 +307,10 @@ ten corridors and **supersedes the first (2026-09-26)**, which arrived flattened
 workbook is not in this workspace and must not be committed — this section is the capture, and §10.4
 records what the second extract settled and what is still open.
 
+**Period:** neither extract carries an effective period for these KPIs, so every figure below is
+period-unestablished. Do not attribute it to V4's 2026/27–2027/28 operating periods or to any
+capacity-workbook financial year — see §11.0, which states the separation rule for all three sources.
+
 Network totals from the first extract reconcile exactly against the second: see §10.4.
 
 ### 10.1 Network summary — manual authorisations, speed restrictions, substations
@@ -515,6 +520,10 @@ theoretical capacities already differ between FYs (§11.5).
 - **One factor, all routes, all years.** The workbook's `0.65` is a single constant applied to every
   route in every FY it computes, whereas V4 §4.2 presents 65% as a planning guideline that may vary by
   route and belongs to V4's periods. Neither reading transfers to the other source (§11.6 item 3).
+- **A third source with no period at all.** Neither Annexure 43 extract carries a period label (§10),
+  so its corridor KPI baselines and targets are **period-unestablished**. The same rule applies in
+  reverse: do not attribute those targets to V4's 2026/27–2027/28 periods, and do not attribute them
+  to any capacity-workbook FY, until the workbook's own effective period is recorded.
 
 ### 11.1 Sheet inventory
 
