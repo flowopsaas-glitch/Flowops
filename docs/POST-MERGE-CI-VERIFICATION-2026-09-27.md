@@ -167,19 +167,28 @@ Once CI publishes successfully, record here as `image@sha256:…` from the run's
 
 ## Order enforcement and next actions
 
-The checklist order stands. The VPS remains unchanged. In order:
+**Owner's order (2026-09-27, recorded this session — supersedes the earlier
+list). PR-mode image jobs build/smoke/scan without publishing to GHCR, so
+green PR checks are not publication evidence:**
 
-1. Merge the fix PR (this work) after its CI is green — it restores the
-   backend build (2.1), the advisory scanner wiring, and the deploy-only
-   migration policy + release-safety suite (2.3, findings 1–3).
-2. Owner resolves blocker B (GHCR authorization) by one of the three options.
-3. Re-run / follow the next `main` push CI to green across **all five** named
-   checks (backend, frontend, E2E, dependency scan, multi-arch image build and
-   push), then record the published digests in section 3.
-4. Land the rehearsal-tool safety port (2.4) — independent review recommended,
-   it touches the adoption-decision tool.
-5. Only then proceed to the staging-clone rehearsal (4) with a named operator
-   and DB owner, and continue down the gates.
+| # | Action | Owner |
+|---|---|---|
+| 1 | Fix GHCR authorization — one approved route: enable appropriate GitHub Actions write permissions; grant the repository write access to the existing GHCR package; or configure the approved `CR_PAT` secret with package-write permission. **The token is never pasted into chat.** | repository owner |
+| 2 | Re-run / verify the relevant CI path (the GHCR preflight must pass) | owner + this session |
+| 3 | Merge PR #438 in a GitHub-enabled session | this session, **only after 1–2** |
+| 4 | Verify post-merge `main` CI **and actual image publication** | this session |
+| 5 | Record image digests (section 3) | this session |
+| 6 | Complete the rehearsal-tool safety-port work (section 2.4) | this session + review |
+| 7 | Run the staging-clone rehearsal | named operator + DB owner |
+| 8 | Decide `clean` / `baseline` / `already-applied` / `drift` | DB owner |
+| 9 | Complete remaining database-backed coverage / backfill review | data + backend owners |
+| 10 | Pilot (feature flags still off initially) | release + operations owners |
+| 11 | Production go/no-go | owner + independent reviewer |
+| 12 | Only then consider the VPS maintenance window (backup and rollback ready) | owner |
+
+**Hold:** PR #438 is **not to be merged before steps 1–2 are complete**. PR
+CI green ≠ post-merge image publication proven ≠ production ready. The VPS
+remains unchanged until, at the earliest, steps 1–11 have passed.
 
 **No merge of release-critical work, staging apply, live VPS change, flag
 change, or production approval is authorized by this document.**
