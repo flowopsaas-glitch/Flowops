@@ -44,7 +44,7 @@ perfectly healthy from inside the server.
 | Sep 28 10:28 | User hits CF 502 "Host Error" (Ray ID `a4220f503fa5017a`, colo JNB) | user report |
 | Sep 28 10:38–10:44 | Diagnosis: curl loop via CF from the VPS = 3/10 then 12/20 then 6/20 **502s, all ~30 ms**; `ps aux` shows **two** cloudflared processes with the same `--config`; container logs silent; origins healthy (in-stack `frontend: 200`) | incident session output |
 | Sep 28 10:59 | **Fix:** `systemctl stop cloudflared && systemctl disable cloudflared` — the host agent's journal closes the case: `ERR Connection terminated connIndex=0/1/2` → `ERR no more connections active and exiting` (three tunnel connections torn down) | journal excerpt |
-| Sep 28 11:00+ | Verified: `200 × 20` on three consecutive samples | incident session output |
+| Sep 28 11:00+ | Verified: `200 × 20` on four consecutive samples | incident session output |
 
 ## 3. Root cause
 
@@ -85,8 +85,8 @@ sudo systemctl stop cloudflared && sudo systemctl disable cloudflared
 
 - Blast radius: the redundant host agent only. The healthy compose agent kept
   serving; no data, containers, config or deploy involved.
-- Verification: `200 × 20` end-to-end via Cloudflare, three consecutive
-  samples; browser load confirmed clean.
+- Verification: `200 × 20` end-to-end via Cloudflare, four consecutive
+  samples (Sep 28); browser load confirmed clean by the user on 2026-09-28.
 - Rollback: none — the stopped unit only 502'd traffic. (`systemctl enable
   --now cloudflared` would restore the fault and must never be run.)
 
