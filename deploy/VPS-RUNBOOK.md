@@ -251,27 +251,44 @@ survivable off-box, provable, and add disk self-healing.
 
 The `postgres-backup` container keeps 7 days of dumps **on the same disk** as
 the database. If the VPS/disk is lost, those go with it. This script copies a
-fresh, **verified** dump into Cloudflare R2 (uses the R2 keys already in `.env`).
+fresh, **verified** dump into Cloudflare R2 so a total-host-loss is survivable.
 
-Prereqs on the host: Docker + `awscli` (`apt-get install -y awscli`).
+It uploads through whichever transport is available (`R2_TRANSPORT=auto`):
 
-Install (run once):
+| Transport | When | Needs |
+|---|---|---|
+| `rclone` | an rclone remote is configured (root's config: `/root/.config/rclone/rclone.conf`) | nothing else — credentials stay inside the rclone config; never copy or print them |
+| `aws` | `CLOUDFLARE_R2_*` + `CLOUDFLARE_ACCOUNT_ID` are in the environment | `apt-get install -y awscli` + the R2 keys (e.g. sourced from `.env`) |
+
+Install (run once, as root):
 ```bash
 sudo cp deploy/backup-to-r2.sh /usr/local/bin/flowops-backup-r2
 sudo chmod +x /usr/local/bin/flowops-backup-r2
 # make a dedicated bucket in the Cloudflare dashboard first, e.g. "flowops-backups"
-# daily 02:15, sourcing the compose .env so R2 creds are present:
+# daily at 02:15:
 ( crontab -l 2>/dev/null; \
-  echo '15 2 * * * set -a; . /root/FlowOps/.env; set +a; R2_BACKUP_BUCKET=flowops-backups /usr/local/bin/flowops-backup-r2 >> /var/log/flowops-backup.log 2>&1' \
+  echo '15 2 * * * R2_BACKUP_BUCKET=flowops-backups /usr/local/bin/flowops-backup-r2 >> /var/log/flowops-backup.log 2>&1' \
 ) | crontab -
 ```
-Run it once by hand to confirm it works:
+Non-standard rclone layout: if the remote root already **is** the bucket, add
+`R2_RCLONE_PATH=backups` to the cron line; with several remotes, also set
+`R2_RCLONE_REMOTE=<name>`. `rclone listremotes` and `rclone lsd <remote>:` show
+the layout (read-only — they print names, never credentials).
+
+Run it once by hand to confirm it works (auto-picks aws or rclone):
 ```bash
-set -a; . /root/FlowOps/.env; set +a
-R2_BACKUP_BUCKET=flowops-backups flowops-backup-r2
+R2_BACKUP_BUCKET=flowops-backups /usr/local/bin/flowops-backup-r2
 ```
 It refuses to upload a dump that fails size/gzip/pg_dump-header checks — a bad
 backup never silently replaces a good one.
+
+**Rollback:** remove the cron line and the binary:
+```bash
+crontab -l | grep -v flowops-backup-r2 | crontab -
+sudo rm -f /usr/local/bin/flowops-backup-r2
+```
+(to delete an uploaded object: `rclone delete <remote>:<path>/<file>` or
+`aws s3 rm s3://<bucket>/<key> --endpoint-url https://<account>.r2.cloudflarestorage.com`)
 
 ### B. PROVE the backup restores — `deploy/restore-verify.sh`
 
@@ -287,6 +304,17 @@ flowops-restore-verify --latest-local
 # optional: weekly automated proof (Sundays 03:00)
 ( crontab -l 2>/dev/null; echo '0 3 * * 0 /usr/local/bin/flowops-restore-verify --latest-local >> /var/log/flowops-restore-verify.log 2>&1' ) | crontab -
 ```
+Also prove the **offsite** copy round-trips — after a total loss, the file you
+fetch back is the R2 object, so verify THAT file too:
+```bash
+# what's actually in R2 (newest last; names sort chronologically):
+rclone lsf -R --files-only <remote>:flowops-backups/backups/ | sort | tail -3
+# pull the newest object and verify it end-to-end:
+rclone copyto <remote>:flowops-backups/backups/<YYYY>/<MM>/<newest> /tmp/r2-verify.sql.gz
+flowops-restore-verify /tmp/r2-verify.sql.gz
+rm -f /tmp/r2-verify.sql.gz
+```
+**Rollback** for the weekly cron: `crontab -l | grep -v flowops-restore-verify | crontab -`
 **Real disaster recovery** (overwrites live DB — only when actually recovering):
 ```bash
 flowops-restore-verify --restore-live /path/to/dump.sql.gz --i-understand
@@ -328,3 +356,70 @@ stack comes back after a reboot. Confirm Docker itself starts on boot:
 sudo systemctl enable docker
 docker ps            # after a test reboot, all flowops-* containers should be Up
 ```
+
+### F. Pinned cloudflared + healthchecks (F-5 / F-9 — incident 2026-09-28)
+
+`deploy/docker-compose.vps.yml` pins `cloudflare/cloudflared:2026.9.3` (F-5 —
+`:latest` had left the box silently running an outdated `2026.6.1`) and adds
+healthchecks (F-9):
+
+- `cloudflared` — `["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]`.
+  Exec-form is **required**: the official image is distroless (no shell, no
+  wget/curl). The probe reads the `/ready` endpoint of the metrics server from
+  `command:` and exits 0 only with ≥1 live Cloudflare edge connection.
+- `postgres-backup` — healthy = a **validated** dump exists fresher than 6h40m
+  (dump cycle is 6h + slack). Catches a dead dump loop or empty volume.
+
+While the release gate holds the branch
+(`docs/POST-MERGE-CI-VERIFICATION-2026-09-27.md`), do **NOT** `git pull` /
+`vps-deploy.sh` on the VPS — they deploy app code. Apply only this delta with a
+temporary overlay; it touches exactly two containers:
+
+```bash
+cat > /root/flowops-f5-f9.yml <<'EOF'
+# TEMPORARY overlay (F-5/F-9, 2026-09-28). Remove once gate step 12 deploys
+# the canonical deploy/docker-compose.vps.yml from arena/01a0e43b-flowops.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+  postgres-backup:
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'flowops_*.sql.gz' -mmin -400 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
+EOF
+cd /root/FlowOps
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  -f /root/flowops-f5-f9.yml up -d --no-deps cloudflared postgres-backup
+```
+
+**Blast radius:** recreates ONLY `cloudflared` + `postgres-backup`. The single
+tunnel agent reconnects — expect a brief (seconds) site blip, then 200s resume;
+`postgres-backup` takes a fresh dump immediately on restart. No other container
+is touched. Never "smooth over" the blip by starting the host systemd unit —
+exactly one tunnel agent (invariant 3).
+
+**Rollback** (back to `:latest`, no healthchecks):
+```bash
+cd /root/FlowOps
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  up -d --no-deps cloudflared postgres-backup
+sudo rm -f /root/flowops-f5-f9.yml
+```
+
+**Verify** (both should read `healthy` within ~1 min; `cloudflared` only flips
+healthy with a live edge connection):
+```bash
+docker inspect flowops-cloudflared-1 --format 'cloudflared image={{.Config.Image}} health={{.State.Health.Status}}'
+docker inspect flowops-postgres-backup-1 --format 'postgres-backup health={{.State.Health.Status}}'
+```
+At gate step 12, deploy the branch normally and delete `/root/flowops-f5-f9.yml`
+— the canonical compose file carries the same pin + healthchecks.

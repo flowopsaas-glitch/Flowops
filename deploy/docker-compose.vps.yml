@@ -106,10 +106,24 @@ services:
   # Uses Docker service names (frontend:80, driver-portal:80) since we no longer
   # expose host ports — cloudflared talks to containers over the Docker network.
   cloudflared:
-    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    # PINNED (F-5, incident 2026-09-28): `:latest` left the box running an
+    # outdated 2026.6.1 with no way to tell which version failed when. Pin the
+    # tag, and upgrade deliberately (see VPS-RUNBOOK §F — recreate this ONE
+    # container; never start a second tunnel agent).
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.9.3}
     init: true
     restart: always
     command: tunnel --no-autoupdate --protocol http2 --metrics 0.0.0.0:2000 --config /etc/cloudflared/config.yml run
+    # F-9: the official image is DROLESS (no shell, no wget/curl) — the probe
+    # MUST be exec-form and comes from the binary itself: `cloudflared tunnel
+    # ready` curls the /ready endpoint of the metrics server configured above
+    # and exits 0 only when the tunnel holds >=1 live edge connection.
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     volumes:
       - /etc/cloudflared:/etc/cloudflared:ro
     networks: [flowops-net]
@@ -180,6 +194,16 @@ services:
           fi
         done
       '
+    # F-9: healthy = at least one VALIDATED dump exists that is fresher than
+    # 6h40m (the dump cycle is 6h + slack). Catches a dead loop, a persistently
+    # failing pg_dump, or an empty backups volume. `find -mmin` matches the
+    # renamed final files only (the loop writes *.partial until validated).
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'flowops_*.sql.gz' -mmin -400 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
 
 volumes:
   postgres-backups:

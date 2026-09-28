@@ -105,12 +105,12 @@ sudo systemctl stop cloudflared && sudo systemctl disable cloudflared
 | ID | Item | Sev | State |
 |---|---|---|---|
 | F-1 | Repo cannot recreate the double-agent trap (above) | P1 | **done** (`7d47236`) |
-| F-2 | Offsite backups (`backup-to-r2.sh` not installed; DB dumps live only on the VPS disk) | **P1 data-loss** | open — awaiting owner approval |
-| F-3 | Restore-test the existing dumps (`restore-verify.sh`) | P1 | open |
+| F-2 | Offsite backups (`backup-to-r2.sh` not installed; DB dumps live only on the VPS disk) | **P1 data-loss** | **in progress** — approved 2026-09-28; repo-side done (rclone/aws transport), host install pending |
+| F-3 | Restore-test the existing dumps (`restore-verify.sh`) | P1 | **in progress** — approved 2026-09-28; host restore-test pending |
 | F-4 | Deploy #437 security fixes via the gate sequence | P1 sec. | open — gated process |
-| F-5 | Pin/upgrade cloudflared (`:latest` → `2026.9.3`) | P2 | open |
+| F-5 | Pin/upgrade cloudflared (`:latest` → `2026.9.3`) | P2 | **in progress** — approved 2026-09-28; pinned in compose (runbook §F), host apply pending |
 | F-7 | Identify the Sep 25 reboot trigger; constrain surprise reboots | P2 | open |
-| F-9 | Add healthchecks for `cloudflared` + `postgres-backup` | P2 | open |
+| F-9 | Add healthchecks for `cloudflared` + `postgres-backup` | P2 | **in progress** — approved 2026-09-28; in compose (runbook §F), host apply pending |
 | F-10 | External uptime check wired to a human | P2 | open |
 
 ## 7. Lessons
