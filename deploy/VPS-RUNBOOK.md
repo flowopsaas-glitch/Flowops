@@ -179,6 +179,47 @@ If the driver app shows CORS errors, that missing origin is the cause.
 
 ---
 
+## Site-down triage order (read-only first)
+
+Work top-down; stop at the first confirmed cause. Change nothing until the
+cause is named, and then one change at a time with its rollback command ready.
+
+1. **Everyone or just you?** Check from a phone on 4G/5G (wifi off) and note
+   the Cloudflare error page: error number + Ray ID. `Cloudflare: Working /
+   Host: Error` means the fault is between the edge and the origin.
+2. **Host alive?** `uptime; df -h; free -m` — reboot? disk full? OOM?
+3. **Containers:** `docker ps -a` — anything not `Up`? Note `STATUS`
+   (healthy/Restarting), `restart`, `exit` codes (137 = OOM).
+4. **Tunnel first** (the component that can take the site down while
+   everything else is green):
+   - `systemctl is-active cloudflared` must print `inactive` — a host-level
+     agent beside the compose one is the 2026-09-28 incident;
+   - `grep -n service: /etc/cloudflared/config.yml` must show Docker service
+     names (`http://frontend:80`), never `localhost`/`127.0.0.1`;
+   - `docker logs --tail 30 $(docker ps -aqf name=cloudflared | head -1)`.
+5. **In-stack smoke:** `docker exec $(docker ps -qf name=api | head -1) node
+   -e "fetch('http://frontend:80/').then(r=>console.log(r.status))"` — 200
+   means the app is fine and the fault is tunnel/edge.
+6. **Reality check through the public URL** (from the VPS; its egress is
+   unfiltered): `for i in $(seq 1 20); do curl -sS -o /dev/null -w
+   "%{http_code} " https://app.flowop.work/; done` — mixed 200/502 = a split
+   path (two agents / flapping connection); all 502 = tunnel or origin down.
+7. **Traffic truth:** `docker logs --since 30m flowops-frontend-1 | tail` —
+   real requests with 200s? Then it's not fully down. Silence + external 502s
+   = requests dying in front of nginx.
+8. **Postgres:** `docker logs --tail 20 flowops-postgres-1` and a connection
+   count via `psql`; look for restart loops and full disks.
+9. **What changed?** `git log --oneline -3` in `~/FlowOps`; per-container
+   `docker inspect -f '{{.State.StartedAt}}'`; `journalctl -b -1` if rebooted.
+10. **Fix one thing, verify (the curl loop), keep the rollback command.**
+    Never `docker system prune`. Never deploy a new release mid-incident —
+    releases go through the gate sequence. Confirm a backup exists before any
+    state-changing fix.
+
+Deeper incident record: [`docs/INCIDENT-POSTMORTEM-2026-09-28.md`](../docs/INCIDENT-POSTMORTEM-2026-09-28.md).
+
+---
+
 ## 7. Clear a stuck PWA service worker (browser side)
 
 ```js
