@@ -41,6 +41,16 @@ by *appending*, so a plain `ports: []` in an overlay is a no-op; that bug is
 what made the app reachable on `http://<VPS_IP>:8080`. Requires **Compose
 v2.24.4+**. Details and rollout plan: [`VPS-PORT-RESET-ROLLOUT.md`](VPS-PORT-RESET-ROLLOUT.md).
 
+**Third invariant — exactly one tunnel agent.** The compose `cloudflared`
+service is the **only** agent; never run a host-level `cloudflared.service`
+beside it (older guides in this repo created one — that bug caused the
+2026-09-28 incident: two agents on one tunnel registration split Cloudflare's
+traffic, and the host one could only 502). Check any time you touch the
+tunnel: `systemctl is-active cloudflared` must print `inactive`, and
+`docker ps --format '{{.Names}}' | grep cloudflared` must show the compose
+container. `vps-deploy.sh` refuses to deploy while a host-level unit is
+active or enabled.
+
 ---
 
 ## 2. One-time VPS setup
@@ -163,6 +173,7 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **AI features dead (Support Agent, Courier orchestrate, copilot, intel) — only fallback replies** | `GROQ_API_KEY` not reaching the container | Set it in `.env`; the compose `api` service forwards it — rebuild/`up -d`. Confirm with `docker compose ... exec api printenv GROQ_API_KEY` |
 | **Fresh instance flags a "clone" in Observatory** | New domain not in `VITE_CANONICAL_HOSTS` (tripwire false-fire) | Set `VITE_CANONICAL_HOSTS=<your-domain>` + rebuild frontend |
 | **Site 502s (or vps-deploy.sh refuses to start) after the port-reset change** | Tunnel ingress still targets `http://127.0.0.1:8080` / `http://localhost:8080`, and nothing listens there any more | Point ingress at `http://frontend:80` / `http://driver-portal:80`, then `docker compose ... restart cloudflared` |
+| **Intermittent 502s — some requests fine, some fail instantly (incident 2026-09-28)** | Two cloudflared agents on one tunnel: a host-level `cloudflared.service` running beside the compose agent. Cloudflare splits traffic between them; the host one cannot reach any origin and 502s its share | `sudo systemctl stop cloudflared && sudo systemctl disable cloudflared`, keep only the compose container. Verify: `for i in $(seq 1 20); do curl -sS -o /dev/null -w "%{http_code} " https://app.flowop.work/; done` → expect 200 × 20. Prevention: `vps-deploy.sh` check 0e refuses to deploy in this state |
 | **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
 | **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
 
