@@ -103,16 +103,27 @@ docker --version
 docker compose version
 
 # ══════════════════════════════════════════════════════════════════════════
-#  STEP 4: Install Cloudflared
+#  STEP 4: Cloudflared CLI (diagnostics only — NO host systemd service)
 # ══════════════════════════════════════════════════════════════════════════
-log "Step 4/7: Installing cloudflared..."
+# The production tunnel runs as a Compose sidecar (see deploy/docker-compose.vps.yml).
+# Installing/enabling a host systemd cloudflared service here creates a second
+# tunnel agent and splits connections. The CLI binary is still useful for
+# `cloudflared tunnel info` and one-off diagnostics.
+log "Step 4/7: Installing cloudflared CLI (diagnostics only)..."
 if ! command -v cloudflared &> /dev/null; then
-  curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
-  dpkg -i /tmp/cloudflared.deb
-  rm /tmp/cloudflared.deb
-  log "cloudflared installed ✓"
+  curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+  chmod 0755 /usr/local/bin/cloudflared
+  log "cloudflared CLI installed to /usr/local/bin/cloudflared (no systemd service) ✓"
 else
-  log "cloudflared already installed ✓"
+  log "cloudflared CLI already installed ✓"
+fi
+# Belt-and-braces: ensure the legacy host service never auto-starts on new
+# VPS builds. Existing disabled/inactive units are left alone; we only
+# prevent `systemctl enable cloudflared` from claiming the tunnel.
+if [[ -d /run/systemd/system ]]; then
+  systemctl stop cloudflared 2>/dev/null || true
+  systemctl disable cloudflared 2>/dev/null || true
+  systemctl mask cloudflared 2>/dev/null || true
 fi
 cloudflared --version
 

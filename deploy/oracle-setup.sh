@@ -123,48 +123,29 @@ YAML
     ok "Tunnel config found: $CONFIG_FILE"
   fi
 
-  # ── Set up systemd service ──────────────────────────────────────────────
-  log "Setting up cloudflared systemd service"
-  
-  # Copy to /etc/cloudflared for the system service
+  # ── Place config/credentials where the Compose sidecar expects them ────
+  # IMPORTANT: cloudflared runs INSIDE the compose stack (service
+  # `cloudflared` in deploy/docker-compose.vps.yml). We deliberately DO NOT
+  # install or enable a host systemd service here — a host + container
+  # tunnel connected to the same tunnel ID creates duplicate connections,
+  # request flapping and 502s. The CLI binary is available for diagnostics.
+  log "Preparing /etc/cloudflared for the Compose sidecar (no host systemd service)"
+
   sudo mkdir -p /etc/cloudflared
   sudo cp "$CRED_FILE" /etc/cloudflared/
   sudo cp "$CONFIG_FILE" /etc/cloudflared/config.yml
-  
-  # Fix paths in system config to use /etc/cloudflared
+
   TUNNEL_ID=$(basename "$CRED_FILE" .json)
   sudo sed -i "s|credentials-file:.*|credentials-file: /etc/cloudflared/${TUNNEL_ID}.json|" /etc/cloudflared/config.yml
 
-  # Extract tunnel name from config
-  TUNNEL_NAME=$(grep '^tunnel:' /etc/cloudflared/config.yml | awk '{print $2}')
-
-  sudo tee /etc/systemd/system/cloudflared.service > /dev/null <<EOF
-[Unit]
-Description=Cloudflare Tunnel (FlowOps)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-TimeoutStartSec=0
-ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
-Restart=on-failure
-RestartSec=5s
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  sudo systemctl daemon-reload
-  sudo systemctl enable cloudflared
-  sudo systemctl start cloudflared
-  sleep 3
-
-  if sudo systemctl is-active --quiet cloudflared; then
-    ok "cloudflared service is running"
-  else
-    warn "cloudflared failed to start. Check: sudo journalctl -u cloudflared -n 20"
+  if command -v cloudflared >/dev/null; then
+    ok "cloudflared CLI present ($(cloudflared --version 2>&1 | head -1))"
+  fi
+  if [[ -d /run/systemd/system ]]; then
+    sudo systemctl stop cloudflared 2>/dev/null || true
+    sudo systemctl disable cloudflared 2>/dev/null || true
+    sudo systemctl mask cloudflared 2>/dev/null || true
+    ok "host cloudflared.service disabled/masked (Compose sidecar owns the tunnel)"
   fi
 fi
 

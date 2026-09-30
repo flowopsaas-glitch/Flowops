@@ -166,6 +166,7 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
 | **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
 | **R2 uploads return `NotImplemented 501` from apt rclone 1.60.1** | Ubuntu-packaged rclone 1.60 uploads objects but mis-handles post-upload checks against current R2 | Use `/usr/local/bin/rclone` v1.66+ (installed by `item2-r2-runner.sh`); the cron job hard-codes that binary |
+| **Intermittent 502s / tunnel split-brain** | A host `cloudflared.service` is running alongside the Compose cloudflared sidecar against the same tunnel ID, creating two connectors | Stop/disable/mask the host service; only the Compose `cloudflared` service should own the tunnel (`deploy/vps-deploy.sh` now refuses to deploy if a host service is active) |
 
 ---
 
@@ -231,14 +232,44 @@ and edit only the `flowops-r2` remote; never paste keys into chat. If cron or
 the installed binary appears altered, re-run a freshly pinned copy of
 `deploy/item2-r2-runner.sh` after verifying its SHA-256 against the commit.
 
-### B. Legacy scripts (reference only) — `deploy/backup-to-r2.sh`, `deploy/restore-verify.sh`
+### B. Cloudflared hardening (current)
+
+Cloudflared runs as a Compose sidecar (service `cloudflared`) pinned to a dated
+release tag, **not** `:latest`, and exposes a healthcheck that queries
+`cloudflared tunnel --metrics 127.0.0.1:2000 ready`. Metrics are bound to
+loopback inside the container and no host port is published.
+
+- Image pin: `cloudflare/cloudflared:2026.9.3`
+- Command: `tunnel --no-autoupdate --protocol http2 --metrics 127.0.0.1:2000 --config /etc/cloudflared/config.yml run`
+- Restart: `always`; depends on frontend/api `service_healthy`
+- Healthcheck: interval 30s, timeout 5s, retries 3, start_period 15s
+- Host unit guard: `deploy/vps-deploy.sh` refuses to start if
+  `systemctl is-active cloudflared` reports active/activating, because a host
+  + container connector against the same tunnel ID causes split-brain and 502s.
+- Bootstrap hygiene: `deploy/setup-vps.sh` and `deploy/oracle-setup.sh` install
+  only the cloudflared CLI for diagnostics, mask the host
+  `cloudflared.service`, and no longer enable a host tunnel agent.
+
+If the host service is ever active by accident:
+```bash
+systemctl stop cloudflared
+systemctl disable cloudflared
+systemctl mask cloudflared
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d cloudflared
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml ps cloudflared
+```
+Rollback to the previous image tag is one
+`CLOUDFLARED_IMAGE=cloudflare/cloudflared@sha256:<prior-digest> docker compose ... up -d cloudflared`
+away; prior image remains in Docker until pruned.
+
+### C. Legacy scripts (reference only) — `deploy/backup-to-r2.sh`, `deploy/restore-verify.sh`
 
 The older `backup-to-r2.sh`/`restore-verify.sh` pair is kept for reference and
 uses `awscli` with `.env` credentials. Do not install it alongside the
 `item2-r2-runner.sh` cron lines — the runner preflight aborts if unmarked
 FlowOps backup jobs already exist in root's crontab.
 
-### C. Disk self-healing — `deploy/disk-guard.sh`
+### D. Disk self-healing — `deploy/disk-guard.sh`
 
 A full disk stops Postgres writes = total outage. This prunes dangling Docker
 images/build-cache at 75% and gets aggressive at 85%. It **never** prunes
@@ -252,7 +283,7 @@ sudo chmod +x /usr/local/bin/flowops-disk-guard
 flowops-disk-guard
 ```
 
-### D. Disk + health visibility
+### E. Disk + health visibility
 
 `GET /health` now includes disk usage. The in-app Health Sentinel logs a
 warning at 80% and an error at 90% (visible in `docker logs flowops-api-1` and
@@ -265,7 +296,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
 df -h /
 ```
 
-### E. Reboot survival (already configured — just verify)
+### F. Reboot survival (already configured — just verify)
 
 All services use `restart: always` in `deploy/docker-compose.vps.yml`, so the
 stack comes back after a reboot. Confirm Docker itself starts on boot:

@@ -93,7 +93,19 @@ else
   printf '\033[1;33m! %s not found — skipping tunnel target check.\033[0m\n' "$CF_CONFIG"
 fi
 
-# ── 0d. Merged config must publish no host ports ─────────────────────────────
+# ── 0d. Refuse to start if a host systemd cloudflared is active ──────────────
+# A host `cloudflared.service` connected to the same tunnel ID creates a second
+# tunnel connector, which splits connections and causes intermittent 502s.
+# Compose's cloudflared sidecar is the sole owner.
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files cloudflared.service >/dev/null 2>&1; then
+  CF_HOST_STATE="$(systemctl is-active cloudflared 2>/dev/null || true)"
+  if [[ "$CF_HOST_STATE" == "active" || "$CF_HOST_STATE" == "activating" ]]; then
+    die "host cloudflared.service is ${CF_HOST_STATE}. The Compose sidecar must own the tunnel.\n       Stop it with:  systemctl stop cloudflared && systemctl disable cloudflared && systemctl mask cloudflared\n       Then re-run this deploy."
+  fi
+  ok "host cloudflared.service is inactive/disabled (Compose sidecar owns the tunnel)"
+fi
+
+# ── 0e. Merged config must publish no host ports ─────────────────────────────
 # Renders the merged compose model and fails if any service still publishes a
 # port on a non-loopback interface. Cheap, and it runs BEFORE the stack moves.
 log "Verifying merged compose config publishes no host ports"
