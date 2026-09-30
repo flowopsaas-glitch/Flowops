@@ -31,7 +31,7 @@ backends/DBs in dev).
 
 **Key invariant:** the browser only ever talks to the **frontend** origin.
 The SPA calls **`/api/v1/*`** (relative, same-origin); nginx proxies it to the
-`api` service. No cross-origin, no CORS headaches, no second backend.
+`api` container. No cross-origin, no CORS headaches, no second backend.
 
 **Second invariant — no host ports.** The VPS overlay (`deploy/docker-compose.vps.yml`)
 unbinds every host port with `ports: !reset []`, so the ONLY way in is the
@@ -165,6 +165,7 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **Site 502s (or vps-deploy.sh refuses to start) after the port-reset change** | Tunnel ingress still targets `http://127.0.0.1:8080` / `http://localhost:8080`, and nothing listens there any more | Point ingress at `http://frontend:80` / `http://driver-portal:80`, then `docker compose ... restart cloudflared` |
 | **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
 | **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
+| **R2 uploads return `NotImplemented 501` from apt rclone 1.60.1** | Ubuntu-packaged rclone 1.60 uploads objects but mis-handles post-upload checks against current R2 | Use `/usr/local/bin/rclone` v1.66+ (installed by `item2-r2-runner.sh`); the cron job hard-codes that binary |
 
 ---
 
@@ -186,7 +187,6 @@ data lived in the other. Keeping everything in **one** compose project means
 there is exactly one backend and one Postgres volume — the failure mode simply
 cannot happen.
 
-
 ---
 
 ## Reliability & Disaster Recovery (added 2026-09)
@@ -195,51 +195,48 @@ Everything below is **operational hardening** for running on one VPS. The app
 already dumps the DB every 6h into a Docker volume; these steps make backups
 survivable off-box, provable, and add disk self-healing.
 
-### A. Off-box backups to Cloudflare R2 — `deploy/backup-to-r2.sh`
+### A. Off-box R2 backups (current) — `deploy/item2-r2-runner.sh`
 
-The `postgres-backup` container keeps 7 days of dumps **on the same disk** as
-the database. If the VPS/disk is lost, those go with it. This script copies a
-fresh, **verified** dump into Cloudflare R2 (uses the R2 keys already in `.env`).
+The production backup path is the fail-closed runner committed at
+`deploy/item2-r2-runner.sh`. It stages files under `/root` (not `/tmp`, which
+is a 1 GiB tmpfs on this VPS), requires modern rclone at
+`/usr/local/bin/rclone` (v1.66+; apt rclone 1.60 returns `NotImplemented 501`
+against current Cloudflare R2), and only installs itself / schedules cron
+**after** all five proof steps pass:
 
-Prereqs on the host: Docker + `awscli` (`apt-get install -y awscli`).
+1. Restores the newest local dump into a throwaway Postgres DB.
+2. gzip + SHA-256 verifies the local copy before upload.
+3. Uploads to `flowops-r2:flowops-backups/backups/YYYY/MM/flowops_*.sql.gz`.
+4. Round-trip downloads from R2 and SHA-256 matches against local.
+5. Restores the R2 copy into a second throwaway DB and counts core tables.
 
-Install (run once):
-```bash
-sudo cp deploy/backup-to-r2.sh /usr/local/bin/flowops-backup-r2
-sudo chmod +x /usr/local/bin/flowops-backup-r2
-# make a dedicated bucket in the Cloudflare dashboard first, e.g. "flowops-backups"
-# daily 02:15, sourcing the compose .env so R2 creds are present:
-( crontab -l 2>/dev/null; \
-  echo '15 2 * * * set -a; . /root/FlowOps/.env; set +a; R2_BACKUP_BUCKET=flowops-backups /usr/local/bin/flowops-backup-r2 >> /var/log/flowops-backup.log 2>&1' \
-) | crontab -
-```
-Run it once by hand to confirm it works:
-```bash
-set -a; . /root/FlowOps/.env; set +a
-R2_BACKUP_BUCKET=flowops-backups flowops-backup-r2
-```
-It refuses to upload a dump that fails size/gzip/pg_dump-header checks — a bad
-backup never silently replaces a good one.
+Bucket layout is checked; unexpected root objects or unexpected files under
+`backups/` abort before writes. 30-day retention is pruned only under the
+dedicated `backups/` prefix.
 
-### B. PROVE the backup restores — `deploy/restore-verify.sh`
+Verified live state after the 2026-09-30 rollout:
 
-An untested backup is not a backup. This restores the newest dump into a
-**throwaway** temp database, counts key tables, then drops it. It never touches
-live data.
+- Installed binary: `/usr/local/bin/flowops-backup-r2`
+- Rclone binary: `/usr/local/bin/rclone` (v1.75.1)
+- Rclone remote: `flowops-r2` (config `/root/.config/rclone/rclone.conf`, mode 600)
+- R2 bucket: `flowops-backups`, prefix `backups/`; public access disabled
+- Root cron:
+  - `15 2 * * *` daily R2 backup → `/var/log/flowops-backup.log`
+  - `0 3 * * 0` local restore proof → `/var/log/flowops-restore-verify.log`
+- First successful proof counts (local and R2 round-trip identical):
+  collections=19, companies=2, drivers=20, users=10, waybills=81.
 
-```bash
-sudo cp deploy/restore-verify.sh /usr/local/bin/flowops-restore-verify
-sudo chmod +x /usr/local/bin/flowops-restore-verify
-# verify the latest local dump right now:
-flowops-restore-verify --latest-local
-# optional: weekly automated proof (Sundays 03:00)
-( crontab -l 2>/dev/null; echo '0 3 * * 0 /usr/local/bin/flowops-restore-verify --latest-local >> /var/log/flowops-restore-verify.log 2>&1' ) | crontab -
-```
-**Real disaster recovery** (overwrites live DB — only when actually recovering):
-```bash
-flowops-restore-verify --restore-live /path/to/dump.sql.gz --i-understand
-docker restart flowops-api-1
-```
+**To rotate / reconfigure rclone credentials**, use `rclone config` as root
+and edit only the `flowops-r2` remote; never paste keys into chat. If cron or
+the installed binary appears altered, re-run a freshly pinned copy of
+`deploy/item2-r2-runner.sh` after verifying its SHA-256 against the commit.
+
+### B. Legacy scripts (reference only) — `deploy/backup-to-r2.sh`, `deploy/restore-verify.sh`
+
+The older `backup-to-r2.sh`/`restore-verify.sh` pair is kept for reference and
+uses `awscli` with `.env` credentials. Do not install it alongside the
+`item2-r2-runner.sh` cron lines — the runner preflight aborts if unmarked
+FlowOps backup jobs already exist in root's crontab.
 
 ### C. Disk self-healing — `deploy/disk-guard.sh`
 
