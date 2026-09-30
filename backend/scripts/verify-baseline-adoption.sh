@@ -35,6 +35,9 @@ PG_PASS="flowops_delta_shadow"
 FRESH_DB="flowops_fresh_ci"
 ADOPT_DB="flowops_adopt_clone"
 REPORT="${REPORT:-/root/flowops-baseline-adoption-report.md}"
+# Reports the container writes are read from the host, so this directory is mounted
+# into it: a container-internal path would leave the host with "no report".
+REPORT_DIR="${REPORT_DIR:-/root/flowops-adoption-reports}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,9 +49,10 @@ while [ $# -gt 0 ]; do
 done
 
 FAILURES=0
+CHECKS=0
 note() { printf '%s\n' "$*"; }
-ok()   { printf '  PASS  %s\n' "$*"; }
-bad()  { printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
+ok()   { CHECKS=$((CHECKS + 1)); printf '  PASS  %s\n' "$*"; }
+bad()  { CHECKS=$((CHECKS + 1)); printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
 
 psql_at() { # psql_at <db> <sql>
   docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$1" -tAc "$2"
@@ -59,15 +63,18 @@ ROW_FINGERPRINT_SQL="SELECT md5(string_agg(relname || '=' || n, '|' ORDER BY rel
   SELECT c.relname,
          (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', c.relname), false, true, '')))[1]::text AS n
     FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
-   WHERE c.relkind = 'r' AND ns.nspname = 'public') s"
+   WHERE c.relkind = 'r' AND ns.nspname = 'public' AND c.relname <> '_prisma_migrations') s"
 
-COUNTS_SQL="SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema='public') || '|' ||
+# `_prisma_migrations` and its primary-key index are Prisma bookkeeping, not schema:
+# excluding them keeps the expected counts identical before adoption (no ledger) and
+# after (`migrate deploy` creates the ledger), which is what makes them comparable.
+COUNTS_SQL="SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name <> '_prisma_migrations') || '|' ||
   (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE t.typtype='e' AND n.nspname='public') || '|' ||
-  (SELECT count(*) FROM pg_indexes WHERE schemaname='public') || '|' ||
+  (SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename <> '_prisma_migrations') || '|' ||
   (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE c.contype='f' AND n.nspname='public')"
 
 run_prisma() { # run_prisma <db> <shell command using $DATABASE_URL>
-  docker run --rm --network "$NETWORK" -v "$WORKTREE":/work -w /work/backend "$NODE_IMAGE" sh -ec "
+  docker run --rm --network "$NETWORK" -v "$WORKTREE":/work -v "$REPORT_DIR":/reports -w /work/backend "$NODE_IMAGE" sh -ec "
     apt-get update -qq
     apt-get install -y -qq openssl ca-certificates
     [ -d node_modules ] || npm ci --no-audit --no-fund --silent
@@ -86,6 +93,7 @@ docker inspect -f '{{.State.Running}}' "$PG_CONTAINER" >/dev/null 2>&1 \
 docker network inspect "$NETWORK" >/dev/null 2>&1 \
   && ok "network $NETWORK exists" \
   || { bad "network $NETWORK is missing"; exit 1; }
+mkdir -p "$REPORT_DIR"
 [ -f "$WORKTREE/backend/prisma/schema.prisma" ] \
   && ok "worktree present at $WORKTREE" \
   || { bad "no worktree at $WORKTREE"; exit 1; }
@@ -104,18 +112,30 @@ note "== 1. fresh replay (migrate deploy on an empty database) =="
 psql_at postgres "DROP DATABASE IF EXISTS $FRESH_DB" >/dev/null
 psql_at postgres "CREATE DATABASE $FRESH_DB" >/dev/null
 
-DEPLOY_OUT="$(run_prisma "$FRESH_DB" "npx prisma migrate deploy; npx prisma migrate status; npx prisma migrate diff --from-url \"\$DATABASE_URL\" --to-schema-datamodel ./prisma/schema.prisma --exit-code; echo fresh_drift_exit=\$?")"
+# `set +e` around the diff: `--exit-code` legitimately exits 1 when a difference is
+# found, and an aborted shell would hide the reason.
+DEPLOY_OUT="$(run_prisma "$FRESH_DB" "
+  npx prisma migrate deploy
+  npx prisma migrate status || echo \"status_exit=\$?\"
+  set +e
+  npx prisma migrate diff --from-url \"\$DATABASE_URL\" --to-schema-datamodel ./prisma/schema.prisma --exit-code
+  echo fresh_drift_exit=\$?
+  set -e
+")"
 printf '%s\n' "$DEPLOY_OUT" | sed 's/^/    /'
-printf '%s\n' "$DEPLOY_OUT" | grep -q 'fresh_drift_exit=0' \
-  && ok "fresh database matches prisma/schema.prisma (diff exit 0)" \
-  || bad "fresh database does not match prisma/schema.prisma"
-FRESH_TABLES="$(printf '%s\n' "$DEPLOY_OUT" | grep -c 'Applying migration')"
-[ "$FRESH_TABLES" -eq 2 ] && ok "both migrations applied" || bad "expected 2 migrations applied, saw $FRESH_TABLES"
+FRESH_DRIFT_EXIT="$(printf '%s\n' "$DEPLOY_OUT" | grep -o 'fresh_drift_exit=[0-9]*' | tail -1)"
+[ "$FRESH_DRIFT_EXIT" = "fresh_drift_exit=0" ] \
+  && ok "fresh database matches prisma/schema.prisma ($FRESH_DRIFT_EXIT)" \
+  || bad "fresh database does not match prisma/schema.prisma ($FRESH_DRIFT_EXIT)"
+FRESH_APPLIED="$(printf '%s\n' "$DEPLOY_OUT" | grep -c '^Applying migration')"
+[ "$FRESH_APPLIED" -eq 2 ] \
+  && ok "both migrations applied (2)" \
+  || bad "expected 2 migrations applied, saw $FRESH_APPLIED"
 
 FRESH_COUNTS="$(psql_at "$FRESH_DB" "$COUNTS_SQL")"
 note "  tables|enums|pg_indexes|fks = $FRESH_COUNTS"
 [ "$FRESH_COUNTS" = "133|72|362|150" ] \
-  && ok "fresh counts 133|72|362|150 (362 pg_indexes = 229 created indexes + 133 primary keys)" \
+  && ok "fresh schema is 133 tables / 72 enums / 150 fks (362 pg_indexes = 229 created indexes + 133 primary keys)" \
   || bad "fresh counts are $FRESH_COUNTS, expected 133|72|362|150"
 
 # ── 2. Adoption of a restored clone ──────────────────────────────────────────
@@ -128,29 +148,33 @@ BEFORE="$(psql_at "$ADOPT_DB" "$ROW_FINGERPRINT_SQL")"
 note "  restored clone: $(psql_at "$ADOPT_DB" "$COUNTS_SQL") (before)"
 note "  row fingerprint before: $BEFORE"
 
-PRE_REPORT="${REPORT%.md}-before.md"
-POST_REPORT="${REPORT%.md}-after.md"
+PRE_REPORT="$REPORT_DIR/pre-adoption.md"
+POST_REPORT="$REPORT_DIR/post-adoption.md"
 
 # One container run for the whole adoption sequence: inspect, adopt, inspect again.
+# The rehearsal tool prints its whole report, so its stdout goes to files next to the
+# reports and only the verdict lines are read back.
 ADOPT_OUT="$(run_prisma "$ADOPT_DB" "
   echo '--- pre-adoption inspection ---'
-  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --report '$PRE_REPORT'
+  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --report '/reports/pre-adoption.md' > /reports/pre-adoption.stdout 2>&1 || echo pre_inspect_exit=\$?
   echo '--- resolve --applied 20260926130650_init ---'
   npx prisma migrate resolve --applied 20260926130650_init
   echo '--- migrate deploy ---'
   npx prisma migrate deploy
   echo '--- migrate status ---'
-  npx prisma migrate status
+  npx prisma migrate status || echo \"status_exit=\$?\"
   echo '--- drift check ---'
+  set +e
   npx prisma migrate diff --from-url \"\$DATABASE_URL\" --to-schema-datamodel ./prisma/schema.prisma --exit-code
   echo adopt_drift_exit=\$?
+  set -e
   echo '--- post-adoption inspection ---'
-  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --report '$POST_REPORT'
+  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --report '/reports/post-adoption.md' > /reports/post-adoption.stdout 2>&1 || echo post_inspect_exit=\$?
 ")"
 printf '%s\n' "$ADOPT_OUT" | grep -vE '^$' | sed 's/^/    /'
 
-PRE_VERDICT="$(grep -m1 '^## Verdict' "$PRE_REPORT" 2>/dev/null || echo '## Verdict: (no report)')"
-POST_VERDICT="$(grep -m1 '^## Verdict' "$POST_REPORT" 2>/dev/null || echo '## Verdict: (no report)')"
+PRE_VERDICT="$(grep -m1 '^## Verdict' "$PRE_REPORT" 2>/dev/null || echo '## Verdict: (no report at '"$PRE_REPORT"')')"
+POST_VERDICT="$(grep -m1 '^## Verdict' "$POST_REPORT" 2>/dev/null || echo '## Verdict: (no report at '"$POST_REPORT"')')"
 note "  pre-adoption verdict:  $PRE_VERDICT"
 note "  post-adoption verdict: $POST_VERDICT"
 
@@ -160,9 +184,13 @@ printf '%s' "$PRE_VERDICT" | grep -q 'drift' \
 printf '%s\n' "$ADOPT_OUT" | grep -q 'adopt_drift_exit=0' \
   && ok "adopted clone matches prisma/schema.prisma (diff exit 0)" \
   || bad "adopted clone does not match prisma/schema.prisma"
+APPLIED_BY_DEPLOY="$(printf '%s\n' "$ADOPT_OUT" | grep -o 'Applying migration .[0-9]*_[a-z_]*' | tr '\n' ' ')"
 printf '%s\n' "$ADOPT_OUT" | grep -q 'Applying migration .20260930143000' \
-  && ok "the delta was the only migration applied by deploy (baseline was resolved, not run)" \
-  || bad "deploy did not apply exactly the delta migration"
+  && ok "deploy applied the delta" \
+  || bad "deploy did not apply the delta migration"
+printf '%s\n' "$ADOPT_OUT" | grep -q 'Applying migration .20260926130650' \
+  && bad "deploy tried to apply the baseline too (it must be resolved, not run)" \
+  || ok "deploy did not run the baseline SQL (resolved as applied instead)"
 printf '%s' "$POST_VERDICT" | grep -q 'already-applied' \
   && ok "post-adoption verdict is already-applied (ledger and schema agree)" \
   || bad "post-adoption verdict is not already-applied: $POST_VERDICT"
@@ -185,17 +213,19 @@ printf '%s' "$LEDGER" | grep -q '20260926130650_init:true' && printf '%s' "$LEDG
   note ""
   note "== summary =="
   note "worktree revision: $REV"
-  note "fresh replay counts: $FRESH_COUNTS (expected 133|72|362|150)"
+  note "checks: $CHECKS run, $FAILURES failed"
+  note "fresh replay: applied=$FRESH_APPLIED, drift=$FRESH_DRIFT_EXIT, counts=$FRESH_COUNTS (expected 133|72|362|150)"
+  note "adoption: drift=$(printf '%s' "$ADOPT_OUT" | grep -o 'adopt_drift_exit=[0-9]*' | tail -1)"
+  note "adoption: deploy applied: ${APPLIED_BY_DEPLOY:-nothing}"
   note "adoption row fingerprint before: $BEFORE"
   note "adoption row fingerprint after:  $AFTER"
   note "pre-adoption verdict:  $PRE_VERDICT"
   note "post-adoption verdict: $POST_VERDICT"
-  note "failures: $FAILURES"
   note ""
   note "rollback (disposable only):"
   note "  docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS $FRESH_DB;'"
   note "  docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS $ADOPT_DB;'"
-  note "  rm -f $REPORT ${REPORT%.md}-before.md ${REPORT%.md}-after.md"
+  note "  rm -rf $REPORT_DIR; rm -f $REPORT"
 } | tee "$REPORT"
 
 if [ "$FAILURES" -eq 0 ]; then
