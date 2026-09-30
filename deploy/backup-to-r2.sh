@@ -27,10 +27,34 @@
 #
 # CONFIG: this script reads the same variables the app uses. Easiest is to run
 # it with your compose .env sourced:
-#   set -a; . /root/FlowOps/.env; set +a; flowops-backup-r2
+#   set -a; . /root/FlowOps/.env; set +a; flowops-backup-r2 --backup-only
 # (the cron line above assumes those are exported; if not, edit the ENV block.)
+#
+# --backup-only performs a fresh dump, upload, and download/hash round-trip but
+# deliberately skips remote retention pruning. Use it after credential rotation
+# or during a verification window when no destructive object operation is wanted.
 
 set -euo pipefail
+
+BACKUP_ONLY=false
+for arg in "$@"; do
+  case "$arg" in
+    --backup-only) BACKUP_ONLY=true ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: flowops-backup-r2 [--backup-only]
+
+  --backup-only  dump, validate, upload and SHA-256 round-trip verify one
+                 backup; do not prune remote backups.
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $arg (use --backup-only or --help)" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # ── Config (override via environment) ────────────────────────────────────────
 PG_CONTAINER="${PG_CONTAINER:-flowops-postgres-1}"
@@ -56,6 +80,13 @@ cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
+sha256() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
 
 # ── 1. Fresh dump from the live container ────────────────────────────────────
 log "Dumping ${POSTGRES_DB} from ${PG_CONTAINER} ..."
@@ -88,17 +119,36 @@ aws s3 cp "$LOCAL_FILE" "s3://${R2_BUCKET}/${REMOTE_KEY}" \
   --only-show-errors
 log "Upload complete."
 
-# ── 4. Prune remote objects older than RETENTION_DAYS ────────────────────────
-CUTOFF="$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-          || date -u -v-"${RETENTION_DAYS}"d +%Y-%m-%dT%H:%M:%SZ)"
-log "Pruning R2 objects older than ${CUTOFF} ..."
-aws s3api list-objects-v2 \
-  --bucket "$R2_BUCKET" --prefix "backups/" \
+# ── 4. Prove the object can be read back without trusting a success response ─
+ROUND_TRIP_FILE="${TMP_DIR}/r2-round-trip-${STAMP}.sql.gz"
+log "Downloading uploaded object for SHA-256 round-trip verification ..."
+aws s3 cp "s3://${R2_BUCKET}/${REMOTE_KEY}" "$ROUND_TRIP_FILE" \
   --endpoint-url "$R2_ENDPOINT" \
-  --query "Contents[?LastModified<'${CUTOFF}'].Key" --output text 2>/dev/null \
-  | tr '\t' '\n' | grep -v '^$' | while read -r key; do
-      log "  deleting old backup: $key"
-      aws s3 rm "s3://${R2_BUCKET}/${key}" --endpoint-url "$R2_ENDPOINT" --only-show-errors
-    done || log "  (prune skipped — no old objects or listing unavailable)"
+  --only-show-errors
+LOCAL_SHA256="$(sha256 "$LOCAL_FILE")"
+ROUND_TRIP_SHA256="$(sha256 "$ROUND_TRIP_FILE")"
+if [[ "$LOCAL_SHA256" != "$ROUND_TRIP_SHA256" ]]; then
+  log "ERROR: R2 round-trip SHA-256 mismatch. Local=${LOCAL_SHA256} downloaded=${ROUND_TRIP_SHA256}"
+  exit 1
+fi
+log "R2 round-trip verified (SHA-256 matched: ${LOCAL_SHA256})."
+
+# ── 5. Prune remote objects older than RETENTION_DAYS ────────────────────────
+# A credential-rotation verification must not delete anything, even old files.
+if $BACKUP_ONLY; then
+  log "--backup-only set; skipping remote retention pruning."
+else
+  CUTOFF="$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+            || date -u -v-"${RETENTION_DAYS}"d +%Y-%m-%dT%H:%M:%SZ)"
+  log "Pruning R2 objects older than ${CUTOFF} ..."
+  aws s3api list-objects-v2 \
+    --bucket "$R2_BUCKET" --prefix "backups/" \
+    --endpoint-url "$R2_ENDPOINT" \
+    --query "Contents[?LastModified<'${CUTOFF}'].Key" --output text 2>/dev/null \
+    | tr '\t' '\n' | grep -v '^$' | while read -r key; do
+        log "  deleting old backup: $key"
+        aws s3 rm "s3://${R2_BUCKET}/${key}" --endpoint-url "$R2_ENDPOINT" --only-show-errors
+      done || log "  (prune skipped — no old objects or listing unavailable)"
+fi
 
 log "DONE. Off-box backup safe in R2: ${REMOTE_KEY}"

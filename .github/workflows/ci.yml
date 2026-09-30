@@ -82,6 +82,12 @@ jobs:
             -f docker-compose.yml \
             -f deploy/docker-compose.vps.yml
 
+      - name: Cloudflared is pinned, health-checked, and single-owner guarded
+        run: |
+          chmod +x deploy/check-cloudflared-owner.sh deploy/test-cloudflared-rollback.sh
+          ./deploy/check-cloudflared-owner.sh
+          ./deploy/test-cloudflared-rollback.sh
+
       - name: Production overlay publishes no non-loopback ports
         env:
           ALLOW_LOOPBACK: "1"

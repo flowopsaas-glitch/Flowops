@@ -11,7 +11,7 @@ backends/DBs in dev).
 
 ```
                         ┌──────────────────────────────────────────┐
- Internet ──Cloudflare──┤  cloudflared tunnel on the VPS           │
+ Internet ──Cloudflare──┤  one pinned cloudflared Compose sidecar │
                         └──────────────────────────────────────────┘
    app.flowop.work      ─────────────────►  http://frontend:80
    platform.flowop.work ─────────────────►  http://frontend:80
@@ -35,11 +35,18 @@ The SPA calls **`/api/v1/*`** (relative, same-origin); nginx proxies it to the
 
 **Second invariant — no host ports.** The VPS overlay (`deploy/docker-compose.vps.yml`)
 unbinds every host port with `ports: !reset []`, so the ONLY way in is the
-tunnel, which must target **Docker service names** (`http://frontend:80`,
-`http://driver-portal:80`) — never `localhost:8080`. Compose merges port lists
-by *appending*, so a plain `ports: []` in an overlay is a no-op; that bug is
-what made the app reachable on `http://<VPS_IP>:8080`. Requires **Compose
-v2.24.4+**. Details and rollout plan: [`VPS-PORT-RESET-ROLLOUT.md`](VPS-PORT-RESET-ROLLOUT.md).
+Docker-owned tunnel, which must target **Docker service names**
+(`http://frontend:80`, `http://driver-portal:80`) — never `localhost:8080`.
+Compose merges port lists by *appending*, so a plain `ports: []` in an overlay
+is a no-op; that bug is what made the app reachable on `http://<VPS_IP>:8080`.
+Requires **Compose v2.24.4+**. Details and rollout plan:
+[`VPS-PORT-RESET-ROLLOUT.md`](VPS-PORT-RESET-ROLLOUT.md).
+
+**Third invariant — one tunnel owner.** `cloudflared` runs only as the pinned
+Docker Compose service (`cloudflare/cloudflared:2026.9.3`), with a native
+`cloudflared tunnel ready` healthcheck. Do **not** install/start a host
+`cloudflared` binary or `cloudflared.service`; a second agent may claim the
+same credentials. See [CLOUDFLARED-POSTMORTEM.md](CLOUDFLARED-POSTMORTEM.md).
 
 ---
 
@@ -52,8 +59,14 @@ git clone https://github.com/flowopsaas-glitch/Flowops.git ~/FlowOps && cd ~/Flo
 ./deploy/vps-bootstrap.sh app.flowop.work   # installs Docker, creates .env,
                                             # generates secrets, wires the domain
 nano .env                                   # fill OWNER_SEED_*, GROQ_API_KEY, etc.
-# point the Cloudflare tunnel:  <domain> -> http://frontend:80
-./deploy/vps-deploy.sh --seed               # first deploy (with demo data)
+# provision /etc/cloudflared as described in “Docker-owned tunnel setup” below
+# ingress: <domain> -> http://frontend:80 (never localhost)
+./deploy/vps-deploy.sh                      # application services only; leaves DB schema and tunnel untouched
+# Do not add --apply-schema or --seed until the independent staging migration
+# rehearsal and production database release gate have been approved.
+# Only after the exact tunnel maintenance action is approved:
+sudo ./deploy/cloudflared-maintenance.sh --check
+sudo ./deploy/cloudflared-maintenance.sh --apply
 ```
 
 `vps-bootstrap.sh` auto-generates `POSTGRES_PASSWORD` / `JWT_SECRET` /
@@ -66,6 +79,43 @@ only fill in the API keys it lists. It never overwrites an existing `.env`.
 > orchestration**. The compose `api` service now forwards it (and Tavily,
 > GitHub, accounting, geocoding keys) into the container, so these work under
 > compose — not just on a PM2-on-host backend.
+
+### Docker-owned tunnel setup (one-time)
+
+The VPS has **one** Cloudflared agent: the Compose `cloudflared` service. Do
+not install the `.deb`, run `cloudflared service install`, or start a host
+`cloudflared.service`. Use a short-lived, pinned container only to create the
+locally managed tunnel credentials:
+
+```bash
+sudo install -d -m 0755 /etc/cloudflared
+
+# The container exits after each command; it is not a long-running connector.
+sudo docker run --rm -it --user 0 \
+  -v /etc/cloudflared:/root/.cloudflared \
+  cloudflare/cloudflared:2026.9.3 tunnel login
+sudo docker run --rm -it --user 0 \
+  -v /etc/cloudflared:/root/.cloudflared \
+  cloudflare/cloudflared:2026.9.3 tunnel create flowops-app
+
+# Replace placeholders, retain Docker service-name ingress targets, and let the
+# non-root official image read the credential file through its read-only mount.
+sudo cp deploy/cloudflared/config.yml /etc/cloudflared/config.yml
+sudoedit /etc/cloudflared/config.yml
+sudo chown root:65532 /etc/cloudflared/<TUNNEL_ID>.json
+sudo chmod 640 /etc/cloudflared/<TUNNEL_ID>.json
+sudo chmod 644 /etc/cloudflared/config.yml
+```
+
+Before first start (or any maintenance), use the read-only guard:
+
+```bash
+./deploy/check-cloudflared-owner.sh
+```
+
+It must report no active/boot-enabled host `cloudflared.service`; a disabled or
+masked historical unit is acceptable. The tunnel client starts only through the
+approved [Cloudflared-only maintenance](#3a-cloudflared-only-maintenance) procedure.
 
 ### Manual path (equivalent, step by step)
 
@@ -90,13 +140,20 @@ cp .env.production.example .env
 #             and VITE_INTEGRITY_BEACON_URL=https://<your-domain>/api/v1
 #   MUST keep: VITE_API_URL=/api/v1   (NOT /api — see §6)
 
-# 2.4 Cloudflare tunnel (if not already running)
-#   cloudflared tunnel route dns <tunnel> app.flowop.work
-#   Ingress: app.flowop.work -> http://frontend:80
-nano ~/.cloudflared/config.yml
+# 2.4 Docker-owned Cloudflare tunnel
+# Follow “Docker-owned tunnel setup” above. Ingress is always:
+#   app.flowop.work -> http://frontend:80
+#   driver.flowop.work -> http://driver-portal:80
+# Never use ~/.cloudflared, a host systemd service, or localhost targets.
 
-# 2.5 First deploy WITH demo seed
-./deploy/vps-deploy.sh --seed
+# 2.5 First application deploy (does not recreate cloudflared or apply schema)
+./deploy/vps-deploy.sh
+# --seed requires --apply-schema. Both remain blocked until the independent
+# staging migration/rehearsal and production database gate are approved.
+
+# 2.6 Only when the tunnel maintenance action has explicit approval:
+sudo ./deploy/cloudflared-maintenance.sh --check
+sudo ./deploy/cloudflared-maintenance.sh --apply
 ```
 
 ---
@@ -108,24 +165,72 @@ cd ~/FlowOps
 ./deploy/vps-deploy.sh
 ```
 
-That script: `git pull` → `docker compose build` → `up -d` → `prisma db push`
-→ health check. Idempotent. **Always rebuilds the frontend image**, so SPA
-changes actually ship (a baked-in stale `dist` was a recurring dev gotcha).
+That script: `git pull` → `docker compose build` → starts **application
+services only** → health check. It runs `prisma db push` only with the explicit
+`--apply-schema` flag; a tunnel image change is not an application release.
+**Always rebuilds the frontend image**, so SPA changes actually ship (a
+baked-in stale `dist` was a recurring dev gotcha).
+
+> The database/migration release gate remains separate. Do not treat this
+> operational runbook as approval for a production schema or application
+> release.
+
+---
+
+## 3A. Cloudflared-only maintenance
+
+**Status: prepared, not approved for the live VPS.** Complete the separate R2
+credential rotation/backup verification and the controlled staging rehearsal
+before seeking approval. The exact action is described in
+[CLOUDFLARED-POSTMORTEM.md](CLOUDFLARED-POSTMORTEM.md).
+
+The safe pre-flight is read-only:
+
+```bash
+cd ~/FlowOps
+sudo ./deploy/cloudflared-maintenance.sh --check
+```
+
+With a documented maintenance approval, the only forward command is:
+
+```bash
+sudo ./deploy/cloudflared-maintenance.sh --apply
+```
+
+If the approved change specifically includes retiring the legacy host agent,
+append `--retire-host-agent`. That option stops, disables, and masks **only**
+`cloudflared.service` before recreating only the Compose `cloudflared`
+container. It never touches API, frontend, Postgres, Redis, backups, source,
+or Prisma.
+
+The script captures the exact existing image digest before changing it. Its
+rollback is equally scoped:
+
+```bash
+sudo ./deploy/cloudflared-maintenance.sh --rollback
+./deploy/check-cloudflared-owner.sh --require-running
+```
+
+Never use `docker compose up -d`, `restart cloudflared`, a mutable `:latest`
+tag, a host systemd service, or `vps-deploy.sh` as a substitute for this action.
 
 ---
 
 ## 4. Common operations
 
 ```bash
-C="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+C="docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml"
 
-$C ps                       # status of all 4 services
+$C ps                       # status of the Compose services
 $C logs -f api              # tail backend logs
 $C logs -f frontend         # tail nginx logs
 $C restart api              # restart just the backend
 $C exec api sh              # shell into the backend container
-$C exec -T api npx prisma db push     # re-sync schema after a pull
 $C exec -T api node prisma/seed-demo-company.js   # re-run a seed
+
+# Do NOT run db push as routine operations: staging migration/rehearsal and
+# production database approval are separate release gates.
+# $C exec -T api npx prisma db push
 
 # Backup / restore the database (named volume postgres-data)
 $C exec -T postgres pg_dump -U flowops flowops > backup_$(date +%F).sql
@@ -162,9 +267,10 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **Driver app CORS error** | `driver.flowop.work` not in `CORS_ORIGINS` | Add it, `restart api` |
 | **AI features dead (Support Agent, Courier orchestrate, copilot, intel) — only fallback replies** | `GROQ_API_KEY` not reaching the container | Set it in `.env`; the compose `api` service forwards it — rebuild/`up -d`. Confirm with `docker compose ... exec api printenv GROQ_API_KEY` |
 | **Fresh instance flags a "clone" in Observatory** | New domain not in `VITE_CANONICAL_HOSTS` (tripwire false-fire) | Set `VITE_CANONICAL_HOSTS=<your-domain>` + rebuild frontend |
-| **Site 502s (or vps-deploy.sh refuses to start) after the port-reset change** | Tunnel ingress still targets `http://127.0.0.1:8080` / `http://localhost:8080`, and nothing listens there any more | Point ingress at `http://frontend:80` / `http://driver-portal:80`, then `docker compose ... restart cloudflared` |
+| **Site 502s (or vps-deploy.sh refuses to start) after the port-reset change** | Tunnel ingress still targets `http://127.0.0.1:8080` / `http://localhost:8080`, and nothing listens there any more | Point ingress at `http://frontend:80` / `http://driver-portal:80`; restart/recreate the tunnel only with the approved `cloudflared-maintenance.sh` action |
+| **Tunnel is unhealthy or another connector appears** | A legacy host `cloudflared.service`, an ad-hoc container, or a failed sidecar is competing for the same tunnel | Do not start a second agent. Run `./deploy/check-cloudflared-owner.sh --require-running`; use the Cloudflared-only rollback/incident procedure |
 | **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
-| **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
+| **`prisma` errors about missing table/column** | Schema release has not passed its staging/rehearsal gate | Do not run `db push` ad hoc. Complete the migration gate, then use the explicit approved `vps-deploy.sh --apply-schema` action. |
 
 ---
 
@@ -216,10 +322,24 @@ sudo chmod +x /usr/local/bin/flowops-backup-r2
 Run it once by hand to confirm it works:
 ```bash
 set -a; . /root/FlowOps/.env; set +a
-R2_BACKUP_BUCKET=flowops-backups flowops-backup-r2
+R2_BACKUP_BUCKET=flowops-backups flowops-backup-r2 --backup-only
 ```
-It refuses to upload a dump that fails size/gzip/pg_dump-header checks — a bad
-backup never silently replaces a good one.
+`--backup-only` performs a fresh dump, upload, and **download/SHA-256
+round-trip**, while deliberately skipping remote retention pruning. It must log
+`R2 round-trip verified (SHA-256 matched: ...)` before a newly rotated R2
+credential is considered production-safe. It refuses to upload a dump that
+fails size/gzip/pg_dump-header checks — a bad backup never silently replaces a
+good one.
+
+### R2 backup-token rotation (mandatory credential hygiene)
+
+If a temporary or over-scoped R2 token was exposed, revoke it in the Cloudflare
+Dashboard before using backups as a production recovery control. Create a new
+R2 API token with **Object Read & Write** permission scoped only to the
+`flowops-backups` bucket, update the VPS `flowops-r2`/environment credentials
+**interactively**, and do not paste the access key or secret into chat, tickets,
+or this repository. Then run the `--backup-only` command above and retain only
+the redacted success evidence including `R2 round-trip verified`.
 
 ### B. PROVE the backup restores — `deploy/restore-verify.sh`
 

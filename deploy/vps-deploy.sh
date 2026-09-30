@@ -17,10 +17,15 @@
 #                                                              (internal-only, named volumes)
 #
 # Usage:
-#   ./deploy/vps-deploy.sh           # build + deploy + migrate + pre-flight guard
-#   ./deploy/vps-deploy.sh --seed    # also run first-time demo seeds
-#   ./deploy/vps-deploy.sh --yes     # don't prompt if tenants are over plan limits
-#   (flags combine, e.g. --seed --yes)
+#   ./deploy/vps-deploy.sh                  # build + deploy application services (no schema change)
+#   ./deploy/vps-deploy.sh --seed --apply-schema  # first-time/demo data only after schema approval
+#   ./deploy/vps-deploy.sh --apply-schema    # explicit schema action after staging gate approval
+#   ./deploy/vps-deploy.sh --yes             # don't prompt if tenants are over plan limits
+#   (flags combine, e.g. --seed --apply-schema --yes)
+#
+# `--apply-schema` is deliberately opt-in. A production database migration is
+# blocked until the staging-clone rehearsal, drift decision, integration suite,
+# backfill dry-run, and rollback verification have been approved.
 #
 # Prereqs (one-time, see deploy/VPS-RUNBOOK.md):
 #   - Docker + Docker Compose v2 installed
@@ -43,14 +48,18 @@ ok()   { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 SEED=false
+APPLY_SCHEMA=false
 ASSUME_YES=false
 for arg in "$@"; do
   case "$arg" in
     --seed) SEED=true ;;
+    --apply-schema) APPLY_SCHEMA=true ;;
     --yes|-y) ASSUME_YES=true ;;
-    *) die "Unknown flag: $arg (use --seed and/or --yes)" ;;
+    *) die "Unknown flag: $arg (use --seed, --apply-schema, and/or --yes)" ;;
   esac
 done
+
+$SEED && ! $APPLY_SCHEMA && die "--seed requires --apply-schema so an empty database is never seeded before its approved schema exists"
 
 # ── 0. Pre-flight ────────────────────────────────────────────────────────────
 command -v docker >/dev/null      || die "docker not installed"
@@ -86,14 +95,22 @@ if [[ -f "$CF_CONFIG" ]]; then
              service: http://frontend:80
            - hostname: driver.flowop.work
              service: http://driver-portal:80
-       Then run:  docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml restart cloudflared"
+       Then use the approved Cloudflared-only maintenance action:
+           sudo ./deploy/cloudflared-maintenance.sh --apply"
   fi
   ok "Cloudflare tunnel targets Docker service names (${CF_CONFIG})"
 else
   printf '\033[1;33m! %s not found — skipping tunnel target check.\033[0m\n' "$CF_CONFIG"
 fi
 
-# ── 0d. Merged config must publish no host ports ─────────────────────────────
+# ── 0d. Tunnel ownership + merged ports ─────────────────────────────────────
+# Cloudflared is deliberately maintained by cloudflared-maintenance.sh rather
+# than this application deployment. Refuse to proceed if a boot-enabled host
+# systemd agent could claim the same tunnel, and prove the rendered sidecar is
+# version-pinned and health-checked before moving the application stack.
+log "Verifying Cloudflare tunnel ownership guard"
+./deploy/check-cloudflared-owner.sh
+
 # Renders the merged compose model and fails if any service still publishes a
 # port on a non-loopback interface. Cheap, and it runs BEFORE the stack moves.
 log "Verifying merged compose config publishes no host ports"
@@ -115,11 +132,16 @@ git pull --ff-only || die "git pull failed (commit/stash local changes first)"
 log "Building images"
 $COMPOSE build
 
-# ── 3. Bring the stack up (postgres + redis + api + frontend) ────────────────
-log "Starting stack"
-$COMPOSE up -d
+# ── 3. Bring up application services only ────────────────────────────────────
+# Do NOT include cloudflared here. A normal application release must not pull,
+# recreate, or silently roll the public tunnel client. The dedicated
+# cloudflared-maintenance.sh action is the only supported path for that service.
+# This list intentionally includes every non-tunnel service in the VPS overlay.
+APPLICATION_SERVICES=(postgres redis api frontend driver-portal postgres-backup)
+log "Starting application stack (cloudflared intentionally untouched)"
+$COMPOSE up -d "${APPLICATION_SERVICES[@]}"
 
-# ── 4. Wait for Postgres to be healthy, then sync schema ─────────────────────
+# ── 4. Wait for Postgres; apply schema only when explicitly gated ────────────
 log "Waiting for Postgres to be healthy"
 for i in $(seq 1 30); do
   if $COMPOSE ps postgres | grep -q "healthy"; then ok "Postgres healthy"; break; fi
@@ -127,9 +149,14 @@ for i in $(seq 1 30); do
   [[ $i -eq 30 ]] && die "Postgres did not become healthy in 60s"
 done
 
-log "Applying Prisma schema (db push — repo uses push, not migrations)"
-$COMPOSE exec -T api npx prisma db push --skip-generate || die "prisma db push failed"
-ok "Schema in sync"
+if $APPLY_SCHEMA; then
+  log "Applying Prisma schema (explicit --apply-schema; release gate must be approved)"
+  $COMPOSE exec -T api npx prisma db push --skip-generate || die "prisma db push failed"
+  ok "Schema in sync"
+else
+  printf '\033[1;33m! Schema action skipped: --apply-schema was not supplied.\033[0m\n'
+  printf '  This is intentional: complete the staging-clone/migration/security gates before any production schema change.\n'
+fi
 
 # ── 4b. Plan-limit pre-flight (entitlement enforcement is live as of #140) ───
 # Enforcement only blocks NEW creates beyond a plan limit, but a tenant already
@@ -147,7 +174,7 @@ if $COMPOSE cp deploy/check-plan-overages.js api:/tmp/check-plan-overages.js 2>/
       printf '\033[1;33m! Overages found, but --yes set; continuing.\033[0m\n'
     else
       read -r -p $'\033[1;33mTenants are over limit (see above). Continue deploying anyway? [y/N] \033[0m' ans
-      [[ "$ans" =~ ^[Yy]$ ]] || die "Aborted after schema sync. The stack is up but you chose to stop before seeding/finishing."
+      [[ "$ans" =~ ^[Yy]$ ]] || die "Aborted after application start. You chose to stop before seeding/finishing."
     fi
   elif [[ $GUARD_RC -ne 0 ]]; then
     printf '\033[1;33m! Pre-flight guard could not complete (rc=%s) — continuing.\033[0m\n' "$GUARD_RC"
@@ -185,6 +212,16 @@ fi
 ok "No container publishes a port on 0.0.0.0"
 HEALTH=$($COMPOSE exec -T api sh -c 'wget -qO- http://localhost:3000/health 2>/dev/null || true')
 echo "api /health -> ${HEALTH:-<no response>}"
+
+# An existing Docker-owned tunnel must remain healthy. On a first application
+# deploy it may not exist yet; start it only through the separate, explicitly
+# approved cloudflared maintenance action after the application is healthy.
+if $COMPOSE ps -q cloudflared | grep -q .; then
+  ./deploy/check-cloudflared-owner.sh --require-running
+else
+  printf '\033[1;33m! cloudflared is not running; it was intentionally not started by vps-deploy.sh.\033[0m\n'
+  printf '  Use deploy/cloudflared-maintenance.sh --apply only in the approved tunnel maintenance window.\n'
+fi
 
 cat <<'EOF'
 

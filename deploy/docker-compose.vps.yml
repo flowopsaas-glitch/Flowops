@@ -1,7 +1,11 @@
 # FlowOps — VPS Production Override (Elite Host: 1 CPU, 2GB RAM, 25GB SSD)
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --build
+#   ./deploy/vps-deploy.sh  # application services only
+#   ./deploy/cloudflared-maintenance.sh --apply  # approved tunnel-only action
+#
+# Do not use a broad `docker compose ... up` on the VPS: it can recreate the
+# public tunnel as an incidental application deployment.
 #
 # This file extends the base docker-compose.yml with:
 #   - Memory limits tuned for 2GB RAM
@@ -106,15 +110,33 @@ services:
   # Uses Docker service names (frontend:80, driver-portal:80) since we no longer
   # expose host ports — cloudflared talks to containers over the Docker network.
   cloudflared:
-    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    # Explicit release pin. Do not use :latest: a tunnel client change must be
+    # reviewed and rolled out with deploy/cloudflared-maintenance.sh, not as an
+    # incidental side effect of an application deployment.
+    image: cloudflare/cloudflared:2026.9.3
     init: true
     restart: always
-    command: tunnel --no-autoupdate --protocol http2 --metrics 0.0.0.0:2000 --config /etc/cloudflared/config.yml run
+    # The native `cloudflared tunnel ready` healthcheck below reads this local
+    # /ready endpoint. Loopback keeps diagnostics off the compose network and
+    # the service publishes no host port.
+    environment:
+      TUNNEL_METRICS: 127.0.0.1:2000
+    command: tunnel --no-autoupdate --protocol http2 --config /etc/cloudflared/config.yml run
+    healthcheck:
+      # cloudflared 2026.9.3 has the native `tunnel ready` command; it returns
+      # non-zero until the local /ready endpoint has an edge connection.
+      test: ["CMD", "cloudflared", "tunnel", "ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     volumes:
       - /etc/cloudflared:/etc/cloudflared:ro
     networks: [flowops-net]
     depends_on:
       frontend:
+        condition: service_healthy
+      driver-portal:
         condition: service_healthy
       api:
         condition: service_healthy

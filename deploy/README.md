@@ -45,19 +45,28 @@ ssh root@164.160.89.97
 curl -fsSL https://raw.githubusercontent.com/flowopsaas-glitch/Flowops/main/deploy/setup-vps.sh | bash
 ```
 
-### 2. Set up Cloudflare Tunnel
+### 2. Set up the Docker-owned Cloudflare Tunnel
+
+Do **not** install a host cloudflared package or `cloudflared.service`. A single
+pinned Compose sidecar owns the tunnel. Use short-lived containers only to
+create the credentials mounted by that sidecar:
 
 ```bash
-cloudflared tunnel login
-cloudflared tunnel create flowops-app
-# Note the tunnel ID from the output
+sudo install -d -m 0755 /etc/cloudflared
+sudo docker run --rm -it --user 0 -v /etc/cloudflared:/root/.cloudflared \
+  cloudflare/cloudflared:2026.9.3 tunnel login
+sudo docker run --rm -it --user 0 -v /etc/cloudflared:/root/.cloudflared \
+  cloudflare/cloudflared:2026.9.3 tunnel create flowops-app
 
-cp deploy/cloudflared/config.yml /etc/cloudflared/config.yml
-nano /etc/cloudflared/config.yml  # Replace CHANGE_ME_TUNNEL_ID with actual ID
-
-# Move credentials file
-cp ~/.cloudflared/<TUNNEL_ID>.json /etc/cloudflared/
+sudo cp deploy/cloudflared/config.yml /etc/cloudflared/config.yml
+sudoedit /etc/cloudflared/config.yml  # Replace CHANGE_ME_TUNNEL_ID
+sudo chown root:65532 /etc/cloudflared/<TUNNEL_ID>.json
+sudo chmod 640 /etc/cloudflared/<TUNNEL_ID>.json
 ```
+
+Ingress must use `http://frontend:80` / `http://driver-portal:80`, never
+localhost. See [VPS-RUNBOOK.md](VPS-RUNBOOK.md) for the approval-gated
+Cloudflared-only start/change procedure.
 
 ### 3. Configure environment
 
@@ -66,21 +75,31 @@ cd /opt/flowops
 nano .env  # Set OWNER_SEED_EMAIL + optional integrations
 ```
 
-### 4. Launch
+### 4. Launch application services
 
 ```bash
-docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --build
+./deploy/vps-deploy.sh
+```
+
+This intentionally leaves Cloudflared unchanged. Only after the exact tunnel
+maintenance action is approved, run:
+
+```bash
+sudo ./deploy/cloudflared-maintenance.sh --check
+sudo ./deploy/cloudflared-maintenance.sh --apply
 ```
 
 ### 5. Verify
 
 ```bash
-docker compose ps                                   # PORTS column must be empty
-docker compose logs -f api
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml ps  # PORTS column must be empty
+./deploy/check-cloudflared-owner.sh --require-running
+
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml logs -f api
 
 # From INSIDE the network — there is no host port to curl from outside:
-docker compose exec frontend curl -fsS localhost/healthz
-docker compose exec frontend curl -fsS localhost/api/v1/health
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml exec frontend curl -fsS localhost/healthz
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml exec frontend curl -fsS localhost/api/v1/health
 
 # From OUTSIDE the VPS — this must now be refused (that is the point):
 curl -m 8 http://<VPS_IP>:8080/healthz              # → connection refused
@@ -126,9 +145,11 @@ docker compose logs -f frontend
 # Restart a service
 docker compose restart api
 
-# Rebuild after code changes
-git pull
-docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --build
+# Deploy application code changes (leaves cloudflared untouched)
+./deploy/vps-deploy.sh
+
+# Tunnel client changes use the separate, approval-gated action:
+# sudo ./deploy/cloudflared-maintenance.sh --apply
 
 # Database backup (manual)
 docker compose exec postgres pg_dump -U flowops flowops | gzip > backup.sql.gz
@@ -147,17 +168,19 @@ docker stats --no-stream
 
 ```bash
 cd /opt/flowops
-git pull
-docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --build
+./deploy/vps-deploy.sh  # application services only; does not change cloudflared
 ```
+
+A tunnel-client change is a separate approved maintenance action; do not use a
+broad `docker compose up` command for it.
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
 | Services OOM killed | Check `docker stats`, reduce API memory if frontend unused |
-| Tunnel not connecting | `cloudflared tunnel info flowops-app`, check credentials path |
-| Site 502s right after adopting `!reset` | The tunnel ingress still points at `http://127.0.0.1:8080` / `http://localhost:8080`. Switch it to `http://frontend:80` / `http://driver-portal:80` and restart cloudflared |
+| Tunnel not connecting | Run `./deploy/check-cloudflared-owner.sh --require-running`; inspect Compose logs and credential path. Do not run a host agent. |
+| Site 502s right after adopting `!reset` | The tunnel ingress still points at `http://127.0.0.1:8080` / `http://localhost:8080`. Switch it to `http://frontend:80` / `http://driver-portal:80`, then use the approved Cloudflared-only action — never a broad application redeploy. |
 | `docker compose up` fails with "address already in use" on 8080 | You are on the prod overlay with Compose < 2.24.4, so the base `8080:80` and the override's `127.0.0.1:8080:80` both got published. Upgrade Compose |
 | Database connection refused | `docker compose logs postgres`, ensure healthy |
 | Frontend 502 | API not healthy yet — wait 30s after start, check `docker compose logs api` |

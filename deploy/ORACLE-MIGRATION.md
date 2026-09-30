@@ -1,8 +1,19 @@
-# FlowOps — Oracle Cloud VPS Migration
+# DEPRECATED — Oracle Cloud VPS Migration
 
-Migrate FlowOps from your local desktop (kakes-desktop) to an Oracle Cloud
-Infrastructure (OCI) VPS so the platform runs 24/7 without needing your
-machine on and a terminal open.
+> **Do not run the historical commands in this document.** They install a host
+> `cloudflared` binary, create a `cloudflared.service`, and target localhost;
+> that is incompatible with the current Docker-owned, tunnel-only VPS design
+> and can create a second agent for the same tunnel. It is retained solely as
+> an historical data-migration reference.
+>
+> Use [VPS-RUNBOOK.md](VPS-RUNBOOK.md) and
+> [CLOUDFLARED-POSTMORTEM.md](CLOUDFLARED-POSTMORTEM.md) instead. The supported
+> Cloudflared action is `deploy/cloudflared-maintenance.sh`, which changes only
+> the pinned tunnel container in an explicitly approved maintenance window.
+
+Migrate FlowOps from your local desktop to an Oracle Cloud Infrastructure (OCI)
+VPS only under the current staged migration gate; no production migration is
+approved by this historical document.
 
 ---
 
@@ -59,178 +70,39 @@ docker compose version
 
 ---
 
-## Step 3: Install cloudflared
+## Steps 3–8: Docker-owned tunnel setup (replaces historical host-agent procedure)
 
-```bash
-# Download the latest cloudflared binary
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
-sudo dpkg -i /tmp/cloudflared.deb
+The historical procedure that occupied this section installed `cloudflared` on
+the VPS, ran it manually, and created a `cloudflared.service`. It has been
+removed because it can run concurrently with the Compose tunnel service.
 
-# Verify
-cloudflared --version
-```
+Follow the [Docker-owned tunnel setup in VPS-RUNBOOK.md](VPS-RUNBOOK.md#docker-owned-tunnel-setup)
+instead. The only supported architecture is:
 
-> **For ARM (Oracle A1 free tier):**
-> ```bash
-> curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb -o /tmp/cloudflared.deb
-> sudo dpkg -i /tmp/cloudflared.deb
-> ```
+- credentials and `config.yml` in `/etc/cloudflared`, mounted read-only;
+- one pinned `cloudflare/cloudflared:2026.9.3` Compose container;
+- Docker service-name ingress (`http://frontend:80` and
+  `http://driver-portal:80`); and
+- the approval-gated `cloudflared-maintenance.sh` action for its first start,
+  update, or rollback.
 
----
-
-## Step 4: Clone the repo
-
-```bash
-git clone https://github.com/flowopsaas-glitch/Flowops.git ~/FlowOps
-cd ~/FlowOps
-```
+Do not proceed with a production tunnel or migration from this document.
 
 ---
 
-## Step 5: Copy your .env from local desktop
+## Step 9: Historical application deployment reference
 
-From your **local machine** (not the VPS), run:
-
-```bash
-scp -i ~/FlowOps-Logistics/ssh-key-2026-07-01.key \
-  ~/FlowOps-Logistics/.env \
-  ubuntu@<ORACLE_VPS_IP>:~/FlowOps/.env
-```
-
-Then SSH into the VPS and verify:
-```bash
-cat ~/FlowOps/.env | head -5
-```
-
----
-
-## Step 6: Transfer Cloudflare tunnel credentials
-
-The tunnel credentials JSON must be on the VPS. From your **local machine**:
-
-```bash
-# Create the cloudflared directory on VPS
-ssh -i ~/FlowOps-Logistics/ssh-key-2026-07-01.key ubuntu@<ORACLE_VPS_IP> \
-  "mkdir -p ~/.cloudflared"
-
-# Copy the credentials file
-scp -i ~/FlowOps-Logistics/ssh-key-2026-07-01.key \
-  ~/.cloudflared/1f2d0684-3cb1-4431-b907-58a7888044ba.json \
-  ubuntu@<ORACLE_VPS_IP>:~/.cloudflared/
-
-# Copy the config file (we'll edit it on the VPS)
-scp -i ~/FlowOps-Logistics/ssh-key-2026-07-01.key \
-  ~/.cloudflared/config.yml \
-  ubuntu@<ORACLE_VPS_IP>:~/.cloudflared/
-```
-
----
-
-## Step 7: Configure the tunnel on Oracle
-
-SSH into the VPS and edit the tunnel config:
-
-```bash
-nano ~/.cloudflared/config.yml
-```
-
-It should look like:
-```yaml
-tunnel: 1f2d0684-3cb1-4431-b907-58a7888044ba
-credentials-file: /home/ubuntu/.cloudflared/1f2d0684-3cb1-4431-b907-58a7888044ba.json
-
-ingress:
-  - hostname: app.flowop.work
-    service: http://127.0.0.1:8080
-  - hostname: driver.flowop.work
-    service: http://127.0.0.1:8083
-  - service: http_status:404
-```
-
-> **Important:** Update the `credentials-file` path to match the VPS user
-> (`/home/ubuntu/` not `/home/kakes/`).
-
-Test manually first:
-```bash
-cloudflared tunnel run flowops-production
-```
-
-You should see `Registered tunnel connection` lines with `location=jnb*`. 
-Press `Ctrl+C` once confirmed.
-
----
-
-## Step 8: Install cloudflared as a systemd service
-
-```bash
-sudo cloudflared service install
-```
-
-This creates `/etc/systemd/system/cloudflared.service` pointing to the config
-in `/etc/cloudflared/`. If it doesn't auto-detect your config, create it
-manually:
-
-```bash
-# Copy credentials to system location
-sudo mkdir -p /etc/cloudflared
-sudo cp ~/.cloudflared/1f2d0684-3cb1-4431-b907-58a7888044ba.json /etc/cloudflared/
-sudo cp ~/.cloudflared/config.yml /etc/cloudflared/config.yml
-
-# Fix the credentials-file path in the system config
-sudo sed -i 's|/home/.*/.cloudflared/|/etc/cloudflared/|' /etc/cloudflared/config.yml
-```
-
-Create/update the systemd service:
-```bash
-sudo tee /etc/systemd/system/cloudflared.service > /dev/null <<'EOF'
-[Unit]
-Description=Cloudflare Tunnel (FlowOps)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-TimeoutStartSec=0
-ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run flowops-production
-Restart=on-failure
-RestartSec=5s
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-Enable and start:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable cloudflared
-sudo systemctl start cloudflared
-sudo systemctl status cloudflared
-```
-
-You should see `active (running)`. Verify connections:
-```bash
-cloudflared tunnel info flowops-production
-```
-
----
-
-## Step 9: Deploy FlowOps (first time)
+This document does not authorize a production deployment. The current
+application-only command is:
 
 ```bash
 cd ~/FlowOps
-./deploy/vps-deploy.sh --seed
+./deploy/vps-deploy.sh
 ```
 
-This will:
-1. Pull latest code
-2. Build all Docker images (api, frontend, driver-portal)
-3. Start the full stack (postgres, redis, api, frontend, driver-portal, backup)
-4. Run `prisma db push` to sync the schema
-5. Seed demo data (first deploy only)
-
-Wait for it to finish — on ARM this can take 15-20 minutes for the first build.
+It leaves the tunnel and schema unchanged. `--apply-schema` (and consequently
+`--seed`) remain blocked until the independent staging clone, migration,
+integration, backfill, and rollback gates are formally approved.
 
 ---
 
@@ -268,8 +140,9 @@ cd ~/FlowOps
 ./deploy/vps-deploy.sh
 ```
 
-That's it. The script handles: `git pull` → `docker build` → `up -d` →
-`prisma db push` → health check.
+The current script handles application source/build/start/health only. It does
+not change Cloudflared, and it applies schema only when the separate migration
+gate has approved an explicit `--apply-schema` action.
 
 ---
 
@@ -313,7 +186,7 @@ $C exec -T api npx prisma db push
 
 | Symptom | Fix |
 |---------|-----|
-| Tunnel shows 0 connections | `sudo systemctl restart cloudflared` then check `journalctl -u cloudflared -f` |
+| Tunnel shows 0 connections | Do not restart a host service. Follow the Cloudflared-only incident/rollback procedure in `VPS-RUNBOOK.md`. |
 | Docker build OOM on 1GB RAM | Add swap: `sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile` |
 | `prisma db push` timeout | The API container needs to be healthy first: `docker compose ... ps` |
 | Permission denied on Docker | `sudo usermod -aG docker $USER` then log out/in |

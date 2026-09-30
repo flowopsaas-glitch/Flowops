@@ -4,12 +4,17 @@
 #  This file goes on the VPS at: /etc/cloudflared/config.yml
 #
 #  SETUP:
-#  1. Install cloudflared on VPS (the setup script handles this)
-#  2. Authenticate:       cloudflared tunnel login
-#  3. Create tunnel:      cloudflared tunnel create flowops-app
-#  4. Copy the credentials JSON to /etc/cloudflared/<TUNNEL_ID>.json
-#  5. Replace TUNNEL_ID below with your actual tunnel ID
-#  6. In Cloudflare DNS, add CNAME records pointing to <TUNNEL_ID>.cfargotunnel.com:
+#  1. Do NOT install cloudflared or create cloudflared.service on the host.
+#     The pinned Docker Compose service is the one and only tunnel agent.
+#  2. Use a short-lived pinned container to authenticate/create the tunnel:
+#       docker run --rm -it --user 0 -v /etc/cloudflared:/root/.cloudflared \
+#         cloudflare/cloudflared:2026.9.3 tunnel login
+#       docker run --rm -it --user 0 -v /etc/cloudflared:/root/.cloudflared \
+#         cloudflare/cloudflared:2026.9.3 tunnel create flowops-app
+#  3. Replace TUNNEL_ID below with your actual tunnel ID.
+#  4. Ensure the credentials JSON is readable by the container's UID 65532:
+#       chown root:65532 /etc/cloudflared/<TUNNEL_ID>.json && chmod 640 ...
+#  5. In Cloudflare DNS, add CNAME records pointing to <TUNNEL_ID>.cfargotunnel.com:
 #       - app.flowop.work   → <TUNNEL_ID>.cfargotunnel.com (Proxied)
 #       - api.flowop.work   → <TUNNEL_ID>.cfargotunnel.com (Proxied)
 #       - driver.flowop.work→ <TUNNEL_ID>.cfargotunnel.com (Proxied)
@@ -28,7 +33,9 @@ credentials-file: /etc/cloudflared/CHANGE_ME_TUNNEL_ID.json
 
 # ── Ingress Rules ─────────────────────────────────────────────────────────
 # Routes incoming requests to the correct local service based on hostname.
-# Services are on the Docker bridge network, accessed via 127.0.0.1 on host.
+# Services are on the Docker Compose network and are addressed by service name.
+# Never point these rules at 127.0.0.1 / localhost: this VPS overlay publishes
+# no host ports, and the deployment guard rejects those targets.
 
 ingress:
   # ── Main web app (app.flowop.work) ────────────────────────────────────

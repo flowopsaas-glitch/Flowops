@@ -4,7 +4,7 @@
 #
 # Run this ON the Oracle VPS after cloning the repo and copying .env + tunnel
 # credentials. It handles: Docker install, swap (for low-RAM instances),
-# cloudflared install, systemd service creation, and the first deploy.
+# Docker-owned tunnel validation and the first deploy.
 #
 # Usage:
 #   ./deploy/oracle-setup.sh                      # interactive
@@ -70,102 +70,28 @@ if ! $SKIP_DOCKER; then
   fi
 fi
 
-# ── 3. cloudflared ───────────────────────────────────────────────────────────
+# ── 3. Docker-owned Cloudflare Tunnel ────────────────────────────────────────
+# The supported VPS design has exactly one tunnel agent: the pinned Compose
+# service. Do NOT install cloudflared on the host and do NOT create a
+# cloudflared.service. Either would create a competing connector for the same
+# tunnel and can make the public route flap.
 if ! $SKIP_TUNNEL; then
-  if command -v cloudflared >/dev/null; then
-    ok "cloudflared already installed ($(cloudflared --version 2>&1 | head -1))"
-  else
-    log "Installing cloudflared"
-    ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
-    curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${ARCH}.deb" -o /tmp/cloudflared.deb
-    sudo dpkg -i /tmp/cloudflared.deb
-    rm -f /tmp/cloudflared.deb
-    ok "cloudflared installed"
+  CF_CONFIG="${CLOUDFLARED_CONFIG:-/etc/cloudflared/config.yml}"
+  [[ -f "$CF_CONFIG" ]] || die "No tunnel config at ${CF_CONFIG}. Provision /etc/cloudflared with the short-lived pinned Docker commands in deploy/VPS-RUNBOOK.md."
+
+  CRED_FILE=$(find /etc/cloudflared -maxdepth 1 -name "*.json" -type f -print -quit 2>/dev/null || true)
+  [[ -n "$CRED_FILE" ]] || die "No tunnel credentials JSON in /etc/cloudflared. Do not copy it to ~/.cloudflared or install a host service."
+
+  if grep -Eq 'service:[[:space:]]*https?://(127\.0\.0\.1|localhost)(:[0-9]+)?' "$CF_CONFIG"; then
+    die "${CF_CONFIG} targets localhost, but the Docker-owned tunnel must use http://frontend:80 / http://driver-portal:80."
   fi
 
-  # Check for tunnel credentials
-  CRED_FILE=$(find /etc/cloudflared/ ~/.cloudflared/ -name "*.json" 2>/dev/null | head -1)
-  if [[ -z "$CRED_FILE" ]]; then
-    warn "No tunnel credentials found in ~/.cloudflared/ or /etc/cloudflared/"
-    warn "Copy your credentials JSON from your desktop:"
-    warn "  scp ~/.cloudflared/<tunnel-id>.json ubuntu@<this-vps>:~/.cloudflared/"
-    warn "Then re-run this script."
-    die "Tunnel credentials required"
-  fi
-  ok "Tunnel credentials found: $CRED_FILE"
-
-  # Check for config.yml
-  CONFIG_FILE=""
-  if [[ -f /etc/cloudflared/config.yml ]]; then
-    CONFIG_FILE="/etc/cloudflared/config.yml"
-  elif [[ -f ~/.cloudflared/config.yml ]]; then
-    CONFIG_FILE="$HOME/.cloudflared/config.yml"
+  if systemctl is-active --quiet cloudflared.service 2>/dev/null \
+    || [[ "$(systemctl is-enabled cloudflared.service 2>/dev/null || true)" =~ ^(enabled|enabled-runtime|linked|linked-runtime|alias)$ ]]; then
+    die "A host cloudflared.service is active or boot-enabled. This script will not create a second agent. Retire it only through deploy/cloudflared-maintenance.sh in an approved maintenance window."
   fi
 
-  if [[ -z "$CONFIG_FILE" ]]; then
-    warn "No config.yml found — creating a default one"
-    TUNNEL_ID=$(basename "$CRED_FILE" .json)
-    mkdir -p ~/.cloudflared
-    cat > ~/.cloudflared/config.yml <<YAML
-tunnel: ${TUNNEL_ID}
-credentials-file: ${CRED_FILE}
-
-ingress:
-  - hostname: app.flowop.work
-    service: http://127.0.0.1:8080
-  - hostname: driver.flowop.work
-    service: http://127.0.0.1:8083
-  - service: http_status:404
-YAML
-    CONFIG_FILE="$HOME/.cloudflared/config.yml"
-    ok "Created config at $CONFIG_FILE"
-  else
-    ok "Tunnel config found: $CONFIG_FILE"
-  fi
-
-  # ── Set up systemd service ──────────────────────────────────────────────
-  log "Setting up cloudflared systemd service"
-  
-  # Copy to /etc/cloudflared for the system service
-  sudo mkdir -p /etc/cloudflared
-  sudo cp "$CRED_FILE" /etc/cloudflared/
-  sudo cp "$CONFIG_FILE" /etc/cloudflared/config.yml
-  
-  # Fix paths in system config to use /etc/cloudflared
-  TUNNEL_ID=$(basename "$CRED_FILE" .json)
-  sudo sed -i "s|credentials-file:.*|credentials-file: /etc/cloudflared/${TUNNEL_ID}.json|" /etc/cloudflared/config.yml
-
-  # Extract tunnel name from config
-  TUNNEL_NAME=$(grep '^tunnel:' /etc/cloudflared/config.yml | awk '{print $2}')
-
-  sudo tee /etc/systemd/system/cloudflared.service > /dev/null <<EOF
-[Unit]
-Description=Cloudflare Tunnel (FlowOps)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-TimeoutStartSec=0
-ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
-Restart=on-failure
-RestartSec=5s
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  sudo systemctl daemon-reload
-  sudo systemctl enable cloudflared
-  sudo systemctl start cloudflared
-  sleep 3
-
-  if sudo systemctl is-active --quiet cloudflared; then
-    ok "cloudflared service is running"
-  else
-    warn "cloudflared failed to start. Check: sudo journalctl -u cloudflared -n 20"
-  fi
+  ok "Docker-owned tunnel config and credentials are present"
 fi
 
 # ── 4. Deploy FlowOps ────────────────────────────────────────────────────────
@@ -173,36 +99,37 @@ log "Ready to deploy FlowOps"
 echo ""
 echo "  Your .env is in place."
 echo "  Docker is installed."
-echo "  Cloudflare tunnel is running."
+echo "  Cloudflare tunnel configuration is validated; the Compose sidecar is managed separately."
 echo ""
-read -r -p "Deploy now with demo seed data? [Y/n] " ans
+read -r -p "Deploy application services now (no schema/seed change)? [Y/n] " ans
 if [[ "$ans" =~ ^[Nn]$ ]]; then
   echo ""
   echo "Run manually when ready:"
-  echo "  cd ~/FlowOps && ./deploy/vps-deploy.sh --seed"
+  echo "  cd ~/FlowOps && ./deploy/vps-deploy.sh"
   exit 0
 fi
 
-log "Deploying FlowOps (first time — with seed data)"
-./deploy/vps-deploy.sh --seed
+log "Deploying FlowOps application services (schema/seed gate remains blocked)"
+./deploy/vps-deploy.sh
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 cat <<'EOF'
 
 ══════════════════════════════════════════════════════════════════════════
-  FlowOps is live on Oracle Cloud!
+  FlowOps application stack is prepared on Oracle Cloud.
   
-  ✓ Docker stack running (api + frontend + postgres + redis + driver-portal)
-  ✓ Cloudflare tunnel active (auto-starts on boot)
-  ✓ Database seeded with demo data
+  ✓ Docker application services running (api + frontend + postgres + redis + driver-portal)
+  ✓ Database schema/seed intentionally unchanged (migration gate remains blocked)
+  ✓ Cloudflare sidecar intentionally NOT changed by this setup script
   
-  Access:
-    • https://app.flowop.work        (main app)
-    • https://driver.flowop.work     (driver PWA)
+  Before public access, only in an approved tunnel maintenance window:
+    sudo ./deploy/cloudflared-maintenance.sh --check
+    sudo ./deploy/cloudflared-maintenance.sh --apply
+    ./deploy/check-cloudflared-owner.sh --require-running
   
   Next steps on your DESKTOP:
     1. Stop the local tunnel:
-       sudo systemctl stop cloudflared  (or Ctrl+C the manual process)
+       stop any desktop/manual tunnel only after the VPS Compose agent is healthy
     
     2. Test the app in your browser — it's now served from Oracle.
   

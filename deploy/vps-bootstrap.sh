@@ -5,7 +5,9 @@
 # Takes a clean server to "ready to deploy": installs Docker + Compose, creates
 # .env from the template, auto-generates the machine secrets (the error-prone
 # bit), and wires the domain. It deliberately does NOT deploy — you fill in the
-# API keys it lists, then run ./deploy/vps-deploy.sh --seed.
+# API keys it lists, then run ./deploy/vps-deploy.sh. It never installs
+# cloudflared or creates a host-level systemd unit: the pinned Compose service
+# is the sole tunnel owner (see deploy/VPS-RUNBOOK.md).
 #
 # Usage:
 #   ./deploy/vps-bootstrap.sh                       # interactive (asks for domain)
@@ -115,8 +117,15 @@ EOF
 cat <<EOF
 Next steps:
   1) nano .env            # fill the values above
-  2) Configure the Cloudflare tunnel:  ${DOMAIN} -> http://localhost:8080
-  3) ./deploy/vps-deploy.sh --seed     # first deploy (with demo data)
+  2) Configure the Docker-owned Cloudflare tunnel: ${DOMAIN} -> http://frontend:80
+     Never install/start a host cloudflared systemd service; it would compete
+     with the pinned Compose tunnel agent.
+  3) ./deploy/vps-deploy.sh            # application services only; no schema change
+     Do NOT add --apply-schema / --seed until the separate staging migration
+     rehearsal and production database gate are approved.
+  4) After the tunnel-only maintenance action is approved:
+     sudo ./deploy/cloudflared-maintenance.sh --check
+     sudo ./deploy/cloudflared-maintenance.sh --apply
 
 Verify after deploy:
   • owner login (OWNER_SEED_*), a tenant login, and driver.flowop.work

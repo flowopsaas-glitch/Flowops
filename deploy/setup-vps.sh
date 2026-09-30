@@ -6,11 +6,15 @@
 #  This script:
 #   1. Updates the system & installs essentials
 #   2. Installs Docker & Docker Compose
-#   3. Installs Cloudflare Tunnel (cloudflared)
+#   3. Prepares the Docker-owned Cloudflare Tunnel credential directory
 #   4. Creates the project directory structure
 #   5. Configures swap (for 2GB RAM safety)
 #   6. Sets up UFW firewall (only SSH + Cloudflare)
 #   7. Clones the repo and prepares deployment
+#
+#  It intentionally DOES NOT install cloudflared on the host or create a
+#  cloudflared.service. The one pinned Compose container is the sole tunnel
+#  owner; a host systemd agent would create a second connector.
 #
 #  Usage (as root on a fresh Ubuntu 26.04 VPS):
 #    curl -fsSL https://raw.githubusercontent.com/flowopsaas-glitch/Flowops/main/deploy/setup-vps.sh | bash
@@ -103,18 +107,20 @@ docker --version
 docker compose version
 
 # ══════════════════════════════════════════════════════════════════════════
-#  STEP 4: Install Cloudflared
+#  STEP 4: Prepare Docker-managed Cloudflared credentials
 # ══════════════════════════════════════════════════════════════════════════
-log "Step 4/7: Installing cloudflared..."
-if ! command -v cloudflared &> /dev/null; then
-  curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
-  dpkg -i /tmp/cloudflared.deb
-  rm /tmp/cloudflared.deb
-  log "cloudflared installed ✓"
-else
-  log "cloudflared already installed ✓"
+log "Step 4/7: Preparing Docker-managed cloudflared..."
+install -d -m 0755 /etc/cloudflared
+
+# Do not stop an existing agent from a bootstrap script: that is an explicit
+# maintenance decision. Fail visibly so the operator cannot accidentally create
+# a second connector by launching the compose sidecar afterwards.
+if systemctl is-active --quiet cloudflared.service 2>/dev/null \
+  || [[ "$(systemctl is-enabled cloudflared.service 2>/dev/null || true)" =~ ^(enabled|enabled-runtime|linked|linked-runtime|alias)$ ]]; then
+  err "A host cloudflared.service is active or boot-enabled. This setup script will not create a second tunnel agent. Use deploy/cloudflared-maintenance.sh in an approved maintenance window to retire it."
 fi
-cloudflared --version
+
+log "Host cloudflared binary intentionally not installed; the pinned Compose sidecar is the only tunnel agent ✓"
 
 # ══════════════════════════════════════════════════════════════════════════
 #  STEP 5: Firewall (UFW)
@@ -188,17 +194,22 @@ echo -e "${BLUE}═════════════════════�
 echo ""
 echo -e "${YELLOW}NEXT STEPS:${NC}"
 echo ""
-echo "  1. SET UP CLOUDFLARE TUNNEL:"
-echo "     ─────────────────────────"
-echo "     cloudflared tunnel login"
-echo "     cloudflared tunnel create flowops-app"
+echo "  1. SET UP THE DOCKER-OWNED CLOUDFLARE TUNNEL:"
+echo "     ───────────────────────────────────────────"
+echo "     # Do NOT install cloudflared or run cloudflared.service on the host."
+echo "     # These short-lived containers only create credentials; they are not agents."
+echo '     sudo docker run --rm -it --user 0 -v /etc/cloudflared:/root/.cloudflared \'
+echo "       cloudflare/cloudflared:2026.9.3 tunnel login"
+echo '     sudo docker run --rm -it --user 0 -v /etc/cloudflared:/root/.cloudflared \'
+echo "       cloudflare/cloudflared:2026.9.3 tunnel create flowops-app"
 echo ""
 echo "     # Copy the tunnel ID from the output, then:"
-echo "     cp deploy/cloudflared/config.yml /etc/cloudflared/config.yml"
-echo "     nano /etc/cloudflared/config.yml   # Replace CHANGE_ME_TUNNEL_ID"
+echo "     sudo cp deploy/cloudflared/config.yml /etc/cloudflared/config.yml"
+echo "     sudo nano /etc/cloudflared/config.yml   # Replace CHANGE_ME_TUNNEL_ID"
 echo ""
-echo "     # Move credentials (replace <TUNNEL_ID> with actual ID):"
-echo "     cp ~/.cloudflared/<TUNNEL_ID>.json /etc/cloudflared/"
+echo "     # The running container is non-root and needs read-only access:"
+echo "     sudo chown root:65532 /etc/cloudflared/<TUNNEL_ID>.json"
+echo "     sudo chmod 640 /etc/cloudflared/<TUNNEL_ID>.json"
 echo ""
 echo "  2. UPDATE DNS IN CLOUDFLARE (if not already done):"
 echo "     ────────────────────────────────────────────────"
@@ -213,16 +224,21 @@ echo "     nano .env"
 echo "     # Set: OWNER_SEED_EMAIL (your login email)"
 echo "     # Optional: SENDGRID_API_KEY, PAYSTACK keys, GROQ_API_KEY"
 echo ""
-echo "  4. LAUNCH FLOWOPS:"
-echo "     ───────────────"
+echo "  4. LAUNCH THE APPLICATION (does not alter cloudflared):"
+echo "     ──────────────────────────────────────────────────"
 echo "     cd /opt/flowops"
-echo "     docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --build"
+echo "     ./deploy/vps-deploy.sh  # no schema change; migration gate remains blocked"
 echo ""
-echo "  5. VERIFY:"
+echo "  5. START THE PINNED TUNNEL ONLY AFTER THE EXACT MAINTENANCE ACTION IS APPROVED:"
+echo "     ───────────────────────────────────────────────────────────────────────"
+echo "     sudo ./deploy/cloudflared-maintenance.sh --check"
+echo "     sudo ./deploy/cloudflared-maintenance.sh --apply"
+echo ""
+echo "  6. VERIFY:"
 echo "     ───────"
-echo "     docker compose ps                  # All services should be 'healthy'"
-echo "     docker compose logs -f api         # Watch for startup errors"
-echo "     curl http://localhost:8080/healthz  # Frontend health check"
+echo "     docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml ps"
+echo "     ./deploy/check-cloudflared-owner.sh --require-running"
+echo "     docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml logs -f api"
 echo ""
 echo -e "${BLUE}════════════════════════════════════════════════════════════════${NC}"
 echo -e "  Project dir: /opt/flowops"
