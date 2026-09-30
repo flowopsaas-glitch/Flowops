@@ -58,16 +58,30 @@ psql_at() { # psql_at <db> <sql>
   docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$1" -tAc "$2"
 }
 
-# Per-table row counts, hashed into one line: unchanged hash == no row moved.
-ROW_FINGERPRINT_SQL="SELECT md5(string_agg(relname || '=' || n, '|' ORDER BY relname)) FROM (
-  SELECT c.relname,
-         (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', c.relname), false, true, '')))[1]::text AS n
-    FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
-   WHERE c.relkind = 'r' AND ns.nspname = 'public' AND c.relname <> '_prisma_migrations') s"
+# Row counts for a SPECIFIC set of tables, hashed into one line. The set matters: the
+# delta creates 17 new (empty) tables, so hashing "all tables" changes the hash even
+# though no existing row moved. Adoption is verified by hashing the same set of
+# pre-existing tables before and after.
+table_list() { # table_list <db>
+  psql_at "$1" "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE c.relkind = 'r' AND n.nspname = 'public' AND c.relname <> '_prisma_migrations'
+                 ORDER BY c.relname" | paste -sd, -
+}
 
-# `_prisma_migrations` and its primary-key index are Prisma bookkeeping, not schema:
-# excluding them keeps the expected counts identical before adoption (no ledger) and
-# after (`migrate deploy` creates the ledger), which is what makes them comparable.
+fingerprint_of() { # fingerprint_of <db> <comma-separated table list>
+  local list
+  list="$(printf '%s' "$2" | sed "s/,/','/g")"
+  psql_at "$1" "SELECT md5(string_agg(relname || '=' || n, '|' ORDER BY relname)) FROM (
+    SELECT c.relname,
+           (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', c.relname), false, true, '')))[1]::text AS n
+      FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+     WHERE c.relkind = 'r' AND ns.nspname = 'public' AND c.relname IN ('$list')) s"
+}
+
+row_count_of() { # row_count_of <db> <table>
+  psql_at "$1" "SELECT count(*) FROM public.\"$2\""
+}
+
 COUNTS_SQL="SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name <> '_prisma_migrations') || '|' ||
   (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE t.typtype='e' AND n.nspname='public') || '|' ||
   (SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename <> '_prisma_migrations') || '|' ||
@@ -144,9 +158,11 @@ note "== 2. adoption of a restored clone (resolve --applied, then migrate deploy
 psql_at postgres "DROP DATABASE IF EXISTS $ADOPT_DB" >/dev/null
 psql_at postgres "CREATE DATABASE $ADOPT_DB" >/dev/null
 gzip -dc "$DUMP" | docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$ADOPT_DB" >/dev/null
-BEFORE="$(psql_at "$ADOPT_DB" "$ROW_FINGERPRINT_SQL")"
-note "  restored clone: $(psql_at "$ADOPT_DB" "$COUNTS_SQL") (before)"
-note "  row fingerprint before: $BEFORE"
+BEFORE_TABLES="$(table_list "$ADOPT_DB")"
+BEFORE_TABLE_COUNT="$(printf '%s' "$BEFORE_TABLES" | tr ',' '\n' | grep -c .)"
+BEFORE="$(fingerprint_of "$ADOPT_DB" "$BEFORE_TABLES")"
+note "  restored clone: $(psql_at "$ADOPT_DB" "$COUNTS_SQL") (before), $BEFORE_TABLE_COUNT tables"
+note "  row fingerprint before: $BEFORE (over those $BEFORE_TABLE_COUNT tables)"
 
 PRE_REPORT="$REPORT_DIR/pre-adoption.md"
 POST_REPORT="$REPORT_DIR/post-adoption.md"
@@ -156,7 +172,7 @@ POST_REPORT="$REPORT_DIR/post-adoption.md"
 # reports and only the verdict lines are read back.
 ADOPT_OUT="$(run_prisma "$ADOPT_DB" "
   echo '--- pre-adoption inspection ---'
-  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --report '/reports/pre-adoption.md' > /reports/pre-adoption.stdout 2>&1 || echo pre_inspect_exit=\$?
+  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --url \"\$DATABASE_URL\" --report '/reports/pre-adoption.md' > /reports/pre-adoption.stdout 2>&1 || echo pre_inspect_exit=\$?
   echo '--- resolve --applied 20260926130650_init ---'
   npx prisma migrate resolve --applied 20260926130650_init
   echo '--- migrate deploy ---'
@@ -169,7 +185,7 @@ ADOPT_OUT="$(run_prisma "$ADOPT_DB" "
   echo adopt_drift_exit=\$?
   set -e
   echo '--- post-adoption inspection ---'
-  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --report '/reports/post-adoption.md' > /reports/post-adoption.stdout 2>&1 || echo post_inspect_exit=\$?
+  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --url \"\$DATABASE_URL\" --report '/reports/post-adoption.md' > /reports/post-adoption.stdout 2>&1 || echo post_inspect_exit=\$?
 ")"
 printf '%s\n' "$ADOPT_OUT" | grep -vE '^$' | sed 's/^/    /'
 
@@ -195,12 +211,38 @@ printf '%s' "$POST_VERDICT" | grep -q 'already-applied' \
   && ok "post-adoption verdict is already-applied (ledger and schema agree)" \
   || bad "post-adoption verdict is not already-applied: $POST_VERDICT"
 
-AFTER="$(psql_at "$ADOPT_DB" "$ROW_FINGERPRINT_SQL")"
-note "  after: $(psql_at "$ADOPT_DB" "$COUNTS_SQL")"
-note "  row fingerprint after:  $AFTER"
+AFTER_TABLES="$(table_list "$ADOPT_DB")"
+AFTER_TABLE_COUNT="$(printf '%s' "$AFTER_TABLES" | tr ',' '\n' | grep -c .)"
+AFTER="$(fingerprint_of "$ADOPT_DB" "$BEFORE_TABLES")"
+ADOPT_COUNTS="$(psql_at "$ADOPT_DB" "$COUNTS_SQL")"
+note "  after: $ADOPT_COUNTS, $AFTER_TABLE_COUNT tables"
+note "  row fingerprint after:  $AFTER (same $BEFORE_TABLE_COUNT pre-existing tables)"
+
 [ "$BEFORE" = "$AFTER" ] \
-  && ok "every pre-existing row is unchanged (identical row-count fingerprint)" \
-  || bad "row counts changed: before $BEFORE, after $AFTER"
+  && ok "every pre-existing row is unchanged (identical fingerprint over the same tables)" \
+  || bad "rows changed: before $BEFORE, after $AFTER"
+[ "$ADOPT_COUNTS" = "133|72|362|150" ] \
+  && ok "adopted schema is 133 tables / 72 enums / 150 fks" \
+  || bad "adopted counts are $ADOPT_COUNTS, expected 133|72|362|150"
+
+# The only tables that may appear are the 17 the delta creates, and they must be empty.
+ADDED_TABLES="$(comm -13 <(printf '%s' "$BEFORE_TABLES" | tr ',' '\n' | sort) <(printf '%s' "$AFTER_TABLES" | tr ',' '\n' | sort) | paste -sd, -)"
+REMOVED_TABLES="$(comm -23 <(printf '%s' "$BEFORE_TABLES" | tr ',' '\n' | sort) <(printf '%s' "$AFTER_TABLES" | tr ',' '\n' | sort) | paste -sd, -)"
+ADDED_COUNT="$(printf '%s' "$ADDED_TABLES" | tr ',' '\n' | grep -c .)"
+[ "$ADDED_COUNT" -eq 17 ] \
+  && ok "the delta added exactly 17 tables" \
+  || bad "expected 17 added tables, saw $ADDED_COUNT: $ADDED_TABLES"
+[ -z "$REMOVED_TABLES" ] \
+  && ok "no table disappeared" \
+  || bad "tables disappeared: $REMOVED_TABLES"
+
+NONEMPTY_NEW=""
+for table in $(printf '%s' "$ADDED_TABLES" | tr ',' ' '); do
+  [ "$(row_count_of "$ADOPT_DB" "$table")" = "0" ] || NONEMPTY_NEW="$NONEMPTY_NEW $table"
+done
+[ -z "$NONEMPTY_NEW" ] \
+  && ok "every table the delta added is empty (no rows were fabricated)" \
+  || bad "added tables with rows:$NONEMPTY_NEW"
 
 LEDGER="$(psql_at "$ADOPT_DB" "SELECT migration_name || ':' || (finished_at IS NOT NULL)::text FROM _prisma_migrations ORDER BY migration_name")"
 note "  ledger: $(printf '%s' "$LEDGER" | tr '\n' ' ')"
@@ -217,8 +259,10 @@ printf '%s' "$LEDGER" | grep -q '20260926130650_init:true' && printf '%s' "$LEDG
   note "fresh replay: applied=$FRESH_APPLIED, drift=$FRESH_DRIFT_EXIT, counts=$FRESH_COUNTS (expected 133|72|362|150)"
   note "adoption: drift=$(printf '%s' "$ADOPT_OUT" | grep -o 'adopt_drift_exit=[0-9]*' | tail -1)"
   note "adoption: deploy applied: ${APPLIED_BY_DEPLOY:-nothing}"
+  note "adoption tables: $BEFORE_TABLE_COUNT before, $AFTER_TABLE_COUNT after (+$ADDED_COUNT, -$(printf %s "$REMOVED_TABLES" | grep -c . || true))"
+  note "adoption counts after: $ADOPT_COUNTS (expected 133|72|362|150)"
   note "adoption row fingerprint before: $BEFORE"
-  note "adoption row fingerprint after:  $AFTER"
+  note "adoption row fingerprint after:  $AFTER (same pre-existing tables)"
   note "pre-adoption verdict:  $PRE_VERDICT"
   note "post-adoption verdict: $POST_VERDICT"
   note ""
