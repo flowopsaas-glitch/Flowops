@@ -12,11 +12,19 @@
  *   node scripts/review-migration.mjs prisma/migrations/<ts>_<name>/migration.sql
  *                                   [--schema prisma/schema.prisma]
  *                                   [--allow-destructive]
+ *   node scripts/review-migration.mjs prisma/migrations
+ *                                   [--schema prisma/schema.prisma]
+ *
+ * A directory (or several files) is reviewed as a set: table parity is compared for
+ * the union of the migrations, because `prisma migrate deploy` applies them in order
+ * and only the set as a whole has to reconstruct the datamodel. Reviewing a single
+ * file out of a multi-migration history reports the other files' models as missing,
+ * which is noise rather than a finding.
  *
  * Exit codes: 0 = no destructive operations, 1 = flagged (or the file is unreadable).
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 
 /**
@@ -137,18 +145,53 @@ export function compareTables(tables, models) {
   };
 }
 
+/**
+ * The migration files in a migrations directory, in the order Prisma applies them.
+ * Exported so the set semantics are unit-tested rather than only exercised by hand.
+ */
+export function migrationSqlFiles(migrationsDir) {
+  return readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(migrationsDir, entry.name, 'migration.sql'))
+    .filter((file) => existsSync(file))
+    .sort();
+}
+
 function main(argv) {
-  const file = argv.find((arg) => !arg.startsWith('--'));
-  if (!file) {
+  // Positional arguments are migration files, or a migrations directory. Flag values
+  // must not be mistaken for paths: `--schema prisma/schema.prisma` would otherwise be
+  // read as a migration file.
+  const positional = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--schema') {
+      i += 1;
+      continue;
+    }
+    if (!arg.startsWith('--')) positional.push(arg);
+  }
+
+  if (positional.length === 0) {
     console.error(
-      'Usage: node scripts/review-migration.mjs <migration.sql> [--schema prisma/schema.prisma] [--allow-destructive]',
+      'Usage: node scripts/review-migration.mjs <migration.sql | migrations-dir> ' +
+        '[--schema prisma/schema.prisma] [--allow-destructive]',
     );
     return 1;
   }
 
-  const filePath = path.resolve(file);
-  if (!existsSync(filePath)) {
-    console.error(`::error::No such migration file: ${filePath}`);
+  const first = path.resolve(positional[0]);
+  const isSet = positional.length > 1 || (existsSync(first) && statSync(first).isDirectory());
+  const filePaths = isSet
+    ? positional.flatMap((entry) => {
+        const resolved = path.resolve(entry);
+        if (existsSync(resolved) && statSync(resolved).isDirectory()) return migrationSqlFiles(resolved);
+        return [resolved];
+      })
+    : [first];
+
+  const missing = filePaths.filter((file) => !existsSync(file));
+  if (missing.length > 0) {
+    console.error(`::error::No such migration file: ${missing.join(', ')}`);
     return 1;
   }
 
@@ -158,23 +201,43 @@ function main(argv) {
   );
   const allowDestructive = argv.includes('--allow-destructive');
 
-  const sql = readFileSync(filePath, 'utf8');
-  const statements = splitStatements(sql);
-  const counts = summariseStatements(statements);
-  const destructive = findDestructive(statements);
-  const tables = createdTables(statements);
+  // A migration set is reviewed as a set: parity is a property of the union of all
+  // migrations (`prisma migrate deploy` runs them in order), so comparing each file on
+  // its own would report every model the other files create as missing.
+  const destructive = [];
+  const allTables = [];
+  const buckets = {};
+  let statementsTotal = 0;
 
-  console.log(`Migration: ${path.relative(process.cwd(), filePath)}`);
-  console.log(`Statements: ${statements.length}`);
-  for (const [bucket, count] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
+  for (const file of filePaths) {
+    const sql = readFileSync(file, 'utf8');
+    const statements = splitStatements(sql);
+    const counts = summariseStatements(statements);
+    statementsTotal += statements.length;
+    destructive.push(...findDestructive(statements).map((item) => ({ ...item, file })));
+    allTables.push(...createdTables(statements));
+    for (const [bucket, count] of Object.entries(counts)) {
+      buckets[bucket] = (buckets[bucket] ?? 0) + count;
+    }
+    if (isSet) {
+      console.log(
+        `${path.relative(process.cwd(), file)}: ${statements.length} statement(s), ` +
+          `${createdTables(statements).length} CREATE TABLE`,
+      );
+    }
+  }
+
+  console.log(`Migration${isSet ? ' set' : ''}: ${filePaths.map((f) => path.relative(process.cwd(), f)).join(', ')}`);
+  console.log(`Statements: ${statementsTotal}`);
+  for (const [bucket, count] of Object.entries(buckets).sort((a, b) => b[1] - a[1])) {
     console.log(`  ${String(count).padStart(5)}  ${bucket}`);
   }
 
   if (existsSync(schemaPath)) {
     const models = modelTables(readFileSync(schemaPath, 'utf8'));
-    const { modelsWithoutTable, tablesWithoutModel } = compareTables(tables, models);
+    const { modelsWithoutTable, tablesWithoutModel } = compareTables(allTables, models);
     console.log(
-      `Schema parity: ${models.length} model(s), ${tables.length} CREATE TABLE — ` +
+      `Schema parity: ${models.length} model(s), ${allTables.length} CREATE TABLE — ` +
         `${modelsWithoutTable.length} model(s) without a table, ` +
         `${tablesWithoutModel.length} table(s) without a model`,
     );
@@ -187,7 +250,7 @@ function main(argv) {
     console.log(`Schema not found at ${schemaPath}; skipped parity check.`);
   }
 
-  const unclassified = Object.keys(counts).filter((bucket) => bucket.startsWith('UNCLASSIFIED'));
+  const unclassified = Object.keys(buckets).filter((bucket) => bucket.startsWith('UNCLASSIFIED'));
   if (unclassified.length > 0) {
     console.log('Unclassified statements (review by hand):');
     for (const bucket of unclassified) console.log(`  ! ${bucket.slice('UNCLASSIFIED: '.length)}`);

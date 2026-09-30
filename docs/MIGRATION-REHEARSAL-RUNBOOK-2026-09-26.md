@@ -1,5 +1,13 @@
 # Migration rehearsal runbook — `20260926130650_init`
 
+> **2026-09-30 update:** the live database was found to have no `_prisma_migrations` ledger and
+> 116 tables, while `20260926130650_init` described 133. The init migration has been rebaselined to
+> the live schema and the missing Process Book / Product Master objects moved into
+> `20260930143000_add_process_book_product_master`. This runbook's decision table is unchanged —
+> the `baseline` row is exactly the path now taken — but the object counts quoted below describe
+> the migration as it was on 2026-09-26. See
+> [MIGRATION-BASELINE-ADOPTION-2026-09-30.md](MIGRATION-BASELINE-ADOPTION-2026-09-30.md).
+
 **Audience:** whoever will deploy the reviewed initial migration to an environment
 that already has data (staging first, production only after that passes).
 
