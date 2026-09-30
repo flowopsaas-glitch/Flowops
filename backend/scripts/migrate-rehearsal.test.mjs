@@ -22,6 +22,7 @@ import {
   normalizeType,
   parseConstraintDef,
   parseIndexDef,
+  migrationSetPaths,
   parseMigration,
   parsePrimaryKeyDef,
 } from './migrate-rehearsal.mjs';
@@ -398,4 +399,61 @@ test('--mode apply refuses anything unverified, not just blocking findings', () 
     }),
     /blocking/,
   );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-migration history (baseline + delta)
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('a set of migrations is recorded only when every name is in the ledger', () => {
+  const migration = {
+    ...parseMigration(MIGRATION_SQL),
+    path: '/repo/prisma/migrations/20240101120000_init/migration.sql',
+    appliedNames: ['20240101120000_init', '20240201120000_more'],
+  };
+  const inventory = {
+    ...INVENTORY_MATCHING,
+    indexes: INVENTORY_MATCHING.indexes.filter((index) => index.name !== 'Widget_pkey'),
+  };
+
+  const partial = structuredClone(inventory);
+  partial.migrationBookkeeping = { present: true, readable: true, applied: ['20240101120000_init'] };
+  const partialDecision = decide(migration, partial, compareInventory(migration, partial));
+  assert.equal(partialDecision.verdict, 'baseline');
+  assert.deepEqual(partialDecision.commands, [
+    'npx prisma migrate resolve --applied 20240101120000_init',
+    'npx prisma migrate resolve --applied 20240201120000_more',
+    'npx prisma migrate deploy',
+  ]);
+
+  const full = structuredClone(inventory);
+  full.migrationBookkeeping = {
+    present: true,
+    readable: true,
+    applied: ['20240101120000_init', '20240201120000_more'],
+  };
+  assert.equal(decide(migration, full, compareInventory(migration, full)).verdict, 'already-applied');
+});
+
+test('a set that the database is behind is additive drift with a resolve-then-deploy path', () => {
+  const migration = {
+    ...parseMigration(MIGRATION_SQL),
+    path: '/repo/prisma/migrations/20240101120000_init/migration.sql',
+    appliedNames: ['20240101120000_init', '20240201120000_more'],
+  };
+  const behind = structuredClone({
+    ...INVENTORY_MATCHING,
+    indexes: INVENTORY_MATCHING.indexes.filter((index) => index.name !== 'Widget_pkey'),
+  });
+  behind.migrationBookkeeping = { present: false, readable: false, applied: [] };
+  // Drop one table from the database: the history creates it, the clone does not have it.
+  behind.tables = behind.tables.filter((table) => table.name !== 'Widget');
+
+  const decision = decide(migration, behind, compareInventory(migration, behind));
+  assert.equal(decision.verdict, 'drift');
+  assert.equal(decision.additive, true);
+  assert.deepEqual(decision.commands, [
+    'npx prisma migrate resolve --applied 20240101120000_init',
+    'npx prisma migrate deploy',
+  ]);
 });

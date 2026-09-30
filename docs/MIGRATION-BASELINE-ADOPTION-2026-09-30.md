@@ -99,19 +99,28 @@ Measured on the VPS with disposable containers only (network `flowops-delta-clon
   sha256 `791b62a4d832ea74e02b0f1a535172e83f2ad913e92a620372d5ffaa1c2f6927`, 11 enums / 17 tables /
   50 indexes / 34 foreign keys / 1 added column, no destructive statement.
 
-The two files in this change carry the same statements; their whitespace-normalised, sorted
-fingerprints are:
+The two files in this change carry the same statements. A whitespace-normalised, sorted
+fingerprint of the single-line statements (enum, index, foreign-key and `ALTER` lines; table bodies
+are multi-line and fall outside `grep`) compares them:
+
+```bash
+grep -E '^(CREATE|ALTER)' <file> | sed 's/[[:space:]]\+/ /g' | sed 's/[[:space:]]*$//' | sort | sha256sum
+```
 
 | File | Statements | Fingerprint (sha256) |
 | --- | --- | --- |
 | `20260926130650_init` (baseline) | 472 | `1d55a82ac76b4307bdc59f2237fc8fa43c668ce31fb41417439859f2886dffbd` |
 | `20260930143000_add_process_book_product_master` | 113 | `8e60302f7d5d1fc099fed3be7028b5f45ee0116bca6fb4d02008a62c195dd890` |
 
-The fingerprint ignores ordering, comments and whitespace, so it compares statement *sets*:
-
-```bash
-grep -E '^(CREATE|ALTER)' <file> | sed 's/[[:space:]]\+/ /g' | sed 's/[[:space:]]*$//' | sort | sha256sum
-```
+The delta fingerprint matches the delta Prisma generated from the live database exactly. The
+baseline fingerprint does **not** match the fingerprint of `baseline-live.sql` (which is
+`839c43279c5d21a89566979446e6c136280ea08a3aecbeb1745bb3e40acd062d`), for a reason that is
+cosmetic and was then checked at the database level rather than argued: Prisma's introspection
+writes index expressions with explicit sort order — `("companyId" ASC)` — while the migration file
+writes `("companyId")`. All 179 index statements differ textually for that one reason (358 diff
+lines, 179 each way, counts equal), and the decisive comparison is in the verification log: a
+database built by replaying `20260926130650_init` is **schema-identical** to the restored clone
+(`prisma migrate diff --from-url <replay> --to-url <clone>` → `No difference detected`, exit 0).
 
 Local checks (no database required, all passing):
 
@@ -120,28 +129,44 @@ Local checks (no database required, all passing):
   `CREATE TABLE`, 0 models without a table, 0 tables without a model, no destructive operations,
   no unclassified statement.
 - `npm run migrations:test` — 11 tests passing, including the new set-ordering test.
+- `npm run migrations:rehearsal:test` — 14 tests passing, including two that pin the
+  multi-migration verdicts below.
 - Enum parity: `schema.prisma` has 72 enums; the baseline creates 61 and the delta 11.
+- The rehearsal tool's own parser, run over the history as a set, reports 133 tables, 72 enums,
+  229 indexes and 150 foreign keys — the same inventory as the pre-baseline migration, which is
+  independent evidence that the split lost nothing.
+
+### Rehearsal tool: history-aware verdicts
+
+`scripts/migrate-rehearsal.mjs` compared a single migration against the clone and defaulted to the
+latest file. With a two-migration history that would have compared only the 17-table delta against
+a 133-table database and reported "the ledger and the schema disagree" — a false alarm at exactly
+the moment an operator is deciding whether to adopt. The tool now rehearses the **history as a
+set** by default (each file in timestamp order, `--migration <path>` still selects one file),
+records a history as applied only when every migration name is in `_prisma_migrations`, and
+proposes `resolve --applied` for each name when a database matches the history but has no ledger.
 
 ## Verification plan (disposable clones only)
 
 Run against disposable databases and containers created from the verified dump. Nothing here
 touches the live database or the deployed application.
 
-1. **Statement fingerprints** — compute the fingerprint above for the VPS-generated
-   `baseline-live.sql` and `delta-from-clone.sql`; they must equal the two rows in the table.
-   This proves this change carries exactly the statement sets Prisma generated from the live
-   database.
-2. **CI-equivalent drift guard** — on a disposable shadow database:
-   `prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel
-   ./prisma/schema.prisma --shadow-database-url <shadow> --exit-code`. Exit 0 means the repository's
-   migrations reconstruct `prisma/schema.prisma` exactly; this is the same command CI runs.
-3. **Fresh replay** — create an empty database, `prisma migrate deploy`, then
-   `node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone` must return verdict `clean`
-   (no drift, no unknown, no blocking finding).
+1. **Statement fingerprints** — done: the delta fingerprint matches; the baseline's textual
+   difference is the `ASC` introspection formatting above, and the database-level equivalence in
+   step 1b is the authoritative check.
+2. **CI-equivalent drift guard** — done: `prisma migrate diff --from-migrations ./prisma/migrations
+   --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url <shadow> --exit-code` printed
+   `No difference detected` and exited 0, so the repository's history reconstructs
+   `prisma/schema.prisma` exactly.
+3. **Fresh replay** — empty database, `prisma migrate deploy`, then `prisma migrate status` must
+   report both migrations applied and no drift, and the object counts must be 133 tables / 72 enums
+   / 229 indexes / 150 foreign keys. (The rehearsal tool's verdict on a replayed database is
+   `already-applied`; `clean` is reserved for an empty target.)
 4. **Adoption path on a restored clone** — restore the dump, `prisma migrate resolve --applied
-   20260926130650_init`, `prisma migrate deploy`, then inspect again; verdict must improve from
-   `drift` to `clean`, and row counts in every pre-existing table must be unchanged (the delta is
-   additive: `CREATE` plus one nullable `ADD COLUMN`, so no data movement is expected).
+   20260926130650_init`, `prisma migrate deploy`, then inspect again. Expected: the verdict improves
+   from `drift` (additive) to `already-applied`, `prisma migrate status` reports the schema up to
+   date, and row counts in every pre-existing table are unchanged (the delta is `CREATE` plus one
+   nullable `ADD COLUMN`, so no data movement is possible).
 
 ## Rollback
 
@@ -163,7 +188,8 @@ rebaselined file.
 
 | Step | Result | Date |
 | --- | --- | --- |
-| 1. Statement fingerprints | pending | |
-| 2. CI-equivalent drift guard | pending | |
-| 3. Fresh replay | pending | |
-| 4. Adoption path on restored clone | pending | |
+| 1. Statement fingerprints | delta matched exactly; baseline differs only by introspection's explicit `ASC` (179 index lines each way, counts equal) — resolved by 1b | 2026-09-30 |
+| 1b. Baseline equivalence to the live clone | `20260926130650_init` replayed into an empty database: 116 tables, 61 enums, 116 foreign keys (295 `pg_indexes` = 179 indexes + 116 primary keys). `prisma migrate diff --from-url <replay> --to-url <clone>` → `No difference detected`, exit 0 | 2026-09-30 |
+| 2. CI-equivalent drift guard | `--exit-code` → `No difference detected`, exit 0 | 2026-09-30 |
+| 3. Fresh replay (`migrate deploy` on an empty database) | pending | |
+| 4. Adoption path on a restored clone (`resolve --applied`, `migrate deploy`, inspect) | pending | |
