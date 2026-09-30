@@ -152,6 +152,18 @@ note "  tables|enums|pg_indexes|fks = $FRESH_COUNTS"
   && ok "fresh schema is 133 tables / 72 enums / 150 fks (362 pg_indexes = 229 created indexes + 133 primary keys)" \
   || bad "fresh counts are $FRESH_COUNTS, expected 133|72|362|150"
 
+# The rehearsal tool's own verdict on the fresh database: it must agree with the
+# Prisma drift check above, otherwise the tool and the database disagree and the
+# adoption verdicts below cannot be trusted.
+FRESH_TOOL="$(run_prisma "$FRESH_DB" "
+  node scripts/migrate-rehearsal.mjs --mode inspect --i-have-a-clone --url \"\$DATABASE_URL\" --report /reports/fresh.md > /reports/fresh.stdout 2>&1 || echo fresh_inspect_exit=\$?
+")"
+FRESH_VERDICT="$(grep -m1 '^## Verdict' "$REPORT_DIR/fresh.md" 2>/dev/null || echo '## Verdict: (no report at '"$REPORT_DIR"'/fresh.md)')"
+note "  fresh-database rehearsal tool verdict: $FRESH_VERDICT"
+printf '%s' "$FRESH_VERDICT" | grep -q 'already-applied' \
+  && ok "the rehearsal tool agrees the fresh database matches the history" \
+  || bad "rehearsal tool verdict on the fresh database is not already-applied: $FRESH_VERDICT"
+
 # ── 2. Adoption of a restored clone ──────────────────────────────────────────
 note ""
 note "== 2. adoption of a restored clone (resolve --applied, then migrate deploy) =="
@@ -263,6 +275,7 @@ printf '%s' "$LEDGER" | grep -q '20260926130650_init:true' && printf '%s' "$LEDG
   note "adoption counts after: $ADOPT_COUNTS (expected 133|72|362|150)"
   note "adoption row fingerprint before: $BEFORE"
   note "adoption row fingerprint after:  $AFTER (same pre-existing tables)"
+  note "fresh-database verdict: $FRESH_VERDICT"
   note "pre-adoption verdict:  $PRE_VERDICT"
   note "post-adoption verdict: $POST_VERDICT"
   note ""

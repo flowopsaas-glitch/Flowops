@@ -130,11 +130,34 @@ function balanced(value) {
  * one-line CREATE TYPE / CREATE INDEX / ALTER TABLE ... FOREIGN KEY, and
  * CREATE TABLE blocks whose columns are one per line.
  */
+/**
+ * A column definition as Prisma writes it inside a CREATE TABLE body, or the tail of
+ * an `ADD COLUMN` clause: `"name" TYPE [NOT NULL] [DEFAULT ...]`.
+ */
+export function parseColumnDefinition(name, rest) {
+  let remainder = rest.trim();
+  let columnDefault = null;
+  const defaultIndex = remainder.indexOf(' DEFAULT ');
+  if (defaultIndex !== -1) {
+    columnDefault = normalizeDefault(remainder.slice(defaultIndex + ' DEFAULT '.length));
+    remainder = remainder.slice(0, defaultIndex);
+  }
+  let notNull = false;
+  if (/ NOT NULL$/.test(remainder)) {
+    notNull = true;
+    remainder = remainder.slice(0, -' NOT NULL'.length);
+  }
+  return { name, type: normalizeType(remainder), notNull, default: columnDefault };
+}
+
 export function parseMigration(sql) {
   const enums = [];
   const tables = [];
   const indexes = [];
   const foreignKeys = [];
+  // `ALTER TABLE ... ADD COLUMN` / `ALTER COLUMN ...` statements, applied after the
+  // whole file is read so ordering between files in a history cannot matter.
+  const alterations = [];
 
   const lines = sql.split('\n');
   let block = null;
@@ -163,24 +186,27 @@ export function parseMigration(sql) {
       if (/^CONSTRAINT\s+/i.test(body)) continue;
       const column = /^"([^"]+)"\s+(.+)$/.exec(body);
       if (!column) continue;
-      let rest = column[2];
-      let columnDefault = null;
-      const defaultIndex = rest.indexOf(' DEFAULT ');
-      if (defaultIndex !== -1) {
-        columnDefault = normalizeDefault(rest.slice(defaultIndex + ' DEFAULT '.length));
-        rest = rest.slice(0, defaultIndex);
-      }
-      let notNull = false;
-      if (/ NOT NULL$/.test(rest)) {
-        notNull = true;
-        rest = rest.slice(0, -' NOT NULL'.length);
-      }
-      block.columns.push({
-        name: column[1],
-        type: normalizeType(rest),
-        notNull,
-        default: columnDefault,
-      });
+      block.columns.push(parseColumnDefinition(column[1], column[2]));
+      continue;
+    }
+
+    // `ALTER TABLE "t" ADD COLUMN     "c" TYPE ...;` — how Prisma adds a column to a table
+    // that already exists, which is the form every delta migration uses. Without this the
+    // tool reports the added column as an object the migration does not know about, and a
+    // perfectly migrated database verdicts as drift.
+    const addColumn = /^ALTER TABLE "([^"]+)" ADD COLUMN\s+"([^"]+)"\s+(.+);$/i.exec(line);
+    if (addColumn) {
+      const definition = addColumn[3].replace(/;$/, '');
+      alterations.push({ table: addColumn[1], definition: parseColumnDefinition(addColumn[2], definition) });
+      continue;
+    }
+
+    // In-place changes to a column: `SET NOT NULL`, `DROP NOT NULL`, `SET DEFAULT ...`,
+    // `DROP DEFAULT` and `TYPE ...`.
+    const alterColumn = /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" (.+);$/i.exec(line);
+    if (alterColumn) {
+      const clause = alterColumn[3].trim();
+      alterations.push({ table: alterColumn[1], column: alterColumn[2], clause });
       continue;
     }
 
@@ -223,7 +249,30 @@ export function parseMigration(sql) {
   }
   flush();
 
+  for (const alteration of alterations) {
+    const table = tables.find((candidate) => candidate.name === alteration.table);
+    if (!table) continue; // the table is not in this history; nothing to reconcile
+    if (alteration.definition) {
+      const existing = table.columns.findIndex((column) => column.name === alteration.definition.name);
+      if (existing === -1) table.columns.push(alteration.definition);
+      else table.columns[existing] = alteration.definition;
+      continue;
+    }
+    const column = table.columns.find((candidate) => candidate.name === alteration.column);
+    if (!column) continue;
+    const clause = alteration.clause;
+    if (/^SET NOT NULL$/i.test(clause)) column.notNull = true;
+    else if (/^DROP NOT NULL$/i.test(clause)) column.notNull = false;
+    else if (/^SET DEFAULT (.+)$/i.test(clause)) {
+      column.default = normalizeDefault(/^SET DEFAULT (.+)$/i.exec(clause)[1]);
+    } else if (/^DROP DEFAULT$/i.test(clause)) column.default = null;
+    else if (/^TYPE (.+)$/i.test(clause)) {
+      column.type = normalizeType(/^TYPE (.+)$/i.exec(clause)[1].replace(/ USING .*$/i, ''));
+    }
+  }
+
   return { enums, tables, indexes, foreignKeys };
+
 }
 
 function splitColumns(list) {
@@ -575,7 +624,10 @@ export function decide(migration, inventory, comparison) {
   if (comparison.identical && recorded) {
     return {
       verdict: 'already-applied',
-      summary: `_prisma_migrations already records ${appliedName}, and the database matches it.`,
+      summary: isSet
+        ? `_prisma_migrations already records all ${appliedNames.length} migrations, and the ` +
+          'database matches them.'
+        : `_prisma_migrations already records ${appliedName}, and the database matches it.`,
       commands: [`npx prisma migrate status`],
     };
   }
@@ -622,7 +674,8 @@ export function decide(migration, inventory, comparison) {
     verdict: 'drift',
     additive,
     summary: recorded
-      ? `_prisma_migrations records ${appliedName}, but the database does not match it: the ` +
+      ? `_prisma_migrations records ${isSet ? `all ${appliedNames.length} migrations` : appliedName}, ` +
+        'but the database does not match them: the ' +
         'ledger and the schema disagree. Investigate before resolving anything — a migration ' +
         'must never be marked applied on a database it did not build.'
       : additive
