@@ -101,7 +101,6 @@ preflight_backup_layout() {
   live_db_bytes="$(docker exec "$PG_CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     -t -A -c 'SELECT pg_database_size(current_database())' | tr -d '[:space:]')"
   [[ "$live_db_bytes" =~ ^[0-9]+$ ]] || die "cannot measure live database size."
-  # Use /root for both staging and the throwaway restore; /tmp may be tmpfs.
   available_kb="$(df -Pk /root | awk 'NR == 2 {print $4}')"
   [[ "$available_kb" =~ ^[0-9]+$ ]] || die "cannot measure free disk space."
   available_bytes=$((available_kb * 1024))
