@@ -170,11 +170,14 @@ touches the live database or the deployed application.
 
 ## Rollback
 
-The change is repository-only until step 4 is run against a disposable clone, so rollback is
-`git revert <commit>`; no database state depends on it. Once the baseline is recorded in a
-database, the ledger entry is the only persistent effect and is removed with
+The change is repository-only until the baseline is recorded in a database, so rollback is
+`git revert <commit>`; no database state depends on it. Once the baseline is recorded, the ledger
+entry is the only persistent effect and is removed with
 `DELETE FROM _prisma_migrations WHERE migration_name = '20260926130650_init'` (disposable clones
-only), which returns that database to the un-adopted state.
+only), which returns that database to the un-adopted state. The delta's own effect is additive
+(17 new tables, one nullable column), so a database that has run it does not need to lose
+anything to return to the live schema — but the appended objects are the Process Book and Product
+Master tables, which the application needs, so in practice the forward fix is preferred.
 
 ## Impact on existing documents
 
@@ -191,5 +194,29 @@ rebaselined file.
 | 1. Statement fingerprints | delta matched exactly; baseline differs only by introspection's explicit `ASC` (179 index lines each way, counts equal) — resolved by 1b | 2026-09-30 |
 | 1b. Baseline equivalence to the live clone | `20260926130650_init` replayed into an empty database: 116 tables, 61 enums, 116 foreign keys (295 `pg_indexes` = 179 indexes + 116 primary keys). `prisma migrate diff --from-url <replay> --to-url <clone>` → `No difference detected`, exit 0 | 2026-09-30 |
 | 2. CI-equivalent drift guard | `--exit-code` → `No difference detected`, exit 0 | 2026-09-30 |
-| 3. Fresh replay (`migrate deploy` on an empty database) | pending | |
-| 4. Adoption path on a restored clone (`resolve --applied`, `migrate deploy`, inspect) | pending | |
+| 3. Fresh replay (`migrate deploy` on an empty database) | **passed** — 2 migrations applied, `migrate diff --exit-code` 0, counts `133\|72\|362\|150`, rehearsal verdict `already-applied` | 2026-09-30 |
+| 4. Adoption path on a restored clone (`resolve --applied`, `migrate deploy`, inspect) | **passed** — only the delta was applied by `migrate deploy`, counts `133\|72\|362\|150`, tables 116 → 133 (+17, −0), row-count fingerprint identical over the 116 pre-existing tables (`f29c1b4759c22bfcf0a13ad4668e6289`), verdict `drift` → `already-applied`, both ledger rows finished | 2026-09-30 |
+| 5. End-to-end script re-run after fixes | **passed** — `backend/scripts/verify-baseline-adoption.sh` on worktree `48cf401`: 20 checks, 0 failed | 2026-09-30 |
+
+### Conclusion
+
+Both directions are verified on disposable clones of the verified production dump:
+
+- **Fresh databases** (CI's service database, any new environment) build the whole schema from
+  the two migrations and match `prisma/schema.prisma` exactly.
+- **The existing production database** adopts the history without executing the baseline
+  (`prisma migrate resolve --applied 20260926130650_init`) and receives the 17 Process Book /
+  Product Master tables from the delta, with no row in any pre-existing table touched.
+
+Three defects were found and fixed while running this verification, all of them in tooling rather
+than in the migration or the database: the verification script counted Prisma's own bookkeeping
+table and hashed newly created (empty) tables (`df370a8`), and the rehearsal tool did not parse
+`ALTER TABLE ... ADD COLUMN`, so it reported a correctly migrated database as `drift` on both the
+fresh database and the clone (`48cf401`). The last one mattered: the tool's verdict is what an
+operator acts on, so a false `drift` on a correct database would have blocked the adoption that
+this document shows is safe.
+
+**Nothing in this work has touched staging or production.** The next steps — a rehearsal against a
+staging clone, the migration job in a deployed environment, and the release gates in
+`docs/END-TO-END-RELEASE-READINESS-MATRIX-2026-09-27.md` — each need the operator's explicit
+approval and a backup taken immediately beforehand.
