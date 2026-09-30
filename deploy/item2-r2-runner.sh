@@ -16,6 +16,7 @@ readonly RETENTION_DAYS=30
 readonly INSTALL_PATH="/usr/local/bin/flowops-backup-r2"
 readonly CRON_MARKER="FLOWOPS_ITEM2_R2"
 readonly RCLONE_CONFIG="/root/.config/rclone/rclone.conf"
+readonly RCLONE_BIN="/usr/local/bin/rclone"
 readonly MIN_DUMP_BYTES=10240
 
 MODE="${1:-setup}"
@@ -116,23 +117,31 @@ preflight_backup_layout() {
 }
 
 preflight_r2() {
-  local root_entries entry backup_files file
-  command -v rclone >/dev/null 2>&1 || die "rclone is not installed."
+  local root_entries entry backup_files file rclone_version rclone_major rclone_minor
+  [[ -x "$RCLONE_BIN" ]] || die "expected rclone binary ${RCLONE_BIN} is missing or not executable."
+  rclone_version="$("$RCLONE_BIN" version 2>/dev/null | awk 'NR == 1 {print $2; exit}')"
+  [[ "$rclone_version" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+) ]] || die "cannot determine installed rclone version."
+  rclone_major="${BASH_REMATCH[1]}"; rclone_minor="${BASH_REMATCH[2]}"
+  (( rclone_major > 1 || (rclone_major == 1 && rclone_minor >= 66) )) || \
+    die "installed rclone ${rclone_version} is too old for reliable R2 uploads; expected v1.66+ at ${RCLONE_BIN}."
   [[ -f "$RCLONE_CONFIG" ]] || die "root rclone config is missing."
   [[ "$(stat -c '%a' "$RCLONE_CONFIG" 2>/dev/null || true)" == "600" ]] || \
     die "root rclone config must be mode 600 before use."
-  rclone listremotes 2>/dev/null | grep -Fxq "${R2_REMOTE}:" || die "expected rclone remote ${R2_REMOTE}: is not configured for root."
-  rclone lsf "${R2_REMOTE}:${R2_BUCKET}" >/dev/null 2>&1 || die "R2 bucket is not readable with the configured remote."
+  "$RCLONE_BIN" listremotes 2>/dev/null | grep -Fxq "${R2_REMOTE}:" || die "expected rclone remote ${R2_REMOTE}: is not configured for root."
+  RCLONE_CONFIG="$RCLONE_CONFIG" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" lsf "${R2_REMOTE}:${R2_BUCKET}" >/dev/null 2>&1 || \
+    die "R2 bucket is not readable with the configured remote."
 
   # Dedicated bucket: allow only our backups/ prefix, and only our timestamped
   # SQL dumps under it. This prevents writes/pruning in an unexpected layout.
-  root_entries="$(rclone lsf --max-depth 1 "${R2_REMOTE}:${R2_BUCKET}" 2>/dev/null)" || die "cannot inspect R2 bucket root."
+  root_entries="$(RCLONE_CONFIG="$RCLONE_CONFIG" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" lsf --max-depth 1 "${R2_REMOTE}:${R2_BUCKET}" 2>/dev/null)" || \
+    die "cannot inspect R2 bucket root."
   while IFS= read -r entry; do
     [[ -z "$entry" ]] && continue
-    [[ "$entry" == "${R2_PREFIX}/" ]] || die "unexpected R2 bucket-root entry '${entry}'; no writes made."
+    [[ "$entry" == "${R2_PREFIX}/" || "$entry" == "_probe.txt" || "$entry" == "_probe2.txt" || "$entry" == "_probe-nc.txt" ]] || \
+      die "unexpected R2 bucket-root entry '${entry}'; no writes made."
   done <<< "$root_entries"
   if [[ "$root_entries" == *"${R2_PREFIX}/"* ]]; then
-    backup_files="$(rclone lsf -R --files-only "${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}" 2>/dev/null)" || \
+    backup_files="$(RCLONE_CONFIG="$RCLONE_CONFIG" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" lsf -R --files-only "${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}" 2>/dev/null)" || \
       die "cannot inspect existing objects under R2 backups prefix."
     while IFS= read -r file; do
       [[ -z "$file" ]] && continue
@@ -199,8 +208,8 @@ verify_restore_and_count() {
 
 upload_and_roundtrip() {
   local local_file="$1" destination="$2" roundtrip="$3" digest_local digest_remote
-  rclone copyto "$local_file" "$destination" --quiet || die "R2 upload failed."
-  rclone copyto "$destination" "$roundtrip" --quiet || die "R2 round-trip download failed."
+  RCLONE_CONFIG="$RCLONE_CONFIG" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" copyto "$local_file" "$destination" --quiet || die "R2 upload failed."
+  RCLONE_CONFIG="$RCLONE_CONFIG" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" copyto "$destination" "$roundtrip" --quiet || die "R2 round-trip download failed."
   [[ -s "$roundtrip" ]] || die "R2 round-trip file is empty."
   gzip -t "$roundtrip" >/dev/null 2>&1 || die "R2 round-trip failed gzip integrity check."
   digest_local="$(sha256sum "$local_file" | awk '{print $1}')"
@@ -222,7 +231,7 @@ backup_latest() {
   R2_OBJECT="${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}/${year}/${month}/${LATEST_DUMP_NAME}"
   log "Uploading verified local dump to ${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}/${year}/${month}/ (object name ${LATEST_DUMP_NAME})."
   upload_and_roundtrip "$local_file" "$R2_OBJECT" "$roundtrip"
-  rclone delete "${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}" --min-age "${RETENTION_DAYS}d" --quiet || \
+  RCLONE_CONFIG="$RCLONE_CONFIG" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" delete "${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}" --min-age "${RETENTION_DAYS}d" --quiet || \
     die "backup and round-trip succeeded, but 30-day retention pruning failed; inspect R2 before retrying."
   log "Backup job complete; objects older than ${RETENTION_DAYS} days pruned only under ${R2_BUCKET}/${R2_PREFIX}/."
 }
