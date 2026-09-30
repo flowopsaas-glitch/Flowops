@@ -215,7 +215,7 @@ Bucket layout is checked; unexpected root objects or unexpected files under
 `backups/` abort before writes. 30-day retention is pruned only under the
 dedicated `backups/` prefix.
 
-Verified live state after the 2026-09-30 rollout:
+Verified live state after the 2026-09-30 rollout (and the A.5 rotation recorded below):
 
 - Installed binary: `/usr/local/bin/flowops-backup-r2`
 - Rclone binary: `/usr/local/bin/rclone` (v1.75.1)
@@ -231,6 +231,28 @@ Verified live state after the 2026-09-30 rollout:
 and edit only the `flowops-r2` remote; never paste keys into chat. If cron or
 the installed binary appears altered, re-run a freshly pinned copy of
 `deploy/item2-r2-runner.sh` after verifying its SHA-256 against the commit.
+
+#### A.5 credential least-privilege (verified 2026-09-30)
+
+The credential that performed the first rollout was **Admin Read & Write** — account-wide,
+not bucket-scoped — and two earlier key pairs had been pasted into chat, so they were
+burned. The rotation removed all of that; the evidence, all measured on the VPS:
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Only one remote exists | `rclone listremotes` | `flowops-r2:` only — no remote left behind with the old keys |
+| Bucket root is clean | `rclone lsf --max-depth 1 flowops-r2:flowops-backups` | `backups/` only (the backup runner's preflight rejects anything else) |
+| Credential **cannot** list buckets | `rclone lsf flowops-r2:` | `403 AccessDenied` on `ListBuckets`, exit 1 — proof the token is scoped to one bucket, not the account |
+| Read/write inside the bucket | `copyto` → `cat` → `deletefile` of `_probe-nc.txt` | write, read-back and delete all succeed; bucket left unchanged |
+| Config permissions | `stat -c '%a %U' /root/.config/rclone/rclone.conf` | `600 root` |
+| Scheduling intact | `crontab -l` | `15 2 * * *` backup, `0 3 * * 0` restore proof, both still marked `FLOWOPS_ITEM2_R2_*` |
+| Installed runner | `ls -l /usr/local/bin/flowops-backup-r2` | `-rwxr-x--- root root`, 16222 bytes — hash must equal `deploy/item2-r2-runner.sh` (`d9b84bd071172314ef0d81f0a1eaa7b75493bcbf531fa031f1eae9b2e91b6927`) |
+| The real job works with the new key | `/usr/local/bin/flowops-backup-r2 --backup-only` | preflight, upload, R2 round-trip (gzip + SHA-256) and 30-day prune all completed |
+
+A token that cannot call `ListBuckets` cannot enumerate or write to any other bucket. Before
+this rotation the account-wide token also reached `flowops-pods` and `old-pond-afc0`; the
+security review should record those bucket names as previously reachable by the VPS
+credential, and confirm they hold nothing whose exposure matters.
 
 ### B. Cloudflared hardening (current)
 
