@@ -101,7 +101,8 @@ preflight_backup_layout() {
   live_db_bytes="$(docker exec "$PG_CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     -t -A -c 'SELECT pg_database_size(current_database())' | tr -d '[:space:]')"
   [[ "$live_db_bytes" =~ ^[0-9]+$ ]] || die "cannot measure live database size."
-  available_kb="$(df -Pk /tmp | awk 'NR == 2 {print $4}')"
+  # Use /root for both staging and the throwaway restore; /tmp may be tmpfs.
+  available_kb="$(df -Pk /root | awk 'NR == 2 {print $4}')"
   [[ "$available_kb" =~ ^[0-9]+$ ]] || die "cannot measure free disk space."
   available_bytes=$((available_kb * 1024))
   if [[ "$need_restore_space" == "1" ]]; then
@@ -213,7 +214,7 @@ backup_latest() {
   local local_file roundtrip year month
   preflight_backup_layout 0
   preflight_r2
-  TMP_DIR="$(mktemp -d /tmp/flowops-r2-backup.XXXXXX)"
+  TMP_DIR="$(mktemp -d /root/flowops-r2-backup.XXXXXX)"
   local_file="${TMP_DIR}/${LATEST_DUMP_NAME}"
   roundtrip="${TMP_DIR}/r2-roundtrip.sql.gz"
   resolve_and_copy_local_dump "$local_file"
@@ -230,7 +231,7 @@ backup_latest() {
 verify_latest_local() {
   local local_file
   preflight_backup_layout
-  TMP_DIR="$(mktemp -d /tmp/flowops-r2-verify.XXXXXX)"
+  TMP_DIR="$(mktemp -d /root/flowops-r2-verify.XXXXXX)"
   local_file="${TMP_DIR}/${LATEST_DUMP_NAME}"
   resolve_and_copy_local_dump "$local_file"
   verify_restore_and_count "$local_file" local
@@ -242,7 +243,7 @@ setup_first_backup_and_proofs() {
   preflight_backup_layout
   preflight_r2
   preflight_cron_and_install
-  TMP_DIR="$(mktemp -d /tmp/flowops-item2.XXXXXX)"
+  TMP_DIR="$(mktemp -d /root/flowops-item2.XXXXXX)"
   local_file="${TMP_DIR}/${LATEST_DUMP_NAME}"
   offsite_file="${TMP_DIR}/r2-roundtrip.sql.gz"
   resolve_and_copy_local_dump "$local_file"
