@@ -121,6 +121,7 @@ if INT_OUT="$(run_node 'set -o pipefail; npm run test:integration -- --json --ou
   ok "npm run test:integration"
 else
   bad "npm run test:integration failed"
+  printf '%s\n' "$INT_OUT" | tail -25
 fi
 
 mkdir -p "$REPORT_DIR"
