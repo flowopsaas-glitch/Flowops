@@ -55,6 +55,11 @@ The corrected numbers are the ones above: **126 restricted / 121 public / 455 ro
 The triage and conclusions below are unchanged — the gap is real, just smaller than first
 reported.
 
+CI re-verified on the corrected scanner and the option-2 reference implementation:
+[run 36873456002](https://github.com/flowopsaas-glitch/Flowops/actions/runs/36873456002),
+Backend job `110406865810` on `716f183` — every step success, including *Release safety
+regressions* (now covering `rbac-inventory.test.mjs`) and *Integration tests (PostgreSQL)*.
+
 ## Owner decision required (this is the gate)
 
 1. **Accept for this release as a documented risk** — authentication, tenant isolation and
