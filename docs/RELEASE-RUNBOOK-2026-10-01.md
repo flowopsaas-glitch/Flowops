@@ -1,10 +1,18 @@
 # Controlled release — live migration adoption (prepared 2026-10-01)
 
-**Status: PREPARED — NOT AUTHORIZED.** Nothing in this document has been run against the
-live database. Execution requires the explicit `approved: 5` phrase from the operator AND the
-recorded RBAC owner decision (option 1 / 2 / hybrid from
-`SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md`). Every step below was proven on disposable
-clones first (`MIGRATION-BASELINE-ADOPTION-2026-09-30.md`, log rows 1–6; CI run 36848646801).
+**Status: AUTHORIZED 2026-10-01 — `approved: 5` given by the operator. Execution log below.**
+
+Nothing in this document had been run against the live database before that phrase. The RBAC
+owner decision (option 1 / 2 / hybrid in `SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md`) governs
+the *application image* release, not this database migration, and is still pending — this
+document's own closing section says so. Every step below was proven on disposable clones
+first (`MIGRATION-BASELINE-ADOPTION-2026-09-30.md`, log rows 1–6; CI run 36848646801).
+
+| Step | Issued | Outcome |
+| --- | --- | --- |
+| 1 — pre-change backup | 2026-10-01 | awaiting operator output |
+| 2 — adopt + deploy | — | not issued |
+| 3 — verification | — | not issued |
 
 ## What this does
 
