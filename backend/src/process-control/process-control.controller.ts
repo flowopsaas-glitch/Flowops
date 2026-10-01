@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { ProcessControlService } from './process-control.service';
 import {
@@ -25,6 +27,15 @@ import {
  * never read or write another tenant's standards, instances or evidence, and
  * every call is refused outright while the capability flag is off.
  */
+const PROCESS_CONFIG_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER] as const;
+
+const PROCESS_EXECUTION_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.WAREHOUSE, UserRole.DISPATCH, UserRole.AGENT,
+] as const;
+
+const PROCESS_RESOLUTION_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER] as const;
+
 @ApiTags('Process Control')
 @ApiBearerAuth()
 @Controller('process-control')
@@ -52,6 +63,7 @@ export class ProcessControlController {
     return this.processControl.listDefinitions(u.companyId);
   }
 
+  @Roles(...PROCESS_CONFIG_ROLES)
   @Post('definitions')
   createDefinition(@CurrentUser() u: AuthenticatedUser, @Body() dto: CreateProcessDefinitionDto) {
     return this.processControl.createDefinition(u.companyId, actorOf(u), dto);
@@ -62,6 +74,7 @@ export class ProcessControlController {
     return this.processControl.getDefinition(u.companyId, id);
   }
 
+  @Roles(...PROCESS_CONFIG_ROLES)
   @Post('definitions/:id/versions')
   createVersion(
     @CurrentUser() u: AuthenticatedUser,
@@ -71,6 +84,7 @@ export class ProcessControlController {
     return this.processControl.createVersion(u.companyId, actorOf(u), id, dto);
   }
 
+  @Roles(...PROCESS_CONFIG_ROLES)
   @Patch('versions/:versionId/steps')
   updateVersionSteps(
     @CurrentUser() u: AuthenticatedUser,
@@ -80,6 +94,7 @@ export class ProcessControlController {
     return this.processControl.updateVersionSteps(u.companyId, actorOf(u), versionId, dto);
   }
 
+  @Roles(...PROCESS_CONFIG_ROLES)
   @Post('versions/:versionId/transition')
   @ApiOperation({ summary: 'Move a version through draft → pilot → approved → retired' })
   transitionVersion(
@@ -107,6 +122,7 @@ export class ProcessControlController {
     return this.processControl.listInstances(u.companyId, { status, definitionId });
   }
 
+  @Roles(...PROCESS_EXECUTION_ROLES)
   @Post('instances')
   @ApiOperation({ summary: 'Start a process instance (idempotent on businessKey)' })
   startInstance(@CurrentUser() u: AuthenticatedUser, @Body() dto: StartProcessInstanceDto) {
@@ -118,6 +134,7 @@ export class ProcessControlController {
     return this.processControl.getInstance(u.companyId, id);
   }
 
+  @Roles(...PROCESS_EXECUTION_ROLES)
   @Post('instances/:id/steps/complete')
   @ApiOperation({ summary: 'Complete the current step with evidence and a result' })
   completeStep(
@@ -134,6 +151,7 @@ export class ProcessControlController {
     );
   }
 
+  @Roles(...PROCESS_EXECUTION_ROLES)
   @Post('instances/:id/outcome')
   recordOutcome(
     @CurrentUser() u: AuthenticatedUser,
@@ -154,6 +172,7 @@ export class ProcessControlController {
     return this.processControl.listIncidents(u.companyId, { status, severity });
   }
 
+  @Roles(...PROCESS_EXECUTION_ROLES)
   @Post('instances/:id/incidents')
   raiseIncident(
     @CurrentUser() u: AuthenticatedUser,
@@ -163,6 +182,7 @@ export class ProcessControlController {
     return this.processControl.raiseIncident(u.companyId, actorOf(u), id, dto);
   }
 
+  @Roles(...PROCESS_RESOLUTION_ROLES)
   @Post('incidents/:incidentId/resolve')
   resolveIncident(
     @CurrentUser() u: AuthenticatedUser,
@@ -172,6 +192,7 @@ export class ProcessControlController {
     return this.processControl.resolveIncident(u.companyId, actorOf(u), incidentId, dto);
   }
 
+  @Roles(...PROCESS_EXECUTION_ROLES)
   @Post('incidents/:incidentId/solutions')
   proposeSolution(
     @CurrentUser() u: AuthenticatedUser,
@@ -181,6 +202,7 @@ export class ProcessControlController {
     return this.processControl.proposeSolution(u.companyId, actorOf(u), incidentId, dto);
   }
 
+  @Roles(...PROCESS_RESOLUTION_ROLES)
   @Post('solutions/:solutionId/resolve')
   resolveSolution(
     @CurrentUser() u: AuthenticatedUser,
@@ -192,6 +214,7 @@ export class ProcessControlController {
 
   // ── Change proposals ──────────────────────────────────────────────────────
 
+  @Roles(...PROCESS_CONFIG_ROLES)
   @Post('definitions/:id/change-proposals')
   proposeChange(
     @CurrentUser() u: AuthenticatedUser,
@@ -201,6 +224,7 @@ export class ProcessControlController {
     return this.processControl.proposeChange(u.companyId, actorOf(u), id, dto);
   }
 
+  @Roles(...PROCESS_RESOLUTION_ROLES)
   @Post('change-proposals/:proposalId/review')
   reviewChange(
     @CurrentUser() u: AuthenticatedUser,
