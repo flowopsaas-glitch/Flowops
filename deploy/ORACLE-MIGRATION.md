@@ -160,58 +160,45 @@ Press `Ctrl+C` once confirmed.
 
 ---
 
-## Step 8: Install cloudflared as a systemd service
+## Step 8: Tunnel agent — the compose stack runs it (do NOT install a service)
 
-```bash
-sudo cloudflared service install
-```
+> **Incident 2026-09-28:** this guide previously said to install cloudflared as
+> a host-level systemd service. Combined with the compose stack's own tunnel
+> agent that created **two agents on one tunnel registration** — Cloudflare
+> split traffic across both, and the host one could only return 502s (it cannot
+> resolve `frontend`/`driver-portal`, and nothing listens on `localhost:8080`
+> since the port-unbind rollout). The site was intermittently down for days.
+> The compose stack (`deploy/docker-compose.vps.yml`) is the **only** tunnel
+> agent. See `deploy/VPS-RUNBOOK.md`.
 
-This creates `/etc/systemd/system/cloudflared.service` pointing to the config
-in `/etc/cloudflared/`. If it doesn't auto-detect your config, create it
-manually:
+Prepare the config and credentials the compose agent reads (bind-mounted at
+`/etc/cloudflared/`):
 
 ```bash
 # Copy credentials to system location
 sudo mkdir -p /etc/cloudflared
-sudo cp ~/.cloudflared/1f2d0684-3cb1-4431-b907-58a7888044ba.json /etc/cloudflared/
+sudo cp ~/.cloudflared/<TUNNEL_ID>.json /etc/cloudflared/
 sudo cp ~/.cloudflared/config.yml /etc/cloudflared/config.yml
 
 # Fix the credentials-file path in the system config
 sudo sed -i 's|/home/.*/.cloudflared/|/etc/cloudflared/|' /etc/cloudflared/config.yml
 ```
 
-Create/update the systemd service:
+Ingress rules must target **Docker service names** (`http://frontend:80`,
+`http://driver-portal:80`) — never `localhost`/`127.0.0.1`.
+
+Then make sure **no** host-level agent exists — one line, same on every box:
+
 ```bash
-sudo tee /etc/systemd/system/cloudflared.service > /dev/null <<'EOF'
-[Unit]
-Description=Cloudflare Tunnel (FlowOps)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-TimeoutStartSec=0
-ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run flowops-production
-Restart=on-failure
-RestartSec=5s
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
+sudo systemctl stop cloudflared 2>/dev/null; sudo systemctl disable cloudflared 2>/dev/null
+docker ps --format '{{.Names}}' | grep cloudflared   # expect: flowops-cloudflared-1
 ```
 
-Enable and start:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable cloudflared
-sudo systemctl start cloudflared
-sudo systemctl status cloudflared
-```
+(`vps-deploy.sh` refuses to deploy while a host-level `cloudflared` unit is
+active or enabled.) Verify the tunnel from the running container:
 
-You should see `active (running)`. Verify connections:
 ```bash
-cloudflared tunnel info flowops-production
+docker logs --tail 20 flowops-cloudflared-1
 ```
 
 ---

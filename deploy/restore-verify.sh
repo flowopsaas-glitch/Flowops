@@ -31,6 +31,20 @@ BACKUP_VOLUME_PATH="${BACKUP_VOLUME_PATH:-/backups}"   # path INSIDE the backup 
 log() { echo "[$(date -u +%H:%M:%SZ)] $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+# Register temp-state cleanup up front: a --latest-local run copies a PLAINTEXT
+# dump to the host tmpfs — it must not linger there after the run (data leak).
+TMP_DUMP=""
+TEMP_DB=""
+cleanup() {
+  if [ -n "$TMP_DUMP" ]; then rm -f "$TMP_DUMP"; fi
+  if [ -n "$TEMP_DB" ]; then
+    log "Dropping verify DB ${TEMP_DB} ..."
+    docker exec "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d postgres \
+      -c "DROP DATABASE IF EXISTS ${TEMP_DB};" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
 MODE="verify"
 DUMP=""
 CONFIRM=""
@@ -58,9 +72,9 @@ if [ "$DUMP" = "__LATEST__" ]; then
   [ -n "$DUMP" ] || die "no healthy (>10KB) *.sql.gz backups found in ${BACKUP_CONTAINER}:${BACKUP_VOLUME_PATH}"
   log "Latest HEALTHY local backup: $DUMP (in ${BACKUP_CONTAINER})"
   # Copy it out of the backup container to the host tmp, then into the pg container.
-  TMP="$(mktemp).sql.gz"
-  docker cp "${BACKUP_CONTAINER}:${DUMP}" "$TMP"
-  DUMP="$TMP"
+  TMP_DUMP="$(mktemp).sql.gz"
+  docker cp "${BACKUP_CONTAINER}:${DUMP}" "$TMP_DUMP"
+  DUMP="$TMP_DUMP"
 fi
 
 [ -n "$DUMP" ] || die "usage: $0 <dump.sql.gz> | --latest-local [--restore-live --i-understand]"
@@ -101,13 +115,7 @@ fi
 TEMP_DB="flowops_verify_$(date +%s)"
 log "Creating throwaway verify DB: ${TEMP_DB}"
 docker exec "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE ${TEMP_DB};" >/dev/null
-
-cleanup() {
-  log "Dropping verify DB ${TEMP_DB} ..."
-  docker exec "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d postgres \
-    -c "DROP DATABASE IF EXISTS ${TEMP_DB};" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
+# (drop happens in the global cleanup() trap registered above)
 
 log "Restoring dump into ${TEMP_DB} (this proves the backup is loadable) ..."
 if ! feed_dump | docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=0 -U "$POSTGRES_USER" -d "$TEMP_DB" >/dev/null 2>/tmp/restore_verify_err; then

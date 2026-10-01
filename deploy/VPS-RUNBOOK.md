@@ -41,6 +41,16 @@ by *appending*, so a plain `ports: []` in an overlay is a no-op; that bug is
 what made the app reachable on `http://<VPS_IP>:8080`. Requires **Compose
 v2.24.4+**. Details and rollout plan: [`VPS-PORT-RESET-ROLLOUT.md`](VPS-PORT-RESET-ROLLOUT.md).
 
+**Third invariant — exactly one tunnel agent.** The compose `cloudflared`
+service is the **only** agent; never run a host-level `cloudflared.service`
+beside it (older guides in this repo created one — that bug caused the
+2026-09-28 incident: two agents on one tunnel registration split Cloudflare's
+traffic, and the host one could only 502). Check any time you touch the
+tunnel: `systemctl is-active cloudflared` must print `inactive`, and
+`docker ps --format '{{.Names}}' | grep cloudflared` must show the compose
+container. `vps-deploy.sh` refuses to deploy while a host-level unit is
+active or enabled.
+
 ---
 
 ## 2. One-time VPS setup
@@ -163,10 +173,52 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **AI features dead (Support Agent, Courier orchestrate, copilot, intel) — only fallback replies** | `GROQ_API_KEY` not reaching the container | Set it in `.env`; the compose `api` service forwards it — rebuild/`up -d`. Confirm with `docker compose ... exec api printenv GROQ_API_KEY` |
 | **Fresh instance flags a "clone" in Observatory** | New domain not in `VITE_CANONICAL_HOSTS` (tripwire false-fire) | Set `VITE_CANONICAL_HOSTS=<your-domain>` + rebuild frontend |
 | **Site 502s (or vps-deploy.sh refuses to start) after the port-reset change** | Tunnel ingress still targets `http://127.0.0.1:8080` / `http://localhost:8080`, and nothing listens there any more | Point ingress at `http://frontend:80` / `http://driver-portal:80`, then `docker compose ... restart cloudflared` |
+| **Intermittent 502s — some requests fine, some fail instantly (incident 2026-09-28)** | Two cloudflared agents on one tunnel: a host-level `cloudflared.service` running beside the compose agent. Cloudflare splits traffic between them; the host one cannot reach any origin and 502s its share | `sudo systemctl stop cloudflared && sudo systemctl disable cloudflared`, keep only the compose container. Verify: `for i in $(seq 1 20); do curl -sS -o /dev/null -w "%{http_code} " https://app.flowop.work/; done` → expect 200 × 20. Prevention: `vps-deploy.sh` check 0e refuses to deploy in this state |
 | **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
 | **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
 | **R2 uploads return `NotImplemented 501` from apt rclone 1.60.1** | Ubuntu-packaged rclone 1.60 uploads objects but mis-handles post-upload checks against current R2 | Use `/usr/local/bin/rclone` v1.66+ (installed by `item2-r2-runner.sh`); the cron job hard-codes that binary |
 | **Intermittent 502s / tunnel split-brain** | A host `cloudflared.service` is running alongside the Compose cloudflared sidecar against the same tunnel ID, creating two connectors | Stop/disable/mask the host service; only the Compose `cloudflared` service should own the tunnel (`deploy/vps-deploy.sh` now refuses to deploy if a host service is active) |
+
+---
+
+## Site-down triage order (read-only first)
+
+Work top-down; stop at the first confirmed cause. Change nothing until the
+cause is named, and then one change at a time with its rollback command ready.
+
+1. **Everyone or just you?** Check from a phone on 4G/5G (wifi off) and note
+   the Cloudflare error page: error number + Ray ID. `Cloudflare: Working /
+   Host: Error` means the fault is between the edge and the origin.
+2. **Host alive?** `uptime; df -h; free -m` — reboot? disk full? OOM?
+3. **Containers:** `docker ps -a` — anything not `Up`? Note `STATUS`
+   (healthy/Restarting), `restart`, `exit` codes (137 = OOM).
+4. **Tunnel first** (the component that can take the site down while
+   everything else is green):
+   - `systemctl is-active cloudflared` must print `inactive` — a host-level
+     agent beside the compose one is the 2026-09-28 incident;
+   - `grep -n service: /etc/cloudflared/config.yml` must show Docker service
+     names (`http://frontend:80`), never `localhost`/`127.0.0.1`;
+   - `docker logs --tail 30 $(docker ps -aqf name=cloudflared | head -1)`.
+5. **In-stack smoke:** `docker exec $(docker ps -qf name=api | head -1) node
+   -e "fetch('http://frontend:80/').then(r=>console.log(r.status))"` — 200
+   means the app is fine and the fault is tunnel/edge.
+6. **Reality check through the public URL** (from the VPS; its egress is
+   unfiltered): `for i in $(seq 1 20); do curl -sS -o /dev/null -w
+   "%{http_code} " https://app.flowop.work/; done` — mixed 200/502 = a split
+   path (two agents / flapping connection); all 502 = tunnel or origin down.
+7. **Traffic truth:** `docker logs --since 30m flowops-frontend-1 | tail` —
+   real requests with 200s? Then it's not fully down. Silence + external 502s
+   = requests dying in front of nginx.
+8. **Postgres:** `docker logs --tail 20 flowops-postgres-1` and a connection
+   count via `psql`; look for restart loops and full disks.
+9. **What changed?** `git log --oneline -3` in `~/FlowOps`; per-container
+   `docker inspect -f '{{.State.StartedAt}}'`; `journalctl -b -1` if rebooted.
+10. **Fix one thing, verify (the curl loop), keep the rollback command.**
+    Never `docker system prune`. Never deploy a new release mid-incident —
+    releases go through the gate sequence. Confirm a backup exists before any
+    state-changing fix.
+
+Deeper incident record: [`docs/INCIDENT-POSTMORTEM-2026-09-28.md`](../docs/INCIDENT-POSTMORTEM-2026-09-28.md).
 
 ---
 
@@ -337,3 +389,70 @@ stack comes back after a reboot. Confirm Docker itself starts on boot:
 sudo systemctl enable docker
 docker ps            # after a test reboot, all flowops-* containers should be Up
 ```
+
+### F. Pinned cloudflared + healthchecks (F-5 / F-9 — incident 2026-09-28)
+
+`deploy/docker-compose.vps.yml` pins `cloudflare/cloudflared:2026.9.3` (F-5 —
+`:latest` had left the box silently running an outdated `2026.6.1`) and adds
+healthchecks (F-9):
+
+- `cloudflared` — `["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]`.
+  Exec-form is **required**: the official image is distroless (no shell, no
+  wget/curl). The probe reads the `/ready` endpoint of the metrics server from
+  `command:` and exits 0 only with ≥1 live Cloudflare edge connection.
+- `postgres-backup` — healthy = a **validated** dump exists fresher than 6h40m
+  (dump cycle is 6h + slack). Catches a dead dump loop or empty volume.
+
+While the release gate holds the branch
+(`docs/POST-MERGE-CI-VERIFICATION-2026-09-27.md`), do **NOT** `git pull` /
+`vps-deploy.sh` on the VPS — they deploy app code. Apply only this delta with a
+temporary overlay; it touches exactly two containers:
+
+```bash
+cat > /root/flowops-f5-f9.yml <<'EOF'
+# TEMPORARY overlay (F-5/F-9, 2026-09-28). Remove once gate step 12 deploys
+# the canonical deploy/docker-compose.vps.yml from arena/01a0e43b-flowops.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+  postgres-backup:
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'flowops_*.sql.gz' -mmin -400 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
+EOF
+cd /root/FlowOps
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  -f /root/flowops-f5-f9.yml up -d --no-deps cloudflared postgres-backup
+```
+
+**Blast radius:** recreates ONLY `cloudflared` + `postgres-backup`. The single
+tunnel agent reconnects — expect a brief (seconds) site blip, then 200s resume;
+`postgres-backup` takes a fresh dump immediately on restart. No other container
+is touched. Never "smooth over" the blip by starting the host systemd unit —
+exactly one tunnel agent (invariant 3).
+
+**Rollback** (back to `:latest`, no healthchecks):
+```bash
+cd /root/FlowOps
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  up -d --no-deps cloudflared postgres-backup
+sudo rm -f /root/flowops-f5-f9.yml
+```
+
+**Verify** (both should read `healthy` within ~1 min; `cloudflared` only flips
+healthy with a live edge connection):
+```bash
+docker inspect flowops-cloudflared-1 --format 'cloudflared image={{.Config.Image}} health={{.State.Health.Status}}'
+docker inspect flowops-postgres-backup-1 --format 'postgres-backup health={{.State.Health.Status}}'
+```
+At gate step 12, deploy the branch normally and delete `/root/flowops-f5-f9.yml`
+— the canonical compose file carries the same pin + healthchecks.

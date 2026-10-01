@@ -186,6 +186,16 @@ services:
           fi
         done
       '
+    # F-9: healthy = at least one VALIDATED dump exists that is fresher than
+    # 6h40m (the dump cycle is 6h + slack). Catches a dead loop, a persistently
+    # failing pg_dump, or an empty backups volume. `find -mmin` matches the
+    # renamed final files only (the loop writes *.partial until validated).
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'flowops_*.sql.gz' -mmin -400 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
 
 volumes:
   postgres-backups:

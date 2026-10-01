@@ -112,9 +112,9 @@ credentials-file: ${CRED_FILE}
 
 ingress:
   - hostname: app.flowop.work
-    service: http://127.0.0.1:8080
+    service: http://frontend:80
   - hostname: driver.flowop.work
-    service: http://127.0.0.1:8083
+    service: http://driver-portal:80
   - service: http_status:404
 YAML
     CONFIG_FILE="$HOME/.cloudflared/config.yml"
