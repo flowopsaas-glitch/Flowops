@@ -53,6 +53,24 @@ integration config (the suite constructs services directly — no Nest DI — so
 test time was pure memory cost; `npm run build` remains the type-check gate). Any leftover
 `flowops-int-*` containers on the VPS can be removed with the script's printed rollback block.
 
+### VPS parity run — now green (2026-10-01)
+
+The optional parity run was also completed on the VPS against the release candidate, and it
+passed: `run-integration-suite.sh` reported **6 / 6 checks, `Test Suites: 4 passed`,
+`Tests: 44 passed` — ALL CHECKS PASSED** (`worktree revision: d9c5e5a`). The commit delta from
+`d9c5e5a` to the current tip is documentation-only (3 files under `docs/`), so the code under
+test is identical to the tip.
+
+Evidence kept on the host: `/root/flowops-integration-reports/integration-report.json` and
+`integration-tests.log`.
+
+Earlier failures on this path were pin artefacts, not product defects: the `8e24f84` pin
+predates the `withCompanyId` import restore, so it failed identically on every attempt
+(`is not defined` at `warehouse-management.service.ts:36`). The revision stamp is the way to
+tell which commit a run actually used. Remaining host hygiene: the disposable
+`flowops-int-*` containers and the `/root/flowops-migration-src` worktree can be removed with
+the script's printed rollback block; the reports directory is worth keeping.
+
 ## Wiring note
 
 Branch commit `904cdd8` restores CI wiring the #436 squash dropped (npm script entries for
