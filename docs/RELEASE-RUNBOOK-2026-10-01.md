@@ -10,9 +10,9 @@ first (`MIGRATION-BASELINE-ADOPTION-2026-09-30.md`, log rows 1–6; CI run 36848
 
 | Step | Issued | Outcome |
 | --- | --- | --- |
-| 1 — pre-change backup | 2026-10-01 | awaiting operator output |
-| 2 — adopt + deploy | — | not issued |
-| 3 — verification | — | not issued |
+| 1 — pre-change backup | 2026-10-01 | **done** — fresh dump `flowops_20261001_150544.sql.gz` taken 15:05 UTC, sha256 `6f980a8145a067fc55526f1194fd6a7377ba748c041d2d24c880b7b85e2b5b96`; the 12:00 dump was re-verified and uploaded to R2 |
+| 2 — adopt + deploy | 2026-10-01 | issued as `deploy/live-migration-adoption.sh --plan`, then `--apply`; awaiting operator output |
+| 3 — verification | — | runs inside the same script (`--apply` prints it) |
 
 ## What this does
 
@@ -50,33 +50,46 @@ this run before touching the database. **This backup is the rollback.**
 
 ## Step 2 — adopt and deploy (gated by `approved: 5`)
 
-Using the same disposable node container recipe as the rehearsal (worktree at the release
-revision; DATABASE_URL pointing at the live database, entered on the VPS — never pasted into
-chat):
+Executed by `deploy/live-migration-adoption.sh` from the release worktree, so the sequence is
+the rehearsed one and nothing has to be pasted into a shell. `--plan` is read-only (ledger
+state, backup age, disk, exact actions); `--apply` performs the migration in one disposable
+`node:20-bookworm-slim` container wired to the live database exactly like the rehearsal
+(`DATABASE_URL` is built inside the container from the VPS `.env` via `--env-file`; it is
+never printed and never placed on a command line):
 
 ```text
-npx prisma migrate resolve --applied 20260926130650_init
-npx prisma migrate deploy
+bash deploy/live-migration-adoption.sh --plan
+bash deploy/live-migration-adoption.sh --apply
 ```
 
-Expected: the first command records the baseline without executing it; the second prints
-`Applying migration 20260930143000_add_process_book_product_master` and nothing else.
+Inside the container, in order:
+
+```text
+npx prisma migrate resolve --applied 20260926130650_init   # only if the baseline row is absent
+npx prisma migrate deploy                                   # applies the additive delta only
+npx prisma migrate status
+npx prisma migrate diff --from-url … --exit-code            # drift guard
+```
+
+Expected: the resolve records the baseline without executing it (its SQL is never run — the
+live schema already exists), and `migrate deploy` prints
+`Applying migration 20260930143000_add_process_book_product_master` and nothing else. Full
+container output is teed to `/root/flowops-adoption-reports/live-adoption-<stamp>.log`.
 
 ## Step 3 — verification (read-only)
 
-```text
-npx prisma migrate status
-```
+`--apply` ends with the same verification, run against the live database:
 
-Expected: both migrations `finished`, database schema is up to date. Then:
+1. Ledger: both migrations `finished` (baseline recorded, delta applied).
+2. Counts before → after: tables `116 → 133` (+17), enums `+11`, indexes `+50`, FKs `+34`.
+3. Every table the delta creates is **empty** (no data written).
+4. Pre-existing row-count fingerprint compared before/after. Live traffic can legitimately
+   move totals during the window, so a change is reported as INFO with both hashes rather
+   than as a failure; the two ledger rows plus the empty new tables are the hard evidence.
+5. Drift guard inside the container: `migrate diff --exit-code` → `drift: none`.
 
-1. Drift guard: `prisma migrate diff --from-url <live> --to-schema-datamodel prisma/schema.prisma
-   --exit-code` → `No difference detected` (exit 0).
-2. Table count 116 → 133 (the 17 new tables present and empty).
-3. Sample a pre-existing table's row count before/after (e.g. `companies`, `invoices`,
-   `waybills`) — identical.
-4. Application health: in-container `frontend/healthz` → `ok`; API `/health` → ok; app logs
-   show no schema errors.
+Still to do by hand afterwards: application health — in-container `frontend/healthz` → `ok`,
+API `/health` → ok, app logs free of schema errors.
 
 ## Rollback (either path)
 
