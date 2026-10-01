@@ -61,6 +61,7 @@ run_node() { # run_node <bash command run inside the worktree's backend/>
     -e DATABASE_URL="postgresql://$PG_USER:$PG_PASS@$PG_ALIAS:5432/$DB?schema=public" \
     -e REDIS_HOST="$REDIS_CONTAINER" -e REDIS_PORT=6379 \
     -e JWT_SECRET="$JWT_SECRET" -e NODE_ENV=test \
+    -e NODE_OPTIONS="--max-old-space-size=$HEAP_MB" \
     "$NODE_IMAGE" bash -ec "
       apt-get update -qq
       apt-get install -y -qq openssl ca-certificates
@@ -69,8 +70,19 @@ run_node() { # run_node <bash command run inside the worktree's backend/>
     "
 }
 
+# Node's default heap tracks system RAM (~1 GB on this VPS), which is too small
+# for ts-jest compiling the Nest codebase — the suite died with "Reached heap
+# limit Allocation failed - JavaScript heap out of memory" and produced no
+# report. Size the heap to 60% of what is actually free, clamped to a sane
+# window so a small box gets a modest bump and a big box does not hoard RAM.
+AVAIL_MB="$(free -m | awk '/^Mem:/{print $7}')"
+HEAP_MB=$((AVAIL_MB * 60 / 100))
+if [ "$HEAP_MB" -lt 1024 ]; then HEAP_MB=1024; fi
+if [ "$HEAP_MB" -gt 3072 ]; then HEAP_MB=3072; fi
+
 # ── Preconditions ────────────────────────────────────────────────────────────
 note "== preconditions =="
+note "node heap limit: ${HEAP_MB} MB (MemAvailable ${AVAIL_MB} MB)"
 [ -f "$WORKTREE/backend/package.json" ] \
   && ok "worktree present at $WORKTREE" \
   || { bad "no worktree at $WORKTREE (create it first, see usage in --help)"; exit 1; }
