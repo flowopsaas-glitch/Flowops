@@ -246,7 +246,7 @@ burned. The rotation removed all of that; the evidence, all measured on the VPS:
 | Read/write inside the bucket | `copyto` → `cat` → `deletefile` of `_probe-nc.txt` | write, read-back and delete all succeed; bucket left unchanged |
 | Config permissions | `stat -c '%a %U' /root/.config/rclone/rclone.conf` | `600 root` |
 | Scheduling intact | `crontab -l` | `15 2 * * *` backup, `0 3 * * 0` restore proof, both still marked `FLOWOPS_ITEM2_R2_*` |
-| Installed runner | `ls -l /usr/local/bin/flowops-backup-r2` | `-rwxr-x--- root root`, 16222 bytes — hash must equal `deploy/item2-r2-runner.sh` (`d9b84bd071172314ef0d81f0a1eaa7b75493bcbf531fa031f1eae9b2e91b6927`) |
+| Installed runner | `sha256sum /usr/local/bin/flowops-backup-r2` | `d9b84bd071172314ef0d81f0a1eaa7b75493bcbf531fa031f1eae9b2e91b6927` — byte-identical to `deploy/item2-r2-runner.sh` in this repo (verified 2026-09-30); mode `-rwxr-x--- root root`, 16222 bytes |
 | The real job works with the new key | `/usr/local/bin/flowops-backup-r2 --backup-only` | preflight, upload, R2 round-trip (gzip + SHA-256) and 30-day prune all completed |
 
 A token that cannot call `ListBuckets` cannot enumerate or write to any other bucket. Before
