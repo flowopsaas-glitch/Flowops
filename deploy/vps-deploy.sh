@@ -139,8 +139,8 @@ for i in $(seq 1 30); do
   [[ $i -eq 30 ]] && die "Postgres did not become healthy in 60s"
 done
 
-log "Applying Prisma schema (db push — repo uses push, not migrations)"
-$COMPOSE exec -T api npx prisma db push --skip-generate || die "prisma db push failed"
+log "Applying Prisma migrations (migrate deploy — non-destructive)"
+$COMPOSE exec -T api ./node_modules/.bin/prisma migrate deploy || die "prisma migrate deploy failed"
 ok "Schema in sync"
 
 # ── 4b. Plan-limit pre-flight (entitlement enforcement is live as of #140) ───
