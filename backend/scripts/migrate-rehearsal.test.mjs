@@ -20,8 +20,10 @@ import {
   normalizeDefault,
   normalizeFormattedType,
   normalizeType,
+  parseColumnDefinition,
   parseConstraintDef,
   parseIndexDef,
+  migrationSetPaths,
   parseMigration,
   parsePrimaryKeyDef,
 } from './migrate-rehearsal.mjs';
@@ -398,4 +400,140 @@ test('--mode apply refuses anything unverified, not just blocking findings', () 
     }),
     /blocking/,
   );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-migration history (baseline + delta)
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('a set of migrations is recorded only when every name is in the ledger', () => {
+  const migration = {
+    ...parseMigration(MIGRATION_SQL),
+    path: '/repo/prisma/migrations/20240101120000_init/migration.sql',
+    appliedNames: ['20240101120000_init', '20240201120000_more'],
+  };
+  const inventory = {
+    ...INVENTORY_MATCHING,
+    indexes: INVENTORY_MATCHING.indexes.filter((index) => index.name !== 'Widget_pkey'),
+  };
+
+  const partial = structuredClone(inventory);
+  partial.migrationBookkeeping = { present: true, readable: true, applied: ['20240101120000_init'] };
+  const partialDecision = decide(migration, partial, compareInventory(migration, partial));
+  assert.equal(partialDecision.verdict, 'baseline');
+  assert.deepEqual(partialDecision.commands, [
+    'npx prisma migrate resolve --applied 20240101120000_init',
+    'npx prisma migrate resolve --applied 20240201120000_more',
+    'npx prisma migrate deploy',
+  ]);
+
+  const full = structuredClone(inventory);
+  full.migrationBookkeeping = {
+    present: true,
+    readable: true,
+    applied: ['20240101120000_init', '20240201120000_more'],
+  };
+  assert.equal(decide(migration, full, compareInventory(migration, full)).verdict, 'already-applied');
+});
+
+test('a set that the database is behind is additive drift with a resolve-then-deploy path', () => {
+  const migration = {
+    ...parseMigration(MIGRATION_SQL),
+    path: '/repo/prisma/migrations/20240101120000_init/migration.sql',
+    appliedNames: ['20240101120000_init', '20240201120000_more'],
+  };
+  const behind = structuredClone({
+    ...INVENTORY_MATCHING,
+    indexes: INVENTORY_MATCHING.indexes.filter((index) => index.name !== 'Widget_pkey'),
+  });
+  behind.migrationBookkeeping = { present: false, readable: false, applied: [] };
+  // Drop one table from the database: the history creates it, the clone does not have it.
+  behind.tables = behind.tables.filter((table) => table.name !== 'Widget');
+
+  const decision = decide(migration, behind, compareInventory(migration, behind));
+  assert.equal(decision.verdict, 'drift');
+  assert.equal(decision.additive, true);
+  assert.deepEqual(decision.commands, [
+    'npx prisma migrate resolve --applied 20240101120000_init',
+    'npx prisma migrate deploy',
+  ]);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ALTER TABLE support (a delta migration changes tables it did not create)
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('ALTER TABLE ... ADD COLUMN is folded into the table, so a migrated database is not "drift"', () => {
+  const migration = parseMigration(`
+CREATE TABLE "Widget" (
+    "id" TEXT NOT NULL,
+
+    CONSTRAINT "Widget_pkey" PRIMARY KEY ("id")
+);
+
+-- AlterTable
+ALTER TABLE "Widget" ADD COLUMN     "note" TEXT;
+
+-- AlterTable
+ALTER TABLE "Widget" ADD COLUMN     "count" INTEGER NOT NULL DEFAULT 0;
+`);
+
+  const widget = migration.tables.find((table) => table.name === 'Widget');
+  assert.deepEqual(
+    widget.columns.map((column) => column.name),
+    ['id', 'note', 'count'],
+  );
+  assert.deepEqual(parseColumnDefinition('note', 'TEXT'), {
+    name: 'note',
+    type: 'text',
+    notNull: false,
+    default: null,
+  });
+  assert.equal(widget.columns[1].type, 'text');
+  assert.equal(widget.columns[1].notNull, false);
+  assert.equal(widget.columns[2].notNull, true);
+  assert.equal(widget.columns[2].default, normalizeDefault('0'));
+});
+
+test('ALTER COLUMN set/drop NOT NULL, set/drop DEFAULT and TYPE are applied', () => {
+  const migration = parseMigration(`
+CREATE TABLE "Widget" (
+    "id" TEXT NOT NULL,
+    "note" TEXT,
+    "count" INTEGER NOT NULL,
+
+    CONSTRAINT "Widget_pkey" PRIMARY KEY ("id")
+);
+
+ALTER TABLE "Widget" ALTER COLUMN "note" SET NOT NULL;
+ALTER TABLE "Widget" ALTER COLUMN "note" SET DEFAULT 'draft';
+ALTER TABLE "Widget" ALTER COLUMN "count" DROP NOT NULL;
+`);
+  const widget = migration.tables.find((table) => table.name === 'Widget');
+  const note = widget.columns.find((column) => column.name === 'note');
+  const count = widget.columns.find((column) => column.name === 'count');
+  assert.equal(note.notNull, true);
+  assert.equal(note.default, normalizeDefault("'draft'"));
+  assert.equal(count.notNull, false);
+});
+
+test('a recorded two-migration history that matches is already-applied, and names the history not the folder', () => {
+  const migration = {
+    ...parseMigration(MIGRATION_SQL),
+    path: '/repo/prisma/migrations/20240101120000_first/migration.sql',
+    appliedNames: ['20240101120000_first', '20240201120000_second'],
+  };
+  const inventory = {
+    ...INVENTORY_MATCHING,
+    indexes: INVENTORY_MATCHING.indexes.filter((index) => index.name !== 'Widget_pkey'),
+    migrationBookkeeping: {
+      present: true,
+      readable: true,
+      applied: ['20240101120000_first', '20240201120000_second'],
+    },
+  };
+  const decision = decide(migration, inventory, compareInventory(migration, inventory));
+  assert.equal(decision.verdict, 'already-applied');
+  assert.match(decision.summary, /records all 2 migrations/);
+  assert.doesNotMatch(decision.summary, /records prisma/);
 });

@@ -130,11 +130,34 @@ function balanced(value) {
  * one-line CREATE TYPE / CREATE INDEX / ALTER TABLE ... FOREIGN KEY, and
  * CREATE TABLE blocks whose columns are one per line.
  */
+/**
+ * A column definition as Prisma writes it inside a CREATE TABLE body, or the tail of
+ * an `ADD COLUMN` clause: `"name" TYPE [NOT NULL] [DEFAULT ...]`.
+ */
+export function parseColumnDefinition(name, rest) {
+  let remainder = rest.trim();
+  let columnDefault = null;
+  const defaultIndex = remainder.indexOf(' DEFAULT ');
+  if (defaultIndex !== -1) {
+    columnDefault = normalizeDefault(remainder.slice(defaultIndex + ' DEFAULT '.length));
+    remainder = remainder.slice(0, defaultIndex);
+  }
+  let notNull = false;
+  if (/ NOT NULL$/.test(remainder)) {
+    notNull = true;
+    remainder = remainder.slice(0, -' NOT NULL'.length);
+  }
+  return { name, type: normalizeType(remainder), notNull, default: columnDefault };
+}
+
 export function parseMigration(sql) {
   const enums = [];
   const tables = [];
   const indexes = [];
   const foreignKeys = [];
+  // `ALTER TABLE ... ADD COLUMN` / `ALTER COLUMN ...` statements, applied after the
+  // whole file is read so ordering between files in a history cannot matter.
+  const alterations = [];
 
   const lines = sql.split('\n');
   let block = null;
@@ -163,24 +186,27 @@ export function parseMigration(sql) {
       if (/^CONSTRAINT\s+/i.test(body)) continue;
       const column = /^"([^"]+)"\s+(.+)$/.exec(body);
       if (!column) continue;
-      let rest = column[2];
-      let columnDefault = null;
-      const defaultIndex = rest.indexOf(' DEFAULT ');
-      if (defaultIndex !== -1) {
-        columnDefault = normalizeDefault(rest.slice(defaultIndex + ' DEFAULT '.length));
-        rest = rest.slice(0, defaultIndex);
-      }
-      let notNull = false;
-      if (/ NOT NULL$/.test(rest)) {
-        notNull = true;
-        rest = rest.slice(0, -' NOT NULL'.length);
-      }
-      block.columns.push({
-        name: column[1],
-        type: normalizeType(rest),
-        notNull,
-        default: columnDefault,
-      });
+      block.columns.push(parseColumnDefinition(column[1], column[2]));
+      continue;
+    }
+
+    // `ALTER TABLE "t" ADD COLUMN     "c" TYPE ...;` — how Prisma adds a column to a table
+    // that already exists, which is the form every delta migration uses. Without this the
+    // tool reports the added column as an object the migration does not know about, and a
+    // perfectly migrated database verdicts as drift.
+    const addColumn = /^ALTER TABLE "([^"]+)" ADD COLUMN\s+"([^"]+)"\s+(.+);$/i.exec(line);
+    if (addColumn) {
+      const definition = addColumn[3].replace(/;$/, '');
+      alterations.push({ table: addColumn[1], definition: parseColumnDefinition(addColumn[2], definition) });
+      continue;
+    }
+
+    // In-place changes to a column: `SET NOT NULL`, `DROP NOT NULL`, `SET DEFAULT ...`,
+    // `DROP DEFAULT` and `TYPE ...`.
+    const alterColumn = /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" (.+);$/i.exec(line);
+    if (alterColumn) {
+      const clause = alterColumn[3].trim();
+      alterations.push({ table: alterColumn[1], column: alterColumn[2], clause });
       continue;
     }
 
@@ -223,7 +249,30 @@ export function parseMigration(sql) {
   }
   flush();
 
+  for (const alteration of alterations) {
+    const table = tables.find((candidate) => candidate.name === alteration.table);
+    if (!table) continue; // the table is not in this history; nothing to reconcile
+    if (alteration.definition) {
+      const existing = table.columns.findIndex((column) => column.name === alteration.definition.name);
+      if (existing === -1) table.columns.push(alteration.definition);
+      else table.columns[existing] = alteration.definition;
+      continue;
+    }
+    const column = table.columns.find((candidate) => candidate.name === alteration.column);
+    if (!column) continue;
+    const clause = alteration.clause;
+    if (/^SET NOT NULL$/i.test(clause)) column.notNull = true;
+    else if (/^DROP NOT NULL$/i.test(clause)) column.notNull = false;
+    else if (/^SET DEFAULT (.+)$/i.test(clause)) {
+      column.default = normalizeDefault(/^SET DEFAULT (.+)$/i.exec(clause)[1]);
+    } else if (/^DROP DEFAULT$/i.test(clause)) column.default = null;
+    else if (/^TYPE (.+)$/i.test(clause)) {
+      column.type = normalizeType(/^TYPE (.+)$/i.exec(clause)[1].replace(/ USING .*$/i, ''));
+    }
+  }
+
   return { enums, tables, indexes, foreignKeys };
+
 }
 
 function splitColumns(list) {
@@ -565,12 +614,20 @@ export function decide(migration, inventory, comparison) {
     };
   }
 
-  const recorded = inventory.migrationBookkeeping.applied.includes(appliedName);
+  // The history may hold several migrations (the whole set is what has to match the
+  // datamodel), so a set is recorded only when every one of its names is in the ledger.
+  // `appliedNames` is absent when decide() is called with a single-migration object.
+  const appliedNames = migration.appliedNames ?? [appliedName];
+  const recorded = appliedNames.every((name) => inventory.migrationBookkeeping.applied.includes(name));
+  const isSet = appliedNames.length > 1;
 
   if (comparison.identical && recorded) {
     return {
       verdict: 'already-applied',
-      summary: `_prisma_migrations already records ${appliedName}, and the database matches it.`,
+      summary: isSet
+        ? `_prisma_migrations already records all ${appliedNames.length} migrations, and the ` +
+          'database matches them.'
+        : `_prisma_migrations already records ${appliedName}, and the database matches it.`,
       commands: [`npx prisma migrate status`],
     };
   }
@@ -585,12 +642,13 @@ export function decide(migration, inventory, comparison) {
     return {
       verdict: 'baseline',
       summary:
-        'The database already matches the migration exactly (typical of an environment that ' +
-        'was maintained with `prisma db push`). Applying the SQL would fail on existing objects; ' +
-        'mark the migration as applied instead, then deploy onward.' +
+        `The database already matches ${isSet ? 'the whole history' : 'the migration'} exactly ` +
+        '(typical of an environment that was maintained with `prisma db push`). Applying the SQL ' +
+        'would fail on existing objects; record the migration(s) as applied instead, then deploy ' +
+        'onward.' +
         ledgerUnknown,
       commands: [
-        `npx prisma migrate resolve --applied ${appliedName}`,
+        ...appliedNames.map((name) => `npx prisma migrate resolve --applied ${name}`),
         `npx prisma migrate deploy`,
       ],
     };
@@ -616,21 +674,27 @@ export function decide(migration, inventory, comparison) {
     verdict: 'drift',
     additive,
     summary: recorded
-      ? `_prisma_migrations records ${appliedName}, but the database does not match it: the ` +
+      ? `_prisma_migrations records ${isSet ? `all ${appliedNames.length} migrations` : appliedName}, ` +
+        'but the database does not match them: the ' +
         'ledger and the schema disagree. Investigate before resolving anything — a migration ' +
         'must never be marked applied on a database it did not build.'
       : additive
-        ? 'The database is behind the migration but has no objects the migration does not know ' +
-          'about. This is the additive case: baseline-resolve the initial migration, then let a ' +
-          'delta migration from the same diff add the missing objects.'
+        ? 'The database is behind the history but has no objects the history does not know ' +
+          'about. This is the additive case: baseline-resolve the migration(s) the database ' +
+          'already matches, then let `prisma migrate deploy` add the missing objects.'
         : 'The database and the migration disagree in both directions (or in type/nullability): ' +
           'this needs a reviewed delta plan before anything is applied.' +
           ledgerUnknown,
-    commands: [
-      `npx prisma migrate resolve --applied ${appliedName}`,
-      `npx prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --script > delta.sql`,
-      `# review delta.sql, commit it as a new migration, then: npx prisma migrate deploy`,
-    ],
+    commands: isSet
+      ? [
+          `npx prisma migrate resolve --applied ${appliedNames[0]}`,
+          `npx prisma migrate deploy`,
+        ]
+      : [
+          `npx prisma migrate resolve --applied ${appliedName}`,
+          `npx prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --script > delta.sql`,
+          `# review delta.sql, commit it as a new migration, then: npx prisma migrate deploy`,
+        ],
   };
 }
 
@@ -823,7 +887,16 @@ export function applyRefusal({ verdict, findings = [] }) {
   return null;
 }
 
-export function renderReport({ target, migrationPath, inventory, comparison, decision, findings, mode }) {
+export function renderReport({
+  target,
+  migrationPath,
+  migrationNames,
+  inventory,
+  comparison,
+  decision,
+  findings,
+  mode,
+}) {
   const { host, database } = target ?? describeTarget('');
   const emptyTarget = inventory.tables.length === 0 && inventory.enums.length === 0;
   const blocking = findings.filter((finding) => finding.severity === 'blocking');
@@ -852,7 +925,11 @@ export function renderReport({ target, migrationPath, inventory, comparison, dec
   return `# Migration rehearsal report
 
 - Target: \`${host}/${database}\` (disposable clone)
-- Migration: \`${path.relative(BACKEND_ROOT, migrationPath)}\`
+- Migration${Array.isArray(migrationNames) && migrationNames.length > 1 ? ' history' : ''}: \`${path.relative(BACKEND_ROOT, migrationPath)}\`${
+    Array.isArray(migrationNames) && migrationNames.length > 1
+      ? ` — applied in order: ${migrationNames.map((name) => `\`${name}\``).join(', ')}`
+      : ''
+  }
 - Mode: ${mode}
 - Tables in target: ${inventory.tables.length}; enums: ${inventory.enums.length}; indexes: ${inventory.indexes.length}; foreign keys: ${inventory.foreignKeys.length}
 
@@ -970,6 +1047,22 @@ function argOf(argv, flag, fallback) {
   return index === -1 ? fallback : argv[index + 1];
 }
 
+/**
+ * Every migration file in the history, in the order Prisma applies them. The history as
+ * a whole is what has to reconstruct `prisma/schema.prisma`, so the rehearsal defaults to
+ * the set rather than to the last file: a two-migration history (baseline + delta) is only
+ * meaningful compared as a set.
+ */
+export function migrationSetPaths(migrationsDir = path.join(BACKEND_ROOT, 'prisma', 'migrations')) {
+  const dirs = readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  return dirs
+    .map((name) => path.join(migrationsDir, name, 'migration.sql'))
+    .filter((file) => existsSync(file));
+}
+
 export function latestMigrationPath(migrationsDir = path.join(BACKEND_ROOT, 'prisma', 'migrations')) {
   const dirs = readdirSync(migrationsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -997,7 +1090,8 @@ async function main(argv) {
         'Options:',
         '  --url <clone-url>     Connection string of the disposable clone (or REHEARSAL_DATABASE_URL).',
         '  --mode <mode>         inspect (default, read-only) | apply (writes, and only on a clean, fully checked clone).',
-        '  --migration <path>    Migration to rehearse (default: latest under prisma/migrations).',
+        '  --migration <path>    Rehearse one migration file instead of the whole history',
+        '                        (default: every migration under prisma/migrations, applied in order).',
         '  --report <file>       Where to write the markdown report (default: rehearsal-report.md).',
         '  --i-have-a-clone      Required for non-local hosts; acknowledges the target is disposable.',
         '  --confirm-apply       Required together with --mode apply.',
@@ -1027,16 +1121,39 @@ async function main(argv) {
     return 1;
   }
 
-  const migrationPath = path.resolve(
-    BACKEND_ROOT,
-    argOf(argv, '--migration', path.relative(BACKEND_ROOT, latestMigrationPath())),
-  );
-  if (!existsSync(migrationPath)) {
-    console.error(`::error::No migration to rehearse at ${migrationPath}`);
-    return 1;
+  // Default to the whole history: `prisma migrate deploy` applies the set in order, so the
+  // set is what has to reconstruct the datamodel and what a clone must be compared against.
+  // `--migration <path>` still rehearses a single file (the pre-baseline workflow).
+  const migrationFlag = argOf(argv, '--migration');
+  const migrationsDir = path.join(BACKEND_ROOT, 'prisma', 'migrations');
+  let migrationPath;
+  let migrationNames;
+  let migrationSql;
+
+  if (migrationFlag) {
+    migrationPath = path.resolve(BACKEND_ROOT, migrationFlag);
+    if (!existsSync(migrationPath)) {
+      console.error(`::error::No migration to rehearse at ${migrationPath}`);
+      return 1;
+    }
+    migrationNames = [path.basename(path.dirname(migrationPath))];
+    migrationSql = readFileSync(migrationPath, 'utf8');
+  } else {
+    const paths = migrationSetPaths(migrationsDir);
+    if (paths.length === 0) {
+      console.error(`::error::No migrations to rehearse under ${migrationsDir}`);
+      return 1;
+    }
+    migrationPath = migrationsDir;
+    migrationNames = paths.map((file) => path.basename(path.dirname(file)));
+    migrationSql = paths.map((file) => readFileSync(file, 'utf8')).join('\n\n');
   }
-  const migrationSql = readFileSync(migrationPath, 'utf8');
-  const migration = { ...parseMigration(migrationSql), path: migrationPath };
+
+  const migration = {
+    ...parseMigration(migrationSql),
+    path: migrationPath,
+    appliedNames: migrationNames,
+  };
 
   // `pg` is CommonJS: `import('pg')` exposes the module as `default` on some
   // Node versions and as named exports on others. Accept either shape.
@@ -1058,6 +1175,7 @@ async function main(argv) {
     const report = renderReport({
       target,
       migrationPath,
+      migrationNames,
       inventory,
       comparison,
       decision,

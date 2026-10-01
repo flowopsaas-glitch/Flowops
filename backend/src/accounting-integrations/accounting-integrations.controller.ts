@@ -7,6 +7,8 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 
+const INTEGRATION_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN] as const;
+
 @ApiTags('Accounting Integrations')
 @ApiBearerAuth()
 @Controller()
@@ -37,6 +39,7 @@ export class AccountingIntegrationsController {
     res.redirect(redirect);
   }
 
+  @Roles(...INTEGRATION_WRITE_ROLES)
   @Post('accounting/integrations/pastel/connect')
   connectPastel(@CurrentUser() u: any) {
     return this.svc.connectPastel(u.companyId);
@@ -57,16 +60,19 @@ export class AccountingIntegrationsController {
     return this.svc.getAuthUrl(u.companyId, provider.toUpperCase() as any);
   }
 
+  @Roles(...INTEGRATION_WRITE_ROLES)
   @Post('accounting/integrations/sync/invoice/:invoiceId')
   syncInvoice(@Param('invoiceId') invoiceId: string, @CurrentUser() u: any) {
     return this.svc.syncInvoice(u.companyId, invoiceId);
   }
 
+  @Roles(...INTEGRATION_WRITE_ROLES)
   @Post('accounting/integrations/sync/credit-note/:creditNoteId')
   syncCreditNote(@Param('creditNoteId') creditNoteId: string, @CurrentUser() u: any) {
     return this.svc.syncCreditNote(u.companyId, creditNoteId);
   }
 
+  @Roles(...INTEGRATION_WRITE_ROLES)
   @Post('accounting/integrations/:id/disconnect')
   disconnect(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.disconnect(id, u.companyId);

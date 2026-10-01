@@ -31,7 +31,7 @@ backends/DBs in dev).
 
 **Key invariant:** the browser only ever talks to the **frontend** origin.
 The SPA calls **`/api/v1/*`** (relative, same-origin); nginx proxies it to the
-`api` service. No cross-origin, no CORS headaches, no second backend.
+`api` container. No cross-origin, no CORS headaches, no second backend.
 
 **Second invariant — no host ports.** The VPS overlay (`deploy/docker-compose.vps.yml`)
 unbinds every host port with `ports: !reset []`, so the ONLY way in is the
@@ -176,6 +176,8 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **Intermittent 502s — some requests fine, some fail instantly (incident 2026-09-28)** | Two cloudflared agents on one tunnel: a host-level `cloudflared.service` running beside the compose agent. Cloudflare splits traffic between them; the host one cannot reach any origin and 502s its share | `sudo systemctl stop cloudflared && sudo systemctl disable cloudflared`, keep only the compose container. Verify: `for i in $(seq 1 20); do curl -sS -o /dev/null -w "%{http_code} " https://app.flowop.work/; done` → expect 200 × 20. Prevention: `vps-deploy.sh` check 0e refuses to deploy in this state |
 | **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
 | **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
+| **R2 uploads return `NotImplemented 501` from apt rclone 1.60.1** | Ubuntu-packaged rclone 1.60 uploads objects but mis-handles post-upload checks against current R2 | Use `/usr/local/bin/rclone` v1.66+ (installed by `item2-r2-runner.sh`); the cron job hard-codes that binary |
+| **Intermittent 502s / tunnel split-brain** | A host `cloudflared.service` is running alongside the Compose cloudflared sidecar against the same tunnel ID, creating two connectors | Stop/disable/mask the host service; only the Compose `cloudflared` service should own the tunnel (`deploy/vps-deploy.sh` now refuses to deploy if a host service is active) |
 
 ---
 
@@ -238,7 +240,6 @@ data lived in the other. Keeping everything in **one** compose project means
 there is exactly one backend and one Postgres volume — the failure mode simply
 cannot happen.
 
-
 ---
 
 ## Reliability & Disaster Recovery (added 2026-09)
@@ -247,81 +248,113 @@ Everything below is **operational hardening** for running on one VPS. The app
 already dumps the DB every 6h into a Docker volume; these steps make backups
 survivable off-box, provable, and add disk self-healing.
 
-### A. Off-box backups to Cloudflare R2 — `deploy/backup-to-r2.sh`
+### A. Off-box R2 backups (current) — `deploy/item2-r2-runner.sh`
 
-The `postgres-backup` container keeps 7 days of dumps **on the same disk** as
-the database. If the VPS/disk is lost, those go with it. This script copies a
-fresh, **verified** dump into Cloudflare R2 so a total-host-loss is survivable.
+The production backup path is the fail-closed runner committed at
+`deploy/item2-r2-runner.sh`. It stages files under `/root` (not `/tmp`, which
+is a 1 GiB tmpfs on this VPS), requires modern rclone at
+`/usr/local/bin/rclone` (v1.66+; apt rclone 1.60 returns `NotImplemented 501`
+against current Cloudflare R2), and only installs itself / schedules cron
+**after** all five proof steps pass:
 
-It uploads through whichever transport is available (`R2_TRANSPORT=auto`):
+1. Restores the newest local dump into a throwaway Postgres DB.
+2. gzip + SHA-256 verifies the local copy before upload.
+3. Uploads to `flowops-r2:flowops-backups/backups/YYYY/MM/flowops_*.sql.gz`.
+4. Round-trip downloads from R2 and SHA-256 matches against local.
+5. Restores the R2 copy into a second throwaway DB and counts core tables.
 
-| Transport | When | Needs |
-|---|---|---|
-| `rclone` | an rclone remote is configured (root's config: `/root/.config/rclone/rclone.conf`) | nothing else — credentials stay inside the rclone config; never copy or print them |
-| `aws` | `CLOUDFLARE_R2_*` + `CLOUDFLARE_ACCOUNT_ID` are in the environment | `apt-get install -y awscli` + the R2 keys (e.g. sourced from `.env`) |
+Bucket layout is checked; unexpected root objects or unexpected files under
+`backups/` abort before writes. 30-day retention is pruned only under the
+dedicated `backups/` prefix.
 
-Install (run once, as root):
+Verified live state after the 2026-09-30 rollout (and the A.5 rotation recorded below):
+
+- Installed binary: `/usr/local/bin/flowops-backup-r2`
+- Rclone binary: `/usr/local/bin/rclone` (v1.75.1)
+- Rclone remote: `flowops-r2` (config `/root/.config/rclone/rclone.conf`, mode 600)
+- R2 bucket: `flowops-backups`, prefix `backups/`; public access disabled
+- Root cron:
+  - `15 2 * * *` daily R2 backup → `/var/log/flowops-backup.log`
+  - `0 3 * * 0` local restore proof → `/var/log/flowops-restore-verify.log`
+- First successful proof counts (local and R2 round-trip identical):
+  collections=19, companies=2, drivers=20, users=10, waybills=81.
+
+**To rotate / reconfigure rclone credentials**, use `rclone config` as root
+and edit only the `flowops-r2` remote; never paste keys into chat. If cron or
+the installed binary appears altered, re-run a freshly pinned copy of
+`deploy/item2-r2-runner.sh` after verifying its SHA-256 against the commit.
+
+#### A.5 credential least-privilege (verified 2026-09-30, closed 2026-10-01)
+
+The credential that performed the first rollout was **Admin Read & Write** — account-wide,
+not bucket-scoped — and two earlier key pairs had been pasted into chat, so they were
+burned. The rotation removed all of that; the evidence, all measured on the VPS:
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Only one remote exists | `rclone listremotes` | `flowops-r2:` only — no remote left behind with the old keys |
+| Bucket root is clean | `rclone lsf --max-depth 1 flowops-r2:flowops-backups` | `backups/` only (the backup runner's preflight rejects anything else) |
+| Credential **cannot** list buckets | `rclone lsf flowops-r2:` | `403 AccessDenied` on `ListBuckets`, exit 1 — proof the token is scoped to one bucket, not the account |
+| Read/write inside the bucket | `copyto` → `cat` → `deletefile` of `_probe-nc.txt` | write, read-back and delete all succeed; bucket left unchanged |
+| Config permissions | `stat -c '%a %U' /root/.config/rclone/rclone.conf` | `600 root` |
+| Scheduling intact | `crontab -l` | `15 2 * * *` backup, `0 3 * * 0` restore proof, both still marked `FLOWOPS_ITEM2_R2_*` |
+| Installed runner | `sha256sum /usr/local/bin/flowops-backup-r2` | `d9b84bd071172314ef0d81f0a1eaa7b75493bcbf531fa031f1eae9b2e91b6927` — byte-identical to `deploy/item2-r2-runner.sh` in this repo (verified 2026-09-30); mode `-rwxr-x--- root root`, 16222 bytes |
+| The real job works with the new key | `/usr/local/bin/flowops-backup-r2 --backup-only` | preflight, upload, R2 round-trip (gzip + SHA-256) and 30-day prune all completed |
+
+A token that cannot call `ListBuckets` cannot enumerate or write to any other bucket.
+
+**Deletion record (2026-10-01).** The dashboard token list now shows exactly two tokens,
+and the account-wide ones are gone:
+
+| Action | Token | Scope it had | Evidence |
+| --- | --- | --- | --- |
+| **Deleted** | `flowops-r2` | Admin Read & Write, all buckets — the credential of the first rollout | No longer in the Cloudflare R2 API-token list (verified 2026-10-01) |
+| **Deleted** | `FlowOps VPS Production` | Object Read & Write, all buckets (issued Aug 4) — earlier burned key pair | No longer in the list (verified 2026-10-01) |
+| Kept | `flowops-backup-vps-scoped` | Object Read & Write → `flowops-backups` — the live backup credential | Active; `rclone lsf flowops-r2:flowops-backups` still lists `backups/` after the deletions |
+| Open question | `flowops-pods-access` (user token) | Object Read & Write → `flowops-pods` | Still active; owner to confirm what uses it before the security review closes |
+
+With the two account-wide tokens deleted, nothing outside the Cloudflare dashboard can
+reach `old-pond-afc0`, and only `flowops-pods-access` reaches `flowops-pods`. The security
+review still owes an answer on whether either bucket holds live data. **A.5 is closed.**
+
+### B. Cloudflared hardening (current)
+
+Cloudflared runs as a Compose sidecar (service `cloudflared`) pinned to a dated
+release tag, **not** `:latest`, and exposes a healthcheck that queries
+`cloudflared tunnel --metrics 127.0.0.1:2000 ready`. Metrics are bound to
+loopback inside the container and no host port is published.
+
+- Image pin: `cloudflare/cloudflared:2026.9.3`
+- Command: `tunnel --no-autoupdate --protocol http2 --metrics 127.0.0.1:2000 --config /etc/cloudflared/config.yml run`
+- Restart: `always`; depends on frontend/api `service_healthy`
+- Healthcheck: interval 30s, timeout 5s, retries 3, start_period 15s
+- Host unit guard: `deploy/vps-deploy.sh` refuses to start if
+  `systemctl is-active cloudflared` reports active/activating, because a host
+  + container connector against the same tunnel ID causes split-brain and 502s.
+- Bootstrap hygiene: `deploy/setup-vps.sh` and `deploy/oracle-setup.sh` install
+  only the cloudflared CLI for diagnostics, mask the host
+  `cloudflared.service`, and no longer enable a host tunnel agent.
+
+If the host service is ever active by accident:
 ```bash
-sudo cp deploy/backup-to-r2.sh /usr/local/bin/flowops-backup-r2
-sudo chmod +x /usr/local/bin/flowops-backup-r2
-# make a dedicated bucket in the Cloudflare dashboard first, e.g. "flowops-backups"
-# daily at 02:15:
-( crontab -l 2>/dev/null; \
-  echo '15 2 * * * R2_BACKUP_BUCKET=flowops-backups /usr/local/bin/flowops-backup-r2 >> /var/log/flowops-backup.log 2>&1' \
-) | crontab -
+systemctl stop cloudflared
+systemctl disable cloudflared
+systemctl mask cloudflared
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d cloudflared
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml ps cloudflared
 ```
-Non-standard rclone layout: if the remote root already **is** the bucket, add
-`R2_RCLONE_PATH=backups` to the cron line; with several remotes, also set
-`R2_RCLONE_REMOTE=<name>`. `rclone listremotes` and `rclone lsd <remote>:` show
-the layout (read-only — they print names, never credentials).
+Rollback to the previous image tag is one
+`CLOUDFLARED_IMAGE=cloudflare/cloudflared@sha256:<prior-digest> docker compose ... up -d cloudflared`
+away; prior image remains in Docker until pruned.
 
-Run it once by hand to confirm it works (auto-picks aws or rclone):
-```bash
-R2_BACKUP_BUCKET=flowops-backups /usr/local/bin/flowops-backup-r2
-```
-It refuses to upload a dump that fails size/gzip/pg_dump-header checks — a bad
-backup never silently replaces a good one.
+### C. Legacy scripts (reference only) — `deploy/backup-to-r2.sh`, `deploy/restore-verify.sh`
 
-**Rollback:** remove the cron line and the binary:
-```bash
-crontab -l | grep -v flowops-backup-r2 | crontab -
-sudo rm -f /usr/local/bin/flowops-backup-r2
-```
-(to delete an uploaded object: `rclone delete <remote>:<path>/<file>` or
-`aws s3 rm s3://<bucket>/<key> --endpoint-url https://<account>.r2.cloudflarestorage.com`)
+The older `backup-to-r2.sh`/`restore-verify.sh` pair is kept for reference and
+uses `awscli` with `.env` credentials. Do not install it alongside the
+`item2-r2-runner.sh` cron lines — the runner preflight aborts if unmarked
+FlowOps backup jobs already exist in root's crontab.
 
-### B. PROVE the backup restores — `deploy/restore-verify.sh`
-
-An untested backup is not a backup. This restores the newest dump into a
-**throwaway** temp database, counts key tables, then drops it. It never touches
-live data.
-
-```bash
-sudo cp deploy/restore-verify.sh /usr/local/bin/flowops-restore-verify
-sudo chmod +x /usr/local/bin/flowops-restore-verify
-# verify the latest local dump right now:
-flowops-restore-verify --latest-local
-# optional: weekly automated proof (Sundays 03:00)
-( crontab -l 2>/dev/null; echo '0 3 * * 0 /usr/local/bin/flowops-restore-verify --latest-local >> /var/log/flowops-restore-verify.log 2>&1' ) | crontab -
-```
-Also prove the **offsite** copy round-trips — after a total loss, the file you
-fetch back is the R2 object, so verify THAT file too:
-```bash
-# what's actually in R2 (newest last; names sort chronologically):
-rclone lsf -R --files-only <remote>:flowops-backups/backups/ | sort | tail -3
-# pull the newest object and verify it end-to-end:
-rclone copyto <remote>:flowops-backups/backups/<YYYY>/<MM>/<newest> /tmp/r2-verify.sql.gz
-flowops-restore-verify /tmp/r2-verify.sql.gz
-rm -f /tmp/r2-verify.sql.gz
-```
-**Rollback** for the weekly cron: `crontab -l | grep -v flowops-restore-verify | crontab -`
-**Real disaster recovery** (overwrites live DB — only when actually recovering):
-```bash
-flowops-restore-verify --restore-live /path/to/dump.sql.gz --i-understand
-docker restart flowops-api-1
-```
-
-### C. Disk self-healing — `deploy/disk-guard.sh`
+### D. Disk self-healing — `deploy/disk-guard.sh`
 
 A full disk stops Postgres writes = total outage. This prunes dangling Docker
 images/build-cache at 75% and gets aggressive at 85%. It **never** prunes
@@ -335,7 +368,7 @@ sudo chmod +x /usr/local/bin/flowops-disk-guard
 flowops-disk-guard
 ```
 
-### D. Disk + health visibility
+### E. Disk + health visibility
 
 `GET /health` now includes disk usage. The in-app Health Sentinel logs a
 warning at 80% and an error at 90% (visible in `docker logs flowops-api-1` and
@@ -348,7 +381,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
 df -h /
 ```
 
-### E. Reboot survival (already configured — just verify)
+### F. Reboot survival (already configured — just verify)
 
 All services use `restart: always` in `deploy/docker-compose.vps.yml`, so the
 stack comes back after a reboot. Confirm Docker itself starts on boot:

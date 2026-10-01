@@ -106,24 +106,10 @@ services:
   # Uses Docker service names (frontend:80, driver-portal:80) since we no longer
   # expose host ports — cloudflared talks to containers over the Docker network.
   cloudflared:
-    # PINNED (F-5, incident 2026-09-28): `:latest` left the box running an
-    # outdated 2026.6.1 with no way to tell which version failed when. Pin the
-    # tag, and upgrade deliberately (see VPS-RUNBOOK §F — recreate this ONE
-    # container; never start a second tunnel agent).
     image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.9.3}
     init: true
     restart: always
-    command: tunnel --no-autoupdate --protocol http2 --metrics 0.0.0.0:2000 --config /etc/cloudflared/config.yml run
-    # F-9: the official image is DROLESS (no shell, no wget/curl) — the probe
-    # MUST be exec-form and comes from the binary itself: `cloudflared tunnel
-    # ready` curls the /ready endpoint of the metrics server configured above
-    # and exits 0 only when the tunnel holds >=1 live edge connection.
-    healthcheck:
-      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+    command: tunnel --no-autoupdate --protocol http2 --metrics 127.0.0.1:2000 --config /etc/cloudflared/config.yml run
     volumes:
       - /etc/cloudflared:/etc/cloudflared:ro
     networks: [flowops-net]
@@ -132,6 +118,12 @@ services:
         condition: service_healthy
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:

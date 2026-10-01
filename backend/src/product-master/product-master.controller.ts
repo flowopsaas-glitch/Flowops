@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, MaxLength, MinLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { ProductMasterService } from './product-master.service';
 
@@ -112,6 +114,8 @@ class CreateAliasBody {
  *
  * Tenant-scoped from the token; nothing here accepts a companyId from the body.
  */
+const PRODUCT_MASTER_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER] as const;
+
 @ApiTags('Product Master')
 @ApiBearerAuth()
 @Controller('product-master')
@@ -135,6 +139,7 @@ export class ProductMasterController {
     return this.products.listProducts(u.companyId, { status, search });
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Post('products')
   createProduct(@CurrentUser() u: AuthenticatedUser, @Body() dto: CreateProductBody) {
     return this.products.createProduct(u.companyId, actorOf(u), dto);
@@ -145,6 +150,7 @@ export class ProductMasterController {
     return this.products.getProduct(u.companyId, id);
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Patch('products/:id')
   updateProduct(
     @CurrentUser() u: AuthenticatedUser,
@@ -154,11 +160,13 @@ export class ProductMasterController {
     return this.products.updateProduct(u.companyId, actorOf(u), id, dto);
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Post('products/:id/submit')
   submitProduct(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
     return this.products.submitProduct(u.companyId, actorOf(u), id);
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Post('products/:id/approval')
   @ApiOperation({ summary: 'Approve or reject a product (approval role required)' })
   approveProduct(
@@ -180,6 +188,7 @@ export class ProductMasterController {
     return this.products.listVariants(u.companyId, { status, productId });
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Post('products/:id/variants')
   createVariant(
     @CurrentUser() u: AuthenticatedUser,
@@ -189,6 +198,7 @@ export class ProductMasterController {
     return this.products.createVariant(u.companyId, actorOf(u), id, dto);
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Patch('variants/:variantId')
   updateVariant(
     @CurrentUser() u: AuthenticatedUser,
@@ -198,6 +208,7 @@ export class ProductMasterController {
     return this.products.updateVariant(u.companyId, actorOf(u), variantId, dto);
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Post('variants/:variantId/approval')
   approveVariant(
     @CurrentUser() u: AuthenticatedUser,
@@ -207,6 +218,7 @@ export class ProductMasterController {
     return this.products.approveVariant(u.companyId, actorOf(u), variantId, dto.approve !== false, dto.note);
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Post('variants/:variantId/sku')
   @ApiOperation({ summary: 'Allocate the next tenant SKU (never reused)' })
   allocateSku(@CurrentUser() u: AuthenticatedUser, @Param('variantId') variantId: string) {
@@ -215,11 +227,13 @@ export class ProductMasterController {
 
   // ── Aliases ───────────────────────────────────────────────────────────────
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Post('aliases')
   addAlias(@CurrentUser() u: AuthenticatedUser, @Body() dto: CreateAliasBody) {
     return this.products.addAlias(u.companyId, actorOf(u), dto);
   }
 
+  @Roles(...PRODUCT_MASTER_ROLES)
   @Put('aliases/:aliasId/deactivate')
   removeAlias(@CurrentUser() u: AuthenticatedUser, @Param('aliasId') aliasId: string) {
     return this.products.removeAlias(u.companyId, actorOf(u), aliasId);

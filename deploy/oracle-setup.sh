@@ -123,33 +123,29 @@ YAML
     ok "Tunnel config found: $CONFIG_FILE"
   fi
 
-  # ── Tunnel agent: the compose stack runs it (NO host-level service) ───────
-  # deploy/docker-compose.vps.yml runs cloudflared on the compose network and
-  # is the ONLY tunnel agent. Do not install a host-level cloudflared.service:
-  # two agents on one tunnel registration split Cloudflare's traffic across
-  # both, and the host one can never deliver (it cannot resolve
-  # frontend/driver-portal, and nothing listens on localhost:8080 since the
-  # port-unbind rollout) — every request it is handed fails with a fast 502
-  # while the rest succeed (incident 2026-09-28). See deploy/VPS-RUNBOOK.md.
-  log "Preparing /etc/cloudflared for the compose tunnel agent"
+  # ── Place config/credentials where the Compose sidecar expects them ────
+  # IMPORTANT: cloudflared runs INSIDE the compose stack (service
+  # `cloudflared` in deploy/docker-compose.vps.yml). We deliberately DO NOT
+  # install or enable a host systemd service here — a host + container
+  # tunnel connected to the same tunnel ID creates duplicate connections,
+  # request flapping and 502s. The CLI binary is available for diagnostics.
+  log "Preparing /etc/cloudflared for the Compose sidecar (no host systemd service)"
 
   sudo mkdir -p /etc/cloudflared
   sudo cp "$CRED_FILE" /etc/cloudflared/
   sudo cp "$CONFIG_FILE" /etc/cloudflared/config.yml
 
-  # Fix paths in system config to use /etc/cloudflared
   TUNNEL_ID=$(basename "$CRED_FILE" .json)
   sudo sed -i "s|credentials-file:.*|credentials-file: /etc/cloudflared/${TUNNEL_ID}.json|" /etc/cloudflared/config.yml
 
-  # Older guides installed a host-level unit. Never leave it running beside
-  # the compose agent — vps-deploy.sh refuses to deploy while it exists.
-  if sudo systemctl is-active --quiet cloudflared 2>/dev/null \
-     || sudo systemctl is-enabled --quiet cloudflared 2>/dev/null; then
-    warn "Host-level cloudflared service found. Stop and disable it now:"
-    warn "    sudo systemctl stop cloudflared && sudo systemctl disable cloudflared"
-    warn "(vps-deploy.sh will refuse to deploy until it is gone.)"
-  else
-    ok "No competing host-level cloudflared — the compose stack is the only agent"
+  if command -v cloudflared >/dev/null; then
+    ok "cloudflared CLI present ($(cloudflared --version 2>&1 | head -1))"
+  fi
+  if [[ -d /run/systemd/system ]]; then
+    sudo systemctl stop cloudflared 2>/dev/null || true
+    sudo systemctl disable cloudflared 2>/dev/null || true
+    sudo systemctl mask cloudflared 2>/dev/null || true
+    ok "host cloudflared.service disabled/masked (Compose sidecar owns the tunnel)"
   fi
 fi
 

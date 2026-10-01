@@ -15,6 +15,7 @@ import {
   compareTables,
   createdTables,
   findDestructive,
+  migrationSqlFiles,
   modelTables,
   splitStatements,
   summariseStatements,
@@ -220,4 +221,18 @@ model Ignored {
   const aligned = compareTables(['Widget', 'mapped_things'], models);
   assert.deepEqual(aligned.modelsWithoutTable, []);
   assert.deepEqual(aligned.tablesWithoutModel, []);
+});
+
+test('lists migration files in the order Prisma applies them', () => {
+  const f = fixture({
+    migrations: {
+      '20240101120000_init': 'CREATE TABLE "Widget" ("id" TEXT);',
+      '20240201120000_more': 'CREATE TABLE "Gadget" ("id" TEXT);',
+    },
+  });
+  assert.deepEqual(
+    migrationSqlFiles(f.migrationsDir).map((file) => path.basename(path.dirname(file))),
+    ['20240101120000_init', '20240201120000_more'],
+  );
+  f.cleanup();
 });

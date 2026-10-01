@@ -93,26 +93,19 @@ else
   printf '\033[1;33m! %s not found — skipping tunnel target check.\033[0m\n' "$CF_CONFIG"
 fi
 
-# ── 0e. Exactly one tunnel agent ─────────────────────────────────────────────
-# The compose stack runs its own cloudflared on the compose network. Older
-# setup guides (oracle-setup.sh, ORACLE-MIGRATION.md) also installed a
-# host-level cloudflared.service. Two agents on one tunnel registration split
-# Cloudflare's traffic across both — and the host one can never deliver: it
-# cannot resolve the Docker service names, and nothing listens on
-# localhost:8080 since the port-unbind rollout. Every request it is handed
-# fails with a fast 502 while the rest succeed: a half-down site
-# (incident 2026-09-28). Refuse to deploy while a competing agent exists.
-if systemctl is-active --quiet cloudflared 2>/dev/null \
-   || systemctl is-enabled --quiet cloudflared 2>/dev/null; then
-  die "A host-level cloudflared service is active or enabled. The compose stack
-       must be the ONLY tunnel agent — two agents on one tunnel cause
-       intermittent 502s (some requests land on the host agent, which cannot
-       reach the origin). Stop and disable it first:
-           sudo systemctl stop cloudflared && sudo systemctl disable cloudflared"
+# ── 0d. Refuse to start if a host systemd cloudflared is active ──────────────
+# A host `cloudflared.service` connected to the same tunnel ID creates a second
+# tunnel connector, which splits connections and causes intermittent 502s.
+# Compose's cloudflared sidecar is the sole owner.
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files cloudflared.service >/dev/null 2>&1; then
+  CF_HOST_STATE="$(systemctl is-active cloudflared 2>/dev/null || true)"
+  if [[ "$CF_HOST_STATE" == "active" || "$CF_HOST_STATE" == "activating" ]]; then
+    die "host cloudflared.service is ${CF_HOST_STATE}. The Compose sidecar must own the tunnel.\n       Stop it with:  systemctl stop cloudflared && systemctl disable cloudflared && systemctl mask cloudflared\n       Then re-run this deploy."
+  fi
+  ok "host cloudflared.service is inactive/disabled (Compose sidecar owns the tunnel)"
 fi
-ok "Single tunnel agent (no host-level cloudflared)"
 
-# ── 0d. Merged config must publish no host ports ─────────────────────────────
+# ── 0e. Merged config must publish no host ports ─────────────────────────────
 # Renders the merged compose model and fails if any service still publishes a
 # port on a non-loopback interface. Cheap, and it runs BEFORE the stack moves.
 log "Verifying merged compose config publishes no host ports"
