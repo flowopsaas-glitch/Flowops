@@ -232,7 +232,7 @@ and edit only the `flowops-r2` remote; never paste keys into chat. If cron or
 the installed binary appears altered, re-run a freshly pinned copy of
 `deploy/item2-r2-runner.sh` after verifying its SHA-256 against the commit.
 
-#### A.5 credential least-privilege (verified 2026-09-30)
+#### A.5 credential least-privilege (verified 2026-09-30, closed 2026-10-01)
 
 The credential that performed the first rollout was **Admin Read & Write** — account-wide,
 not bucket-scoped — and two earlier key pairs had been pasted into chat, so they were
@@ -249,10 +249,21 @@ burned. The rotation removed all of that; the evidence, all measured on the VPS:
 | Installed runner | `sha256sum /usr/local/bin/flowops-backup-r2` | `d9b84bd071172314ef0d81f0a1eaa7b75493bcbf531fa031f1eae9b2e91b6927` — byte-identical to `deploy/item2-r2-runner.sh` in this repo (verified 2026-09-30); mode `-rwxr-x--- root root`, 16222 bytes |
 | The real job works with the new key | `/usr/local/bin/flowops-backup-r2 --backup-only` | preflight, upload, R2 round-trip (gzip + SHA-256) and 30-day prune all completed |
 
-A token that cannot call `ListBuckets` cannot enumerate or write to any other bucket. Before
-this rotation the account-wide token also reached `flowops-pods` and `old-pond-afc0`; the
-security review should record those bucket names as previously reachable by the VPS
-credential, and confirm they hold nothing whose exposure matters.
+A token that cannot call `ListBuckets` cannot enumerate or write to any other bucket.
+
+**Deletion record (2026-10-01).** The dashboard token list now shows exactly two tokens,
+and the account-wide ones are gone:
+
+| Action | Token | Scope it had | Evidence |
+| --- | --- | --- | --- |
+| **Deleted** | `flowops-r2` | Admin Read & Write, all buckets — the credential of the first rollout | No longer in the Cloudflare R2 API-token list (verified 2026-10-01) |
+| **Deleted** | `FlowOps VPS Production` | Object Read & Write, all buckets (issued Aug 4) — earlier burned key pair | No longer in the list (verified 2026-10-01) |
+| Kept | `flowops-backup-vps-scoped` | Object Read & Write → `flowops-backups` — the live backup credential | Active; `rclone lsf flowops-r2:flowops-backups` still lists `backups/` after the deletions |
+| Open question | `flowops-pods-access` (user token) | Object Read & Write → `flowops-pods` | Still active; owner to confirm what uses it before the security review closes |
+
+With the two account-wide tokens deleted, nothing outside the Cloudflare dashboard can
+reach `old-pond-afc0`, and only `flowops-pods-access` reaches `flowops-pods`. The security
+review still owes an answer on whether either bucket holds live data. **A.5 is closed.**
 
 ### B. Cloudflared hardening (current)
 
