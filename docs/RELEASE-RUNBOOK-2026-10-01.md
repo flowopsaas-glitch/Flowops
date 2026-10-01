@@ -97,5 +97,7 @@ Expected: both migrations `finished`, database schema is up to date. Then:
 - Application image rollout (PR #439 merge + CI images + VPS deploy) is the **separate**
   `approved: 5` item governed by `deploy/VPS-RUNBOOK.md`; the Process Control / Product
   Master feature flags stay OFF until their own gate.
-- The RBAC decision (option 2 implementation work, if chosen) is tracked from the security
-  review document and does not block the migration itself.
+- The RBAC decision is **recorded**: hybrid — option 2 enforced on the 60 sensitive write
+  routes, reads a documented exception, `RBAC_STRICT` as the later ratchet
+  (`SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md`). It does not block the migration; the open
+  follow-up is the negative permission test set.

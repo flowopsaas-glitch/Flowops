@@ -60,7 +60,29 @@ CI re-verified on the corrected scanner and the option-2 reference implementatio
 Backend job `110406865810` on `716f183` — every step success, including *Release safety
 regressions* (now covering `rbac-inventory.test.mjs`) and *Integration tests (PostgreSQL)*.
 
-## Owner decision required (this is the gate)
+## Owner decision — RECORDED 2026-10-01: hybrid
+
+The owner selected the hybrid: **option 2 for the sensitive write surfaces** (the 60 routes
+below, enforced server-side) **+ a written exception for read-only reporting routes** (option 1
+for reads)**, with option 3 (`RBAC_STRICT`) as the steady-state ratchet** once
+`npm run rbac:inventory` shows the unroled list driven down.
+
+What that means in practice:
+
+- Enforced now: every write on accounting notes/salespeople/commissions, accounting-connector
+  configuration, warehouse mutations, process-control definitions/versions/change proposals,
+  product-master catalogue writes. Attempts outside the allowed role sets get
+  `403 This action requires one of these roles…`.
+- Accepted, tracked exception: the remaining **395** routes (reads/reporting plus
+  operational actions outside the shortlist) remain tenant-authenticated but
+  role-unrestricted for this release. Exposure is intra-tenant only; tenant pinning and
+  ownership-checked writes are unaffected.
+- Ratchet: `RBAC_STRICT=true` is the mechanism that closes the exception — flip it only when
+  `rbac:inventory` reports no unroled routes, otherwise real users get locked out.
+- Still open, unaffected by this decision: the negative permission tests (below) and the
+  deployed-environment cross-tenant rows.
+
+## Options considered (the gate)
 
 1. **Accept for this release as a documented risk** — authentication, tenant isolation and
    the API-shield all hold; roles are treated as a UX/department layer, and the exposure is
@@ -77,7 +99,7 @@ regressions* (now covering `rbac-inventory.test.mjs`) and *Integration tests (Po
 for read-only reporting routes, then option 3 as the steady-state ratchet. Either way the
 decision must be an owner sign-off — it is a product risk decision, not a code defect.
 
-## Option-2 reference implementation (owner decision still required)
+## Option-2 implementation (chosen — hybrid)
 
 To make the decision concrete rather than hypothetical, option 2 is implemented on the branch
 so the owner can review the actual diff (commit alongside this document; revert is a single
@@ -112,9 +134,11 @@ Deliberate choices for the owner to confirm or adjust at merge time:
 ## Matrix rows this review touches
 
 - Role permission matrix across ADMIN / COMPANY_ADMIN / MANAGER / WAREHOUSE / DRIVER —
-  **stays NOT VERIFIED** until (a) the owner picks 1 / 2 / hybrid and (b) the negative tests
-  exist. The reference implementation narrows the question to the four confirm-or-adjust
-  choices above.
+  decision recorded (hybrid); the 60 enforced routes have positive coverage through the
+  DB-backed suite and the service-level tests, but the row **stays NOT VERIFIED until the
+  negative tests exist** (deny cases: e.g. a `WAREHOUSE` user calling a finance write must get
+  403, a `VIEWER` calling `adjustStock` must get 403). Those tests are the next security work
+  item, not a release blocker for the database migration.
 - Cross-tenant read/mutation refusal rows — code-level controls verified here (session-pinned
   tenant + ownership-checked writes) and the DB-backed suite runs green in CI, but the rows
   call for deployed-environment evidence and stay **NOT VERIFIED**.
