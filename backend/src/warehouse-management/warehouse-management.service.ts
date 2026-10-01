@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
 import { GoodsReceiptProcessBridge } from './goods-receipt-process.bridge';
+import { withCompanyId } from '../common/security/tenant.util';
 
 @Injectable()
 export class WarehouseManagementService {

@@ -112,9 +112,9 @@ credentials-file: ${CRED_FILE}
 
 ingress:
   - hostname: app.flowop.work
-    service: http://127.0.0.1:8080
+    service: http://frontend:80
   - hostname: driver.flowop.work
-    service: http://127.0.0.1:8083
+    service: http://driver-portal:80
   - service: http_status:404
 YAML
     CONFIG_FILE="$HOME/.cloudflared/config.yml"
@@ -123,48 +123,33 @@ YAML
     ok "Tunnel config found: $CONFIG_FILE"
   fi
 
-  # ── Set up systemd service ──────────────────────────────────────────────
-  log "Setting up cloudflared systemd service"
-  
-  # Copy to /etc/cloudflared for the system service
+  # ── Tunnel agent: the compose stack runs it (NO host-level service) ───────
+  # deploy/docker-compose.vps.yml runs cloudflared on the compose network and
+  # is the ONLY tunnel agent. Do not install a host-level cloudflared.service:
+  # two agents on one tunnel registration split Cloudflare's traffic across
+  # both, and the host one can never deliver (it cannot resolve
+  # frontend/driver-portal, and nothing listens on localhost:8080 since the
+  # port-unbind rollout) — every request it is handed fails with a fast 502
+  # while the rest succeed (incident 2026-09-28). See deploy/VPS-RUNBOOK.md.
+  log "Preparing /etc/cloudflared for the compose tunnel agent"
+
   sudo mkdir -p /etc/cloudflared
   sudo cp "$CRED_FILE" /etc/cloudflared/
   sudo cp "$CONFIG_FILE" /etc/cloudflared/config.yml
-  
+
   # Fix paths in system config to use /etc/cloudflared
   TUNNEL_ID=$(basename "$CRED_FILE" .json)
   sudo sed -i "s|credentials-file:.*|credentials-file: /etc/cloudflared/${TUNNEL_ID}.json|" /etc/cloudflared/config.yml
 
-  # Extract tunnel name from config
-  TUNNEL_NAME=$(grep '^tunnel:' /etc/cloudflared/config.yml | awk '{print $2}')
-
-  sudo tee /etc/systemd/system/cloudflared.service > /dev/null <<EOF
-[Unit]
-Description=Cloudflare Tunnel (FlowOps)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-TimeoutStartSec=0
-ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
-Restart=on-failure
-RestartSec=5s
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  sudo systemctl daemon-reload
-  sudo systemctl enable cloudflared
-  sudo systemctl start cloudflared
-  sleep 3
-
-  if sudo systemctl is-active --quiet cloudflared; then
-    ok "cloudflared service is running"
+  # Older guides installed a host-level unit. Never leave it running beside
+  # the compose agent — vps-deploy.sh refuses to deploy while it exists.
+  if sudo systemctl is-active --quiet cloudflared 2>/dev/null \
+     || sudo systemctl is-enabled --quiet cloudflared 2>/dev/null; then
+    warn "Host-level cloudflared service found. Stop and disable it now:"
+    warn "    sudo systemctl stop cloudflared && sudo systemctl disable cloudflared"
+    warn "(vps-deploy.sh will refuse to deploy until it is gone.)"
   else
-    warn "cloudflared failed to start. Check: sudo journalctl -u cloudflared -n 20"
+    ok "No competing host-level cloudflared — the compose stack is the only agent"
   fi
 fi
 
