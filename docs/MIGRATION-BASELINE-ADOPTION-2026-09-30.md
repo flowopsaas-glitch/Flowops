@@ -1,8 +1,8 @@
 # Migration baseline adoption — 2026-09-30
 
-**Status:** repository change prepared and locally verified. Disposable-clone verification on the
-VPS runs next; results are recorded in the verification log below before any staging or production
-step. No database has been modified by this change.
+**Status:** repository change prepared and verified on disposable clones — see the verification
+log below (rows 1–6), including the fresh-data rehearsal of 2026-10-01. Ready for the
+staged-approval steps in the conclusion. No database has been modified by this change.
 
 ## The problem, measured
 
@@ -197,6 +197,7 @@ rebaselined file.
 | 3. Fresh replay (`migrate deploy` on an empty database) | **passed** — 2 migrations applied, `migrate diff --exit-code` 0, counts `133\|72\|362\|150`, rehearsal verdict `already-applied` | 2026-09-30 |
 | 4. Adoption path on a restored clone (`resolve --applied`, `migrate deploy`, inspect) | **passed** — only the delta was applied by `migrate deploy`, counts `133\|72\|362\|150`, tables 116 → 133 (+17, −0), row-count fingerprint identical over the 116 pre-existing tables (`f29c1b4759c22bfcf0a13ad4668e6289`), verdict `drift` → `already-applied`, both ledger rows finished | 2026-09-30 |
 | 5. End-to-end script re-run after fixes | **passed** — `backend/scripts/verify-baseline-adoption.sh` on worktree `48cf401`: 20 checks, 0 failed | 2026-09-30 |
+| 6. Fresh-data rehearsal (`approved: baseline-adoption-rehearsal`) | **passed** — `verify-baseline-adoption.sh` on worktree `ce75d1e` against the newest local dump `flowops_20261001_060048.sql.gz` (local dumps land every 6 h; the 02:15 cron is the R2 upload job): 20 checks, 0 failed, fresh `applied=2`, drift exits 0, counts `133\|72\|362\|150` both directions, adoption +17 / −0 tables, pre-existing row fingerprint `80285d27bf8fd2e9f817e0ed83f7237d` unchanged across adoption, verdicts `already-applied` / `drift` → `already-applied` | 2026-10-01 |
 
 ### Conclusion
 
@@ -216,7 +217,8 @@ fresh database and the clone (`48cf401`). The last one mattered: the tool's verd
 operator acts on, so a false `drift` on a correct database would have blocked the adoption that
 this document shows is safe.
 
-**Nothing in this work has touched staging or production.** The next steps — a rehearsal against a
-staging clone, the migration job in a deployed environment, and the release gates in
-`docs/END-TO-END-RELEASE-READINESS-MATRIX-2026-09-27.md` — each need the operator's explicit
+**Nothing in this work has touched staging or production.** The staging-clone rehearsal step is
+closed by log row 6 (fresh-data disposable clone, 2026-10-01). What remains — the migration job
+in a deployed environment, and the release gates in
+`docs/END-TO-END-RELEASE-READINESS-MATRIX-2026-09-27.md` — each needs the operator's explicit
 approval and a backup taken immediately beforehand.
