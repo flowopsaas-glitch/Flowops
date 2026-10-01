@@ -82,6 +82,7 @@ if [ "$HEAP_MB" -gt 3072 ]; then HEAP_MB=3072; fi
 
 # ── Preconditions ────────────────────────────────────────────────────────────
 note "== preconditions =="
+note "worktree revision: $(git -C "$WORKTREE" rev-parse HEAD 2>/dev/null || echo unknown)"
 note "node heap limit: ${HEAP_MB} MB (MemAvailable ${AVAIL_MB} MB)"
 [ -f "$WORKTREE/backend/package.json" ] \
   && ok "worktree present at $WORKTREE" \
