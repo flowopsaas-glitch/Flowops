@@ -205,8 +205,18 @@ jobs:
           npm run migrations:test
           npm run migrations:rehearsal:test
 
+      # Release-safety regressions: policy tests over the CI workflow, the
+      # Dockerfile and the migration path (no `migrate dev` fallback in CI,
+      # deploy-only when migrations exist, fixture push never mistaken for
+      # migration evidence). Reinstated after the #436 squash-merge dropped it.
+      - name: Release safety regressions (no database connection)
+        run: npm run release:safety:test
+
+      # Deploy-only: no `|| npx prisma migrate dev` fallback. A failed deploy is
+      # a broken migration and must fail the job — `migrate dev` would generate
+      # and apply SQL in CI and hide it. (Enforced by release-startup.test.mjs.)
       - name: Run migrations
-        run: npx prisma migrate deploy || npx prisma migrate dev
+        run: npx prisma migrate deploy
 
       # The integration database is now prepared by the migrations above. This
       # guard proves the migrations really do reconstruct prisma/schema.prisma,
