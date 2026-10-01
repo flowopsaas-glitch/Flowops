@@ -50,6 +50,7 @@ done
 
 FAILURES=0
 CHECKS=0
+FAIL_DETAIL=""
 note() { printf '%s\n' "$*"; }
 ok()   { CHECKS=$((CHECKS + 1)); printf '  PASS  %s\n' "$*"; }
 bad()  { CHECKS=$((CHECKS + 1)); printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
@@ -98,6 +99,7 @@ if TOOL_OUT="$(run_node 'npm run migrations:verify && npm run migrations:test &&
   ok "migrations:verify + migrations:test + migrations:rehearsal:test"
 else
   bad "migration tooling gates failed"
+  FAIL_DETAIL="$TOOL_OUT"
   printf '%s\n' "$TOOL_OUT" | tail -15
 fi
 
@@ -107,6 +109,7 @@ if DEPLOY_OUT="$(run_node 'npx prisma generate && npx prisma migrate deploy' 2>&
   ok "prisma generate + migrate deploy built the schema"
 else
   bad "migrate deploy failed"
+  FAIL_DETAIL="$DEPLOY_OUT"
   printf '%s\n' "$DEPLOY_OUT" | tail -15
   note "stopping here: the suite must run against a migrations-built database"
   note ""
@@ -121,6 +124,7 @@ if INT_OUT="$(run_node 'set -o pipefail; npm run test:integration -- --json --ou
   ok "npm run test:integration"
 else
   bad "npm run test:integration failed"
+  FAIL_DETAIL="$INT_OUT"
   printf '%s\n' "$INT_OUT" | tail -25
 fi
 
@@ -135,6 +139,11 @@ grep -E '^(Test Suites|Tests):' "$WORKTREE/backend/integration-tests.log" 2>/dev
 note ""
 note "== summary =="
 note "checks: $CHECKS run, $FAILURES failed"
+if [ "$FAILURES" -gt 0 ] && [ -n "$FAIL_DETAIL" ]; then
+  note ""
+  note "== failure detail (tail of the failing step) =="
+  printf '%s\n' "$FAIL_DETAIL" | tail -25
+fi
 note "integration log: $REPORT_DIR/integration-tests.log (kept as evidence)"
 note ""
 if [ "$FAILURES" -eq 0 ]; then
