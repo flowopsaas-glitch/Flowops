@@ -157,6 +157,27 @@ describe('recording a reading', () => {
     expect(within(dialog).getByText(/needed to check the limit/)).toBeTruthy();
   });
 
+  it('tells the user that a different axle count can only tighten the check (the smaller of the registered and entered count applies)', async () => {
+    const { dialog } = await openModal();
+    expect(within(dialog).queryByText(/Registered with/)).toBeNull(); // no wagon chosen yet
+    fireEvent.change(within(dialog).getByLabelText('Wagon'), { target: { value: 'MNR-000001' } });
+    expect(within(dialog).getByText(/Registered with 4 axles\. If you enter a different number the smaller one is used/)).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText('Wagon'), { target: { value: 'MNR-000002' } }); // none registered
+    expect(within(dialog).queryByText(/Registered with/)).toBeNull();
+  });
+
+  it('shows the server\'s note when it ignored a larger axle count', async () => {
+    A.recordWeighbridgeReading.mockResolvedValue(h.verdict({
+      evaluation: { status: 'OVERLOADED', allowedTonnes: 80, excessTonnes: 10, reason: '90 t on 4 axle(s) exceeds the 80 t allowed (20 t per axle) by 10 t. The 8 axles entered exceed the 4 registered for MNR-000001, so the registered count was used — correct the wagon register if it is wrong.' },
+    }) as never);
+    const { dialog } = await openModal();
+    fireEvent.change(within(dialog).getByLabelText('Wagon'), { target: { value: 'MNR-000001' } });
+    fireEvent.change(within(dialog).getByLabelText('Gross mass'), { target: { value: '90' } });
+    fireEvent.change(within(dialog).getByLabelText('Axles'), { target: { value: '8' } });
+    submit(dialog);
+    expect((await screen.findByTestId('weighbridge-verdict')).textContent).toContain('so the registered count was used');
+  });
+
   it('sends the mass and what was entered — blanks omitted — and NEVER a verdict', async () => {
     const { dialog } = await openModal();
     fireEvent.change(within(dialog).getByLabelText('Wagon'), { target: { value: 'MNR-000001' } });

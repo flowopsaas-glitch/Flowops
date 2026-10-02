@@ -25,6 +25,8 @@ const FUTURE_SKEW_MS = 5 * 60_000;
  * caller enters with the reading (the wagon's own rating, recorded as MANUAL) — when both exist the STRICTER applies, so a
  * higher entered figure can never relax a verified limit. With neither, the reading is UNVERIFIED: it never passes and never holds.
  *
+ * The same holds for the axle count: when both a registered and an entered count exist the SMALLER applies.
+ *
  * Readings are append-only. The hold is derived from the most recently RECORDED reading of each wagon, so correcting an
  * overload is simply weighing the wagon again within its limit; there is no manual override of a hold.
  */
@@ -99,8 +101,18 @@ export class RailWeighbridgeService {
       maxAxleLoadTonnes = manualLimit;
       limitSource = 'MANUAL';
     }
-    const axles = dto.axles ?? wagon.axles ?? null;
-    const evaluation = evaluateOverload({ actualTonnes: dto.actualTonnes, axles, maxAxleLoadTonnes });
+    // The axle count follows the same rule as the limit: it may TIGHTEN the check, never relax it. Allowed mass is
+    // limit × axles, so typing a larger count than the wagon is registered with would raise the allowance and clear a
+    // genuine overload. When both are known the SMALLER applies; an entered count is only believed outright for a wagon
+    // that has none registered. (A wrong register is corrected by re-registering the wagon, which is audited.)
+    const registeredAxles = wagon.axles ?? null;
+    const enteredAxles = dto.axles ?? null;
+    const axles = registeredAxles !== null && enteredAxles !== null ? Math.min(registeredAxles, enteredAxles) : enteredAxles ?? registeredAxles;
+    const axlesOverridden = registeredAxles !== null && enteredAxles !== null && enteredAxles > registeredAxles;
+    const judged = evaluateOverload({ actualTonnes: dto.actualTonnes, axles, maxAxleLoadTonnes });
+    const evaluation = axlesOverridden
+      ? { ...judged, reason: `${judged.reason} The ${enteredAxles} axles entered exceed the ${registeredAxles} registered for ${wagonNumber}, so the registered count was used — correct the wagon register if it is wrong.` }
+      : judged;
 
     const reading = await this.prisma.railWeighbridgeReading.create({
       data: {
@@ -111,7 +123,7 @@ export class RailWeighbridgeService {
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.WEIGHBRIDGE_READING_RECORDED, { type: RAIL_AUDIT_TARGET.WEIGHBRIDGE_READING, id: reading.id, name: `${consignment.consignmentNumber} ${wagonNumber}` }, {
       consignmentId: consignment.id, consignmentNumber: consignment.consignmentNumber, wagonNumber, actualTonnes: dto.actualTonnes, axles, maxAxleLoadTonnes, limitSource,
-      status: evaluation.status, excessTonnes: evaluation.excessTonnes,
+      status: evaluation.status, excessTonnes: evaluation.excessTonnes, axlesEntered: enteredAxles, axlesRegistered: registeredAxles, axlesOverridden,
     });
 
     // The hold follows the LATEST reading of each wagon.

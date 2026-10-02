@@ -146,6 +146,7 @@ function RecordModal({ consignment, wagons, onClose, onDone }: { consignment: Ra
           </Field>
           <Field label={`Axles${wagon?.axles ? "" : " (needed to check the limit)"}`}>
             <input className={inputCls} inputMode="numeric" value={f.axles} onChange={(e) => set("axles", e.target.value)} aria-label="Axles" placeholder={wagon?.axles ? String(wagon.axles) : "e.g. 4"} />
+            {wagon?.axles ? <span className="mt-1 block text-[11px] text-slate-500">Registered with {wagon.axles} axles. If you enter a different number the smaller one is used — it can tighten the check, never relax it.</span> : null}
             {err("axles") && <span role="alert" className="mt-1 block text-[11px] text-rose-300">{errors.axles}</span>}
           </Field>
           <Field label="Maximum axle load (t) — optional">

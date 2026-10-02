@@ -165,7 +165,7 @@ describe('where the limit comes from', () => {
     expect(out.hold.held).toBe(true);
   });
 
-  it('the axle count: the request wins, then the wagon\'s registered count; with neither the reading is UNVERIFIED', async () => {
+  it('the axle count: the registered count; an entered one can only be SMALLER (stricter); with neither the reading is UNVERIFIED', async () => {
     const h = make({ verifiedCorridor: { limit: 20 } });
     const c = h.seedConsignment({ wagons: [wagon('W1', 4), wagon('W2', null)] });
     expect((await h.svc.recordReading('A', dto(c.id, { actualTonnes: 70 }) as any, MANAGER, NOW)).reading.axles).toBe(4);
@@ -173,6 +173,61 @@ describe('where the limit comes from', () => {
     const none = await h.svc.recordReading('A', dto(c.id, { wagonNumber: 'W2', actualTonnes: 70 }) as any, MANAGER, NOW);
     expect(none.reading).toMatchObject({ status: 'UNVERIFIED', axles: null });
     expect(none.evaluation.reason).toMatch(/axle count/);
+  });
+
+  describe('an entered axle count can NEVER relax the check (allowed mass is limit × axles, so a bigger count would clear an overload)', () => {
+    it('more axles than the wagon is registered with: the registered count is used, and the reading says so', async () => {
+      const h = make({ verifiedCorridor: { limit: 20 } });
+      const c = h.seedConsignment({ wagons: [wagon('W1', 4)] }); // 20 t × 4 = 80 t allowed
+      const out = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 90, axles: 8 }) as any, MANAGER, NOW); // 8 axles would allow 160 t
+      expect(out.reading).toMatchObject({ axles: 4, allowedTonnes: 80, excessTonnes: 10, status: 'OVERLOADED' });
+      expect(out.hold.held).toBe(true);
+      expect(out.evaluation.reason).toContain('The 8 axles entered exceed the 4 registered for W1, so the registered count was used');
+      expect(out.evaluation.reason).toMatch(/correct the wagon register/);
+    });
+
+    it('typing a bigger count into a RE-WEIGH does not lift a hold that the real axle count would keep', async () => {
+      const h = make({ verifiedCorridor: { limit: 20 } });
+      const c = h.seedConsignment({ wagons: [wagon('W1', 4)] });
+      await h.svc.recordReading('A', dto(c.id, { wagonNumber: 'W1', actualTonnes: 90 }) as any, MANAGER, NOW); // 90 t > 20 × 4 = 80 t → held
+      expect(h.consignment(c.id).holdStatus).toBe('HOLD_FOR_LOAD_ADJUSTMENT');
+      const later = new Date(NOW.getTime() + 60 * MIN);
+      jest.useFakeTimers().setSystemTime(later);
+      try {
+        const out = await h.svc.recordReading('A', dto(c.id, { wagonNumber: 'W1', actualTonnes: 90, axles: 12 }) as any, MANAGER, later);
+        expect(out.reading.status).toBe('OVERLOADED');
+        expect(out.hold).toMatchObject({ held: true, changed: false });
+      } finally {
+        jest.useRealTimers();
+      }
+      expect(h.consignment(c.id).holdStatus).toBe('HOLD_FOR_LOAD_ADJUSTMENT');
+    });
+
+    it('the same count, or fewer, is accepted without comment (fewer only tightens)', async () => {
+      const h = make({ verifiedCorridor: { limit: 20 } });
+      const c = h.seedConsignment({ wagons: [wagon('W1', 4)] });
+      const same = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 70, axles: 4 }) as any, MANAGER, NOW);
+      expect(same.reading.axles).toBe(4);
+      expect(same.evaluation.reason).not.toMatch(/registered count was used/);
+      const fewer = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 70, axles: 3 }) as any, MANAGER, NOW);
+      expect(fewer.reading).toMatchObject({ axles: 3, allowedTonnes: 60, status: 'OVERLOADED' });
+      expect(fewer.evaluation.reason).not.toMatch(/registered count was used/);
+    });
+
+    it('a wagon with NO registered count is judged on the entered one (the only information there is)', async () => {
+      const h = make({ verifiedCorridor: { limit: 20 } });
+      const c = h.seedConsignment({ wagons: [wagon('W2', null)] });
+      const out = await h.svc.recordReading('A', dto(c.id, { wagonNumber: 'W2', actualTonnes: 70, axles: 4 }) as any, MANAGER, NOW);
+      expect(out.reading).toMatchObject({ axles: 4, allowedTonnes: 80, status: 'WITHIN_LIMIT' });
+    });
+
+    it('the audit entry records what was entered, what was registered and whether the entry was overridden', async () => {
+      const h = make({ verifiedCorridor: { limit: 20 } });
+      const c = h.seedConsignment({ wagons: [wagon('W1', 4)] });
+      await h.svc.recordReading('A', dto(c.id, { actualTonnes: 90, axles: 8 }) as any, MANAGER, NOW);
+      const entry = h.audit.record.mock.calls.map(([e]: any) => e).find((e: any) => e.action === RAIL_AUDIT_ACTION.WEIGHBRIDGE_READING_RECORDED);
+      expect(entry.metadata).toMatchObject({ axles: 4, axlesEntered: 8, axlesRegistered: 4, axlesOverridden: true });
+    });
   });
 
   it('the corridor is found by alias, route name or code, exactly (no fuzzy matching)', async () => {

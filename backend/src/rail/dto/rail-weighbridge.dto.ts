@@ -7,7 +7,10 @@ export class RecordWeighbridgeReadingDto {
   @RawString() @IsString() @MinLength(1) @MaxLength(60) wagonNumber!: string;
   /** Gross mass of the wagon on the weighbridge, in tonnes (a single wagon cannot exceed 1000 t). */
   @RawNumber() @IsNumber() @Min(0.001) @Max(1000) actualTonnes!: number;
-  /** Defaults to the wagon's registered axle count. */
+  /**
+   * Defaults to the wagon's registered axle count. When the wagon has one AND this is given, the SMALLER applies: an entered count
+   * can tighten the check (a wagon registered with too many axles) but never relax it.
+   */
   @RawNumber() @IsOptional() @IsInt() @Min(1) @Max(12) axles?: number;
   /**
    * A limit to judge THIS reading against (e.g. the wagon's own rating). The corridor's VERIFIED maximum axle load is
