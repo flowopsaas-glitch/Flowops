@@ -41,6 +41,7 @@ import {
 import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../contexts/AuthContext";
 import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
+import ChangeRequestModal from "./rail/ChangeRequestModal";
 import {
   buildHandshakeCsv,
   buildHandshakeDossierHtml,
@@ -122,6 +123,7 @@ export default function RailHandshake() {
   const [busy, setBusy] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [showChange, setShowChange] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -287,6 +289,7 @@ export default function RailHandshake() {
           generatedBy={generatedBy}
           onClose={() => setSelected(null)}
           onLogDeviation={() => setShowLog(true)}
+          onCancelReschedule={() => setShowChange(true)}
           onIssue={() => act("issue", () => issueHandshakeReport(selected.id), "Report issued for review")}
           onSignOff={() => {
             const name = window.prompt("Sign off as (name / role):");
@@ -330,13 +333,23 @@ export default function RailHandshake() {
           }
         />
       )}
+
+      {/* Annexure 20a / 20b cancel / reschedule — also logged in this report as a deviation (handshakeReportId) */}
+      {showChange && selected && canWrite && (
+        <ChangeRequestModal
+          context={{ handshakeReportId: selected.id }}
+          trainSlotRefSuggestions={Array.from(new Set((selected.deviations ?? []).map((d) => d.trainSlotRef).filter(Boolean)))}
+          onClose={() => setShowChange(false)}
+          onCreated={() => { setShowChange(false); void load(); void openReport(selected.id); }}
+        />
+      )}
     </div>
   );
 }
 
 // ── Report detail drawer ──────────────────────────────────────────────────────
 function ReportDrawer({
-  report, busy, canWrite, canSign, generatedBy, onClose, onLogDeviation, onIssue, onSignOff, onRunEscalation, onReview, onResolve, onDispute,
+  report, busy, canWrite, canSign, generatedBy, onClose, onLogDeviation, onCancelReschedule, onIssue, onSignOff, onRunEscalation, onReview, onResolve, onDispute,
 }: {
   report: HandshakeReport;
   busy: string;
@@ -347,6 +360,8 @@ function ReportDrawer({
   generatedBy?: string;
   onClose: () => void;
   onLogDeviation: () => void;
+  /** Open the Annexure 20a / 20b cancel / reschedule request for this report. */
+  onCancelReschedule: () => void;
   onIssue: () => void;
   onSignOff: () => void;
   onRunEscalation: () => void;
@@ -397,6 +412,12 @@ function ReportDrawer({
             <button onClick={onLogDeviation}
               className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/[0.07]">
               <Plus className="h-3.5 w-3.5" /> Log deviation
+            </button>
+          )}
+          {canLogDeviation && (
+            <button onClick={onCancelReschedule} data-testid="handshake-cancel-reschedule"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25">
+              Cancel / reschedule (20a · 20b)
             </button>
           )}
           {canWrite && report.status === "DRAFT" && (

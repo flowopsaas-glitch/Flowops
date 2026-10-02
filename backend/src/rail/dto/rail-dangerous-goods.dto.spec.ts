@@ -37,6 +37,10 @@ describe.each([
     await expect(run(dto, { ...base, unNumber })).resolves.toBeDefined();
   });
 
+  it.each([['+27 11 555 0100'], ['011 555 0100'], ['(011) 555-0100'], ['+27 (0) 11 555 0100']])('accepts the emergency contact written as "%s"', async (emergencyContact24h) => {
+    await expect(run(dto, { ...base, emergencyContact24h })).resolves.toBeDefined();
+  });
+
   it.each([['1'], ['2.1'], ['6.1'], ['1.4S'], ['1.4s'], ['9'], ['5.2']])('accepts IMDG class %s', async (imdgClass) => {
     await expect(run(dto, { ...base, imdgClass })).resolves.toBeDefined();
   });

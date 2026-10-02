@@ -1,7 +1,25 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
-const h = vi.hoisted(() => ({ auth: { user: { role: 'MANAGER', email: 'm@x.co' } as Record<string, unknown> } }));
+const h = vi.hoisted(() => {
+  // ToastProvider's real showToast is a stable useCallback. A mock that returns a NEW function on every render would make
+  // RailOperations.load (which depends on it) change identity each render and reload forever — so keep it stable.
+  const showToast = vi.fn();
+  const consignment = (over: Record<string, unknown> = {}) => ({
+    id: 'c1', consignmentNumber: 'RAIL-2026-00007', status: 'LOADING', commodity: 'Petrol', corridor: 'Ore', serviceRef: 'SVC-77', plannedDeparture: '2026-10-05T04:00:00.000Z',
+    createdAt: '2026-10-01T00:00:00Z', tonnage: 1200, ...over,
+  });
+  return {
+    showToast,
+    auth: { user: { role: 'MANAGER', email: 'm@x.co' } as Record<string, unknown> },
+    consignment,
+    state: {
+      rows: [] as unknown[], full: consignment() as Record<string, unknown>,
+      scan: null as unknown,
+      readiness: { required: true, ready: false, dgWagons: 1, missing: [], invalid: [], summary: 'consignment: missing Placard reference', blocksDeparture: true, consignmentNumber: 'RAIL-2026-00007' } as Record<string, unknown>,
+    },
+  };
+});
 
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children?: unknown }) => <div data-testid="map">{children as never}</div>,
@@ -9,30 +27,62 @@ vi.mock('react-leaflet', () => ({
 }));
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => h.auth }));
-vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: h.showToast }) }));
 vi.mock('../api/railApi', () => ({
   getRailOverview: vi.fn().mockResolvedValue({ generatedAt: '', metrics: { activeConsignments: 0, inTransit: 0, atInterchange: 0, wagonsInTransit: 0, totalWagons: 0, tonnageMoved: 0, tonnagePlanned: 0, onTimePct: null, avgTransitHours: null, avgInterchangeDwellHours: null, atRisk: 0 }, byCorridor: [] }),
-  listConsignments: vi.fn().mockResolvedValue([]),
-  getConsignment: vi.fn(), advanceConsignment: vi.fn(),
+  listConsignments: vi.fn(async () => h.state.rows),
+  getConsignment: vi.fn(async () => h.state.full), advanceConsignment: vi.fn(), updateConsignment: vi.fn(),
+}));
+vi.mock('../api/railChangeApi', () => ({
+  getPossessionConflicts: vi.fn(async () => { if (h.state.scan === 'fail') throw new Error('not entitled'); return h.state.scan; }),
+  getDangerousGoods: vi.fn(async () => h.state.readiness),
 }));
 vi.mock('./rail/SlotCompliancePanel', () => ({
   default: ({ canWrite, canSign }: { canWrite: boolean; canSign: boolean }) => <div data-testid="slots-panel">{`write=${canWrite} sign=${canSign}`}</div>,
 }));
+vi.mock('./rail/ChangesPossessionsPanel', () => ({
+  default: ({ canWrite, canSign }: { canWrite: boolean; canSign: boolean }) => <div data-testid="changes-panel">{`write=${canWrite} sign=${canSign}`}</div>,
+}));
+// The real modal is tested in rail/ChangeRequestModal.test.tsx; here we only check how the drawer opens it.
+vi.mock('./rail/ChangeRequestModal', () => ({
+  default: ({ context, onClose, onCreated }: { context: unknown; onClose: () => void; onCreated: (r: unknown) => void }) => (
+    <div role="dialog" aria-label="change-modal-stub">
+      <pre data-testid="change-context">{JSON.stringify(context)}</pre>
+      <button onClick={() => onCreated({})}>stub-created</button>
+      <button onClick={onClose}>stub-close</button>
+    </div>
+  ),
+}));
 
+import { getConsignment } from '../api/railApi';
 import RailOperations from './RailOperations';
 
 const open = async (role: string) => {
   h.auth.user = { role, email: 'u@x.co' };
   render(<RailOperations />);
-  return screen.findByRole('tablist', { name: /Rail operations sections/ });
+  const tabs = await screen.findByRole('tablist', { name: /Rail operations sections/ });
+  // let the first load finish, so no state update lands after the test's assertions
+  const table = await screen.findByRole('table');
+  await waitFor(() => expect(table.querySelector('.animate-spin')).toBeNull());
+  return tabs;
 };
 
-describe('RailOperations — Slot Applications & Compliance tab', () => {
-  it('has a tab bar and starts on Consignments', async () => {
+beforeEach(() => {
+  vi.clearAllMocks();
+  h.state.rows = [];
+  h.state.full = h.consignment();
+  h.state.scan = null;
+  h.state.readiness = { required: true, ready: false, dgWagons: 1, missing: [], invalid: [], summary: 'consignment: missing Placard reference', blocksDeparture: true, consignmentNumber: 'RAIL-2026-00007' };
+});
+
+describe('RailOperations — tabs', () => {
+  it('has a tab bar of three tabs and starts on Consignments', async () => {
     await open('MANAGER');
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Changes & Possessions']);
     expect(screen.getByRole('tab', { name: 'Consignments' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }).getAttribute('aria-selected')).toBe('false');
     expect(screen.queryByTestId('slots-panel')).toBeNull();
+    expect(screen.queryByTestId('changes-panel')).toBeNull();
     expect(await screen.findByText(/Corridor Breakdown|Search consignment|SADC Rail Corridors/)).toBeTruthy();
   });
 
@@ -41,8 +91,12 @@ describe('RailOperations — Slot Applications & Compliance tab', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
     expect(screen.getByTestId('slots-panel')).toBeTruthy();
     expect(screen.queryByPlaceholderText(/Search consignment/)).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Changes & Possessions' }));
+    expect(screen.getByTestId('changes-panel')).toBeTruthy();
+    expect(screen.queryByTestId('slots-panel')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Consignments' }));
     expect(screen.queryByTestId('slots-panel')).toBeNull();
+    expect(screen.queryByTestId('changes-panel')).toBeNull();
     expect(screen.getByPlaceholderText(/Search consignment/)).toBeTruthy();
   });
 
@@ -50,9 +104,141 @@ describe('RailOperations — Slot Applications & Compliance tab', () => {
     ['MANAGER', 'write=true sign=true'],
     ['DISPATCH', 'write=true sign=false'],
     ['VIEWER', 'write=false sign=false'],
-  ])('passes the right capabilities for %s', async (role, expected) => {
+  ])('passes the right capabilities for %s to both panels', async (role, expected) => {
     await open(role);
     fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
     expect(screen.getByTestId('slots-panel').textContent).toBe(expected);
+    fireEvent.click(screen.getByRole('tab', { name: 'Changes & Possessions' }));
+    expect(screen.getByTestId('changes-panel').textContent).toBe(expected);
+  });
+});
+
+describe('RailOperations — possession-conflict banner', () => {
+  const clash = {
+    conflicts: [{ windowId: 'p1', windowTitle: 'Ore line re-sleepering', windowKind: 'AD_HOC_EMERGENCY', corridorCode: 'COR-ORE', consignmentId: 'c1', consignmentNumber: 'RAIL-2026-00007', overlapStart: '2026-10-05T00:00:00Z', overlapEnd: '2026-10-05T12:00:00Z', overlapHours: 12, severity: 'HARD' }],
+    unscheduled: [], unresolved: [], consignmentsChecked: 1,
+  };
+
+  it('shows the clash at the top of the Consignments tab, and its button takes the user to the possession windows', async () => {
+    h.state.scan = clash;
+    await open('MANAGER');
+    const banner = await screen.findByTestId('possession-banner');
+    expect(banner.textContent).toMatch(/Possession conflict — 1 consignment overlaps 1 possession window/);
+    expect(banner.textContent).toMatch(/RAIL-2026-00007/);
+    fireEvent.click(within(banner).getByRole('button', { name: 'View possession windows' }));
+    expect(screen.getByTestId('changes-panel')).toBeTruthy();
+  });
+
+  it('no banner when nothing clashes', async () => {
+    h.state.scan = { conflicts: [], unscheduled: [], unresolved: [], consignmentsChecked: 4 };
+    await open('MANAGER');
+    await screen.findByPlaceholderText(/Search consignment/);
+    expect(screen.queryByTestId('possession-banner')).toBeNull();
+  });
+
+  it('if the scan cannot be loaded (e.g. not entitled) the page still works and shows no banner — it does not pretend to be "all clear" either', async () => {
+    h.state.scan = 'fail';
+    await open('MANAGER');
+    expect(await screen.findByPlaceholderText(/Search consignment/)).toBeTruthy();
+    expect(screen.queryByTestId('possession-banner')).toBeNull();
+    expect(screen.queryByText(/all clear/i)).toBeNull();
+  });
+
+  it('the banner is not shown on the other tabs', async () => {
+    h.state.scan = clash;
+    await open('MANAGER');
+    await screen.findByTestId('possession-banner');
+    fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
+    expect(screen.queryByTestId('possession-banner')).toBeNull();
+  });
+});
+
+describe('RailOperations — dangerous-goods badges', () => {
+  it('the list has a Dangerous goods column: red with the gap count, green when ready, a dash when none', async () => {
+    h.state.rows = [
+      h.consignment({ id: 'a', consignmentNumber: 'A-1', dg: { required: true, ready: false, problems: 2 } }),
+      h.consignment({ id: 'b', consignmentNumber: 'B-1', dg: { required: true, ready: true, problems: 0 } }),
+      h.consignment({ id: 'c', consignmentNumber: 'C-1', dg: { required: false, ready: true, problems: 0 } }),
+    ];
+    await open('MANAGER');
+    expect(await screen.findByRole('columnheader', { name: 'Dangerous goods' })).toBeTruthy();
+    const rowOf = (n: string) => within(screen.getByText(n).closest('tr') as HTMLElement);
+    expect(rowOf('A-1').getByText('DG · 2 gaps').className).toMatch(/rose/);
+    expect(rowOf('B-1').getByText('DG ready').className).toMatch(/emerald/);
+    expect(rowOf('C-1').getByLabelText('No dangerous goods')).toBeTruthy();
+  });
+});
+
+describe('RailOperations — consignment drawer', () => {
+  const openDrawer = async (role = 'MANAGER') => {
+    h.state.rows = [h.consignment({ dg: { required: true, ready: false, problems: 1 } })];
+    await open(role);
+    // scoped to the table: a possession banner above it may also name the consignment
+    fireEvent.click(await within(await screen.findByRole('table')).findByText('RAIL-2026-00007'));
+    await screen.findByTestId('dg-section');
+  };
+
+  it('shows the dangerous-goods section with the departure-blocked banner', async () => {
+    await openDrawer();
+    expect(await screen.findByText('Departure is blocked — dangerous-goods details are incomplete')).toBeTruthy();
+  });
+
+  it('shows a flagged wagon\'s UN number and class in the wagon register', async () => {
+    h.state.full = h.consignment({ wagons: [
+      { id: 'w1', wagonNumber: 'TANK-1', type: 'TANK', loadedTonnes: 60, isDangerousGoods: true, unNumber: 'UN1203', imdgClass: '3' },
+      { id: 'w2', wagonNumber: 'FLAT-1', type: 'FLAT', loadedTonnes: 40, isDangerousGoods: false },
+    ] });
+    await openDrawer();
+    expect(screen.getByText('UN1203 · class 3')).toBeTruthy();
+    expect(within(screen.getByText('FLAT-1').closest('tr') as HTMLElement).queryByText(/UN|DG/)).toBeNull();
+  });
+
+  it('shows the possession banner for THIS consignment only', async () => {
+    h.state.scan = {
+      conflicts: [
+        { windowId: 'p1', windowTitle: 'Window for this one', windowKind: 'AD_HOC_EMERGENCY', corridorCode: 'COR-ORE', consignmentId: 'c1', consignmentNumber: 'RAIL-2026-00007', overlapStart: '2026-10-05T00:00:00Z', overlapEnd: '2026-10-05T12:00:00Z', overlapHours: 12, severity: 'HARD' },
+        { windowId: 'p2', windowTitle: 'Window for another', windowKind: 'AD_HOC_EMERGENCY', corridorCode: 'COR-ORE', consignmentId: 'c9', consignmentNumber: 'RAIL-2026-00099', overlapStart: '2026-10-05T00:00:00Z', overlapEnd: '2026-10-05T12:00:00Z', overlapHours: 8, severity: 'HARD' },
+      ], unscheduled: [], unresolved: [], consignmentsChecked: 2,
+    };
+    await openDrawer();
+    const banners = screen.getAllByTestId('possession-banner');
+    const drawerBanner = banners.find((b) => /this consignment overlaps/.test(b.textContent ?? ''))!;
+    expect(drawerBanner.textContent).toMatch(/Window for this one/);
+    expect(drawerBanner.textContent).not.toMatch(/Window for another/);
+  });
+
+  it('a writer sees Cancel / reschedule and it opens the modal for this consignment, pre-filled', async () => {
+    await openDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel / reschedule' }));
+    expect(JSON.parse(screen.getByTestId('change-context').textContent!)).toEqual({ consignmentId: 'c1', trainSlotRef: 'SVC-77', originalDeparture: '2026-10-05T04:00:00.000Z' });
+  });
+
+  it('with no service reference the consignment number is the train reference', async () => {
+    h.state.full = h.consignment({ serviceRef: null });
+    await openDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel / reschedule' }));
+    expect(JSON.parse(screen.getByTestId('change-context').textContent!)).toMatchObject({ trainSlotRef: 'RAIL-2026-00007' });
+  });
+
+  it('a read-only VIEWER sees neither Cancel / reschedule nor the DG edit form', async () => {
+    await openDrawer('VIEWER');
+    expect(screen.queryByRole('button', { name: 'Cancel / reschedule' })).toBeNull();
+    expect(screen.queryByTestId('dg-flag')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Save dangerous-goods details/ })).toBeNull();
+  });
+
+  it.each(['CANCELLED', 'COMPLETED'])('a %s consignment cannot be cancelled / rescheduled again', async (status) => {
+    h.state.full = h.consignment({ status });
+    await openDrawer();
+    expect(screen.queryByRole('button', { name: 'Cancel / reschedule' })).toBeNull();
+  });
+
+  it('after a request is logged the modal closes and the consignment is re-read', async () => {
+    await openDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel / reschedule' }));
+    const reads = vi.mocked(getConsignment).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'stub-created' }));
+    expect(screen.queryByRole('dialog', { name: 'change-modal-stub' })).toBeNull();
+    await waitFor(() => expect(vi.mocked(getConsignment).mock.calls.length).toBeGreaterThan(reads));
   });
 });

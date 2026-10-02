@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { getHandshakeReport } from '../api/railHandshakeApi';
 
 // ── Fixtures (hoisted: vi.mock factories run before module-level consts) ──────
 const h = vi.hoisted(() => {
@@ -28,6 +29,16 @@ vi.mock('../lib/railHandshakeExport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/railHandshakeExport')>()),
   downloadTextFile: h.downloadTextFile,
   printHtmlDocument: h.printHtmlDocument,
+}));
+// The real modal is tested in rail/ChangeRequestModal.test.tsx; here we only check how the page opens it.
+vi.mock('./rail/ChangeRequestModal', () => ({
+  default: ({ context, trainSlotRefSuggestions, onClose, onCreated }: { context: unknown; trainSlotRefSuggestions?: string[]; onClose: () => void; onCreated: (r: unknown) => void }) => (
+    <div role="dialog" aria-label="change-modal-stub">
+      <pre data-testid="change-context">{JSON.stringify({ context, trainSlotRefSuggestions })}</pre>
+      <button onClick={() => onCreated({})}>stub-created</button>
+      <button onClick={onClose}>stub-close</button>
+    </div>
+  ),
 }));
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => h.auth }));
 vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -135,5 +146,45 @@ describe('RailHandshake — role gating of mutating controls', () => {
   it('the dossier is built from what the drawer shows (a smoke check that opening does not throw)', async () => {
     await openReport('MANAGER');
     await waitFor(() => expect(screen.getByText('NS-0412')).toBeTruthy());
+  });
+});
+
+describe('RailHandshake — Cancel / reschedule (Annexure 20a · 20b) from a report', () => {
+  const CANCEL = /Cancel \/ reschedule \(20a · 20b\)/;
+
+  it.each([['MANAGER', 'PENDING_TOC'], ['MANAGER', 'DRAFT'], ['DISPATCH', 'PENDING_TOC'], ['DISPATCH', 'DRAFT']])('%s sees it on a %s report', async (role, status) => {
+    await openReport(role, status);
+    expect(has(CANCEL)).toBe(true);
+  });
+
+  it('a read-only VIEWER never sees it', async () => {
+    await openReport('VIEWER', 'PENDING_TOC');
+    expect(has(CANCEL)).toBe(false);
+  });
+
+  it.each(['SIGNED_OFF', 'DISPUTED'])('it is not offered once the report is %s — a signed report takes no new deviations, even from a signatory', async (status) => {
+    await openReport('MANAGER', status);
+    expect(has(CANCEL)).toBe(false);
+  });
+
+  it('opens the modal for THIS report (so the request is also logged here as a deviation), offering the report\'s trains', async () => {
+    await openReport('MANAGER');
+    expect(screen.queryByRole('dialog', { name: 'change-modal-stub' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: CANCEL }));
+    const ctx = JSON.parse(screen.getByTestId('change-context').textContent!);
+    expect(ctx).toEqual({ context: { handshakeReportId: 'r1' }, trainSlotRefSuggestions: ['NS-0412'] });
+  });
+
+  it('closing the modal leaves the report untouched; creating a request closes it and re-reads the report', async () => {
+    await openReport('MANAGER');
+    fireEvent.click(screen.getByRole('button', { name: CANCEL }));
+    fireEvent.click(screen.getByRole('button', { name: 'stub-close' }));
+    expect(screen.queryByRole('dialog', { name: 'change-modal-stub' })).toBeNull();
+    const reads = vi.mocked(getHandshakeReport).mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: CANCEL }));
+    fireEvent.click(screen.getByRole('button', { name: 'stub-created' }));
+    expect(screen.queryByRole('dialog', { name: 'change-modal-stub' })).toBeNull();
+    await waitFor(() => expect(vi.mocked(getHandshakeReport).mock.calls.length).toBeGreaterThan(reads)); // the new deviation shows up
   });
 });

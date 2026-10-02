@@ -27,10 +27,15 @@ import {
   type RailConsignment,
   type RailStatus,
 } from "../api/railApi";
+import { getPossessionConflicts, type ConflictScan } from "../api/railChangeApi";
 import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../contexts/AuthContext";
 import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
 import SlotCompliancePanel from "./rail/SlotCompliancePanel";
+import ChangesPossessionsPanel from "./rail/ChangesPossessionsPanel";
+import ChangeRequestModal from "./rail/ChangeRequestModal";
+import DangerousGoodsSection, { DgBadge, WagonDgPill } from "./rail/DangerousGoods";
+import PossessionConflictBanner from "./rail/PossessionConflictBanner";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -288,7 +293,7 @@ export default function RailOperations() {
   // VIEWER sees Rail read-only: no "Advance" control (the API refuses it anyway).
   const canWrite = getRailAccessLevel(user?.role, userPermissionOverrides(user)) === "FULL";
   const canSign = canSignRailHandshake(user?.role);
-  const [tab, setTab] = useState<"consignments" | "slots">("consignments");
+  const [tab, setTab] = useState<"consignments" | "slots" | "changes">("consignments");
   const [overview, setOverview] = useState<RailOverview | null>(null);
   const [rows, setRows] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -296,16 +301,21 @@ export default function RailOperations() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selected, setSelected] = useState<RailConsignment | null>(null);
   const [advancing, setAdvancing] = useState(false);
+  const [showChange, setShowChange] = useState(false);
+  // Possession-window clashes with booked consignments. Advisory and server-computed; null = not available (never "all clear").
+  const [conflicts, setConflicts] = useState<ConflictScan | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ov, list] = await Promise.all([
+      const [ov, list, scan] = await Promise.all([
         getRailOverview(),
         listConsignments({ q: q || undefined, status: statusFilter || undefined }),
+        getPossessionConflicts().catch(() => null),
       ]);
       setOverview(ov);
       setRows(list);
+      setConflicts(scan);
     } catch (e: any) {
       showToast(`Could not load rail data: ${String(e?.message ?? e)}`, "error");
     } finally {
@@ -349,6 +359,13 @@ export default function RailOperations() {
     }
   };
 
+  /** Re-read the open consignment (after its dangerous-goods details were saved, or a change request was logged). */
+  const refreshSelected = async () => {
+    if (!selected) return;
+    try { setSelected(await getConsignment(selected.id)); } catch { /* the list reload below still runs */ }
+    await load();
+  };
+
   const m = overview?.metrics;
 
   return (
@@ -376,7 +393,7 @@ export default function RailOperations() {
 
       {/* Tabs */}
       <div className="mb-5 flex gap-2 border-b border-white/10" role="tablist" aria-label="Rail operations sections">
-        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"]] as const).map(([key, label]) => (
+        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["changes", "Changes & Possessions"]] as const).map(([key, label]) => (
           <button
             key={key}
             role="tab"
@@ -390,8 +407,12 @@ export default function RailOperations() {
       </div>
 
       {tab === "slots" && <SlotCompliancePanel canWrite={canWrite} canSign={canSign} />}
+      {tab === "changes" && <ChangesPossessionsPanel canWrite={canWrite} canSign={canSign} />}
 
       {tab === "consignments" && (<>
+      {/* Possession windows that overlap booked consignments (server-detected, advisory) */}
+      <PossessionConflictBanner scan={conflicts} onOpenPossessions={() => setTab("changes")} />
+
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Kpi icon={Layers} label="Active" value={m?.activeConsignments ?? "—"} sub="consignments" />
@@ -470,17 +491,18 @@ export default function RailOperations() {
               <th className="px-4 py-3">Corridor</th>
               <th className="px-4 py-3">Tonnage</th>
               <th className="px-4 py-3">Wagons</th>
+              <th className="px-4 py-3">Dangerous goods</th>
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {loading && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">
                 <Loader2 className="mx-auto h-6 w-6 animate-spin" />
               </td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">No rail consignments yet.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No rail consignments yet.</td></tr>
             )}
             {!loading && rows.map((r) => (
               <tr
@@ -493,6 +515,7 @@ export default function RailOperations() {
                 <td className="px-4 py-3 text-slate-400">{r.corridor ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-200">{fmtT(r.tonnage)}</td>
                 <td className="px-4 py-3 text-slate-400">{r._count?.wagons ?? r.wagons?.length ?? 0}</td>
+                <td className="px-4 py-3"><DgBadge dg={r.dg} /></td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${STATUS_COLOR[r.status]}`}>
                     {STATUS_LABEL[r.status]}
@@ -526,17 +549,34 @@ export default function RailOperations() {
               <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_COLOR[selected.status]}`}>
                 {STATUS_LABEL[selected.status]}
               </span>
-              {canWrite && nextStatus(selected.status) && (
-                <button
-                  onClick={advance}
-                  disabled={advancing}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-500/90 px-4 py-2 text-sm font-bold text-black hover:bg-emerald-400 disabled:opacity-50"
-                >
-                  {advancing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-                  Advance to {STATUS_LABEL[nextStatus(selected.status)!]}
-                </button>
-              )}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {canWrite && selected.status !== "CANCELLED" && selected.status !== "COMPLETED" && (
+                  <button
+                    onClick={() => setShowChange(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/25"
+                  >
+                    Cancel / reschedule
+                  </button>
+                )}
+                {canWrite && nextStatus(selected.status) && (
+                  <button
+                    onClick={advance}
+                    disabled={advancing}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-500/90 px-4 py-2 text-sm font-bold text-black hover:bg-emerald-400 disabled:opacity-50"
+                  >
+                    {advancing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                    Advance to {STATUS_LABEL[nextStatus(selected.status)!]}
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Possession windows overlapping THIS consignment (server-detected, advisory) */}
+            <PossessionConflictBanner scan={conflicts} consignmentId={selected.id} onOpenPossessions={() => { setSelected(null); setTab("changes"); }} />
+
+            {/* Dangerous goods: what the dispatch gate sees, and the details form */}
+            <div className="mt-4" />
+            <DangerousGoodsSection consignment={selected} canWrite={canWrite} onSaved={() => void refreshSelected()} />
 
             {/* Facts */}
             <div className="mb-6 grid grid-cols-2 gap-3 text-sm">
@@ -587,6 +627,7 @@ export default function RailOperations() {
                         <th className="px-3 py-2">Type</th>
                         <th className="px-3 py-2">Loaded</th>
                         <th className="px-3 py-2">Location</th>
+                        <th className="px-3 py-2">Dangerous goods</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -596,6 +637,7 @@ export default function RailOperations() {
                           <td className="px-3 py-2 text-slate-400">{w.type}</td>
                           <td className="px-3 py-2 text-slate-200">{fmtT(w.loadedTonnes)}</td>
                           <td className="px-3 py-2 text-slate-400">{w.lastKnownSiding ?? "—"}</td>
+                          <td className="px-3 py-2"><WagonDgPill wagon={w} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -626,6 +668,15 @@ export default function RailOperations() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Annexure 20a / 20b cancel / reschedule for the open consignment */}
+      {showChange && selected && canWrite && (
+        <ChangeRequestModal
+          context={{ consignmentId: selected.id, trainSlotRef: selected.serviceRef || selected.consignmentNumber, originalDeparture: selected.plannedDeparture }}
+          onClose={() => setShowChange(false)}
+          onCreated={() => { setShowChange(false); void refreshSelected(); }}
+        />
       )}
       </>)}
     </div>

@@ -37,7 +37,7 @@ export function validateDgField(field: DgField, value: string): string | null {
     case 'unNumber': return /^UN\d{4}$/.test(v) ? null : 'must be UN followed by four digits (e.g. UN1203)';
     case 'imdgClass': return /^[1-9](\.[1-6])?[A-Z]?$/.test(v) ? null : 'must be an IMDG class such as 3, 2.1, 6.1 or 1.4S';
     case 'placardRef': return v.length <= 60 ? null : 'must be at most 60 characters';
-    case 'emergencyContact24h': return /^\+?[0-9][0-9 ()-]{5,18}[0-9]$/.test(v) ? null : 'must be a phone number';
+    case 'emergencyContact24h': return /^\+?\(?[0-9][0-9 ()-]{5,18}[0-9]$/.test(v) ? null : 'must be a phone number';
     case 'msdsDocumentUrl': return /^https:\/\/\S+$/.test(v) ? null : 'must be an https:// link';
     default: return null;
   }

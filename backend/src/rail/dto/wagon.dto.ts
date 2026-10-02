@@ -47,7 +47,7 @@ export class CreateWagonDto {
   @RawString() @IsOptional() @IsString() @MaxLength(60)
   placardRef?: string;
 
-  @RawString() @IsOptional() @IsString() @Matches(/^\+?[0-9][0-9 ()-]{5,18}[0-9]$/, { message: 'emergencyContact24h must be a phone number' })
+  @RawString() @IsOptional() @IsString() @Matches(/^\+?\(?[0-9][0-9 ()-]{5,18}[0-9]$/, { message: 'emergencyContact24h must be a phone number' })
   emergencyContact24h?: string;
 
   /** Link to the controlled safety data sheet — never the file itself. */

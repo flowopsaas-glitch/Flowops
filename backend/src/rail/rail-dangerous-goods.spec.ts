@@ -27,7 +27,7 @@ describe('validateDgField', () => {
     ['unNumber', 'UN1203', true], ['unNumber', 'UN12', false], ['unNumber', '1203', false], ['unNumber', 'UN12034', false],
     ['imdgClass', '3', true], ['imdgClass', '2.1', true], ['imdgClass', '6.1', true], ['imdgClass', '1.4S', true], ['imdgClass', '9', true], ['imdgClass', '0', false], ['imdgClass', '10', false], ['imdgClass', '1.7', false], ['imdgClass', 'flammable', false],
     ['placardRef', 'PL-3', true], ['placardRef', 'x'.repeat(61), false],
-    ['emergencyContact24h', '+27 11 555 0100', true], ['emergencyContact24h', '0115550100', true], ['emergencyContact24h', 'call Bob', false], ['emergencyContact24h', '123', false],
+    ['emergencyContact24h', '+27 11 555 0100', true], ['emergencyContact24h', '0115550100', true], ['emergencyContact24h', '(011) 555-0100', true], ['emergencyContact24h', '+27 (0) 11 555 0100', true], ['emergencyContact24h', '((011) 555', false], ['emergencyContact24h', 'call Bob', false], ['emergencyContact24h', '123', false],
     ['msdsDocumentUrl', 'https://x.org/a.pdf', true], ['msdsDocumentUrl', 'http://x.org/a.pdf', false], ['msdsDocumentUrl', 'javascript:alert(1)', false], ['msdsDocumentUrl', 'https://has space.pdf', false],
   ] as const)('%s %j → %s', (field, value, ok) => expect(validateDgField(field, value) === null).toBe(ok));
 });

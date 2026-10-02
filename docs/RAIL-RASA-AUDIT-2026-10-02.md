@@ -238,8 +238,149 @@ New suites in Wave 2: `rail-reference` (catalogs, validators), `rail-envelope`, 
 | 2 | The 11 transfer yards with the same fields + siding capacity + contacts | Chapter 2; `List of Yards.xlsx` (Annexure 40 item 1) | `catalog/yards.catalog.ts` | yard validation on applications |
 | 3 | Definition of vehicle profiles A / B / B+1 and their order | Chapter 2 / Annexures 2–12 (NDA) | `rail-reference.ts` `RAIL_VEHICLE_PROFILE_ORDER` | profile check as a hard criterion |
 | 4 | Which documents are required at which stage; validity of the 60-day mobilisation and 5-year window | Chapter 3 / 4 / RAA | `rail-compliance.ts`, `rail-reference.ts` | confirm D7, remove `[BRIEF]` tags |
+| 5 | Annexure C of the Rail Access Agreement / Network Statement Chapter 5: the weekly do-ability cut-off, deemed cancellation on non-utilisation, the contracted-path failure credit | S2 Annexure C; NS §5.2.10.9 | `rail-change.rules.ts` `evaluateConsequence` | remove the *unverified* evidence line; model the three unmodelled remedies |
+| 6 | Annexure 20a flow diagram (the label of the > 48 h branch) | the annexure PDF | `catalog/cancellation-process.catalog.ts` | close EXC-032 |
+| 7 | Annexures 23, 24 and 41 as the brief describes them (possession kinds, the 60-day lock), and Annexures 36 / 41 (the occurrence reporting trail, the 48-hour form) | the Network Statement annexure set | `rail-possession.rules.ts`, `rail-occurrence.service.ts` | confirm D15 / D16, remove `[BRIEF]` tags |
+| 8 | The authoritative dangerous-goods data list and its formats; which statuses the gate must cover | Chapter 3 / the DG procedure | `rail-dangerous-goods.ts` | confirm D17 |
 
-<!-- Wave 3 (§4) and Wave 4 (§5) are appended below as they are completed. -->
+## 4. Wave 3 — cancellations & reschedules, possession windows, occurrence reports, dangerous goods (RAIL-007, RAIL-009, RAIL-010, RAIL-011)
+
+Task numbers are the brief's; requirement numbers (`R-0nn.n`) are the register's. In the register, cancellations are
+RAIL-013, the Clearinghouse RAIL-014 and occurrence reporting RAIL-015.
+
+### 4.1 Schema and migration — strictly additive
+
+`20261002060000_rail_wave3_changes_possessions_occurrences_dg`: **10 enums, 4 tables, 10 indexes, 12 `ALTER TABLE … ADD
+COLUMN`** (the five dangerous-goods fields + the `isDangerousGoods` flag, on both `rail_consignments` and `wagons`).
+No DROP, no `ALTER COLUMN`, no `SET NOT NULL`, no data statement, **no foreign keys** (D11 stands). New tables:
+`rail_cancellation_codes` (platform-wide), `rail_slot_change_requests`, `rail_possession_windows`,
+`rail_occurrence_reports` (all tenant-scoped).
+
+| Check | Result |
+| --- | --- |
+| Baseline + process-book + Wave 2 + this migration applied, in order, to a real PostgreSQL build | all 4 apply cleanly |
+| Resulting catalog vs the datamodel (columns, types, nullability, defaults, indexes, enum labels) | **141 tables, 0 differences** |
+| `node scripts/review-migration.mjs prisma/migrations --schema prisma/schema.prisma` | **Destructive operations: none**; 141 models ↔ 141 tables |
+| `npm run migrations:verify` / `migrations:test` / `release:safety:test` | pass (4 migrations) / 11 of 11 / 40 of 40 |
+| Offline schema validation (`scripts/prisma-validate-offline.mjs`) | schema valid |
+| CI "drift guard" (`prisma migrate diff`, real engine) | **authoritative — runs on the PR** (the engines are unreachable from the authoring sandbox, as in §3.2) |
+
+### 4.2 Cancel / reschedule / re-plan (Annexure 20a + 20b) — RAIL-007
+
+| Rule | Behaviour | Evidence |
+| --- | --- | --- |
+| Reason catalogue | **82** reasons (`CNX-001…082`, FlowOps-assigned) are loaded by the gated seeder; the API serves the code catalog until it has run. The 10 "could be …" reasons keep the party the annexure names and are **never defaulted** | `[ANX-20b]`, `[REG R-013.4]` |
+| Who bears it | Derived on the server from the reason: *Rail Operations* → **TOC**, *Infrastructure Manager* → **TRIM**, *Force Majeure* → recorded distinctly, *could be …* → **UNDETERMINED** until the Clearinghouse allocates it | `[REG R-013.1, R-013.2]`; D12 |
+| The client cannot choose its own penalty | The DTO does not declare `attribution`, `penalty*`, `noticeBand`, `commercialWindow`, `status` or `companyId`; the whitelist strips them even if sent | `dto/rail-change.dto.spec.ts` |
+| Notice windows | Notice within **15 min** of the event (warned, not blocked); the IM acknowledges within **1 h** (an overdue clock is computed, not stored); received **more than** 48 h before departure ⇒ planning-version ITP, otherwise the emergency dynamic ITP. Boundaries follow the wording: exactly 48 h is short notice; exactly 72 h is inside the commercial window | `[ANX-20a steps 1–6, decision]`, EXC-032 |
+| Commercial consequence | TOC-caused, ≤ 72 h before departure ⇒ **forfeit** access fees paid in advance · TOC-caused, > 72 h ⇒ **credit if the path is reallocated** · TRIM-caused and the replacement path **not** accepted ⇒ **full Train Path fee refund** (TRIM bears it; "subject to the limitation of liability") · TRIM-caused and accepted ⇒ none · planned occupation ⇒ none · Force Majeure ⇒ none · **UNDETERMINED ⇒ "pending allocation" — no consequence is assumed** · no departure time ⇒ "pending departure time" | `[REG R-013.3]` (NS §5.2.10.9 = RAA Annexure C — **not supplied; unverified**) |
+| Allocating a "could be …" party | **Authorised representatives only** (service and route); only a party the annexure names for that reason; refused when the annexure already allocates it; refused once the request is closed | `rail-change.service.ts` `allocateParty` |
+| State machine | `SUBMITTED → ACKNOWLEDGED → [ALTERNATIVE_PROPOSED →] ACCEPTED \| CANCELLED_CONFIRMED → CLOSED`; the consequence is re-derived when the replacement outcome is known | `rail-change.rules.ts` `CHANGE_TRANSITIONS` |
+| Handshake integration | With `handshakeReportId` the request is also logged as a `CANCELLATION` / `RESCHEDULE` deviation (responsible party and slot impact derived, order number = the request number) and both ids are stored. Only a DRAFT or PENDING_TOC report accepts it | `[REG R-013.5]`, `[ANX-20a step 7]` |
+| A request names only this tenant's records | `consignmentId`, `slotApplicationId` and `handshakeReportId` are each checked against the caller's tenant before anything is saved | `rail-change.service.spec.ts` |
+
+**Not modelled, because the evidence was not supplied:** the "weekly do-ability" cut-off in R-013.3, non-utilisation as a
+*deemed cancellation* with fees retained, and the credit for TRIM failing to provide contracted paths. Every
+consequence the service returns carries an `evidence` line saying the source annexure is unsupplied. **No amounts are
+computed in this wave** — what the consequence is *worth* is Wave 4's calculator.
+
+### 4.3 Possession windows — RAIL-009
+
+| Rule | Behaviour | Evidence |
+| --- | --- | --- |
+| Kinds | `ANNUAL_PLAN`, `LOCKED_60_DAY`, `AD_HOC_EMERGENCY` | `[BRIEF]`; Annexures 23 / 24 / 41 were **not supplied** and the register maps them to other subjects (EXC-029) |
+| Lock | 60 days: an annual-plan window is treated as locked from `startsAt − 60 d`; the other two kinds always are | `[BRIEF, unverified]`; D15 |
+| Conflict | A PLANNED/ACTIVE window and a still-active consignment on the **same catalog corridor** with overlapping time (touching ends do not overlap). Severity **HARD** (locked / emergency) or **PLANNED** (annual plan not yet locked) | `rail-possession.rules.ts` |
+| Honesty | A consignment with **no usable schedule**, or whose corridor text matches **no** catalog corridor, is listed as *unscheduled* / *unresolved*. It is never assumed clear | `rail-possession.rules.spec.ts` |
+| Advisory only | A conflict raises a banner, an audit entry and an `AiEvent`; it never blocks a booking | D15 |
+| Status | Hourly sweep: PLANNED → ACTIVE at its start, COMPLETED after its end; each change is a system-attributed audit entry | `rail-possession.service.ts` `runStatusSweep` |
+
+### 4.4 Occurrence reports — RAIL-010
+
+| Rule | Behaviour | Evidence |
+| --- | --- | --- |
+| Classification | Levels 1 / 2 / 3 = Code Green / Orange / Red; types derailment, collision, OHTE / cable theft, SPAD, hazmat spill, other | `[REG R-012.4]`; the types are `[BRIEF]` |
+| Reporting chain | The TCO is notified **immediately**, then the Regulator; each party's time is recorded **once** (the first record stands) with the minutes after the event | `[REG R-015.1]` |
+| 48-hour preliminary report | Due `occurredAt + 48 h`; **overdue** is computed from the clock; a late filing is flagged in the audit entry | `[REG R-015.5]` (form 4.12B, Annexure 36 — **not supplied; unverified**); D16 |
+| Close | Authorised representatives only, and only after the preliminary report is filed | formal act; as the handshake sign-off |
+| Linked evidence | Optionally logged as a handshake deviation (`deviationId`), and linked to its `audit_logs` row (`auditLogId`) — `AuditService.record` now returns the row id, or `null` if the write failed | brief; `audit.service.spec.ts` |
+| Best-effort audit | A failure to write the audit entry **never** loses the safety record: the report is saved with `auditLogId = null` | `rail-occurrence.service.spec.ts` |
+| Hazmat | A hazmat-spill report is a hazmat occurrence: the caller cannot un-flag it | |
+
+**Known limitation (deliberately not changed):** `create` for both change requests and occurrences saves the row
+*before* it calls `RailHandshakeService.logDeviation`. The handshake report's status is checked first, so only a race
+(the report is signed off between the check and the call) can make the second step throw; the row would then exist
+**unlinked**, and a client retry would create a second one. Making the link transactional needs a change to the
+handshake service's write path (or a compensating delete), which is outside this wave. The audit entry is unaffected.
+
+### 4.5 Dangerous goods — RAIL-011
+
+| Rule | Behaviour | Evidence |
+| --- | --- | --- |
+| Mandatory fields | UN number · IMDG class · placard reference · 24-hour emergency contact · safety-data-sheet link — on the consignment and, individually, on a wagon (a wagon's empty field **inherits** the consignment's) | `[BRIEF]`; `[REG R-005.4]` (safety data sheet) |
+| Formats | `UN` + 4 digits; IMDG class `1–9` with optional division and letter (3, 2.1, 6.1, 1.4S); a phone number; an `https://` link | **UN / IMDG conventions, not taken from a supplied annexure** — the validator's header says so; D17 |
+| Dispatch gate | A consignment that carries dangerous goods with missing or malformed details cannot **move into** `DEPARTED`, `IN_TRANSIT` or `AT_INTERCHANGE` — jumping ahead does not skip it. Other moves (including a cancel) are never gated. The refusal is a 400 and a `consignment.dispatch_blocked` audit entry | brief names `DISPATCHED`; no such status exists (§1 row 4) |
+| Visibility | The list carries `dg: { required, ready, problems }`; `GET /rail/consignments/:id/dangerous-goods` returns exactly what the gate sees | |
+| Unknown status | `advanceStatus` now rejects an unknown status with a 400 that lists the valid ones (it used to reach Prisma and surface as a 500) | |
+
+### 4.6 Frontend
+
+| Surface | Behaviour |
+| --- | --- |
+| **Possession-conflict banners** | At the top of the Consignments tab (all clashes) and in a consignment's drawer (that consignment's). Red when any is locked, amber when only annual-plan. Consignments that could not be checked are reported, never shown as clear. If the scan cannot be loaded no banner is shown and the page still works |
+| **DG badges** | A "Dangerous goods" column (green *DG ready* / red *DG · n gaps* / a dash), a drawer section showing what the gate sees with an edit form, and a UN-number · class pill per flagged wagon. The form sends a blank as `null`, never `""` (the API rejects an empty string); malformed values are explained inline because the API client reduces a 400 to "Validation failed" |
+| **Cancel / Reschedule modal (Annexure 20a/20b)** | Opened from a consignment (drawer) **and** from a Daily Handshake report (then also logged there as a deviation). The reason list is the 82 Annexure 20b reasons grouped by who it is allocated to. As the form is filled in, **the server** is asked what follows (`POST /rail/changes/preview`) and its answer is shown verbatim; the modal does not work out attribution, notice band or consequence itself, and **will not submit until the server has answered for the current inputs** |
+| **"Changes & Possessions" tab** | Change requests (with IM-acknowledgement clock, row actions, signatory-only *Allocate party*), possession windows (record / complete / cancel, with conflicts reported on save), occurrence reports (notify TCO / Regulator, investigate, file the 48 h report, signatory-only *Close*, overdue flagged) |
+| Roles | Buttons follow the API's three tiers: VIEWER sees every register and no control; DISPATCH can log and progress; only MANAGER / COMPANY_ADMIN / ADMIN see *Allocate party* and *Close*. Hiding is courtesy — the routes enforce the same split (`rail.controllers.spec.ts`) |
+
+### 4.7 Findings while implementing Wave 3
+
+| # | Finding | Where | Resolution |
+| --- | --- | --- | --- |
+| W3-1 | `RailChangeService.proposeAlternative` validated the date **before** the entitlement check and threw synchronously (it was not `async`), so a non-entitled tenant got validation detail and the call did not reject | `rail-change.service.ts` | `async`, entitlement first; convention recorded (public rail service methods are `async` and call `assertEntitled` first); a spec asserts it |
+| W3-2 | The global `ValidationPipe` uses `enableImplicitConversion`, which turns the **string `"false"` into `true`** (and `"no"`, `0`-like strings, `{}`) for every `@IsBoolean()` field — including `ReviewDeviationDto.agree`, the TOC's formal *agree / dispute* decision on a deviation, `isPlannedOccupation` (would waive a TRIM refund) and `isDangerousGoods` | all rail DTOs | `@RawBoolean()` (same technique as `@RawString()`): only a real JSON `true` / `false` passes. Tests prove `"false"`, `"true"`, `0`, `1`, `""`, `{}`, `[]` are all rejected on six DTOs |
+| W3-3 | `railAuditEntry` spread caller metadata **last**, so a key named `companyId` / `module` / `actorRole` overwrote the built-in. The diagnostics endpoint scopes audit rows by `metadata.companyId`, so a future `{ ...dto }` could have forged the tenant | `rail-audit.ts` | built-ins spread last; test proves a caller cannot override them. No current caller did |
+| W3-4 | `PATCH /rail/consignments/:id` with an explicit `isDangerousGoods: null` would have written NULL to a NOT NULL column (a 500) | `rail.service.ts` `update` | a null flag means "not sent"; test added |
+| W3-5 | `advanceStatus` with an unknown status reached Prisma and surfaced as a 500 | `rail.service.ts` | 400 listing the valid statuses |
+| W3-6 | The API client keeps only `message` from an error body, so every validation failure reads "Validation failed" | `frontend/src/api/client.ts` | not changed (shared); the new forms validate formats client-side with the backend's patterns and say why |
+| W3-7 | The fake used by earlier specs returned `undefined` for a nullable column that was never written; Postgres returns `NULL`. It hid a difference between the fake and the database | `test/support/in-memory-db.ts` users | the Wave 3 fakes pass column defaults (`defaults: () => ({ … null … })`) |
+| W3-8 | Pre-existing test harness: `useToast: () => ({ showToast: vi.fn() })` returns a **new** function every render, and `RailOperations.load` depends on it, so under test the page reloaded forever (and logged ~19 `act()` warnings). Production's `showToast` is a stable `useCallback`, so the app was not affected | `RailOperations.test.tsx` | the mock is stable now; the warnings are gone |
+| W3-9 | The 24-hour emergency-contact pattern rejected a number written `(011) 555 0100` (a leading bracket) | `rail-dangerous-goods.ts`, both DTOs, the UI mirror | an optional opening bracket is accepted; tests added on all four |
+
+### 4.8 Verification (Wave 3)
+
+| Check | Baseline `03b181a` | After Wave 1 | After Wave 2 | After Wave 3 |
+| --- | --- | --- | --- | --- |
+| Backend `npx jest` | 20 suites / 307 tests | 23 / 479 | 32 / 797 | **43 suites / 1410 tests**, all pass |
+| Backend `tsc --noEmit`; `npm run build`; `eslint "src/**/*.ts"` | pass; pass; — | pass; pass; 0 | pass; pass; 0 | pass; pass; **0 problems** |
+| Frontend `vitest run` | 8 files / 59 tests | 10 / 131 | 13 / 183 | **19 files / 359 tests**, all pass |
+| Frontend `tsc`; `npm run lint`; `vite build` | pass; 0 errors; — | pass; 0 errors; pass | pass; 0 errors; pass | pass; **0 errors**; pass |
+| Migration tooling (§4.1) | — | — | 3 migrations | 4 migrations; **0 differences / 141 tables**; destructive none |
+| Operator seeder, run end-to-end against a stand-in database (`--plan` writes nothing; `--apply`; a second `--plan` is a no-op) | — | — | — | 6 corridors + 82 cancellation codes; a deactivated code stays deactivated; a changed party is reported |
+
+New backend suites in Wave 3: `rail-change.rules` (52), `rail-possession.rules` (17), `rail-dangerous-goods` (50),
+`rail-change.service` (73), `rail-possession.service` (44), `rail-occurrence.service` (48), `audit/audit.service` (11),
+`dto/rail-change` (47), `dto/rail-possession` (20), `dto/rail-occurrence` (37), `dto/rail-dangerous-goods` (126).
+Extended: `rail.service` (24 → 64, the gate and the readiness summary), `rail.controllers` (59 → 87: every new route, the
+signatory exceptions, the read-only `preview`, **no route shadowed by an earlier `:id` route**, no duplicate verb+path,
+every controller registered in the module), `catalog/seed-rail-reference` (+20).
+Frontend: `lib/railChange` (29), `lib/railDangerousGoods` (43), `ChangeRequestModal` (18), `DangerousGoods` (19),
+`PossessionConflictBanner` (11), `ChangesPossessionsPanel` (33); extended: `RailOperations` (5 → 19), `RailHandshake` (9 → 18).
+
+### 4.9 Decisions the owner should confirm (Wave 3)
+
+| # | Decision | Default taken |
+| --- | --- | --- |
+| D12 | "Rail Operations" in Annexure 20b means the **TOC** side; "Infrastructure Manager" means **TRIM** | as stated; the annexure does not say it in so many words |
+| D13 | A request raised by TRIM whose reason is allocated to the TOC (or the reverse) | **flagged** with a warning, not blocked |
+| D14 | The consequence table of §4.2 is the register's R-013.3 (Annexure C unsupplied) | encoded and labelled unverified; not legal advice; no amounts |
+| D15 | Possession lock of 60 days; HARD vs PLANNED severity; conflicts are advisory | as §4.3 — a conflict never blocks a booking |
+| D16 | The 48-hour preliminary-report deadline, and who may close an occurrence | `occurredAt + 48 h` (R-015.5); signatories only |
+| D17 | Dangerous-goods field formats and the gated statuses | UN / IMDG conventions; `DEPARTED`, `IN_TRANSIT`, `AT_INTERCHANGE` |
+| D18 | Signatory-only acts added in this wave | *Allocate party* (decides who pays) and *Close occurrence* |
+| D19 | Seeding the 82 reasons | `isActive` is **operator-owned** (never written on update; a deactivated code is never revived — it is reported); any change to a code's responsible party is reported before it is applied |
+
+<!-- Wave 4 (§5) is appended below as it is completed. -->
 
 ## Appendix A — generated code index
 
