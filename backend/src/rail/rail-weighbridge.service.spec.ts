@@ -268,41 +268,48 @@ describe('the hold', () => {
   it('re-weighing the wagon within its limit LIFTS the hold, and audits that', async () => {
     const h = make({ verifiedCorridor: { limit: 20 } });
     const c = h.seedConsignment();
-    const first = await over(h, c.id);
-    h.audit.record.mockClear();
-    const later = new Date(NOW.getTime() + 30 * MIN);
-    jest.useFakeTimers().setSystemTime(later); // the second reading is RECORDED later
+    // Pin the clock BEFORE the first reading. FakeTable stamps createdAt from the wall clock,
+    // so a real-time first reading outranks the mocked second reading once the suite runs after
+    // NOW+30min — a time-bomb (green in the morning, red in the afternoon) on identical code.
+    jest.useFakeTimers().setSystemTime(NOW);
     try {
+      const first = await over(h, c.id);
+      h.audit.record.mockClear();
+      const later = new Date(NOW.getTime() + 30 * MIN);
+      jest.setSystemTime(later); // the second reading is RECORDED later
       const out = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 78 }) as any, MANAGER, later);
       expect(out.hold).toMatchObject({ held: false, status: 'NONE', changed: true });
+      expect(h.consignment(c.id)).toMatchObject({ holdStatus: 'NONE', holdReason: null, holdClearedAt: later });
+      expect(h.actions()).toEqual([RAIL_AUDIT_ACTION.WEIGHBRIDGE_READING_RECORDED, RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_CLEARED]);
+      expect(h.entries()[1].metadata).toMatchObject({ previousReason: first.hold.reason });
     } finally {
       jest.useRealTimers();
     }
-    expect(h.consignment(c.id)).toMatchObject({ holdStatus: 'NONE', holdReason: null, holdClearedAt: later });
-    expect(h.actions()).toEqual([RAIL_AUDIT_ACTION.WEIGHBRIDGE_READING_RECORDED, RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_CLEARED]);
-    expect(h.entries()[1].metadata).toMatchObject({ previousReason: first.hold.reason });
   });
 
   it('a hold on two wagons needs BOTH re-weighed: fixing one leaves the hold on the other, with an updated reason and no second "set" entry', async () => {
     const h = make({ verifiedCorridor: { limit: 20 } });
     const c = h.seedConsignment();
-    await over(h, c.id, 'W1', 90);
-    await over(h, c.id, 'W2', 85);
-    expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(1);
-    expect(h.consignment(c.id).holdReason).toBe('Overloaded: W1 (10 t over), W2 (5 t over). Reduce the load and re-weigh each wagon within its limit.');
-    const firstHeldAt = h.consignment(c.id).holdSetAt;
-
-    jest.useFakeTimers().setSystemTime(new Date(NOW.getTime() + 60 * MIN));
+    // Pin the clock BEFORE the first readings (see the test above: a real-time first
+    // reading outranks the mocked re-weigh once the suite runs after NOW+60min).
+    jest.useFakeTimers().setSystemTime(NOW);
     try {
+      await over(h, c.id, 'W1', 90);
+      await over(h, c.id, 'W2', 85);
+      expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(1);
+      expect(h.consignment(c.id).holdReason).toBe('Overloaded: W1 (10 t over), W2 (5 t over). Reduce the load and re-weigh each wagon within its limit.');
+      const firstHeldAt = h.consignment(c.id).holdSetAt;
+
+      jest.setSystemTime(new Date(NOW.getTime() + 60 * MIN));
       const out = await h.svc.recordReading('A', dto(c.id, { wagonNumber: 'W1', actualTonnes: 79 }) as any, MANAGER, new Date(NOW.getTime() + 60 * MIN));
       expect(out.hold).toMatchObject({ held: true, changed: false, totalExcessTonnes: 5, wagons: [{ wagonNumber: 'W2', excessTonnes: 5 }] });
+      expect(h.consignment(c.id).holdReason).toBe('Overloaded: W2 (5 t over). Reduce the load and re-weigh the wagon within its limit.');
+      expect(h.consignment(c.id).holdSetAt).toEqual(firstHeldAt); // when the hold began does not move
+      expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(1);
+      expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_CLEARED)).toHaveLength(0);
     } finally {
       jest.useRealTimers();
     }
-    expect(h.consignment(c.id).holdReason).toBe('Overloaded: W2 (5 t over). Reduce the load and re-weigh the wagon within its limit.');
-    expect(h.consignment(c.id).holdSetAt).toEqual(firstHeldAt); // when the hold began does not move
-    expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(1);
-    expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_CLEARED)).toHaveLength(0);
   });
 
   it('an UNVERIFIED reading neither sets nor clears a hold (it says nothing about the limit)', async () => {
@@ -316,35 +323,39 @@ describe('the hold', () => {
   it('a re-weigh that is STILL over the limit keeps the hold — the stricter of an entered and the verified limit applies', async () => {
     const h = make({ verifiedCorridor: { limit: 20 } });
     const c = h.seedConsignment();
-    await over(h, c.id, 'W1', 90);
-    const later = new Date(NOW.getTime() + 60 * MIN);
-    jest.useFakeTimers().setSystemTime(later);
+    // Pin the clock BEFORE the first reading (see above: the suite must not depend on wall time).
+    jest.useFakeTimers().setSystemTime(NOW);
     try {
+      await over(h, c.id, 'W1', 90);
+      const later = new Date(NOW.getTime() + 60 * MIN);
+      jest.setSystemTime(later);
       // 70 t on ONE axle against min(20, 30) = 20 t allowed: still overloaded, so nothing is lifted.
       const out = await h.svc.recordReading('A', dto(c.id, { wagonNumber: 'W1', actualTonnes: 70, axles: 1, maxAxleLoadTonnes: 30 }) as any, MANAGER, later);
       expect(out.reading).toMatchObject({ status: 'OVERLOADED', allowedTonnes: 20, excessTonnes: 50 });
       expect(out.hold).toMatchObject({ held: true, changed: false, totalExcessTonnes: 50 });
+      expect(h.consignment(c.id).holdStatus).toBe('HOLD_FOR_LOAD_ADJUSTMENT');
     } finally {
       jest.useRealTimers();
     }
-    expect(h.consignment(c.id).holdStatus).toBe('HOLD_FOR_LOAD_ADJUSTMENT');
   });
 
   it('a later overloaded reading re-imposes a hold that had been lifted', async () => {
     const h = make({ verifiedCorridor: { limit: 20 } });
     const c = h.seedConsignment();
-    await over(h, c.id, 'W1', 90);
-    jest.useFakeTimers().setSystemTime(new Date(NOW.getTime() + 60 * MIN));
+    // Pin the clock BEFORE the first reading (see above: the suite must not depend on wall time).
+    jest.useFakeTimers().setSystemTime(NOW);
     try {
+      await over(h, c.id, 'W1', 90);
+      jest.setSystemTime(new Date(NOW.getTime() + 60 * MIN));
       await h.svc.recordReading('A', dto(c.id, { actualTonnes: 70 }) as any, MANAGER, new Date(NOW.getTime() + 60 * MIN));
       expect(h.consignment(c.id).holdStatus).toBe('NONE');
       jest.setSystemTime(new Date(NOW.getTime() + 120 * MIN));
       await h.svc.recordReading('A', dto(c.id, { actualTonnes: 95 }) as any, MANAGER, new Date(NOW.getTime() + 120 * MIN));
+      expect(h.consignment(c.id)).toMatchObject({ holdStatus: 'HOLD_FOR_LOAD_ADJUSTMENT', holdClearedAt: null });
+      expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(2);
     } finally {
       jest.useRealTimers();
     }
-    expect(h.consignment(c.id)).toMatchObject({ holdStatus: 'HOLD_FOR_LOAD_ADJUSTMENT', holdClearedAt: null });
-    expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(2);
   });
 
   it('holds are per consignment: tenant A\'s hold is invisible to — and unaffected by — tenant B', async () => {
