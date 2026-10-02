@@ -57,6 +57,26 @@ export const RAIL_AUDIT_ACTION = {
   COMPLIANCE_DOC_VERIFIED: 'compliance_doc.verified',
   COMPLIANCE_DOC_REVOKED: 'compliance_doc.revoked',
   COMPLIANCE_DOC_EXPIRED: 'compliance_doc.expired',
+  // ── Cancel / reschedule, possessions, occurrences, dangerous goods (Wave 3) ─
+  CHANGE_CREATED: 'change_request.created',
+  CHANGE_ACKNOWLEDGED: 'change_request.acknowledged',
+  CHANGE_ALTERNATIVE_PROPOSED: 'change_request.alternative_proposed',
+  CHANGE_ACCEPTED: 'change_request.accepted',
+  CHANGE_CANCELLATION_CONFIRMED: 'change_request.cancellation_confirmed',
+  CHANGE_PARTY_ALLOCATED: 'change_request.party_allocated',
+  CHANGE_CLOSED: 'change_request.closed',
+  POSSESSION_CREATED: 'possession.created',
+  POSSESSION_CONFLICT_DETECTED: 'possession.conflict_detected',
+  POSSESSION_CANCELLED: 'possession.cancelled',
+  POSSESSION_COMPLETED: 'possession.completed',
+  POSSESSION_ACTIVATED: 'possession.activated',
+  OCCURRENCE_REPORTED: 'occurrence.reported',
+  OCCURRENCE_NOTIFIED: 'occurrence.notified',
+  OCCURRENCE_INVESTIGATION_STARTED: 'occurrence.investigation_started',
+  OCCURRENCE_PRELIMINARY_FILED: 'occurrence.preliminary_report_filed',
+  OCCURRENCE_CLOSED: 'occurrence.closed',
+  /** A move into DEPARTED / IN_TRANSIT / AT_INTERCHANGE that the dangerous-goods gate refused. */
+  CONSIGNMENT_DISPATCH_BLOCKED: 'consignment.dispatch_blocked',
 } as const;
 export type RailAuditAction = (typeof RAIL_AUDIT_ACTION)[keyof typeof RAIL_AUDIT_ACTION];
 
@@ -68,6 +88,9 @@ export const RAIL_AUDIT_TARGET = {
   HANDSHAKE_DEVIATION: 'rail_handshake_deviation',
   SLOT_APPLICATION: 'rail_slot_application',
   COMPLIANCE_DOC: 'rail_compliance_doc',
+  CHANGE_REQUEST: 'rail_change_request',
+  POSSESSION: 'rail_possession_window',
+  OCCURRENCE: 'rail_occurrence_report',
 } as const;
 
 /** Build an audit entry attributed to an authenticated tenant user. */
@@ -87,8 +110,9 @@ export function railAuditEntry(
     targetId: target.id,
     targetName: target.name ?? null,
     // `companyId` lives in metadata because AuditLog has no tenant column; the
-    // tenant-scoped diagnostics endpoint filters on it.
-    metadata: { module: 'rail', companyId, actorRole: actor.role, ...metadata },
+    // tenant-scoped diagnostics endpoint filters on it. The built-ins are spread LAST so a caller can
+    // never override the tenant, module or actor role (a future `{ ...dto }` must not be able to forge them).
+    metadata: { ...metadata, module: 'rail', companyId, actorRole: actor.role },
   };
 }
 
@@ -107,7 +131,7 @@ export function railSystemAuditEntry(
     targetType: target.type,
     targetId: target.id,
     targetName: target.name ?? null,
-    metadata: { module: 'rail', companyId, ...metadata },
+    metadata: { ...metadata, module: 'rail', companyId },
   };
 }
 
@@ -120,10 +144,11 @@ export async function recordRailAudit(
   audit: AuditService,
   logger: Logger,
   entry: AuditEntry,
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await audit.record(entry);
+    return (await audit.record(entry)) ?? null;
   } catch (err) {
     logger.warn(`Rail audit write failed for ${entry.action}: ${err}`);
+    return null;
   }
 }

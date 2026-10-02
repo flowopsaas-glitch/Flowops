@@ -5,7 +5,7 @@ import {
 } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 import { RailComplianceDocType, RailElectrification, RailGauge, RailVehicleProfile } from '@prisma/client';
-import { RawString } from '../../common/decorators/raw-string.decorator';
+import { RawBoolean, RawString } from '../../common/decorators/raw-string.decorator';
 
 /**
  * DTOs for slot applications, Annexure 25 self-screening, compliance documents and the
@@ -29,7 +29,7 @@ export class CreateSlotApplicationDto {
   @RawString() @IsOptional() @IsString() @MaxLength(120) imReference?: string;
   @IsOptional() @IsEnum(RailElectrification) tractionType?: RailElectrification;
   @RawString() @IsOptional() @IsString() @MaxLength(120) commodity?: string;
-  @IsOptional() @IsBoolean() isDangerousGoods?: boolean;
+  @RawBoolean() @IsOptional() @IsBoolean() isDangerousGoods?: boolean;
   @IsOptional() @IsInt() @Min(1) @Max(1000) trainsPerWeek?: number;
   @IsOptional() @IsInt() @Min(1) @Max(500) wagonsPerTrain?: number;
   @IsOptional() @IsNumber() @Min(0) @Max(1_000_000_000) annualTonnes?: number;

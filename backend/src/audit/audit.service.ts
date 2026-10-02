@@ -24,9 +24,10 @@ export class AuditService {
 
   constructor(private prisma: PrismaService) {}
 
-  async record(entry: AuditEntry): Promise<void> {
+  /** Returns the id of the audit_logs row, or null if the write failed (it never throws). */
+  async record(entry: AuditEntry): Promise<string | null> {
     try {
-      await this.prisma.auditLog.create({
+      const row = await this.prisma.auditLog.create({
         data: {
           action: entry.action,
           actorType: entry.actorType ?? 'owner',
@@ -39,8 +40,10 @@ export class AuditService {
           ip: entry.ip ?? null,
         },
       });
+      return row?.id ?? null;
     } catch (err) {
       this.logger.warn(`Failed to write audit log for ${entry.action}: ${err}`);
+      return null;
     }
   }
 

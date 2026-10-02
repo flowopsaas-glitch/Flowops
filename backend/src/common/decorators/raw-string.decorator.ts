@@ -11,3 +11,12 @@ import { Transform } from 'class-transformer';
  * Use this on string fields whose content reaches an LLM, a query or a log.
  */
 export const RawString = () => Transform(({ obj, key }) => obj?.[key]);
+
+/**
+ * Same idea for booleans. With `enableImplicitConversion` the STRING "false" becomes `true`
+ * (`Boolean("false")`), as do "no", "0" and `{}` — so a client that sends `"false"` would silently
+ * switch a flag ON (a dangerous-goods declaration, a "planned occupation" that waives a refund, an
+ * "agree" on a disputed deviation). With this transform only a real JSON `true` / `false` passes
+ * `@IsBoolean()`.
+ */
+export const RawBoolean = () => Transform(({ obj, key }) => obj?.[key]);

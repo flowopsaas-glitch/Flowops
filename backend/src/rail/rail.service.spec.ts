@@ -4,9 +4,12 @@
  * Covers: the `rail` entitlement gate, tenant isolation (consignments, wagons,
  * legs), lifecycle timestamps, dwell maths and the audit trail. Prisma is an
  * in-memory fake so isolation is tested by behaviour.
+ *
+ * Wave 3 adds the dangerous-goods (DG) fields, the readiness summary on the list,
+ * `getDangerousGoods`, status validation, and the dispatch gate (see the last block).
  */
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import { RailConsignmentStatus, UserRole } from '@prisma/client';
 import { RailService } from './rail.service';
 import { RAIL_AUDIT_ACTION, RailActor } from './rail-audit';
 
@@ -83,6 +86,7 @@ function makeDb() {
         return { count };
       }),
       count: jest.fn(async () => 0),
+      findMany: jest.fn(async ({ where }: any) => db.wagons.filter((w) => matches(w, where)).map((w) => ({ ...w }))),
     },
     intermodalLeg: {
       create: jest.fn(async ({ data }: any) => {
@@ -151,6 +155,7 @@ describe('rail entitlement gate', () => {
       () => svc.create('A', { commodity: 'Coal' }, MANAGER),
       () => svc.list('A'),
       () => svc.get('A', 'c1'),
+      () => svc.getDangerousGoods('A', 'c1'),
       () => svc.update('A', 'c1', {}, MANAGER), // routes through get()
       () => svc.cancel('A', 'c1', MANAGER),
       () => svc.advanceStatus('A', 'c1', 'DEPARTED', MANAGER),
@@ -445,8 +450,260 @@ describe('consignment lifecycle', () => {
   });
 
   it('an audit-write failure never breaks the business action', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const { svc, audit } = makeService();
     audit.record.mockRejectedValue(new Error('audit store down'));
     await expect(svc.create('A', { commodity: 'Coal' }, MANAGER)).resolves.toMatchObject({ commodity: 'Coal' });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Wave 3 — dangerous goods (RAIL-011)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('dangerous goods', () => {
+  const DG_FULL = {
+    isDangerousGoods: true, unNumber: 'UN1203', imdgClass: '3', placardRef: 'Placard 3 — flammable liquid',
+    emergencyContact24h: '+27 11 555 0100', msdsDocumentUrl: 'https://example.org/msds/petrol.pdf',
+  };
+  const MOVEMENT = ['DEPARTED', 'IN_TRANSIT', 'AT_INTERCHANGE'];
+  const NOT_MOVEMENT = Object.values(RailConsignmentStatus).filter((st) => !MOVEMENT.includes(st));
+
+  describe('stored values are normalised, and only what was sent is touched', () => {
+    it('create: "un 1203" → UN1203, class upper-cased, blanks → NULL, flag defaults to false', async () => {
+      const { svc, db } = makeService();
+      await svc.create('A', { commodity: 'Petrol', isDangerousGoods: true, unNumber: ' un 1203 ', imdgClass: ' 1.4s ', placardRef: '  ', emergencyContact24h: ' +27 11 555 0100 ' } as any, MANAGER);
+      await svc.create('A', { commodity: 'Coal' }, MANAGER);
+      expect(db.consignments[0]).toMatchObject({ isDangerousGoods: true, unNumber: 'UN1203', imdgClass: '1.4S', placardRef: null, emergencyContact24h: '+27 11 555 0100', msdsDocumentUrl: null });
+      expect(db.consignments[1]).toMatchObject({ isDangerousGoods: false, unNumber: null, imdgClass: null, placardRef: null, emergencyContact24h: null, msdsDocumentUrl: null });
+    });
+
+    it('a malformed value is stored as typed (upper-cased) so the gate can reject it, never silently "fixed"', async () => {
+      const { svc, db } = makeService();
+      await svc.create('A', { commodity: 'Petrol', isDangerousGoods: true, unNumber: 'abc' } as any, MANAGER);
+      expect(db.consignments[0].unNumber).toBe('ABC');
+    });
+
+    it('addWagon stores the same normalised DG columns', async () => {
+      const { svc, db, seedConsignment } = makeService();
+      const c = seedConsignment();
+      await svc.addWagon('A', c.id, { wagonNumber: 'TANK-1', isDangerousGoods: true, unNumber: '1203', imdgClass: '3' } as any, MANAGER);
+      await svc.addWagon('A', c.id, { wagonNumber: 'FLAT-1' }, MANAGER);
+      expect(db.wagons[0]).toMatchObject({ isDangerousGoods: true, unNumber: 'UN1203', imdgClass: '3', msdsDocumentUrl: null });
+      expect(db.wagons[1]).toMatchObject({ isDangerousGoods: false, unNumber: null });
+    });
+
+    it('update only touches the DG fields that were actually sent', async () => {
+      const { svc, db, audit, seedConsignment } = makeService();
+      const c = seedConsignment({ ...DG_FULL });
+      await svc.update('A', c.id, { placardRef: '  Placard 3A  ', unNumber: '1267' } as any, MANAGER);
+      expect(db.consignments[0]).toMatchObject({ ...DG_FULL, unNumber: 'UN1267', placardRef: 'Placard 3A' });
+      expect(auditEntries(audit)[0].metadata.fields).toEqual(['placardRef', 'unNumber']);
+    });
+
+    it('update treats an explicit null flag as "not sent" — it never tries to write NULL into the NOT NULL column', async () => {
+      const { svc, db, prisma, seedConsignment } = makeService();
+      const c = seedConsignment({ ...DG_FULL });
+      await svc.update('A', c.id, { isDangerousGoods: null, placardRef: 'P9' } as any, MANAGER);
+      expect(db.consignments[0].isDangerousGoods).toBe(true);
+      expect((prisma.railConsignment.update as jest.Mock).mock.calls[0][0].data).not.toHaveProperty('isDangerousGoods');
+    });
+
+    it('update can clear a DG field with a blank value, and can switch the flag off', async () => {
+      const { svc, db, seedConsignment } = makeService();
+      const c = seedConsignment({ ...DG_FULL });
+      await svc.update('A', c.id, { msdsDocumentUrl: '   ', imdgClass: '', isDangerousGoods: false } as any, MANAGER);
+      expect(db.consignments[0]).toMatchObject({ msdsDocumentUrl: null, imdgClass: null, isDangerousGoods: false, unNumber: 'UN1203' });
+    });
+  });
+
+  describe('list: the readiness summary behind the DG badge', () => {
+    it('reports required / ready / number of problems per consignment', async () => {
+      const { svc, seedConsignment, seedWagon } = makeService();
+      seedConsignment({ consignmentNumber: 'NONE' });
+      seedConsignment({ consignmentNumber: 'READY', ...DG_FULL });
+      seedConsignment({ consignmentNumber: 'GAPS', ...DG_FULL, placardRef: null, msdsDocumentUrl: '' });
+      seedConsignment({ consignmentNumber: 'BAD', ...DG_FULL, unNumber: 'ABC' });
+      const wagonOnly = seedConsignment({ consignmentNumber: 'WAGON' });
+      seedWagon(wagonOnly.id, { wagonNumber: 'TANK-9', isDangerousGoods: true });
+      const byNumber = Object.fromEntries((await svc.list('A')).map((c: any) => [c.consignmentNumber, c.dg]));
+      expect(byNumber).toEqual({
+        NONE: { required: false, ready: true, problems: 0 },
+        READY: { required: true, ready: true, problems: 0 },
+        GAPS: { required: true, ready: false, problems: 2 },
+        BAD: { required: true, ready: false, problems: 1 },
+        WAGON: { required: true, ready: false, problems: 5 },
+      });
+    });
+
+    it('loads only the FLAGGED wagons of the listed consignments — never every wagon, and nothing at all for an empty list', async () => {
+      const { svc, prisma, seedConsignment, seedWagon } = makeService();
+      expect(await svc.list('A')).toEqual([]);
+      expect(prisma.wagon.findMany).not.toHaveBeenCalled();
+
+      const mine = seedConsignment({ companyId: 'A' });
+      const theirs = seedConsignment({ companyId: 'B' });
+      seedWagon(mine.id, { wagonNumber: 'PLAIN' });
+      seedWagon(theirs.id, { wagonNumber: 'THEIRS', isDangerousGoods: true });
+      const rows: any[] = await svc.list('A');
+      expect(prisma.wagon.findMany).toHaveBeenCalledTimes(1);
+      expect((prisma.wagon.findMany as jest.Mock).mock.calls[0][0].where).toEqual({ consignmentId: { in: [mine.id] }, isDangerousGoods: true });
+      expect(rows[0].dg).toEqual({ required: false, ready: true, problems: 0 }); // B's flagged wagon does not leak into A's badge
+    });
+
+    it('keeps every existing field on the row (the badge is additive)', async () => {
+      const { svc, seedConsignment } = makeService();
+      seedConsignment({ consignmentNumber: 'KEEP', commodity: 'Coal' });
+      const [row] = (await svc.list('A')) as any[];
+      expect(row).toMatchObject({ consignmentNumber: 'KEEP', commodity: 'Coal', dg: { required: false } });
+    });
+  });
+
+  describe('getDangerousGoods: exactly what the gate sees', () => {
+    it('a complete DG consignment is ready and does not block departure', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ consignmentNumber: 'RAIL-DG-1', ...DG_FULL });
+      expect(await svc.getDangerousGoods('A', c.id)).toMatchObject({ required: true, ready: true, blocksDeparture: false, consignmentNumber: 'RAIL-DG-1', missing: [], invalid: [] });
+    });
+
+    it('lists what is missing and malformed, and says departure is blocked', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ consignmentNumber: 'RAIL-DG-2', ...DG_FULL, imdgClass: null, emergencyContact24h: 'call me' });
+      const out = await svc.getDangerousGoods('A', c.id);
+      expect(out).toMatchObject({ required: true, ready: false, blocksDeparture: true });
+      expect(out.missing).toEqual([{ scope: 'CONSIGNMENT', ref: 'RAIL-DG-2', fields: ['imdgClass'] }]);
+      expect(out.invalid).toEqual([expect.objectContaining({ scope: 'CONSIGNMENT', field: 'emergencyContact24h', reason: expect.stringContaining('must be a phone number') })]);
+    });
+
+    it('a consignment with no dangerous goods never blocks', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment();
+      expect(await svc.getDangerousGoods('A', c.id)).toMatchObject({ required: false, ready: true, blocksDeparture: false });
+    });
+
+    it('a flagged wagon inherits the consignment\'s DG values where its own are empty', async () => {
+      const { svc, seedConsignment, seedWagon } = makeService();
+      const c = seedConsignment({ isDangerousGoods: false, unNumber: 'UN1203', imdgClass: '3', placardRef: 'P3', emergencyContact24h: '+27 11 555 0100', msdsDocumentUrl: 'https://example.org/m.pdf' });
+      seedWagon(c.id, { wagonNumber: 'TANK-1', isDangerousGoods: true });
+      expect(await svc.getDangerousGoods('A', c.id)).toMatchObject({ required: true, ready: true, dgWagons: 1 });
+    });
+
+    it('is tenant-scoped (another tenant\'s consignment is a 404)', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ companyId: 'A', ...DG_FULL });
+      await expect(svc.getDangerousGoods('B', c.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('advanceStatus validates the status it is given', () => {
+    it.each(['SHIPPED', 'DISPATCHED', '', 'departed'])('rejects "%s" with a 400 that lists the valid statuses — before touching any data', async (bad) => {
+      const { svc, prisma, db, audit, seedConsignment } = makeService();
+      const c = seedConsignment();
+      const before = JSON.stringify([db.consignments, db.events]);
+      await expect(svc.advanceStatus('A', c.id, bad, MANAGER)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.advanceStatus('A', c.id, bad, MANAGER)).rejects.toThrow(/Use one of: PLANNED, WAGONS_ALLOCATED, LOADING, DEPARTED, IN_TRANSIT, AT_INTERCHANGE, ARRIVED, OFFLOADED, COMPLETED, CANCELLED/);
+      expect(prisma.railConsignment.findFirst).not.toHaveBeenCalled();
+      expect(JSON.stringify([db.consignments, db.events])).toBe(before);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('truncates a very long bogus status in the message', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment();
+      await expect(svc.advanceStatus('A', c.id, 'x'.repeat(500), MANAGER)).rejects.toThrow(/Unknown status "x{40}"\./);
+    });
+  });
+
+  describe('the dispatch gate (the brief says "DISPATCHED"; this model\'s dispatch event is DEPARTED)', () => {
+    const blockedBody = { ...DG_FULL, placardRef: null, msdsDocumentUrl: null };
+
+    it.each(MOVEMENT)('a DG consignment with missing details cannot move to %s — nothing changes except one audit entry', async (status) => {
+      const { svc, prisma, db, audit, seedConsignment } = makeService();
+      const c = seedConsignment({ status: 'LOADING', consignmentNumber: 'RAIL-DG-3', ...blockedBody });
+      const before = JSON.stringify([db.consignments, db.wagons, db.events]);
+
+      await expect(svc.advanceStatus('A', c.id, status, MANAGER, 'leaving', 'Hotazel')).rejects.toThrow(/Dispatch blocked — dangerous-goods details are incomplete: consignment: missing Placard reference, Safety data sheet \(MSDS\) link/);
+
+      expect(JSON.stringify([db.consignments, db.wagons, db.events])).toBe(before);
+      expect(prisma.railConsignment.update).not.toHaveBeenCalled();
+      expect(prisma.railConsignmentEvent.create).not.toHaveBeenCalled();
+      expect(db.aiEvents).toHaveLength(0);
+      expect(db.consignments[0].actualDeparture).toBeNull();
+      expect(auditActions(audit)).toEqual([RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED]);
+      expect(auditEntries(audit)[0]).toMatchObject({
+        action: 'consignment.dispatch_blocked', actorType: 'tenant', actorId: 'u-mgr', targetType: 'rail_consignment', targetId: c.id, targetName: 'RAIL-DG-3',
+        metadata: { module: 'rail', companyId: 'A', actorRole: 'MANAGER', attemptedStatus: status, from: 'LOADING', invalid: [], missing: [{ scope: 'CONSIGNMENT', ref: 'RAIL-DG-3', fields: ['placardRef', 'msdsDocumentUrl'] }] },
+      });
+    });
+
+    it('the gate cannot be skipped by jumping ahead (PLANNED straight to AT_INTERCHANGE is still blocked)', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ status: 'PLANNED', ...blockedBody });
+      await expect(svc.advanceStatus('A', c.id, 'AT_INTERCHANGE', MANAGER)).rejects.toThrow(/Dispatch blocked/);
+    });
+
+    it.each(NOT_MOVEMENT)('moving to %s is NOT gated — paperwork can be finished while loading, and a cancel is never trapped', async (status) => {
+      const { svc, audit, seedConsignment } = makeService();
+      const c = seedConsignment({ status: 'PLANNED', ...blockedBody });
+      await expect(svc.advanceStatus('A', c.id, status, MANAGER)).resolves.toMatchObject({ status });
+      expect(auditActions(audit)).toEqual([RAIL_AUDIT_ACTION.CONSIGNMENT_STATUS_ADVANCED]);
+    });
+
+    it('cancel() is never blocked by incomplete DG data', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ status: 'LOADING', ...blockedBody });
+      await expect(svc.cancel('A', c.id, MANAGER)).resolves.toMatchObject({ status: 'CANCELLED' });
+    });
+
+    it.each(MOVEMENT)('a DG consignment whose details are complete moves to %s normally', async (status) => {
+      const { svc, audit, seedConsignment } = makeService();
+      const c = seedConsignment({ status: 'LOADING', ...DG_FULL });
+      const out = await svc.advanceStatus('A', c.id, status, MANAGER, 'go', 'Hotazel');
+      expect(out.status).toBe(status);
+      if (status === 'DEPARTED') expect(out.actualDeparture).toBeInstanceOf(Date);
+      expect(auditActions(audit)).toEqual([RAIL_AUDIT_ACTION.CONSIGNMENT_STATUS_ADVANCED]);
+    });
+
+    it('a non-DG consignment is never gated', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ status: 'LOADING' });
+      await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).resolves.toMatchObject({ status: 'DEPARTED' });
+    });
+
+    it('a malformed value blocks just like a missing one, and the message says why', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ ...DG_FULL, unNumber: 'ABC', msdsDocumentUrl: 'http://insecure.example/msds.pdf' });
+      await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toThrow(/UN number must be UN followed by four digits \(e\.g\. UN1203\); consignment: Safety data sheet \(MSDS\) link must be an https:\/\/ link/);
+    });
+
+    it('a flagged wagon with incomplete details blocks the whole consignment, naming the wagon', async () => {
+      const { svc, db, seedConsignment, seedWagon } = makeService();
+      const c = seedConsignment({ status: 'LOADING' }); // the consignment itself is not flagged
+      seedWagon(c.id, { wagonNumber: 'TANK-77', isDangerousGoods: true, unNumber: 'UN1203' });
+      await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toThrow(/wagon TANK-77: missing IMDG class, Placard reference, 24-hour emergency contact, Safety data sheet \(MSDS\) link/);
+      expect(db.consignments[0].status).toBe('LOADING');
+    });
+
+    it('fixing the gap lifts the block — the same request then succeeds', async () => {
+      const { svc, seedConsignment } = makeService();
+      const c = seedConsignment({ status: 'LOADING', ...blockedBody });
+      await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toThrow(/Dispatch blocked/);
+      await svc.update('A', c.id, { placardRef: 'Placard 3', msdsDocumentUrl: 'https://example.org/msds.pdf' } as any, MANAGER);
+      await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).resolves.toMatchObject({ status: 'DEPARTED' });
+    });
+
+    it('the refusal is a 400 even when the audit write itself fails', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { svc, audit, seedConsignment } = makeService();
+      audit.record.mockRejectedValue(new Error('audit store down'));
+      const c = seedConsignment({ ...blockedBody });
+      await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('another tenant cannot probe the gate: it gets a 404, and no blocked-dispatch entry is written for the owner', async () => {
+      const { svc, audit, seedConsignment } = makeService();
+      const c = seedConsignment({ companyId: 'A', ...blockedBody });
+      await expect(svc.advanceStatus('B', c.id, 'DEPARTED', MANAGER)).rejects.toBeInstanceOf(NotFoundException);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
   });
 });

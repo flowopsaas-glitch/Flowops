@@ -1,9 +1,10 @@
 /**
  * Rail reference-data seeder (operator script).
  *
- * Loads the platform-wide corridor / yard reference rows from the typed catalogs that ship in
- * the compiled app (dist/rail/catalog). It is idempotent, never downgrades a VERIFIED row, and
- * refuses to write anything if a catalog entry fails validation.
+ * Loads the platform-wide corridor / yard / Annexure 20b cancellation-code reference rows from the
+ * typed catalogs that ship in the compiled app (dist/rail/catalog). It is idempotent, never downgrades
+ * a VERIFIED row, never revives a deactivated cancellation code, and refuses to write anything if a
+ * catalog entry fails validation.
  *
  *   node prisma/seed-rail-reference.js --plan     read-only: what WOULD be created / updated
  *   node prisma/seed-rail-reference.js --apply    performs the writes
@@ -31,6 +32,7 @@ const { seedRailReference } = require(path.join(__dirname, '..', 'dist', 'rail',
     console.log(mode === 'plan' ? 'PLAN (nothing written):' : 'APPLIED:');
     for (const t of summary.tables) {
       console.log(`  ${t.table}: catalog ${t.catalogRows} | create ${t.created} | update ${t.updated} | unchanged ${t.unchanged} | skipped (already VERIFIED) ${t.skippedVerified}`);
+      for (const note of t.notes || []) console.log(`    ! ${note}`);
     }
   } finally {
     await prisma.$disconnect();

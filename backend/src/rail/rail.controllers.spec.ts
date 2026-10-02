@@ -4,23 +4,33 @@
  * (READ / WRITE / SIGNATORY) so a future edit cannot silently widen a route.
  */
 import { ForbiddenException, RequestMethod } from '@nestjs/common';
-import { METHOD_METADATA, GUARDS_METADATA } from '@nestjs/common/constants';
+import { METHOD_METADATA, GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '@prisma/client';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RailController } from './rail.controller';
 import { RailHandshakeController } from './rail-handshake.controller';
 import { RailSlotController } from './rail-slot.controller';
+import { RailChangeController } from './rail-change.controller';
+import { RailPossessionController } from './rail-possession.controller';
+import { RailOccurrenceController } from './rail-occurrence.controller';
+import { RailModule } from './rail.module';
 import { RAIL_READ_ROLES, RAIL_SIGNATORY_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
 
 const ALL_ROLES = Object.values(UserRole);
-const CONTROLLERS = [RailController, RailHandshakeController, RailSlotController] as const;
+const CONTROLLERS = [
+  RailController, RailHandshakeController, RailSlotController, RailChangeController, RailPossessionController, RailOccurrenceController,
+] as const;
 
 /** Signatory-only handlers (formal commitments), by controller. */
 const SIGNATORY_HANDLERS: Record<string, string[]> = {
   RailController: [],
   RailHandshakeController: ['signOff', 'resolveDeviation', 'lodgeDispute'],
   RailSlotController: ['submit', 'verifyDoc', 'revokeDoc'],
+  // allocating a "could be …" reason decides who pays; closing an occurrence is a formal act
+  RailChangeController: ['allocate'],
+  RailPossessionController: [],
+  RailOccurrenceController: ['close'],
 };
 
 /**
@@ -31,6 +41,9 @@ const READ_ONLY_POSTS: Record<string, string[]> = {
   RailController: [],
   RailHandshakeController: [],
   RailSlotController: ['envelopeCheck'],
+  RailChangeController: ['preview'], // derives attribution / consequence, saves nothing, audits nothing
+  RailPossessionController: [],
+  RailOccurrenceController: [],
 };
 const isReadOnly = (ctrl: { name: string }, handler: string, method: RequestMethod) =>
   method === RequestMethod.GET || READ_ONLY_POSTS[ctrl.name].includes(handler);
@@ -56,7 +69,7 @@ const routes = CONTROLLERS.flatMap((ctrl) =>
 
 describe('rail controllers — role matrix', () => {
   it('discovers a meaningful number of routes (the matrix is not vacuous)', () => {
-    expect(routes.length).toBeGreaterThanOrEqual(45);
+    expect(routes.length).toBeGreaterThanOrEqual(76); // 6 controllers; raise this when routes are added, so a deleted route is noticed
   });
 
   it('every controller uses RolesGuard', () => {
@@ -102,11 +115,50 @@ describe('rail controllers — role matrix', () => {
     }
   });
 
-  it('the only POST open to VIEWER is the side-effect-free envelope check', () => {
+  it('the only POSTs open to VIEWER are the two side-effect-free calculations (envelope check, change preview)', () => {
     const openPosts = routes
       .filter(([ctrl, handler, method]) => method === RequestMethod.POST && allows(ctrl.prototype, handler, UserRole.VIEWER))
       .map(([ctrl, handler]) => `${ctrl.name}.${handler}`);
-    expect(openPosts).toEqual(['RailSlotController.envelopeCheck']);
+    expect(openPosts.sort()).toEqual(['RailChangeController.preview', 'RailSlotController.envelopeCheck']);
+  });
+
+  it('every controller class is registered in the rail module (a route nobody registered is a route nobody can reach)', () => {
+    const registered: unknown[] = Reflect.getMetadata('controllers', RailModule);
+    for (const c of CONTROLLERS) expect(registered).toContain(c);
+  });
+
+  it('no route is shadowed by an EARLIER parameterised route of the same verb (e.g. GET :id declared before GET codes)', () => {
+    const seg = (p: string) => p.split('/').filter(Boolean);
+    const problems: string[] = [];
+    for (const ctrl of CONTROLLERS) {
+      const base = Reflect.getMetadata(PATH_METADATA, ctrl) as string;
+      const declared = Object.getOwnPropertyNames(ctrl.prototype)
+        .filter((n) => n !== 'constructor' && Reflect.hasMetadata(METHOD_METADATA, ctrl.prototype[n]))
+        .map((n) => ({
+          name: n, method: Reflect.getMetadata(METHOD_METADATA, ctrl.prototype[n]) as RequestMethod,
+          path: seg(`${base}/${Reflect.getMetadata(PATH_METADATA, ctrl.prototype[n]) === '/' ? '' : Reflect.getMetadata(PATH_METADATA, ctrl.prototype[n])}`),
+        }));
+      declared.forEach((later, j) => declared.slice(0, j).forEach((earlier) => {
+        if (earlier.method !== later.method || earlier.path.length !== later.path.length) return;
+        const shadows = earlier.path.every((s, i) => s === later.path[i] || s.startsWith(':'));
+        const identical = earlier.path.join('/') === later.path.join('/');
+        if (shadows && !identical) problems.push(`${ctrl.name}.${earlier.name} (/${earlier.path.join('/')}) shadows ${later.name} (/${later.path.join('/')})`);
+      }));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('no two handlers in the rail controllers answer the same verb + path', () => {
+    const seen = new Map<string, string>();
+    const dupes: string[] = [];
+    for (const [ctrl, handler, method] of routes) {
+      const base = Reflect.getMetadata(PATH_METADATA, ctrl) as string;
+      const sub = Reflect.getMetadata(PATH_METADATA, ctrl.prototype[handler]) as string;
+      const key = `${RequestMethod[method]} /${[base, sub === '/' ? '' : sub].filter(Boolean).join('/')}`;
+      if (seen.has(key)) dupes.push(`${key}: ${seen.get(key)} and ${ctrl.name}.${handler}`);
+      seen.set(key, `${ctrl.name}.${handler}`);
+    }
+    expect(dupes).toEqual([]);
   });
 
   it('role sets nest: signatory ⊂ write ⊂ read', () => {

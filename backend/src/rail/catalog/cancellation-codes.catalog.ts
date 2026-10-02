@@ -158,3 +158,23 @@ export const CANCELLATION_CODE_CATALOG: readonly CancellationCodeEntry[] = RAW_A
 export function findCancellationCode(code: string): CancellationCodeEntry | undefined {
   return CANCELLATION_CODE_CATALOG.find((c) => c.code === code);
 }
+
+const ANNEXURE_20B_PARTIES: readonly Annexure20bParty[] = ['RAIL_OPERATIONS', 'INFRASTRUCTURE_MANAGER', 'FORCE_MAJEURE', 'ALLOCATION_REQUIRED'];
+
+/** Returns a list of problems; empty means the row may be seeded. */
+export function validateCancellationCodeEntry(e: CancellationCodeEntry): string[] {
+  const p: string[] = [];
+  if (!/^CNX-\d{3}$/.test(e.code)) p.push(`code "${e.code}" must look like CNX-001`);
+  if (!Number.isInteger(e.sourceRow) || e.sourceRow < 1) p.push('sourceRow must be a positive integer');
+  else if (e.code !== `CNX-${String(e.sourceRow).padStart(3, '0')}`) p.push(`code ${e.code} does not match sourceRow ${e.sourceRow} (codes are the annexure row number and are never renumbered)`);
+  if (!e.reason?.trim()) p.push('reason is required');
+  if (!e.sourceText?.trim()) p.push('sourceText is required');
+  if (!ANNEXURE_20B_PARTIES.includes(e.responsibleParty)) p.push(`responsibleParty "${e.responsibleParty}" is not one of ${ANNEXURE_20B_PARTIES.join('/')}`);
+  if (e.responsibleParty === 'ALLOCATION_REQUIRED') {
+    if (e.possibleParties.length < 2) p.push('an ALLOCATION_REQUIRED row must list the parties the annexure says it could be (at least two)');
+    if (e.possibleParties.some((x) => !ANNEXURE_20B_PARTIES.includes(x) || (x as string) === 'ALLOCATION_REQUIRED')) p.push('possibleParties may only name RAIL_OPERATIONS / INFRASTRUCTURE_MANAGER / FORCE_MAJEURE');
+  } else if (e.possibleParties.length) {
+    p.push('only an ALLOCATION_REQUIRED row can list possibleParties');
+  }
+  return p;
+}

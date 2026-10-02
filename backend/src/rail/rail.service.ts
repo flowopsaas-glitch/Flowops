@@ -1,10 +1,12 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { RailConsignmentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
 import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, recordRailAudit,
 } from './rail-audit';
+import { evaluateDangerousGoods, isMovementStatus, normaliseUnNumber } from './rail-dangerous-goods';
 import { CreateRailConsignmentDto } from './dto/create-rail-consignment.dto';
 import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';
 import { CreateWagonDto } from './dto/wagon.dto';
@@ -66,6 +68,20 @@ export class RailService {
     return v ? new Date(v) : null;
   }
 
+  /** Dangerous-goods columns from a DTO, normalised (UN number → UN1203, class upper-cased). */
+  private dgColumns(dto: {
+    isDangerousGoods?: boolean; unNumber?: string; imdgClass?: string; placardRef?: string; emergencyContact24h?: string; msdsDocumentUrl?: string;
+  }) {
+    return {
+      isDangerousGoods: dto.isDangerousGoods ?? false,
+      unNumber: normaliseUnNumber(dto.unNumber),
+      imdgClass: dto.imdgClass?.trim() ? dto.imdgClass.trim().toUpperCase() : null,
+      placardRef: dto.placardRef?.trim() || null,
+      emergencyContact24h: dto.emergencyContact24h?.trim() || null,
+      msdsDocumentUrl: dto.msdsDocumentUrl?.trim() || null,
+    };
+  }
+
   // ── Consignment CRUD ─────────────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateRailConsignmentDto, actor: RailActor) {
@@ -90,6 +106,7 @@ export class RailService {
         slaHours: dto.slaHours ?? null,
         ...(dto.riskLevel ? { riskLevel: dto.riskLevel } : {}),
         riskNote: dto.riskNote ?? null,
+        ...this.dgColumns(dto),
       },
     });
 
@@ -129,7 +146,7 @@ export class RailService {
         { railOperator: { contains: filters.q, mode: 'insensitive' } },
       ];
     }
-    return this.prisma.railConsignment.findMany({
+    const rows = await this.prisma.railConsignment.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -137,6 +154,32 @@ export class RailService {
         _count: { select: { wagons: true, legs: true, events: true } },
       },
     });
+
+    // Dangerous-goods readiness for the list badge. Only wagons that are themselves flagged are loaded
+    // (a handful), never every wagon of every consignment.
+    const dgWagons = rows.length
+      ? await this.prisma.wagon.findMany({
+          where: { consignmentId: { in: rows.map((r) => r.id) }, isDangerousGoods: true },
+          select: { consignmentId: true, wagonNumber: true, isDangerousGoods: true, unNumber: true, imdgClass: true, placardRef: true, emergencyContact24h: true, msdsDocumentUrl: true },
+        })
+      : [];
+    return rows.map((r) => {
+      const dg = evaluateDangerousGoods(r, dgWagons.filter((w) => w.consignmentId === r.id));
+      return {
+        ...r,
+        dg: {
+          required: dg.required, ready: dg.ready,
+          problems: dg.missing.reduce((n, g) => n + g.fields.length, 0) + dg.invalid.length,
+        },
+      };
+    });
+  }
+
+  /** The dangerous-goods readiness of one consignment, exactly as the dispatch gate sees it. */
+  async getDangerousGoods(companyId: string, id: string) {
+    const c = await this.get(companyId, id);
+    const dg = evaluateDangerousGoods(c, c.wagons);
+    return { ...dg, blocksDeparture: dg.required && !dg.ready, consignmentNumber: c.consignmentNumber };
   }
 
   async get(companyId: string, id: string) {
@@ -158,6 +201,14 @@ export class RailService {
     const data: any = { ...dto };
     if (dto.plannedDeparture !== undefined) data.plannedDeparture = this.toDate(dto.plannedDeparture);
     if (dto.plannedArrival !== undefined) data.plannedArrival = this.toDate(dto.plannedArrival);
+    // Dangerous-goods values are normalised on the way in, but only the ones actually sent are touched.
+    // `isDangerousGoods` is a NOT NULL column: an explicit null means "not sent", never "write NULL" (that would be a 500).
+    if (data.isDangerousGoods === null) delete data.isDangerousGoods;
+    if (dto.unNumber !== undefined) data.unNumber = normaliseUnNumber(dto.unNumber);
+    if (dto.imdgClass !== undefined) data.imdgClass = dto.imdgClass.trim() ? dto.imdgClass.trim().toUpperCase() : null;
+    for (const k of ['placardRef', 'emergencyContact24h', 'msdsDocumentUrl'] as const) {
+      if (dto[k] !== undefined) data[k] = dto[k]?.trim() || null;
+    }
     const updated = await this.prisma.railConsignment.update({ where: { id }, data });
     await this.record(
       companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_UPDATED,
@@ -191,7 +242,26 @@ export class RailService {
    * record a timeline event, and log a best-effort AI Control Tower event.
    */
   async advanceStatus(companyId: string, id: string, status: string, actor: RailActor, note?: string, location?: string) {
+    // An unknown status used to reach Prisma and surface as a 500; reject it up front.
+    if (!(Object.values(RailConsignmentStatus) as string[]).includes(status)) {
+      throw new BadRequestException(`Unknown status "${String(status).slice(0, 40)}". Use one of: ${Object.values(RailConsignmentStatus).join(', ')}.`);
+    }
     const c = await this.get(companyId, id);
+
+    // ── DANGEROUS-GOODS DISPATCH GATE ───────────────────────────────────────────
+    // The brief says "DISPATCHED"; this model has no such status — DEPARTED is the dispatch event, and
+    // IN_TRANSIT / AT_INTERCHANGE are covered too so the gate cannot be skipped by jumping ahead.
+    if (isMovementStatus(status)) {
+      const dg = evaluateDangerousGoods(c, c.wagons);
+      if (dg.required && !dg.ready) {
+        await this.record(
+          companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED,
+          { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id, name: c.consignmentNumber },
+          { attemptedStatus: status, from: c.status, missing: dg.missing, invalid: dg.invalid },
+        );
+        throw new BadRequestException(`Dispatch blocked — dangerous-goods details are incomplete: ${dg.summary}.`);
+      }
+    }
 
     const patch: any = { status: status as any };
     if (status === 'DEPARTED' && !c.actualDeparture) patch.actualDeparture = new Date();
@@ -248,6 +318,7 @@ export class RailService {
         axles: dto.axles ?? null,
         gauge: dto.gauge ?? null,
         vehicleProfile: dto.vehicleProfile ?? null,
+        ...this.dgColumns(dto),
       },
     });
     await this.record(

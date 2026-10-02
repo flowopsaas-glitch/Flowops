@@ -53,6 +53,12 @@ export class RailController {
     return this.rail.get(u.companyId, id);
   }
 
+  @Get('consignments/:id/dangerous-goods')
+  @ApiOperation({ summary: 'Dangerous-goods readiness of a consignment — exactly what the departure gate checks' })
+  dangerousGoods(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
+    return this.rail.getDangerousGoods(u.companyId, id);
+  }
+
   @Post('consignments')
   @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Create a rail consignment' })

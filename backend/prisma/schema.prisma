@@ -3886,6 +3886,16 @@ model RailConsignment {
   riskLevel    RiskLevel?
   riskNote     String? @db.Text
 
+  // Dangerous goods (Wave 3). When isDangerousGoods is true the dispatch gate blocks departure
+  // until every mandatory field below is present and well-formed (consignment value, or the
+  // wagon's own where a wagon is flagged individually).
+  isDangerousGoods    Boolean @default(false)
+  unNumber            String? // UN1234
+  imdgClass           String? // 3, 2.1, 6.1, 1.4S …
+  placardRef          String?
+  emergencyContact24h String?
+  msdsDocumentUrl     String? // https link to the controlled safety data sheet
+
   companyId String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3918,6 +3928,14 @@ model Wagon {
   axles          Int?               // axle count (axle load = (tare + loaded) / axles)
   gauge          RailGauge?
   vehicleProfile RailVehicleProfile?
+
+  // Dangerous goods carried by THIS wagon (Wave 3). A field left empty inherits the consignment's.
+  isDangerousGoods    Boolean @default(false)
+  unNumber            String?
+  imdgClass           String?
+  placardRef          String?
+  emergencyContact24h String?
+  msdsDocumentUrl     String?
 
   @@index([consignmentId])
   @@map("wagons")
@@ -5117,4 +5135,220 @@ model RailSlotApplication {
   @@index([companyId, corridorCode])
   @@index([status, mobilizeBy])
   @@map("rail_slot_applications")
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RAIL — CANCELLATION / RESCHEDULING, POSSESSIONS, OCCURRENCES, DANGEROUS GOODS  (Wave 3)
+//
+// Requirements: RAIL-007 (flexing), RAIL-009 (reserved in the register — the brief assigns it here),
+// RAIL-010, RAIL-011, RAIL-013 (cancellation consequences), RAIL-015 (occurrences).
+// Sources: Annexure 20a (process), 20b (82 reasons), 21 (Clearinghouse windows) — all supplied;
+// Annexures 13 / 23 / 24 / 41 were NOT supplied, so possession and occurrence parameters that the
+// brief attributes to them are modelled generically and flagged unverified in the audit ledger.
+//
+// Strictly additive, and again NO foreign keys (scalar references verified by the service layer).
+// rail_cancellation_codes is PLATFORM-WIDE reference data; the other three tables are tenant-scoped.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum RailCancellationParty {
+  RAIL_OPERATIONS         // Annexure 20b "Rail Operations" — the train-operating side (TOC)
+  INFRASTRUCTURE_MANAGER  // TRIM
+  FORCE_MAJEURE
+  ALLOCATION_REQUIRED     // the annexure says "Could be …": decided at the Clearinghouse
+}
+
+enum RailAttribution {
+  TRIM
+  TOC
+  FORCE_MAJEURE
+  UNDETERMINED
+}
+
+enum RailChangeKind {
+  CANCEL
+  RESCHEDULE
+  REPLAN
+}
+
+enum RailChangeInitiator {
+  TOC
+  YARD_OPERATOR
+  TRIM
+  PORT_TERMINAL_OPERATOR
+  PRASA_OTHER_IM
+}
+
+enum RailChangeStatus {
+  SUBMITTED
+  ACKNOWLEDGED
+  ALTERNATIVE_PROPOSED
+  ACCEPTED
+  CANCELLED_CONFIRMED
+  CLOSED
+}
+
+enum RailPossessionKind {
+  ANNUAL_PLAN
+  LOCKED_60_DAY
+  AD_HOC_EMERGENCY
+}
+
+enum RailPossessionStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum RailOccurrenceType {
+  DERAILMENT
+  COLLISION
+  OHTE_CABLE_THEFT
+  SPAD
+  HAZMAT_SPILL
+  OTHER
+}
+
+enum RailOccurrenceLevel {
+  LEVEL_1_CODE_GREEN   // minor
+  LEVEL_2_CODE_ORANGE  // major
+  LEVEL_3_CODE_RED     // disaster
+}
+
+enum RailOccurrenceStatus {
+  REPORTED
+  UNDER_INVESTIGATION
+  PRELIMINARY_REPORT_FILED
+  CLOSED
+}
+
+// Annexure 20b, one row per source row (FlowOps-assigned code CNX-nnn). Platform-wide.
+model RailCancellationCode {
+  id               String                @id @default(cuid())
+  code             String                @unique // CNX-001
+  sourceRow        Int
+  reason           String
+  responsibleParty RailCancellationParty
+  possibleParties  String[]              @default([]) // for ALLOCATION_REQUIRED rows
+  sourceText       String                // the "Responsible Party" cell, verbatim
+  annexureVersion  String
+  isActive         Boolean               @default(true)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@map("rail_cancellation_codes")
+}
+
+// A cancel / reschedule / re-plan of a TOC train (Annexure 20a), with its 20b reason, attribution and commercial
+// consequence. Snapshots the reason text and the 20b allocation so history survives a catalog change.
+model RailSlotChangeRequest {
+  id                    String                @id @default(cuid())
+  companyId             String
+  requestNumber         String                // CR-2026-00042 (unique per tenant)
+  kind                  RailChangeKind
+  status                RailChangeStatus      @default(SUBMITTED)
+  initiatedBy           RailChangeInitiator
+
+  cancellationCode      String                // soft reference to rail_cancellation_codes.code
+  cancellationReason    String
+  codeResponsibleParty  RailCancellationParty // the 20b allocation, as it was when logged
+  attribution           RailAttribution       @default(UNDETERMINED)
+  isForceMajeure        Boolean               @default(false)
+  isPlannedOccupation   Boolean               @default(false)
+
+  trainSlotRef          String
+  slotApplicationId     String?
+  consignmentId         String?
+  handshakeReportId     String?
+  handshakeDeviationId  String?
+
+  originalDeparture     DateTime?
+  proposedDeparture     DateTime?
+  eventOccurredAt       DateTime?             // when the cause happened (15-minute notice clock)
+  requestedAt           DateTime              @default(now())
+  acknowledgedAt        DateTime?             // the IM must acknowledge within 1 hour
+  noticeLateMinutes     Int?                  // minutes beyond the 15-minute notice, when late
+  hoursBeforeDeparture  Float?
+  noticeBand            String                // SHORT_NOTICE | PLANNING_VERSION | AFTER_DEPARTURE | UNKNOWN
+  commercialWindow      String                // INSIDE_72H | OUTSIDE_72H | UNKNOWN
+
+  consequence           String                // see rail-change.rules.ts
+  penaltyApplicable     Boolean               @default(false)
+  penaltyAgainst        String?               // TOC | TRIM
+  penaltyBasis          String?               @db.Text
+  requiresStaging       Boolean               @default(false)
+  replacementAccepted   Boolean?
+  note                  String?               @db.Text
+  closedAt              DateTime?
+  createdById           String?
+  createdByEmail        String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@unique([companyId, requestNumber])
+  @@index([companyId, status])
+  @@index([companyId, consignmentId])
+  @@index([companyId, trainSlotRef])
+  @@map("rail_slot_change_requests")
+}
+
+// An IM possession / occupation window on a corridor, recorded by the tenant.
+model RailPossessionWindow {
+  id              String               @id @default(cuid())
+  companyId       String
+  corridorCode    String               // soft reference to rail_corridor_nodes.code
+  kind            RailPossessionKind
+  status          RailPossessionStatus @default(PLANNED)
+  title           String
+  location        String?
+  description     String?              @db.Text
+  imReference     String?
+  startsAt        DateTime
+  endsAt          DateTime
+  noticeGivenAt   DateTime?
+  createdById     String?
+  createdByEmail  String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([companyId, corridorCode, startsAt])
+  @@index([companyId, status])
+  @@map("rail_possession_windows")
+}
+
+// A safety / security occurrence (derailment, collision, OHTE / cable theft, SPAD, hazmat spill …).
+model RailOccurrenceReport {
+  id                       String               @id @default(cuid())
+  companyId                String
+  occurrenceNumber         String               // OR-2026-00042 (unique per tenant)
+  type                     RailOccurrenceType
+  level                    RailOccurrenceLevel
+  status                   RailOccurrenceStatus @default(REPORTED)
+  corridorCode             String?
+  location                 String?
+  trainSlotRef             String?
+  consignmentId            String?
+  deviationId              String?              // the Daily Handshake deviation it was logged as
+  auditLogId               String?              // the audit_logs row written when it was reported
+  occurredAt               DateTime
+  description              String               @db.Text
+  responsibleParty         RailAttribution      @default(UNDETERMINED)
+  fatalities               Boolean              @default(false)
+  hazmatInvolved           Boolean              @default(false)
+  reportedToTcoAt          DateTime?
+  reportedToRsrAt          DateTime?
+  preliminaryReportDueAt   DateTime?            // occurredAt + 48 hours
+  preliminaryReportFiledAt DateTime?
+  investigationNote        String?              @db.Text
+  closedAt                 DateTime?
+  createdById              String?
+  createdByEmail           String?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  @@unique([companyId, occurrenceNumber])
+  @@index([companyId, status])
+  @@index([companyId, occurredAt])
+  @@map("rail_occurrence_reports")
 }
