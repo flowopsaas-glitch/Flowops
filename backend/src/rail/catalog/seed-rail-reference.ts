@@ -2,6 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import { CORRIDOR_CATALOG } from './corridors.catalog';
 import { YARD_CATALOG } from './yards.catalog';
 import { ANNEXURE_20B_VERSION, CANCELLATION_CODE_CATALOG, validateCancellationCodeEntry } from './cancellation-codes.catalog';
+import { ANCILLARY_SERVICE_CATALOG, ANNEXURE_40_VERSION, validateAncillaryServiceEntry } from './ancillary-services.catalog';
+import { TARIFF_RATE_FIELDS, TARIFF_SCHEDULE_CATALOG, validateTariffScheduleEntry } from './tariff-schedules.catalog';
 import { validateReferenceEntry } from '../rail-reference';
 
 /**
@@ -17,6 +19,12 @@ import { validateReferenceEntry } from '../rail-reference';
  *   different: `isActive` belongs to the operator — the seeder never writes it on update and never
  *   revives a row that was deactivated. A change of a code's responsible party (it drives who pays)
  *   is always listed in the summary so it cannot happen unnoticed.
+ *
+ * - Annexure 40 ancillary services (113 lines) are seeded WITHOUT prices: the annexure publishes none. `isActive` is
+ *   operator-owned as above, a PUBLISHED rate in the database is never overwritten by a catalog line that does not
+ *   carry one, and every change to a rate is listed so a price cannot change unnoticed.
+ * - Tariff schedules come from `tariff-schedules.catalog.ts`, which is EMPTY: no c/GTK rate was supplied. A VERIFIED
+ *   row is never downgraded and every change to a rate is listed.
  *
  * Run it from the operator script `prisma/seed-rail-reference.js` (--plan, then --apply).
  */
@@ -36,7 +44,7 @@ export interface SeedSummary {
   tables: SeedTableSummary[];
 }
 
-type Db = Pick<PrismaClient, 'railCorridorNode' | 'railYardSpec' | 'railCancellationCode'>;
+type Db = Pick<PrismaClient, 'railCorridorNode' | 'railYardSpec' | 'railCancellationCode' | 'railAncillaryServiceCatalog' | 'railTariffSchedule'>;
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -53,6 +61,11 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
   dup(YARD_CATALOG.map((c) => c.code)).forEach((c) => problems.push(`duplicate yard code ${c}`));
   dup(CANCELLATION_CODE_CATALOG.map((c) => c.code)).forEach((c) => problems.push(`duplicate cancellation code ${c}`));
   dup(CANCELLATION_CODE_CATALOG.map((c) => String(c.sourceRow))).forEach((r) => problems.push(`duplicate cancellation sourceRow ${r}`));
+  for (const a of ANCILLARY_SERVICE_CATALOG) validateAncillaryServiceEntry(a).forEach((x) => problems.push(`ancillary service ${a.code}: ${x}`));
+  dup(ANCILLARY_SERVICE_CATALOG.map((a) => a.code)).forEach((c) => problems.push(`duplicate ancillary service code ${c}`));
+  const corridorCodes = CORRIDOR_CATALOG.map((c) => c.code);
+  for (const t of TARIFF_SCHEDULE_CATALOG) validateTariffScheduleEntry(t, corridorCodes).forEach((x) => problems.push(`tariff schedule ${t.corridorCode} ${t.financialYear}: ${x}`));
+  dup(TARIFF_SCHEDULE_CATALOG.map((t) => `${t.corridorCode} ${t.financialYear}`)).forEach((k) => problems.push(`duplicate tariff schedule ${k}`));
   if (problems.length) throw new Error(`Reference catalog failed validation — nothing was written:\n  ${problems.join('\n  ')}`);
 
   const tables: SeedTableSummary[] = [];
@@ -137,6 +150,79 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
     codes.updated += 1;
   }
   tables.push(codes);
+
+  // 5) Annexure 40 ancillary services — no prices (the annexure publishes none)
+  const ancillary: SeedTableSummary = { table: 'rail_ancillary_services', catalogRows: ANCILLARY_SERVICE_CATALOG.length, created: 0, updated: 0, unchanged: 0, skippedVerified: 0, notes: [] };
+  for (const a of ANCILLARY_SERVICE_CATALOG) {
+    const data = {
+      serviceNumber: a.serviceNumber, serviceName: a.serviceName, name: a.name, sourceLabel: a.sourceLabel ?? null, section: a.section ?? null, description: a.description ?? null,
+      unitOfMeasure: a.unitOfMeasure, tier: a.tier, tierName: a.tierName, serviceGroup: a.group, isCompulsory: a.isCompulsory, priceStatus: a.priceStatus,
+      unitRateZar: a.unitRateZar ?? null, rateSourceRef: a.rateSourceRef ?? null, annexureVersion: ANNEXURE_40_VERSION,
+    };
+    const existing = await prisma.railAncillaryServiceCatalog.findUnique({ where: { code: a.code } });
+    if (!existing) {
+      if (!dryRun) await prisma.railAncillaryServiceCatalog.create({ data: { code: a.code, ...data } });
+      ancillary.created += 1;
+      continue;
+    }
+    if (existing.isActive === false) ancillary.notes!.push(`${a.code} is deactivated in the database — its status was left alone.`);
+    if (existing.priceStatus === 'PUBLISHED' && a.priceStatus !== 'PUBLISHED') {
+      ancillary.skippedVerified += 1;
+      ancillary.notes!.push(`${a.code} has a PUBLISHED rate in the database (R${existing.unitRateZar}) and the catalog carries none — the row was left alone.`);
+      continue;
+    }
+    if (
+      existing.serviceNumber === data.serviceNumber && existing.serviceName === data.serviceName && existing.name === data.name && (existing.sourceLabel ?? null) === data.sourceLabel
+      && (existing.section ?? null) === data.section && (existing.description ?? null) === data.description && existing.unitOfMeasure === data.unitOfMeasure
+      && existing.tier === data.tier && existing.tierName === data.tierName && existing.serviceGroup === data.serviceGroup && existing.isCompulsory === data.isCompulsory
+      && existing.priceStatus === data.priceStatus && (existing.unitRateZar ?? null) === data.unitRateZar && (existing.rateSourceRef ?? null) === data.rateSourceRef
+      && existing.annexureVersion === data.annexureVersion
+    ) {
+      ancillary.unchanged += 1;
+      continue;
+    }
+    if ((existing.unitRateZar ?? null) !== data.unitRateZar) {
+      ancillary.notes!.push(`${a.code} rate ${dryRun ? 'WOULD change' : 'changed'}: ${existing.unitRateZar ?? 'none'} -> ${data.unitRateZar ?? 'none'} (this is the price billed for the service).`);
+    }
+    if (!dryRun) await prisma.railAncillaryServiceCatalog.update({ where: { code: a.code }, data });
+    ancillary.updated += 1;
+  }
+  tables.push(ancillary);
+
+  // 6) Tariff schedules — the catalog is EMPTY until a published tariff is supplied
+  const schedules: SeedTableSummary = { table: 'rail_tariff_schedules', catalogRows: TARIFF_SCHEDULE_CATALOG.length, created: 0, updated: 0, unchanged: 0, skippedVerified: 0, notes: [] };
+  for (const t of TARIFF_SCHEDULE_CATALOG) {
+    const data = {
+      loadedCentsPerGtk: t.loadedCentsPerGtk ?? null, emptyCentsPerGtk: t.emptyCentsPerGtk ?? null, dieselLitresPer1000Gtk: t.dieselLitresPer1000Gtk ?? null,
+      electricKwhPer1000Gtk: t.electricKwhPer1000Gtk ?? null, dieselPricePerLitreZar: t.dieselPricePerLitreZar ?? null,
+      electricityPricePerKwhZar: t.electricityPricePerKwhZar ?? null, overloadPenaltyPerTonneZar: t.overloadPenaltyPerTonneZar ?? null,
+      dataStatus: t.dataStatus, sourceRef: t.sourceRef ?? null, notes: t.notes ?? null,
+    };
+    const existing = await prisma.railTariffSchedule.findFirst({ where: { corridorCode: t.corridorCode, financialYear: t.financialYear } });
+    if (!existing) {
+      if (!dryRun) await prisma.railTariffSchedule.create({ data: { corridorCode: t.corridorCode, financialYear: t.financialYear, ...data } });
+      schedules.created += 1;
+      continue;
+    }
+    if (existing.dataStatus === 'VERIFIED' && t.dataStatus !== 'VERIFIED') {
+      schedules.skippedVerified += 1;
+      schedules.notes!.push(`${t.corridorCode} ${t.financialYear} is VERIFIED in the database and the catalog says SOURCE_PENDING — the row was left alone.`);
+      continue;
+    }
+    if (existing.isActive === false) schedules.notes!.push(`${t.corridorCode} ${t.financialYear} is deactivated in the database — its status was left alone.`);
+    const same = TARIFF_RATE_FIELDS.every((f) => (existing[f] ?? null) === data[f])
+      && existing.dataStatus === data.dataStatus && (existing.sourceRef ?? null) === data.sourceRef && (existing.notes ?? null) === data.notes;
+    if (same) {
+      schedules.unchanged += 1;
+      continue;
+    }
+    for (const f of TARIFF_RATE_FIELDS) {
+      if ((existing[f] ?? null) !== data[f]) schedules.notes!.push(`${t.corridorCode} ${t.financialYear} ${f} ${dryRun ? 'WOULD change' : 'changed'}: ${existing[f] ?? 'none'} -> ${data[f] ?? 'none'} (this is a billed rate).`);
+    }
+    if (!dryRun) await prisma.railTariffSchedule.update({ where: { id: existing.id }, data });
+    schedules.updated += 1;
+  }
+  tables.push(schedules);
 
   return { dryRun, tables };
 }

@@ -3896,6 +3896,13 @@ model RailConsignment {
   emergencyContact24h String?
   msdsDocumentUrl     String? // https link to the controlled safety data sheet
 
+  // Weighbridge hold (Wave 4). While HOLD_FOR_LOAD_ADJUSTMENT the dispatch gate blocks departure. Derived from
+  // the LATEST weighbridge reading of each wagon: it clears when every wagon has been re-weighed within its limit.
+  holdStatus    RailHoldStatus @default(NONE)
+  holdReason    String?        @db.Text
+  holdSetAt     DateTime?
+  holdClearedAt DateTime?
+
   companyId String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -5351,4 +5358,158 @@ model RailOccurrenceReport {
   @@index([companyId, status])
   @@index([companyId, occurredAt])
   @@map("rail_occurrence_reports")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Wave 4 — tariffs, ancillary services, weighbridge overload hold (RAIL-013 / 014 / 015)
+// Strictly additive. Money is Float, as everywhere else in this schema; arithmetic goes through common/money.util.
+// NOTHING below is priced by default: every rate is nullable and stays NULL until it is loaded from a cited source.
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum RailHoldStatus {
+  NONE
+  HOLD_FOR_LOAD_ADJUSTMENT // an overloaded wagon has not been re-weighed within its limit
+}
+
+enum RailPriceStatus {
+  NOT_PUBLISHED // the annexure lists the service without a price
+  TBD           // the annexure says "TBD" — not zero, not free
+  PUBLISHED     // a rate was loaded from a published tariff (requires unitRateZar and rateSourceRef)
+}
+
+enum RailAncillaryGroup {
+  RAIL
+  TELECOMS
+  SAFETY_EMERGENCY
+  PROPERTY
+}
+
+enum RailLimitSource {
+  CORRIDOR // the VERIFIED corridor's maximum axle load
+  MANUAL   // entered with the reading; not checked against the corridor
+  NONE     // no limit known — the reading cannot be checked
+}
+
+enum RailWeighStatus {
+  WITHIN_LIMIT
+  OVERLOADED
+  UNVERIFIED // no limit (or axle count) known, so the reading cannot be judged — never a pass
+}
+
+enum RailTariffCalcStatus {
+  PRICED     // every line has an amount
+  INCOMPLETE // saved, but at least one line has no loaded rate — no invoice draft until it does
+}
+
+// Platform-wide. One row per corridor and financial year. NO ROW IS SEEDED: the c/GTK tables (Network Statement
+// Section 5) were not supplied. The calculator prices only from a VERIFIED row that has a loaded rate.
+model RailTariffSchedule {
+  id                         String         @id @default(cuid())
+  corridorCode               String         // soft reference to rail_corridor_nodes.code
+  financialYear              String         // "2026/27"
+  loadedCentsPerGtk          Float?         // cents per gross tonne-kilometre, loaded train
+  emptyCentsPerGtk           Float?         // cents per GTK, empty return
+  dieselLitresPer1000Gtk     Float?         // consumption factor (not supplied)
+  electricKwhPer1000Gtk      Float?         // consumption factor (not supplied)
+  dieselPricePerLitreZar     Float?         // when NULL the calculator uses the brief's base price and says so
+  electricityPricePerKwhZar  Float?         // NULL ⇒ electric traction cannot be priced
+  overloadPenaltyPerTonneZar Float?         // NULL ⇒ the overload penalty line stays unpriced
+  currency                   String         @default("ZAR")
+  dataStatus                 RailDataStatus @default(SOURCE_PENDING)
+  sourceRef                  String?        // where the rates came from (required for VERIFIED)
+  notes                      String?        @db.Text
+  isActive                   Boolean        @default(true)
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+
+  @@unique([corridorCode, financialYear])
+  @@index([financialYear])
+  @@map("rail_tariff_schedules")
+}
+
+// Platform-wide: Annexure 40, one row per priced line (113). The annexure publishes NO prices: unitRateZar is NULL
+// and stays NULL until a published tariff is loaded.
+model RailAncillaryServiceCatalog {
+  id              String             @id @default(cuid())
+  code            String             @unique // ANX40-01, ANX40-04-02
+  serviceNumber   Int
+  serviceName     String
+  name            String
+  sourceLabel     String?
+  section         String?
+  description     String?            @db.Text
+  unitOfMeasure   String             // verbatim from the annexure
+  tier            Int
+  tierName        String
+  serviceGroup    RailAncillaryGroup
+  isCompulsory    Boolean            @default(false)
+  priceStatus     RailPriceStatus
+  unitRateZar     Float?
+  rateSourceRef   String?
+  annexureVersion String             // "2026/27"
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([serviceNumber])
+  @@index([tier])
+  @@map("rail_ancillary_services")
+}
+
+// Append-only. The most recently RECORDED reading of a wagon decides whether its consignment is held.
+model RailWeighbridgeReading {
+  id                String          @id @default(cuid())
+  companyId         String
+  consignmentId     String
+  wagonId           String?
+  wagonNumber       String
+  weighbridge       String?
+  weighedAt         DateTime
+  actualTonnes      Float           // gross mass of the wagon on the weighbridge
+  axles             Int?
+  maxAxleLoadTonnes Float?          // the limit this reading was judged against
+  limitSource       RailLimitSource @default(NONE)
+  corridorCode      String?
+  allowedTonnes     Float?          // maxAxleLoadTonnes × axles
+  excessTonnes      Float?          // actualTonnes − allowedTonnes, when overloaded
+  status            RailWeighStatus
+  note              String?         @db.Text
+  createdById       String?
+  createdByEmail    String?
+  createdAt         DateTime        @default(now())
+
+  @@index([companyId, consignmentId, createdAt])
+  @@map("rail_weighbridge_readings")
+}
+
+// A saved tariff calculation for one consignment. A BLOCKED calculation (no loaded rate, no weights …) is never saved.
+model RailTariffCalculation {
+  id                String               @id @default(cuid())
+  companyId         String
+  calculationNumber String               // TC-2026-00042 (unique per tenant)
+  consignmentId     String
+  consignmentNumber String
+  corridorCode      String
+  financialYear     String
+  scheduleId        String?              // the rail_tariff_schedules row the rates came from
+  status            RailTariffCalcStatus
+  inputs            Json
+  lines             Json
+  blockers          Json
+  warnings          Json
+  gtkLoaded         Float?
+  gtkEmpty          Float?
+  subtotalZar       Float
+  currency          String               @default("ZAR")
+  holdTriggered     Boolean              @default(false)
+  invoiceDraftId    String?              // set once, atomically — this is what makes "Generate Invoice Draft" idempotent
+  invoiceDraftedAt  DateTime?
+  createdById       String?
+  createdByEmail    String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([companyId, calculationNumber])
+  @@index([companyId, consignmentId])
+  @@map("rail_tariff_calculations")
 }

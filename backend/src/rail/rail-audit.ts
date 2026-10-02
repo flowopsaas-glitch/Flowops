@@ -75,8 +75,14 @@ export const RAIL_AUDIT_ACTION = {
   OCCURRENCE_INVESTIGATION_STARTED: 'occurrence.investigation_started',
   OCCURRENCE_PRELIMINARY_FILED: 'occurrence.preliminary_report_filed',
   OCCURRENCE_CLOSED: 'occurrence.closed',
-  /** A move into DEPARTED / IN_TRANSIT / AT_INTERCHANGE that the dangerous-goods gate refused. */
+  /** A move into DEPARTED / IN_TRANSIT / AT_INTERCHANGE that a dispatch gate (dangerous goods, weighbridge hold) refused. */
   CONSIGNMENT_DISPATCH_BLOCKED: 'consignment.dispatch_blocked',
+  // ── Weighbridge, hold and tariffs (Wave 4) ─────────────────────────────────
+  WEIGHBRIDGE_READING_RECORDED: 'weighbridge.reading_recorded',
+  CONSIGNMENT_HOLD_SET: 'consignment.held_for_load_adjustment',
+  CONSIGNMENT_HOLD_CLEARED: 'consignment.hold_cleared',
+  TARIFF_CALCULATED: 'tariff_calculation.created',
+  TARIFF_INVOICE_DRAFT_CREATED: 'tariff_calculation.invoice_draft_created',
 } as const;
 export type RailAuditAction = (typeof RAIL_AUDIT_ACTION)[keyof typeof RAIL_AUDIT_ACTION];
 
@@ -91,6 +97,8 @@ export const RAIL_AUDIT_TARGET = {
   CHANGE_REQUEST: 'rail_change_request',
   POSSESSION: 'rail_possession_window',
   OCCURRENCE: 'rail_occurrence_report',
+  WEIGHBRIDGE_READING: 'rail_weighbridge_reading',
+  TARIFF_CALCULATION: 'rail_tariff_calculation',
 } as const;
 
 /** Build an audit entry attributed to an authenticated tenant user. */

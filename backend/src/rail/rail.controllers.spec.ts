@@ -14,12 +14,15 @@ import { RailSlotController } from './rail-slot.controller';
 import { RailChangeController } from './rail-change.controller';
 import { RailPossessionController } from './rail-possession.controller';
 import { RailOccurrenceController } from './rail-occurrence.controller';
+import { RailTariffController } from './rail-tariff.controller';
+import { RailWeighbridgeController } from './rail-weighbridge.controller';
 import { RailModule } from './rail.module';
 import { RAIL_READ_ROLES, RAIL_SIGNATORY_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
 
 const ALL_ROLES = Object.values(UserRole);
 const CONTROLLERS = [
   RailController, RailHandshakeController, RailSlotController, RailChangeController, RailPossessionController, RailOccurrenceController,
+  RailTariffController, RailWeighbridgeController,
 ] as const;
 
 /** Signatory-only handlers (formal commitments), by controller. */
@@ -31,6 +34,9 @@ const SIGNATORY_HANDLERS: Record<string, string[]> = {
   RailChangeController: ['allocate'],
   RailPossessionController: [],
   RailOccurrenceController: ['close'],
+  // tariffs and weighbridge readings are working acts, not formal commitments: the WRITE tier
+  RailTariffController: [],
+  RailWeighbridgeController: [],
 };
 
 /**
@@ -44,6 +50,8 @@ const READ_ONLY_POSTS: Record<string, string[]> = {
   RailChangeController: ['preview'], // derives attribution / consequence, saves nothing, audits nothing
   RailPossessionController: [],
   RailOccurrenceController: [],
+  RailTariffController: ['preview'], // works out the charges, saves nothing, audits nothing
+  RailWeighbridgeController: [],
 };
 const isReadOnly = (ctrl: { name: string }, handler: string, method: RequestMethod) =>
   method === RequestMethod.GET || READ_ONLY_POSTS[ctrl.name].includes(handler);
@@ -69,7 +77,7 @@ const routes = CONTROLLERS.flatMap((ctrl) =>
 
 describe('rail controllers — role matrix', () => {
   it('discovers a meaningful number of routes (the matrix is not vacuous)', () => {
-    expect(routes.length).toBeGreaterThanOrEqual(76); // 6 controllers; raise this when routes are added, so a deleted route is noticed
+    expect(routes.length).toBeGreaterThanOrEqual(85); // 8 controllers; raise this when routes are added, so a deleted route is noticed
   });
 
   it('every controller uses RolesGuard', () => {
@@ -115,11 +123,18 @@ describe('rail controllers — role matrix', () => {
     }
   });
 
-  it('the only POSTs open to VIEWER are the two side-effect-free calculations (envelope check, change preview)', () => {
+  it('the only POSTs open to VIEWER are the three side-effect-free calculations (envelope check, change preview, tariff preview)', () => {
     const openPosts = routes
       .filter(([ctrl, handler, method]) => method === RequestMethod.POST && allows(ctrl.prototype, handler, UserRole.VIEWER))
       .map(([ctrl, handler]) => `${ctrl.name}.${handler}`);
-    expect(openPosts.sort()).toEqual(['RailChangeController.preview', 'RailSlotController.envelopeCheck']);
+    expect(openPosts.sort()).toEqual(['RailChangeController.preview', 'RailSlotController.envelopeCheck', 'RailTariffController.preview']);
+  });
+
+  it('saving a calculation, generating an invoice draft and recording a weighbridge reading all need the WRITE tier — never a viewer', () => {
+    for (const [ctrl, handler] of [[RailTariffController, 'calculate'], [RailTariffController, 'invoiceDraft'], [RailWeighbridgeController, 'record']] as const) {
+      expect(allows(ctrl.prototype, handler, UserRole.VIEWER)).toBe(false);
+      expect(allows(ctrl.prototype, handler, UserRole.DISPATCH)).toBe(true);
+    }
   });
 
   it('every controller class is registered in the rail module (a route nobody registered is a route nobody can reach)', () => {

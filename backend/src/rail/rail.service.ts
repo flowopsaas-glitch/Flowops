@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { RailConsignmentStatus } from '@prisma/client';
+import { RailConsignmentStatus, RailHoldStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
@@ -248,18 +248,25 @@ export class RailService {
     }
     const c = await this.get(companyId, id);
 
-    // ── DANGEROUS-GOODS DISPATCH GATE ───────────────────────────────────────────
+    // ── DISPATCH GATES: dangerous goods, and the weighbridge hold ──────────────
     // The brief says "DISPATCHED"; this model has no such status — DEPARTED is the dispatch event, and
-    // IN_TRANSIT / AT_INTERCHANGE are covered too so the gate cannot be skipped by jumping ahead.
+    // IN_TRANSIT / AT_INTERCHANGE are covered too so a gate cannot be skipped by jumping ahead. Both gates are
+    // evaluated together so the user is told everything that stops them, in one sentence.
     if (isMovementStatus(status)) {
       const dg = evaluateDangerousGoods(c, c.wagons);
-      if (dg.required && !dg.ready) {
+      const dgBlocked = dg.required && !dg.ready;
+      const held = c.holdStatus === RailHoldStatus.HOLD_FOR_LOAD_ADJUSTMENT;
+      if (dgBlocked || held) {
+        const reasons = [
+          ...(dgBlocked ? [`dangerous-goods details are incomplete: ${dg.summary}`] : []),
+          ...(held ? [`held for load adjustment: ${c.holdReason ?? 'a wagon has not been re-weighed within its limit'}`] : []),
+        ];
         await this.record(
           companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED,
           { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id, name: c.consignmentNumber },
-          { attemptedStatus: status, from: c.status, missing: dg.missing, invalid: dg.invalid },
+          { attemptedStatus: status, from: c.status, missing: dg.missing, invalid: dg.invalid, ...(held ? { hold: { status: c.holdStatus, reason: c.holdReason ?? null } } : {}) },
         );
-        throw new BadRequestException(`Dispatch blocked — dangerous-goods details are incomplete: ${dg.summary}.`);
+        throw new BadRequestException(`Dispatch blocked — ${reasons.join('; and ')}.`);
       }
     }
 

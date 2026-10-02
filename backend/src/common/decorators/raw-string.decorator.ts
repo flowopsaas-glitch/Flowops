@@ -20,3 +20,10 @@ export const RawString = () => Transform(({ obj, key }) => obj?.[key]);
  * `@IsBoolean()`.
  */
 export const RawBoolean = () => Transform(({ obj, key }) => obj?.[key]);
+
+/**
+ * Same idea for numbers. Implicit conversion turns `true` into 1, `"5"` into 5 and `[7]` into 7, so a money / mass /
+ * distance field could be satisfied by a value the client never meant as a number. With this transform only a real
+ * JSON number passes `@IsNumber()`.
+ */
+export const RawNumber = () => Transform(({ obj, key }) => obj?.[key]);

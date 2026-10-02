@@ -18,7 +18,8 @@
 
 export type AncillaryTier = 1 | 2 | 3 | 4;
 export type AncillaryGroup = 'RAIL' | 'TELECOMS' | 'SAFETY_EMERGENCY' | 'PROPERTY';
-export type AncillaryPriceStatus = 'NOT_PUBLISHED' | 'TBD';
+/** NOT_PUBLISHED / TBD are the two states the annexure itself uses; PUBLISHED is only for a rate loaded from a cited published tariff. */
+export type AncillaryPriceStatus = 'NOT_PUBLISHED' | 'TBD' | 'PUBLISHED';
 
 export interface AncillaryServiceLine {
   code: string;
@@ -40,6 +41,10 @@ export interface AncillaryServiceLine {
   /** Tier 1 is described as "Safety critical and compulsory services". */
   isCompulsory: boolean;
   priceStatus: AncillaryPriceStatus;
+  /** ONLY when priceStatus is PUBLISHED: ZAR per unit of measure. Absent for every line in the annexure as supplied. */
+  unitRateZar?: number;
+  /** ONLY when priceStatus is PUBLISHED: the published tariff the rate was taken from. */
+  rateSourceRef?: string;
 }
 
 export const ANNEXURE_40_VERSION = '2026/27';
@@ -309,4 +314,30 @@ export const ANCILLARY_SERVICE_CATALOG: readonly AncillaryServiceLine[] = flatte
 
 export function findAncillaryService(code: string): AncillaryServiceLine | undefined {
   return ANCILLARY_SERVICE_CATALOG.find((s) => s.code === code);
+}
+
+const ANCILLARY_GROUPS: readonly AncillaryGroup[] = ['RAIL', 'TELECOMS', 'SAFETY_EMERGENCY', 'PROPERTY'];
+
+/**
+ * Returns a list of problems; empty means the line may be seeded. A rate is only accepted together with the published
+ * tariff it came from: `TBD` and "not published" are never a price, and a price is never present without its source.
+ */
+export function validateAncillaryServiceEntry(e: AncillaryServiceLine): string[] {
+  const p: string[] = [];
+  if (!/^ANX40-\d{2}(-\d{2})?$/.test(e.code)) p.push(`code "${e.code}" must look like ANX40-04 or ANX40-04-02`);
+  if (!Number.isInteger(e.serviceNumber) || e.serviceNumber < 1 || e.serviceNumber > 40) p.push('serviceNumber must be 1-40');
+  else if (!e.code.startsWith(`ANX40-${String(e.serviceNumber).padStart(2, '0')}`)) p.push(`code ${e.code} does not match serviceNumber ${e.serviceNumber}`);
+  if (!e.serviceName?.trim() || !e.name?.trim()) p.push('serviceName and name are required');
+  if (!e.unitOfMeasure?.trim()) p.push('unitOfMeasure is required (the annexure gives one for every line)');
+  if (![1, 2, 3, 4].includes(e.tier)) p.push('tier must be 1-4');
+  if (!ANCILLARY_GROUPS.includes(e.group)) p.push(`group "${e.group}" is not one of ${ANCILLARY_GROUPS.join('/')}`);
+  if (!['NOT_PUBLISHED', 'TBD', 'PUBLISHED'].includes(e.priceStatus)) p.push(`priceStatus "${e.priceStatus}" is not one of NOT_PUBLISHED/TBD/PUBLISHED`);
+  if (e.priceStatus === 'PUBLISHED') {
+    if (typeof e.unitRateZar !== 'number' || !Number.isFinite(e.unitRateZar) || e.unitRateZar < 0) p.push('a PUBLISHED line needs a finite, non-negative unitRateZar');
+    if (!e.rateSourceRef?.trim()) p.push('a PUBLISHED line needs rateSourceRef (the published tariff the rate came from)');
+  } else {
+    if (e.unitRateZar !== undefined) p.push(`a ${e.priceStatus} line must not carry a unitRateZar (TBD is not zero and not a price)`);
+    if (e.rateSourceRef !== undefined) p.push(`a ${e.priceStatus} line must not carry a rateSourceRef`);
+  }
+  return p;
 }

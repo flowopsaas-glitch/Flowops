@@ -707,3 +707,96 @@ describe('dangerous goods', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Wave 4 — the weighbridge HOLD_FOR_LOAD_ADJUSTMENT gate (alongside the dangerous-goods gate)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('weighbridge hold gate', () => {
+  const HOLD = { holdStatus: 'HOLD_FOR_LOAD_ADJUSTMENT', holdReason: 'Overloaded: W1 (3.2 t over). Reduce the load and re-weigh the wagon within its limit.', holdSetAt: new Date('2026-10-02T08:00:00Z') };
+  const MOVEMENT = ['DEPARTED', 'IN_TRANSIT', 'AT_INTERCHANGE'];
+  const NOT_MOVEMENT = Object.values(RailConsignmentStatus).filter((st) => !MOVEMENT.includes(st));
+  const DG_BAD = { isDangerousGoods: true, unNumber: 'UN1203', imdgClass: '3' }; // placard, contact and MSDS missing
+
+  it.each(MOVEMENT)('a consignment on HOLD_FOR_LOAD_ADJUSTMENT cannot move to %s — nothing changes except one audit entry', async (status) => {
+    const { svc, prisma, db, audit, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING', consignmentNumber: 'RAIL-H-1', ...HOLD });
+    const before = JSON.stringify([db.consignments, db.wagons, db.events]);
+
+    await expect(svc.advanceStatus('A', c.id, status, MANAGER, 'leaving')).rejects.toThrow(
+      /^Dispatch blocked — held for load adjustment: Overloaded: W1 \(3\.2 t over\)\. Reduce the load and re-weigh the wagon within its limit\.\.$/,
+    );
+
+    expect(JSON.stringify([db.consignments, db.wagons, db.events])).toBe(before);
+    expect(prisma.railConsignment.update).not.toHaveBeenCalled();
+    expect(prisma.railConsignmentEvent.create).not.toHaveBeenCalled();
+    expect(db.aiEvents).toHaveLength(0);
+    expect(auditActions(audit)).toEqual([RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED]);
+    expect(auditEntries(audit)[0]).toMatchObject({
+      action: 'consignment.dispatch_blocked', actorId: 'u-mgr', targetId: c.id, targetName: 'RAIL-H-1',
+      metadata: { companyId: 'A', attemptedStatus: status, from: 'LOADING', hold: { status: 'HOLD_FOR_LOAD_ADJUSTMENT', reason: HOLD.holdReason } },
+    });
+  });
+
+  it('the hold cannot be skipped by jumping ahead (PLANNED straight to AT_INTERCHANGE)', async () => {
+    const { svc, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'PLANNED', ...HOLD });
+    await expect(svc.advanceStatus('A', c.id, 'AT_INTERCHANGE', MANAGER)).rejects.toThrow(/held for load adjustment/);
+  });
+
+  it.each(NOT_MOVEMENT)('moving to %s is NOT gated by the hold — the load can be adjusted while loading, and a cancel is never trapped', async (status) => {
+    const { svc, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'PLANNED', ...HOLD });
+    await expect(svc.advanceStatus('A', c.id, status, MANAGER)).resolves.toMatchObject({ status });
+  });
+
+  it('cancel() is never blocked by a hold', async () => {
+    const { svc, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING', ...HOLD });
+    await expect(svc.cancel('A', c.id, MANAGER)).resolves.toMatchObject({ status: 'CANCELLED' });
+  });
+
+  it('a consignment whose hold is NONE (or lifted) moves normally', async () => {
+    const { svc, seedConsignment } = makeService();
+    for (const hold of [{}, { holdStatus: 'NONE', holdReason: null }]) {
+      const c = seedConsignment({ status: 'LOADING', ...hold });
+      await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).resolves.toMatchObject({ status: 'DEPARTED' });
+    }
+  });
+
+  it('with no recorded reason the message still says what to do', async () => {
+    const { svc, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING', holdStatus: 'HOLD_FOR_LOAD_ADJUSTMENT', holdReason: null });
+    await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toThrow(/held for load adjustment: a wagon has not been re-weighed within its limit/);
+  });
+
+  it('a consignment that is BOTH on hold AND missing dangerous-goods details is told both, in one sentence', async () => {
+    const { svc, audit, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING', consignmentNumber: 'RAIL-H-2', ...DG_BAD, ...HOLD });
+    let message = '';
+    await svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER).catch((e) => { message = e.message; });
+    expect(message).toMatch(/^Dispatch blocked — dangerous-goods details are incomplete: .*missing .*; and held for load adjustment: Overloaded: W1/);
+    expect(auditEntries(audit)[0].metadata).toMatchObject({ hold: { status: 'HOLD_FOR_LOAD_ADJUSTMENT' }, missing: [expect.objectContaining({ scope: 'CONSIGNMENT' })] });
+  });
+
+  it('a dangerous-goods-only refusal is unchanged (no hold wording, no hold in the audit)', async () => {
+    const { svc, audit, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING', ...DG_BAD });
+    await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toThrow(/^Dispatch blocked — dangerous-goods details are incomplete: [^;]*\.$/);
+    expect(auditEntries(audit)[0].metadata).not.toHaveProperty('hold');
+  });
+
+  it('the refusal is a 400 even when the audit write itself fails', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { svc, audit, seedConsignment } = makeService();
+    audit.record.mockRejectedValue(new Error('audit store down'));
+    const c = seedConsignment({ ...HOLD });
+    await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('another tenant cannot probe the hold: a 404, and nothing is written for the owner', async () => {
+    const { svc, audit, seedConsignment } = makeService();
+    const c = seedConsignment({ companyId: 'A', ...HOLD });
+    await expect(svc.advanceStatus('B', c.id, 'DEPARTED', MANAGER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+});
