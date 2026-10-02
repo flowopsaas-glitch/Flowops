@@ -18,7 +18,7 @@ NOTHING DEPLOYED. PR #441 NOT MERGED. NO MIGRATION APPLIED. NO PRODUCTION FLAGS 
 | F-2 | DB-backed integration tests | **NOT RUN HERE — needs CI or approved VPS run** | No Docker/Postgres in this sandbox. CI's integration + E2E jobs run on push (PR #441: E2E pass). VPS disposable run (Action A-3 below) creates only `flowops-int-*` containers and never touches live. |
 | F-3 | Migration status review | **PASS — clean, nothing added** | `migrations:verify`: 5 migrations present and well-formed. `migrations:test` pass, `release:safety:test` 40/40 pass, `migrations:rehearsal:test` 17/17 pass. Schema proposals (C-01/C-03/C-12/C-13) are **drafts only** — no migration files created, no ledger change, checklist counts (`145\|95\|401\|150`) unaffected. |
 | F-4 | Staging-clone rehearsal | **AWAITING APPROVAL** | Action A-2 below (read-only inspect on a disposable clone). Not run. |
-| F-5 | clean / baseline / already-applied / drift | **AWAITING APPROVAL** | Actions A-1a/A-1b below (read-only R6/R7). Not run. CI drift guard runs on push. |
+| F-5 | clean / baseline / already-applied / drift | **LIVE BASELINE CONFIRMED (A-1a/A-1b PASS, 2026-10-02)** — CI drift guard still to run on this branch | Ledger = 2 finished, non-rolled-back rows (R6); schema = `133|72|362|150` (R7). Ran read-only on VPS, pasted output verified. No drift on live. CI drift guard runs on PR. |
 | F-6 | Tenant-scope + RBAC reviews | **PASS (advisory reviewed)** | `tenant-scope:audit` runs (advisory — rail tariff paths are companyId-scoped; D-15 test proves cross-tenant 404). `rbac:test` 7/7 pass. New routes: none (no new controllers in this release). |
 | F-7 | Security / P0 verification | **PARTIAL — local clean, CI authoritative** | `eslint` clean; no secrets in new code or commands; no `.env` access added; calculator DTOs still whitelist-strip rates. Trivy + E2E run in CI on push. No P0-critical paths touched (auth, payments, self-repair fail-closed unchanged). |
 | F-8 | Non-production pricing pilot (synthetic) | **AWAITING STAGING + APPROVAL** | Synthetic pilot fixtures exist in tests (clearly labelled `SYNTHETIC test tariff`). A live pilot needs a non-production tenant on staging + owner sign-off — not run. |
@@ -66,3 +66,10 @@ bash /root/FlowOps/backend/scripts/run-integration-suite.sh; echo done
 ```
 
 No further VPS action is proposed. Steps 1–12 of the deployment checklist remain gated behind their own approvals.
+
+## Evidence log (VPS read-only)
+
+| Action | When (UTC) | Output | Verdict |
+| --- | --- | --- | --- |
+| A-1a ledger (R6) | 2026-10-02 | `20260926130650_init|true|false` + `20260930143000_add_process_book_product_master|true|false` | PASS — pre-release baseline, nothing applied |
+| A-1b schema counts (R7) | 2026-10-02 | `133|72|362|150` | PASS — matches checklist baseline, no drift |
