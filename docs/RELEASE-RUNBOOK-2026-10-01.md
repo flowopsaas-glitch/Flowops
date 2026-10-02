@@ -10,9 +10,9 @@ first (`MIGRATION-BASELINE-ADOPTION-2026-09-30.md`, log rows 1–6; CI run 36848
 
 | Step | Issued | Outcome |
 | --- | --- | --- |
-| 1 — pre-change backup | 2026-10-01 | **done** — fresh dump `flowops_20261001_150544.sql.gz` taken 15:05 UTC, sha256 `6f980a8145a067fc55526f1194fd6a7377ba748c041d2d24c880b7b85e2b5b96`; the 12:00 dump was re-verified and uploaded to R2 |
-| 2 — adopt + deploy | 2026-10-01 | issued as `deploy/live-migration-adoption.sh --plan`, then `--apply`; awaiting operator output |
-| 3 — verification | — | runs inside the same script (`--apply` prints it) |
+| 1 — pre-change backup | 2026-10-01 | **done** — fresh dump `flowops_20261001_150544.sql.gz` taken 15:05 UTC, sha256 `6f980a8145a067fc55526f1194fd6a7377ba748c041d2d24c880b7b85e2b5b96` (plus newer validated dump `flowops_20261001_152733.sql.gz`, 0h old at apply); the 12:00 dump was re-verified and uploaded to R2 |
+| 2 — adopt + deploy | 2026-10-01 | **done** — `deploy/live-migration-adoption.sh --plan` (6/6 passed) then `--apply` on worktree `3b56c22bdd8822d5b7c0ef995f31ac41af6db6c1`: `20260926130650_init` marked applied without executing SQL; `20260930143000_add_process_book_product_master` applied via `prisma migrate deploy`; container log `/root/flowops-adoption-reports/live-adoption-20261001_175609.log` |
+| 3 — verification | 2026-10-01 | **done** — 11/11 checks passed: both ledger rows `finished`, `drift: none`, object counts `116\|61\|295\|116` → `133\|72\|362\|150` (tables `116 → 133`, +17), all 17 new tables empty (`0` rows), pre-existing row-count fingerprint `80285d27bf8fd2e9f817e0ed83f7237d` unchanged |
 
 ## What this does
 
