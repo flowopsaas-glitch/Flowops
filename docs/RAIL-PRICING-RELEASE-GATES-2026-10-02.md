@@ -1,0 +1,68 @@
+# Rail pricing release gates — status (2026-10-02, Phase F)
+
+**Status: GATES 1–3 + 6 PARTIALLY COMPLETE LOCALLY. VPS GATES AWAITING EXPLICIT APPROVAL.
+NOTHING DEPLOYED. PR #441 NOT MERGED. NO MIGRATION APPLIED. NO PRODUCTION FLAGS CHANGED.**
+
+- **Branch:** `arena/01a0fbb8-flowops` at `adf1182` (PR #441 tip `a8f6f37` + 4 pricing commits).
+- **Matrix:** `docs/RAIL-PRICING-SOURCE-MATRIX-2026-10-02.md` — all rows `UNVERIFIED`.
+- **Controls:** `docs/RAIL-PRICING-ENGINE-CONTROLS-2026-10-02.md` — 5 PASS, gaps recorded.
+- **Exceptions:** `docs/RAIL-PRICING-EXCEPTIONS-2026-10-02.md` — EXC-039…048 all OPEN.
+- **Deployment checklist:** `docs/RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md` — still gated, nothing run.
+
+## Gate results
+
+| # | Gate | Verdict | Evidence |
+| --- | --- | --- | --- |
+| F-1 | Re-run backend tests | **PASS (with env note)** | New `rail-pricing-gates` 20/20 pass; tariff suites 232/232 pass; full jest 49/50 suites, 1825 tests pass. The 1 failing suite (`users.service.spec`) fails only because this sandbox installed with `--ignore-scripts` (bcrypt native binding not built) — no code failure. `tsc --noEmit` clean, `eslint` on touched files clean. Prisma client generated with placeholder engines (types-only, per `PROCESS-CONTROL-PHASE-A-STATUS §2.2`) — CI's real-engine generate remains authoritative. |
+| F-1 | Re-run frontend tests | **PASS** | `vitest run`: 24 files / 502 tests pass — identical to PR #441 baseline (no frontend changes in this release). |
+| F-2 | DB-backed integration tests | **NOT RUN HERE — needs CI or approved VPS run** | No Docker/Postgres in this sandbox. CI's integration + E2E jobs run on push (PR #441: E2E pass). VPS disposable run (Action A-3 below) creates only `flowops-int-*` containers and never touches live. |
+| F-3 | Migration status review | **PASS — clean, nothing added** | `migrations:verify`: 5 migrations present and well-formed. `migrations:test` pass, `release:safety:test` 40/40 pass, `migrations:rehearsal:test` 17/17 pass. Schema proposals (C-01/C-03/C-12/C-13) are **drafts only** — no migration files created, no ledger change, checklist counts (`145\|95\|401\|150`) unaffected. |
+| F-4 | Staging-clone rehearsal | **AWAITING APPROVAL** | Action A-2 below (read-only inspect on a disposable clone). Not run. |
+| F-5 | clean / baseline / already-applied / drift | **AWAITING APPROVAL** | Actions A-1a/A-1b below (read-only R6/R7). Not run. CI drift guard runs on push. |
+| F-6 | Tenant-scope + RBAC reviews | **PASS (advisory reviewed)** | `tenant-scope:audit` runs (advisory — rail tariff paths are companyId-scoped; D-15 test proves cross-tenant 404). `rbac:test` 7/7 pass. New routes: none (no new controllers in this release). |
+| F-7 | Security / P0 verification | **PARTIAL — local clean, CI authoritative** | `eslint` clean; no secrets in new code or commands; no `.env` access added; calculator DTOs still whitelist-strip rates. Trivy + E2E run in CI on push. No P0-critical paths touched (auth, payments, self-repair fail-closed unchanged). |
+| F-8 | Non-production pricing pilot (synthetic) | **AWAITING STAGING + APPROVAL** | Synthetic pilot fixtures exist in tests (clearly labelled `SYNTHETIC test tariff`). A live pilot needs a non-production tenant on staging + owner sign-off — not run. |
+| F-9 | Owner + independent reviewer sign-off | **AWAITING HUMANS** | Matrix §4, exceptions closure log, and decisions D20–D28 all unsigned. No row may move above `UNVERIFIED` without both signatures. |
+| F-10 | PR review / merge + staging deploy | **NOT NOW** | Blocked on F-2/F-4/F-5/F-8/F-9. PR #441 stays open and unmerged. |
+
+## Calculator state after this release (unchanged, by design)
+
+- Real corridors: `hasVerifiedLoadedRate: false` on all 6 → every real calculation `BLOCKED`, every
+  unpriced line `NOT_PRICED` (never `R0.00`). Verified by `status` test + D-01.
+- Formula `rail-tariff/1.1.0` stamped on every result, input record and audit entry (no arithmetic change).
+- Electric traction flagged pass-through; methodology `UNKNOWN` until P-07 sourced.
+- Invoice draft still refused for `INCOMPLETE`/unpriced (D-11/D-14).
+
+## VPS actions awaiting explicit approval (one at a time, each ending `; echo done`)
+
+> Rules: paste the output back. Do not continue past a surprise. Each approval covers that action only.
+> No action below prints a secret or `.env`. No action below changes the live database or app.
+
+**A-1a — migration ledger (read-only; checklist R6).** Expect exactly two rows, both finished, not rolled back.
+<!-- CMD read-only A-1a -->
+```text
+docker exec flowops-postgres-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"' sh "SELECT migration_name || '|' || (finished_at IS NOT NULL) || '|' || (rolled_back_at IS NOT NULL) FROM _prisma_migrations ORDER BY started_at"; echo done
+```
+
+**A-1b — live schema counts (read-only; checklist R7).** Expect `133|72|362|150` (pre-release live schema).
+<!-- CMD read-only A-1b -->
+```text
+docker exec flowops-postgres-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"' sh "SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name <> '_prisma_migrations') || '|' || (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE t.typtype='e' AND n.nspname='public') || '|' || (SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename <> '_prisma_migrations') || '|' || (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE c.contype='f' AND n.nspname='public')"; echo done
+```
+
+**A-2 — staging-clone rehearsal, inspect only (read-only on live; needs a disposable clone URL).**
+Requires a clone database URL that is NOT the live database (guard refuses live names/hosts).
+Provide `<CLONE_URL>` separately; the command below only inspects.
+<!-- CMD approved A-2 -->
+```text
+cd /root/FlowOps && node backend/scripts/migrate-rehearsal.mjs --url <CLONE_URL> --mode inspect --i-have-a-clone; echo done
+```
+
+**A-3 — disposable integration suite (creates only `flowops-int-*` containers; never touches live).**
+Follows `backend/scripts/run-integration-suite.sh`; needs a source worktree (default `/root/flowops-migration-src`).
+<!-- CMD approved A-3 -->
+```text
+bash /root/FlowOps/backend/scripts/run-integration-suite.sh; echo done
+```
+
+No further VPS action is proposed. Steps 1–12 of the deployment checklist remain gated behind their own approvals.
