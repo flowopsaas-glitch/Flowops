@@ -1,5 +1,5 @@
 import {
-  IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min,
+  IsBoolean, IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min,
 } from 'class-validator';
 import {
   DeviationCategory, ResponsibleParty, SlotImpact,
@@ -138,6 +138,10 @@ export class ResolveDeviationDto {
 }
 
 export class SignOffReportDto {
-  @IsString() @MaxLength(160)
+  /**
+   * What the signer types (name / role). The server appends the identity it
+   * verified from the JWT — see RailHandshakeService.buildVerifiedSignatory().
+   */
+  @IsString() @IsNotEmpty() @MaxLength(160)
   signedOffBy!: string;
 }

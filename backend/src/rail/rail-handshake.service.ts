@@ -7,10 +7,15 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
+import { AuditService } from '../audit/audit.service';
 import {
   CreateHandshakeReportDto, UpdateHandshakeReportDto, LogDeviationDto,
   UpdateDeviationDto, ReviewDeviationDto, ResolveDeviationDto, SignOffReportDto,
 } from './dto/handshake.dto';
+import {
+  RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, railSystemAuditEntry, recordRailAudit,
+} from './rail-audit';
+import { RAIL_SIGNATORY_ROLES } from './rail-roles';
 
 /**
  * Daily Handshake service — Transnet Network Statement, Annexure 28.
@@ -32,7 +37,58 @@ export class RailHandshakeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly billing: BillingService,
+    private readonly audit: AuditService,
   ) {}
+
+  /** Best-effort audit write attributed to an authenticated user. */
+  private record(companyId: string, actor: RailActor, action: string, target: { type: string; id: string; name?: string | null }, metadata: Record<string, unknown> = {}) {
+    return recordRailAudit(this.audit, this.logger, railAuditEntry(companyId, actor, action, target, metadata));
+  }
+
+  /** Best-effort audit write for a change the platform itself made (time-based escalation). */
+  private recordSystem(companyId: string, action: string, target: { type: string; id: string; name?: string | null }, metadata: Record<string, unknown> = {}) {
+    return recordRailAudit(this.audit, this.logger, railSystemAuditEntry(companyId, action, target, metadata));
+  }
+
+  /**
+   * Formal commitments (sign-off, resolution, Regulator dispute) are made by an
+   * authorised representative, not by any user who can edit the report.
+   */
+  private assertSignatory(actor: RailActor, what: string): void {
+    if (!RAIL_SIGNATORY_ROLES.includes(actor.role)) {
+      throw new ForbiddenException(
+        `${what} must be made by an authorised representative (${RAIL_SIGNATORY_ROLES.join(', ')}).`,
+      );
+    }
+  }
+
+  /**
+   * Make user-typed (or user-profile) text safe to embed in the signatory
+   * string: no control characters / line breaks (log + CSV forging), and no
+   * `[ ] < >` so nobody can type a lookalike `[verified: …]` tag.
+   */
+  private cleanSignatoryText(value: unknown, max = 160): string {
+    return String(value ?? '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001F\u007F\u2028\u2029]/g, ' ')
+      .replace(/[[\]<>]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, max);
+  }
+
+  /**
+   * The signatory string stored on the report: what the signer typed, followed
+   * by the identity the SERVER verified from the JWT. The two can differ — that
+   * is the point; the verified part cannot be forged from the request body.
+   */
+  buildVerifiedSignatory(typedName: string, actor: RailActor): string {
+    const typed = this.cleanSignatoryText(typedName);
+    if (!typed) throw new BadRequestException('signedOffBy must contain a name or role.');
+    const name = this.cleanSignatoryText(actor.name, 120);
+    const email = this.cleanSignatoryText(actor.email, 160);
+    return `${typed} [verified: ${name} <${email}> (${actor.role})]`;
+  }
 
   // ── Entitlement gate ─────────────────────────────────────────────────────
 
@@ -106,7 +162,7 @@ export class RailHandshakeService {
   // ── Reports ────────────────────────────────────────────────────────────────
 
   /** Create a daily handshake report for a 24h operating-day window. */
-  async createReport(companyId: string, dto: CreateHandshakeReportDto) {
+  async createReport(companyId: string, dto: CreateHandshakeReportDto, actor: RailActor) {
     await this.assertEntitled(companyId);
 
     // Default the operating day to "yesterday" (the IM issues the report at
@@ -117,7 +173,7 @@ export class RailHandshakeService {
     const windowEnd = new Date(windowStart.getTime() + 24 * 3_600_000);
 
     const reportNumber = await this.nextReportNumber(companyId);
-    return this.prisma.railHandshakeReport.create({
+    const created = await this.prisma.railHandshakeReport.create({
       data: {
         companyId,
         reportNumber,
@@ -131,6 +187,12 @@ export class RailHandshakeService {
       },
       include: { deviations: true },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.REPORT_CREATED,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_REPORT, id: created.id, name: reportNumber },
+      { reportDate: windowStart.toISOString(), corridor: dto.corridor ?? null, railOperator: dto.railOperator ?? null },
+    );
+    return created;
   }
 
   async listReports(
@@ -168,7 +230,7 @@ export class RailHandshakeService {
     return this.withRefreshedEscalation(report);
   }
 
-  async updateReport(companyId: string, reportId: string, dto: UpdateHandshakeReportDto) {
+  async updateReport(companyId: string, reportId: string, dto: UpdateHandshakeReportDto, actor: RailActor) {
     await this.assertEntitled(companyId);
     const report = await this.getReportOrThrow(companyId, reportId);
     this.assertReportStatus(
@@ -176,7 +238,7 @@ export class RailHandshakeService {
       [HandshakeReportStatus.DRAFT, HandshakeReportStatus.PENDING_TOC],
       'Report metadata updates',
     );
-    return this.prisma.railHandshakeReport.update({
+    const updated = await this.prisma.railHandshakeReport.update({
       where: { id: reportId },
       data: {
         railOperator: dto.railOperator ?? report.railOperator,
@@ -186,20 +248,32 @@ export class RailHandshakeService {
       },
       include: { deviations: { orderBy: { createdAt: 'asc' } } },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.REPORT_UPDATED,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_REPORT, id: reportId, name: report.reportNumber },
+      { fields: Object.keys(dto) },
+    );
+    return updated;
   }
 
   /** IM issues the report to the TOC for review (DRAFT → PENDING_TOC). */
-  async issueReport(companyId: string, reportId: string) {
+  async issueReport(companyId: string, reportId: string, actor: RailActor) {
     await this.assertEntitled(companyId);
     const report = await this.getReportOrThrow(companyId, reportId);
     if (report.status !== HandshakeReportStatus.DRAFT) {
       throw new BadRequestException('Only a DRAFT report can be issued for review.');
     }
-    return this.prisma.railHandshakeReport.update({
+    const issued = await this.prisma.railHandshakeReport.update({
       where: { id: reportId },
       data: { status: HandshakeReportStatus.PENDING_TOC },
       include: { deviations: { orderBy: { createdAt: 'asc' } } },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.REPORT_ISSUED,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_REPORT, id: reportId, name: report.reportNumber },
+      { from: report.status, to: HandshakeReportStatus.PENDING_TOC, deviations: report.deviations.length },
+    );
+    return issued;
   }
 
   /**
@@ -208,8 +282,9 @@ export class RailHandshakeService {
    * item is DISPUTED the report is marked DISPUTED; if all resolved/agreed it
    * can be CLOSED, otherwise SIGNED_OFF.
    */
-  async signOff(companyId: string, reportId: string, dto: SignOffReportDto) {
+  async signOff(companyId: string, reportId: string, dto: SignOffReportDto, actor: RailActor) {
     await this.assertEntitled(companyId);
+    this.assertSignatory(actor, 'Signing off a handshake report');
     const report = await this.getReportOrThrow(companyId, reportId);
     if (report.status === HandshakeReportStatus.CLOSED) {
       throw new BadRequestException('Report is already closed.');
@@ -225,16 +300,31 @@ export class RailHandshakeService {
         ? HandshakeReportStatus.SIGNED_OFF
         : HandshakeReportStatus.CLOSED;
 
-    return this.prisma.railHandshakeReport.update({
+    // Bind the server-verified identity to whatever the signer typed.
+    const signedOffBy = this.buildVerifiedSignatory(dto.signedOffBy, actor);
+
+    const signed = await this.prisma.railHandshakeReport.update({
       where: { id: reportId },
-      data: { status, signedOffAt: new Date(), signedOffBy: dto.signedOffBy },
+      data: { status, signedOffAt: new Date(), signedOffBy },
       include: { deviations: { orderBy: { createdAt: 'asc' } } },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.REPORT_SIGNED_OFF,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_REPORT, id: reportId, name: report.reportNumber },
+      {
+        from: report.status,
+        to: status,
+        signedOffBy,
+        openItems: report.deviations.filter((d) => d.status === DeviationStatus.OPEN || d.status === DeviationStatus.LOGGED).length,
+        disputedItems: report.deviations.filter((d) => d.status === DeviationStatus.DISPUTED).length,
+      },
+    );
+    return signed;
   }
 
   // ── Deviations ───────────────────────────────────────────────────────────
 
-  async logDeviation(companyId: string, reportId: string, dto: LogDeviationDto) {
+  async logDeviation(companyId: string, reportId: string, dto: LogDeviationDto, actor: RailActor) {
     await this.assertEntitled(companyId);
     const report = await this.getReportOrThrow(companyId, reportId);
     this.assertReportStatus(
@@ -252,7 +342,7 @@ export class RailHandshakeService {
       if (!owned) throw new BadRequestException('consignmentId does not belong to this tenant.');
     }
 
-    return this.prisma.railHandshakeDeviation.create({
+    const deviation = await this.prisma.railHandshakeDeviation.create({
       data: {
         reportId,
         trainSlotRef: dto.trainSlotRef,
@@ -269,10 +359,20 @@ export class RailHandshakeService {
         costZar: dto.costZar ?? null,
       },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.DEVIATION_LOGGED,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviation.id, name: dto.trainSlotRef },
+      {
+        reportId, reportNumber: report.reportNumber, category: dto.category ?? 'OTHER',
+        responsibleParty: dto.responsibleParty ?? 'UNDETERMINED', delayMinutes: dto.delayMinutes ?? null,
+        costZar: dto.costZar ?? null, consignmentId: dto.consignmentId ?? null,
+      },
+    );
+    return deviation;
   }
 
   async updateDeviation(
-    companyId: string, reportId: string, deviationId: string, dto: UpdateDeviationDto,
+    companyId: string, reportId: string, deviationId: string, dto: UpdateDeviationDto, actor: RailActor,
   ) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
@@ -284,7 +384,7 @@ export class RailHandshakeService {
     if (dev.status !== DeviationStatus.LOGGED) {
       throw new BadRequestException('Only an unreviewed deviation can be edited.');
     }
-    return this.prisma.railHandshakeDeviation.update({
+    const updated = await this.prisma.railHandshakeDeviation.update({
       where: { id: deviationId },
       data: {
         ...(dto.category ? { category: dto.category } : {}),
@@ -299,6 +399,12 @@ export class RailHandshakeService {
         ...(dto.costRecovered !== undefined ? { costRecovered: dto.costRecovered } : {}),
       },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.DEVIATION_UPDATED,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviationId, name: dev.trainSlotRef },
+      { reportId, fields: Object.keys(dto) },
+    );
+    return updated;
   }
 
   /**
@@ -307,7 +413,7 @@ export class RailHandshakeService {
    * ladder at the 24h stage with a required dispute reason.
    */
   async reviewDeviation(
-    companyId: string, reportId: string, deviationId: string, dto: ReviewDeviationDto,
+    companyId: string, reportId: string, deviationId: string, dto: ReviewDeviationDto, actor: RailActor,
   ) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
@@ -317,16 +423,22 @@ export class RailHandshakeService {
     }
 
     if (dto.agree) {
-      return this.prisma.railHandshakeDeviation.update({
+      const agreed = await this.prisma.railHandshakeDeviation.update({
         where: { id: deviationId },
         data: { status: DeviationStatus.AGREED, escalationStage: EscalationStage.NONE, disputeReason: null },
       });
+      await this.record(
+        companyId, actor, RAIL_AUDIT_ACTION.DEVIATION_AGREED,
+        { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviationId, name: dev.trainSlotRef },
+        { reportId },
+      );
+      return agreed;
     }
 
     if (!dto.disputeReason || !dto.disputeReason.trim()) {
       throw new BadRequestException('A dispute reason is required to flag an item as OPEN.');
     }
-    return this.prisma.railHandshakeDeviation.update({
+    const flagged = await this.prisma.railHandshakeDeviation.update({
       where: { id: deviationId },
       data: {
         status: DeviationStatus.OPEN,
@@ -335,6 +447,12 @@ export class RailHandshakeService {
         escalatedAt: new Date(),
       },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.DEVIATION_FLAGGED_OPEN,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviationId, name: dev.trainSlotRef },
+      { reportId, disputeReason: dto.disputeReason.trim().slice(0, 500), escalationStage: EscalationStage.LIAISON_MANAGER_24H },
+    );
+    return flagged;
   }
 
   /**
@@ -351,11 +469,24 @@ export class RailHandshakeService {
       const elapsed = this.hoursSince(report.windowEnd);
       const stage = this.stageForElapsedHours(elapsed);
       if (stage !== d.escalationStage) {
+        const fromStage = d.escalationStage; // capture before the write is issued
         updates.push(
           this.prisma.railHandshakeDeviation.update({
             where: { id: d.id },
             data: { escalationStage: stage, escalatedAt: new Date() },
           }),
+        );
+        // The ladder moves with the clock, not with a person — so the audit
+        // trail attributes it to the system and records exactly when it moved.
+        updates.push(
+          this.recordSystem(
+            report.companyId, RAIL_AUDIT_ACTION.DEVIATION_ESCALATED,
+            { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: d.id, name: d.trainSlotRef },
+            {
+              reportId: report.id, reportNumber: report.reportNumber,
+              from: fromStage, to: stage, elapsedHoursSinceWindowEnd: Math.round(elapsed * 100) / 100,
+            },
+          ),
         );
         return { ...d, escalationStage: stage };
       }
@@ -393,13 +524,18 @@ export class RailHandshakeService {
   }
 
   /** Escalate all OPEN items across all open reports for the tenant (manual). */
-  async runEscalation(companyId: string) {
+  async runEscalation(companyId: string, actor: RailActor) {
     await this.assertEntitled(companyId);
     const reports = await this.prisma.railHandshakeReport.findMany({
       where: { companyId, status: { in: RailHandshakeService.ACTIVE_REPORT_STATUSES } },
       include: { deviations: true },
     });
     const moved = await this.escalateReports(reports);
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.ESCALATION_RUN,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_REPORT, id: companyId, name: 'tenant escalation sweep' },
+      { reportsScanned: reports.length, reportsChanged: moved },
+    );
     return { reportsScanned: reports.length, reportsChanged: moved };
   }
 
@@ -428,9 +564,10 @@ export class RailHandshakeService {
 
   /** Resolve an OPEN item after escalation (agreement reached). */
   async resolveDeviation(
-    companyId: string, reportId: string, deviationId: string, dto: ResolveDeviationDto,
+    companyId: string, reportId: string, deviationId: string, dto: ResolveDeviationDto, actor: RailActor,
   ) {
     await this.assertEntitled(companyId);
+    this.assertSignatory(actor, 'Resolving a handshake deviation');
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
     this.assertReportStatus(
       dev.report.status,
@@ -440,7 +577,7 @@ export class RailHandshakeService {
     if (dev.status !== DeviationStatus.OPEN) {
       throw new BadRequestException('Only an OPEN deviation can be resolved.');
     }
-    return this.prisma.railHandshakeDeviation.update({
+    const resolved = await this.prisma.railHandshakeDeviation.update({
       where: { id: deviationId },
       data: {
         status: DeviationStatus.RESOLVED,
@@ -452,14 +589,24 @@ export class RailHandshakeService {
         resolvedAt: new Date(),
       },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.DEVIATION_RESOLVED,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviationId, name: dev.trainSlotRef },
+      {
+        reportId, resolutionNote: dto.resolutionNote ? dto.resolutionNote.slice(0, 500) : null,
+        responsibleParty: dto.responsibleParty ?? null, costRecovered: dto.costRecovered ?? dev.costRecovered,
+      },
+    );
+    return resolved;
   }
 
   /**
    * Lodge an unresolved OPEN item as a dispute with the Regulator
    * (Annexure 28 final step). Only valid once it has climbed to the RLF stage.
    */
-  async lodgeDispute(companyId: string, reportId: string, deviationId: string) {
+  async lodgeDispute(companyId: string, reportId: string, deviationId: string, actor: RailActor) {
     await this.assertEntitled(companyId);
+    this.assertSignatory(actor, 'Lodging a dispute with the Regulator');
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
     this.assertReportStatus(
       dev.report.status,
@@ -482,10 +629,15 @@ export class RailHandshakeService {
       where: { id: reportId },
       data: { status: HandshakeReportStatus.DISPUTED },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.DISPUTE_LODGED_REGULATOR,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviationId, name: dev.trainSlotRef },
+      { reportId, escalationStageAtLodging: dev.escalationStage },
+    );
     return updated;
   }
 
-  async removeDeviation(companyId: string, reportId: string, deviationId: string) {
+  async removeDeviation(companyId: string, reportId: string, deviationId: string, actor: RailActor) {
     await this.assertEntitled(companyId);
     const dev = await this.getDeviationOrThrow(companyId, reportId, deviationId);
     this.assertReportStatus(
@@ -497,6 +649,11 @@ export class RailHandshakeService {
       throw new BadRequestException('Only an unreviewed deviation can be deleted.');
     }
     await this.prisma.railHandshakeDeviation.delete({ where: { id: deviationId } });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.DEVIATION_REMOVED,
+      { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviationId, name: dev.trainSlotRef },
+      { reportId, category: dev.category, reason: dev.reason.slice(0, 200) },
+    );
     return { deleted: true };
   }
 

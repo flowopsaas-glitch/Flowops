@@ -4,6 +4,9 @@ import {
   buildRoleDefaultTenantNavPermissions,
   normalizeTenantNavPermissions,
   ALL_TENANT_NAV_PERMISSION_KEYS,
+  TENANT_NAV_PERMISSION_LABELS,
+  canSignRailHandshake,
+  getRailAccessLevel,
 } from './tenantUserPermissions';
 
 describe('buildFullTenantNavPermissions', () => {
@@ -106,5 +109,96 @@ describe('normalizeTenantNavPermissions', () => {
     const p = normalizeTenantNavPermissions({ collections: 'yes', invoices: 1 }, 'WAREHOUSE');
     expect(p.collections).toBe(base.collections);
     expect(p.invoices).toBe(base.invoices);
+  });
+});
+
+describe('rail + railHandshake permission keys', () => {
+  it('are registered keys with a label', () => {
+    for (const key of ['rail', 'railHandshake'] as const) {
+      expect(ALL_TENANT_NAV_PERMISSION_KEYS).toContain(key);
+      expect(TENANT_NAV_PERMISSION_LABELS[key]).toBeTruthy();
+    }
+  });
+
+  it('are granted by the full permission set', () => {
+    const full = buildFullTenantNavPermissions();
+    expect(full.rail).toBe(true);
+    expect(full.railHandshake).toBe(true);
+  });
+
+  it.each([
+    // role,           rail,  railHandshake
+    ['ADMIN', true, true],
+    ['COMPANY_ADMIN', true, true],
+    ['TENANT_ADMIN', true, true],
+    ['MANAGER', true, true],
+    ['DISPATCH', true, true],
+    ['OPS_CLERK', true, true],
+    ['VIEWER', true, true], // visible, read-only (see getRailAccessLevel)
+    ['DRIVER', false, false],
+    ['WAREHOUSE', false, false],
+    ['AGENT', false, false],
+    ['USER', false, false],
+    ['', false, false],
+    ['SOMETHING_ELSE', false, false],
+  ])('role %s → rail:%s railHandshake:%s', (role, rail, railHandshake) => {
+    const p = buildRoleDefaultTenantNavPermissions(role);
+    expect(p.rail).toBe(rail);
+    expect(p.railHandshake).toBe(railHandshake);
+  });
+
+  it('OPS_CLERK is treated exactly like DISPATCH (the role does not exist on the API yet)', () => {
+    expect(buildRoleDefaultTenantNavPermissions('OPS_CLERK')).toEqual(buildRoleDefaultTenantNavPermissions('DISPATCH'));
+    expect(buildRoleDefaultTenantNavPermissions(' ops_clerk ')).toEqual(buildRoleDefaultTenantNavPermissions('DISPATCH'));
+  });
+
+  it('adding the keys did not change any pre-existing grant', () => {
+    // spot-check the roles whose other keys the older tests do not pin
+    const viewer = buildRoleDefaultTenantNavPermissions('VIEWER');
+    expect(viewer.invoices).toBe(true);
+    expect(viewer.shipments).toBe(false);
+    const warehouse = buildRoleDefaultTenantNavPermissions('WAREHOUSE');
+    expect(warehouse.risksExceptions).toBe(true);
+    expect(warehouse.invoices).toBe(false);
+  });
+
+  it('an explicit per-user override wins over the role default, both ways', () => {
+    expect(normalizeTenantNavPermissions({ rail: true, railHandshake: true }, 'DRIVER').rail).toBe(true);
+    expect(normalizeTenantNavPermissions({ rail: false }, 'ADMIN').rail).toBe(false);
+    expect(normalizeTenantNavPermissions({ rail: false }, 'ADMIN').railHandshake).toBe(true); // independent keys
+  });
+});
+
+describe('getRailAccessLevel — visible vs read-only vs hidden', () => {
+  it.each([
+    ['ADMIN', 'FULL'],
+    ['COMPANY_ADMIN', 'FULL'],
+    ['MANAGER', 'FULL'],
+    ['DISPATCH', 'FULL'],
+    ['OPS_CLERK', 'FULL'],
+    ['VIEWER', 'READ_ONLY'],
+    ['DRIVER', 'NONE'],
+    ['WAREHOUSE', 'NONE'],
+    [undefined, 'NONE'],
+  ])('%s → %s', (role, level) => {
+    expect(getRailAccessLevel(role as string | undefined)).toBe(level);
+  });
+
+  it('a VIEWER with Rail revoked sees nothing; revoking only one key keeps the other page', () => {
+    expect(getRailAccessLevel('VIEWER', { rail: false, railHandshake: false })).toBe('NONE');
+    expect(getRailAccessLevel('VIEWER', { rail: false })).toBe('READ_ONLY');
+  });
+
+  it('granting Rail to a DRIVER makes it visible but only READ_ONLY — the role still cannot write', () => {
+    expect(getRailAccessLevel('DRIVER', { rail: true })).toBe('READ_ONLY');
+  });
+});
+
+describe('canSignRailHandshake — authorised representatives only', () => {
+  it.each([
+    ['ADMIN', true], ['COMPANY_ADMIN', true], ['TENANT_ADMIN', true], ['MANAGER', true],
+    ['DISPATCH', false], ['OPS_CLERK', false], ['VIEWER', false], ['DRIVER', false], ['WAREHOUSE', false], [undefined, false],
+  ])('%s → %s', (role, expected) => {
+    expect(canSignRailHandshake(role as string | undefined)).toBe(expected);
   });
 });

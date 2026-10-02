@@ -28,6 +28,8 @@ import {
   type RailStatus,
 } from "../api/railApi";
 import { useToast } from "../components/ToastProvider";
+import { useAuth } from "../contexts/AuthContext";
+import { getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -281,6 +283,9 @@ function RailCorridorMap({ activeCorridor }: { activeCorridor?: string | null })
 
 export default function RailOperations() {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  // VIEWER sees Rail read-only: no "Advance" control (the API refuses it anyway).
+  const canWrite = getRailAccessLevel(user?.role, userPermissionOverrides(user)) === "FULL";
   const [overview, setOverview] = useState<RailOverview | null>(null);
   const [rows, setRows] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -500,7 +505,7 @@ export default function RailOperations() {
               <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_COLOR[selected.status]}`}>
                 {STATUS_LABEL[selected.status]}
               </span>
-              {nextStatus(selected.status) && (
+              {canWrite && nextStatus(selected.status) && (
                 <button
                   onClick={advance}
                   disabled={advancing}
