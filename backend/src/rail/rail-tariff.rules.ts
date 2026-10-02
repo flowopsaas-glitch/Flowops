@@ -29,6 +29,14 @@ export const RAIL_TARIFF_CONSTANTS = {
 
 export const TARIFF_CONSTANT_SOURCE = '[BRIEF] — not corroborated by any supplied document; unverified';
 
+/**
+ * Formula version for every tariff calculation (Phase C, C-02).
+ * Bump when the calculator's arithmetic changes; persisted in TariffResult + calculation inputs + audit.
+ * `1.0.0-wave4` = PR #441 (GTK-only, no train-km, no effective dates).
+ * `1.1.0` = pass-through flags + formula version stamping (no arithmetic change).
+ */
+export const TARIFF_FORMULA_VERSION = 'rail-tariff/1.1.0' as const;
+
 // ── financial year ───────────────────────────────────────────────────────────
 
 /** "2026/27" — the label Annexure 40 uses ("2026/27"). */
@@ -185,6 +193,15 @@ export interface TariffLine {
   /** How the amount was derived, in words. */
   basis: string;
   evidence: string[];
+  /**
+   * True when this line is a pass-through cost (Phase C, C-06): the operator recovers a third-party
+   * charge rather than pricing its own access. Electric traction is always a pass-through; diesel is
+   * a pass-through only when priced from a contracted schedule price (the brief's base is not).
+   * Methodology stays UNKNOWN until matrix P-07 is sourced.
+   */
+  passThrough?: boolean;
+  /** Pass-through methodology in words, or null when unknown. */
+  methodology?: string | null;
 }
 
 export interface WagonWeight { wagonNumber: string; tareTonnes?: number | null; loadedTonnes?: number | null }
@@ -237,6 +254,8 @@ export interface TariffContext {
 
 export interface TariffResult {
   status: TariffStatus;
+  /** Formula version that produced this result (C-02). Persisted with the calculation. */
+  formulaVersion: typeof TARIFF_FORMULA_VERSION;
   corridorCode: string | null;
   financialYear: string;
   scheduleId: string | null;
@@ -298,7 +317,7 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
   const lines: TariffLine[] = [];
   const hold = deriveHold(ctx.latestReadings);
   const base = {
-    corridorCode: req.corridorCode, financialYear: req.financialYear, currency: 'ZAR' as const, hold,
+    formulaVersion: TARIFF_FORMULA_VERSION, corridorCode: req.corridorCode, financialYear: req.financialYear, currency: 'ZAR' as const, hold,
   };
 
   // ── weights: a weighbridge reading beats the nominal tare + loaded ─────────
@@ -407,6 +426,8 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
           ? 'No litres were given and no consumption factor is loaded for this corridor, so the quantity is unknown and the line is not priced.'
           : given !== null ? `${litres} L entered × R${price}/L` : `${factor} L per 1000 GTK × ${gtkLoaded} GTK = ${litres} L × R${price}/L`,
         evidence: priceEvidence,
+        passThrough: schedulePrice !== null && explicitPrice === null,
+        methodology: schedulePrice !== null && explicitPrice === null ? 'Contracted schedule price (pass-through methodology UNKNOWN — matrix P-08)' : null,
       });
     } else {
       const given = isPos(t.kWh) ? t.kWh : null;
@@ -424,6 +445,8 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
           : price === null ? `${kWh} kWh; no electricity price is loaded and none was entered (the brief gives only the ${elecPct.toFixed(2)}% escalation, not a price), so it is not priced.`
           : given !== null ? `${kWh} kWh entered × R${round3(price)}/kWh` : `${factor} kWh per 1000 GTK × ${gtkLoaded} GTK = ${kWh} kWh × R${round3(price)}/kWh`,
         evidence: explicitPrice !== null ? ['price entered with the request'] : schedulePrice !== null ? [scheduleEvidence, ...(years > 0 ? [`escalated ${years} year(s) at ${elecPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}`] : [])] : [],
+        passThrough: true,
+        methodology: 'Electric traction is a pass-through cost (methodology UNKNOWN until matrix P-07 is sourced)',
       });
     }
   }

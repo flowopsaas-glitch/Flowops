@@ -11,7 +11,7 @@ import { ANCILLARY_SERVICE_CATALOG } from './catalog/ancillary-services.catalog'
 import { CORRIDOR_CATALOG } from './catalog/corridors.catalog';
 import { CorridorIdentity, resolveCorridor } from './rail-reference';
 import {
-  AncillaryLike, RAIL_TARIFF_CONSTANTS, ReadingLike, ScheduleLike, TARIFF_CONSTANT_SOURCE, TariffLine, TariffRequest, calculateTariff, financialYearOf,
+  AncillaryLike, RAIL_TARIFF_CONSTANTS, ReadingLike, ScheduleLike, TARIFF_CONSTANT_SOURCE, TARIFF_FORMULA_VERSION, TariffLine, TariffRequest, calculateTariff, financialYearOf,
   latestReadingPerWagon,
 } from './rail-tariff.rules';
 
@@ -190,7 +190,7 @@ export class RailTariffService {
     }
 
     const inputs = {
-      distanceKm: request.distanceKm, includeEmptyReturn: !!request.includeEmptyReturn, allowEscalation: !!request.allowEscalation, traction: request.traction ?? null,
+      formulaVersion: TARIFF_FORMULA_VERSION, distanceKm: request.distanceKm, includeEmptyReturn: !!request.includeEmptyReturn, allowEscalation: !!request.allowEscalation, traction: request.traction ?? null,
       ancillary: request.ancillary ?? [], corridorText: consignment.corridor ?? null, scheduleFinancialYear: result.scheduleFinancialYear, escalationYears: result.escalationYears,
       weightSources: result.weightSources, constants: RAIL_TARIFF_CONSTANTS, constantsSource: TARIFF_CONSTANT_SOURCE,
     };
@@ -215,6 +215,7 @@ export class RailTariffService {
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.TARIFF_CALCULATED, { type: RAIL_AUDIT_TARGET.TARIFF_CALCULATION, id: calc.id, name: calc.calculationNumber }, {
       consignmentId: consignment.id, consignmentNumber: consignment.consignmentNumber, corridorCode: corridor!.code, financialYear, status: result.status,
       subtotalZar: result.subtotalZar, lines: result.lines.length, unpricedLines: result.blockers.length, escalationYears: result.escalationYears, holdTriggered: result.hold.held,
+      formulaVersion: TARIFF_FORMULA_VERSION, scheduleId: result.scheduleId,
     });
     return { calculation: calc, ...this.describe(built) };
   }
