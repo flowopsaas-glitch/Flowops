@@ -378,6 +378,15 @@ describe('consignment lifecycle', () => {
     ]);
   });
 
+  it('wagons: the corridor-envelope particulars (axles, gauge, profile) are persisted, and default to NULL — never to a value', async () => {
+    const { svc, db, seedConsignment } = makeService();
+    const c = seedConsignment();
+    await svc.addWagon('A', c.id, { wagonNumber: 'FULL-1', axles: 4, gauge: 'CAPE_1067MM' as any, vehicleProfile: 'B' as any }, MANAGER);
+    await svc.addWagon('A', c.id, { wagonNumber: 'BARE-1' }, MANAGER);
+    expect(db.wagons[0]).toMatchObject({ axles: 4, gauge: 'CAPE_1067MM', vehicleProfile: 'B' });
+    expect(db.wagons[1]).toMatchObject({ axles: null, gauge: null, vehicleProfile: null });
+  });
+
   describe('intermodal legs', () => {
     it('addLeg is audited', async () => {
       const { svc, audit, seedConsignment } = makeService();

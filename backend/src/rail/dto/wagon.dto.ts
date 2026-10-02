@@ -1,5 +1,5 @@
-import { IsString, IsOptional, IsNumber, IsEnum } from 'class-validator';
-import { WagonType } from '@prisma/client';
+import { IsString, IsOptional, IsNumber, IsEnum, IsInt, Min, Max } from 'class-validator';
+import { RailGauge, RailVehicleProfile, WagonType } from '@prisma/client';
 
 export class CreateWagonDto {
   @IsString()
@@ -22,4 +22,13 @@ export class CreateWagonDto {
 
   @IsOptional() @IsString()
   lastKnownSiding?: string;
+  /** Axle count (1–12). With tare + loaded weight it gives the axle load the corridor-envelope check uses. */
+  @IsOptional() @IsInt() @Min(1) @Max(12)
+  axles?: number;
+
+  @IsOptional() @IsEnum(RailGauge)
+  gauge?: RailGauge;
+
+  @IsOptional() @IsEnum(RailVehicleProfile)
+  vehicleProfile?: RailVehicleProfile;
 }

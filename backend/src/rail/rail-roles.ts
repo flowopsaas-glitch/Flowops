@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
 /**
@@ -43,3 +44,10 @@ export const RAIL_SIGNATORY_ROLES: UserRole[] = [
   UserRole.COMPANY_ADMIN,
   UserRole.MANAGER,
 ];
+
+/** Throw 403 unless the actor is an authorised representative. Used for formal commitments. */
+export function assertSignatoryRole(actor: { role: UserRole }, what: string): void {
+  if (!RAIL_SIGNATORY_ROLES.includes(actor.role)) {
+    throw new ForbiddenException(`${what} must be made by an authorised representative (${RAIL_SIGNATORY_ROLES.join(', ')}).`);
+  }
+}

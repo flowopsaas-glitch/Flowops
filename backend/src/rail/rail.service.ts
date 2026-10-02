@@ -245,6 +245,9 @@ export class RailService {
         commodity: dto.commodity ?? null,
         sealNumbers: dto.sealNumbers ?? null,
         lastKnownSiding: dto.lastKnownSiding ?? null,
+        axles: dto.axles ?? null,
+        gauge: dto.gauge ?? null,
+        vehicleProfile: dto.vehicleProfile ?? null,
       },
     });
     await this.record(

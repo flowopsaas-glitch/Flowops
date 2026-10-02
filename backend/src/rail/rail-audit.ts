@@ -38,6 +38,25 @@ export const RAIL_AUDIT_ACTION = {
   WAGON_REMOVED: 'consignment.wagon_removed',
   LEG_ADDED: 'consignment.leg_added',
   LEG_ADVANCED: 'consignment.leg_advanced',
+  // ── Slot applications (Wave 2) ─────────────────────────────────────────────
+  SLOT_CREATED: 'slot_application.created',
+  SLOT_UPDATED: 'slot_application.updated',
+  SLOT_SELF_SCREENED: 'slot_application.self_screened',
+  SLOT_SUBMITTED: 'slot_application.submitted',
+  SLOT_ASSESSMENT_STARTED: 'slot_application.assessment_started',
+  SLOT_CAPACITY_CONFLICT: 'slot_application.capacity_conflict',
+  SLOT_CONFLICT_RESOLVED: 'slot_application.conflict_resolved',
+  SLOT_ALLOCATED: 'slot_application.allocated',
+  SLOT_REJECTED: 'slot_application.rejected',
+  SLOT_EXPIRED: 'slot_application.expired',
+  SLOT_OPERATED: 'slot_application.operated',
+  SLOT_CONSIGNMENT_LINKED: 'slot_application.consignment_linked',
+  SLOT_FORFEITURE_FLAGGED: 'slot_application.forfeiture_flagged',
+  // ── Operator compliance documents (Wave 2) ─────────────────────────────────
+  COMPLIANCE_DOC_CREATED: 'compliance_doc.created',
+  COMPLIANCE_DOC_VERIFIED: 'compliance_doc.verified',
+  COMPLIANCE_DOC_REVOKED: 'compliance_doc.revoked',
+  COMPLIANCE_DOC_EXPIRED: 'compliance_doc.expired',
 } as const;
 export type RailAuditAction = (typeof RAIL_AUDIT_ACTION)[keyof typeof RAIL_AUDIT_ACTION];
 
@@ -47,6 +66,8 @@ export const RAIL_AUDIT_TARGET = {
   LEG: 'rail_intermodal_leg',
   HANDSHAKE_REPORT: 'rail_handshake_report',
   HANDSHAKE_DEVIATION: 'rail_handshake_deviation',
+  SLOT_APPLICATION: 'rail_slot_application',
+  COMPLIANCE_DOC: 'rail_compliance_doc',
 } as const;
 
 /** Build an audit entry attributed to an authenticated tenant user. */

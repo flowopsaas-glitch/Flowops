@@ -29,7 +29,8 @@ import {
 } from "../api/railApi";
 import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../contexts/AuthContext";
-import { getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
+import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
+import SlotCompliancePanel from "./rail/SlotCompliancePanel";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -286,6 +287,8 @@ export default function RailOperations() {
   const { user } = useAuth();
   // VIEWER sees Rail read-only: no "Advance" control (the API refuses it anyway).
   const canWrite = getRailAccessLevel(user?.role, userPermissionOverrides(user)) === "FULL";
+  const canSign = canSignRailHandshake(user?.role);
+  const [tab, setTab] = useState<"consignments" | "slots">("consignments");
   const [overview, setOverview] = useState<RailOverview | null>(null);
   const [rows, setRows] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -371,6 +374,24 @@ export default function RailOperations() {
         </button>
       </div>
 
+      {/* Tabs */}
+      <div className="mb-5 flex gap-2 border-b border-white/10" role="tablist" aria-label="Rail operations sections">
+        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"]] as const).map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${tab === key ? "border-emerald-400 text-emerald-300" : "border-transparent text-slate-400 hover:text-white"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "slots" && <SlotCompliancePanel canWrite={canWrite} canSign={canSign} />}
+
+      {tab === "consignments" && (<>
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Kpi icon={Layers} label="Active" value={m?.activeConsignments ?? "—"} sub="consignments" />
@@ -606,6 +627,7 @@ export default function RailOperations() {
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }
