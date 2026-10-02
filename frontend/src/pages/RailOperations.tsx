@@ -36,6 +36,9 @@ import ChangesPossessionsPanel from "./rail/ChangesPossessionsPanel";
 import ChangeRequestModal from "./rail/ChangeRequestModal";
 import DangerousGoodsSection, { DgBadge, WagonDgPill } from "./rail/DangerousGoods";
 import PossessionConflictBanner from "./rail/PossessionConflictBanner";
+import TariffPanel from "./rail/TariffPanel";
+import WeighbridgeSection from "./rail/WeighbridgeSection";
+import { isOnHold } from "../lib/railTariff";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -293,7 +296,7 @@ export default function RailOperations() {
   // VIEWER sees Rail read-only: no "Advance" control (the API refuses it anyway).
   const canWrite = getRailAccessLevel(user?.role, userPermissionOverrides(user)) === "FULL";
   const canSign = canSignRailHandshake(user?.role);
-  const [tab, setTab] = useState<"consignments" | "slots" | "changes">("consignments");
+  const [tab, setTab] = useState<"consignments" | "slots" | "changes" | "tariffs">("consignments");
   const [overview, setOverview] = useState<RailOverview | null>(null);
   const [rows, setRows] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -393,7 +396,7 @@ export default function RailOperations() {
 
       {/* Tabs */}
       <div className="mb-5 flex gap-2 border-b border-white/10" role="tablist" aria-label="Rail operations sections">
-        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["changes", "Changes & Possessions"]] as const).map(([key, label]) => (
+        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["changes", "Changes & Possessions"], ["tariffs", "Tariffs & Weighbridge"]] as const).map(([key, label]) => (
           <button
             key={key}
             role="tab"
@@ -408,6 +411,7 @@ export default function RailOperations() {
 
       {tab === "slots" && <SlotCompliancePanel canWrite={canWrite} canSign={canSign} />}
       {tab === "changes" && <ChangesPossessionsPanel canWrite={canWrite} canSign={canSign} />}
+      {tab === "tariffs" && <TariffPanel canWrite={canWrite} />}
 
       {tab === "consignments" && (<>
       {/* Possession windows that overlap booked consignments (server-detected, advisory) */}
@@ -520,6 +524,11 @@ export default function RailOperations() {
                   <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${STATUS_COLOR[r.status]}`}>
                     {STATUS_LABEL[r.status]}
                   </span>
+                  {isOnHold(r) && (
+                    <span className="ml-2 inline-flex rounded-full border border-rose-500/30 bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-300" title={r.holdReason ?? "Held for load adjustment — dispatch is blocked"}>
+                      HOLD
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -546,9 +555,16 @@ export default function RailOperations() {
 
             {/* Status + advance */}
             <div className="mb-6 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] p-4">
-              <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_COLOR[selected.status]}`}>
-                {STATUS_LABEL[selected.status]}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_COLOR[selected.status]}`}>
+                  {STATUS_LABEL[selected.status]}
+                </span>
+                {isOnHold(selected) && (
+                  <span className="inline-flex rounded-full border border-rose-500/30 bg-rose-500/15 px-2.5 py-1 text-[11px] font-bold text-rose-300">
+                    ON HOLD
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {canWrite && selected.status !== "CANCELLED" && selected.status !== "COMPLETED" && (
                   <button
@@ -577,6 +593,10 @@ export default function RailOperations() {
             {/* Dangerous goods: what the dispatch gate sees, and the details form */}
             <div className="mt-4" />
             <DangerousGoodsSection consignment={selected} canWrite={canWrite} onSaved={() => void refreshSelected()} />
+
+            {/* Weighbridge readings and the overload hold (server-decided) */}
+            <WeighbridgeSection consignment={selected} canWrite={canWrite} onChanged={() => void refreshSelected()} />
+            <div className="mb-4" />
 
             {/* Facts */}
             <div className="mb-6 grid grid-cols-2 gap-3 text-sm">

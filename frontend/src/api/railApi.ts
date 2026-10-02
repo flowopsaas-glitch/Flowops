@@ -24,6 +24,8 @@ export interface DangerousGoodsFields {
 export interface Wagon extends DangerousGoodsFields {
   id: string; wagonNumber: string; type: WagonType;
   tareTonnes?: number | null; loadedTonnes?: number | null;
+  /** Axle count (used to default the weighbridge limit check). */
+  axles?: number | null;
   commodity?: string | null; sealNumbers?: string | null;
   lastKnownSiding?: string | null; loadedAt?: string | null; offloadedAt?: string | null;
 }
@@ -39,6 +41,9 @@ export interface IntermodalLeg {
 export interface RailEvent {
   id: string; status: RailStatus; note?: string | null; location?: string | null; reachedAt: string;
 }
+
+/** Set by the SERVER when a wagon's latest weighbridge reading is overloaded; it blocks dispatch until re-weighed within its limit. */
+export type RailHoldStatus = "NONE" | "HOLD_FOR_LOAD_ADJUSTMENT";
 
 export interface RailConsignment extends DangerousGoodsFields {
   id: string;
@@ -62,6 +67,10 @@ export interface RailConsignment extends DangerousGoodsFields {
   riskLevel?: RiskLevel | null;
   riskNote?: string | null;
   createdAt: string;
+  holdStatus?: RailHoldStatus;
+  holdReason?: string | null;
+  holdSetAt?: string | null;
+  holdClearedAt?: string | null;
   wagons?: Wagon[];
   legs?: IntermodalLeg[];
   events?: RailEvent[];

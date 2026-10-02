@@ -43,6 +43,15 @@ vi.mock('./rail/SlotCompliancePanel', () => ({
 vi.mock('./rail/ChangesPossessionsPanel', () => ({
   default: ({ canWrite, canSign }: { canWrite: boolean; canSign: boolean }) => <div data-testid="changes-panel">{`write=${canWrite} sign=${canSign}`}</div>,
 }));
+vi.mock('./rail/TariffPanel', () => ({
+  default: ({ canWrite }: { canWrite: boolean }) => <div data-testid="tariffs-panel">{`write=${canWrite}`}</div>,
+}));
+// The real section is tested in rail/WeighbridgeSection.test.tsx; here we only check how the drawer hosts it.
+vi.mock('./rail/WeighbridgeSection', () => ({
+  default: ({ consignment, canWrite, onChanged }: { consignment: { id: string; holdStatus?: string }; canWrite: boolean; onChanged: () => void }) => (
+    <div data-testid="weighbridge-stub">{`consignment=${consignment.id} write=${canWrite} hold=${consignment.holdStatus ?? 'none'}`}<button onClick={onChanged}>stub-weighed</button></div>
+  ),
+}));
 // The real modal is tested in rail/ChangeRequestModal.test.tsx; here we only check how the drawer opens it.
 vi.mock('./rail/ChangeRequestModal', () => ({
   default: ({ context, onClose, onCreated }: { context: unknown; onClose: () => void; onCreated: (r: unknown) => void }) => (
@@ -76,13 +85,14 @@ beforeEach(() => {
 });
 
 describe('RailOperations — tabs', () => {
-  it('has a tab bar of three tabs and starts on Consignments', async () => {
+  it('has a tab bar of four tabs and starts on Consignments', async () => {
     await open('MANAGER');
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Changes & Possessions']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Changes & Possessions', 'Tariffs & Weighbridge']);
     expect(screen.getByRole('tab', { name: 'Consignments' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }).getAttribute('aria-selected')).toBe('false');
     expect(screen.queryByTestId('slots-panel')).toBeNull();
     expect(screen.queryByTestId('changes-panel')).toBeNull();
+    expect(screen.queryByTestId('tariffs-panel')).toBeNull();
     expect(await screen.findByText(/Corridor Breakdown|Search consignment|SADC Rail Corridors/)).toBeTruthy();
   });
 
@@ -94,9 +104,13 @@ describe('RailOperations — tabs', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Changes & Possessions' }));
     expect(screen.getByTestId('changes-panel')).toBeTruthy();
     expect(screen.queryByTestId('slots-panel')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Tariffs & Weighbridge' }));
+    expect(screen.getByTestId('tariffs-panel')).toBeTruthy();
+    expect(screen.queryByTestId('changes-panel')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Consignments' }));
     expect(screen.queryByTestId('slots-panel')).toBeNull();
     expect(screen.queryByTestId('changes-panel')).toBeNull();
+    expect(screen.queryByTestId('tariffs-panel')).toBeNull();
     expect(screen.getByPlaceholderText(/Search consignment/)).toBeTruthy();
   });
 
@@ -104,12 +118,15 @@ describe('RailOperations — tabs', () => {
     ['MANAGER', 'write=true sign=true'],
     ['DISPATCH', 'write=true sign=false'],
     ['VIEWER', 'write=false sign=false'],
-  ])('passes the right capabilities for %s to both panels', async (role, expected) => {
+  ])('passes the right capabilities for %s to every panel', async (role, expected) => {
     await open(role);
     fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
     expect(screen.getByTestId('slots-panel').textContent).toBe(expected);
     fireEvent.click(screen.getByRole('tab', { name: 'Changes & Possessions' }));
     expect(screen.getByTestId('changes-panel').textContent).toBe(expected);
+    // the tariff panel needs only the write capability (no formal act in it is signatory-only)
+    fireEvent.click(screen.getByRole('tab', { name: 'Tariffs & Weighbridge' }));
+    expect(screen.getByTestId('tariffs-panel').textContent).toBe(expected.split(' ')[0]);
   });
 });
 
@@ -240,5 +257,59 @@ describe('RailOperations — consignment drawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'stub-created' }));
     expect(screen.queryByRole('dialog', { name: 'change-modal-stub' })).toBeNull();
     await waitFor(() => expect(vi.mocked(getConsignment).mock.calls.length).toBeGreaterThan(reads));
+  });
+});
+
+describe('RailOperations — weighbridge hold (Wave 4)', () => {
+  const held = { holdStatus: 'HOLD_FOR_LOAD_ADJUSTMENT', holdReason: 'Overloaded: MNR-000001 (4 t over). Reduce the load and re-weigh the wagon within its limit.' };
+  const openDrawer = async (role: string, over: Record<string, unknown> = {}) => {
+    const row = h.consignment({ id: 'c1', ...over });
+    h.state.rows = [row];
+    h.state.full = row;
+    await open(role);
+    fireEvent.click(await screen.findByText('RAIL-2026-00007'));
+    await screen.findByTestId('weighbridge-stub');
+  };
+
+  it('a held consignment carries a HOLD pill in the list (with the reason on hover); an unheld one does not', async () => {
+    h.state.rows = [h.consignment({ id: 'a', consignmentNumber: 'RAIL-HELD', ...held }), h.consignment({ id: 'b', consignmentNumber: 'RAIL-FREE', holdStatus: 'NONE' })];
+    await open('MANAGER');
+    const rowOf = (n: string) => screen.getByText(n).closest('tr') as HTMLElement;
+    const pill = within(rowOf('RAIL-HELD')).getByText('HOLD');
+    expect(pill.className).toMatch(/rose/);
+    expect(pill.getAttribute('title')).toMatch(/Overloaded: MNR-000001/);
+    expect(within(rowOf('RAIL-FREE')).queryByText('HOLD')).toBeNull();
+  });
+
+  it('a consignment with no hold information at all (an older row) shows no pill', async () => {
+    h.state.rows = [h.consignment({ id: 'a', consignmentNumber: 'RAIL-OLD' })];
+    await open('MANAGER');
+    expect(within(screen.getByText('RAIL-OLD').closest('tr') as HTMLElement).queryByText('HOLD')).toBeNull();
+  });
+
+  it('the drawer shows ON HOLD beside the status, and hosts the weighbridge section for this consignment', async () => {
+    await openDrawer('MANAGER', held);
+    expect(screen.getByText('ON HOLD').className).toMatch(/rose/);
+    expect(screen.getByTestId('weighbridge-stub').textContent).toContain('consignment=c1 write=true hold=HOLD_FOR_LOAD_ADJUSTMENT');
+  });
+
+  it('no ON HOLD chip for a consignment that is not held', async () => {
+    await openDrawer('MANAGER', { holdStatus: 'NONE' });
+    expect(screen.queryByText('ON HOLD')).toBeNull();
+  });
+
+  it('a read-only user is told nothing they can act on: the section is hosted without write access', async () => {
+    await openDrawer('VIEWER', held);
+    expect(screen.getByTestId('weighbridge-stub').textContent).toContain('write=false');
+    expect(screen.getByText('ON HOLD')).toBeTruthy(); // reading the hold is allowed
+  });
+
+  it('after a reading is recorded the consignment is re-read, so the hold chip follows the server', async () => {
+    await openDrawer('MANAGER', held);
+    vi.mocked(getConsignment).mockClear();
+    h.state.full = h.consignment({ id: 'c1', holdStatus: 'NONE', holdReason: null });
+    fireEvent.click(screen.getByText('stub-weighed'));
+    await waitFor(() => expect(getConsignment).toHaveBeenCalledWith('c1'));
+    await waitFor(() => expect(screen.queryByText('ON HOLD')).toBeNull());
   });
 });
