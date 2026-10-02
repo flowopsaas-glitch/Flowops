@@ -1,6 +1,6 @@
 # RASA Rail — implementation audit (2026-10-02)
 
-**Status: IN PROGRESS — written wave by wave; each section is committed with the code it describes.**
+**Status: COMPLETE for Waves 1–4 — implemented and verified on the branch; NOT deployed.** Each section was committed with the code it describes. Deployment is gated: see `RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md` (nothing in it has been run).
 This document is the evidence ledger for the "TRIM Network Statement V4 (RASA 17-document suite) &
 AI Security Hardening" release. It does not approve anything: the requirement register
 (`RAIL-REQUIREMENT-REGISTER-TRACEABILITY-2026-09-27.md`) is still **PROPOSED BASELINE — not
@@ -230,19 +230,6 @@ New suites in Wave 2: `rail-reference` (catalogs, validators), `rail-envelope`, 
 | D10 | Whether tenants may enter their own corridor limits | No — reference data is platform-wide and code-reviewed |
 | D11 | Add real foreign keys later? | No FKs now, to stay inside the additive statement list |
 
-## 6. Open data requests (nothing below has been invented)
-
-| # | Needed | From | Lands in | Unblocks |
-| --- | --- | --- | --- | --- |
-| 1 | Corridor technical data: gauge, electrification, max axle load (20/26/30 t), vehicle profile, max train length, per V4 corridor | Network Statement V4 Chapter 2 | `catalog/corridors.catalog.ts` (+ `sourceRef`, `verifiedBy`, `dataStatus: 'VERIFIED'`) | real `COMPATIBLE` / `INCOMPATIBLE` envelope results |
-| 2 | The 11 transfer yards with the same fields + siding capacity + contacts | Chapter 2; `List of Yards.xlsx` (Annexure 40 item 1) | `catalog/yards.catalog.ts` | yard validation on applications |
-| 3 | Definition of vehicle profiles A / B / B+1 and their order | Chapter 2 / Annexures 2–12 (NDA) | `rail-reference.ts` `RAIL_VEHICLE_PROFILE_ORDER` | profile check as a hard criterion |
-| 4 | Which documents are required at which stage; validity of the 60-day mobilisation and 5-year window | Chapter 3 / 4 / RAA | `rail-compliance.ts`, `rail-reference.ts` | confirm D7, remove `[BRIEF]` tags |
-| 5 | Annexure C of the Rail Access Agreement / Network Statement Chapter 5: the weekly do-ability cut-off, deemed cancellation on non-utilisation, the contracted-path failure credit | S2 Annexure C; NS §5.2.10.9 | `rail-change.rules.ts` `evaluateConsequence` | remove the *unverified* evidence line; model the three unmodelled remedies |
-| 6 | Annexure 20a flow diagram (the label of the > 48 h branch) | the annexure PDF | `catalog/cancellation-process.catalog.ts` | close EXC-032 |
-| 7 | Annexures 23, 24 and 41 as the brief describes them (possession kinds, the 60-day lock), and Annexures 36 / 41 (the occurrence reporting trail, the 48-hour form) | the Network Statement annexure set | `rail-possession.rules.ts`, `rail-occurrence.service.ts` | confirm D15 / D16, remove `[BRIEF]` tags |
-| 8 | The authoritative dangerous-goods data list and its formats; which statuses the gate must cover | Chapter 3 / the DG procedure | `rail-dangerous-goods.ts` | confirm D17 |
-
 ## 4. Wave 3 — cancellations & reschedules, possession windows, occurrence reports, dangerous goods (RAIL-007, RAIL-009, RAIL-010, RAIL-011)
 
 Task numbers are the brief's; requirement numbers (`R-0nn.n`) are the register's. In the register, cancellations are
@@ -380,7 +367,179 @@ Frontend: `lib/railChange` (29), `lib/railDangerousGoods` (43), `ChangeRequestMo
 | D18 | Signatory-only acts added in this wave | *Allocate party* (decides who pays) and *Close occurrence* |
 | D19 | Seeding the 82 reasons | `isActive` is **operator-owned** (never written on update; a deactivated code is never revived — it is reported); any change to a code's responsible party is reported before it is applied |
 
-<!-- Wave 4 (§5) is appended below as it is completed. -->
+## 5. Wave 4 — tariffs, Annexure 40 ancillary services, weighbridge overload hold, invoice draft (RAIL-013, RAIL-014, RAIL-015)
+
+**The one fact that shapes this wave:** no tariff rate was supplied. The brief gives three constants (an 8.50 %
+infrastructure escalation, a 4.42 % electricity escalation, a R24.64/L diesel *base*) and the overload rule — it does **not**
+give a single c/GTK rate, corridor length, consumption factor, electricity price or overload penalty, and Annexure 40
+publishes no price at all. Nothing below invents one. A corridor with no VERIFIED loaded rate is **refused**, a line with
+no rate is **"Not priced"** (never R0.00), and an incomplete calculation can be saved but **never invoiced**. The
+calculator is therefore complete and tested, and prices nothing until the owner loads rates (§6 rows 9–15).
+
+### 5.1 Schema and migration — strictly additive
+
+`20261002070000_rail_wave4_tariffs_ancillary_weighbridge`: **6 enums, 4 tables, 8 indexes, 4 `ALTER TABLE … ADD COLUMN`** (all on
+`rail_consignments`: `holdStatus` — enum, `NOT NULL DEFAULT 'NONE'` — `holdReason`, `holdSetAt`, `holdClearedAt`). No DROP, no
+`ALTER COLUMN`, no `SET NOT NULL`, no data statement, **no foreign keys**. New tables: `rail_tariff_schedules` and
+`rail_ancillary_services` (platform-wide), `rail_weighbridge_readings` and `rail_tariff_calculations` (tenant-scoped).
+
+| Check | Result |
+| --- | --- |
+| All **5** migrations applied, in order, to a real PostgreSQL engine (PGlite 0.5.8, in-process) | all 5 apply cleanly |
+| Resulting catalog vs the datamodel: tables, columns, types, nullability, defaults, enum labels, indexes | **145 models / 2 235 columns / 95 enums — 0 differences** |
+| Is that check able to fail? Three deliberate mutations of the Wave 4 SQL | a dropped index, a changed column type and an extra column are each reported |
+| Calibration against production: applying only the first two migrations reproduces the live object counts recorded in `RELEASE-RUNBOOK-2026-10-01.md` | `116\|61\|295\|116` and `133\|72\|362\|150` — **identical** (tables \| enums \| indexes \| FKs) |
+| Expected live counts after this release (for the deployment checklist) | `145\|95\|401\|150` — tables +12, enums +23, indexes +39, FKs +0 |
+| `node scripts/review-migration.mjs prisma/migrations --schema prisma/schema.prisma` | 145 models ↔ 145 tables; **Destructive operations: none** |
+| `npm run migrations:verify` / `migrations:test` / `release:safety:test`; offline schema validation | 5 migrations; 11 of 11; 40 of 40; schema valid |
+| CI "drift guard" (`prisma migrate diff`, real schema engine) | **authoritative — runs on the PR** (the engines cannot be downloaded in the authoring sandbox, as in §3.2) |
+
+To reproduce the first rows: `docs/tools/verify-migrations-pglite.mjs` (usage in its header; it needs only `@electric-sql/pglite`, installed in a scratch directory).
+
+The checker's first run reported 19 "differences". All 19 were the checker being stricter than Prisma: a scalar list
+(`String[]`) is a *nullable* array in Prisma's own DDL (the baseline written by the real engine has `"events" TEXT[]`), and
+`DEFAULT 2.50` is the same number as `2.5`. Both rules were corrected against the baseline SQL, not against the new
+migrations, and the re-run found nothing.
+
+### 5.2 What was supplied and what was not
+
+| Item | Source | How it is handled |
+| --- | --- | --- |
+| Infrastructure escalation 8.50 % / electricity escalation 4.42 % | `[BRIEF]` — corroborated by no document | `RAIL_TARIFF_CONSTANTS` (`rail-tariff.rules.ts:21`), shown in the UI as *unverified*. **Applied only when the user ticks "escalate"**, compounding per whole financial year, and recorded on every line it touches |
+| Diesel base R24.64/L | `[BRIEF]` — a *base*, not a pump price | used only when no price was loaded **and** none was entered; the result then carries a warning saying so |
+| The overload rule `actualTonnes > maxAxleLoadTonnes × axles` | `[BRIEF]` | implemented exactly: strictly greater, compared in **whole kilograms** so `20.1 × 3` is not "overloaded" by a floating-point crumb (`evaluateOverload`, `rail-tariff.rules.ts:99`) |
+| c/GTK rates (loaded, empty), per corridor and year | **not supplied** (Network Statement Section 5) | `TARIFF_SCHEDULE_CATALOG` is **empty**; no row is seeded; the calculator refuses |
+| Corridor lengths | **not supplied** | `distanceKm` is a required input (0.1 – 10 000); the service never guesses one |
+| Consumption factors, electricity price, overload penalty rate | **not supplied** | nullable columns; the line is "Not priced" unless the user supplies the quantity / price |
+| Annexure 40 prices | none published: **113 lines, 8 `TBD`, 105 with no price** | `unitRateZar` is `null` on every line (verified); `TBD` ≠ free |
+| Where a financial year starts | not stated in any supplied document | 1 April – 31 March, on the South African calendar date (UTC+2); the caller can always override `financialYear` (D20) |
+
+### 5.3 The calculator — `rail-tariff.rules.ts`, `rail-tariff.service.ts`
+
+| Rule | Behaviour | Evidence |
+| --- | --- | --- |
+| Quantity | GTK = gross tonnes × km. A wagon's mass is its **latest weighbridge reading** if there is one, otherwise registered tare + loaded; the result lists where each mass came from | `calculateTariff`, `rail-tariff.rules.ts:295` |
+| Loaded rate → amount | `rate (c/GTK) ÷ 100 × GTK`, rounded **once** to the cent (not rate-rounded first) | `amount`, `:266` |
+| Refusal (`BLOCKED`) | No corridor match in the catalogue · no distance · malformed financial year · no wagons · a wagon of unknown mass · **no VERIFIED loaded rate** · an unknown or non-positive ancillary line ⇒ status `BLOCKED`, the reasons returned, **nothing saved** | `rail-tariff.service.ts:188` |
+| Which rate | Only a **VERIFIED** schedule with a positive loaded rate is used; a `SOURCE_PENDING` rate is never priced from. An exact-year schedule wins; otherwise the nearest *earlier* VERIFIED year **only if escalation was ticked** — otherwise the refusal says so | `pickSchedule`, `:269` |
+| Unpriced lines (`INCOMPLETE`) | A line with no rate is emitted with `amountZar: null`, the subtotal is *the priced lines only*, and the calculation is `INCOMPLETE`: it is saved as a working record and can **never** become an invoice draft | `:295`ff |
+| Empty return | Opt-in; weight = registered tare; priced only if an empty rate is loaded | |
+| Traction energy | Opt-in; diesel litres or electric kWh from the user or from a loaded consumption factor; price = entered > loaded > (diesel only) the brief's base. Electric with no price is unpriced | |
+| Ancillary | Each requested Annexure 40 line is priced only if it is `PUBLISHED` with a rate; otherwise "Not priced" with the annexure's own reason (`TBD` is *not zero and not free*) | |
+| Overload penalty | **One** line covering every wagon whose **latest** reading is still overloaded: the total excess tonnes × `overloadPenaltyPerTonneZar` (unpriced if none loaded), the wagons named in its basis. The penalty rate is **not** escalated (a warning says so) | `rail-tariff.rules.ts` `OVERLOAD_PENALTY` |
+| A corrected overload | A wagon overloaded earlier but re-weighed within its limit gets **no** penalty line, and a warning asks whether the tariff charges an overload corrected before departure (D23) | |
+| Idempotent numbering | `TC-2026-00042`, per tenant per year, retried on a unique collision | |
+| The client names no price | The DTO has no rate, amount, subtotal or status field; the whitelist strips them if sent | `dto/rail-tariff.dto.spec.ts` |
+
+### 5.4 Annexure 40 — RAIL-013
+
+40 numbered services → **113 priced lines** (tier 1: 7, tier 2: 4, tier 3: 17, tier 4: 85; groups Rail 28 · Telecoms 50 ·
+Safety/Emergency 33 · Property 2; 7 compulsory), each with its unit of measure verbatim. `priceStatus` is `NOT_PUBLISHED` (105)
+or `TBD` (8); none is `PUBLISHED`. The gated seeder loads them **without prices**, never overwrites a `PUBLISHED` rate with a
+catalogue line that has none, leaves a deactivated line deactivated, and **lists every rate change before it is applied**
+(`seed-rail-reference.ts`, "5) Annexure 40"). The API serves the same data from the code catalogue until the seeder has run.
+
+### 5.5 Weighbridge, the overload rule and the hold — RAIL-014 / RAIL-015
+
+| Rule | Behaviour | Evidence |
+| --- | --- | --- |
+| Readings are append-only | A reading is never edited or deleted; correcting an overload means weighing the wagon again | `rail-weighbridge.service.ts` |
+| The limit | A VERIFIED corridor's maximum axle load and/or a limit entered with the reading (the wagon's own rating); when both exist the **stricter** applies, so a higher entered figure can never relax a verified one. With neither, the reading is `UNVERIFIED` — **never a pass, never a hold**. *Today no corridor is VERIFIED, so a hold can arise only from an entered limit* | `:93` |
+| The axle count | Registered count and entered count: the **smaller** applies (W4-2) | `rail-weighbridge.service.ts:108-113` |
+| What decides the hold | The most recently **recorded** reading of each wagon (system time — a back-dated `weighedAt` cannot hide a re-weigh). Any wagon still overloaded ⇒ `HOLD_FOR_LOAD_ADJUSTMENT`; when every wagon's latest reading is within its limit the hold clears by itself | `deriveHold`, `rail-tariff.rules.ts:152` |
+| What the hold does | `advanceStatus` refuses a move into `DEPARTED`, `IN_TRANSIT` or `AT_INTERCHANGE` while held, with **one sentence naming every blocker** (the dangerous-goods gate and the hold are evaluated together), and writes `consignment.dispatch_blocked` | `rail.service.ts:258-269` |
+| No override | `holdStatus` / `holdReason` are in no DTO, so the whitelist strips an attempt to write them (`dto/rail-tariff.dto.spec.ts`); the UI offers no release control | |
+| Audit | `weighbridge.reading_recorded`, `consignment.held_for_load_adjustment`, `consignment.hold_cleared` — each attributed to the actor, the hold ones carrying the wagons and excess; the tariff side writes `tariff_calculation.created` and `tariff_calculation.invoice_draft_created` | `rail-audit.ts:81-85` |
+
+### 5.6 Invoice draft — RAIL-015
+
+| Rule | Behaviour |
+| --- | --- |
+| Idempotent — one click, one draft | The draft's **primary key** is derived from the calculation (`rail-draft-<calculationId>`, `rail-tariff.service.ts:271`), so a second create — a double-click, or a retry after a crash — fails atomically with a unique violation and the loser reads back the winner's draft. The calculation then records `invoiceDraftId`. The UI also disables the button while the request is in flight |
+| Only a fully priced calculation | `INCOMPLETE`, or any line with `amountZar === null`, is refused with the number of unpriced lines |
+| A client is required | From the consignment, or `clientName` in the request. The UI asks for one only when the consignment is *known* to have none, and never overrides a stored name |
+| What goes into `draftData` | Only `clientName`, `notes` and `items` — the keys `InvoicesService.create` accepts (it spreads every other key into a Prisma call). One **lump-sum** line per charge (`quantity: 1`, `unitPrice` = the exact amount), because `InvoiceItem.quantity` is an `Int` and `Money.multiply` rounds the unit price to cents, so a per-GTK price could not be carried exactly. Tested through the real `InvoicesService.finalizeDraft` |
+| VAT | **No tax rate is set.** Finalising calls `InvoicesService.create`, which applies the platform default (**15 %**) — the rail module does not decide VAT (D25, §6 row 14) |
+
+### 5.7 Frontend
+
+| Surface | Behaviour |
+| --- | --- |
+| **Tariffs & Weighbridge tab** | A red banner says no corridor has a VERIFIED rate (with the server's explanation); the brief's constants are shown **labelled unverified**; the calculator sends only the consignment, distance, options and quantities — never a rate; a `BLOCKED` result shows the server's reasons verbatim and no figures; an `INCOMPLETE` total is labelled *"Subtotal of the priced lines only"* and a line with no rate reads **"Not priced"**; any change to an input marks the result **stale** and disables Save; the 113 Annexure 40 lines are filterable and addable with quantities |
+| **Saved calculations** | *Generate Invoice Draft* appears only for a fully priced calculation with no draft, to someone who may write; an existing draft is shown as "Draft created" |
+| **Weighbridge section (consignment drawer)** | Readings with the limit arithmetic (`26 t × 4 axles = 104 t (verified corridor limit)`) and the server's verdict; each wagon's latest reading is marked *current*; the hold banner shows the server's reason and **there is no release control**; an `UNVERIFIED` reading is amber and explained as neither a pass nor a hold; after recording, the server's verdict (and whether the hold was set or lifted) is shown before the form closes |
+| **Consignment list / drawer** | A `HOLD` pill beside the status (reason on hover) and an `ON HOLD` chip in the drawer |
+| **Invoice Drafts page** | Now shows a rail draft's client, label and value (W4-1) |
+| Roles | A VIEWER may run the calculation (it saves nothing — the `preview` route is in the read-only allow-list); saving, invoicing and recording readings need write access. There is no signatory-only act in this wave (a draft is reviewed and approved before it is issued) |
+
+### 5.8 Findings while implementing and verifying Wave 4
+
+| # | Finding | Where | Resolution |
+| --- | --- | --- | --- |
+| W4-1 | **The Invoice Drafts page could not display any draft correctly.** `GET /invoice-drafts` returns raw `InvoiceDraft` rows (client, lines and amounts are inside the `draftData` JSON) but the page read a flat `clientName` / `total` / `status` / `lineCount`, so every draft showed "FlowOps Client" and R0.00 with no status. The rail tariff service is the **only** code that creates an `InvoiceDraft`, so the mismatch had never been seen | `frontend/src/pages/InvoiceDrafts.tsx`; `invoices.service.ts:744` | A small pure helper (`lib/invoiceDraft.ts`) derives the flat fields from `draftData`; flat values already present win. The value is labelled *before VAT*. Two page tests fail without the fix (verified by reverting it). The API is unchanged |
+| W4-2 | **An axle count typed with a reading could clear a genuine overload.** Allowed mass is `limit × axles`; the entered count overrode the registered one, so entering more axles than the wagon has raised the allowance and lifted the hold. The earlier pass had closed the same hole for the axle *load* (a higher entered figure never relaxes a verified one) but took the axle count at face value | `rail-weighbridge.service.ts` | the **smaller** of registered and entered counts applies; an entered count is believed outright only for a wagon with none registered; the response says why; the audit entry records `axlesEntered` / `axlesRegistered` / `axlesOverridden`. 5 tests, 3 of which fail against the old behaviour (verified). *A wrong register is corrected by re-registering the wagon — there is no wagon-edit endpoint, so this is the audited route* |
+| W4-3 | Implicit conversion turned the JSON value `true` into **1 km** (and `false`/`""` into 0) for numeric fields — the same family as W3-2 | all Wave 4 DTOs | found and fixed by the earlier pass: `@RawNumber()`; money, mass and distance fields accept only real JSON numbers (`dto/rail-tariff.dto.spec.ts`) |
+| W4-4 | **`deploy/vps-deploy.sh` starts the new API image *before* it runs `migrate deploy`** (steps 3 → 4, lines 129–146). Prisma selects every column in the schema, so for the seconds between the two the new code would query `rail_consignments` / `wagons` columns that do not exist yet | `deploy/vps-deploy.sh` | the additive migrations are **backward-compatible with the old app** (new columns are nullable or constant-default; the old client ignores new tables), so the checklist migrates **first**, with the new image run once, while the old app keeps serving. The script is unchanged (its later `migrate deploy` is then a no-op) |
+| W4-5 | **Known limitation.** `recordReading` writes the reading and then the consignment's hold in two statements, not one transaction. If the process died between them the reading would exist and the consignment would not yet be held; the next reading recorded for that consignment re-derives the hold from *all* its readings, so it heals itself, but until then the gate (which reads the consignment column) would not see it | `rail-weighbridge.service.ts` | **not changed**: it needs transaction support in the test doubles used by every rail spec. Low probability (two consecutive awaits); recorded so it is a decision, not a surprise |
+| W4-6 | The migration checker's first 19 "differences" were its own strictness (§5.1) | `docs/tools/verify-migrations-pglite.mjs` | corrected against Prisma's baseline SQL (not against the new migrations); re-run clean. The tool is committed so the evidence can be reproduced |
+
+### 5.9 Verification (Wave 4)
+
+| Check | Baseline `03b181a` | After Wave 1 | After Wave 2 | After Wave 3 | After Wave 4 |
+| --- | --- | --- | --- | --- | --- |
+| Backend `npx jest` | 20 suites / 307 tests | 23 / 479 | 32 / 797 | 43 / 1410 | **49 suites / 1814 tests**, all pass |
+| Backend `tsc --noEmit`; `npm run build`; `eslint "src/**/*.ts"` | pass; pass; — | pass; pass; 0 | pass; pass; 0 | pass; pass; 0 | pass; pass; **0 problems** |
+| Frontend `vitest run` | 8 files / 59 tests | 10 / 131 | 13 / 183 | 19 / 359 | **24 files / 502 tests**, all pass |
+| Frontend `tsc`; `npm run lint`; `vite build` | pass; 0 errors; — | pass; 0 errors; pass | pass; 0 errors; pass | pass; 0 errors; pass | pass; **0 errors**; pass |
+| Migrations | — | — | 3 | 4 | **5 — applied to a real engine, 0 differences, destructive none** (§5.1) |
+
+New in Wave 4 — backend: `rail-tariff.rules` (the calculator, the overload rule, the hold, escalation, financial years),
+`rail-tariff.service` (calculate / preview / refusal / idempotent invoice draft, through the real `InvoicesService.finalizeDraft`),
+`rail-weighbridge.service` (31), `dto/rail-tariff` (tariff + weighbridge DTOs), `rail-audit` (13), `rail-deployment-checklist` (63 — see below), `catalog/seed-rail-reference` (+
+Annexure 40 and tariff-schedule seeding), and the extended `rail.controllers` (every new route, the read-only `preview`, no shadowed
+route) and `rail.service` (the hold gate). Frontend: `lib/railTariff` (60), `TariffPanel` (43), `WeighbridgeSection` (23),
+`lib/invoiceDraft` (9), `InvoiceDrafts` (2); extended `RailOperations` (19 → 25).
+
+`rail-deployment-checklist.spec.ts` guards the deployment checklist, which an operator will paste production commands from. It fails if
+a command is not ONE line ending `; echo done`, if a read-only step contains a mutating verb or write SQL, if any command could print
+a secret or `.env`, if the approvals are not 1 – 12 in order, if a gated step lacks its blast radius or rollback, if the checklist
+migrates after (rather than before) it swaps the application, if the object counts it promises differ from what the migrations
+add, or if its rollback SQL stops being exactly the migrations undone. Five deliberate corruptions of the checklist were each caught.
+
+### 5.10 Decisions the owner should confirm (Wave 4)
+
+| # | Decision | Default taken |
+| --- | --- | --- |
+| D20 | The financial year runs 1 April – 31 March (judged on the South African calendar date) | as stated; the caller may always override `financialYear` |
+| D21 | The 8.50 % / 4.42 % escalations are applied only on request, only to a rate loaded for an **earlier** year, and never to the overload penalty | opt-in, recorded on the line, labelled unverified |
+| D22 | Diesel is priced at the brief's base R24.64/L when no price is loaded or entered | used, with a warning on the result |
+| D23 | An overload that was **corrected** before departure (re-weighed within its limit) carries no penalty line | a warning asks the owner to confirm whether the tariff charges it |
+| D24 | When the registered and the entered axle count differ, the smaller applies | as W4-2 |
+| D25 | VAT on rail charges | no rate set; the platform default (15 %) applies when a draft is finalised — confirm standard / zero-rated / exempt |
+| D26 | A hold has no manual override; only a re-weigh within the limit lifts it | as §5.5 |
+| D27 | One invoice draft per calculation; one lump-sum line per charge; an `INCOMPLETE` calculation can never be invoiced | as §5.6 |
+| D28 | Loading the reference tables on the VPS (6 corridors, 82 cancellation codes, 113 Annexure 40 lines, 0 tariff schedules) is **optional** — the API serves the same data from the code catalogues until it runs; `isActive` stays operator-owned | optional, gated (checklist step 6) |
+
+## 6. Open data requests (nothing below has been invented)
+
+| # | Needed | From | Lands in | Unblocks |
+| --- | --- | --- | --- | --- |
+| 1 | Corridor technical data: gauge, electrification, max axle load (20/26/30 t), vehicle profile, max train length, per V4 corridor | Network Statement V4 Chapter 2 | `catalog/corridors.catalog.ts` (+ `sourceRef`, `verifiedBy`, `dataStatus: 'VERIFIED'`) | real `COMPATIBLE` / `INCOMPATIBLE` envelope results |
+| 2 | The 11 transfer yards with the same fields + siding capacity + contacts | Chapter 2; `List of Yards.xlsx` (Annexure 40 item 1) | `catalog/yards.catalog.ts` | yard validation on applications |
+| 3 | Definition of vehicle profiles A / B / B+1 and their order | Chapter 2 / Annexures 2–12 (NDA) | `rail-reference.ts` `RAIL_VEHICLE_PROFILE_ORDER` | profile check as a hard criterion |
+| 4 | Which documents are required at which stage; validity of the 60-day mobilisation and 5-year window | Chapter 3 / 4 / RAA | `rail-compliance.ts`, `rail-reference.ts` | confirm D7, remove `[BRIEF]` tags |
+| 5 | Annexure C of the Rail Access Agreement / Network Statement Chapter 5: the weekly do-ability cut-off, deemed cancellation on non-utilisation, the contracted-path failure credit | S2 Annexure C; NS §5.2.10.9 | `rail-change.rules.ts` `evaluateConsequence` | remove the *unverified* evidence line; model the three unmodelled remedies |
+| 6 | Annexure 20a flow diagram (the label of the > 48 h branch) | the annexure PDF | `catalog/cancellation-process.catalog.ts` | close EXC-032 |
+| 7 | Annexures 23, 24 and 41 as the brief describes them (possession kinds, the 60-day lock), and Annexures 36 / 41 (the occurrence reporting trail, the 48-hour form) | the Network Statement annexure set | `rail-possession.rules.ts`, `rail-occurrence.service.ts` | confirm D15 / D16, remove `[BRIEF]` tags |
+| 8 | The authoritative dangerous-goods data list and its formats; which statuses the gate must cover | Chapter 3 / the DG procedure | `rail-dangerous-goods.ts` | confirm D17 |
+| 9 | The c/GTK rate tables (loaded and empty-return) per corridor and financial year, including 2025/26 | Network Statement Section 5 (tariff tables) | `catalog/tariff-schedules.catalog.ts` (+ `sourceRef`, `dataStatus: 'VERIFIED'`), then the gated seeder | **any pricing at all** — until one VERIFIED row exists every calculation is refused |
+| 10 | Corridor lengths (km) | Network Statement Chapter 2 | a `distanceKm` default per corridor (today the distance is typed in) | GTK without hand-entered distances |
+| 11 | Traction consumption factors (litres / kWh per 1 000 GTK) and the contracted electricity price | Network Statement Section 5 / the traction schedule | `tariff-schedules.catalog.ts` | traction-energy lines without the user typing a quantity; electric traction at all |
+| 12 | The overload penalty (rate per tonne, or the rule) and whether an overload **corrected before departure** is chargeable | Network Statement / RAA | `tariff-schedules.catalog.ts` `overloadPenaltyPerTonneZar`; `rail-tariff.rules.ts` | pricing the overload line; confirm D23 |
+| 13 | Any published rate for an Annexure 40 service | the published ancillary tariff | `catalog/ancillary-services.catalog.ts` (`priceStatus: 'PUBLISHED'`, `unitRateZar`, `rateSourceRef`) | pricing ancillary lines — **TBD is not zero** |
+| 14 | VAT treatment of rail access / ancillary charges (standard-rated, zero-rated for export, exempt) | the tenant's tax adviser / SARS | `rail-tariff.service.ts` `generateInvoiceDraft` (`taxRate` in `draftData`) | confirm D25 — today the platform default (15 %) applies when the draft is finalised |
+| 15 | The start of the financial year the Network Statement labels "2026/27" | Network Statement Section 5 | `rail-tariff.rules.ts` `financialYearOf` | confirm D20 |
+
 
 ## Appendix A — generated code index
 
