@@ -264,9 +264,30 @@ If it asks whether to continue because tenants are over plan limits, answer **N*
 - **Blast radius:** the `api` container (and `frontend`) are recreated: a few seconds of API unavailability and WebSocket reconnects. `driver-portal`, `postgres` and `redis` are not recreated (their images are unchanged). The behaviour changes in §0 take effect.
 - **Rollback:** the application can go back **without touching the schema** (§6.2).
 - *Stop if* the script exits non-zero, or the final health line is empty.
+
+**Why the command below pre-builds `frontend` first.** `vps-deploy.sh` line 128 runs `$COMPOSE build` with **no service filter**, and
+this release changes 21 files under `frontend/src/pages/rail`, so the frontend build runs for real — on a 1.9 Gi box, with
+`frontend/package.json` hardcoding `node --max-old-space-size=8192`. That is a *ceiling*, not an allocation: V8 only commits pages
+it actually uses, but with an 8 GiB ceiling it will not GC aggressively before hitting whatever the host can give it, and an
+uncapped build is what a host-wide OOM would land on. Pre-building the frontend with `--memory 1600m` bounds it to its own cgroup,
+so the worst case is a **clean kill of the build**, not pressure on `postgres`. `&&` means that if the build fails, `vps-deploy.sh`
+never runs and **nothing is recreated**.
+
+This is belt-and-braces, not the primary protection: `vps-deploy.sh` runs under `set -euo pipefail` (line 51), so it aborts at
+`$COMPOSE build` (line 128) **before** `$COMPOSE up -d` (line 132) — a build failure cannot leave the stack half-swapped. And every
+live service carries its own cgroup cap (`api` 768M, `postgres` 384M, `redis` 96M, 128M each for `frontend`, `driver-portal`,
+`cloudflared`, `postgres-backup`).
+
+**What `vps-deploy.sh` will then do, in order:** pre-flight (Compose ≥ 2.24.4 ✓ at 5.5.1, Cloudflare tunnel must not target
+`127.0.0.1`/`localhost`, host `cloudflared.service` must be inactive, `scripts/check-compose-ports.sh`, and `.env` must contain
+`VITE_API_URL=/api/v1` plus `POSTGRES_PASSWORD`/`JWT_SECRET`/`OWNER_SEED_EMAIL`/`OWNER_SEED_PASSWORD`/`CORS_ORIGINS`) →
+`git pull --ff-only` (a no-op) → `$COMPOSE build` (api and driver-portal cached; frontend already built above) → `$COMPOSE up -d`
+→ wait for Postgres healthy → `prisma migrate deploy`, now *No pending migrations to apply* → plan-limit pre-flight → health.
+**If it asks whether to continue because tenants are over plan limits, answer `N` and report what it printed.**
+
 <!-- CMD approved 6 -->
 ```text
-cd /root/FlowOps && ./deploy/vps-deploy.sh; echo done
+cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml build frontend --memory 1600m && ./deploy/vps-deploy.sh; echo done
 ```
 
 Verify (read-only):
@@ -355,7 +376,12 @@ Fill in as each step is approved and run (UTC time, who approved, the one-line o
 | 4 build | 2026-10-03, Kader | **`BUILD_EXIT=0` but every layer came from cache — VERIFICATION PENDING, Step 5 must not run yet.** The whole build finished in **0.3 s** with `CACHED` on `COPY src ./src`, `RUN npx prisma generate` and `RUN npm run build`, and it only transferred a **31.39 kB** context where the dockerignore-filtered `backend/` tree is **~4.7 MB** (452 files, `src` alone 4.3 MB). A cache hit is not automatically stale — BuildKit cache keys are content-addressed, so a hit means *this exact content was built before on this daemon* — but it is unproven, and an image built from pre-release content would make Step 5's `prisma migrate deploy` report *No pending migrations* and send Step 6 forward against an unmigrated schema. Two signals initially read as "the Dockerfile edit did not apply" were **wrong and are recorded as such**: (a) `builder 10/10` — BuildKit does not number `ARG`/`ENV`, which the same build proves (the production stage has `ARG NODE_ENV` + `ENV NODE_ENV` and reports `13/13`); (b) `transferring dockerfile: 2.99kB` — modified file is 2 948 B, original 2 895 B, so the figure is consistent with either. **Nothing is running the new tag: the live `api` container still uses `<OLD_API_IMAGE_ID>`, so the only thing that changed on disk is the `flowops/backend:latest` tag. Zero blast radius on live.**
 
 **Subsequently verified — the image IS the release, so Step 4 is PASS.** `docker run --rm flowops/backend:latest sh -c '…'` reports **5 migration directories** (all three `20261002*` rail waves, plus `migration_lock.toml`), **`dist/rail` holds 47 `.js` files** (exactly the 47 non-spec `.ts` files in `be1792d`'s `src/rail`; the old release had 10), and **`rail-tariff.service.js` is present**. Image id `sha256:4b3dc5eb23ace4fa27f9f9fa300ee01077b14f87fcb1247e2669c29130751b9f` differs from the running `api` image (`…d85bd522…`) and matches the build's `exporting manifest list` line. The cache hit is explained: byte-identical source had been built on this daemon before (the prior session's rehearsal at PR-branch content — a squash merge yields the same tree), so BuildKit's content-addressed cache hit legitimately. **Caveat carried forward: no layer actually executed, so the `--memory 1792m` / `--max-old-space-size=1536` profile is untested** — it matters at Step 6, where the frontend build runs for real. |
-| 5 migrate | 2026-10-03, Kader | **Executed — `All migrations have been successfully applied.` V1–V4 PENDING, Step 6 must not start without them.** `docker compose … run --rm -T --no-deps api ./node_modules/.bin/prisma migrate deploy` reported `5 migrations found in prisma/migrations` and applied exactly the three expected rail waves in order (`…050000_rail_wave2…`, `…060000_rail_wave3…`, `…070000_rail_wave4…`), then `All migrations have been successfully applied.` **Two gaps:** R8 was not pasted immediately beforehand (the migration completed without incident, so the lock-risk it guards against did not materialise — recorded for completeness, not as a defect), and V1–V4 have not been run. **Step 5 is not PASS until V1 reads `5\|0` and V2 reads `145\|95\|401\|150`.** |
+| 5 migrate | 2026-10-03, Kader | **Executed — `All migrations have been successfully applied.` V1–V4 PENDING, Step 6 must not start without them.** `docker compose … run --rm -T --no-deps api ./node_modules/.bin/prisma migrate deploy` reported `5 migrations found in prisma/migrations` and applied exactly the three expected rail waves in order (`…050000_rail_wave2…`, `…060000_rail_wave3…`, `…070000_rail_wave4…`), then `All migrations have been successfully applied.` **V1–V4 all passed — Step 5 is PASS.** V1 `5|0`; V2 `145|95|401|150` (from `133|72|362|150`); V3 `0`; V4
+`{"data":{"status":"ok","db":"connected","uptime":125551,…},"statusCode":200,"message":"success"}` — and that `uptime` of ~34.9 h proves the
+`api` container was never restarted. The `flowops-api-run-*` migrate container was reaped (`docker ps -a --filter name=flowops-api-run`
+→ empty). **R10 = `0`**, so `ALLOW_AI_SELF_REPAIR` and `ALLOW_AI_CHAOS_SIMULATION` are unset and the AI safety switches stay
+fail-closed in production. The central claim of §0 — *the old Prisma client runs fine on the new schema* — is now verified in
+production, not just reasoned about. |
 | 6 deploy | | |
 | 7 seed (optional) | | |
 | Smoke test (§4) | | |
