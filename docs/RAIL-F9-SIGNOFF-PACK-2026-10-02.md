@@ -33,7 +33,7 @@ risk in writing, and meeting every compensating control:
 ☐ I am the sole operator. No second human is available. I sign both roles, I
 accept the residual risk, and I will seek independent review before any real
 rate is ever marked VERIFIED.
-SIGNATURED in chat 2026-10-03 by **Kader** (sole operator, 09:44 SAST assumed — to correct if UTC). Reviewer blocks throughout = same person, independence waived per §0.1.
+SIGNATURED in chat 2026-10-03 by **Kader** (sole operator, 09:44 SAST confirmed = 07:44 UTC). Reviewer blocks throughout = same person, independence waived per §0.1.
 
 How to sign: each party fills their block in Parts 1–3 and the signature page
 (§4) with name + UTC date + signature (handwritten scan or SSO-attested
@@ -109,7 +109,7 @@ amended decisions until code/docs match).
 | D22 | Diesel at brief's R24.64/L when nothing loaded/entered | used, with warning | ☐ | ☐ |
 | D23 | Corrected-before-departure overload carries no penalty line | warning asks owner | ☐ | ☐ |
 | D24 | Registered vs entered axle count differ → smaller applies | as W4-2 | ☐ | ☐ |
-| **D25** | **VAT on rail charges — standard / zero-rated / exempt?** (no rate set; platform default 15% applies at finalisation unless decided) | **owner must decide** | ☐ standard / zero / exempt: ___ | ☐ countersign |
+| **D25** | **VAT on rail charges — standard / zero-rated / exempt?** (no rate set; platform default 15% applies at finalisation unless decided) | **owner must decide** | ☑ **standard** (chat, Kader, 2026-10-03) | solo-operator: same person |
 | D26 | No manual hold override; only re-weigh within limit lifts it | as §5.5 | ☐ | ☐ |
 | D27 | One draft per calculation; one lump-sum line per charge; `INCOMPLETE` never invoiced | as §5.6 | ☐ | ☐ |
 | D28 | Reference-data seeder optional (6 corridors, 82 codes, 113 lines, **0 schedules**); API serves code catalogues until it runs | optional, gated | ☐ | ☐ |
@@ -123,7 +123,7 @@ real invoice — not during the pilot.
 **Owner.** I have read Parts 1–3, I confirm the statements I initialled, and I
 understand what my signature does and does not authorise (§0).
 
-- Name (print): **Kader** Date (UTC): **2026-10-03** Signature / approval ref: **chat-signed (Parts 1–3 confirmed, no amendments; D25 pending)**
+- Name (print): **Kader** Date (UTC): **2026-10-03** Signature / approval ref: **chat-signed (Parts 1–3 confirmed, no amendments; D25: standard)**
 
 **Independent reviewer (solo-operator: same person, waived per §0.1).** Independence statement N/A —'s authorship. I have
 checked Part 1.2 against the code and Parts 1–3 against the cited documents, I
