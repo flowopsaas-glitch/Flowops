@@ -326,7 +326,7 @@ Fill in as each step is approved and run (UTC time, who approved, the one-line o
 | --- | --- | --- |
 | R1 – R11 | 2026-10-03, Kader | Partial: R1 (13 GB free), R2 (8 containers), R6 (ledger 2 rows) confirmed from the operator's starting state. R3/R4/R5/R7/R8/R10/R11 still to be pasted. |
 | 1 backup | 2026-10-03 11:28–11:30 UTC, Kader | **PASS.** Fresh dump `flowops_20261003_112847.sql.gz` (260,395 B) produced by the restart, uploaded to `flowops-r2:flowops-backups/backups/2026/10/`, R2 round-trip verified (gzip + SHA-256), 30-day prune completed. V0 + V0b agree: newest dump is from this run. Observation, not a blocker: the backup container had also dumped at 08:11 and 11:17 UTC today — the 6-hourly cadence in the compose comment is not what is actually happening. |
-| 2 restore-verify | | |
+| 2 restore-verify | 2026-10-03 11:40 UTC, Kader | **PASS.** `deploy/restore-verify.sh --latest-local` picked the Step 1 dump `flowops_20261003_112847.sql.gz` (260,395 B), restored it into throwaway `flowops_verify_1791027638` in ~1 s, and printed `VERIFY PASSED` with core counts `companies: 2 · users: 10 · drivers: 20 · waybills: 81 · collections: 19`. No `psql reported issues during restore` warning. Temp DB drop was reported. **The residue check (`SELECT … FROM pg_database …` → expect `none`) has not been pasted yet** — the drop runs under `> /dev/null 2>&1 \|\| true`, so it is silent on failure. Live database untouched. |
 | 3 checkout | | |
 | 4 build | | |
 | 5 migrate | | |

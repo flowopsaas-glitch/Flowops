@@ -3,8 +3,9 @@
 **Status: F-1 – F-9 ALL PASS. F-10 UNBLOCKED AND IN PROGRESS — executing
 `docs/RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md` one gated step at a time at `RELEASE_SHA` `be1792d`.**
 
-**Live production state as of 2026-10-03 11:30 UTC: UNCHANGED.** Step 1 (backup) is the only step run so far. No migration
-applied, no image built, no container recreated, no production flag changed, checkout still on `03b181a`.
+**Live production state as of 2026-10-03 11:40 UTC: UNCHANGED.** Steps 1 (backup) and 2 (restore proof) are complete. No migration
+applied, no image built, no container recreated, no production flag changed, checkout still on `03b181a`. Live DB counts, read from
+the restored copy at Step 2: companies 2 · users 10 · drivers 20 · waybills 81 · collections 19.
 
 - **PR #442** — **MERGED** into `main` as `be1792dc45d3a580fac5a5a25820025176ac3d09` (2026-10-03T08:07:26Z). This is
   `<RELEASE_SHA>`. The `DO NOT MERGE` prefix is a stale cosmetic title.
@@ -99,3 +100,5 @@ No further VPS action is proposed. Steps 1–12 of the deployment checklist rema
 | **Checklist Step 1 — backup** | 2026-10-03 11:28–11:30 UTC | `docker restart flowops-postgres-backup-1 && sleep 120 && /usr/local/bin/flowops-backup-r2 --backup-only` → fresh dump `flowops_20261003_112847.sql.gz` (260,395 B) uploaded to `flowops-r2:flowops-backups/backups/2026/10/`; `R2 round-trip verified (gzip + SHA-256)`; 30-day prune completed. V0 (host volume path) and V0b (inside container) agree: newest dump 11:28 UTC = this run. | **PASS** — fresh pre-release backup exists on-box and off-box. Live DB untouched. |
 | Checklist Step 1 — command correction | 2026-10-03 | The draft Step 1 (`flowops-backup-r2 --backup-only` alone) would have **STOPPed**: that binary uploads the newest *existing* dump and `die`s if it is >12 h old — it contains no `pg_dump`. Corrected to restart the `postgres-backup` service first (its loop dumps on container start). Documented in the checklist §Step 1; `backend/src/rail/rail-deployment-checklist.spec.ts` re-run: **64/64 pass**. | PASS — guard test green after the edit |
 | Checklist Step 1 — observation | 2026-10-03 | Backup container had produced dumps at 08:11, 11:17 and 11:28 UTC today. The compose comment advertises a 6-hourly cadence; the observed gaps (~3 h) do not match it. Healthcheck (`-mmin -400`) still passes. | INFO — not a blocker; the 12-hour freshness guard in the runner is what Step 1 depends on |
+| **Checklist Step 2 — restore proof** | 2026-10-03 11:40 UTC | `bash deploy/restore-verify.sh --latest-local` → picked `flowops_20261003_112847.sql.gz` (260,395 B); throwaway DB `flowops_verify_1791027638`; restore ~1 s (11:40:39 → 11:40:40); core counts **companies 2 · users 10 · drivers 20 · waybills 81 · collections 19**; `VERIFY PASSED: … (2 companies).` No `psql reported issues during restore` warning. Live `flowops` DB untouched. | **PASS** — the Step 1 backup is proven restorable. These counts are also the pre-migration baseline; the three rail migrations write no data, so Step 5 must not change them. |
+| Checklist Step 2 — residue check | 2026-10-03 | `SELECT coalesce(string_agg(datname,','),'none') FROM pg_database WHERE datname NOT IN ('flowops','postgres','template0','template1')` | **NOT PASTED — OUTSTANDING.** The script's `DROP DATABASE` runs under `> /dev/null 2>&1 \|\| true`, so the printed drop line is not proof it succeeded. Required before Step 3. |
