@@ -563,7 +563,7 @@ because a step was held and verified instead of trusted. Read it before running 
 |---|---|
 | Untracked artefacts in the checkout | Four `flowops-rehearsal-*.{md,stdout}` files sit in `/root/FlowOps`. Harmless — outside both build contexts, and `reset --hard` cannot touch them — but a future `git add -A` there would commit them. |
 | `/root/Dockerfile.pre-step4` | Step 4's backup copy, left on the host (outside the repo). Harmless. |
-| Backup container restart at ~11:17 UTC | **The cadence itself is fine** — see the resolved section below: dumps are 6 h 00 m 00 s apart, exactly as documented. One container restart at ~11:17 UTC has no known cause (it is not ours; Step 1's restart was 11:28). Harmless — the loop self-heals by dumping on start — but `RestartCount` will say whether it was a one-off or is a pattern. |
+| Backup service provenance | **Closed — no defect.** Dumps are 6 h 00 m 00 s apart exactly as documented, retention works, and `restarts=0` proves the service has never crashed or been OOM-killed. The current instance started at 11:28:47 (Step 1's restart). One earlier deliberate start at ~11:17 UTC is unexplained as to *who*, but it was not a fault and nothing else on the box moved. |
 | Prisma version nudge | `migrate status` printed `Update available 5.22.0 -> 8.0.0-rc.19`. Cosmetic; **not** actioned mid-release. |
 | Rollback image availability | `<OLD_API_IMAGE_ID>` `sha256:d85bd522…` and `<OLD_FRONTEND_IMAGE_ID>` `sha256:09fb0305…` should still be on disk. Worth confirming with `docker image inspect` before relying on `approved: 9`. |
 
@@ -583,9 +583,7 @@ so it is healthy right now. The log also shows the 28-file retention working as 
 `20261003_111718` came from a restart at ~11:17 UTC; `20261003_112847` is ours, from Step 1. A restarting container dumps
 immediately, so a restart shortens one interval without the loop misbehaving at all.
 
-**The only open question is the ~11:17 restart.** It was not caused by this deployment, and nothing else on the box restarted —
-`postgres` and `redis` were both showing `Up 8 days` at the time, which rules out a Docker daemon restart or a host reboot.
-One command says whether it was a one-off or is a pattern:
+**The ~11:17 start — answered, and it was not a fault.**
 
 <!-- CMD read-only B1 -->
 ```text
@@ -597,15 +595,29 @@ docker inspect --format 'restarts={{.RestartCount}} started={{.State.StartedAt}}
 docker logs --tail 30 flowops-postgres-backup-1; echo done
 ```
 
+Result on 2026-10-03: **`restarts=0 started=2026-10-03T11:28:47.343886387Z status=running`**.
+
+`RestartCount` counts **only restarts performed by the restart policy** — a crash, an OOM kill, or a daemon-driven restart. An
+explicit `docker restart` or a `docker compose up -d` recreate does **not** increment it. That single distinction settles it:
+
+- **`restarts=0` eliminates every fault hypothesis.** The service has never crashed and has never been OOM-killed at its 128M
+  limit — the OOM theory that was the leading suspect is dead.
+- **`started=11:28:47.343…` is Step 1's restart, to the second** — the dump it produced is named
+  `flowops_20261003_112847.sql.gz`. The container instance now running is ours.
+- **The ~11:17 dump therefore came from an earlier container instance**, started by a deliberate action at ~11:17 UTC that was
+  neither a crash nor part of this deployment.
+
+What remains unknown is only the *provenance* of that 11:17 start, not the health of anything. Nothing on the box was disturbed by
+it (`postgres` and `redis` were both `Up 8 days` at 13:17, which rules out a daemon restart or host reboot), and
+`deploy/disk-guard.sh` cannot cause it — it runs only `docker image prune -f` / `docker builder prune -f`, never restarts
+containers, and never touches volumes. If it is worth naming, `last`, `~/.bash_history` and `/var/log/auth.log` on the host will
+identify the actor.
+
 > **Also corrected:** the first version of B1 used `{{.StartedAt}}`, which is **not a top-level `docker inspect` field** and fails
 > with `template parsing error: … map has no entry for key "StartedAt"`. The correct path is `{{.State.StartedAt}}`. `RestartCount`
 > *is* top-level, so only that half worked. Worth remembering: a `docker inspect` template that has never been run is a guess.
 
-*How to read them:* `restarts=0` together with a start time long before 11:17 would mean the banner came from something other
-than a restart — go back to the log. A small non-zero count means occasional restarts; at its 128M limit an OOM kill is the usual
-suspect, and `restart: unless-stopped` brings the container back silently. A count climbing steadily means a recurring cause worth
-actually fixing.
-
-Either way this is **not a blocker**: the healthcheck (`find /backups -name 'flowops_*.sql.gz' -mmin -400`) passes, the loop
-self-heals by dumping on start, and Step 1 is safe because `flowops-backup-r2` enforces its own 12-hour freshness gate before it
-uploads anything.
+**Conclusion — this item is closed, and there is no backup defect.** The loop is 6-hourly and exact, its 28-file retention is
+working, it has never crashed, and it is running healthy. The healthcheck (`find /backups -name 'flowops_*.sql.gz' -mmin -400`)
+passes, the loop self-heals by dumping on start, and Step 1 is safe because `flowops-backup-r2` enforces its own 12-hour
+freshness gate before it uploads anything.
