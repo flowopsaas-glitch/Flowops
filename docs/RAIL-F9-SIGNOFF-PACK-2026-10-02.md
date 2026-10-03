@@ -33,7 +33,7 @@ risk in writing, and meeting every compensating control:
 ☐ I am the sole operator. No second human is available. I sign both roles, I
 accept the residual risk, and I will seek independent review before any real
 rate is ever marked VERIFIED.
-SIGNATURED in chat 2026-10-03 by **Kader** (sole operator, 09:44 SAST assumed — to correct if UTC). Reviewer blocks throughout = same person, independence waived per S0.1.
+SIGNATURED in chat 2026-10-03 by **Kader** (sole operator, 09:44 SAST assumed — to correct if UTC). Reviewer blocks throughout = same person, independence waived per §0.1.
 
 How to sign: each party fills their block in Parts 1–3 and the signature page
 (§4) with name + UTC date + signature (handwritten scan or SSO-attested
@@ -123,9 +123,9 @@ real invoice — not during the pilot.
 **Owner.** I have read Parts 1–3, I confirm the statements I initialled, and I
 understand what my signature does and does not authorise (§0).
 
-- Name (print): **Kader** Date (UTC): **2026-10-03** Signature / approval ref: **chat-signed (Parts 1-3 confirmed, no amendments; D25 pending)**
+- Name (print): **Kader** Date (UTC): **2026-10-03** Signature / approval ref: **chat-signed (Parts 1–3 confirmed, no amendments; D25 pending)**
 
-**Independent reviewer (solo-operator: same person, waived per S0.1).** Independence statement N/A —'s authorship. I have
+**Independent reviewer (solo-operator: same person, waived per §0.1).** Independence statement N/A —'s authorship. I have
 checked Part 1.2 against the code and Parts 1–3 against the cited documents, I
 confirm the statements I initialled, and I understand §0.
 
