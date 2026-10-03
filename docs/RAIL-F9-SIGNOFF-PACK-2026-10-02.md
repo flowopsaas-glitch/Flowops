@@ -15,6 +15,26 @@ No matrix row may move above `UNVERIFIED` without both signatures.
   `APPROVED_FOR_PRODUCTION` status, closing any exception without its Transnet
   source location, or merging / deploying (F-10 stays gated on F-8 too).
 
+## 0.1 Solo-operator adaptation (only if no second human exists)
+
+The two-person rule (§0) is the preferred control. If the operating team is one
+person, that person may proceed **only** by signing here, accepting the residual
+risk in writing, and meeting every compensating control:
+
+- a. The owner signs BOTH the owner and reviewer blocks in Parts 1–3 and §4,
+  marking the reviewer blocks "solo-operator — same person, independence waived".
+- b. The first-party adversarial review (§6) is attached. It is supporting
+  evidence, NOT independent review — the agent authored the release.
+- c. Gates F-1–F-7 stay PASS (objective, automated controls — they take nobody's word).
+- d. F-8 still runs as a pilot with artifacts — never an approval.
+- e. This release cannot move money: every real calculation is BLOCKED by code
+  (Part 1), so the waived control gates dormant code paths, not pricing.
+
+☐ I am the sole operator. No second human is available. I sign both roles, I
+accept the residual risk, and I will seek independent review before any real
+rate is ever marked VERIFIED.
+Name: ______________________ Date (UTC): __________ Signature: ______________________
+
 How to sign: each party fills their block in Parts 1–3 and the signature page
 (§4) with name + UTC date + signature (handwritten scan or SSO-attested
 approval reference — record which). The agent then records F-9 PASS and files
@@ -110,6 +130,29 @@ checked Part 1.2 against the code and Parts 1–3 against the cited documents, I
 confirm the statements I initialled, and I understand §0.
 
 - Name (print): ______________________ Date (UTC): __________ Signature / approval ref: ______________________
+
+## 6. First-party adversarial review (supporting — not independent)
+
+Conducted 2026-10-02 by the release agent against §0.1(b). Method and limits
+stated honestly: 153 files / +27.5k lines cannot be re-read line-by-line here;
+breadth is carried by CI (Backend incl. real engines, E2E, Trivy, drift guard —
+10/10 green on the tip) and the suites. This review targeted the money paths
+and the release envelope structurally:
+
+| # | Check | Result |
+| --- | --- | --- |
+| R-1 | Secrets: tracked secret-adjacent files; private-key/cert patterns in added lines | PASS — none found |
+| R-2 | Blast radius: `backend/src` subdirs touched | PASS — rail (73), ai (10), audit (2), common (1 new decorators file). No auth/billing/payment/user modules |
+| R-3 | Envelope: compose/Dockerfiles/deploy untouched; exactly 5 migrations; `.env` examples gain only commented fail-closed switches | PASS |
+| R-4 | `pickSchedule` uses only VERIFIED + positive loaded rate | PASS — `rail-tariff.rules.ts:292` |
+| R-5 | BLOCKED refused at save; INCOMPLETE refused at invoice draft; preview saves nothing; client name required | PASS — `rail-tariff.service.ts:188-189`, `:266`, `:171-175`, `:270` |
+| R-6 | Frontend renders null/undefined/NaN/Infinity as "Not priced", never R0.00 (explicit trap-avoidance + tests) | PASS — `railTariff.ts:21`, `railTariff.test.ts:19-29` |
+| R-7 | Pack accuracy: EXC ids complete vs exceptions doc; D20–D28 exact match vs audit §5.10 | PASS |
+| R-8 | `024b420` time-bomb fix is spec-only | PASS — 1 spec file |
+
+Verdict: no blocking findings. Residual risks (unchanged, already on record):
+backup cadence is ad hoc (fresh pre-release backup mandatory); D25 VAT undecided
+until the owner picks; production pricing impossible until VERIFIED rates arrive.
 
 ## 5. Effect
 
