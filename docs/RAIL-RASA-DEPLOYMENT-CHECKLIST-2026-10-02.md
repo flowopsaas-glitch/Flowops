@@ -185,9 +185,33 @@ keeps serving**. It does not restart anything.
 - **Blast radius:** CPU, memory and disk on the host for the duration of the build; the `flowops/backend:latest` tag moves to the new image (the old image stays on disk, still used by the running container, and is what `<OLD_API_IMAGE_ID>` names).
 - **Rollback:** none needed; `docker image prune` is optional housekeeping afterwards.
 - *Stop if* the build fails — nothing has changed.
+
+**Why the command below is not the plain `… build api`.** Measured on a 2 GB host: `Mem 1.9 Gi total / 891 Mi used / 1.0 Gi available`,
+`Swap 2.0 Gi total / 546 Mi used / 1.5 Gi free`. The build step is `nest build` (tsc), and this release adds 48 files under
+`backend/src/rail`, so it is the largest compile this project has done. Two consequences:
+
+1. **The heap must be raised.** `backend/Dockerfile` has **no `ARG NODE_OPTIONS`** and there is no build-memory convention anywhere
+   in `deploy/`, so `NODE_OPTIONS` cannot be injected any other way. This step therefore adds two lines to the **builder** stage,
+   immediately before `RUN npx prisma generate` (so the `npm ci` layer stays cached — no lockfile change in this release), builds,
+   and **unconditionally restores the file afterwards**. The production stage is a separate `FROM`, so `ENV` does not propagate:
+   **the shipped image gets no `NODE_OPTIONS`.** The insertion is anchored on `/^RUN npx prisma generate$/` rather than a line
+   number and was verified against a copy of the Dockerfile before being written here.
+2. **The build is memory-capped with `--memory 1792m`.** Protection for the live stack does not rest on this flag alone (see below),
+   but it is the belt to the braces: if the daemon honours it, the build is confined to its own cgroup.
+
+**Why live survives even though the cap (1.75 Gi) is most of the box.** Every live service already carries a hard cgroup limit —
+`api` 768M, `postgres` 384M, `redis` 96M, and 128M each for `frontend`, `driver-portal`, `cloudflared` and `postgres-backup`
+(~1.72 GiB of limits, ~0.81 GiB of reservations, which is the `891 Mi used` observed). They cannot grow, so they cannot be the
+processes that exhaust memory. An uncapped build would be by far the largest consumer and is what the OOM killer would take first.
+The residual risk is *slowness*, not death: if the build spills, it swaps (1.5 GiB free), and the API stays up but sluggish.
+Nothing is restarted by this step.
+
+**If it OOMs, the ladder is** (each retry is its own approval): raise to `--memory 2304m --build-arg NODE_OPTIONS=--max-old-space-size=2048`,
+still leaving live protected by its own caps. Do **not** delete `--memory` to make the build succeed.
+
 <!-- CMD approved 4 -->
 ```text
-cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml build api; echo done
+cd /root/FlowOps && cp backend/Dockerfile /root/Dockerfile.pre-step4 && sed -i -e '/^RUN npx prisma generate$/i ARG NODE_OPTIONS=""' -e '/^RUN npx prisma generate$/i ENV NODE_OPTIONS=${NODE_OPTIONS}' backend/Dockerfile && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml build api --memory 1792m --build-arg NODE_OPTIONS=--max-old-space-size=1536; echo "BUILD_EXIT=$?"; cp /root/Dockerfile.pre-step4 backend/Dockerfile; git -C /root/FlowOps diff --stat; echo done
 ```
 
 ### Step 5 — apply the three migrations, while the old app is still serving · `approved: 5`
