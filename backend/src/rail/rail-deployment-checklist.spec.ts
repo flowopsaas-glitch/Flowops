@@ -98,6 +98,47 @@ describe('checklist — the command rules', () => {
   });
 });
 
+/**
+ * Regressions from the first real run (2026-10-03, RELEASE_SHA be1792d).
+ *
+ * These are not style opinions — each one is a thing that was wrong in the document, was only caught because a step was
+ * held and verified rather than trusted, and would otherwise be re-introduced by the next edit.
+ */
+describe('checklist — regressions from the 2026-10-03 run', () => {
+  const cmd = (kind: string) => {
+    const found = commands.find((c) => c.kind === kind);
+    expect(found).toBeDefined();
+    return found!;
+  };
+
+  it('V6b does not use the blunt pattern that can never report zero', () => {
+    // 'error|exception|prisma' reported 7 on a perfectly healthy deploy: PrismaModule/PrismaService startup lines, and
+    // five `Mapped {…}` routes whose PATHS contain error/exception (/observability/client-error, /operations/exception-sla,
+    // /owner/observatory/errors, …). A check that can never read 0 is worse than no check — it trains the operator to
+    // wave through a non-zero result.
+    const v6b = cmd('read-only V6b').text;
+    expect(v6b).not.toMatch(/grep -ciE 'error\|exception\|prisma'/);
+    expect(v6b).toMatch(/grep -v 'Mapped \{'/); // drop route-registration lines before counting
+    expect(v6b).not.toMatch(/grep -i\b/); // case-sensitive: match the ERROR severity, not "client-error"
+  });
+
+  it('Step 6 bounds the frontend build (its package.json hardcodes --max-old-space-size=8192 on a 2 GB host)', () => {
+    // A CLI flag beats NODE_OPTIONS, so --memory is the only lever that can bound this build. The host has 1.9 Gi RAM.
+    expect(cmd('approved 6').text).toMatch(/build frontend --memory \d+m/);
+  });
+
+  it('records the run that proved the document wrong, so the next operator reads it first', () => {
+    expect(doc).toMatch(/## 8\. Corrections from the 2026-10-03 run/);
+    for (const lesson of [
+      'A green exit code is not a verified state.',
+      'The backend does not need a raised heap.',
+      'The frontend is the real memory risk',
+    ]) {
+      expect(doc).toContain(lesson);
+    }
+  });
+});
+
 describe('checklist — each gated step names its blast radius and its rollback', () => {
   const sections = [...doc.matchAll(/### Step (\d+)[^\n]*\n([\s\S]*?)(?=\n### |\n## )/g)].map((m) => ({ n: Number(m[1]), body: m[2] }));
 

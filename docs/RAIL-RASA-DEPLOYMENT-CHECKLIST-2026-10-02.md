@@ -56,7 +56,18 @@ df -h / | tail -2; echo done
 cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml ps; echo done
 ```
 
-**R3 — the live checkout has no local changes.** Expect `0`. *Stop if* not (`vps-deploy.sh` refuses a dirty tree).
+**R3 — the live checkout has no local changes.** Expect `0`. *Stop if* not.
+
+> **Corrected 2026-10-03.** An earlier draft justified this check with "`vps-deploy.sh` refuses a dirty tree". **That is false and
+> was disproved during this deployment.** `deploy/vps-deploy.sh` has no dirty-tree check of its own: its only guard is
+> `git pull --ff-only` (line 124), which dies solely when a local modification **collides** with the incoming commit. Untracked
+> files never block it, and neither does a modification to a file the release does not touch. On 2026-10-03 this check returned
+> `4`, not `0`, and the release proceeded anyway because all four entries were untracked and non-colliding.
+>
+> **R3 is therefore a gate this document imposes, not one the tooling imposes** — and it matters for exactly one reason: Step 3's
+> rollback is `git reset --hard <PREVIOUS_SHA>`, which silently destroys modifications to tracked files. Run it, and if it is not
+> `0`, identify every entry before going further. `git diff --stat` is the discriminator — empty output means every *tracked* file
+> matches the release exactly and only untracked artefacts remain, which `reset --hard` cannot destroy.
 <!-- CMD read-only R3 -->
 ```text
 git -C /root/FlowOps status --short | wc -l; echo done
@@ -261,7 +272,16 @@ The standard deploy, `deploy/vps-deploy.sh`: it pulls (a no-op now), builds, rec
 `prisma migrate deploy` (now *No pending migrations to apply*), runs the plan-limit pre-flight and checks health. **Run R11 first.**
 If it asks whether to continue because tenants are over plan limits, answer **N** and report what it printed.
 
-- **Blast radius:** the `api` container (and `frontend`) are recreated: a few seconds of API unavailability and WebSocket reconnects. `driver-portal`, `postgres` and `redis` are not recreated (their images are unchanged). The behaviour changes in §0 take effect.
+- **Blast radius:** the `api` and `frontend` containers are recreated: a few seconds of API unavailability and WebSocket reconnects. `postgres`, `redis` and `cloudflared` are **not** recreated — they are image-based services that `compose build` never touches. **`driver-portal` is usually not recreated either, but do not rely on it** — see the correction below. The behaviour changes in §0 take effect.
+
+> **Corrected 2026-10-03.** An earlier draft said "`driver-portal`, `postgres` and `redis` are not recreated (their images are
+> unchanged)". **That proved wrong.** On 2026-10-03 `driver-portal` *was* rebuilt (31.3 s) and recreated, even though this release
+> changes not one file under `driver-portal/`. The cause is that both `frontend` and `driver-portal` build
+> `FROM node:20.18-alpine` — a **tag**, not a digest — and that tag's digest had moved since the last build. A moved base image
+> invalidates `FROM` and every layer after it, so a service whose source is untouched still rebuilds. (It is the same reason the
+> frontend did not come from cache.) It is harmless here — a static nginx SPA, recreated in seconds and healthy — but the
+> blast-radius claim was wrong, and an operator who believed it would be surprised by an extra service restarting. The accurate
+> statement is: **a service is recreated whenever its image id changes, and an image id can change without any source change.**
 - **Rollback:** the application can go back **without touching the schema** (§6.2).
 - *Stop if* the script exits non-zero, or the final health line is empty.
 
@@ -303,7 +323,17 @@ cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compos
 cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml exec -T api ./node_modules/.bin/prisma migrate status; echo done
 ```
 
-**V6 — the API's health, and the count of error lines since the swap.** The first prints the health response; the second prints **a number only** — expect `0`, or a small number you can explain. If it is not 0, ask for the *matching lines* (trimmed) rather than the log.
+**V6 — the API's health, and the count of error lines since the swap.** The first prints the health response; the second prints
+**a number only** — expect `0`, or a small number you can explain. If it is not 0, ask for the *matching lines* (trimmed) rather
+than the log.
+
+> **Corrected 2026-10-03.** The original V6b pattern was `grep -ciE 'error|exception|prisma'`, which is **too blunt for this
+> codebase and will never read `0`**. It matches `PrismaModule`/`PrismaService` startup lines by construction, and it matches
+> route names whose *paths* contain the substrings — on this deployment all 7 hits were exactly that:
+> `/api/v1/observability/client-error`, `/api/v1/operations/exception-sla`, `/api/v1/owner/observatory/errors` (+ two
+> sub-routes), plus `[InstanceLoader] PrismaModule dependencies initialized` and `[PrismaService] Database connected`.
+> Zero real errors. The corrected command below drops route-registration lines first (`grep -v 'Mapped {'`), then counts only
+> real log severities, case-sensitively.
 <!-- CMD read-only V6 -->
 ```text
 cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml exec -T api sh -c 'wget -qO- http://localhost:3000/health'; echo done
@@ -311,7 +341,7 @@ cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compos
 
 <!-- CMD read-only V6b -->
 ```text
-cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml logs --since 15m api 2>&1 | grep -ciE 'error|exception|prisma'; echo done
+cd /root/FlowOps && docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml logs --since 15m api 2>&1 | grep -v 'Mapped {' | grep -cE 'ERROR|Exception|Error:|UnhandledPromiseRejection|FATAL'; echo done
 ```
 
 ### Step 7 (optional) — load the reference data · `approved: 7`
@@ -375,7 +405,14 @@ Fill in as each step is approved and run (UTC time, who approved, the one-line o
 | 3 checkout | 2026-10-03 ~11:5x UTC, Kader | **EXECUTED — fast-forward succeeded, but on a dirty tree. Anomaly OPEN.** `git merge --ff-only be1792dc…` printed `Updating 03b181a..be1792d / Fast-forward / 153 files changed, 27566 insertions(+), 237 deletions(-)`, matching the locally-computed `git diff --shortstat 03b181a be1792d` exactly, and the three migration files plus `prisma/seed-rail-reference.js` are all present in the `create mode` list. **However R3 had returned `4`, not `0`:** four unidentified entries existed in `/root/FlowOps` before the merge and the *Stop if* was not honoured. Because git refuses a fast-forward that would overwrite modified tracked files, the four entries did not collide with the 153 — but that is inference, not evidence. **Anomaly resolved 2026-10-03:** the four entries are `?? flowops-rehearsal-apply-report.md`, `?? flowops-rehearsal-apply-report.stdout`, `?? flowops-rehearsal-report.md`, `?? flowops-rehearsal-report.stdout` — all **untracked** prior-session rehearsal artefacts in the checkout root, and `git -C /root/FlowOps diff --stat` is **empty**, i.e. every tracked file matches `be1792d` exactly. Consequences: `reset --hard` (`approved: 8`) cannot destroy them (it never touches untracked files), so it is valid again; they are outside both build contexts (`context: ./backend`, `context: ./frontend`) so they cannot be baked into an image; and an untracked file never blocks `git pull --ff-only` at Step 6. **Step 3 is PASS.** One residual: they are loose files in a git checkout, so a future `git add -A` in `/root/FlowOps` would commit them — post-release housekeeping, not a blocker. |
 | 4 build | 2026-10-03, Kader | **`BUILD_EXIT=0` but every layer came from cache — VERIFICATION PENDING, Step 5 must not run yet.** The whole build finished in **0.3 s** with `CACHED` on `COPY src ./src`, `RUN npx prisma generate` and `RUN npm run build`, and it only transferred a **31.39 kB** context where the dockerignore-filtered `backend/` tree is **~4.7 MB** (452 files, `src` alone 4.3 MB). A cache hit is not automatically stale — BuildKit cache keys are content-addressed, so a hit means *this exact content was built before on this daemon* — but it is unproven, and an image built from pre-release content would make Step 5's `prisma migrate deploy` report *No pending migrations* and send Step 6 forward against an unmigrated schema. Two signals initially read as "the Dockerfile edit did not apply" were **wrong and are recorded as such**: (a) `builder 10/10` — BuildKit does not number `ARG`/`ENV`, which the same build proves (the production stage has `ARG NODE_ENV` + `ENV NODE_ENV` and reports `13/13`); (b) `transferring dockerfile: 2.99kB` — modified file is 2 948 B, original 2 895 B, so the figure is consistent with either. **Nothing is running the new tag: the live `api` container still uses `<OLD_API_IMAGE_ID>`, so the only thing that changed on disk is the `flowops/backend:latest` tag. Zero blast radius on live.**
 
-**Subsequently verified — the image IS the release, so Step 4 is PASS.** `docker run --rm flowops/backend:latest sh -c '…'` reports **5 migration directories** (all three `20261002*` rail waves, plus `migration_lock.toml`), **`dist/rail` holds 47 `.js` files** (exactly the 47 non-spec `.ts` files in `be1792d`'s `src/rail`; the old release had 10), and **`rail-tariff.service.js` is present**. Image id `sha256:4b3dc5eb23ace4fa27f9f9fa300ee01077b14f87fcb1247e2669c29130751b9f` differs from the running `api` image (`…d85bd522…`) and matches the build's `exporting manifest list` line. The cache hit is explained: byte-identical source had been built on this daemon before (the prior session's rehearsal at PR-branch content — a squash merge yields the same tree), so BuildKit's content-addressed cache hit legitimately. **Caveat carried forward: no layer actually executed, so the `--memory 1792m` / `--max-old-space-size=1536` profile is untested** — it matters at Step 6, where the frontend build runs for real. |
+**Subsequently verified — the image IS the release, so Step 4 is PASS.** `docker run --rm flowops/backend:latest sh -c '…'` reports **5 migration directories** (all three `20261002*` rail waves, plus `migration_lock.toml`), **`dist/rail` holds 47 `.js` files** (exactly the 47 non-spec `.ts` files in `be1792d`'s `src/rail`; the old release had 10), and **`rail-tariff.service.js` is present**. Image id `sha256:4b3dc5eb23ace4fa27f9f9fa300ee01077b14f87fcb1247e2669c29130751b9f` differs from the running `api` image (`…d85bd522…`) and matches the build's `exporting manifest list` line. The cache hit is explained: byte-identical source had been built on this daemon before (the prior session's rehearsal at PR-branch content — a squash merge yields the same tree), so BuildKit's content-addressed cache hit legitimately. **Resolved at Step 6 — the backend does not need a raised heap at all.** Because `vps-deploy.sh` builds with the plain Dockerfile
+and no build-arg (a different cache key), the `api` image was rebuilt for real: `[api builder 9/10] RUN npx prisma generate` 11.1 s
+and **`[api builder 10/10] RUN npm run build` 71.9 s on the default heap**, no `NODE_OPTIONS` and no `--memory`. So the
+`--max-old-space-size=3072` recipe this host previously required for tsc is **not needed for the backend**; the Step 4 cap was
+precautionary, and a future run can drop it for `api`. **The frontend is the opposite case and is the real risk:**
+`frontend/package.json` hardcodes `node --max-old-space-size=8192`, and because a CLI flag beats `NODE_OPTIONS`, the only way to
+bound it is a container-level `--memory` — which is why Step 6 pre-builds `frontend` with `--memory 1600m`. That build took
+83.5 s and completed without an OOM.
 | 5 migrate | 2026-10-03, Kader | **Executed — `All migrations have been successfully applied.` V1–V4 PENDING, Step 6 must not start without them.** `docker compose … run --rm -T --no-deps api ./node_modules/.bin/prisma migrate deploy` reported `5 migrations found in prisma/migrations` and applied exactly the three expected rail waves in order (`…050000_rail_wave2…`, `…060000_rail_wave3…`, `…070000_rail_wave4…`), then `All migrations have been successfully applied.` **V1–V4 all passed — Step 5 is PASS.** V1 `5|0`; V2 `145|95|401|150` (from `133|72|362|150`); V3 `0`; V4
 `{"data":{"status":"ok","db":"connected","uptime":125551,…},"statusCode":200,"message":"success"}` — and that `uptime` of ~34.9 h proves the
 `api` container was never restarted. The `flowops-api-run-*` migrate container was reaped (`docker ps -a --filter name=flowops-api-run`
@@ -488,3 +525,69 @@ cd /root/FlowOps && bash deploy/restore-verify.sh --restore-live /var/lib/docker
 | The production image has the Prisma CLI, the migrations and the seeder | `backend/Dockerfile` (production stage copies `prisma/`, `node_modules/prisma`, `dist/`); `vps-deploy.sh` already runs `migrate deploy` in it |
 | The AI switches are fail-closed | `backend/src/ai/ai-security.policy.ts` (production ⇒ only the exact string `true` enables them) |
 | The deploy tooling is untouched by this release | `git diff 03b181a -- deploy docker-compose.yml backend/Dockerfile frontend/Dockerfile` is empty |
+
+## 8. Corrections from the 2026-10-03 run
+
+**Status: DEPLOYED.** All seven steps ran against `RELEASE_SHA` `be1792d`, each on its own `approved: N`, and the release is live.
+This section exists because **four claims in this document were wrong when it was written**, and three of them were only caught
+because a step was held and verified instead of trusted. Read it before running this checklist again.
+
+| # | The document claimed | What actually happened | Fix applied |
+|---|---|---|---|
+| 1 | Step 1: `flowops-backup-r2 --backup-only` "dumps the live database" | It does not. That binary uploads the newest **existing** dump and `die`s if it is >12 h old; there is no `pg_dump` in that code path. Run as written it would have **STOPped** and produced no backup. | Step 1 now restarts `flowops-postgres-backup-1` first, whose loop dumps on container start. Verified: fresh 260,395 B dump uploaded and SHA-256 round-tripped. |
+| 2 | R3: "*Stop if* not (`vps-deploy.sh` refuses a dirty tree)" | **False.** `vps-deploy.sh` has no dirty-tree check; its only guard is `git pull --ff-only` (line 124), which fails solely on a **colliding** modification. On 2026-10-03 R3 returned `4` and the release proceeded — all four entries were untracked and non-colliding. | R3 rewritten: it is a gate **this document** imposes, because Step 3's rollback is `reset --hard`. `git diff --stat` is the discriminator. |
+| 3 | Step 6: "`driver-portal`, `postgres` and `redis` are not recreated" | `driver-portal` **was** rebuilt (31.3 s) and recreated. Both it and `frontend` build `FROM node:20.18-alpine` — a tag — and that tag's digest had moved, invalidating `FROM` and every later layer despite zero source changes. | Step 6 restated: a service is recreated whenever its **image id** changes, and an image id can change with no source change. |
+| 4 | V6b: count lines matching `error\|exception\|prisma`, expect `0` | Never reads `0` on this codebase. All 7 hits were `LOG`-level noise: `PrismaModule`/`PrismaService` startup lines and five `Mapped {…}` routes whose **paths** contain `error`/`exception` (`/observability/client-error`, `/operations/exception-sla`, `/owner/observatory/errors`, …). | V6b now drops `Mapped {` lines and counts real severities case-sensitively (`ERROR\|Exception\|Error:\|UnhandledPromiseRejection\|FATAL`). |
+
+### Also learned, and worth carrying forward
+
+- **A green exit code is not a verified state.** Step 4 finished in 0.3 s with `BUILD_EXIT=0` and every layer `CACHED`. It was
+  legitimate — BuildKit keys are content-addressed and byte-identical source had been built on that daemon before (the rehearsal
+  at PR-branch content; a squash merge yields the same tree) — but that was only established by **inspecting the image**
+  (5 migration dirs, 47 rail modules, `rail-tariff.service.js` present). Had Step 5 run against a stale image, `prisma migrate
+  deploy` would have said *No pending migrations to apply* and Step 6 would have shipped an unmigrated schema.
+- **The backend does not need a raised heap.** At Step 6 the `api` image rebuilt for real and `npm run build` completed in
+  **71.9 s on the default heap**. The `--max-old-space-size=3072` recipe this host previously needed is unnecessary for `api`.
+- **The frontend is the real memory risk**, because `frontend/package.json` hardcodes `--max-old-space-size=8192` and a CLI flag
+  beats `NODE_OPTIONS` — so a container-level `--memory` is the only lever. It built in 83.5 s under a 1600m cap, no OOM.
+- **Live was protected by cgroup caps, not by our flags.** `api` 768M, `postgres` 384M, `redis` 96M, 128M each for `frontend`,
+  `driver-portal`, `cloudflared`, `postgres-backup` (~1.72 GiB of limits against 891 Mi actual). They cannot grow, so an uncapped
+  build is what the OOM killer takes first. Combined with `set -euo pipefail` in `vps-deploy.sh` (line 51), which aborts at
+  `build` (128) **before** `up -d` (132), a build failure cannot leave the stack half-swapped.
+- **`docker compose build` accepts `-m, --memory`** (confirmed on Docker 29.8.1 / Compose 5.5.1) — but BuildKit solves builds in
+  the daemon, so treat it as belt to the cgroup caps' braces, not as a guarantee.
+
+### Open items after the run (not blockers)
+
+| Item | Detail |
+|---|---|
+| Untracked artefacts in the checkout | Four `flowops-rehearsal-*.{md,stdout}` files sit in `/root/FlowOps`. Harmless — outside both build contexts, and `reset --hard` cannot touch them — but a future `git add -A` there would commit them. |
+| `/root/Dockerfile.pre-step4` | Step 4's backup copy, left on the host (outside the repo). Harmless. |
+| Backup cadence | `deploy/docker-compose.vps.yml` advertises a 6-hourly loop; dumps were observed at 08:11, 11:17 and 11:28 UTC — gaps of ~3 h, not 6. The healthcheck (`-mmin -400`) still passes, and Step 1 is safe because the runner enforces its own 12-hour freshness gate, but the loop is not behaving as documented and deserves a look. |
+| Prisma version nudge | `migrate status` printed `Update available 5.22.0 -> 8.0.0-rc.19`. Cosmetic; **not** actioned mid-release. |
+| Rollback image availability | `<OLD_API_IMAGE_ID>` `sha256:d85bd522…` and `<OLD_FRONTEND_IMAGE_ID>` `sha256:09fb0305…` should still be on disk. Worth confirming with `docker image inspect` before relying on `approved: 9`. |
+
+### Backup cadence — how to finish the diagnosis
+
+The loop in `deploy/docker-compose.vps.yml` dumps, then `sleep 21600` and logs `Sleeping 6h...`. Dumps were observed at 08:11,
+11:17 and 11:28 UTC — ~3 h apart, not 6. That gap means the **container is being restarted**, not that the loop is looping fast.
+Two read-only commands settle it:
+
+<!-- CMD read-only B1 -->
+```text
+docker inspect --format '{{.RestartCount}} restarts, started {{.StartedAt}}' flowops-postgres-backup-1; echo done
+```
+
+<!-- CMD read-only B2 -->
+```text
+docker logs --tail 30 flowops-postgres-backup-1; echo done
+```
+
+*How to read them:* a `RestartCount` climbing over hours, or a log showing `Dumping to …` again with no intervening
+`Sleeping 6h...`, means something external is restarting the container — at its 128M limit an OOM kill is the usual suspect, since
+`restart: unless-stopped` will silently bring it back. A log showing `Sleeping 6h...` followed by another dump within the hour
+instead means the `sleep` itself is being interrupted.
+
+This is **not** a blocker: the healthcheck (`find /backups -name 'flowops_*.sql.gz' -mmin -400`) still passes, and Step 1 is safe
+regardless because `flowops-backup-r2` enforces its own 12-hour freshness gate before uploading. But a backup loop that restarts
+without anyone noticing is how a gap appears, so it is worth closing out.
