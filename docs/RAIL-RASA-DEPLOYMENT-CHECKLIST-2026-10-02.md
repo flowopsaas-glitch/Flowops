@@ -563,19 +563,33 @@ because a step was held and verified instead of trusted. Read it before running 
 |---|---|
 | Untracked artefacts in the checkout | Four `flowops-rehearsal-*.{md,stdout}` files sit in `/root/FlowOps`. Harmless — outside both build contexts, and `reset --hard` cannot touch them — but a future `git add -A` there would commit them. |
 | `/root/Dockerfile.pre-step4` | Step 4's backup copy, left on the host (outside the repo). Harmless. |
-| Backup cadence | `deploy/docker-compose.vps.yml` advertises a 6-hourly loop; dumps were observed at 08:11, 11:17 and 11:28 UTC — gaps of ~3 h, not 6. The healthcheck (`-mmin -400`) still passes, and Step 1 is safe because the runner enforces its own 12-hour freshness gate, but the loop is not behaving as documented and deserves a look. |
+| Backup container restart at ~11:17 UTC | **The cadence itself is fine** — see the resolved section below: dumps are 6 h 00 m 00 s apart, exactly as documented. One container restart at ~11:17 UTC has no known cause (it is not ours; Step 1's restart was 11:28). Harmless — the loop self-heals by dumping on start — but `RestartCount` will say whether it was a one-off or is a pattern. |
 | Prisma version nudge | `migrate status` printed `Update available 5.22.0 -> 8.0.0-rc.19`. Cosmetic; **not** actioned mid-release. |
 | Rollback image availability | `<OLD_API_IMAGE_ID>` `sha256:d85bd522…` and `<OLD_FRONTEND_IMAGE_ID>` `sha256:09fb0305…` should still be on disk. Worth confirming with `docker image inspect` before relying on `approved: 9`. |
 
 ### Backup cadence — how to finish the diagnosis
 
-The loop in `deploy/docker-compose.vps.yml` dumps, then `sleep 21600` and logs `Sleeping 6h...`. Dumps were observed at 08:11,
-11:17 and 11:28 UTC — ~3 h apart, not 6. That gap means the **container is being restarted**, not that the loop is looping fast.
-Two read-only commands settle it:
+> **Corrected 2026-10-03.** The previous version of this section claimed the cadence "does not behave as documented (gaps of
+> ~3 h, not 6)". **That reading was wrong.** It was inferred from two dumps that are not cadence evidence at all. The logs settle
+> it, and they say the opposite of what was written here.
+
+**The 6-hourly cadence is exact.** `docker logs --tail 30 flowops-postgres-backup-1` shows dumps at `20261002_081146`,
+`20261002_141146`, `20261002_201146`, `20261003_021146`, `20261003_081147` — **6 h 00 m 00 s apart**, each followed by
+`Sleeping 6h...`. The loop does precisely what `deploy/docker-compose.vps.yml` documents, and its last line is `Sleeping 6h...`,
+so it is healthy right now. The log also shows the 28-file retention working as intended (`removed '/backups/flowops_20260926_…'`).
+
+**The two dumps that made it look broken are restart artefacts, not cadence evidence.** Each is preceded by
+`Backup service started. Dumping every 6h (validated), retaining 28 files.` — a banner the loop prints only on container start.
+`20261003_111718` came from a restart at ~11:17 UTC; `20261003_112847` is ours, from Step 1. A restarting container dumps
+immediately, so a restart shortens one interval without the loop misbehaving at all.
+
+**The only open question is the ~11:17 restart.** It was not caused by this deployment, and nothing else on the box restarted —
+`postgres` and `redis` were both showing `Up 8 days` at the time, which rules out a Docker daemon restart or a host reboot.
+One command says whether it was a one-off or is a pattern:
 
 <!-- CMD read-only B1 -->
 ```text
-docker inspect --format '{{.RestartCount}} restarts, started {{.StartedAt}}' flowops-postgres-backup-1; echo done
+docker inspect --format 'restarts={{.RestartCount}} started={{.State.StartedAt}} status={{.State.Status}}' flowops-postgres-backup-1; echo done
 ```
 
 <!-- CMD read-only B2 -->
@@ -583,11 +597,15 @@ docker inspect --format '{{.RestartCount}} restarts, started {{.StartedAt}}' flo
 docker logs --tail 30 flowops-postgres-backup-1; echo done
 ```
 
-*How to read them:* a `RestartCount` climbing over hours, or a log showing `Dumping to …` again with no intervening
-`Sleeping 6h...`, means something external is restarting the container — at its 128M limit an OOM kill is the usual suspect, since
-`restart: unless-stopped` will silently bring it back. A log showing `Sleeping 6h...` followed by another dump within the hour
-instead means the `sleep` itself is being interrupted.
+> **Also corrected:** the first version of B1 used `{{.StartedAt}}`, which is **not a top-level `docker inspect` field** and fails
+> with `template parsing error: … map has no entry for key "StartedAt"`. The correct path is `{{.State.StartedAt}}`. `RestartCount`
+> *is* top-level, so only that half worked. Worth remembering: a `docker inspect` template that has never been run is a guess.
 
-This is **not** a blocker: the healthcheck (`find /backups -name 'flowops_*.sql.gz' -mmin -400`) still passes, and Step 1 is safe
-regardless because `flowops-backup-r2` enforces its own 12-hour freshness gate before uploading. But a backup loop that restarts
-without anyone noticing is how a gap appears, so it is worth closing out.
+*How to read them:* `restarts=0` together with a start time long before 11:17 would mean the banner came from something other
+than a restart — go back to the log. A small non-zero count means occasional restarts; at its 128M limit an OOM kill is the usual
+suspect, and `restart: unless-stopped` brings the container back silently. A count climbing steadily means a recurring cause worth
+actually fixing.
+
+Either way this is **not a blocker**: the healthcheck (`find /backups -name 'flowops_*.sql.gz' -mmin -400`) passes, the loop
+self-heals by dumping on start, and Step 1 is safe because `flowops-backup-r2` enforces its own 12-hour freshness gate before it
+uploads anything.
