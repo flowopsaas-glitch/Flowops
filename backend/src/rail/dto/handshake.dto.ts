@@ -1,9 +1,10 @@
 import {
-  IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min,
+  IsBoolean, IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min,
 } from 'class-validator';
 import {
   DeviationCategory, ResponsibleParty, SlotImpact,
 } from '@prisma/client';
+import { RawBoolean } from '../../common/decorators/raw-string.decorator';
 
 /**
  * DTOs for the Daily Handshake (Transnet Network Statement — Annexure 28).
@@ -111,14 +112,14 @@ export class UpdateDeviationDto {
   @IsOptional() @IsNumber() @Min(0)
   costZar?: number;
 
-  @IsOptional() @IsBoolean()
+  @RawBoolean() @IsOptional() @IsBoolean()
   costRecovered?: boolean;
 }
 
 /** TOC review of a deviation line: agree, or flag as an OPEN (disputed) item. */
 export class ReviewDeviationDto {
   /** true = agree (AGREED); false = disagree → OPEN with a reason. */
-  @IsBoolean()
+  @RawBoolean() @IsBoolean()
   agree!: boolean;
 
   @IsOptional() @IsString() @MaxLength(4000)
@@ -133,11 +134,15 @@ export class ResolveDeviationDto {
   @IsOptional() @IsEnum(ResponsibleParty)
   responsibleParty?: ResponsibleParty;
 
-  @IsOptional() @IsBoolean()
+  @RawBoolean() @IsOptional() @IsBoolean()
   costRecovered?: boolean;
 }
 
 export class SignOffReportDto {
-  @IsString() @MaxLength(160)
+  /**
+   * What the signer types (name / role). The server appends the identity it
+   * verified from the JWT — see RailHandshakeService.buildVerifiedSignatory().
+   */
+  @IsString() @IsNotEmpty() @MaxLength(160)
   signedOffBy!: string;
 }

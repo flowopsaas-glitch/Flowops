@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsNumber, IsEnum } from 'class-validator';
-import { WagonType } from '@prisma/client';
+import { IsString, IsOptional, IsNumber, IsEnum, IsInt, IsBoolean, Matches, MaxLength, Min, Max } from 'class-validator';
+import { RailGauge, RailVehicleProfile, WagonType } from '@prisma/client';
+import { RawBoolean, RawString } from '../../common/decorators/raw-string.decorator';
 
 export class CreateWagonDto {
   @IsString()
@@ -22,4 +23,34 @@ export class CreateWagonDto {
 
   @IsOptional() @IsString()
   lastKnownSiding?: string;
+  /** Axle count (1–12). With tare + loaded weight it gives the axle load the corridor-envelope check uses. */
+  @IsOptional() @IsInt() @Min(1) @Max(12)
+  axles?: number;
+
+  @IsOptional() @IsEnum(RailGauge)
+  gauge?: RailGauge;
+
+  @IsOptional() @IsEnum(RailVehicleProfile)
+  vehicleProfile?: RailVehicleProfile;
+  // ── Dangerous goods carried by this wagon (Wave 3; an empty field inherits the consignment's) ───
+  @RawBoolean() @IsOptional() @IsBoolean()
+  isDangerousGoods?: boolean;
+
+  /** "UN1203" — "1203" and "un 1203" are accepted and normalised. */
+  @RawString() @IsOptional() @IsString() @Matches(/^(UN\s?)?\d{4}$/i, { message: 'unNumber must be UN followed by four digits' })
+  unNumber?: string;
+
+  /** IMDG class, e.g. 3, 2.1, 6.1, 1.4S. */
+  @RawString() @IsOptional() @IsString() @Matches(/^[1-9](\.[1-6])?[A-Za-z]?$/, { message: 'imdgClass must be an IMDG class such as 3, 2.1 or 1.4S' })
+  imdgClass?: string;
+
+  @RawString() @IsOptional() @IsString() @MaxLength(60)
+  placardRef?: string;
+
+  @RawString() @IsOptional() @IsString() @Matches(/^\+?\(?[0-9][0-9 ()-]{5,18}[0-9]$/, { message: 'emergencyContact24h must be a phone number' })
+  emergencyContact24h?: string;
+
+  /** Link to the controlled safety data sheet — never the file itself. */
+  @RawString() @IsOptional() @IsString() @Matches(/^https:\/\/\S+$/, { message: 'msdsDocumentUrl must be an https:// link' }) @MaxLength(500)
+  msdsDocumentUrl?: string;
 }

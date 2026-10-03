@@ -1,6 +1,12 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { RailConsignmentStatus, RailHoldStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
+import { AuditService } from '../audit/audit.service';
+import {
+  RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, recordRailAudit,
+} from './rail-audit';
+import { evaluateDangerousGoods, isMovementStatus, normaliseUnNumber } from './rail-dangerous-goods';
 import { CreateRailConsignmentDto } from './dto/create-rail-consignment.dto';
 import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';
 import { CreateWagonDto } from './dto/wagon.dto';
@@ -18,10 +24,18 @@ import { CreateIntermodalLegDto } from './dto/intermodal-leg.dto';
  */
 @Injectable()
 export class RailService {
+  private readonly logger = new Logger(RailService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly billing: BillingService,
+    private readonly audit: AuditService,
   ) {}
+
+  /** Best-effort audit write — never blocks or fails the business action. */
+  private record(companyId: string, actor: RailActor, action: string, target: { type: string; id: string; name?: string | null }, metadata: Record<string, unknown> = {}) {
+    return recordRailAudit(this.audit, this.logger, railAuditEntry(companyId, actor, action, target, metadata));
+  }
 
   // ── Entitlement gate ─────────────────────────────────────────────────────────
 
@@ -54,9 +68,23 @@ export class RailService {
     return v ? new Date(v) : null;
   }
 
+  /** Dangerous-goods columns from a DTO, normalised (UN number → UN1203, class upper-cased). */
+  private dgColumns(dto: {
+    isDangerousGoods?: boolean; unNumber?: string; imdgClass?: string; placardRef?: string; emergencyContact24h?: string; msdsDocumentUrl?: string;
+  }) {
+    return {
+      isDangerousGoods: dto.isDangerousGoods ?? false,
+      unNumber: normaliseUnNumber(dto.unNumber),
+      imdgClass: dto.imdgClass?.trim() ? dto.imdgClass.trim().toUpperCase() : null,
+      placardRef: dto.placardRef?.trim() || null,
+      emergencyContact24h: dto.emergencyContact24h?.trim() || null,
+      msdsDocumentUrl: dto.msdsDocumentUrl?.trim() || null,
+    };
+  }
+
   // ── Consignment CRUD ─────────────────────────────────────────────────────────
 
-  async create(companyId: string, dto: CreateRailConsignmentDto) {
+  async create(companyId: string, dto: CreateRailConsignmentDto, actor: RailActor) {
     await this.assertEntitled(companyId);
     const consignmentNumber = await this.nextConsignmentNumber(companyId);
     const consignment = await this.prisma.railConsignment.create({
@@ -78,6 +106,7 @@ export class RailService {
         slaHours: dto.slaHours ?? null,
         ...(dto.riskLevel ? { riskLevel: dto.riskLevel } : {}),
         riskNote: dto.riskNote ?? null,
+        ...this.dgColumns(dto),
       },
     });
 
@@ -90,6 +119,12 @@ export class RailService {
         location: dto.originSiding ?? null,
       },
     });
+
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_CREATED,
+      { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id: consignment.id, name: consignmentNumber },
+      { commodity: dto.commodity, corridor: dto.corridor ?? null, tonnage: dto.tonnage ?? null, railOperator: dto.railOperator ?? null },
+    );
 
     return consignment;
   }
@@ -111,7 +146,7 @@ export class RailService {
         { railOperator: { contains: filters.q, mode: 'insensitive' } },
       ];
     }
-    return this.prisma.railConsignment.findMany({
+    const rows = await this.prisma.railConsignment.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -119,6 +154,32 @@ export class RailService {
         _count: { select: { wagons: true, legs: true, events: true } },
       },
     });
+
+    // Dangerous-goods readiness for the list badge. Only wagons that are themselves flagged are loaded
+    // (a handful), never every wagon of every consignment.
+    const dgWagons = rows.length
+      ? await this.prisma.wagon.findMany({
+          where: { consignmentId: { in: rows.map((r) => r.id) }, isDangerousGoods: true },
+          select: { consignmentId: true, wagonNumber: true, isDangerousGoods: true, unNumber: true, imdgClass: true, placardRef: true, emergencyContact24h: true, msdsDocumentUrl: true },
+        })
+      : [];
+    return rows.map((r) => {
+      const dg = evaluateDangerousGoods(r, dgWagons.filter((w) => w.consignmentId === r.id));
+      return {
+        ...r,
+        dg: {
+          required: dg.required, ready: dg.ready,
+          problems: dg.missing.reduce((n, g) => n + g.fields.length, 0) + dg.invalid.length,
+        },
+      };
+    });
+  }
+
+  /** The dangerous-goods readiness of one consignment, exactly as the dispatch gate sees it. */
+  async getDangerousGoods(companyId: string, id: string) {
+    const c = await this.get(companyId, id);
+    const dg = evaluateDangerousGoods(c, c.wagons);
+    return { ...dg, blocksDeparture: dg.required && !dg.ready, consignmentNumber: c.consignmentNumber };
   }
 
   async get(companyId: string, id: string) {
@@ -135,23 +196,43 @@ export class RailService {
     return c;
   }
 
-  async update(companyId: string, id: string, dto: UpdateRailConsignmentDto) {
-    await this.get(companyId, id);
+  async update(companyId: string, id: string, dto: UpdateRailConsignmentDto, actor: RailActor) {
+    const existing = await this.get(companyId, id);
     const data: any = { ...dto };
     if (dto.plannedDeparture !== undefined) data.plannedDeparture = this.toDate(dto.plannedDeparture);
     if (dto.plannedArrival !== undefined) data.plannedArrival = this.toDate(dto.plannedArrival);
-    return this.prisma.railConsignment.update({ where: { id }, data });
+    // Dangerous-goods values are normalised on the way in, but only the ones actually sent are touched.
+    // `isDangerousGoods` is a NOT NULL column: an explicit null means "not sent", never "write NULL" (that would be a 500).
+    if (data.isDangerousGoods === null) delete data.isDangerousGoods;
+    if (dto.unNumber !== undefined) data.unNumber = normaliseUnNumber(dto.unNumber);
+    if (dto.imdgClass !== undefined) data.imdgClass = dto.imdgClass.trim() ? dto.imdgClass.trim().toUpperCase() : null;
+    for (const k of ['placardRef', 'emergencyContact24h', 'msdsDocumentUrl'] as const) {
+      if (dto[k] !== undefined) data[k] = dto[k]?.trim() || null;
+    }
+    const updated = await this.prisma.railConsignment.update({ where: { id }, data });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_UPDATED,
+      { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id, name: existing.consignmentNumber },
+      { fields: Object.keys(dto) },
+    );
+    return updated;
   }
 
-  async cancel(companyId: string, id: string) {
-    await this.get(companyId, id);
+  async cancel(companyId: string, id: string, actor: RailActor) {
+    const existing = await this.get(companyId, id);
     await this.prisma.railConsignmentEvent.create({
       data: { consignmentId: id, status: 'CANCELLED', note: 'Consignment cancelled' },
     });
-    return this.prisma.railConsignment.update({
+    const cancelled = await this.prisma.railConsignment.update({
       where: { id },
       data: { status: 'CANCELLED' },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_CANCELLED,
+      { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id, name: existing.consignmentNumber },
+      { from: existing.status },
+    );
+    return cancelled;
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -160,8 +241,34 @@ export class RailService {
    * Advance the consignment to a new status, timestamp key transitions,
    * record a timeline event, and log a best-effort AI Control Tower event.
    */
-  async advanceStatus(companyId: string, id: string, status: string, note?: string, location?: string) {
+  async advanceStatus(companyId: string, id: string, status: string, actor: RailActor, note?: string, location?: string) {
+    // An unknown status used to reach Prisma and surface as a 500; reject it up front.
+    if (!(Object.values(RailConsignmentStatus) as string[]).includes(status)) {
+      throw new BadRequestException(`Unknown status "${String(status).slice(0, 40)}". Use one of: ${Object.values(RailConsignmentStatus).join(', ')}.`);
+    }
     const c = await this.get(companyId, id);
+
+    // ── DISPATCH GATES: dangerous goods, and the weighbridge hold ──────────────
+    // The brief says "DISPATCHED"; this model has no such status — DEPARTED is the dispatch event, and
+    // IN_TRANSIT / AT_INTERCHANGE are covered too so a gate cannot be skipped by jumping ahead. Both gates are
+    // evaluated together so the user is told everything that stops them, in one sentence.
+    if (isMovementStatus(status)) {
+      const dg = evaluateDangerousGoods(c, c.wagons);
+      const dgBlocked = dg.required && !dg.ready;
+      const held = c.holdStatus === RailHoldStatus.HOLD_FOR_LOAD_ADJUSTMENT;
+      if (dgBlocked || held) {
+        const reasons = [
+          ...(dgBlocked ? [`dangerous-goods details are incomplete: ${dg.summary}`] : []),
+          ...(held ? [`held for load adjustment: ${c.holdReason ?? 'a wagon has not been re-weighed within its limit'}`] : []),
+        ];
+        await this.record(
+          companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED,
+          { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id, name: c.consignmentNumber },
+          { attemptedStatus: status, from: c.status, missing: dg.missing, invalid: dg.invalid, ...(held ? { hold: { status: c.holdStatus, reason: c.holdReason ?? null } } : {}) },
+        );
+        throw new BadRequestException(`Dispatch blocked — ${reasons.join('; and ')}.`);
+      }
+    }
 
     const patch: any = { status: status as any };
     if (status === 'DEPARTED' && !c.actualDeparture) patch.actualDeparture = new Date();
@@ -192,14 +299,20 @@ export class RailService {
       });
     } catch { /* best-effort */ }
 
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_STATUS_ADVANCED,
+      { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id, name: c.consignmentNumber },
+      { from: c.status, to: status, location: location ?? null, note: note ? note.slice(0, 200) : null },
+    );
+
     return updated;
   }
 
   // ── Wagons (rolling-stock register) ──────────────────────────────────────────
 
-  async addWagon(companyId: string, consignmentId: string, dto: CreateWagonDto) {
-    await this.get(companyId, consignmentId);
-    return this.prisma.wagon.create({
+  async addWagon(companyId: string, consignmentId: string, dto: CreateWagonDto, actor: RailActor) {
+    const consignment = await this.get(companyId, consignmentId);
+    const wagon = await this.prisma.wagon.create({
       data: {
         consignmentId,
         wagonNumber: dto.wagonNumber,
@@ -209,21 +322,41 @@ export class RailService {
         commodity: dto.commodity ?? null,
         sealNumbers: dto.sealNumbers ?? null,
         lastKnownSiding: dto.lastKnownSiding ?? null,
+        axles: dto.axles ?? null,
+        gauge: dto.gauge ?? null,
+        vehicleProfile: dto.vehicleProfile ?? null,
+        ...this.dgColumns(dto),
       },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.WAGON_ADDED,
+      { type: RAIL_AUDIT_TARGET.WAGON, id: wagon.id, name: dto.wagonNumber },
+      { consignmentId, consignmentNumber: consignment.consignmentNumber },
+    );
+    return wagon;
   }
 
-  async removeWagon(companyId: string, consignmentId: string, wagonId: string) {
-    await this.get(companyId, consignmentId);
-    await this.prisma.wagon.deleteMany({ where: { id: wagonId, consignmentId } });
-    return { deleted: true };
+  async removeWagon(companyId: string, consignmentId: string, wagonId: string, actor: RailActor) {
+    const consignment = await this.get(companyId, consignmentId);
+    // The consignment lookup above proves tenant ownership; the deleteMany is
+    // additionally pinned to that consignment, so a wagon id from another
+    // consignment (or tenant) matches nothing.
+    const res = await this.prisma.wagon.deleteMany({ where: { id: wagonId, consignmentId } });
+    if (res.count > 0) {
+      await this.record(
+        companyId, actor, RAIL_AUDIT_ACTION.WAGON_REMOVED,
+        { type: RAIL_AUDIT_TARGET.WAGON, id: wagonId },
+        { consignmentId, consignmentNumber: consignment.consignmentNumber },
+      );
+    }
+    return { deleted: res.count > 0 };
   }
 
   // ── Intermodal legs (road <-> rail <-> port handoffs) ────────────────────────
 
-  async addLeg(companyId: string, consignmentId: string, dto: CreateIntermodalLegDto) {
-    await this.get(companyId, consignmentId);
-    return this.prisma.intermodalLeg.create({
+  async addLeg(companyId: string, consignmentId: string, dto: CreateIntermodalLegDto, actor: RailActor) {
+    const consignment = await this.get(companyId, consignmentId);
+    const leg = await this.prisma.intermodalLeg.create({
       data: {
         consignmentId,
         sequence: dto.sequence,
@@ -237,6 +370,12 @@ export class RailService {
         note: dto.note ?? null,
       },
     });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.LEG_ADDED,
+      { type: RAIL_AUDIT_TARGET.LEG, id: leg.id },
+      { consignmentId, consignmentNumber: consignment.consignmentNumber, mode: dto.mode, sequence: dto.sequence },
+    );
+    return leg;
   }
 
   /**
@@ -244,8 +383,8 @@ export class RailService {
    * we have both actual timestamps, compute the dwell (idle) hours — the core
    * "handoff gap" metric operators can never see today.
    */
-  async advanceLeg(companyId: string, consignmentId: string, legId: string, status: string) {
-    await this.get(companyId, consignmentId);
+  async advanceLeg(companyId: string, consignmentId: string, legId: string, status: string, actor: RailActor) {
+    const consignment = await this.get(companyId, consignmentId);
     const leg = await this.prisma.intermodalLeg.findFirst({ where: { id: legId, consignmentId } });
     if (!leg) throw new NotFoundException('Intermodal leg not found');
 
@@ -260,7 +399,13 @@ export class RailService {
       patch.dwellHours = Math.max(0, (end.getTime() - start.getTime()) / 3_600_000);
     }
 
-    return this.prisma.intermodalLeg.update({ where: { id: legId }, data: patch });
+    const updated = await this.prisma.intermodalLeg.update({ where: { id: legId }, data: patch });
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.LEG_ADVANCED,
+      { type: RAIL_AUDIT_TARGET.LEG, id: legId },
+      { consignmentId, consignmentNumber: consignment.consignmentNumber, from: leg.status, to: status, dwellHours: patch.dwellHours ?? null },
+    );
+    return updated;
   }
 
   // ── KPIs / dashboard ─────────────────────────────────────────────────────────

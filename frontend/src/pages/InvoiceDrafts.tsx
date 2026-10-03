@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FileText, ArrowRight, Wallet, CheckCircle2, Bot, X, AlertTriangle, Loader2, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
+import { describeDraft } from '../lib/invoiceDraft';
 
 function money(v: number) {
   return `R${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -18,7 +19,8 @@ export default function InvoiceDrafts() {
       const res = await api.get('/invoice-drafts');
       // api client already unwraps the TransformInterceptor envelope
       const data = Array.isArray(res) ? res : Array.isArray((res as any)?.data) ? (res as any).data : [];
-      setDrafts(data);
+      // The API returns raw rows (client, lines and amounts are inside draftData); derive what the list shows.
+      setDrafts(data.map((d: any) => ({ ...d, ...describeDraft(d) })));
     } catch (err) {
       console.error("Failed to fetch drafts", err);
     } finally {
@@ -48,7 +50,7 @@ export default function InvoiceDrafts() {
           <p className="text-slate-400 mt-2 text-sm">Select a commercial draft to run the Z-AI Compliance Audit before final dispatch.</p>
           
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <HeroStat title="Draft Value" value={money(stats.totalValue)} subtitle="Visible invoice draft pipeline" icon={Wallet} />
+            <HeroStat title="Draft Value" value={money(stats.totalValue)} subtitle="Before VAT · visible invoice draft pipeline" icon={Wallet} />
             <HeroStat title="Drafts" value={String(stats.draftCount)} subtitle="Awaiting finalization" icon={FileText} />
             <HeroStat title="Sent" value={String(stats.sentCount)} subtitle="Finalized to invoices" icon={CheckCircle2} />
             <HeroStat title="Draft Lines" value={String(stats.linesCount)} subtitle="Commercial line items" icon={Bot} />
@@ -83,7 +85,7 @@ export default function InvoiceDrafts() {
 
                   <div className="flex items-center gap-8">
                     <div className="text-right">
-                      <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Draft Value</div>
+                      <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Draft Value (before VAT)</div>
                       <div className="text-2xl font-black text-emerald-400">{money(draft.total)}</div>
                     </div>
                     

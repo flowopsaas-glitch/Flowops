@@ -375,8 +375,8 @@ export default function AppLayout() {
     { section: "OPS", label: "ESG & Carbon", desc: "Fleet emissions & compliance", to: "/esg", icon: Activity, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
-    { section: "OPS", label: "Rail & Intermodal", desc: "Consignment lifecycle & road↔rail↔port (Enterprise)", to: "/rail", icon: Train, adminOnly: true, entitlement: "rail" },
-    { section: "OPS", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, adminOnly: true, entitlement: "rail" },
+    { section: "OPS", label: "Rail & Intermodal", desc: "Consignment lifecycle & road↔rail↔port (Enterprise)", to: "/rail", icon: Train, perm: "rail", entitlement: "rail" },
+    { section: "OPS", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, perm: "railHandshake", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
     

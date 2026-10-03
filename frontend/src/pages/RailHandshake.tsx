@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   FileText,
   Banknote,
+  Download,
+  Printer,
 } from "lucide-react";
 import {
   getHandshakeOverview,
@@ -37,6 +39,16 @@ import {
   type SlotImpact,
 } from "../api/railHandshakeApi";
 import { useToast } from "../components/ToastProvider";
+import { useAuth } from "../contexts/AuthContext";
+import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
+import ChangeRequestModal from "./rail/ChangeRequestModal";
+import {
+  buildHandshakeCsv,
+  buildHandshakeDossierHtml,
+  downloadTextFile,
+  handshakeCsvFilename,
+  printHtmlDocument,
+} from "../lib/railHandshakeExport";
 
 const money = (v?: number | null) =>
   v == null ? "R0" : `R${Math.round(v).toLocaleString("en-ZA")}`;
@@ -97,6 +109,13 @@ const inputCls =
 
 export default function RailHandshake() {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  // Visible vs read-only: VIEWER sees the page but is offered no mutating control.
+  // The API enforces the same split (backend/src/rail/rail-roles.ts); hiding the
+  // buttons is courtesy, not security.
+  const canWrite = getRailAccessLevel(user?.role, userPermissionOverrides(user)) === "FULL";
+  const canSign = canSignRailHandshake(user?.role);
+  const generatedBy = (user as { name?: string } | null)?.name || user?.email || undefined;
   const [overview, setOverview] = useState<HandshakeOverview | null>(null);
   const [reports, setReports] = useState<HandshakeReport[]>([]);
   const [selected, setSelected] = useState<HandshakeReport | null>(null);
@@ -104,6 +123,7 @@ export default function RailHandshake() {
   const [busy, setBusy] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [showChange, setShowChange] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,12 +180,14 @@ export default function RailHandshake() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/25"
-          >
-            <Plus className="h-4 w-4" /> New daily report
-          </button>
+          {canWrite && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/25"
+            >
+              <Plus className="h-4 w-4" /> New daily report
+            </button>
+          )}
           <button
             onClick={() => void load()}
             className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.07]"
@@ -262,8 +284,12 @@ export default function RailHandshake() {
         <ReportDrawer
           report={selected}
           busy={busy}
+          canWrite={canWrite}
+          canSign={canSign}
+          generatedBy={generatedBy}
           onClose={() => setSelected(null)}
           onLogDeviation={() => setShowLog(true)}
+          onCancelReschedule={() => setShowChange(true)}
           onIssue={() => act("issue", () => issueHandshakeReport(selected.id), "Report issued for review")}
           onSignOff={() => {
             const name = window.prompt("Sign off as (name / role):");
@@ -298,7 +324,7 @@ export default function RailHandshake() {
       )}
 
       {/* Log deviation modal */}
-      {showLog && selected && (
+      {showLog && selected && canWrite && (
         <LogDeviationModal
           busy={busy === "logdev"}
           onClose={() => setShowLog(false)}
@@ -307,18 +333,35 @@ export default function RailHandshake() {
           }
         />
       )}
+
+      {/* Annexure 20a / 20b cancel / reschedule — also logged in this report as a deviation (handshakeReportId) */}
+      {showChange && selected && canWrite && (
+        <ChangeRequestModal
+          context={{ handshakeReportId: selected.id }}
+          trainSlotRefSuggestions={Array.from(new Set((selected.deviations ?? []).map((d) => d.trainSlotRef).filter(Boolean)))}
+          onClose={() => setShowChange(false)}
+          onCreated={() => { setShowChange(false); void load(); void openReport(selected.id); }}
+        />
+      )}
     </div>
   );
 }
 
 // ── Report detail drawer ──────────────────────────────────────────────────────
 function ReportDrawer({
-  report, busy, onClose, onLogDeviation, onIssue, onSignOff, onRunEscalation, onReview, onResolve, onDispute,
+  report, busy, canWrite, canSign, generatedBy, onClose, onLogDeviation, onCancelReschedule, onIssue, onSignOff, onRunEscalation, onReview, onResolve, onDispute,
 }: {
   report: HandshakeReport;
   busy: string;
+  /** May create / edit (false for the read-only VIEWER). */
+  canWrite: boolean;
+  /** May sign off, resolve and lodge Regulator disputes (authorised representatives). */
+  canSign: boolean;
+  generatedBy?: string;
   onClose: () => void;
   onLogDeviation: () => void;
+  /** Open the Annexure 20a / 20b cancel / reschedule request for this report. */
+  onCancelReschedule: () => void;
   onIssue: () => void;
   onSignOff: () => void;
   onRunEscalation: () => void;
@@ -327,11 +370,15 @@ function ReportDrawer({
   onDispute: (dev: HandshakeDeviation) => void;
 }) {
   const devs = report.deviations ?? [];
-  const canLogDeviation = report.status === "DRAFT" || report.status === "PENDING_TOC";
-  const canReviewDeviation = report.status === "PENDING_TOC";
-  const canResolveDeviation = report.status === "PENDING_TOC" || report.status === "SIGNED_OFF";
+  // Report state AND the viewer's role must both allow an action.
+  const canLogDeviation = canWrite && (report.status === "DRAFT" || report.status === "PENDING_TOC");
+  const canReviewDeviation = canWrite && report.status === "PENDING_TOC";
+  const canResolveDeviation = canSign && (report.status === "PENDING_TOC" || report.status === "SIGNED_OFF");
   const canLodgeDisputeForReport =
-    report.status === "PENDING_TOC" || report.status === "SIGNED_OFF" || report.status === "DISPUTED";
+    canSign && (report.status === "PENDING_TOC" || report.status === "SIGNED_OFF" || report.status === "DISPUTED");
+
+  const exportCsv = () => downloadTextFile(handshakeCsvFilename(report), buildHandshakeCsv(report));
+  const printDossier = () => printHtmlDocument(buildHandshakeDossierHtml(report, { generatedBy }));
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
       <div
@@ -367,21 +414,38 @@ function ReportDrawer({
               <Plus className="h-3.5 w-3.5" /> Log deviation
             </button>
           )}
-          {report.status === "DRAFT" && (
+          {canLogDeviation && (
+            <button onClick={onCancelReschedule} data-testid="handshake-cancel-reschedule"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25">
+              Cancel / reschedule (20a · 20b)
+            </button>
+          )}
+          {canWrite && report.status === "DRAFT" && (
             <button onClick={onIssue} disabled={busy === "issue"}
               className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 disabled:opacity-50">
               <ArrowUpRight className="h-3.5 w-3.5" /> Issue for review
             </button>
           )}
-          {(report.status === "PENDING_TOC" || report.status === "SIGNED_OFF") && (
+          {canSign && (report.status === "PENDING_TOC" || report.status === "SIGNED_OFF") && (
             <button onClick={onSignOff} disabled={busy === "signoff"}
               className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-500/25 disabled:opacity-50">
               <CheckCircle2 className="h-3.5 w-3.5" /> Sign off
             </button>
           )}
-          <button onClick={onRunEscalation} disabled={busy === "escalate"}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/[0.07] disabled:opacity-50">
-            <RefreshCw className={`h-3.5 w-3.5 ${busy === "escalate" ? "animate-spin" : ""}`} /> Run escalation ladder
+          {canWrite && (
+            <button onClick={onRunEscalation} disabled={busy === "escalate"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/[0.07] disabled:opacity-50">
+              <RefreshCw className={`h-3.5 w-3.5 ${busy === "escalate" ? "animate-spin" : ""}`} /> Run escalation ladder
+            </button>
+          )}
+          {/* Evidence export — read-only, so offered to every role that can open the report. */}
+          <button onClick={exportCsv} data-testid="handshake-export-csv"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20">
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </button>
+          <button onClick={printDossier} data-testid="handshake-print-dossier"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20">
+            <Printer className="h-3.5 w-3.5" /> Print / PDF dossier
           </button>
         </div>
 

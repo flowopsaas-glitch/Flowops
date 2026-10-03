@@ -3,8 +3,20 @@ import { spawn } from 'child_process';
 import { AiService } from './ai.service';
 import { CompetitiveIntelligenceService } from './competitive-intelligence.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { isAiSelfRepairAllowed } from './ai-security.policy';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+
+/** Result of an auto-repair attempt. `blocked` is set when a safety gate refused to run. */
+export interface RepairResult {
+  repaired: boolean;
+  file: string;
+  branch: string | null;
+  pushedUpstream: boolean;
+  processedAt: string;
+  blocked?: boolean;
+  reason?: string;
+}
 
 @Injectable()
 export class AiDevOpsService {
@@ -66,7 +78,7 @@ export class AiDevOpsService {
    * 🔄 Compatibility Proxy Alias
    * Routes legacy orchestrator execution triggers from AiAutonomyService cleanly to the unified self-healing engine.
    */
-  async executeAutoRepair(fileName: string, context?: string): Promise<{ repaired: boolean; file: string; branch: string | null; pushedUpstream: boolean; processedAt: string }> {
+  async executeAutoRepair(fileName: string, context?: string): Promise<RepairResult> {
     this.logger.log(`🔄 [PROXY_REDIRECT] Forwarding legacy auto-repair invocation to verified script restoration core engine...`);
     return this.repairScript(fileName, context);
   }
@@ -74,16 +86,46 @@ export class AiDevOpsService {
   /**
    * Directly addresses script anomalies caught during runtime crashes or watchdog surveys.
    */
-  async repairScript(fileName: string, context?: string): Promise<{ 
-    repaired: boolean; 
-    file: string; 
-    branch: string | null; 
-    pushedUpstream: boolean; 
-    processedAt: string; 
-  }> {
+  async repairScript(fileName: string, context?: string): Promise<RepairResult> {
+    const resolutionTimestamp = new Date().toISOString();
+
+    // ── FAIL-CLOSED GATE ─────────────────────────────────────────────────────
+    // Self-repair creates a git branch, overwrites a source file, runs the
+    // build, pushes to origin and — on any failure — runs `git reset --hard`
+    // against the live working tree. None of that may happen in production
+    // unless an operator has explicitly opted in with ALLOW_AI_SELF_REPAIR=true.
+    // Checked before ANY git, file or process operation.
+    if (!isAiSelfRepairAllowed()) {
+      this.logger.error(
+        `🛑 [SELF_REPAIR_BLOCKED] Refusing to repair "${String(fileName).slice(0, 120)}": NODE_ENV=production and ALLOW_AI_SELF_REPAIR is not "true".`,
+      );
+      return {
+        repaired: false,
+        file: fileName,
+        branch: null,
+        pushedUpstream: false,
+        processedAt: resolutionTimestamp,
+        blocked: true,
+        reason: 'SELF_REPAIR_DISABLED_IN_PRODUCTION',
+      };
+    }
+
+    // The target must be a bare file name inside src/ai — never a path.
+    if (!this.isSafeRepairTarget(fileName)) {
+      this.logger.error(`🛑 [SELF_REPAIR_BLOCKED] Invalid repair target rejected: "${String(fileName).slice(0, 120)}"`);
+      return {
+        repaired: false,
+        file: String(fileName),
+        branch: null,
+        pushedUpstream: false,
+        processedAt: resolutionTimestamp,
+        blocked: true,
+        reason: 'INVALID_REPAIR_TARGET',
+      };
+    }
+
     this.logger.warn(`🔧 [SELF_REPAIR] Executing script recovery block sequence for target: ${fileName}`);
     
-    const resolutionTimestamp = new Date().toISOString();
     const sourceFilePath = this.resolveWorkspaceFilePath(fileName);
     const targetBranch = `claw-fix/${path.basename(fileName, path.extname(fileName))}-${Date.now()}`;
     let initialBranchName = 'main';
@@ -232,6 +274,15 @@ export class AiDevOpsService {
     } catch (err: any) {
       this.logger.error(`[BACKUP_FAILURE] Snapshot allocation aborted: ${err.message}`);
     }
+  }
+
+  /**
+   * A repair target is a plain file name from a strict allow-list of characters.
+   * (A deny-list such as path.basename() is not enough: on POSIX it does not
+   * treat a backslash as a separator, so `..\\..\\x` would slip through.)
+   */
+  private isSafeRepairTarget(fileName: unknown): fileName is string {
+    return typeof fileName === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(fileName);
   }
 
   /**

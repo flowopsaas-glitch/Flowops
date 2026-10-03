@@ -15,6 +15,14 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > still required, and nothing here is production implementation. The capacity model stays
 > unimplemented and the migration decision still gates all of it.
 >
+> **Revision 9 — 2026-10-02.** Five annexures arrive as text — **20a** (cancel / re-plan process v4), **20b**
+> (cancellation reasons v1.3), **21** (Clearinghouse narrative), **25** (self-screening form, *second draft*)
+> and **40** (ancillary services catalogue 2026/27) — and are captured in **§13**, rendered from the typed
+> catalogs under `backend/src/rail/catalog/` so the register and the code cannot disagree. Named individuals in
+> the sign-off blocks are **not** copied (POPIA; EXC-022). This closes the "not supplied" status of 20a, 20b, 25
+> and 40 in the requirement register's §3 and the "nothing" rows for them in this register's §3 — see §13.6.
+> Annexures 13, 14, 23, 24, 41 and 37–39, and Network Statement Chapters 2 and 5, are **still not supplied**.
+>
 > **Revision 7 — 2026-09-27.** The project owner attests that the **capacity source is valid**: the
 > Annexure 33 capacity-statement workbook is now named in §1's provenance attestation, which previously
 > listed only the Volume 4 text, its annexure list and the Annexure 43 KPI extract. This was a real gap —
@@ -758,3 +766,355 @@ requirement **definition** or traceability matrix has been authored. The identif
 §3's coverage map are cross-references from the owner's supplied mapping — §3 says so in its own column
 heading — not an authored, reviewed and approved requirement register. Calling this a working capacity engine would be the same
 category of overstatement as calling Rail complete.
+
+## 13. Annexure captures supplied 2026-10-02 (20a, 20b, 21, 25, 40)
+
+Supplied by the project owner as pasted text in the Wave-2 brief. **Transcription fidelity is unverified,
+and unverifiable from here** (same limit as §1): the tables below were typed from chat text, not read from a
+binary. They are rendered from `backend/src/rail/catalog/*.ts`, and `backend/src/rail/rail-docs-sync.spec.ts`
+fails if this section ever differs from those catalogs — but that proves doc ↔ code agreement, not agreement
+with the original annexure. The reviewer reconciles against the controlled copies.
+
+Handling rules applied: no binary is committed; the sign-off blocks of 20a and the compiler / approver names of
+21 are withheld (POPIA, EXC-022) — roles and designations only; the internal server path printed on 20a is
+omitted; Annexure 21 is **CONFIDENTIAL-marked** (EXC-013), so only its numeric business rules are kept.
+
+<!-- BEGIN GENERATED: annexure-captures — do not edit; run `docs/tools/render-annexure-captures.ts` -->
+
+### 13.1 Annexure 20b — main train cancellation reasons allocated to responsible parties (v1.3 (updated 19 May 2023))
+
+82 rows, in source order. The annexure has no codes; `CNX-nnn` is a FlowOps-assigned stable key (= source row number in this version; append, never renumber). Source: `backend/src/rail/catalog/cancellation-codes.catalog.ts`.
+
+| Code | Row | Cancellation reason | Responsible party (as printed) | FlowOps allocation |
+| --- | --- | --- | --- | --- |
+| CNX-001 | 1 | Abnormal working / yard | Rail Operations | Rail Operations (TOC side) |
+| CNX-002 | 2 | Animal hit by train | Force Majeure | Force Majeure |
+| CNX-003 | 3 | Assets Fire Damage | Could be Force Majeure, Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Force Majeure / Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-004 | 4 | Auxiliary equipment related | Rail Operations | Rail Operations (TOC side) |
+| CNX-005 | 5 | Averted collision | Rail Operations | Rail Operations (TOC side) |
+| CNX-006 | 6 | Bridge collapsed | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-007 | 7 | Broken axle | Rail Operations | Rail Operations (TOC side) |
+| CNX-008 | 8 | Broken rail | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-009 | 9 | Cable Theft | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-010 | 10 | Carriage & Wagons related | Rail Operations | Rail Operations (TOC side) |
+| CNX-011 | 11 | Collision | Rail Operations | Rail Operations (TOC side) |
+| CNX-012 | 12 | Community unrest | Force Majeure | Force Majeure |
+| CNX-013 | 13 | Container / Container Terminal Related | Rail Operations | Rail Operations (TOC side) |
+| CNX-014 | 14 | Covid-19 | Force Majeure | Force Majeure |
+| CNX-015 | 15 | Crew issues | Rail Operations | Rail Operations (TOC side) |
+| CNX-016 | 16 | CTC / Train Authorisation related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-017 | 17 | Customer-related | Rail Operations | Rail Operations (TOC side) |
+| CNX-018 | 18 | Dangerous Goods / Environmental Spillage and Leakage related | Rail Operations | Rail Operations (TOC side) |
+| CNX-019 | 19 | Derailment | Could be Force Majeure, Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Force Majeure / Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-020 | 20 | ECP failure | Rail Operations | Rail Operations (TOC side) |
+| CNX-021 | 21 | Electrical Substation related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-022 | 22 | Emergency brake application | Rail Operations | Rail Operations (TOC side) |
+| CNX-023 | 23 | EOT Device / Telemeter Failure | Rail Operations | Rail Operations (TOC side) |
+| CNX-024 | 24 | Eskom related issues / Power Failure | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-025 | 25 | Hook-up | Could be Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-026 | 26 | ICTM / System / Network-related | Could be Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-027 | 27 | Industrial Action | Could be Force Majeure, Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Force Majeure / Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-028 | 28 | Injury / Death of Personnel | Could be Force Majeure, Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Force Majeure / Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-029 | 29 | ITP not adjusted / ITP related issues | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-030 | 30 | Kombi issues | Rail Operations | Rail Operations (TOC side) |
+| CNX-031 | 31 | Level Crossing related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-032 | 32 | Line obstruction | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-033 | 33 | Loco await inspection or repair | Rail Operations | Rail Operations (TOC side) |
+| CNX-034 | 34 | Loco battery theft | Rail Operations | Rail Operations (TOC side) |
+| CNX-035 | 35 | Loco failure | Rail Operations | Rail Operations (TOC side) |
+| CNX-036 | 36 | Loco undersupply | Rail Operations | Rail Operations (TOC side) |
+| CNX-037 | 37 | Loco imbalance | Rail Operations | Rail Operations (TOC side) |
+| CNX-038 | 38 | Loco planning | Rail Operations | Rail Operations (TOC side) |
+| CNX-039 | 39 | Loco refuelling | Rail Operations | Rail Operations (TOC side) |
+| CNX-040 | 40 | Municipality related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-041 | 41 | No / late Empty Wagon Supply | Rail Operations | Rail Operations (TOC side) |
+| CNX-042 | 42 | No Product | Rail Operations | Rail Operations (TOC side) |
+| CNX-043 | 43 | Non compliance to plans (ITP, YPP) | Rail Operations | Rail Operations (TOC side) |
+| CNX-044 | 44 | Non-supply of Materials | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-045 | 45 | NWB issues | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-046 | 46 | OBC-related failures | Rail Operations | Rail Operations (TOC side) |
+| CNX-047 | 47 | Occupations related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-048 | 48 | OHTE related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-049 | 49 | On-Track Machines Related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-050 | 50 | Over- / Skew Loading | Rail Operations | Rail Operations (TOC side) |
+| CNX-051 | 51 | Overborder issues | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-052 | 52 | Pandroll springs theft | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-053 | 53 | Perway related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-054 | 54 | Point Theft | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-055 | 55 | Point failure | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-056 | 56 | Points ran through | Rail Operations | Rail Operations (TOC side) |
+| CNX-057 | 57 | Port issues (TPT) | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-058 | 58 | Port windbound | Force Majeure | Force Majeure |
+| CNX-059 | 59 | PRASA issues | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-060 | 60 | Product Contamination | Rail Operations | Rail Operations (TOC side) |
+| CNX-061 | 61 | Radio / TDU failure | Rail Operations | Rail Operations (TOC side) |
+| CNX-062 | 62 | Rail Network related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-063 | 63 | Railway Technology related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-064 | 64 | Removal of Not-to-Go's | Rail Operations | Rail Operations (TOC side) |
+| CNX-065 | 65 | Rolling Stock Maintenance Related | Rail Operations | Rail Operations (TOC side) |
+| CNX-066 | 66 | Runaway Rail Wagons | Rail Operations | Rail Operations (TOC side) |
+| CNX-067 | 67 | Section Congested | Could be Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-068 | 68 | Yard / Siding congestion | Could be Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-069 | 69 | Security related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-070 | 70 | Shunting challenges | Rail Operations | Rail Operations (TOC side) |
+| CNX-071 | 71 | SPAD | Rail Operations | Rail Operations (TOC side) |
+| CNX-072 | 72 | Speed Restrictions related | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-073 | 73 | TE related issues | Rail Operations | Rail Operations (TOC side) |
+| CNX-074 | 74 | Train Robbery | Could be Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-075 | 75 | Theft | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-076 | 76 | Vandalism | Could be Force Majeure, Infrastructure Manager or Rail Operations | Allocation required — Clearinghouse (Force Majeure / Infrastructure Manager (TRIM) / Rail Operations (TOC side)) |
+| CNX-077 | 77 | Wagons related | Rail Operations | Rail Operations (TOC side) |
+| CNX-078 | 78 | Wash away | Force Majeure | Force Majeure |
+| CNX-079 | 79 | Wayside Readers faulty | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-080 | 80 | Weather | Force Majeure | Force Majeure |
+| CNX-081 | 81 | Weigh Bridge not functioning / not calibrated | Infrastructure Manager | Infrastructure Manager (TRIM) |
+| CNX-082 | 82 | Yard Derailment | Rail Operations | Rail Operations (TOC side) |
+
+### 13.2 Annexure 40 — TRIM ancillary services catalogue (2026/27)
+
+40 numbered services in 4 tiers, flattened to 113 priced lines. **The annexure publishes no prices** — only units of measure; `TBD` is not zero. Source: `backend/src/rail/catalog/ancillary-services.catalog.ts`.
+
+**Tier 1 — INFRASTRUCTURE ACCESS SERVICES (safety critical and compulsory)** — 7 line(s)
+
+| Code | # | Service | Line | Unit of measure | Price |
+| --- | --- | --- | --- | --- | --- |
+| ANX40-01 | 1 | Yards: Shunting and marshalling services (List of Yards.xlsx) | — | Per wagon movement (varies per train category: GF <50 wagons; Medium heavy >50 <100; heavy >100) | not published |
+| ANX40-02 | 2 | Inland terminals: Handling of containerized cargo for modal transfers from road to rail (List of Terminals.xlsx) | — | Per container handled | not published |
+| ANX40-03 | 3 | Radio network (Trunk & Open Channel): Radio support services for compulsory onboard train communications | — | Per Radio (monthly subscription) | not published |
+| ANX40-04-01 | 4 | Radio Network Supporting Peripherals (Train Radios, Handheld Radios, Telemeters, Radio Cab Systems, incl. Integrated Onboard Operating System) | (a) Radio & Telemeter Compliance Testing and Acceptance Support | Per Device | not published |
+| ANX40-04-02 | 4 | Radio Network Supporting Peripherals (Train Radios, Handheld Radios, Telemeters, Radio Cab Systems, incl. Integrated Onboard Operating System) | (b) Radio & Telemeter Programming and Configuration Support | Per Device | not published |
+| ANX40-04-03 | 4 | Radio Network Supporting Peripherals (Train Radios, Handheld Radios, Telemeters, Radio Cab Systems, incl. Integrated Onboard Operating System) | (c) TOC Radio Onboarding and Activation | Per radio | not published |
+| ANX40-04-04 | 4 | Radio Network Supporting Peripherals (Train Radios, Handheld Radios, Telemeters, Radio Cab Systems, incl. Integrated Onboard Operating System) | (d) Train Radio Box and locomotive handset installation and commissioning | Per locomotive | not published |
+
+**Tier 2 — RAIL CRITICAL SUPPORT SERVICES** — 4 line(s)
+
+| Code | # | Service | Line | Unit of measure | Price |
+| --- | --- | --- | --- | --- | --- |
+| ANX40-05 | 5 | Track and trace data | — | Per month | not published |
+| ANX40-06 | 6 | Rolling stock condition data | — | Per month | not published |
+| ANX40-07 | 7 | Locomotive pantograph monitoring data | — | Per loco per month | not published |
+| ANX40-08 | 8 | Evaluation of new rolling stock | — | Per certificate (certificate for each wagon/loco) | not published |
+
+**Tier 3 — OPTIONAL RAIL SUPPORT SERVICES** — 17 line(s)
+
+| Code | # | Service | Line | Unit of measure | Price |
+| --- | --- | --- | --- | --- | --- |
+| ANX40-09 | 9 | Engineering and technical reviews of rail related project proposals | — | Per hour | not published |
+| ANX40-10 | 10 | Weigh bridge calibration test train rental (wagons) | — | Per wagon per hour | not published |
+| ANX40-11 | 11 | Business case reviews and support | — | Per hour | not published |
+| ANX40-12 | 12 | Weigh bridge repair, calibration and validation | — | Per certificate (1 certificate per weighbridge) | not published |
+| ANX40-13 | 13 | Rail construction consultancy | — | Per hour | not published |
+| ANX40-14 | 14 | Rail infrastructure specifications | — | Subscription Per annum (Fee covers all revisions in that year) | not published |
+| ANX40-15 | 15 | Private siding inspections | — | Per inspection | not published |
+| ANX40-16 | 16 | Applications for new or upgraded level crossings | — | Per application | not published |
+| ANX40-17 | 17 | Quality assurance, testing and commissioning | — | Per certificate | not published |
+| ANX40-18 | 18 | Rental of cabooses | — | Per caboose/day | not published |
+| ANX40-19 | 19 | Electrical network capacity analysis | — | Per request | not published |
+| ANX40-20 | 20 | Electrical protection review and issuing settings | — | Per application | not published |
+| ANX40-21 | 21 | OHTE mechanized condition assessments | — | Per run | not published |
+| ANX40-22 | 22 | Technical investigations | — | Per request | not published |
+| ANX40-23 | 23 | Pantograph and roof equipment inspection | — | Per locomotive | not published |
+| ANX40-24 | 24 | Electrical energy performance analysis | — | Per request | not published |
+| ANX40-25 | 25 | Electrical Systems and Technology Audits | — | Per request | not published |
+
+**Tier 4 — NON RAIL SERVICE** — 85 line(s)
+
+| Code | # | Service | Line | Unit of measure | Price |
+| --- | --- | --- | --- | --- | --- |
+| ANX40-26-01 | 26 | Unlit dark optic fiber National Long Distance (50 - 1000km) | Installation of dark optical fibre cables NLD (50-1000km) for Leasing | Per installation (once off) | not published |
+| ANX40-26-02 | 26 | Unlit dark optic fiber National Long Distance (50 - 1000km) | Leasing of dark optical fibre cables NLD (50-1000km) | Per month (usage) | not published |
+| ANX40-26-03 | 26 | Unlit dark optic fiber National Long Distance (50 - 1000km) | Maintenance of leased fibre links to ensure operational integrity (NLD) 50-1000km | Per km/month | not published |
+| ANX40-27-01 | 27 | Dark optic fibre Metro (0 - 50km) | Installation of dark optical fibre cables (Metro) 0-50km for leasing | Per installation (once off) | not published |
+| ANX40-27-02 | 27 | Dark optic fibre Metro (0 - 50km) | Leasing of dark optical fibre cables (Metro) 0-50km for leasing | Per month (usage) | not published |
+| ANX40-27-03 | 27 | Dark optic fibre Metro (0 - 50km) | Maintenance of leased fibre links to ensure operational integrity (Metro) 0-50km | Per km/month | not published |
+| ANX40-27-04 | 27 | Dark optic fibre Metro (0 - 50km) | [Installation of Transmission links] Digital transmission link with a capacity of 2.048 Mbps (E1) | Per Month (usage) | not published |
+| ANX40-27-05 | 27 | Dark optic fibre Metro (0 - 50km) | [Installation of Transmission links] Synchronous Transport Module level 1 (STM-1) 155.52 Mbps | Per Month (usage) | not published |
+| ANX40-27-06 | 27 | Dark optic fibre Metro (0 - 50km) | [Installation of Transmission links] Synchronous Transport Module level 1 (STM-4) 622.080 Mbit/s or 622 Mbps | Per Month (usage) | not published |
+| ANX40-27-07 | 27 | Dark optic fibre Metro (0 - 50km) | [Installation of Transmission links] Synchronous Transport Module level 1 (STM-16) 2.5 gigabits per second (2,488.320 Mbit/s) | Per Month (usage) | not published |
+| ANX40-27-08 | 27 | Dark optic fibre Metro (0 - 50km) | [Installation of Transmission links] Synchronous Transport Module level 1 (STM-64) 10 Gigabits per second (10 Gbps) | Per Month (usage) | not published |
+| ANX40-27-09 | 27 | Dark optic fibre Metro (0 - 50km) | [Installation of Transmission links] Installation of any single transmission link from the list above | Per link (Once off) | not published |
+| ANX40-27-10 | 27 | Dark optic fibre Metro (0 - 50km) | [Data Transmission Speed packages] 1 Gbps | Per month | not published |
+| ANX40-27-11 | 27 | Dark optic fibre Metro (0 - 50km) | [Data Transmission Speed packages] 2,5 Gbps | Per month | not published |
+| ANX40-27-12 | 27 | Dark optic fibre Metro (0 - 50km) | [Data Transmission Speed packages] 5 Gbps | Per month | not published |
+| ANX40-27-13 | 27 | Dark optic fibre Metro (0 - 50km) | [Data Transmission Speed packages] 10 Gbps | Per month | not published |
+| ANX40-28-01 | 28 | Dark fibre support services - real estate: Rental of physical space for telecoms equipment | Space in Comms Room 3 X 3 | Per room/month | not published |
+| ANX40-28-02 | 28 | Dark fibre support services - real estate: Rental of physical space for telecoms equipment | Utilities (electricity) MRC | Per room/month | not published |
+| ANX40-28-03 | 28 | Dark fibre support services - real estate: Rental of physical space for telecoms equipment | Site Access | Per site visit | not published |
+| ANX40-29-01 | 29 | Installation of non-TRIM optic fibre cables | Underground Fiber installation | Per meter | not published |
+| ANX40-29-02 | 29 | Installation of non-TRIM optic fibre cables | Overhead Fiber installation | Per meter | not published |
+| ANX40-30-01 | 30 | Radio & Wireless Communication Services | Enterprise and non-rail radio network access | Per radio/month | not published |
+| ANX40-30-02 | 30 | Radio & Wireless Communication Services | UHF/VHF fixed base station and repeater deployment | Per site/project | not published |
+| ANX40-30-03 | 30 | Radio & Wireless Communication Services | UHF/VHF handheld and mobile radio service | Per unit | not published |
+| ANX40-30-04 | 30 | Radio & Wireless Communication Services | Intrinsically safe radio service | Per unit | not published |
+| ANX40-30-05 | 30 | Radio & Wireless Communication Services | Marine VHF communication service | Per unit/site | not published |
+| ANX40-30-06 | 30 | Radio & Wireless Communication Services | Radio high-site co-location service | Per site/month | not published |
+| ANX40-30-07 | 30 | Radio & Wireless Communication Services | Port terminal wireless and Navis connectivity support | Per terminal/month | not published |
+| ANX40-30-08 | 30 | Radio & Wireless Communication Services | Managed Wi-Fi, access point, controller, wireless gateway and associated backhaul services for port operational areas and modern mobile terminals | Per access point/site/month | not published |
+| ANX40-30-09 | 30 | Radio & Wireless Communication Services | Narrowband wireless gateway and repeater support for TOC port operations | Per gateway or repeater/month | not published |
+| ANX40-31-01 | 31 | Transmission & Data Connectivity Services | Dedicated wavelength service | Per wavelength/month | not published |
+| ANX40-31-02 | 31 | Transmission & Data Connectivity Services | Managed wavelength service | Per wavelength/month | not published |
+| ANX40-31-03 | 31 | Transmission & Data Connectivity Services | DWDM/OTN managed transport service | Per link/month | not published |
+| ANX40-31-04 | 31 | Transmission & Data Connectivity Services | Carrier Ethernet service (E-Line/E-LAN) | Per link/month | not published |
+| ANX40-31-05 | 31 | Transmission & Data Connectivity Services | MPLS/IP VPN service | Per site/month | not published |
+| ANX40-31-06 | 31 | Transmission & Data Connectivity Services | Microwave radio link service | Per link once off/month | not published |
+| ANX40-31-07 | 31 | Transmission & Data Connectivity Services | Satellite backhaul service | Per terminal once off plus subscription | not published |
+| ANX40-31-08 | 31 | Transmission & Data Connectivity Services | Legacy access network service | Per port/link/month | not published |
+| ANX40-32-01 | 32 | Telecommunication Facilities & Infrastructure Services | Telecommunications room, rack and outdoor colocation | Per rack/room/m²/month | not published |
+| ANX40-32-02 | 32 | Telecommunication Facilities & Infrastructure Services | AC/DC power and battery-backup service | Per connection/month or metered usage | not published |
+| ANX40-32-03 | 32 | Telecommunication Facilities & Infrastructure Services | Telecommunications site access service | Per site visit | not published |
+| ANX40-33-01 | 33 | Ad Hoc Installations | Lan Point Installations | Per Site | not published |
+| ANX40-33-02 | 33 | Ad Hoc Installations | CCTV Installations | Per Site | not published |
+| ANX40-34-01 | 34 | Future Digital Telecommunication Services | DMR network access service | TBD | TBD (≠ free) |
+| ANX40-34-02 | 34 | Future Digital Telecommunication Services | LTE broadband and MCPTT service | TBD | TBD (≠ free) |
+| ANX40-34-03 | 34 | Future Digital Telecommunication Services | LTE and DMR hybrid interworking service | TBD | TBD (≠ free) |
+| ANX40-34-04 | 34 | Future Digital Telecommunication Services | DMR and LTE high-site coverage service | TBD | TBD (≠ free) |
+| ANX40-34-05 | 34 | Future Digital Telecommunication Services | Mission-critical smart device service | TBD | TBD (≠ free) |
+| ANX40-34-06 | 34 | Future Digital Telecommunication Services | Intelligent NOC and customer service assurance | TBD | TBD (≠ free) |
+| ANX40-34-07 | 34 | Future Digital Telecommunication Services | Smart port telecommunications and IoT connectivity | TBD | TBD (≠ free) |
+| ANX40-35-01 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | Use of specialist vehicle | Per call-out (first 30mnts) / Per vehicle per hour | not published |
+| ANX40-35-02 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | Use of Fire Engine 3500 litres | Per call-out (first 30mnts) / Per vehicle per hour | not published |
+| ANX40-35-03 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | Use of Water tanker | Per call-out (first 30mnts) / Per vehicle per hour | not published |
+| ANX40-35-04 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | Use of Grass unit | Per call-out (first 30mnts) / Per vehicle per hour | not published |
+| ANX40-35-05 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | Use of Incident Command vehicle / response vehicle | Per call-out (first 30mnts) / Per vehicle per hour | not published |
+| ANX40-35-06 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | Use of First response vehicle | Per call-out (first 30mnts) / Per vehicle per hour | not published |
+| ANX40-35-07 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Decanting spade pump | Per unit | not published |
+| ANX40-35-08 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Decanting Hetz pump | Per unit | not published |
+| ANX40-35-09 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Fire extinguishers (dcp) | Per extinguisher | not published |
+| ANX40-35-10 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Alco foam concentrates | Per litre | not published |
+| ANX40-35-11 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Oil cap | Per litre | not published |
+| ANX40-35-12 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Spillsorb | Per 10 kg bag | not published |
+| ANX40-35-13 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Splash suite | Per suit | not published |
+| ANX40-35-14 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Use of specialized fire equipment] Scba - Self-Contained Breathing Apparatus | Per unit | not published |
+| ANX40-35-15 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Specialized Labour] Labour - Chief Fire Officer | Per hour | not published |
+| ANX40-35-16 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Specialized Labour] Labour - Senior Fire Officer | Per hour | not published |
+| ANX40-35-17 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Specialized Labour] Labour - Fire Officer | Per hour | not published |
+| ANX40-35-18 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Specialized Labour] Labour - Fire Fighter | Per hour | not published |
+| ANX40-35-19 | 35 | Emergency response services to fire, chemicals spills, derailments and other emergencies. | [Specialized Labour] Water used | Per kl | not published |
+| ANX40-36-01 | 36 | Fire equipment maintenance services | Maintenance of 4,5 kg DCP Fire Extinguisher | Per extinguisher | not published |
+| ANX40-36-02 | 36 | Fire equipment maintenance services | Maintenance of 9 kg DCP Fire Extinguisher | Per extinguisher | not published |
+| ANX40-36-03 | 36 | Fire equipment maintenance services | Maintenance of 5 kg Co2 Fire Extinguisher | Per extinguisher | not published |
+| ANX40-36-04 | 36 | Fire equipment maintenance services | Maintenance of 9 kg Water Fire Extinguisher | Per extinguisher | not published |
+| ANX40-36-05 | 36 | Fire equipment maintenance services | Maintenance of 9 kg Foam Water Fire Extinguishers | Per extinguisher | not published |
+| ANX40-36-06 | 36 | Fire equipment maintenance services | Maintenance of Fire Hose Reels | Per reel | not published |
+| ANX40-36-07 | 36 | Fire equipment maintenance services | Maintenance of Fire Hydrants | Per hydrant | not published |
+| ANX40-37-01 | 37 | Fire equipment and escape signages supply services | Supply of Fire equipment Signages (Pair - item and Arrow) | Per pair | not published |
+| ANX40-37-02 | 37 | Fire equipment and escape signages supply services | Supply and installation of escape signages (Pair - item and Arrow) | Per pair | not published |
+| ANX40-38-01 | 38 | Technical support services: Provision of fire prevention support services and training equipment. | Provision of Fire Risk Assessment | Per assessment | not published |
+| ANX40-38-02 | 38 | Technical support services: Provision of fire prevention support services and training equipment. | On site evacuation drills / Simulations and feedback | Per drill/simulation | not published |
+| ANX40-38-03 | 38 | Technical support services: Provision of fire prevention support services and training equipment. | Rail Route Risk Assessment/Profiling | Per site | not published |
+| ANX40-38-04 | 38 | Technical support services: Provision of fire prevention support services and training equipment. | Lecture rooms etc. per day or part thereof | Per room per day | not published |
+| ANX40-38-05 | 38 | Technical support services: Provision of fire prevention support services and training equipment. | Fire training grounds, drill yard, equipment and props etc. for practical fire training/drills and demonstrations per day or part thereof (NEW) | Per day/per hour | not published |
+| ANX40-39 | 39 | Access to wayleaves | — | Per application | not published |
+| ANX40-40 | 40 | Staging | — | TBD | TBD (≠ free) |
+
+### 13.3 Annexure 25 — TOC self-screening form (Second Draft, 12 March 2024)
+
+The document is a **draft**. Source: `backend/src/rail/catalog/self-screening.catalog.ts`.
+
+| No. | Key | Assessment (verbatim) | Evidence requested / refers to |
+| --- | --- | --- | --- |
+| (i) | solvency | Is the prospective Applicant's business solvent and liquid? If the answer is "Yes", you are requested to submit signed letter issued by the currently appointed external auditors of the prospective Applicant confirming that it is a going concern and that it is solvent and liquid. | Signed letter from the currently appointed external auditors confirming going concern, solvency and liquidity |
+| (ii) | rolling_stock_compliant | Will the prospective Applicant have their own/leased rolling stock that is compliant with the prescribed specifications and that is compatible with the network configuration each as set out in the Information Pack, and will such rolling stock be available for physical inspection during the evaluation of any Application that it may submit in respect of the Competitive Contracting Process? | — |
+| (iii) | rolling_stock_condition | Will the asset condition of the rolling stock envisaged in question (ii) be such that it is capable of safe, immediate and ongoing operation on the Transnet freight rail network? | — |
+| (iv) | crewing | Does the prospective Applicant have adequate crewing manning methodology and details for Train communication equipment, available to operate trains in the slots and on the routes that are envisaged in the Information Pack and that it intends to apply for, within 3 months of the conclusion of the relevant contracts with Transnet? | — |
+| (v) | training_rsr_permit | Is the prospective Applicant willing to make its train operating personnel (including but not limited to its train drivers) available, at its own cost, to undergo any required training (as determined by the Faculty of Rail) including training in respect of the Local Area Working Rules and associated procedures? Please note that the deployment of suitable qualified and certified train operating personnel is a prerequisite for the granting of an RSR Permit and in accordance to SANS 3000-4 requirements. | Refers to: RSR Permit; SANS 3000-4 |
+| (vi) | operating_model_plans | The prospective applicants have an appropriate business operating model, security plan, environment management plan and the prospective applicant's willingness to participate in the IM community and socio development plans. | — |
+| (vii) | volume_guarantee | The prospective applicants must ensure that there are rail volume forecasts and guarantees in the form of a letter confirming this from and signed by the cargo owner for timetable period or Framework agreement period. The letter should include the duration of the contract, tonnages (to be) contracted, confirmation that the TOC is the nominated haulage service provider. Refer to Annexure 34 (Volume Confirmation Letter). | Cargo-owner letter: contract duration, tonnages contracted, confirmation that the TOC is the nominated haulage provider · Refers to: Annexure 34 (Volume Confirmation Letter) |
+
+### 13.4 Annexure 20a — cancel or re-plan / re-schedule TOC train process (v4 (30 Sep 2024)) and Annexure 21 rules
+
+Roles only: the named individuals in the sign-off blocks are withheld (POPIA, register EXC-022). Source: `backend/src/rail/catalog/cancellation-process.catalog.ts`.
+
+| Step | Path | Title | Detail |
+| --- | --- | --- | --- |
+| 1 | COMMON | Submit TOC Request for Train Cancellation with reasons (via TOL / TEMS-TOMS) | Request TOC train(s) to be cancelled due to TOC reasons. · Authorised TOC personnel must contact the IM Customer Liaison Officer directly. · Request must also be submitted via TOL; TOC selects the possible cancellation reason(s) on TOL. · Notice within 15 minutes of the event's occurrence, or as soon as it is discovered that there will be a TOC mainline slot compromise (incidents, operational issues, resource constraints …). |
+| 2 | COMMON | Submit Yard Operating Company (YOC) request for train(s) cancellations due to Yard Operator reasons (via TOL) | Only authorised Yard Operator personnel can communicate TOC train cancellations — directly to authorised IM personnel. · Notice within 15 minutes of occurrence / discovery. |
+| 3 | COMMON | Submit TRIM Request for Train Cancellation | Request TOC train(s) to be cancelled due to TRIM reasons. · Notice within 15 minutes of occurrence / discovery. · Cross-reference in the diagram: par 6.5.4.2 in the Network Statement. |
+| 4 | COMMON | Submit Port / Port Terminal Operator Request for Train Cancellation | Only authorised Port / Port Terminal Operator personnel can communicate TOC train cancellations — directly to authorised IM personnel. · Notice within 15 minutes of occurrence / discovery. · Cross-reference in the diagram: par 6.5.4.2 in the Network Statement. |
+| 5 | COMMON | Submit PRASA / Over-Border IM / Other IM Request for Train Cancellation | — |
+| 6 | COMMON | Receive notification of TOC Train Cancellation Request and acknowledge receipt | Authorised TOC personnel must contact the IM Customer Liaison Officer directly. · Acknowledge receipt of the train cancellation request within 1 hour. |
+| 7 | COMMON | Capture TOC trains to be cancelled, reasons and responsible party (Daily Handshake Process — Daily Handshake Report Template, via designated e-mail per corridor) | Capture and verify the reason for the cancellation linked to the Train Slot Number (including Force Majeure) and all supporting information required by the Daily Handshake Template. · Log all incidents that impact train slot utilisation and on-time train performance. · Use incident information from TOMS/TEMS ("TOC Execution and Monitoring" process) and the Daily Handshake Templates. |
+| 8 | SHORT_NOTICE_LE_48H | Assess total ITP impact of the requested TOC Train Cancellation (Execution and Monitoring Process) | Capture the cancellation reason; state whether it is outside IM control (Force Majeure). · Assess which other TOC trains are impacted; check the cancellation clauses in the rail access agreement; impact assessment for the full corridor. |
+| 9 | SHORT_NOTICE_LE_48H | Prioritise all impacted TOC slots | — |
+| 10 | SHORT_NOTICE_LE_48H | Assess if the impacted TOC train(s) can be re-planned, re-scheduled or re-routed | Decision: can impacted TOC train(s) be re-planned, re-scheduled or re-routed? |
+| 11 | SHORT_NOTICE_LE_48H | Assess possible alternative available slot(s) and propose re-planned / re-scheduled / re-routed slot(s) | — |
+| 12 | SHORT_NOTICE_LE_48H | Discuss possible alternative slot(s) with TOCs (receive possible alternative slots) | — |
+| 13 | SHORT_NOTICE_LE_48H | Provide TOC train rescheduling inputs | Decision: did the TOC accept the proposed re-planned / re-scheduled / re-routed slots? |
+| 14 | SHORT_NOTICE_LE_48H | Update an emergency dynamic version of the ITP | (">48 hours" path, same step number: "Update relevant planning version of ITP (7 day, 72 hour, 48 hour)".) |
+| 15 | SHORT_NOTICE_LE_48H | Communicate the updated emergency dynamic version of the ITP | (">48 hours" path: "Communicate the updated relevant planning version of ITP (7 day, 72 hour, 48 hour)".) |
+| 16 | SHORT_NOTICE_LE_48H | Acknowledge receipt of updated ITP (containing re-planned / re-scheduled / re-routed slot(s)) | — |
+| 17 | SHORT_NOTICE_LE_48H | Provide pilot services for TOC crew that lacks route knowledge on new re-scheduled routes | This service can be provided by TFROC to TOCs at a fee. |
+| 18 | CONVERGED | Cancel requested / impacted TOC train(s) and update ITP | Reached when the impacted trains cannot be re-planned, re-scheduled or re-routed. |
+| 19 | CONVERGED | Notify impacted TOC(s) of train cancellation(s) | — |
+| 20 | CONVERGED | Compile TOC Train Cancellation Notice, with reasons and responsible parties | — |
+| 21 | CONVERGED | Acknowledge receipt of train cancellation(s) | Decision: does a cancelled en-route TOC train require staging? |
+| 22* | CONVERGED | Stage the impacted TOC train | Printed without a number in the source; 23 and 24 follow it. |
+| 23 | CONVERGED | Arrange security measures to safeguard staged trains | — |
+| 24 | CONVERGED | Re-plan movement of staged train | If no staging is required: go to the TOC Charges and Penalties Process (skip steps 18–24, go to end interfaces where applicable). |
+
+\* step number not printed in the source; inferred from the sequence.
+
+**Initiators (steps 1–5)**
+
+| Step | Initiator | Channel |
+| --- | --- | --- |
+| 1 | Train Operating Company (TOC) | IM Customer Liaison Officer directly AND via TOL (TEMS-TOMS) |
+| 2 | Yard Operating Company (YOC) — on behalf of the IM | TOL, directly to authorised IM personnel |
+| 3 | TRIM (any department: Asset Maintenance and Management, Security, Network Service Planning, Network Operations, Safety, …) | — |
+| 4 | Port / Port Terminal Operator (TPT) | directly to authorised IM personnel |
+| 5 | PRASA / Over-Border IM / Other IM | — |
+
+**Timings and windows quoted by the annexures**
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Cancellation notice | within 15 minutes of the event / discovery | [ANX-20a steps 1–4] |
+| Acknowledge receipt | within 1 hour | [ANX-20a step 6] |
+| Short-notice threshold | 48 hours before real time | [ANX-20a decision] |
+| ITP planning versions | 7_DAY / 72_HOUR / 48_HOUR | [ANX-20a step 14, >48 h path] |
+| Clearinghouse dispute window | 24 hours | [ANX-21 business rules] |
+| Closed to dispute after | 48 hours | [ANX-21 business rules] |
+| Unresolved-dispute investigation | within 48 hours (Network Operations Interface Manager) | [ANX-21 process] |
+| National Clearinghouse | Tue–Fri 12:00; Mon 10:30 | [ANX-21 business rules] |
+
+### 13.5 Reference data actually loaded (corridors and yards)
+
+Source: `backend/src/rail/catalog/corridors.catalog.ts`, `yards.catalog.ts`.
+
+| Code | V4 corridor | Pre-V4 aliases | Annexure 33b routes (indicative) | Data status | Gauge / electrification / axle load / profile / train length |
+| --- | --- | --- | --- | --- | --- |
+| COR-CONTAINER | Container | Natal | General Freight: Johannesburg to Durban | SOURCE_PENDING | not supplied |
+| COR-CAPE | Cape | Cape 1 | General Freight: Johannesburg to Cape Town; General Freight: Vereeniging/Danskraal to East London | SOURCE_PENDING | not supplied |
+| COR-ORE | Ore | Cape 2 | Ore | SOURCE_PENDING | not supplied |
+| COR-NORTH | North | Northern | Manganese; General Freight & Export Coal: Lephalale to Richards Bay; General Freight: Musina - Pyramid South/Hoedspruit | SOURCE_PENDING | not supplied |
+| COR-NORTH-EAST | North-East | — | Magnetite; Eastern Mainline: Rayton to Komatipoort/Richards Bay | SOURCE_PENDING | not supplied |
+| COR-CENTRAL | Central | — | General Freight: Mafikeng to Beaconsfield/Potchefstroom | SOURCE_PENDING | not supplied |
+
+Transfer yards in the catalog: **0 of 11** expected by the brief (none supplied). Corridors: **6 of 6**, all `SOURCE_PENDING`.
+
+<!-- END GENERATED: annexure-captures -->
+
+### 13.6 What this changes, and what it does not
+
+| Area | Before | Now |
+| --- | --- | --- |
+| §3 row "Annexure 20a, 20b → RAIL-013" | `CANCELLATION` / `RESCHEDULE` categories exist; reason catalogue **not** modelled | The 82-row reason catalogue and the 24-step process are captured as typed catalogs (§13.1, §13.4). The commercial-consequence logic is Wave 3 |
+| §3 row "Annexure 25 → RAIL-005 / RAIL-006" | **nothing** | Seven-question form captured and enforced as the submission cover page (draft status carried) |
+| §3 row "Annexure 40 → not in the supplied mapping" | **nothing** | 113 priced lines catalogued with units; **prices still unpublished** |
+| Annexure 21 | summarised in R-014.1 | Numeric rules re-checked against the supplied v5 text — consistent; see below |
+
+**Reading exceptions found in the supplied text** (proposed; numbering continues the requirement register's EXC-025):
+
+| # | Exception | Source |
+| --- | --- | --- |
+| EXC-032 | Annexure 20a labels the >48 h path "NO branch (>48 hours)" and the other path "NO branch →" under the one decision "received >48 Hours before real time?". The step content disambiguates it (short notice → *emergency dynamic ITP*; >48 h → *planning ITP versions 7 day / 72 hour / 48 hour*) and FlowOps follows the content. Confirm against the diagram | 20a decision + steps 14–15 |
+| EXC-034 | Annexure 25 is a **"Second Draft"** (12 Mar 2024). The question set is provisional | 25 title |
+| EXC-035 | Annexure 21's revision table runs backwards in time: v2 = 27 Oct 2023, v3 = 11 Mar 2023, v4 = 11 Mar 2023. (Also the cover says v5, the body header "V4" — EXC-013.) | 21 revision table |
+| EXC-036 | Annexure 20b has no codes and no version beyond "v1.3 updated 19 May 2023"; ten rows are "Could be …" and are not allocated by the annexure | 20b |
+| EXC-037 | Annexure 40: Staging and all seven Future Digital lines are `TBD`; no line carries a price (restates EXC-025 for the full line set) | 40 |
+| EXC-038 | The brief calls Annexure 25 "flexing windows"; the supplied document is the self-screening form and contains no time windows | brief vs 25 |
+
+**Still outstanding (not supplied):** Annexures 13, 14, 23, 24, 41, 37, 38, 39, 22, 26, 27a–c, 30, 31, 34;
+Network Statement Chapter 2 (corridor and yard technical data — gauge, electrification, axle load, vehicle
+profile, train length, siding capacity, contacts) and Chapter 5 (tariff tables). Nothing that depends on them has
+been given invented values; see `docs/RAIL-RASA-AUDIT-2026-10-02.md` §6.

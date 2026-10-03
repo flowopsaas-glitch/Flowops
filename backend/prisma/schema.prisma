@@ -3886,6 +3886,23 @@ model RailConsignment {
   riskLevel    RiskLevel?
   riskNote     String? @db.Text
 
+  // Dangerous goods (Wave 3). When isDangerousGoods is true the dispatch gate blocks departure
+  // until every mandatory field below is present and well-formed (consignment value, or the
+  // wagon's own where a wagon is flagged individually).
+  isDangerousGoods    Boolean @default(false)
+  unNumber            String? // UN1234
+  imdgClass           String? // 3, 2.1, 6.1, 1.4S …
+  placardRef          String?
+  emergencyContact24h String?
+  msdsDocumentUrl     String? // https link to the controlled safety data sheet
+
+  // Weighbridge hold (Wave 4). While HOLD_FOR_LOAD_ADJUSTMENT the dispatch gate blocks departure. Derived from
+  // the LATEST weighbridge reading of each wagon: it clears when every wagon has been re-weighed within its limit.
+  holdStatus    RailHoldStatus @default(NONE)
+  holdReason    String?        @db.Text
+  holdSetAt     DateTime?
+  holdClearedAt DateTime?
+
   companyId String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3912,6 +3929,20 @@ model Wagon {
   lastKnownSiding String?  // location snapshot (coordination, not signalling)
   loadedAt       DateTime?
   offloadedAt    DateTime?
+
+  // Corridor-envelope particulars (Wave 2). NULL = not declared, which the envelope check
+  // reports as UNVERIFIED — never as "fits".
+  axles          Int?               // axle count (axle load = (tare + loaded) / axles)
+  gauge          RailGauge?
+  vehicleProfile RailVehicleProfile?
+
+  // Dangerous goods carried by THIS wagon (Wave 3). A field left empty inherits the consignment's.
+  isDangerousGoods    Boolean @default(false)
+  unNumber            String?
+  imdgClass           String?
+  placardRef          String?
+  emergencyContact24h String?
+  msdsDocumentUrl     String?
 
   @@index([consignmentId])
   @@map("wagons")
@@ -4885,4 +4916,600 @@ model MasterDataAuditEvent {
   @@index([productId])
   @@index([variantId])
   @@map("master_data_audit_events")
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RAIL — REFERENCE DATA, SLOT APPLICATIONS & OPERATOR COMPLIANCE  (Wave 2)
+//
+// Requirements: RAIL-005 (access application + Annexure 25 self-screening),
+// RAIL-006 (access prerequisites / controlled documents), RAIL-008, RAIL-012
+// (train-path management). Evidence ledger: docs/RAIL-RASA-AUDIT-2026-10-02.md.
+//
+// Strictly additive. Deliberately NO foreign keys: like the older rail tables
+// (RailHandshakeDeviation.consignmentId), links are plain scalar references that the
+// service layer verifies per tenant, so this migration contains only CREATE TYPE,
+// CREATE TABLE, CREATE INDEX and ALTER TABLE ... ADD COLUMN.
+//
+// Reference tables (rail_corridor_nodes, rail_yard_specs) are PLATFORM-WIDE and
+// read-only to tenants. Every technical field is nullable: NULL means "not in any
+// supplied source" — it is never zero and never "unlimited".
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum RailGauge {
+  CAPE_1067MM      // 1067 mm
+  NARROW_610MM     // 610 mm
+  STANDARD_1435MM  // 1435 mm
+}
+
+enum RailElectrification {
+  DC_3KV   // 3 kV DC
+  AC_25KV  // 25 kV AC
+  AC_50KV  // 50 kV AC
+  DIESEL
+}
+
+enum RailVehicleProfile {
+  A
+  B
+  B_PLUS_1  // "B+1"
+}
+
+enum RailDataStatus {
+  SOURCE_PENDING  // identity known; technical data not yet loaded from a cited source
+  VERIFIED        // loaded from a cited source and reviewed
+}
+
+enum RailComplianceDocType {
+  RSR_PERMIT
+  INSURANCE
+  ROLLING_STOCK_CERT
+  TRAIN_CREW_CERT
+  DANGEROUS_GOODS
+  INTERFACE_AGREEMENT
+  ACCESS_CONTRACT
+  SECURITY_DEPOSIT
+}
+
+enum RailComplianceDocStatus {
+  PENDING_REVIEW  // entered, not yet verified by an authorised representative
+  VALID
+  EXPIRED
+  REVOKED
+}
+
+enum RailSlotApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_ASSESSMENT
+  CAPACITY_CONFLICT
+  ALLOCATED
+  REJECTED
+  EXPIRED
+}
+
+// One of the V4 corridors (Container, Cape, Ore, North, North-East, Central).
+model RailCorridorNode {
+  id                String               @id @default(cuid())
+  code              String               @unique // e.g. COR-ORE
+  name              String               // V4 corridor name
+  aliases           String[]             @default([]) // pre-V4 names (register EXC-020)
+  workbookRoutes    String[]             @default([]) // Annexure 33b route names (indicative, SRC §11.4)
+  sortOrder         Int                  @default(0)
+
+  // Technical envelope — NULL / empty = not supplied.
+  gauge             RailGauge?
+  electrification   String[]             @default([]) // RailElectrification values supported
+  maxAxleLoadTonnes Float?
+  vehicleProfile    RailVehicleProfile?
+  maxTrainLengthM   Int?
+
+  contacts          Json?                // role mailboxes / functions only — no personal data (POPIA)
+  dataStatus        RailDataStatus       @default(SOURCE_PENDING)
+  sourceRef         String?
+  verifiedBy        String?
+  verifiedAt        DateTime?
+  notes             String?              @db.Text
+  isActive          Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@map("rail_corridor_nodes")
+}
+
+// A transfer yard. corridorCode is a soft reference to rail_corridor_nodes.code.
+model RailYardSpec {
+  id                   String               @id @default(cuid())
+  code                 String               @unique
+  name                 String
+  corridorCode         String?
+  isTransferYard       Boolean              @default(true)
+
+  gauge                RailGauge?
+  electrification      String[]             @default([])
+  maxAxleLoadTonnes    Float?
+  vehicleProfile       RailVehicleProfile?
+  maxTrainLengthM      Int?
+  sidingCapacityWagons Int?
+
+  contacts             Json?
+  dataStatus           RailDataStatus       @default(SOURCE_PENDING)
+  sourceRef            String?
+  verifiedBy           String?
+  verifiedAt           DateTime?
+  notes                String?              @db.Text
+  isActive             Boolean              @default(true)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([corridorCode])
+  @@map("rail_yard_specs")
+}
+
+// A tenant's controlled document for the access prerequisites (RSR permit, insurance, …).
+// Several rows per type are normal (renewals); the gate asks "is there a VALID one covering today?".
+model RailOperatorComplianceDoc {
+  id               String                  @id @default(cuid())
+  companyId        String
+  docType          RailComplianceDocType
+  status           RailComplianceDocStatus @default(PENDING_REVIEW)
+  referenceNumber  String?
+  issuer           String?
+  validFrom        DateTime
+  validUntil       DateTime
+  documentUrl      String?                 // pointer to controlled storage — never the binary
+  notes            String?                 @db.Text
+  verifiedAt       DateTime?
+  verifiedById     String?
+  verifiedByEmail  String?
+  revokedAt        DateTime?
+  revokedReason    String?                 @db.Text
+  createdById      String?
+  createdByEmail   String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([companyId, docType])
+  @@index([companyId, validUntil])
+  @@map("rail_operator_compliance_docs")
+}
+
+// A TOC's application for Train Path (slot) capacity — recorded, never granted, by FlowOps.
+model RailSlotApplication {
+  id                       String                    @id @default(cuid())
+  companyId                String
+  applicationNumber        String                    // SA-2026-00042 (unique per tenant)
+  status                   RailSlotApplicationStatus @default(DRAFT)
+
+  // What is being applied for
+  corridorCode             String                    // soft reference to rail_corridor_nodes.code
+  originName               String?
+  destinationName          String?
+  originYardCode           String?
+  destinationYardCode      String?
+  railOperator             String?
+  imReference              String?                   // the IM's TOL reference
+  tractionType             RailElectrification?
+  commodity                String?
+  isDangerousGoods         Boolean                   @default(false)
+  trainsPerWeek            Int?
+  wagonsPerTrain           Int?
+  annualTonnes             Float?
+
+  // Rolling-stock particulars used by the corridor-envelope check
+  gauge                    RailGauge?
+  axleLoadTonnes           Float?
+  vehicleProfile           RailVehicleProfile?
+  trainLengthM             Int?
+
+  // Validity window — requested, then allocated (each at most 5 years)
+  requestedFrom            DateTime
+  requestedUntil           DateTime
+  validFrom                DateTime?
+  validUntil               DateTime?
+
+  // Annexure 25 self-screening (cover page of the application)
+  selfScreening            Json?
+  selfScreeningAccessType  String?                   // "Network A" | "Network B"
+  selfScreeningCompletedAt DateTime?
+
+  // Gate snapshots taken at submission
+  envelopeCheckStatus      String?                   // COMPATIBLE | INCOMPATIBLE | UNVERIFIED
+  envelopeCheck            Json?
+  complianceSnapshot       Json?
+
+  // Lifecycle
+  submittedAt              DateTime?
+  assessmentStartedAt      DateTime?
+  conflictFlaggedAt        DateTime?
+  conflictNote             String?                   @db.Text
+  allocatedAt              DateTime?
+  mobilizeBy               DateTime?                 // allocatedAt + 60 days
+  firstOperatedAt          DateTime?
+  forfeitureFlaggedAt      DateTime?                 // set automatically if unoperated at mobilizeBy
+  rejectedAt               DateTime?
+  rejectionReason          String?                   @db.Text
+  expiredAt                DateTime?
+
+  consignmentId            String?                   // optional link to a RailConsignment
+  createdById              String?
+  createdByEmail           String?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+
+  @@unique([companyId, applicationNumber])
+  @@index([companyId, status])
+  @@index([companyId, corridorCode])
+  @@index([status, mobilizeBy])
+  @@map("rail_slot_applications")
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RAIL — CANCELLATION / RESCHEDULING, POSSESSIONS, OCCURRENCES, DANGEROUS GOODS  (Wave 3)
+//
+// Requirements: RAIL-007 (flexing), RAIL-009 (reserved in the register — the brief assigns it here),
+// RAIL-010, RAIL-011, RAIL-013 (cancellation consequences), RAIL-015 (occurrences).
+// Sources: Annexure 20a (process), 20b (82 reasons), 21 (Clearinghouse windows) — all supplied;
+// Annexures 13 / 23 / 24 / 41 were NOT supplied, so possession and occurrence parameters that the
+// brief attributes to them are modelled generically and flagged unverified in the audit ledger.
+//
+// Strictly additive, and again NO foreign keys (scalar references verified by the service layer).
+// rail_cancellation_codes is PLATFORM-WIDE reference data; the other three tables are tenant-scoped.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum RailCancellationParty {
+  RAIL_OPERATIONS         // Annexure 20b "Rail Operations" — the train-operating side (TOC)
+  INFRASTRUCTURE_MANAGER  // TRIM
+  FORCE_MAJEURE
+  ALLOCATION_REQUIRED     // the annexure says "Could be …": decided at the Clearinghouse
+}
+
+enum RailAttribution {
+  TRIM
+  TOC
+  FORCE_MAJEURE
+  UNDETERMINED
+}
+
+enum RailChangeKind {
+  CANCEL
+  RESCHEDULE
+  REPLAN
+}
+
+enum RailChangeInitiator {
+  TOC
+  YARD_OPERATOR
+  TRIM
+  PORT_TERMINAL_OPERATOR
+  PRASA_OTHER_IM
+}
+
+enum RailChangeStatus {
+  SUBMITTED
+  ACKNOWLEDGED
+  ALTERNATIVE_PROPOSED
+  ACCEPTED
+  CANCELLED_CONFIRMED
+  CLOSED
+}
+
+enum RailPossessionKind {
+  ANNUAL_PLAN
+  LOCKED_60_DAY
+  AD_HOC_EMERGENCY
+}
+
+enum RailPossessionStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum RailOccurrenceType {
+  DERAILMENT
+  COLLISION
+  OHTE_CABLE_THEFT
+  SPAD
+  HAZMAT_SPILL
+  OTHER
+}
+
+enum RailOccurrenceLevel {
+  LEVEL_1_CODE_GREEN   // minor
+  LEVEL_2_CODE_ORANGE  // major
+  LEVEL_3_CODE_RED     // disaster
+}
+
+enum RailOccurrenceStatus {
+  REPORTED
+  UNDER_INVESTIGATION
+  PRELIMINARY_REPORT_FILED
+  CLOSED
+}
+
+// Annexure 20b, one row per source row (FlowOps-assigned code CNX-nnn). Platform-wide.
+model RailCancellationCode {
+  id               String                @id @default(cuid())
+  code             String                @unique // CNX-001
+  sourceRow        Int
+  reason           String
+  responsibleParty RailCancellationParty
+  possibleParties  String[]              @default([]) // for ALLOCATION_REQUIRED rows
+  sourceText       String                // the "Responsible Party" cell, verbatim
+  annexureVersion  String
+  isActive         Boolean               @default(true)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@map("rail_cancellation_codes")
+}
+
+// A cancel / reschedule / re-plan of a TOC train (Annexure 20a), with its 20b reason, attribution and commercial
+// consequence. Snapshots the reason text and the 20b allocation so history survives a catalog change.
+model RailSlotChangeRequest {
+  id                    String                @id @default(cuid())
+  companyId             String
+  requestNumber         String                // CR-2026-00042 (unique per tenant)
+  kind                  RailChangeKind
+  status                RailChangeStatus      @default(SUBMITTED)
+  initiatedBy           RailChangeInitiator
+
+  cancellationCode      String                // soft reference to rail_cancellation_codes.code
+  cancellationReason    String
+  codeResponsibleParty  RailCancellationParty // the 20b allocation, as it was when logged
+  attribution           RailAttribution       @default(UNDETERMINED)
+  isForceMajeure        Boolean               @default(false)
+  isPlannedOccupation   Boolean               @default(false)
+
+  trainSlotRef          String
+  slotApplicationId     String?
+  consignmentId         String?
+  handshakeReportId     String?
+  handshakeDeviationId  String?
+
+  originalDeparture     DateTime?
+  proposedDeparture     DateTime?
+  eventOccurredAt       DateTime?             // when the cause happened (15-minute notice clock)
+  requestedAt           DateTime              @default(now())
+  acknowledgedAt        DateTime?             // the IM must acknowledge within 1 hour
+  noticeLateMinutes     Int?                  // minutes beyond the 15-minute notice, when late
+  hoursBeforeDeparture  Float?
+  noticeBand            String                // SHORT_NOTICE | PLANNING_VERSION | AFTER_DEPARTURE | UNKNOWN
+  commercialWindow      String                // INSIDE_72H | OUTSIDE_72H | UNKNOWN
+
+  consequence           String                // see rail-change.rules.ts
+  penaltyApplicable     Boolean               @default(false)
+  penaltyAgainst        String?               // TOC | TRIM
+  penaltyBasis          String?               @db.Text
+  requiresStaging       Boolean               @default(false)
+  replacementAccepted   Boolean?
+  note                  String?               @db.Text
+  closedAt              DateTime?
+  createdById           String?
+  createdByEmail        String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@unique([companyId, requestNumber])
+  @@index([companyId, status])
+  @@index([companyId, consignmentId])
+  @@index([companyId, trainSlotRef])
+  @@map("rail_slot_change_requests")
+}
+
+// An IM possession / occupation window on a corridor, recorded by the tenant.
+model RailPossessionWindow {
+  id              String               @id @default(cuid())
+  companyId       String
+  corridorCode    String               // soft reference to rail_corridor_nodes.code
+  kind            RailPossessionKind
+  status          RailPossessionStatus @default(PLANNED)
+  title           String
+  location        String?
+  description     String?              @db.Text
+  imReference     String?
+  startsAt        DateTime
+  endsAt          DateTime
+  noticeGivenAt   DateTime?
+  createdById     String?
+  createdByEmail  String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([companyId, corridorCode, startsAt])
+  @@index([companyId, status])
+  @@map("rail_possession_windows")
+}
+
+// A safety / security occurrence (derailment, collision, OHTE / cable theft, SPAD, hazmat spill …).
+model RailOccurrenceReport {
+  id                       String               @id @default(cuid())
+  companyId                String
+  occurrenceNumber         String               // OR-2026-00042 (unique per tenant)
+  type                     RailOccurrenceType
+  level                    RailOccurrenceLevel
+  status                   RailOccurrenceStatus @default(REPORTED)
+  corridorCode             String?
+  location                 String?
+  trainSlotRef             String?
+  consignmentId            String?
+  deviationId              String?              // the Daily Handshake deviation it was logged as
+  auditLogId               String?              // the audit_logs row written when it was reported
+  occurredAt               DateTime
+  description              String               @db.Text
+  responsibleParty         RailAttribution      @default(UNDETERMINED)
+  fatalities               Boolean              @default(false)
+  hazmatInvolved           Boolean              @default(false)
+  reportedToTcoAt          DateTime?
+  reportedToRsrAt          DateTime?
+  preliminaryReportDueAt   DateTime?            // occurredAt + 48 hours
+  preliminaryReportFiledAt DateTime?
+  investigationNote        String?              @db.Text
+  closedAt                 DateTime?
+  createdById              String?
+  createdByEmail           String?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  @@unique([companyId, occurrenceNumber])
+  @@index([companyId, status])
+  @@index([companyId, occurredAt])
+  @@map("rail_occurrence_reports")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Wave 4 — tariffs, ancillary services, weighbridge overload hold (RAIL-013 / 014 / 015)
+// Strictly additive. Money is Float, as everywhere else in this schema; arithmetic goes through common/money.util.
+// NOTHING below is priced by default: every rate is nullable and stays NULL until it is loaded from a cited source.
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum RailHoldStatus {
+  NONE
+  HOLD_FOR_LOAD_ADJUSTMENT // an overloaded wagon has not been re-weighed within its limit
+}
+
+enum RailPriceStatus {
+  NOT_PUBLISHED // the annexure lists the service without a price
+  TBD           // the annexure says "TBD" — not zero, not free
+  PUBLISHED     // a rate was loaded from a published tariff (requires unitRateZar and rateSourceRef)
+}
+
+enum RailAncillaryGroup {
+  RAIL
+  TELECOMS
+  SAFETY_EMERGENCY
+  PROPERTY
+}
+
+enum RailLimitSource {
+  CORRIDOR // the VERIFIED corridor's maximum axle load
+  MANUAL   // entered with the reading; not checked against the corridor
+  NONE     // no limit known — the reading cannot be checked
+}
+
+enum RailWeighStatus {
+  WITHIN_LIMIT
+  OVERLOADED
+  UNVERIFIED // no limit (or axle count) known, so the reading cannot be judged — never a pass
+}
+
+enum RailTariffCalcStatus {
+  PRICED     // every line has an amount
+  INCOMPLETE // saved, but at least one line has no loaded rate — no invoice draft until it does
+}
+
+// Platform-wide. One row per corridor and financial year. NO ROW IS SEEDED: the c/GTK tables (Network Statement
+// Section 5) were not supplied. The calculator prices only from a VERIFIED row that has a loaded rate.
+model RailTariffSchedule {
+  id                         String         @id @default(cuid())
+  corridorCode               String         // soft reference to rail_corridor_nodes.code
+  financialYear              String         // "2026/27"
+  loadedCentsPerGtk          Float?         // cents per gross tonne-kilometre, loaded train
+  emptyCentsPerGtk           Float?         // cents per GTK, empty return
+  dieselLitresPer1000Gtk     Float?         // consumption factor (not supplied)
+  electricKwhPer1000Gtk      Float?         // consumption factor (not supplied)
+  dieselPricePerLitreZar     Float?         // when NULL the calculator uses the brief's base price and says so
+  electricityPricePerKwhZar  Float?         // NULL ⇒ electric traction cannot be priced
+  overloadPenaltyPerTonneZar Float?         // NULL ⇒ the overload penalty line stays unpriced
+  currency                   String         @default("ZAR")
+  dataStatus                 RailDataStatus @default(SOURCE_PENDING)
+  sourceRef                  String?        // where the rates came from (required for VERIFIED)
+  notes                      String?        @db.Text
+  isActive                   Boolean        @default(true)
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+
+  @@unique([corridorCode, financialYear])
+  @@index([financialYear])
+  @@map("rail_tariff_schedules")
+}
+
+// Platform-wide: Annexure 40, one row per priced line (113). The annexure publishes NO prices: unitRateZar is NULL
+// and stays NULL until a published tariff is loaded.
+model RailAncillaryServiceCatalog {
+  id              String             @id @default(cuid())
+  code            String             @unique // ANX40-01, ANX40-04-02
+  serviceNumber   Int
+  serviceName     String
+  name            String
+  sourceLabel     String?
+  section         String?
+  description     String?            @db.Text
+  unitOfMeasure   String             // verbatim from the annexure
+  tier            Int
+  tierName        String
+  serviceGroup    RailAncillaryGroup
+  isCompulsory    Boolean            @default(false)
+  priceStatus     RailPriceStatus
+  unitRateZar     Float?
+  rateSourceRef   String?
+  annexureVersion String             // "2026/27"
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([serviceNumber])
+  @@index([tier])
+  @@map("rail_ancillary_services")
+}
+
+// Append-only. The most recently RECORDED reading of a wagon decides whether its consignment is held.
+model RailWeighbridgeReading {
+  id                String          @id @default(cuid())
+  companyId         String
+  consignmentId     String
+  wagonId           String?
+  wagonNumber       String
+  weighbridge       String?
+  weighedAt         DateTime
+  actualTonnes      Float           // gross mass of the wagon on the weighbridge
+  axles             Int?
+  maxAxleLoadTonnes Float?          // the limit this reading was judged against
+  limitSource       RailLimitSource @default(NONE)
+  corridorCode      String?
+  allowedTonnes     Float?          // maxAxleLoadTonnes × axles
+  excessTonnes      Float?          // actualTonnes − allowedTonnes, when overloaded
+  status            RailWeighStatus
+  note              String?         @db.Text
+  createdById       String?
+  createdByEmail    String?
+  createdAt         DateTime        @default(now())
+
+  @@index([companyId, consignmentId, createdAt])
+  @@map("rail_weighbridge_readings")
+}
+
+// A saved tariff calculation for one consignment. A BLOCKED calculation (no loaded rate, no weights …) is never saved.
+model RailTariffCalculation {
+  id                String               @id @default(cuid())
+  companyId         String
+  calculationNumber String               // TC-2026-00042 (unique per tenant)
+  consignmentId     String
+  consignmentNumber String
+  corridorCode      String
+  financialYear     String
+  scheduleId        String?              // the rail_tariff_schedules row the rates came from
+  status            RailTariffCalcStatus
+  inputs            Json
+  lines             Json
+  blockers          Json
+  warnings          Json
+  gtkLoaded         Float?
+  gtkEmpty          Float?
+  subtotalZar       Float
+  currency          String               @default("ZAR")
+  holdTriggered     Boolean              @default(false)
+  invoiceDraftId    String?              // set once, atomically — this is what makes "Generate Invoice Draft" idempotent
+  invoiceDraftedAt  DateTime?
+  createdById       String?
+  createdByEmail    String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([companyId, calculationNumber])
+  @@index([companyId, consignmentId])
+  @@map("rail_tariff_calculations")
 }
