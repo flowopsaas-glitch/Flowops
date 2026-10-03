@@ -115,20 +115,40 @@ git -C /root/FlowOps fetch origin && git -C /root/FlowOps rev-parse origin/main 
 
 ### Step 1 — backup · `approved: 1`
 
-Dumps the live database (read-only on the database), verifies the dump is a valid gzip and non-trivial, and uploads it to R2. **This
-backup is the disaster-recovery rollback.**
+Forces a **fresh** dump right now and pushes it to R2. **This backup is the disaster-recovery rollback.**
 
-- **Blast radius:** reads the database; writes one dump file and one R2 object. Nothing in the database changes.
+> **Why the command is chained (corrected 2026-10-03).** An earlier draft ran `/usr/local/bin/flowops-backup-r2 --backup-only` alone
+> and described it as "dumps the live database". It does not. That binary (`deploy/item2-r2-runner.sh`, installed byte-identical —
+> `sha256 d9b84bd071172314ef0d81f0a1eaa7b75493bcbf531fa031f1eae9b2e91b6927`) *finds the newest existing* `/backups/flowops_*.sql.gz`,
+> and `die`s with `newest local dump is older than 12 hours; local backup freshness is not proven.` if it is stale — there is no
+> `pg_dump` in that code path. The only thing that produces a dump is the `postgres-backup` service
+> (`deploy/docker-compose.vps.yml`), whose loop dumps **immediately on container start** and then sleeps 6 h. So `docker restart`
+> is what makes the dump happen, and the sleep gives the loop time to write and validate it (`>10 KB` + `gzip -t`, written as
+> `.partial` and only then renamed). If the restart had not landed a dump, the runner's own 12-hour guard would have stopped the
+> step instead of uploading something stale — the failure mode is a red step, never a false-confidence backup.
+
+- **Blast radius:** `docker restart flowops-postgres-backup-1` — that service is a stateless `pg_dump` loop, so restarting it only
+  makes it re-dump; its healthcheck has `start_period: 5m`, so it reads `starting` for a few minutes. **The live `api`, `postgres`
+  and `redis` containers are not touched.** Then: one new `flowops_YYYYMMDD_HHMMSS.sql.gz` (~260 KB) in the `flowops_postgres-backups`
+  volume (retention trims to the newest 28), ~2 minutes of `pg_dump` CPU/IO inside a container capped at 128 MB, one new R2 object,
+  and a round-trip download of the same file to compare SHA-256. **Also note the runner's last act is a 30-day prune**
+  (`rclone delete … --min-age 30d` under `flowops-backups/backups/`) — off-box objects older than 30 days are deleted. That is its
+  design (`RETENTION_DAYS=30`) but it is a write to production backup storage, not a no-op. Nothing in the live database changes.
 - **Rollback:** none needed.
 <!-- CMD approved 1 -->
 ```text
-/usr/local/bin/flowops-backup-r2 --backup-only; echo done
+docker restart flowops-postgres-backup-1 && sleep 120 && /usr/local/bin/flowops-backup-r2 --backup-only; echo done
 ```
 
-Then confirm the newest `flowops_*.sql.gz` is from this run (**V0**, read-only). *Stop if* it is not fresh.
+Then confirm the newest `flowops_*.sql.gz` is from this run (**V0**, read-only), and cross-check it from inside the container
+(**V0b**, read-only) so the check does not depend on the volume's host path. *Stop if* it is not fresh.
 <!-- CMD read-only V0 -->
 ```text
 ls -lt /var/lib/docker/volumes/flowops_postgres-backups/_data | head -3; echo done
+```
+<!-- CMD read-only V0b -->
+```text
+docker exec flowops-postgres-backup-1 sh -c 'ls -lt /backups/flowops_*.sql.gz | head -3'; echo done
 ```
 
 ### Step 2 — prove the backup restores · `approved: 2`
@@ -304,8 +324,8 @@ Fill in as each step is approved and run (UTC time, who approved, the one-line o
 
 | Step | Approved by / when | Outcome |
 | --- | --- | --- |
-| R1 – R11 | | |
-| 1 backup | | |
+| R1 – R11 | 2026-10-03, Kader | Partial: R1 (13 GB free), R2 (8 containers), R6 (ledger 2 rows) confirmed from the operator's starting state. R3/R4/R5/R7/R8/R10/R11 still to be pasted. |
+| 1 backup | 2026-10-03 11:28–11:30 UTC, Kader | **PASS.** Fresh dump `flowops_20261003_112847.sql.gz` (260,395 B) produced by the restart, uploaded to `flowops-r2:flowops-backups/backups/2026/10/`, R2 round-trip verified (gzip + SHA-256), 30-day prune completed. V0 + V0b agree: newest dump is from this run. Observation, not a blocker: the backup container had also dumped at 08:11 and 11:17 UTC today — the 6-hourly cadence in the compose comment is not what is actually happening. |
 | 2 restore-verify | | |
 | 3 checkout | | |
 | 4 build | | |

@@ -1,9 +1,16 @@
 # Rail pricing release gates — status (2026-10-02, Phase F)
 
-**Status: GATES 1–3 + 6 PARTIALLY COMPLETE LOCALLY. VPS GATES AWAITING EXPLICIT APPROVAL.
-NOTHING DEPLOYED. PR #441 NOT MERGED. NO MIGRATION APPLIED. NO PRODUCTION FLAGS CHANGED.**
+**Status: F-1 – F-9 ALL PASS. F-10 UNBLOCKED AND IN PROGRESS — executing
+`docs/RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md` one gated step at a time at `RELEASE_SHA` `be1792d`.**
 
-- **Branch:** `arena/01a0fbb8-flowops` at `adf1182` (PR #441 tip `a8f6f37` + 4 pricing commits).
+**Live production state as of 2026-10-03 11:30 UTC: UNCHANGED.** Step 1 (backup) is the only step run so far. No migration
+applied, no image built, no container recreated, no production flag changed, checkout still on `03b181a`.
+
+- **PR #442** — **MERGED** into `main` as `be1792dc45d3a580fac5a5a25820025176ac3d09` (2026-10-03T08:07:26Z). This is
+  `<RELEASE_SHA>`. The `DO NOT MERGE` prefix is a stale cosmetic title.
+- **PR #441** — **CLOSED, never merged** (`mergeCommit: null`, `mergedAt: null`). It carries the weighbridge wall-clock
+  time-bomb fixed in `024b420`. **Not used for anything in this release, and never to be used.**
+- **Branch:** this session works on `arena/01a10170-flowops` (HEAD `be1792d`, tracking `main`).
 - **Matrix:** `docs/RAIL-PRICING-SOURCE-MATRIX-2026-10-02.md` — all rows `UNVERIFIED`.
 - **Controls:** `docs/RAIL-PRICING-ENGINE-CONTROLS-2026-10-02.md` — 5 PASS, gaps recorded.
 - **Exceptions:** `docs/RAIL-PRICING-EXCEPTIONS-2026-10-02.md` — EXC-039…048 all OPEN.
@@ -21,9 +28,9 @@ NOTHING DEPLOYED. PR #441 NOT MERGED. NO MIGRATION APPLIED. NO PRODUCTION FLAGS 
 | F-5 | clean / baseline / already-applied / drift | **PASS — live baseline + CI drift leg green** | A-1a/A-1b PASS (ledger 2 rows; schema `133|72|362|150`, no drift). PR #442 CI green (10/10 incl. Backend with real engines + E2E), same coverage as PR #441's drift-guard run. No migration files added by this release. |
 | F-6 | Tenant-scope + RBAC reviews | **PASS (advisory reviewed)** | `tenant-scope:audit` runs (advisory — rail tariff paths are companyId-scoped; D-15 test proves cross-tenant 404). `rbac:test` 7/7 pass. New routes: none (no new controllers in this release). |
 | F-7 | Security / P0 verification | **PASS (CI authoritative leg green)** | Trivy pass, Backend pass (real engines + unit tests incl. bcrypt suites that can't run in this sandbox), Frontend pass, image builds pass. Local: eslint clean, no secrets in code/commands, no `.env` access, DTO whitelists unchanged. No auth/payment/self-repair paths touched. |
-| F-8 | Non-production pricing pilot (synthetic) | **AWAITING STAGING + APPROVAL** | Synthetic pilot fixtures exist in tests (clearly labelled `SYNTHETIC test tariff`). A live pilot needs a non-production tenant on staging + owner sign-off — not run. Pilot plan prepared: `docs/RAIL-F8-PILOT-PLAN-2026-10-02.md` (8 cases, mandatory cleanup). |
+| F-8 | Non-production pricing pilot (synthetic) | **PASS (synthetic pilot, owner-accepted)** | 8-case synthetic pilot green, including invoice idempotency and the `INCOMPLETE` draft refusal. Evidence is in the prior session transcript; **not re-run** per the operating rules of this deployment. Fixtures are clearly labelled `SYNTHETIC test tariff` and live only in tests. Owner accepted the synthetic pilot in place of a live non-production tenant pilot — no staging tenant exists, so `docs/RAIL-F8-PILOT-PLAN-2026-10-02.md` was executed synthetically, not against staging. |
 | F-9 | Owner + independent reviewer sign-off | **PASS (solo-operator §0.1)** | Matrix §4, exceptions closure log, and decisions D20–D28 all unsigned. No row may move above `UNVERIFIED` without both signatures. Sign-off pack prepared: `docs/RAIL-F9-SIGNOFF-PACK-2026-10-02.md` (3 parts + signature page, solo-operator §0.1 + review §6). SIGNED 2026-10-03: Kader (sole operator) accepted §0.1, confirmed Parts 1–3, no amendments, no exception closes. **D25 decided 2026-10-03: standard** (platform 15% default confirmed as the treatment). F-9 CLOSED. |
-| F-10 | PR review / merge + staging deploy | **BLOCKED on F-8 only** | F-1–F-7 all PASS. Remaining: staging pilot (F-8) + human sign-offs (F-9). PR #442 supersedes #441; both stay open and unmerged. Branch-side F-10 preflight 2026-10-02: tip CI 10/10 incl. drift-guard step (run 37030819233); `main` unmoved at `03b181a` (R11 holds); exactly 5 migrations; compose/Dockerfiles/deploy untouched; `.env` examples gain only commented fail-closed AI switches (no new required var). |
+| F-10 | PR review / merge + production deploy | **UNBLOCKED — IN PROGRESS (checklist Step 1 of 7 done)** | F-1–F-9 all PASS. PR #442 merged as `be1792d` = `<RELEASE_SHA>`; `origin/main` re-verified at `be1792d` on 2026-10-03 (nothing merged after it). `git diff 03b181a be1792d -- deploy docker-compose.yml backend/Dockerfile frontend/Dockerfile frontend/package.json` is **empty** — deploy tooling untouched. Release scope: 48 `backend/src/rail`, 21 `frontend/src/pages/rail`, 7 `backend/src/ai`, 9 docs. Executing `docs/RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md` steps 1→7, one `approved: N` at a time; evidence per step is appended to the table below. **Step 1 (backup) PASS 2026-10-03 11:30 UTC** — see the evidence log. Steps 2–7 not started. |
 
 ## Calculator state after this release (unchanged, by design)
 
@@ -89,3 +96,6 @@ No further VPS action is proposed. Steps 1–12 of the deployment checklist rema
 | A-2g cleanup | 2026-10-02 | DROP DATABASE; worktrees back to main + migration-src; live still `03b181a`; 0 rehearsal DBs; no /tmp artifacts | PASS — zero residue, F-4 CLOSED |
 | F-9 signature (Kader, solo-operator) | 2026-10-03 | §0.1 waiver accepted in chat (09:44 SAST assumed = 07:44 UTC — owner to correct if UTC); Parts 1–3 confirmed, no amendments, no closures; D25 UNDECIDED | SIGNED except D25 — F-9 holds for: standard / zero-rated / exempt |
 | F-9 D25 decision | 2026-10-03 | Kader: **standard**. 09:44 confirmed SAST (= 07:44 UTC) | PASS — F-9 CLOSED |
+| **Checklist Step 1 — backup** | 2026-10-03 11:28–11:30 UTC | `docker restart flowops-postgres-backup-1 && sleep 120 && /usr/local/bin/flowops-backup-r2 --backup-only` → fresh dump `flowops_20261003_112847.sql.gz` (260,395 B) uploaded to `flowops-r2:flowops-backups/backups/2026/10/`; `R2 round-trip verified (gzip + SHA-256)`; 30-day prune completed. V0 (host volume path) and V0b (inside container) agree: newest dump 11:28 UTC = this run. | **PASS** — fresh pre-release backup exists on-box and off-box. Live DB untouched. |
+| Checklist Step 1 — command correction | 2026-10-03 | The draft Step 1 (`flowops-backup-r2 --backup-only` alone) would have **STOPPed**: that binary uploads the newest *existing* dump and `die`s if it is >12 h old — it contains no `pg_dump`. Corrected to restart the `postgres-backup` service first (its loop dumps on container start). Documented in the checklist §Step 1; `backend/src/rail/rail-deployment-checklist.spec.ts` re-run: **64/64 pass**. | PASS — guard test green after the edit |
+| Checklist Step 1 — observation | 2026-10-03 | Backup container had produced dumps at 08:11, 11:17 and 11:28 UTC today. The compose comment advertises a 6-hourly cadence; the observed gaps (~3 h) do not match it. Healthcheck (`-mmin -400`) still passes. | INFO — not a blocker; the 12-hour freshness guard in the runner is what Step 1 depends on |
