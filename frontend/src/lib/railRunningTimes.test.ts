@@ -937,3 +937,309 @@ describe('a fifth extract: a run longer than a day', () => {
     expect((mook.distanceKm ?? 0) / ((mook.pointToPointRuntime ?? 1) / 60)).toBeGreaterThan(200);
   });
 });
+
+const B6_2312 = `
+Origin	Train	NODE_Seq	ENROUTE_Corridor	ENRTE_Station/siding number	ENROUTE_Arrival time	ENROUTE_Departure Time	Point to Point Runtime	Standingtime	StandingReason	Destination	Origin Departure Time	Destination Arrival Time	Sched	Frequency	Train Type	Train Throughput Runtime (from Origin to Destination)	Depart_Day	Distance
+SIN-MYN-WISST	2312	1	CAPE	SIN-MYN-WISST		18:29:00				POSTMASBURG	18:29:00	20:46:00	2	YYYYYYY	VACUUM TRAINS/MATERIAL TRN	02:17:00	0	
+SIN-MYN-WISST	2312	1	CAPE	GAMMAGARA	18:48:00	18:49:00	00:19:00	00:01:00	B SHUNT	POSTMASBURG						02:17:00	0	3.25
+SIN-MYN-WISST	2312	2	CAPE	MOOKANENG	18:59:30	19:01:00	00:10:30	00:01:30	SHUNT	POSTMASBURG						02:17:00	0	9.63
+SIN-MYN-WISST	2312	2	CAPE	HAAKBOSLEEGTE	19:11:00	19:12:00	00:10:00	00:01:00	SHUNT	POSTMASBURG						02:17:00	0	5.04
+SIN-MYN-WISST	2312	3	CAPE	LOHATLHA	19:24:00	19:25:00	00:12:00	00:01:00	SHUNT	POSTMASBURG						02:17:00	0	10.57
+SIN-MYN-WISST	2312	4	CAPE	ERTSRAND	19:32:30	19:33:00	00:07:30	00:00:30	SHUNT	POSTMASBURG						02:17:00	0	5.57
+SIN-MYN-WISST	2312	4	CAPE	GLOSAM	19:36:00	19:37:00	00:03:00	00:01:00	SHUNT	POSTMASBURG						02:17:00	0	2.75
+SIN-MYN-WISST	2312	4	CAPE	PALINGPAN	19:42:30	19:44:00	00:05:30	00:01:30	SHUNT	POSTMASBURG						02:17:00	0	4.95
+SIN-MYN-WISST	2312	5	CAPE	BOKKOPPIE	19:51:00	20:20:00	00:07:00	00:29:00	SHUNT / WAIT CROSSINGS	POSTMASBURG						02:17:00	0	6.51
+SIN-MYN-WISST	2312	5	CAPE	BEESHOEK	20:30:00	20:31:00	00:10:00	00:01:00	SHUNT	POSTMASBURG						02:17:00	0	8.86
+SIN-MYN-WISST	2312	6	CAPE	POSTMASBURG	20:46:00	00:00:00	00:15:00		RT	POSTMASBURG						02:17:00	0	7.84`;
+
+const B6_6431_HEAD = `
+Origin	Train	NODE_Seq	ENROUTE_Corridor	ENRTE_Station/siding number	ENROUTE_Arrival time	ENROUTE_Departure Time	Point to Point Runtime	Standingtime	StandingReason	Destination	Origin Departure Time	Destination Arrival Time	Sched	Frequency	Train Type	Train Throughput Runtime (from Origin to Destination)	Depart_Day	Distance
+SIN-MYN-WISST	6431	1	CAPE	SIN-MYN-WISST		21:00:00				NEWCASTLYSKOR	21:00:00	02:09:00	1	AAAAAAA	MEDIUM HEAVY/AMSA IRON ORE	29:09:00	0	
+SIN-MYN-WISST	6431	1	CAPE	GAMMAGARA	21:04:00	21:04:00	00:04:00		C	NEWCASTLYSKOR						29:09:00	0	3.25
+SIN-MYN-WISST	6431	2	ORELINE	GMA/S261955	21:05:00	21:06:00	00:01:00	00:01:00	SHUNT	NEWCASTLYSKOR						29:09:00	0	0.96
+SIN-MYN-WISST	6431	3	CAPE	GAMMAGARA	21:07:00	21:07:00	00:01:00			NEWCASTLYSKOR						29:09:00	0	0.96
+SIN-MYN-WISST	6431	4	CAPE	MOOKANENG	21:17:00	21:17:00	00:10:00			NEWCASTLYSKOR						29:09:00	0	9.63
+SIN-MYN-WISST	6431	4	CAPE	HAAKBOSLEEGTE	21:23:00	21:23:00	00:06:00			NEWCASTLYSKOR						29:09:00	0	5.04
+SIN-MYN-WISST	6431	5	CAPE	LOHATLHA	21:36:00	21:36:00	00:13:00			NEWCASTLYSKOR						29:09:00	0	10.57
+SIN-MYN-WISST	6431	6	CAPE	ERTSRAND	21:44:00	21:44:00	00:08:00			NEWCASTLYSKOR						29:09:00	0	5.57
+SIN-MYN-WISST	6431	6	CAPE	GLOSAM	21:48:00	21:48:00	00:04:00			NEWCASTLYSKOR						29:09:00	0	2.75
+SIN-MYN-WISST	6431	6	CAPE	PALINGPAN	21:55:00	21:55:00	00:07:00			NEWCASTLYSKOR						29:09:00	0	4.95
+SIN-MYN-WISST	6431	7	CAPE	BOKKOPPIE	22:03:30	22:03:30	00:08:30			NEWCASTLYSKOR						29:09:00	0	6.51
+SIN-MYN-WISST	6431	7	CAPE	BEESHOEK	22:09:00	22:09:00	00:05:30			NEWCASTLYSKOR						29:09:00	0	8.86
+SIN-MYN-WISST	6431	8	CAPE	BEK/S242799	22:11:00	22:13:00	00:02:00	00:02:00	SHUNT	NEWCASTLYSKOR						29:09:00	0	0.97
+SIN-MYN-WISST	6431	9	CAPE	BEESHOEK	22:15:30	22:15:30	00:02:30			NEWCASTLYSKOR						29:09:00	0	0.97
+SIN-MYN-WISST	6431	10	CAPE	POSTMASBURG	22:32:00	23:00:00	00:16:30	00:28:00	INSPECTION ROLL BY	NEWCASTLYSKOR						29:09:00	0	7.84
+SIN-MYN-WISST	6431	11	CAPE	TSANTSABANE	23:19:00	23:19:00	00:19:00			NEWCASTLYSKOR						29:09:00	0	9.06
+SIN-MYN-WISST	6431	11	CAPE	BLINKKLIP	23:31:00	23:31:00	00:12:00			NEWCASTLYSKOR						29:09:00	0	9
+SIN-MYN-WISST	6431	11	CAPE	GROENWATER	23:46:30	23:46:30	00:15:30			NEWCASTLYSKOR						29:09:00	0	11.9
+SIN-MYN-WISST	6431	11	CAPE	CLIFTON	00:30:00	00:30:00	00:43:30			NEWCASTLYSKOR						29:09:00	1	8.38
+SIN-MYN-WISST	6431	11	CAPE	LIMEACRES	00:45:30	00:45:30	00:15:30			NEWCASTLYSKOR						29:09:00	1	14.46
+SIN-MYN-WISST	6431	12	CAPE	SILVERSTREAMS	00:52:00	00:52:00	00:06:30			NEWCASTLYSKOR						29:09:00	1	5.87
+SIN-MYN-WISST	6431	13	CAPE	TREWIL	01:05:30	01:05:30	00:13:30			NEWCASTLYSKOR						29:09:00	1	11.43
+SIN-MYN-WISST	6431	13	CAPE	ARIESFONTEIN	01:14:00	01:14:00	00:08:30			NEWCASTLYSKOR						29:09:00	1	8.21
+SIN-MYN-WISST	6431	13	CAPE	PLATEAU	01:29:00	01:29:00	00:15:00			NEWCASTLYSKOR						29:09:00	1	14.08
+SIN-MYN-WISST	6431	13	CAPE	KOOPMANSFONTE	01:45:30	01:45:30	00:16:30			NEWCASTLYSKOR						29:09:00	1	13.26
+SIN-MYN-WISST	6431	13	CAPE	NOOIBOS	01:47:00	01:47:00	00:01:30			NEWCASTLYSKOR						29:09:00	1	5.41
+SIN-MYN-WISST	6431	13	CAPE	OLEA	01:58:30	01:58:30	00:11:30			NEWCASTLYSKOR						29:09:00	1	4.37
+SIN-MYN-WISST	6431	13	CAPE	KNEUKEL	02:03:00	02:03:00	00:04:30			NEWCASTLYSKOR						29:09:00	1	3.12
+SIN-MYN-WISST	6431	13	CAPE	GHAAP	02:15:30	02:15:30	00:12:30			NEWCASTLYSKOR						29:09:00	1	6.51
+SIN-MYN-WISST	6431	13	CAPE	ULCO	02:39:00	02:39:00	00:23:30			NEWCASTLYSKOR						29:09:00	1	11.85
+SIN-MYN-WISST	6431	14	CAPE	BORRELSKOP	02:46:30	02:46:30	00:07:30			NEWCASTLYSKOR						29:09:00	1	6.04
+SIN-MYN-WISST	6431	14	CAPE	WINTERSRUSH	02:53:00	02:53:00	00:06:30			NEWCASTLYSKOR						29:09:00	1	6.54
+SIN-MYN-WISST	6431	14	CAPE	GONGGONG	03:01:00	03:01:00	00:08:00			NEWCASTLYSKOR						29:09:00	1	7.51
+SIN-MYN-WISST	6431	14	CAPE	BADHOPE	03:05:00	03:05:00	00:04:00			NEWCASTLYSKOR						29:09:00	1	4.5
+SIN-MYN-WISST	6431	14	CAPE	BAH/S261866	03:06:00	03:07:00	00:01:00	00:01:00	WEIGHBRIDGE	NEWCASTLYSKOR						29:09:00	1	0.1
+SIN-MYN-WISST	6431	14	CAPE	DIAMANTOORD	03:09:00	03:09:00	00:02:00			NEWCASTLYSKOR						29:09:00	1	6.44
+SIN-MYN-WISST	6431	14	CAPE	BARKLYWEST	03:16:00	03:16:00	00:07:00			NEWCASTLYSKOR						29:09:00	1	1.7
+SIN-MYN-WISST	6431	15	CAPE	WEIR	03:25:00	03:25:00	00:09:00			NEWCASTLYSKOR						29:09:00	1	6.19
+SIN-MYN-WISST	6431	15	CAPE	RIVERMEAD	03:27:00	03:27:00	00:02:00			NEWCASTLYSKOR						29:09:00	1	4.11
+SIN-MYN-WISST	6431	15	CAPE	FIELDSVIEW	03:38:30	03:38:30	00:11:30			NEWCASTLYSKOR						29:09:00	1	6.41
+SIN-MYN-WISST	6431	16	CAPE	MACFARLANE	03:54:30	03:54:30	00:16:00			NEWCASTLYSKOR						29:09:00	1	12.09
+SIN-MYN-WISST	6431	17	CAPE	RIVERTON	04:04:00	04:04:00	00:09:30			NEWCASTLYSKOR						29:09:00	1	6.12
+SIN-MYN-WISST	6431	18	CAPE	SLYPKLIP	04:07:00	04:07:00	00:03:00			NEWCASTLYSKOR						29:09:00	1	7.92
+SIN-MYN-WISST	6431	18	CAPE	WINDSORTONROA	04:23:30	04:23:30	00:16:30			NEWCASTLYSKOR						29:09:00	1	9.4
+SIN-MYN-WISST	6431	19	CAPE	KOEDOE	04:26:30	04:26:30	00:03:00			NEWCASTLYSKOR						29:09:00	1	12.4
+SIN-MYN-WISST	6431	19	CAPE	CONTENT	04:42:00	04:42:00	00:15:30			NEWCASTLYSKOR						29:09:00	1	8
+SIN-MYN-WISST	6431	19	CAPE	WARRENTON	04:55:00	10:00:00	00:13:00	05:05:00	BO	NEWCASTLYSKOR						29:09:00	1	12.64
+SIN-MYN-WISST	6431	20	CAPE	VEERTIENSTROM	10:06:00	10:06:00	00:06:00			NEWCASTLYSKOR						29:09:00	1	5.8
+SIN-MYN-WISST	6431	21	CENTRAL	CAMELFORD	10:17:00	10:17:00	00:11:00			NEWCASTLYSKOR						29:09:00	1	13.9
+SIN-MYN-WISST	6431	21	CENTRAL	FENDYKE	10:27:30	10:27:30	00:10:30			NEWCASTLYSKOR						29:09:00	1	9.69
+SIN-MYN-WISST	6431	21	CENTRAL	CHRISTIANA	10:36:30	10:36:30	00:09:00			NEWCASTLYSKOR						29:09:00	1	9.91
+SIN-MYN-WISST	6431	22	CENTRAL	KROMELLENBOOG	10:49:00	10:49:00	00:12:30			NEWCASTLYSKOR						29:09:00	1	14.18
+SIN-MYN-WISST	6431	23	CENTRAL	BRITTEN	11:06:00	11:06:00	00:17:00			NEWCASTLYSKOR						29:09:00	1	11.77
+SIN-MYN-WISST	6431	24	CENTRAL	FERNDALE	11:13:00	11:13:00	00:07:00			NEWCASTLYSKOR						29:09:00	1	8.82
+SIN-MYN-WISST	6431	24	CENTRAL	WILDHOEN	11:20:00	11:20:00	00:07:00			NEWCASTLYSKOR						29:09:00	1	4.94
+SIN-MYN-WISST	6431	24	CENTRAL	YDELHOOP	11:35:00	11:35:00	00:15:00			NEWCASTLYSKOR						29:09:00	1	7.11
+SIN-MYN-WISST	6431	24	CENTRAL	BLOEMHOF	11:42:30	11:42:30	00:07:30			NEWCASTLYSKOR						29:09:00	1	6.28
+SIN-MYN-WISST	6431	25	CENTRAL	STRYDERS	11:48:30	11:48:30	00:06:00			NEWCASTLYSKOR						29:09:00	1	6.62
+SIN-MYN-WISST	6431	25	CENTRAL	GRASSLANDS	11:55:00	11:55:00	00:06:30			NEWCASTLYSKOR						29:09:00	1	6.5
+SIN-MYN-WISST	6431	25	CENTRAL	KINGSWOOD	12:01:00	12:01:00	00:06:00			NEWCASTLYSKOR						29:09:00	1	11.74
+SIN-MYN-WISST	6431	26	CENTRAL	DRIERUITERS	12:16:00	12:16:00	00:15:00		X CONTAINER	NEWCASTLYSKOR						29:09:00	1	6.5
+SIN-MYN-WISST	6431	26	CENTRAL	BOSKUIL	12:38:00	12:38:00	00:22:00			NEWCASTLYSKOR						29:09:00	1	6.26
+SIN-MYN-WISST	6431	26	CENTRAL	MAKWASSIE	12:51:00	13:15:00	00:13:00	00:24:00	X 81002	NEWCASTLYSKOR						29:09:00	1	15.56
+SIN-MYN-WISST	6431	27	CENTRAL	EERSTELING	13:26:00	13:26:00	00:11:00			NEWCASTLYSKOR						29:09:00	1	9.66
+SIN-MYN-WISST	6431	27	CENTRAL	DAALDER	13:41:00	13:41:00	00:15:00			NEWCASTLYSKOR						29:09:00	1	7.48
+SIN-MYN-WISST	6431	27	CENTRAL	LEEUDORINGSTA	13:46:30	13:46:30	00:05:30			NEWCASTLYSKOR						29:09:00	1	8.38
+SIN-MYN-WISST	6431	28	CENTRAL	LEEUBOS	13:52:30	13:52:30	00:06:00			NEWCASTLYSKOR						29:09:00	1	9.68
+SIN-MYN-WISST	6431	28	CENTRAL	HARRISBURG	14:02:30	14:02:30	00:10:00			NEWCASTLYSKOR						29:09:00	1	9.56
+SIN-MYN-WISST	6431	28	CENTRAL	REGINA	14:17:00	14:17:00	00:14:30			NEWCASTLYSKOR						29:09:00	1	14.71
+SIN-MYN-WISST	6431	29	CENTRAL	DEAN	14:32:00	14:32:00	00:15:00			NEWCASTLYSKOR						29:09:00	1	7.44
+SIN-MYN-WISST	6431	29	CENTRAL	LAVA	14:39:00	14:39:00	00:07:00			NEWCASTLYSKOR						29:09:00	1	5.33
+SIN-MYN-WISST	6431	29	CENTRAL	ORKNEY	14:44:00	14:44:00	00:05:00			NEWCASTLYSKOR						29:09:00	1	6.54
+SIN-MYN-WISST	6431	30	CENTRAL	ARISTON	14:51:00	14:51:00	00:07:00			NEWCASTLYSKOR						29:09:00	1	3.43
+SIN-MYN-WISST	6431	30	CENTRAL	KLERKSDORP	15:00:00	15:00:00	00:09:00			NEWCASTLYSKOR						29:09:00	1	6.58
+SIN-MYN-WISST	6431	31	CENTRAL	SANDPAN	15:06:00	15:06:00	00:06:00			NEWCASTLYSKOR						29:09:00	1	6.41
+SIN-MYN-WISST	6431	31	CENTRAL	STILFONTEIN	15:11:00	15:11:00	00:05:00			NEWCASTLYSKOR						29:09:00	1	2.95
+SIN-MYN-WISST	6431	31	CENTRAL	KOEKEMOER	15:22:00	15:22:00	00:11:00			NEWCASTLYSKOR						29:09:00	1	4.91
+SIN-MYN-WISST	6431	32	CENTRAL	NEWMACHAVIE	15:28:00	15:28:00	00:06:00			NEWCASTLYSKOR						29:09:00	1	13.17
+SIN-MYN-WISST	6431	32	CENTRAL	CRESCENT	15:41:00	15:41:00	00:13:00			NEWCASTLYSKOR						29:09:00	1	9.52
+SIN-MYN-WISST	6431	32	CENTRAL	POTCHEFSTROOM	15:54:00	15:54:00	00:13:00			NEWCASTLYSKOR						29:09:00	1	9.92
+SIN-MYN-WISST	6431	33	CENTRAL	CACHET	15:57:00	15:57:00	00:03:00			NEWCASTLYSKOR						29:09:00	1	2.6
+SIN-MYN-WISST	6431	34	CENTRAL	TARENTAAL	16:02:00	16:02:06	00:05:00			NEWCASTLYSKOR						29:09:00	1	9.08
+SIN-MYN-WISST	6431	34	CENTRAL	KLIPDRIF	16:07:00	16:07:00	00:04:54			NEWCASTLYSKOR						29:09:00	1	9.75
+SIN-MYN-WISST	6431	34	CENTRAL	ENSELSPRUIT	16:11:00	16:11:00	00:04:00			NEWCASTLYSKOR						29:09:00	1	14.5
+SIN-MYN-WISST	6431	35	CENTRAL	FOCHVILLE	16:19:00	16:19:00	00:08:00			NEWCASTLYSKOR						29:09:00	1	13.18
+SIN-MYN-WISST	6431	35	CENTRAL	MICHAELSRAAD	16:26:00	16:26:00	00:07:00			NEWCASTLYSKOR						29:09:00	1	10.93
+SIN-MYN-WISST	6431	35	CENTRAL	RAATHSVLEI	16:34:00	17:44:00	00:08:00	01:10:00	BO	NEWCASTLYSKOR						29:09:00	1	4.88
+SIN-MYN-WISST	6431	36	CENTRAL	BLOEKOMHEUNING	17:49:00	17:49:00	00:05:00			NEWCASTLYSKOR						29:09:00	1	7.78
+SIN-MYN-WISST	6431	36		VANDERBIJL	17:53:00	17:53:00	00:04:00			NEWCASTLYSKOR						29:09:00	1	7.95
+SIN-MYN-WISST	6431	36	CENTRAL	VANDERBIJLPAR	17:55:00	17:55:00	00:02:00			NEWCASTLYSKOR						29:09:00	1	1
+SIN-MYN-WISST	6431	36	CENTRAL	HOUTHEUWEL	18:03:00	18:03:00	00:08:00			NEWCASTLYSKOR						29:09:00	1	5.34
+SIN-MYN-WISST	6431	37	CENTRAL	KLEIGROND	18:08:00	18:08:00	00:05:00			NEWCASTLYSKOR						29:09:00	1	4.38
+SIN-MYN-WISST	6431	38	CENTRAL	LEEUHOF	18:16:00	18:16:00	00:08:00			NEWCASTLYSKOR						29:09:00	1	3.06
+SIN-MYN-WISST	6431	39	CENTRAL	DUNCANVILLE	18:20:00	18:20:00	00:04:00			NEWCASTLYSKOR						29:09:00	1	3.12
+SIN-MYN-WISST	6431	39	CENTRAL	VER-NOORD	18:24:00	18:24:00	00:04:00			NEWCASTLYSKOR						29:09:00	1	0.98
+SIN-MYN-WISST	6431	40	CENTRAL	ALLOY	18:28:00	18:28:00	00:04:00			NEWCASTLYSKOR						29:09:00	1	1.55
+SIN-MYN-WISST	6431	40	CENTRAL	REDAN	18:34:00	18:34:00	00:06:00			NEWCASTLYSKOR						29:09:00	1	3.97
+SIN-MYN-WISST	6431	41	CENTRAL	KOOKRUS	18:39:30	18:39:30	00:05:30			NEWCASTLYSKOR						29:09:00	1	5.11
+SIN-MYN-WISST	6431	41	CENTRAL	MEYERTON	18:49:30	18:49:30	00:10:00			NEWCASTLYSKOR						29:09:00	1	3.91
+SIN-MYN-WISST	6431	42	CENTRAL	HENLYONKLIP	18:54:30	18:54:30	00:05:00			NEWCASTLYSKOR						29:09:00	1	4.46
+SIN-MYN-WISST	6431	43	CENTRAL	DALESIDE	19:05:30	19:05:30	00:11:00			NEWCASTLYSKOR						29:09:00	1	4.91
+SIN-MYN-WISST	6431	44	CONTAINER	SKANSDAM	19:08:30	19:08:30	00:03:00			NEWCASTLYSKOR						29:09:00	1	2.62
+SIN-MYN-WISST	6431	44	CENTRAL	SYBRAND	19:13:30	19:13:30	00:05:00			NEWCASTLYSKOR						29:09:00	1	2.58
+SIN-MYN-WISST	6431	45	CENTRAL	ROODE	19:36:30	19:36:30	00:23:00			NEWCASTLYSKOR						29:09:00	1	22.66
+SIN-MYN-WISST	6431	46	CENTRAL	ROOIVLEI	19:40:00	19:40:00	00:03:30			NEWCASTLYSKOR						29:09:00	1	2.93
+SIN-MYN-WISST	6431	47	CONTAINER	RIETVALLEI	19:42:00	19:45:00	00:02:00	00:03:00	F MAJUBA	NEWCASTLYSKOR						29:09:00	1	3.14
+SIN-MYN-WISST	6431	48	CONTAINER	GLENROY	19:49:30	19:49:30	00:04:30			NEWCASTLYSKOR						29:09:00	1	4.23
+SIN-MYN-WISST	6431	49	CONTAINER	DRIEMANSKAP	19:57:00	19:57:00	00:07:30			NEWCASTLYSKOR						29:09:00	1	5.24
+SIN-MYN-WISST	6431	50	CONTAINER	KAYDALE	20:07:00	20:07:00	00:10:00			NEWCASTLYSKOR						29:09:00	1	7.92
+SIN-MYN-WISST	6431	51	CONTAINER	KLIPPOORTJIE	20:12:00	20:12:00	00:05:00			NEWCASTLYSKOR						29:09:00	1	3.27
+SIN-MYN-WISST	6431	51	CONTAINER	HEIDELBERGT	20:16:00	20:16:00	00:04:00			NEWCASTLYSKOR						29:09:00	1	2.54
+SIN-MYN-WISST	6431	52	CONTAINER	KRAAL	20:25:30	20:25:30	00:09:30			NEWCASTLYSKOR						29:09:00	1	8
+SIN-MYN-WISST	6431	52	CONTAINER	SPRUYTSRUS	20:36:30	20:36:30	00:11:00			NEWCASTLYSKOR						29:09:00	1	8.31
+SIN-MYN-WISST	6431	52	CONTAINER	FORTUNA	20:47:30	20:47:30	00:11:00			NEWCASTLYSKOR						29:09:00	1	6.76
+SIN-MYN-WISST	6431	52	CONTAINER	BALFOURNORTH	20:57:00	20:57:00	00:09:30			NEWCASTLYSKOR						29:09:00	1	7.83
+SIN-MYN-WISST	6431	53	CONTAINER	SPRUCEWELL	21:09:00	21:09:00	00:12:00			NEWCASTLYSKOR						29:09:00	1	9.38
+SIN-MYN-WISST	6431	53	CONTAINER	GREYLINGSTAD	21:21:00	21:21:00	00:12:00			NEWCASTLYSKOR						29:09:00	1	9.91
+SIN-MYN-WISST	6431	54	CONTAINER	TEAKWORTH	21:32:00	21:32:00	00:11:00			NEWCASTLYSKOR						29:09:00	1	9.09
+SIN-MYN-WISST	6431	54	CONTAINER	BEYTELPLAATS	21:40:00	21:40:00	00:08:00			NEWCASTLYSKOR						29:09:00	1	11.8`;
+
+
+/**
+ * Sixth extract. Supplies 6431's head and summary, which joins the tail held
+ * from the fifth, and adds 2312 complete.
+ *
+ * The 6431 head plus the 6431 tail is the same node list as 6455, in the same
+ * order, over the same distance. Two trains, one route, and a controlled
+ * comparison of where the time actually goes.
+ */
+describe('a sixth extract: two trains, one route', () => {
+  const byId = (c: string, id: string) => parseRunningTimes(c).find((t) => t.train === id)!;
+  const joined6431 = () => byId(`${B6_6431_HEAD}\n${B5_6431}`, '6431');
+  const c6455 = () => byId(B5_6455, '6455');
+
+  /**
+   * 6431 departs 21:00 on day 0 and arrives 02:09 on day 2 — 1749 minutes,
+   * which is 29h09m and more than a full day. Its modular reading is 309
+   * minutes, so this is the second train that cannot be checked on a 24-hour
+   * clock and the one that confirms the day-offset repair was not a fix
+   * fitted to a single case.
+   */
+  it('ties 6431 at 29h09 across two midnights', () => {
+    const t = joined6431();
+    expect(t.throughputRuntime).toBe(1749);
+    expect(elapsedMinutes(t)).toBe(1749);
+    expect((t.destinationArrival - t.originDeparture + 1440) % 1440).toBe(309);
+    expect(validateSchedule(t).throughputTies).toBe(true);
+  });
+
+  /**
+   * The head ends at BEYTELPLAATS 21:40 and the tail opens at VAL 21:49, nine
+   * minutes later, which is exactly the p2p the tail records. Two pastes,
+   * three extracts apart, joining on the arithmetic rather than on my word.
+   */
+  it('joins 6431 head to tail on the section between them', () => {
+    const rows = joined6431().rows;
+    const i = rows.findIndex((r) => r.station === 'VAL');
+    expect(rows[i - 1].station).toBe('BEYTELPLAATS');
+    expect(rows[i - 1].departure).toBe(1300); // 21:40
+    expect(rows[i].arrival).toBe(1309); // 21:49
+    expect(rows[i].pointToPointRuntime).toBe(9);
+  });
+
+  /**
+   * The central result of the sample so far.
+   *
+   * 6455 and 6431 visit the same 142 nodes in the same order over the same
+   * 1035.85 km. Their running times differ by 6.9 minutes — half a percent
+   * over a thousand kilometres. Their standing times differ by 113 minutes.
+   * Of the 120 minute gap between them, 94% is standing.
+   *
+   * This is the second pair to say so, after 8422 and 8426 on a much shorter
+   * corridor, and it is the finding that decides where a reconciliation
+   * process should look: running time is close to deterministic per section,
+   * and the variance lives entirely in standing.
+   */
+  it('shows 94% of the gap between two trains on one route is standing', () => {
+    const a = c6455();
+    const b = joined6431();
+
+    expect(a.rows.map((r) => r.station)).toEqual(b.rows.map((r) => r.station));
+
+    const distance = (t: ReturnType<typeof c6455>) =>
+      t.rows.reduce((n, r) => n + (r.distanceKm ?? 0), 0);
+    expect(distance(a)).toBeCloseTo(distance(b), 2);
+    expect(distance(a)).toBeCloseTo(1035.85, 2);
+
+    const running = (t: ReturnType<typeof c6455>) =>
+      t.rows.reduce((n, r) => n + (r.pointToPointRuntime ?? 0), 0);
+    const standing = (t: ReturnType<typeof c6455>) =>
+      t.rows.reduce((n, r) => n + (r.standingTime ?? 0), 0);
+
+    expect(running(a)).toBe(1308);
+    expect(running(b)).toBeCloseTo(1314.9, 1);
+    expect(standing(a)).toBe(321);
+    expect(standing(b)).toBe(434);
+
+    const gap = b.throughputRuntime - a.throughputRuntime;
+    expect(gap).toBe(120);
+    expect((standing(b) - standing(a)) / gap).toBeGreaterThan(0.9);
+    expect(Math.abs(running(b) - running(a)) / running(a)).toBeLessThan(0.01);
+  });
+
+  /**
+   * 2312 is complete and short: 99.5 minutes running plus 37.5 standing is
+   * 137, which is its stated 02:17. It is the first train supplied with a
+   * Sched of 2 rather than 1, so a timetable holds more than one schedule.
+   */
+  it('ties 2312 complete, and records a schedule other than 1', () => {
+    const t = byId(B6_2312, '2312');
+    const runtime = t.rows.reduce((n, r) => n + (r.pointToPointRuntime ?? 0), 0);
+    const standing = t.rows.reduce((n, r) => n + (r.standingTime ?? 0), 0);
+    expect(runtime).toBe(99.5);
+    expect(standing).toBe(37.5);
+    expect(t.throughputRuntime).toBe(137);
+    expect(validateSchedule(t).throughputTies).toBe(true);
+    expect(validateSchedule(t).elapsedIdentityHolds).toBe(true);
+    expect(validateSchedule(t).runtimeMismatches).toEqual([]);
+  });
+
+  /**
+   * The terminus sentinel is Departure 00:00:00, and 2312 proves the reason
+   * code is not what marks it: its terminus carries 'RT', not the 'BO' seen
+   * on every other train, while 'BO' also appears mid-journey at Warronton.
+   * Neither the reason nor the departure time alone identifies a terminus.
+   */
+  it('marks the terminus with RT, so the reason does not identify it', () => {
+    const terminus = byId(B6_2312, '2312').rows.at(-1)!;
+    expect(terminus.station).toBe('POSTMASBURG');
+    expect(terminus.departure).toBe(0);
+    expect(terminus.standingReason).toBe('RT');
+    expect(terminus.standingTime).toBeNull();
+  });
+
+  /**
+   * A reason with no standing time against it. 6431 records 'X CONTAINER' at
+   * DRIERUITERS and 'C' at GAMMAGARA with the standing column empty, and 2312
+   * does the same with 'RT' at its terminus. The reason column is not
+   * evidence that a stand occurred.
+   */
+  it('carries standing reasons with no standing time at all', () => {
+    const rows = joined6431().rows;
+    expect(rows.find((r) => r.station === 'DRIERUITERS')!.standingReason).toBe('X CONTAINER');
+    expect(rows.find((r) => r.station === 'DRIERUITERS')!.standingTime).toBeNull();
+    expect(rows.find((r) => r.station === 'GAMMAGARA' && r.standingReason === 'C')!.standingTime)
+      .toBeNull();
+  });
+
+  /**
+   * A compound reason: 'SHUNT / WAIT CROSSINGS', 29 minutes at BOKKOPPIE.
+   * The vocabulary is free text and now contains a slash joining two causes.
+   */
+  it('adds a compound standing reason', () => {
+    const bok = byId(B6_2312, '2312').rows.find((r) => r.station === 'BOKKOPPIE')!;
+    expect(bok.standingReason).toBe('SHUNT / WAIT CROSSINGS');
+    expect(bok.standingTime).toBe(29);
+  });
+
+  /**
+   * Frequency 'AAAAAAA' on 6431, against YYYYYYY on 2312. Two day-of-week
+   * codes, so a service is described by more than whether it runs.
+   */
+  it('adds a second frequency code', () => {
+    expect(joined6431().frequency).toBe('AAAAAAA');
+    expect(byId(B6_2312, '2312').frequency).toBe('YYYYYYY');
+  });
+
+  /**
+   * 6431's rows total 1748.9 minutes against a stated 1749 — short by six
+   * seconds, and the cause is a single row: TARENTAAL departs at 16:02:06
+   * having arrived at 16:02:00, with the standing column blank. Sub-minute
+   * standing is dropped by the source, which is why the identity is a defect
+   * detector and not just a total.
+   */
+  it('loses six seconds to an unrecorded stand at TARENTAAL', () => {
+    const rows = joined6431().rows;
+    const tarentaal = rows.find((r) => r.station === 'TARENTAAL')!;
+    expect(tarentaal.arrival).toBe(962); // 16:02:00
+    expect(tarentaal.departure).toBeCloseTo(962.1, 6); // 16:02:06
+    expect(tarentaal.standingTime).toBeNull();
+
+    const total = rows.reduce(
+      (n, r) => n + (r.pointToPointRuntime ?? 0) + (r.standingTime ?? 0),
+      0,
+    );
+    expect(total).toBeCloseTo(1748.9, 1);
+    expect(elapsedMinutes(joined6431())).toBe(1749);
+  });
+});
