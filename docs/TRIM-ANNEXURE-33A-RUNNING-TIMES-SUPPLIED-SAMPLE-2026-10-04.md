@@ -1104,16 +1104,17 @@ Two consequences:
 4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
    measuring any transit KPI, and §45 has now made it sharper: the mapping has
    to be per node.
-5. **The meaning of the codes `B` and `C`** (§44). Materially advanced, not
-   closed. §49.4: every train whose *Frequency* contains `C` also carries a
-   `C` flag. §50.1: the *flag* tracks the train type — exactly at VYD-STASIE
-   (23/23), and 90 of 106 corpus-wide. A day-of-week reading of the flag is
-   ruled out. What distinguishes the sixteen exceptions is not known, and the
-   Frequency `C` and the reason-column `C` must not be assumed to be the same
-   thing.
+5. **The meaning of the codes `B` and `C`** (§44). Two separate questions,
+   and only one has moved.
+   - *Reason-column flag*: tracks the train type — exactly at VYD-STASIE
+     (23/23), 90 of 106 corpus-wide (§50.1). A day-of-week reading is ruled
+     out. What distinguishes the seventeen exceptions is unknown.
+   - *Frequency column*: **entirely unknown again.** The §49.4 implication
+     linking it to the flag was refuted by VANDYKSDRIF 2200 and is withdrawn
+     (§51.1). The two columns are not connected.
 6. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
    has appeared anywhere in 33a. Phase 7 remains BLOCKED.
-7. Every train not listed in §34, §48, §49 or §50.
+7. Every train not listed in §34, §48, §49, §50 or §51.
 10. **WARRENTON in full, and seven WALTLOO workings** — 3604, 7513, 7929,
     8916, 8945, 8955, 18927. Supplied, not captured (§50).
 8. **WITBANK, WYKOM and WELGELEE** — supplied once, but not captured. See §47.
@@ -1500,3 +1501,68 @@ summary column is short.
 - **WALTLOO 4707 and 8709** likewise run an identical path to ROSSLYN, one
   vacuum and one medium heavy, and **both** carry `B`. 8709 is another of the
   sixteen.
+
+## 51. A thirteenth extract: VANDYKSDRIF, complete — and a claim withdrawn
+
+Captured verbatim, **468 rows across 80 trains at one origin**, held as the
+fixture `B13`. This is the **whole** of what was supplied. Seventy-eight of
+the eighty reconcile exactly.
+
+### 51.1 WITHDRAWN: the frequency-`C` implication from §49.4
+
+§49.4 established, on four KGR-WATERVAL trains, that *every train whose
+**Frequency** string contains a `C` also carries a `C` flag on its first
+reason-bearing row*. It was recorded as a weak implication on a small sample,
+and asserted in the test suite **precisely so that a later extract breaking it
+would say so**.
+
+It broke.
+
+**VANDYKSDRIF 2200** runs frequency `YCYYCCY` — three `C`s — and carries **no
+flag at all**. Its first reason-bearing row reads `RANGEER`, and not one of its
+six node rows holds a `B` or a `C`. It is otherwise an unremarkable member of
+the hourly shunt pool, clock-for-clock identical to the other twenty-one.
+
+**The Frequency `C` and the reason-column `C` are not linked.** They were
+always different fields; the apparent connection was four trains' worth of
+coincidence, and it is now withdrawn. The meaning of a `C` in the Frequency
+column is once again entirely unknown.
+
+What survives untouched is **§50.1** — the *reason-column* flag tracks the
+train type. This extract neither supports nor disturbs it: eighty trains carry
+exactly one flag between them.
+
+### 51.2 The stated runtime is TRUNCATED, not rounded
+
+**2255 and 2257** both arrive at 59 seconds past the minute — 19:31:59 and
+01:32:59 — against a stated `01:31:00`. Elapsed is 91 minutes 59 seconds;
+stated is 91.
+
+This settles a question the earlier cases could not. WELGEDAG 1268 (§48.2) and
+WALTLOO 8961 (§50.3) each carried a *half* minute, which rounding-to-nearest
+would have explained just as well as truncation. **59 seconds would round up.
+It does not.** Four instances across three extracts and two behaviours
+distinguished: the export truncates the stated throughput toward zero.
+
+### 51.3 Twenty-two identical hourly yard sweeps
+
+Trains **100, 300–2000 on the hour, 2100, 2200, 2300** are each a 55-minute
+sweep out to `VYF/S754331` and back through `VYF/S754307` and `VYF/S754293` —
+five `RANGEER` moves of five minutes apiece, identical to the second. They
+differ only in departure hour, and 2200 in its frequency. **There is no 200.**
+
+At twenty-two this is the largest identity group in the corpus, against ten at
+VYD-STASIE (§50.2) and four at WELGEDAG (§48.3).
+
+### 51.4 Smaller findings
+
+- **One flag in eighty trains.** Only 8748 carries one — a `B` on a
+  `MEDIUM HEAVY` working, which under the §50.1 rule would predict `C`. It
+  joins the sixteen named exceptions.
+- **Six numbers, one path.** 2097, 2099, 2101, 2103, 8977 and 8979 all work
+  the same five nodes to `PSH/S741051` in 59 minutes with the same one-minute
+  `RANGEER` at BSX-PULLENSHO. Four are `VACUUM TRAINS/FEEDER TRAIN`, two are
+  `MEDIUM HEAVY`, and none carries a flag.
+- **A terminus reason parses as `null`, not `''`.** Noted because the opposite
+  was assumed when writing these tests and the assertion failed. Blank node
+  reasons read as the empty string; the terminus reads null.
