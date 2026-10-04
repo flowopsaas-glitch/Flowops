@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CORRIDOR_TAXONOMY_NOTE,
   hasSummary,
+  spansDays,
   distanceCovered,
   formatClock,
   isComplete,
@@ -449,5 +450,118 @@ describe('a third extract: long hauls, corridor changes, and split pastes', () =
     const t = byId(BATCH3_HEAD, '7407');
     expect(t.rows.find((r) => r.station === 'BAH/S261866')?.standingReason).toBe('WEIGHBRIGH');
     expect(t.rows.find((r) => r.station === 'POSTMASBURG')?.standingReason).toBe('INSPECTION ROLL BY');
+  });
+});
+
+/**
+ * Fourth extract. Supplies the summary rows for 7405 and 7407, which makes
+ * both of them end-to-end verifiable for the first time.
+ */
+const BATCH4 = `Origin	Train	NODE_Seq	ENROUTE_Corridor	ENRTE_Station/siding number	ENROUTE_Arrival time	ENROUTE_Departure Time	Point to Point Runtime	Standingtime	StandingReason	Destination	Origin Departure Time	Destination Arrival Time	Sched	Frequency	Train Type	Train Throughput Runtime (from Origin to Destination)	Depart_Day	Distance
+SIN-MYN-WISST	7405	1	CAPE	SIN-MYN-WISST		16:30:00				BIJLKOR	16:30:00	12:57:00	1	YYYYYYY	MEDIUM HEAVY/AMSA IRON ORE	20:27:00	0
+SIN-MYN-WISST	7405	1	CAPE	GAMMAGARA	16:36:00	16:36:00	00:06:00		C	BIJLKOR						20:27:00	0	3.25
+SIN-MYN-WISST	7405	2	ORELINE	GMA/S261955	16:37:00	16:38:00	00:01:00	00:01:00	SHUNT	BIJLKOR						20:27:00	0	0.96
+SIN-MYN-WISST	7405	3	CAPE	GAMMAGARA	16:39:00	16:39:00	00:01:00			BIJLKOR						20:27:00	0	0.96
+SIN-MYN-WISST	7405	4	CAPE	MOOKANENG	16:47:00	16:47:00	00:08:00			BIJLKOR						20:27:00	0	9.63
+SIN-MYN-WISST	7405	10	CAPE	POSTMASBURG	18:09:00	18:40:00	00:16:00	00:31:00	INSPECTION ROLL BY	BIJLKOR						20:27:00	0	7.84
+SIN-MYN-WISST	7405	14	CAPE	BAH/S261866	22:37:00	22:37:00				BIJLKOR						20:27:00	0	0.1
+SIN-MYN-WISST	7405	14	CAPE	DIAMANTOORD	22:41:00	22:41:00	00:04:00			BIJLKOR						20:27:00	0	6.44
+SIN-MYN-WISST	7405	19	CAPE	WARRENTON	00:29:00	05:50:00	00:13:00	05:21:00	BO	BIJLKOR						20:27:00	1	12.64
+SIN-MYN-WISST	7405	39	CENTRAL	BIJLKOR	12:57:00	00:00:00	00:06:00		BO	BIJLKOR						20:27:00	1	6.69
+SIN-MYN-WISST	7407	1	CAPE	SIN-MYN-WISST		04:00:00				BIJLKOR	04:00:00	21:36:00	1	YYYYYYY	MEDIUM HEAVY/MEDIUM HEAVY	17:36:00	0
+SIN-MYN-WISST	7407	1	CAPE	GAMMAGARA	04:07:00	04:07:00	00:07:00		C	BIJLKOR						17:36:00	0	3.25
+SIN-MYN-WISST	7403	14	CAPE	BAH/S261866	13:54:18	13:54:18				BIJLKOR						18:01:00	0	0.1
+SIN-MYN-WISST	7403	14	CAPE	DIAMANTOORD	13:58:09	13:58:09	00:03:51			BIJLKOR						18:01:00	0	6.44
+SIN-MYN-WISST	7403	19	CAPE	WARRENTON	15:45:00	19:00:00	00:12:00	03:15:00	BO	BIJLKOR						18:01:00	0	12.64
+SIN-MYN-WISST	7403	32	CENTRAL	NEWMACHAVIE	00:01:00	00:01:00	00:15:00			BIJLKOR						18:01:00	1	13.17`;
+
+describe('a fourth extract: summary rows arrive, and day offsets', () => {
+  const byId = (id: string) => parseRunningTimes(BATCH4).find((t) => t.train === id)!;
+
+  /**
+   * 7405 departs 16:30 and arrives 12:57 the next day. Its arrival is
+   * NUMERICALLY EARLIER than its departure, so the span only resolves modulo
+   * 1440 — 1227 minutes, exactly the stated 20:27.
+   */
+  it('ties 7405 at 20h27 across midnight', () => {
+    const t = byId('7405');
+    expect(hasSummary(t)).toBe(true);
+    expect(t.throughputRuntime).toBe(1227);
+    expect((t.destinationArrival - t.originDeparture + 1440) % 1440).toBe(1227);
+    expect(validateSchedule(t).throughputTies).toBe(true);
+  });
+
+  /**
+   * 7407 was a continuation for two extracts, arriving only as rows. Its
+   * throughput of 17:36 with an arrival of 21:36 implied a 04:00 departure;
+   * the summary row now supplied says 04:00:00.
+   */
+  it('ties 7407 at 17h36 and confirms the inferred departure', () => {
+    const t = byId('7407');
+    expect(t.originDeparture).toBe(240); // 04:00
+    expect(t.throughputRuntime).toBe(1056);
+    expect(validateSchedule(t).throughputTies).toBe(true);
+  });
+
+  /**
+   * Depart_Day was modelled as a per-train field taken from the summary row.
+   * It is per row and increments mid-run: 7403 carries 0 up to 23:46 and 1
+   * from 00:01 onward.
+   */
+  it('reads Depart_Day per row, where it changes partway through a run', () => {
+    const t = byId('7403');
+    const days = t.rows.map((r) => r.departDay);
+    expect(days).toContain(0);
+    expect(days).toContain(1);
+    expect(spansDays(t)).toBe(true);
+  });
+
+  it('does not report a single-day run as spanning days', () => {
+    expect(spansDays(byId('7407'))).toBe(false);
+  });
+
+  /**
+   * The weighbridge siding carries an arrival and departure but no
+   * point-to-point runtime. It must be read as null rather than as zero.
+   *
+   * The 7403 fixture here is gapped — it jumps seq 14 to seq 19 to seq 32 —
+   * so no end-to-end runtime claim is made about it.
+   */
+  it('carries rows with no runtime at all', () => {
+    const weigh = byId('7403').rows.find((r) => r.station === 'BAH/S261866')!;
+    expect(weigh.pointToPointRuntime).toBeNull();
+    expect(weigh.arrival).toBeCloseTo(834.3, 4);
+  });
+
+  /**
+   * Seconds are not only :30. This extract adds :09 and :51, so values land
+   * on 0.15 and 0.85 of a minute. Parsing to whole minutes would round both.
+   */
+  it('preserves seconds beyond half-minutes', () => {
+    const t = byId('7403');
+    const diamant = t.rows.find((r) => r.station === 'DIAMANTOORD')!;
+    expect(diamant.arrival).toBeCloseTo(838.15, 6);
+    expect(diamant.pointToPointRuntime).toBeCloseTo(3.85, 6);
+    expect(formatClock(diamant.pointToPointRuntime)).toBe('00:03:51');
+  });
+
+  /**
+   * Train Type is not a symmetric X/X pair. 7405 carries
+   * "MEDIUM HEAVY/AMSA IRON ORE" — a shunting band followed by a commodity,
+   * where 7407 carries a band twice and 10008 carries a brake type twice. The
+   * field is overloaded, so shuntingBandFor's reading of it is a guess and is
+   * recorded as such rather than treated as authoritative.
+   */
+  it('shows Train Type mixing bands, commodities and brake types', () => {
+    expect(byId('7405').trainType).toBe('MEDIUM HEAVY/AMSA IRON ORE');
+    expect(byId('7407').trainType).toBe('MEDIUM HEAVY/MEDIUM HEAVY');
+    expect(byId('7405').trainType.split('/')[0]).not.toBe(byId('7405').trainType.split('/')[1]);
+  });
+
+  it('records the 5h21m Warronton stand on 7405', () => {
+    const t = byId('7405');
+    const w = t.rows.find((r) => r.station === 'WARRENTON')!;
+    expect(w.standingTime).toBe(321); // 05:21:00
+    expect(w.standingReason).toBe('BO');
   });
 });

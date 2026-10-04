@@ -75,6 +75,16 @@ export interface RunningTimeRow {
   destination: string;
   /** Distance travelled to reach this node, km. */
   distanceKm: number | null;
+  /**
+   * Day offset from the train's departure day, PER ROW.
+   *
+   * This was modelled as a per-train field taken from the summary row, which
+   * is wrong: it increments partway through a run. Train 7403 departs on day 0
+   * and its rows carry 0 up to KOEKEMOER at 23:46, then 1 from NEWMACHAVIE at
+   * 00:01 onward. Two rows can legitimately share a clock time on different
+   * days, so time-of-day alone does not identify a node.
+   */
+  departDay: number | null;
 }
 
 /** The summary row that precedes a train's node rows. */
@@ -126,6 +136,7 @@ function toRow(f: string[]): RunningTimeRow {
     standingReason: f[9]?.trim() || null,
     destination: f[10]?.trim() ?? '',
     distanceKm: num(f[18] ?? ''),
+    departDay: num(f[17] ?? ''),
   };
 }
 
@@ -275,6 +286,19 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
     elapsedIdentityHolds:
       elapsed != null && Math.abs(totalRuntime + totalStanding - elapsed) < EPS,
   };
+}
+
+/**
+ * Whether a run spans more than one calendar day.
+ *
+ * Derived from the per-row day offsets rather than by comparing clock times:
+ * a run that departs at 16:30 and arrives at 12:57 has an arrival that is
+ * NUMERICALLY EARLIER than its departure, and a run that departs at 04:00 and
+ * arrives at 21:36 does not. Only the day offset distinguishes them reliably.
+ */
+export function spansDays(s: TrainSchedule): boolean {
+  const days = new Set(s.rows.map((r) => r.departDay).filter((d): d is number => d != null));
+  return days.size > 1;
 }
 
 /** Distance covered by the supplied rows, km. */
