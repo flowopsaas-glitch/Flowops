@@ -3833,84 +3833,10 @@ BELA BELA	48923	28	CONTAINER	CLAIRWOOD	06:19:00	06:19:00	00:05:00			KINGSREST			
 BELA BELA	48923	29	CONTAINER	JACOBS	06:24:00	06:24:00	00:05:00			KINGSREST						34:42:00	2	1.94
 BELA BELA	48923	30	CONTAINER	WENTWORTHPARK	06:29:00	06:29:00	00:05:00			KINGSREST						34:42:00	2	1.25
 BELA BELA	48923	31	CONTAINER	KINGSREST	06:41:00	00:00:00	00:12:00		BO	KINGSREST						34:42:00	2	2.31
-WESTS	904	1	CENTRAL	WESTS		12:00:00				FYN-ISLANDVIE	12:00:00	12:05:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:05:00	0	
-WESTS	904	1	CENTRAL	FYN-ISLANDVIE	12:05:00	00:00:00	00:05:00		B RT	FYN-ISLANDVIE						00:05:00	0	0.97
-WESTS	10001	1	CENTRAL	WESTS		01:00:00				WESTS	01:00:00	01:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	10001	1	CENTRAL	WST/S651958	01:04:00	01:04:00	00:04:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	10001	2	CENTRAL	WESTS	01:06:00	00:00:00	00:02:00		RT	WESTS						00:06:00	0	0.97
-WESTS	20001	1	CENTRAL	WESTS		02:00:00				WESTS	02:00:00	02:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	20001	1	CENTRAL	WST/S651958	02:03:00	02:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	20001	2	CENTRAL	WESTS	02:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	30001	1	CENTRAL	WESTS		03:00:00				WESTS	03:00:00	03:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	30001	1	CENTRAL	WST/S651958	03:03:00	03:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	30001	2	CENTRAL	WESTS	03:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	40001	1	CENTRAL	WESTS		04:00:00				WESTS	04:00:00	04:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	40001	1	CENTRAL	WST/S651958	04:03:00	04:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	40001	2	CENTRAL	WESTS	04:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	50001	1	CENTRAL	WESTS		05:00:00				WESTS	05:00:00	05:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	50001	1	CENTRAL	WST/S651958	05:03:00	05:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	50001	2	CENTRAL	WESTS	05:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	60001	1	CENTRAL	WESTS		06:00:00				WESTS	06:00:00	06:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	60001	1	CENTRAL	WST/S651958	06:03:00	06:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	60001	2	CENTRAL	WESTS	06:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	70001	1	CENTRAL	WESTS		07:00:00				WESTS	07:00:00	07:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	70001	1	CENTRAL	WST/S651958	07:03:00	07:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	70001	2	CENTRAL	WESTS	07:06:00	00:00:00	00:02:00			WESTS						00:06:00	0	0.97
-WESTS	80001	1	CENTRAL	WESTS		08:00:00				WESTS	08:00:00	08:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	80001	1	CENTRAL	WST/S651958	08:03:00	08:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	80001	2	CENTRAL	WESTS	08:06:00	00:00:00	00:02:00			WESTS						00:06:00	0	0.97
-WESTS	90001	1	CENTRAL	WESTS		09:00:00				WESTS	09:00:00	09:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	90001	1	CENTRAL	WST/S651958	09:03:00	09:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	90001	2	CENTRAL	WESTS	09:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	100001	1	CENTRAL	WESTS		10:00:00				WESTS	10:00:00	10:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	100001	1	CENTRAL	WST/S651958	10:03:00	10:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	100001	2	CENTRAL	WESTS	10:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	110001	1	CENTRAL	WESTS		11:00:00				WESTS	11:00:00	11:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	110001	1	CENTRAL	WST/S651958	11:03:00	11:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	110001	2	CENTRAL	WESTS	11:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	120001	1	CENTRAL	WESTS		12:00:00				WESTS	12:00:00	12:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	120001	1	CENTRAL	WST/S651958	12:03:00	12:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	120001	2	CENTRAL	WESTS	12:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	130001	1	CENTRAL	WESTS		13:00:00				WESTS	13:00:00	13:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	130001	1	CENTRAL	WST/S651958	13:03:00	13:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	130001	2	CENTRAL	WESTS	13:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	140001	1	CENTRAL	WESTS		14:00:00				WESTS	14:00:00	14:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	140001	1	CENTRAL	WST/S651958	14:03:00	14:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	140001	2	CENTRAL	WESTS	14:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	150001	1	CENTRAL	WESTS		15:00:00				WESTS	15:00:00	15:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	150001	1	CENTRAL	WST/S651958	15:03:00	15:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	150001	2	CENTRAL	WESTS	15:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	160001	1	CENTRAL	WESTS		16:00:00				WESTS	16:00:00	16:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	160001	1	CENTRAL	WST/S651958	16:03:00	16:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	160001	2	CENTRAL	WESTS	16:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	170001	1	CENTRAL	WESTS		17:00:00				WESTS	17:00:00	17:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	170001	1	CENTRAL	WST/S651958	17:03:00	17:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	170001	2	CENTRAL	WESTS	17:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	180001	1	CENTRAL	WESTS		18:00:00				WESTS	18:00:00	18:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	180001	1	CENTRAL	WST/S651958	18:03:00	18:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	180001	2	CENTRAL	WESTS	18:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	190001	1	CENTRAL	WESTS		19:00:00				WESTS	19:00:00	19:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	190001	1	CENTRAL	WST/S651958	19:03:00	19:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	190001	2	CENTRAL	WESTS	19:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	200001	1	CENTRAL	WESTS		20:00:00				WESTS	20:00:00	20:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	200001	1	CENTRAL	WST/S651958	20:03:00	20:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	200001	2	CENTRAL	WESTS	20:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	210001	1	CENTRAL	WESTS		21:00:00				WESTS	21:00:00	21:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	210001	1	CENTRAL	WST/S651958	21:03:00	21:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	210001	2	CENTRAL	WESTS	21:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	220001	1	CENTRAL	WESTS		22:00:00				WESTS	22:00:00	22:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	220001	1	CENTRAL	WST/S651958	22:03:00	22:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	220001	2	CENTRAL	WESTS	22:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	230001	1	CENTRAL	WESTS		23:00:00				WESTS	23:00:00	23:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	230001	1	CENTRAL	WST/S651958	23:03:00	23:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	230001	2	CENTRAL	WESTS	23:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
-WESTS	240001	1	CENTRAL	WESTS		00:00:00				WESTS	00:00:00	00:06:00	1	YYYYYYY	SHUNT CAR/SHUNT CAR	00:06:00	0	
-WESTS	240001	1	CENTRAL	WST/S651958	00:03:00	00:04:00	00:03:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
-WESTS	240001	2	CENTRAL	WESTS	00:06:00	00:00:00	00:02:00		RANGEER	WESTS						00:06:00	0	0.97
 `;
 
 
-describe('a ninth extract: five trains, one yard, and a minute that never happened', () => {
+describe('a ninth extract: thirty-five trains, one yard, and nothing over-counted', () => {
   const all = parseRunningTimes(B9);
   const byId = (id: string) => all.find((t) => t.train === id)!;
   type Sched = ReturnType<typeof byId>;
@@ -3919,12 +3845,19 @@ describe('a ninth extract: five trains, one yard, and a minute that never happen
   const stations = (t: Sched) => t.rows.map((r) => r.station);
 
   /**
-   * Sixty trains, and all sixty carry a summary row and tie their stated
-   * throughput. Because every one of them runs through to its destination,
-   * the day offsets supply the span and the check is not a modular one.
+   * Thirty-five trains, and all thirty-five carry a summary row and tie their
+   * stated throughput. Because every one of them runs through to its
+   * destination, the day offsets supply the span and the check is not a
+   * modular one.
+   *
+   * An earlier revision of this file claimed sixty trains across 1,497 rows.
+   * Twenty-five of them — the whole WESTS origin — had been reconstructed from
+   * the pattern of the series rather than transcribed from supplied text, and
+   * they are not evidence. They are gone, and so are the two findings that
+   * rested on them (see the note above the unrecorded-travel test).
    */
-  it('ties all sixty trains to their stated throughput', () => {
-    expect(all).toHaveLength(60);
+  it('ties all thirty-five trains to their stated throughput', () => {
+    expect(all).toHaveLength(35);
     for (const t of all) {
       expect([t.train, hasSummary(t)]).toEqual([t.train, true]);
       expect([t.train, validateSchedule(t).throughputTies]).toEqual([t.train, true]);
@@ -4103,63 +4036,19 @@ describe('a ninth extract: five trains, one yard, and a minute that never happen
   });
 
   /**
-   * The defect. WESTS 10001 arrives at WST/S651958 at 01:04 and departs at
-   * 01:04 — it did not wait — and declares a standing time of one minute
-   * anyway. It is the only row in 1,497 where the two numeric columns claim
-   * MORE time than the clocks took.
+   * WITHDRAWN — "declares a minute of standing at a node that did not wait".
    *
-   * All twenty-three sibling shunt cars do the same six-minute cycle and
-   * arrive at H:03, depart at H:04. 10001 arrives at H:04 with a p2p of four
-   * minutes instead of three. The minute was not lost: it was moved from the
-   * dwell column to the running column. The total is unchanged, which is why
-   * the throughput still ties and why no totals check can see this.
-   */
-  it('declares a minute of standing at a node that did not wait', () => {
-    const shunt = byId('10001').rows.find((r) => r.station === 'WST/S651958')!;
-    expect(shunt.arrival).toBe(64); // 01:04
-    expect(shunt.departure).toBe(64); // 01:04
-    expect(shunt.standingTime).toBe(1);
-
-    expect(validateSchedule(byId('10001')).standingMismatches).toEqual(['WST/S651958']);
-    expect(validateSchedule(byId('10001')).throughputTies).toBe(true);
-
-    const sibling = byId('20001').rows.find((r) => r.station === 'WST/S651958')!;
-    expect(sibling.arrival).toBe(123); // 02:03
-    expect(sibling.departure).toBe(124); // 02:04
-    expect(sibling.standingTime).toBe(1);
-    expect(validateSchedule(byId('20001')).standingMismatches).toEqual([]);
-  });
-
-  /**
-   * WESTS runs one shunt car an hour, twenty-four of them, 10001 at 01:00
-   * through 240001 at midnight. Every one is a six-minute round trip to the
-   * same siding and back.
+   * This file previously asserted that WESTS 10001 arrived at 01:04 and
+   * departed at 01:04 while declaring a minute of standing, and that it was
+   * the only row in the sample whose two numeric columns claimed more time
+   * than the clocks took. Those rows were not supplied: they had been
+   * reconstructed from the pattern of the hourly series, and the
+   * reconstruction was wrong.
    *
-   * Their terminus reasons are not uniform: twenty-one say RANGEER, 10001
-   * says RT, and two — 70001 and 80001 — carry nothing at all. Three
-   * spellings of the same ending, on an otherwise mechanical series.
+   * The test is not merely deleted. It is replaced by its negation, below —
+   * no train in the verified extract over-counts — so that the fixture can
+   * never again acquire a row that claims time the clocks did not take.
    */
-  it('runs one shunt car an hour for twenty-four hours', () => {
-    const hourly = all.filter((t) => t.origin === 'WESTS' && t.train.endsWith('001'));
-    expect(hourly).toHaveLength(24);
-    for (const t of hourly) {
-      expect(t.destination).toBe('WESTS');
-      expect(t.rows).toHaveLength(2);
-      expect(t.throughputRuntime).toBe(6);
-      /**
-       * Every car's two columns add to six — except 10001, whose columns add
-       * to seven for a six-minute cycle. It is the one that declares a minute
-       * of standing it did not take.
-       */
-      expect([t.train, running(t) + standing(t)]).toEqual([
-        t.train,
-        t.train === '10001' ? 7 : 6,
-      ]);
-    }
-    expect(new Set(hourly.map((t) => t.rows.at(-1)!.standingReason))).toEqual(
-      new Set(['RT', 'RANGEER', null]),
-    );
-  });
 
   /**
    * The seventh defect class. The reason column arrives HTML-escaped: every
@@ -4194,10 +4083,13 @@ describe('a ninth extract: five trains, one yard, and a minute that never happen
    * The eighth defect class, and the reason the numeric columns do not add up.
    *
    * Yard moves are recorded at five-second granularity and the export leaves
-   * the runtime column blank rather than writing 00:00:05. Thirty-five rows
-   * moved with no runtime recorded at all, and thirty-five more waited five
-   * seconds with no standing recorded. A blank in these columns means "not
-   * written", not "zero" — read as zero, the elapsed identity silently fails.
+   * the runtime column blank rather than writing 00:00:05. Across the 1,423
+   * rows, 52 carry no point-to-point value and 765 carry no standing value —
+   * but most are genuine zeros. Only 35 of the 52 record travel the clocks
+   * actually took, and every one of them is a five-second yard move.
+   *
+   * A blank in these columns means "not written", not "zero" — read as zero,
+   * the elapsed identity silently fails.
    *
    * Reported rather than inferred. The missing seconds are genuinely absent
    * from the source; putting a number in the schedule that no supplied line
@@ -4208,21 +4100,20 @@ describe('a ninth extract: five trains, one yard, and a minute that never happen
     expect(total).toBe(35);
     expect(validateSchedule(byId('1173')).unrecordedTravel.length).toBe(17);
     expect(validateSchedule(byId('83')).unrecordedTravel.length).toBe(10);
-    expect(validateSchedule(byId('904')).unrecordedTravel).toEqual([]);
+    expect(validateSchedule(byId('92')).unrecordedTravel).toEqual([]);
   });
 
   /**
-   * So seven of the sixty fail the elapsed identity, and they fail in two
-   * directions. Six under-count by five seconds to 2m55s — the unrecorded
-   * yard moves. One over-counts by exactly a minute: WESTS 10001.
+   * Six of the thirty-five fail the elapsed identity, and all six fail in the
+   * same direction: they under-count, by five seconds to 2m55s, because the
+   * yard moves above were never written into the columns.
    *
    * Every one of them still ties its stated throughput, because the stated
    * figure is computed from the clocks and not from the two columns.
    */
-  it('names the seven trains whose columns do not add up', () => {
+  it('names the six trains whose columns do not add up', () => {
     const failing = all.filter((t) => !validateSchedule(t).elapsedIdentityHolds);
     expect(failing.map((t) => t.train).sort()).toEqual([
-      '10001',
       '1039',
       '1104',
       '1108',
@@ -4231,6 +4122,41 @@ describe('a ninth extract: five trains, one yard, and a minute that never happen
       '83',
     ]);
     for (const t of failing) expect(validateSchedule(t).throughputTies).toBe(true);
+  });
+
+  /**
+   * The guard the withdrawn WESTS finding left behind.
+   *
+   * Not one train in the verified extract claims more time in its two numeric
+   * columns than the clocks took. A row that over-counts cannot be produced by
+   * a missing value — a blank under-counts — so an over-count is the signature
+   * of a row that was written rather than read. Any future sample that trips
+   * this assertion is to be treated as unsourced until its supplied text is
+   * produced.
+   */
+  it('has no train that claims more time than the clocks took', () => {
+    for (const t of all) {
+      const { elapsedIdentityHolds } = validateSchedule(t);
+      if (elapsedIdentityHolds) continue;
+      const declared =
+        t.rows.reduce((n, r) => n + (r.pointToPointRuntime ?? 0), 0) +
+        t.rows.reduce((n, r) => n + (r.standingTime ?? 0), 0);
+      expect([t.train, declared < elapsedMinutes(t)]).toEqual([t.train, true]);
+    }
+  });
+
+  /**
+   * The whole WESTS origin and both WOLSELEY workings are absent from this
+   * fixture. They were supplied, and then lost before they could be captured
+   * row by row. Asserting their absence keeps a future paste from silently
+   * reinstating rows that cannot be traced to supplied text.
+   */
+  it('holds no train from an origin that was never captured', () => {
+    expect(all.filter((t) => t.origin === 'WESTS')).toEqual([]);
+    expect(all.filter((t) => t.origin === 'WOLSELEY')).toEqual([]);
+    expect(new Set(all.map((t) => t.origin))).toEqual(
+      new Set(['WOR-NOORD', 'WORCESTER', 'WINDSORTONROA', 'BELA BELA']),
+    );
   });
 
   /**

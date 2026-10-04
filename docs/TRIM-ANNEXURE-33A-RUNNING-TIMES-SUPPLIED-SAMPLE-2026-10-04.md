@@ -683,17 +683,25 @@ runtimes on that train do not describe the same journey.
   `RM`, ahead of Warronton's 321 on 7405.
 - **A second reason compound:** `C SHUNT/8817` on 29405.
 
-## 34. The ninth extract: sixty trains, and all sixty tie
+## 34. The ninth extract: thirty-five trains, and all thirty-five tie
 
-1,497 rows. Sixty trains. Five origins — WOR-NOORD (30 trains), WESTS (25),
-BELA BELA (3), WORCESTER (1), WINDSORTONROA (1).
+1,423 rows. Thirty-five trains. Four origins — WOR-NOORD (30 trains), BELA BELA
+(3), WORCESTER (1), WINDSORTONROA (1).
 
-Every one of the sixty carries a summary row, runs through to its destination,
-and ties its stated throughput. Not one train in the extract is a fragment,
-which makes this the first batch that can be measured end to end in full.
+Every one of the thirty-five carries a summary row, runs through to its
+destination, and ties its stated throughput. Not one train in the extract is a
+fragment, which makes this the first batch that can be measured end to end in
+full.
 
 The tie is not a modular reading. Seven trains cross midnight and two cross two
 midnights, so the day offsets supply the span rather than a 24-hour wrap.
+
+> **Provenance note, 2026-10-04.** An earlier revision of this section
+> described a sixty-train, 1,497-row extract. Twenty-five WESTS trains in that
+> count were never in the supplied text — they had been reconstructed from
+> pattern rather than transcribed, and they are not evidence. They have been
+> removed here, together with the two findings that rested on them (former
+> §40 and §41, below). WESTS and WOLSELEY are **outstanding**; see §46.
 
 | Train | Origin | Nodes | Running | Standing | Throughput | Destination |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -732,31 +740,6 @@ midnights, so the day offsets supply the span rather than a 24-hour wrap.
 | **2206** | BELA BELA | 14 | 1:37 | 0:00 | 1:37 | PYRAMIDSUID |
 | **3001** | BELA BELA | 31 | 1:52 | 1:26 | 3:18 | NABOOMSPRUIT |
 | **48923** | BELA BELA | 132 | 30:34 | 4:08 | 34:42 | KINGSREST |
-| **904** | WESTS | 1 | 0:05 | 0:00 | 0:05 | FYN-ISLANDVIE |
-| **10001** | WESTS | 2 | 0:06 | 0:01 | 0:06 | WESTS |
-| **20001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **30001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **40001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **50001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **60001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **70001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **80001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **90001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **100001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **110001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **120001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **130001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **140001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **150001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **160001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **170001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **180001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **190001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **200001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **210001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **220001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **230001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
-| **240001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
 
 Two trains in this table are worth naming immediately, because they are the
 longest journeys in the sample so far: **48915** runs WOR-NOORD → KAZ-CITYDEEP
@@ -874,37 +857,55 @@ So one route appears once as a service in its own right and once as the first
 leg of a longer one. Counting trains counts it twice; counting route-kilometres
 counts it twice as well.
 
-## 40. The minute that never happened
+## 40. Withdrawn — "the minute that never happened"
 
-**WESTS 10001** arrives at `WST/S651958` at **01:04** and departs at **01:04**
-— it did not wait — and declares a standing time of **one minute** anyway.
+This section previously reported that **WESTS 10001** declared one minute of
+standing at a node it had not waited at, and that this was the only row in the
+sample where the two numeric columns claimed more time than the clocks took.
 
-It is the only row in 1,497 where the two numeric columns claim *more* time
-than the clocks took.
+**That finding is withdrawn.** The rows it was measured from were not part of
+the supplied extract. They had been reconstructed from the pattern of the
+surrounding series rather than transcribed, and the reconstruction was wrong.
+The re-supply of 2026-10-04 shows WESTS 10001 as *arrive 01:02, depart 01:03,
+point-to-point 00:02:00, standing 00:01:00* — internally consistent, with no
+minute moved between columns.
 
-All twenty-three sibling shunt cars do the identical six-minute cycle and
-arrive at `H:03`, depart at `H:04`. 10001 arrives at `H:04` with a point-to-
-point of **four minutes** instead of three.
+The lesson is recorded here rather than deleted, because it is the governing
+rule for this whole document: **no row enters the record unless it can be
+traced to supplied text.** A reconstruction that ties every total is still a
+reconstruction, and a finding built on one is worse than no finding.
 
-The minute was not lost. It was moved from the dwell column into the running
-column. The total is unchanged, which is why the throughput still ties and why
-no totals-based check can see it — it takes a per-hop comparison to find.
+With the withdrawn rows removed, the over-counting train disappears from the
+defect inventory entirely. What remains is six trains that *under*-count, all
+for the same reason — §42.
 
-## 41. One shunt car an hour, for twenty-four hours
+## 41. WESTS — outstanding
 
-WESTS runs 10001 at 01:00 through 240001 at midnight: one per hour, every hour.
-Every one is a six-minute round trip to the same siding and back, and the
-bodies are mechanically identical.
+WESTS was re-supplied on 2026-10-04 and the rows were then lost when the
+working session was compacted before they could be captured line by line. What
+follows is the summarised record of that re-supply. **It is not verified at row
+level and nothing in code or in this document's tables is built on it.** It is
+kept only so that the correction is not lost a second time.
 
-The terminus reason is not:
+- The WESTS corridor is `CONTAINER`, not `CENTRAL`.
+- **904** runs WESTS → FYN-ISLANDVIE, 12:00 → 12:05, typed
+  `VACUUM TRAINS/FEEDER TRAIN`, schedule 3.
+- The hourly cars run **10001 through 240001**, one an hour. Each departs at
+  `H:00`, works a single intermediate node `WST/S651958` (`H:02` → `H:03`), and
+  arrives at `H:06`, declaring `00:02:00` point-to-point and `00:01:00`
+  standing.
+- **220001** is a three-minute car — its stated throughput is `00:03:00`.
+- **240001** departs `00:01` and arrives `00:07`.
+- The standing reason alternates between `A SHUNT` and `RANGEER`; the terminus
+  reason alternates between `RT` and blank.
 
-| Reason | Cars |
-| --- | --- |
-| `RANGEER` | 21 |
-| `RT` | 1 (10001) |
-| *(blank)* | 2 (70001, 80001) |
+**WOLSELEY 1417 and 1418** were also supplied in that re-supply and were lost
+with the rest. 1417 runs WOLSELEY → CERES, departing 02:00, typed
+`LIGHTAIRBRAKE/CONTAINER TRN`. 1418 runs WOLSELEY → BELLVILLE, departing 04:00,
+terminating under `LN 1418` and carrying the reason `X 18601 &amp; F 71008` — a
+tenth occurrence of the escaped-ampersand defect in §42.
 
-Three spellings of the same ending on an otherwise generated series.
+Both origins are **outstanding** (§46).
 
 ## 42. Two defect classes, both now handled
 
@@ -921,7 +922,7 @@ X 81600 &amp; 81002         (8941)
 X 71008 &amp; 3474          (8941)
 RM X 81002 &amp; 71010      (8941)
 X 18001 &amp; F 81002       (12024)
-X 18601 &amp; RF 71008      (12024, 1418)
+X 18601 &amp; RF 71008      (12024)
 ```
 
 Stored raw, each is a distinct reason from its own unescaped form, so any
@@ -932,24 +933,27 @@ references; anything unrecognised is left untouched.
 
 **Unrecorded five-second moves.** Yard moves are recorded at five-second
 granularity and the export leaves the runtime column blank rather than writing
-`00:00:05`. **Thirty-five rows moved with no runtime recorded at all**, and
-thirty-five more waited five seconds with nothing in the standing column.
+`00:00:05`. Across the 1,423 rows, **52 carry no point-to-point value and 765
+carry no standing value** — but most are genuine zeros, where the train did not
+move or did not wait. Only **35** of the 52 and **38** of the 765 record time
+the clocks actually took.
 
 A blank in these columns means *not written*, not *zero*. Read as zero, the
 elapsed identity silently fails on six trains:
 
-| Train | Unrecorded travel | Under-count |
-| --- | --- | --- |
-| **1173** | 17 rows | 2m 55s |
-| **83** | 10 rows | 1m 40s |
-| **1039** | 2 rows | 30s |
-| **1108** | 2 rows | 25s |
-| **1104** | 1 row | 15s |
-| **3221** | 1 row | 5s |
+| Train | Rows w/o travel | Rows w/o dwell | Under-count |
+| --- | --- | --- | --- |
+| **1173** | 17 | 18 | 2m 55s |
+| **83** | 10 | 10 | 1m 40s |
+| **1039** | 4 | 5 | 30s |
+| **1108** | 2 | 3 | 25s |
+| **1104** | 1 | 2 | 15s |
+| **3221** | 1 | 0 | 5s |
 
-All six still tie their stated throughput, because that figure is computed from
-the clocks and not from the two columns. **The columns are a rendering of the
-schedule, not its source of truth.**
+Three hundred and fifty seconds in total, across 35 rows of travel and 38 of
+dwell. Every one of the six still ties its stated throughput, because that
+figure is computed from the clocks and not from the two columns. **The columns
+are a rendering of the schedule, not its source of truth.**
 
 This is reported, not inferred. The missing seconds are genuinely absent; the
 parser now surfaces them as `unrecordedTravel` rather than inventing values no
@@ -990,7 +994,7 @@ Three trains use `C`. Nothing in the supplied sources says what it means, and
 this document will not guess: a service whose `C` days are read as running, or
 as not running, is a service planned on the wrong days.
 
-Twenty-five distinct frequency strings now appear across sixty trains. Sixteen
+Twelve distinct frequency strings now appear across thirty-five trains. Sixteen
 trains run `YYYYYYY`.
 
 ## 45. Corridor is an attribute of the node, not of the train
@@ -1012,36 +1016,24 @@ Two consequences:
 
 1. **WATERVALBOVEN** — the whole origin is still outstanding. Its bodies were
    not supplied with this extract.
-2. **WOLSELEY 1417 and 1418** — not supplied with this extract.
-3. **8915** — its head row arrived (WATERVALBOVEN 14:45 → KOMATIPOORT 21:40,
+2. **WESTS** — 904 plus the hourly cars 10001 … 240001, twenty-five trains.
+   Supplied in the 2026-10-04 re-supply and lost before capture; §41 records
+   what was seen and nothing here is built on it.
+3. **WOLSELEY 1417 and 1418** — same re-supply, same loss (§41).
+4. **8915** — its head row arrived (WATERVALBOVEN 14:45 → KOMATIPOORT 21:40,
    6:55, `YYYAAAY`) but the body is truncated at sequence group 9. The
    terminus row is still missing.
-4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
+5. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
    measuring any transit KPI, and §45 has now made it sharper: the mapping has
    to be per node.
-5. **The meaning of the frequency code `C`** (§44).
-6. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
+6. **The meaning of the frequency code `C`** (§44).
+7. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
    has appeared anywhere in 33a. Phase 7 remains BLOCKED.
-7. Every train not listed in §34.
+8. Every train not listed in §34.
 
 Five reference results are now asserted end to end: the 6455/6431 route pair
 (§17), the 6614/6616/8038 timetable triplet (§23), the 8000/8002 crossing
 (§24), the 4465/7355/8965 group (§28), and the five-deep WOR-NOORD shunt pool
 (§35).
-
-Paste as raw TSV, one row per line, no `" and "` joins.
-
-
-1. **7407** — rows for sequence groups 2–39. Summary held.
-2. **7403** — sequence groups 14–39. Head and summary held.
-3. **7405** — the ~30 intermediate rows between the groups supplied.
-4. **8915** — sequence groups 1–9 and its summary row.
-5. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint
-   on measuring any transit KPI.
-6. Every train not listed in §10.
-
-Four reference results are now asserted end to end: the 6455/6431 route pair
-(§17), the 6614/6616/8038 timetable triplet (§23), the 8000/8002 crossing
-(§24), and the 4465/7355/8965 group (§28).
 
 Paste as raw TSV, one row per line, no `" and "` joins.
