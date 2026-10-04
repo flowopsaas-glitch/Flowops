@@ -301,3 +301,153 @@ describe('a second extract: continuations and termini', () => {
     expect(shuntingBandFor('VACUUM TRAINS/VACUUM TRAIN')).toBeNull();
   });
 });
+
+/**
+ * Third extract: train 7407 (Sishen to Bijlkor, 701 km, crossing CAPE into
+ * CENTRAL), 7430, and 8412's missing head.
+ */
+const BATCH3_HEAD = `Origin	Train	NODE_Seq	ENROUTE_Corridor	ENRTE_Station/siding number	ENROUTE_Arrival time	ENROUTE_Departure Time	Point to Point Runtime	Standingtime	StandingReason	Destination	Origin Departure Time	Destination Arrival Time	Sched	Frequency	Train Type	Train Throughput Runtime (from Origin to Destination)	Depart_Day	Distance
+SIN-MYN-WISST	7407	2	CAPE	MOOKANENG	04:17:30	04:17:30	00:10:30			BIJLKOR						17:36:00	0	9.63
+SIN-MYN-WISST	7407	8	CAPE	POSTMASBURG	05:32:00	06:00:00	00:12:00	00:28:00	INSPECTION ROLL BY	BIJLKOR						17:36:00	0	7.84
+SIN-MYN-WISST	7407	12	CAPE	BAH/S261866	09:39:00	09:40:00	00:11:00	00:01:00	WEIGHBRIGH	BIJLKOR						17:36:00	0	0.1
+SIN-MYN-WISST	7407	17	CAPE	WARRENTON	11:20:00	14:35:00	00:12:00	03:15:00	BO	BIJLKOR						17:36:00	0	12.64
+SIN-MYN-WISST	7407	19	CENTRAL	CAMELFORD	14:53:30	14:53:30	00:12:30			BIJLKOR						17:36:00	0	13.9
+SIN-MYN-WISST	7407	34		VANDERBIJL	21:19:30	21:19:30	00:07:00			BIJLKOR						17:36:00	0	7.95
+SIN-MYN-WISST	7407	37	CENTRAL	BIJLKOR	21:36:00	00:00:00	00:06:00		BO	BIJLKOR						17:36:00	0	6.69
+SIN-MYN-WISST	7430	1	CAPE	SIN-MYN-WISST		09:00:00				POSTMASBURG	09:00:00	10:50:00	2	YYYYYYY	MEDIUM HEAVY/MEDIUM HEAVY	01:50:00	0
+SIN-MYN-WISST	7430	1	CAPE	GAMMAGARA	09:19:30	09:19:30	00:19:30		C	POSTMASBURG						01:50:00	0	3.25
+SIN-MYN-WISST	7430	2	CAPE	MOOKANENG	09:25:00	09:25:00	00:05:30			POSTMASBURG						01:50:00	0	9.63
+SIN-MYN-WISST	7430	2	CAPE	HAAKBOSLEEGTE	09:40:30	09:40:30	00:15:30			POSTMASBURG						01:50:00	0	5.04
+SIN-MYN-WISST	7430	3	CAPE	LOHATLHA	09:53:30	09:53:30	00:13:00			POSTMASBURG						01:50:00	0	10.57
+SIN-MYN-WISST	7430	4	CAPE	ERTSRAND	10:01:00	10:01:00	00:07:30			POSTMASBURG						01:50:00	0	5.57
+SIN-MYN-WISST	7430	4	CAPE	GLOSAM	10:05:00	10:05:00	00:04:00			POSTMASBURG						01:50:00	0	2.75
+SIN-MYN-WISST	7430	4	CAPE	PALINGPAN	10:12:00	10:12:00	00:07:00			POSTMASBURG						01:50:00	0	4.95
+SIN-MYN-WISST	7430	5	CAPE	BOKKOPPIE	10:20:30	10:20:30	00:08:30			POSTMASBURG						01:50:00	0	6.51
+SIN-MYN-WISST	7430	5	CAPE	BEESHOEK	10:32:30	10:32:30	00:12:00			POSTMASBURG						01:50:00	0	8.86
+SIN-MYN-WISST	7430	6	CAPE	BEK/S242799	10:33:30	10:34:30	00:01:00	00:01:00	SHUNT	POSTMASBURG						01:50:00	0	0.97
+SIN-MYN-WISST	7430	7	CAPE	BEESHOEK	10:35:30	10:35:30	00:01:00			POSTMASBURG						01:50:00	0	0.97
+SIN-MYN-WISST	7430	8	CAPE	POSTMASBURG	10:50:00	00:00:00	00:14:30		RT	POSTMASBURG						01:50:00	0	7.84
+SIN-MYN-WISST	8412	1	CAPE	SIN-MYN-WISST		14:35:00				POSTMASBURG	14:35:00	16:45:00	3	YYYYYYY	MEDIUM HEAVY/MEDIUM HEAVY	02:10:00	0
+SIN-MYN-WISST	8412	1	CAPE	GAMMAGARA	14:54:30	14:54:30	00:19:30		B	POSTMASBURG						02:10:00	0	3.25
+SIN-MYN-WISST	8412	2	CAPE	MOOKANENG	15:00:00	15:00:00	00:05:30			POSTMASBURG						02:10:00	0	9.63
+SIN-MYN-WISST	8412	2	CAPE	HAAKBOSLEEGTE	15:15:30	15:36:00	00:15:30	00:20:30	X 8309	POSTMASBURG						02:10:00	0	5.04
+SIN-MYN-WISST	8412	3	CAPE	LOHATLHA	15:49:00	15:49:00	00:13:00			POSTMASBURG						02:10:00	0	10.57
+SIN-MYN-WISST	8412	4	CAPE	ERTSRAND	15:56:30	15:56:30	00:07:30			POSTMASBURG						02:10:00	0	5.57
+SIN-MYN-WISST	8412	4	CAPE	GLOSAM	16:00:30	16:00:30	00:04:00			POSTMASBURG						02:10:00	0	2.75
+SIN-MYN-WISST	8412	4	CAPE	PALINGPAN	16:07:30	16:07:30	00:07:00			POSTMASBURG						02:10:00	0	4.95
+SIN-MYN-WISST	8412	5	CAPE	BOKKOPPIE	16:16:00	16:16:00	00:08:30			POSTMASBURG						02:10:00	0	6.51
+SIN-MYN-WISST	8412	5	CAPE	BEESHOEK	16:28:00	16:28:00	00:12:00			POSTMASBURG						02:10:00	0	8.86`;
+
+/** The tail of 8412, supplied in the FIRST extract, before its head arrived. */
+const BATCH1_TAIL = `Origin	Train	NODE_Seq	ENROUTE_Corridor	ENRTE_Station/siding number	ENROUTE_Arrival time	ENROUTE_Departure Time	Point to Point Runtime	Standingtime	StandingReason	Destination	Origin Departure Time	Destination Arrival Time	Sched	Frequency	Train Type	Train Throughput Runtime (from Origin to Destination)	Depart_Day	Distance
+SIN-MYN-WISST	8412	6	CAPE	BEK/S242799	16:29:00	16:30:00	00:01:00	00:01:00	SHUNT	POSTMASBURG						02:10:00	0	0.97
+SIN-MYN-WISST	8412	7	CAPE	BEESHOEK	16:31:00	16:31:00	00:01:00			POSTMASBURG						02:10:00	0	0.97
+SIN-MYN-WISST	8412	8	CAPE	POSTMASBURG	16:45:00	00:00:00	00:14:00		RT	POSTMASBURG						02:10:00	0	7.84`;
+
+describe('a third extract: long hauls, corridor changes, and split pastes', () => {
+  const byId = (tsv: string, id: string) => parseRunningTimes(tsv).find((t) => t.train === id)!;
+
+  /**
+   * BATCH3_HEAD is ABRIDGED — 7 of 7407's 90 rows, kept short so the fixture
+   * stays readable. The full extract in the source record runs 701.05 km
+   * across CAPE into CENTRAL. Assertions here cover only what the fixture
+   * actually contains.
+   */
+  it('reads 7407 as a long haul still missing its summary row', () => {
+    const t = byId(BATCH3_HEAD, '7407');
+    expect(hasSummary(t)).toBe(false);
+    expect(t.rows[0].station).toBe('MOOKANENG');
+    expect(t.rows.at(-1)?.station).toBe('BIJLKOR');
+    expect(distanceCovered(t)).toBeCloseTo(58.75, 2);
+  });
+
+  /**
+   * Standing is a per-row fact, so it is checkable on a gapped extract. The
+   * runtime chain is not: it depends on the previous row's departure, and this
+   * fixture is deliberately abridged. The full 90-row extract in the source
+   * record validates clean.
+   */
+  it('reads the 3h15m Warronton stand and its BO reason', () => {
+    const t = byId(BATCH3_HEAD, '7407');
+    const warrenton = t.rows.find((r) => r.station === 'WARRENTON')!;
+    expect(warrenton.standingTime).toBe(195); // 03:15:00
+    expect(warrenton.standingReason).toBe('BO');
+    expect(warrenton.arrival).toBe(680);       // 11:20:00
+    expect(warrenton.departure).toBe(875);     // 14:35:00
+  });
+
+  /**
+   * Corridor is per row AND can be blank. 7407 runs CAPE, crosses to CENTRAL,
+   * and has one row with no corridor at all sandwiched between two CENTRAL
+   * rows. A rollup must not assume a train has a single corridor.
+   */
+  it('crosses corridors mid-journey and carries a row with no corridor', () => {
+    const t = byId(BATCH3_HEAD, '7407');
+    const corridors = t.rows.map((r) => r.corridor);
+    expect(corridors).toContain('CAPE');
+    expect(corridors).toContain('CENTRAL');
+    expect(corridors.filter((c) => c === '')).toHaveLength(1);
+    const blank = t.rows.find((r) => r.corridor === '')!;
+    expect(blank.station).toBe('VANDERBIJL');
+  });
+
+  it('ties 7430 end to end at 110 minutes', () => {
+    const t = byId(BATCH3_HEAD, '7430');
+    const v = validateSchedule(t);
+    expect(v.throughputTies).toBe(true);
+    expect(v.elapsedIdentityHolds).toBe(true);
+    expect(t.throughputRuntime).toBe(110);
+  });
+
+  /**
+   * The head of 8412 arrived in the third extract and its tail in the first.
+   * The seam is BEESHOEK 16:28 -> BEK 16:29, exactly one minute, and joining
+   * them yields the 130 minutes the summary row claims.
+   */
+  it('joins two halves of 8412 pasted three extracts apart', () => {
+    const head = byId(BATCH3_HEAD, '8412');
+    const tail = byId(BATCH1_TAIL, '8412');
+    const joined: typeof head = {
+      ...head,
+      rows: [...head.rows, ...tail.rows],
+    };
+    expect(hasSummary(joined)).toBe(true);
+    const v = validateSchedule(joined);
+    expect(v.throughputTies).toBe(true);
+    expect(v.runtimeMismatches).toEqual([]);
+    expect(v.standingMismatches).toEqual([]);
+    expect(v.elapsedIdentityHolds).toBe(true);
+    expect(joined.throughputRuntime).toBe(130);
+  });
+
+  it('reports 8412 as incomplete from either half alone', () => {
+    expect(isComplete(byId(BATCH3_HEAD, '8412'))).toBe(false);
+    expect(hasSummary(byId(BATCH1_TAIL, '8412'))).toBe(false);
+  });
+
+  /**
+   * 7430, 8422 and 8426 run the same 66.91 km route. Their running times are
+   * within 30 seconds of each other; the 20-minute spread in throughput is
+   * entirely standing time. Delay attribution here is a standing problem,
+   * not a running problem.
+   */
+  it('shows 8426 losing 10 minutes to 8422 on standing alone, not running', () => {
+    const total = (id: string, pick: (r: { pointToPointRuntime: number | null; standingTime: number | null }) => number) =>
+      byId(BATCH2, id).rows.reduce((n, r) => n + pick(r), 0);
+    const running = (id: string) => total(id, (r) => r.pointToPointRuntime ?? 0);
+    const standing = (id: string) => total(id, (r) => r.standingTime ?? 0);
+
+    // Same route, within 30 seconds of identical running time.
+    expect(Math.abs(running('8422') - running('8426'))).toBeLessThanOrEqual(0.5);
+    // The whole 10-minute throughput gap is standing.
+    expect(standing('8426') - standing('8422')).toBe(9.5);
+    expect(byId(BATCH2, '8426').throughputRuntime - byId(BATCH2, '8422').throughputRuntime).toBe(10);
+  });
+
+  /** Truncated vocabulary in the source, kept verbatim rather than expanded. */
+  it('preserves truncated reason and station names as supplied', () => {
+    const t = byId(BATCH3_HEAD, '7407');
+    expect(t.rows.find((r) => r.station === 'BAH/S261866')?.standingReason).toBe('WEIGHBRIGH');
+    expect(t.rows.find((r) => r.station === 'POSTMASBURG')?.standingReason).toBe('INSPECTION ROLL BY');
+  });
+});
