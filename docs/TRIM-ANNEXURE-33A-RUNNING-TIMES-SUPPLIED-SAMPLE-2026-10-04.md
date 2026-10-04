@@ -695,6 +695,8 @@ which makes this the first batch that can be measured end to end in full.
 The tie is not a modular reading. Seven trains cross midnight and two cross two
 midnights, so the day offsets supply the span rather than a 24-hour wrap.
 
+| Train | Origin | Nodes | Running | Standing | Throughput | Destination |
+| --- | --- | --- | --- | --- | --- | --- |
 | **83** | WOR-NOORD | 43 | 4:54 | 0:19 | 5:15 | KARRINGMELK |
 | **92** | WOR-NOORD | 31 | 4:37 | 0:43 | 5:20 | BELLVILLE |
 | **93** | WOR-NOORD | 25 | 3:42 | 0:48 | 4:30 | LAINGSBURG |
