@@ -24,7 +24,24 @@ const commands: Cmd[] = [...doc.matchAll(/<!-- CMD ([^>]+?) -->\n```text\n([\s\S
 const approved = commands.filter((c) => c.kind.startsWith('approved'));
 const readOnly = commands.filter((c) => c.kind.startsWith('read-only'));
 
-const railMigrations = readdirSync(migrationsDir).filter((d) => /_rail_wave\d/.test(d) && existsSync(join(migrationsDir, d, 'migration.sql'))).sort();
+/**
+ * This spec exists to keep the deployment checklist honest about the release it
+ * describes: the rail pricing deployment of 2026-10-03, RELEASE_SHA `be1792d`,
+ * which shipped waves 2, 3 and 4.
+ *
+ * The filter below therefore names those waves explicitly rather than taking
+ * every `rail_wave` it finds. That is scoping, not exclusion — and it is
+ * deliberate, because a later wave is a different release with its own
+ * document. Silently folding new waves into this guard would make the counts,
+ * the rollback block and the "no drops" claim describe a release that never
+ * happened.
+ *
+ * The tripwire test further down fails if any *other* wave appears, so a new
+ * one cannot be forgotten here.
+ */
+const DEPLOYMENT_WAVES = /_rail_wave(2|3|4)_/;
+
+const railMigrations = readdirSync(migrationsDir).filter((d) => DEPLOYMENT_WAVES.test(d) && existsSync(join(migrationsDir, d, 'migration.sql'))).sort();
 const sqlOf = (m: string) => readFileSync(join(migrationsDir, m, 'migration.sql'), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n');
 
 describe('checklist — the command rules', () => {
@@ -167,6 +184,23 @@ describe('checklist — it agrees with the migrations it describes', () => {
   it('there are exactly three rail migrations, and the document names each of them', () => {
     expect(railMigrations).toHaveLength(3);
     for (const m of railMigrations) expect(doc).toContain(m);
+  });
+
+  /**
+   * TRIPWIRE. Every rail wave in the tree that this spec does not cover, listed
+   * by name. Wave 5 is recorded here because it is known and deliberately out
+   * of scope: it is the TRIM TOC Operations workstream, not part of the
+   * pricing release this checklist governs.
+   *
+   * Adding a wave to this list is a decision that must be justified in the
+   * comment above. If a wave appears that is not listed, this fails — which is
+   * the point: the alternative is a new migration quietly changing the counts
+   * and the rollback block of a document that describes a release already run.
+   */
+  it('names every rail wave this spec deliberately does not cover', () => {
+    const allWaves = readdirSync(migrationsDir).filter((d) => /_rail_wave\d/.test(d)).sort();
+    const uncovered = allWaves.filter((d) => !DEPLOYMENT_WAVES.test(d));
+    expect(uncovered).toEqual(['20261004000000_rail_wave5_handshake_ladder_gaps']);
   });
 
   const count = (re: RegExp) => railMigrations.reduce((n, m) => n + (sqlOf(m).match(re)?.length ?? 0), 0);

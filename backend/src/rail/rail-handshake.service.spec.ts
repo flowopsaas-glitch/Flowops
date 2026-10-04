@@ -331,7 +331,9 @@ describe('lodgeDispute — the Regulator rung', () => {
     return { ...s, rep, dev };
   };
 
-  it.each([EscalationStage.NONE, EscalationStage.LIAISON_MANAGER_24H, EscalationStage.HEAD_LIAISON_48H])(
+  // HEAD_NSPO_72H is refused too: the Head of NSP&O still has until 96h to
+  // resolve, and the Route Logistics Forum has not seen the item yet.
+  it.each([EscalationStage.NONE, EscalationStage.LIAISON_MANAGER_24H, EscalationStage.HEAD_LIAISON_48H, EscalationStage.HEAD_NSPO_72H])(
     'is refused while the item is still at %s',
     async (stage) => {
       const { svc, rep, dev, audit } = setup(stage);

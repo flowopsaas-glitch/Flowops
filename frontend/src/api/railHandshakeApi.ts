@@ -17,8 +17,25 @@ export type SlotImpact = "NONE" | "NOT_USED" | "CANCELLED" | "RESCHEDULED" | "DE
 
 export type DeviationStatus = "LOGGED" | "AGREED" | "OPEN" | "RESOLVED" | "DISPUTED";
 
+/**
+ * Annexure 28, read with NS §6.6.1.14.1/.15.3/.16. The order here is the
+ * ladder's order, not an arbitrary list:
+ *
+ *   24h  Access Seeker Liaison Manager
+ *   48h  Head of Access Seeker Service
+ *   72h  Head of Network Service Planning and Operations — escalated here and
+ *        held until a 96h resolve-by deadline expires
+ *   >96h Route Logistics Forum — a later referral, not the third rung
+ *
+ * REGULATOR_DISPUTE is never reached by the clock; a person lodges it once the
+ * item has been through the Forum.
+ *
+ * The 48h label keeps the old wording on purpose. That rung carries three
+ * different role names across the sources (EXC-017) and picking one is the
+ * owner's and the independent reviewer's decision, not a display tweak.
+ */
 export type EscalationStage =
-  | "NONE" | "LIAISON_MANAGER_24H" | "HEAD_LIAISON_48H"
+  | "NONE" | "LIAISON_MANAGER_24H" | "HEAD_LIAISON_48H" | "HEAD_NSPO_72H"
   | "ROUTE_LOGISTICS_FORUM" | "REGULATOR_DISPUTE";
 
 export interface HandshakeDeviation {
@@ -161,7 +178,8 @@ export const ESCALATION_LABEL: Record<EscalationStage, string> = {
   NONE: "—",
   LIAISON_MANAGER_24H: "24h · IM Liaison Manager",
   HEAD_LIAISON_48H: "48h · IM Head of Liaison",
-  ROUTE_LOGISTICS_FORUM: "72h · Route Logistics Forum",
+  HEAD_NSPO_72H: "72h · Head of Network Service Planning (resolves by 96h)",
+  ROUTE_LOGISTICS_FORUM: ">96h · Route Logistics Forum",
   REGULATOR_DISPUTE: "Regulator dispute",
 };
 
