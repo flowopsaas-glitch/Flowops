@@ -1104,13 +1104,18 @@ Two consequences:
 4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
    measuring any transit KPI, and §45 has now made it sharper: the mapping has
    to be per node.
-5. **The meaning of the frequency code `C`** (§44). Still unexplained, but no
-   longer entirely opaque: §49.4 establishes that every train whose frequency
-   contains `C` also carries a `C` flag on its first reason-bearing row. That
-   is an implication on four trains, not a semantics.
+5. **The meaning of the codes `B` and `C`** (§44). Materially advanced, not
+   closed. §49.4: every train whose *Frequency* contains `C` also carries a
+   `C` flag. §50.1: the *flag* tracks the train type — exactly at VYD-STASIE
+   (23/23), and 90 of 106 corpus-wide. A day-of-week reading of the flag is
+   ruled out. What distinguishes the sixteen exceptions is not known, and the
+   Frequency `C` and the reason-column `C` must not be assumed to be the same
+   thing.
 6. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
    has appeared anywhere in 33a. Phase 7 remains BLOCKED.
-7. Every train not listed in §34, §48 or §49.
+7. Every train not listed in §34, §48, §49 or §50.
+10. **WARRENTON in full, and seven WALTLOO workings** — 3604, 7513, 7929,
+    8916, 8945, 8955, 18927. Supplied, not captured (§50).
 8. **WITBANK, WYKOM and WELGELEE** — supplied once, but not captured. See §47.
 9. **A stale-offset train longer than a day.** §49.1 shows the one-day
    correction cannot detect a run that is stale by more than a day. Nothing in
@@ -1409,3 +1414,89 @@ worth knowing. The meaning of `C` remains outstanding.
 - **WAPADSKLOOF** is a new origin with two trains, both sixteen-minute yard
   moves out to WDF/S845043 and back to their own starting point, 70 minutes
   apart.
+
+## 50. A twelfth extract: VYD-STASIE, WAKEFIELD, WARDEN, and part of WALTLOO
+
+Captured verbatim, **591 rows across 73 trains and four origins**, held as the
+fixture `B12`. VYD-STASIE, WAKEFIELD and WARDEN are **complete**; WALTLOO is
+**partial** — its seven long-distance workings (3604, 7513, 7929, 8916, 8945,
+8955, 18927) were not transcribed, and neither was any of **WARRENTON**.
+Seventy-two of the seventy-three reconcile exactly.
+
+### 50.1 The B/C flag is not a day code — it tracks the train type
+
+This is the first substantive thing known about the flag, and VYD-STASIE is as
+close to a controlled experiment as the corpus offers: twenty-three trains, one
+origin, two destinations, ten of them running node-for-node identical paths.
+
+**Across all twenty-three, the flag is predicted exactly by the first component
+of the train type.** Every `VACUUM TRAINS` working carries `B`; every
+`MEDIUM HEAVY` working carries `C`. Fifteen and eight, no exceptions.
+
+The cleanest pair is **1844 and 2844**:
+
+| | 1844 | 2844 |
+| --- | --- | --- |
+| Depart VYD-STASIE | 16:10 | 16:10 |
+| Arrive VRYHEIDOOS | 16:20 | 16:20 |
+| Distance | 7.09 km | 7.09 km |
+| Train type | VACUUM TRAINS/VACUUM TRAIN | MEDIUM HEAVY/MEDIUM HEAVY |
+| Reason | **`B RT`** | **`C RT`** |
+
+Same hop, same ten minutes, same kilometre. The flag is the only thing that
+moves, and it moves with the type.
+
+**Corpus-wide the association is strong and imperfect.** Measured over B9, B10,
+B11 and B12 together: **106 flagged trains, 90 agree, 16 do not — 84.9%.** All
+sixteen exceptions are named in the test rather than waved away; thirteen are
+`MEDIUM HEAVY` carrying `B`, three are `VACUUM TRAINS` carrying `C`, and one
+(WOLSELEY 1418) is `LIGHTAIRBRAKE` carrying `B`.
+
+So the flag is **associated with** the brake class and is not **determined by**
+it. That is not a reading of what `B` and `C` mean, but it does rule one out:
+a day-of-week code would not track the brake class at all, let alone at 85%.
+The remaining question is narrower and better posed than it was — what makes
+the sixteen different.
+
+This also has to be read alongside §49.4, which found that every train whose
+**Frequency** string contains a `C` also carries a `C` flag. The two columns
+are different fields and the letters may well mean different things in each;
+nothing here licenses merging them.
+
+### 50.2 Ten trains to GLENCOE over one path
+
+**1845, 1847, 2408, 2414, 2841, 2845, 2849, 6406, 6408, 6491** share every
+node, every point-to-point runtime, every standing time — including the
+ten-minute shunt at TALANA — and all state 02:53:00. They leave at **five**
+distinct times and carry **four** distinct frequency strings; 6406 is the only
+`MEDIUM HEAVY/IMPORT COKE`.
+
+This is the largest identity group in the corpus. The previous best was the
+four-way WELGEDAG 8205/8215/8219/8407 (§48.3). Ten numbers, one slot.
+
+### 50.3 The half-minute truncation is a rule, not a one-off
+
+**WALTLOO 8961** arrives KAALFONTEIN at 20:21:30 against a stated 01:16:00 —
+76 minutes 30 seconds of clock, 76 minutes stated. Identical in form to
+**WELGEDAG 1268** (§48.2), which arrived 08:07:30 against a stated 01:02:00.
+
+Two instances, two extracts, two origins. Where the destination arrival carries
+a half minute, the stated throughput drops it. It is the export's behaviour,
+not an isolated slip, and the node rows are complete in both cases — only the
+summary column is short.
+
+### 50.4 Smaller findings, each asserted
+
+- **WARDEN 5598 and 8598** are one path booked twice through fourteen shunting
+  moves to HARRISMITH. 5598's first reason is a bare `SHUNT`; 8598's is
+  `B SHUNT` — a `B` on a medium-heavy working, one of the sixteen exceptions.
+- **WAKEFIELD** is a new origin with two trains. 5005 departs 23:50 and arrives
+  00:05 with `Depart_Day = 1` on its single node row — the day offset behaving
+  correctly, in contrast to §49.1.
+- **The WALTLOO yard pool**: nineteen workings that start and finish at
+  WALTLOO and move only among eight `WAO/` sidings. Three are booked twice —
+  3801/8801, 3813/8813, 3825/8825 — identical move, differing train type, no
+  flag on either member of any pair.
+- **WALTLOO 4707 and 8709** likewise run an identical path to ROSSLYN, one
+  vacuum and one medium heavy, and **both** carry `B`. 8709 is another of the
+  sixteen.
