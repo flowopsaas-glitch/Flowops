@@ -232,17 +232,70 @@ export function hasSummary(s: TrainSchedule): boolean {
 }
 
 /**
+ * Elapsed minutes from the origin departure to the last row's arrival.
+ *
+ * Returns null unless the rows carry per-row day offsets, because without
+ * them there is no way to tell a 3-hour run from a 27-hour one: both can
+ * present an arrival numerically close to their departure on a 24-hour clock.
+ *
+ * Train 6455 runs 27h09m. A modular difference wraps it to 189 minutes and
+ * reports a train that reconciles exactly as failing every check, so the
+ * totals below are taken from the day offsets rather than from the clock.
+ *
+ * This measures the ROWS PRESENT, so on a partial extract it returns the
+ * elapsed time to the last row supplied and not to the destination. That is
+ * the honest answer, and it is why throughputTies does not use it directly.
+ */
+export function elapsedMinutes(s: TrainSchedule): Minutes | null {
+  const first = s.rows.find((r) => r.departDay != null)?.departDay;
+  const last = s.rows.filter((r) => r.arrival != null).at(-1);
+  if (first == null || last?.arrival == null || last.departDay == null) return null;
+  return last.arrival + (last.departDay - first) * 1440 - s.originDeparture;
+}
+
+/**
+ * Days between the origin departure and the destination arrival, or null when
+ * the rows do not run as far as the destination.
+ *
+ * The summary row gives a departure time, an arrival time and a throughput,
+ * but no date, so on its own it cannot say whether 15:40 -> 18:49 means 189
+ * minutes or 1629. Only the supplied rows carry that. Where they stop short of
+ * the destination there is nothing to infer from, and null is returned rather
+ * than a guess.
+ */
+function arrivalDayOffset(s: TrainSchedule): number | null {
+  const last = s.rows.filter((r) => r.arrival != null).at(-1);
+  const first = s.rows.find((r) => r.departDay != null)?.departDay;
+  if (last?.departDay == null || first == null) return null;
+  if (last.station !== s.destination) return null;
+  return last.departDay - first;
+}
+
+/**
  * Check the schedule against its own arithmetic.
  *
  * Times are minutes within a day, so a journey that crosses midnight has an
- * arrival numerically SMALLER than its departure. Every difference is taken
- * modulo 1440 for that reason.
+ * arrival numerically SMALLER than its departure. Individual hops are taken
+ * modulo 1440 for that reason — no single hop in the sample approaches 24
+ * hours. The journey TOTALS are not: they use the day offsets, because a run
+ * can and does exceed a full day.
  */
 export function validateSchedule(s: TrainSchedule): ScheduleValidation {
   const span = (from: Minutes, to: Minutes) => (to - from + 1440) % 1440;
 
-  const throughputTies =
-    Math.abs(span(s.originDeparture, s.destinationArrival) - s.throughputRuntime) < EPS;
+  /**
+   * The stated throughput is checked against the summary row, not against the
+   * rows supplied. Where those rows run through to the destination they say
+   * how many days the journey took, which is the only way to read a span
+   * longer than a day; where they stop short, the modular reading is all
+   * there is to go on.
+   */
+  const days = arrivalDayOffset(s);
+  const summarySpan =
+    days == null
+      ? span(s.originDeparture, s.destinationArrival)
+      : s.destinationArrival + days * 1440 - s.originDeparture;
+  const throughputTies = Math.abs(summarySpan - s.throughputRuntime) < EPS;
 
   const runtimeMismatches: string[] = [];
   const standingMismatches: string[] = [];
@@ -276,8 +329,12 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
 
   const totalRuntime = s.rows.reduce((n, r) => n + (r.pointToPointRuntime ?? 0), 0);
   const totalStanding = s.rows.reduce((n, r) => n + (r.standingTime ?? 0), 0);
-  const lastArrival = [...s.rows].reverse().find((r) => r.arrival != null)?.arrival;
-  const elapsed = lastArrival == null ? null : span(s.originDeparture, lastArrival);
+  /**
+   * The elapsed identity is measured over the rows supplied, so it is a claim
+   * about those rows and not about the whole journey. On a partial extract it
+   * is expected to fail, and that is a true report rather than a defect.
+   */
+  const elapsed = elapsedMinutes(s);
 
   return {
     throughputTies,
