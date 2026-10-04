@@ -3833,10 +3833,110 @@ BELA BELA	48923	28	CONTAINER	CLAIRWOOD	06:19:00	06:19:00	00:05:00			KINGSREST			
 BELA BELA	48923	29	CONTAINER	JACOBS	06:24:00	06:24:00	00:05:00			KINGSREST						34:42:00	2	1.94
 BELA BELA	48923	30	CONTAINER	WENTWORTHPARK	06:29:00	06:29:00	00:05:00			KINGSREST						34:42:00	2	1.25
 BELA BELA	48923	31	CONTAINER	KINGSREST	06:41:00	00:00:00	00:12:00		BO	KINGSREST						34:42:00	2	2.31
+WESTS	904	1	CONTAINER	WESTS		12:00:00				FYN-ISLANDVIE	12:00:00	12:05:00	3	YYYYYYY	VACUUM TRAINS/FEEDER TRAIN	00:05:00	0	
+WESTS	904	1	CONTAINER	FYN-ISLANDVIE	12:05:00	00:00:00	00:05:00		B RT	FYN-ISLANDVIE						00:05:00	0	2.39
+WESTS	10001	1	CONTAINER	WESTS		01:00:00				WESTS	01:00:00	01:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	10001	1	CONTAINER	WST/S651958	01:02:00	01:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	10001	2	CONTAINER	WESTS	01:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	20001	1	CONTAINER	WESTS		02:00:00				WESTS	02:00:00	02:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	20001	1	CONTAINER	WST/S651958	02:02:00	02:03:00	00:02:00	00:01:00	RANGEER	WESTS						00:06:00	0	0.97
+WESTS	20001	2	CONTAINER	WESTS	02:06:00	00:00:00	00:03:00			WESTS						00:06:00	0	0.97
+WESTS	30001	1	CONTAINER	WESTS		03:00:00				WESTS	03:00:00	03:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	30001	1	CONTAINER	WST/S651958	03:02:00	03:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	30001	2	CONTAINER	WESTS	03:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	40001	1	CONTAINER	WESTS		04:00:00				WESTS	04:00:00	04:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	40001	1	CONTAINER	WST/S651958	04:02:00	04:03:00	00:02:00	00:01:00	RANGEER	WESTS						00:06:00	0	0.97
+WESTS	40001	2	CONTAINER	WESTS	04:06:00	00:00:00	00:03:00			WESTS						00:06:00	0	0.97
+WESTS	50001	1	CONTAINER	WESTS		05:00:00				WESTS	05:00:00	05:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	50001	1	CONTAINER	WST/S651958	05:02:00	05:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	50001	2	CONTAINER	WESTS	05:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	60001	1	CONTAINER	WESTS		06:00:00				WESTS	06:00:00	06:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	60001	1	CONTAINER	WST/S651958	06:02:00	06:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	60001	2	CONTAINER	WESTS	06:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	70001	1	CONTAINER	WESTS		07:00:00				WESTS	07:00:00	07:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	70001	1	CONTAINER	WST/S651958	07:02:00	07:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	70001	2	CONTAINER	WESTS	07:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	80001	1	CONTAINER	WESTS		08:00:00				WESTS	08:00:00	08:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	80001	1	CONTAINER	WST/S651958	08:02:00	08:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	80001	2	CONTAINER	WESTS	08:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	90001	1	CONTAINER	WESTS		09:00:00				WESTS	09:00:00	09:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	90001	1	CONTAINER	WST/S651958	09:02:00	09:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	90001	2	CONTAINER	WESTS	09:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	100001	1	CONTAINER	WESTS		10:00:00				WESTS	10:00:00	10:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	100001	1	CONTAINER	WST/S651958	10:02:00	10:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	100001	2	CONTAINER	WESTS	10:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	110001	1	CONTAINER	WESTS		11:00:00				WESTS	11:00:00	11:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	110001	1	CONTAINER	WST/S651958	11:02:00	11:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	110001	2	CONTAINER	WESTS	11:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	120001	1	CONTAINER	WESTS		12:00:00				WESTS	12:00:00	12:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	120001	1	CONTAINER	WST/S651958	12:02:00	12:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	120001	2	CONTAINER	WESTS	12:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	130001	1	CONTAINER	WESTS		13:00:00				WESTS	13:00:00	13:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	130001	1	CONTAINER	WST/S651958	13:02:00	13:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	130001	2	CONTAINER	WESTS	13:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	140001	1	CONTAINER	WESTS		14:00:00				WESTS	14:00:00	14:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	140001	1	CONTAINER	WST/S651958	14:02:00	14:03:00	00:02:00	00:01:00	RANGEER	WESTS						00:06:00	0	0.97
+WESTS	140001	2	CONTAINER	WESTS	14:06:00	00:00:00	00:03:00			WESTS						00:06:00	0	0.97
+WESTS	150001	1	CONTAINER	WESTS		15:00:00				WESTS	15:00:00	15:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	150001	1	CONTAINER	WST/S651958	15:02:00	15:03:00	00:02:00	00:01:00	RANGEER	WESTS						00:06:00	0	0.97
+WESTS	150001	2	CONTAINER	WESTS	15:06:00	00:00:00	00:03:00			WESTS						00:06:00	0	0.97
+WESTS	160001	1	CONTAINER	WESTS		16:00:00				WESTS	16:00:00	16:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	160001	1	CONTAINER	WST/S651958	16:02:00	16:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	160001	2	CONTAINER	WESTS	16:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	170001	1	CONTAINER	WESTS		17:00:00				WESTS	17:00:00	17:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	170001	1	CONTAINER	WST/S651958	17:02:00	17:03:00	00:02:00	00:01:00	RANGEER	WESTS						00:06:00	0	0.97
+WESTS	170001	2	CONTAINER	WESTS	17:06:00	00:00:00	00:03:00			WESTS						00:06:00	0	0.97
+WESTS	180001	1	CONTAINER	WESTS		18:00:00				WESTS	18:00:00	18:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	180001	1	CONTAINER	WST/S651958	18:02:00	18:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	180001	2	CONTAINER	WESTS	18:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	190001	1	CONTAINER	WESTS		19:00:00				WESTS	19:00:00	19:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	190001	1	CONTAINER	WST/S651958	19:02:00	19:03:00	00:02:00	00:01:00	RANGEER	WESTS						00:06:00	0	0.97
+WESTS	190001	2	CONTAINER	WESTS	19:06:00	00:00:00	00:03:00			WESTS						00:06:00	0	0.97
+WESTS	200001	1	CONTAINER	WESTS		20:00:00				WESTS	20:00:00	20:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	200001	1	CONTAINER	WST/S651958	20:02:00	20:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	200001	2	CONTAINER	WESTS	20:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	210001	1	CONTAINER	WESTS		21:00:00				WESTS	21:00:00	21:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	210001	1	CONTAINER	WST/S651958	21:02:00	21:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	210001	2	CONTAINER	WESTS	21:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	220001	1	CONTAINER	WESTS		22:00:00				WESTS	22:00:00	22:03:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:03:00	0	
+WESTS	220001	1	CONTAINER	WST/S651958	22:01:00	22:02:00	00:01:00	00:01:00	RANGEER	WESTS						00:03:00	0	0.97
+WESTS	220001	2	CONTAINER	WESTS	22:03:00	00:00:00	00:01:00			WESTS						00:03:00	0	0.97
+WESTS	230001	1	CONTAINER	WESTS		23:00:00				WESTS	23:00:00	23:06:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	230001	1	CONTAINER	WST/S651958	23:02:00	23:03:00	00:02:00	00:01:00	A SHUNT	WESTS						00:06:00	0	0.97
+WESTS	230001	2	CONTAINER	WESTS	23:06:00	00:00:00	00:03:00		RT	WESTS						00:06:00	0	0.97
+WESTS	240001	1	CONTAINER	WESTS		00:01:00				WESTS	00:01:00	00:07:00	3	YYYYYYY	VACUUM TRAINS/SHUNT CAR	00:06:00	0	
+WESTS	240001	1	CONTAINER	WST/S651958	00:03:00	00:04:00	00:02:00	00:01:00	RANGEER	WESTS						00:06:00	0	0.97
+WESTS	240001	2	CONTAINER	WESTS	00:07:00	00:00:00	00:03:00			WESTS						00:06:00	0	0.97
+WOLSELEY	1417	1	CAPE	WOLSELEY		07:00:00				CERES	07:00:00	09:00:00	3	YYYYYYY	LIGHTAIRBRAKE/CONTAINER TRN	02:00:00	0	
+WOLSELEY	1417	1	CAPE	WAVEREN	07:32:00	07:32:00	00:32:00			CERES						02:00:00	0	5.57
+WOLSELEY	1417	1	CAPE	MICHELLSPASS	07:45:00	07:45:00	00:13:00			CERES						02:00:00	0	2.16
+WOLSELEY	1417	1	CAPE	DEMETER	08:36:00	08:36:00	00:51:00			CERES						02:00:00	0	8.44
+WOLSELEY	1417	1	CAPE	BONCHRETIEN	08:49:00	08:49:00	00:13:00			CERES						02:00:00	0	2.87
+WOLSELEY	1417	1	CAPE	CERES	09:00:00	00:00:00	00:11:00		RT	CERES						02:00:00	0	1.12
+WOLSELEY	1418	1	CAPE	WOLSELEY		12:10:00				BELLVILLE	12:10:00	16:10:00	3	YYYYYYY	LIGHTAIRBRAKE/CONTAINER TRN	04:00:00	0	
+WOLSELEY	1418	1	CAPE	ARTOIS	12:20:00	12:30:00	00:10:00	00:10:00	B X 17007	BELLVILLE						04:00:00	0	5.95
+WOLSELEY	1418	1	CAPE	TULBAGHWEG	12:43:30	12:51:00	00:13:30	00:07:30	X 14255 / 7	BELLVILLE						04:00:00	0	8.92
+WOLSELEY	1418	1	CAPE	GOUDA	13:02:00	13:02:00	00:11:00			BELLVILLE						04:00:00	0	7.26
+WOLSELEY	1418	2	CAPE	VOELVLEI	13:11:00	13:30:00	00:09:00	00:19:00	X 18601 &amp; F 71008	BELLVILLE						04:00:00	0	7.48
+WOLSELEY	1418	2	CAPE	HERMON	13:42:00	13:45:00	00:12:00	00:03:00	X 8913	BELLVILLE						04:00:00	0	7.62
+WOLSELEY	1418	3	CAPE	SOETENDAL	13:59:00	14:17:00	00:14:00	00:18:00	X 17011	BELLVILLE						04:00:00	0	10.57
+WOLSELEY	1418	4	CAPE	MALAN	14:27:00	14:27:00	00:10:00			BELLVILLE						04:00:00	0	1.33
+WOLSELEY	1418	4	CAPE	WELLINGTON	14:36:00	14:36:00	00:09:00			BELLVILLE						04:00:00	0	13.71
+WOLSELEY	1418	5	CAPE	MBEKWENI	14:40:00	14:40:00	00:04:00			BELLVILLE						04:00:00	0	4.53
+WOLSELEY	1418	5	CAPE	DALJOSAFAT	14:45:00	14:45:00	00:05:00			BELLVILLE						04:00:00	0	3.58
+WOLSELEY	1418	6	CAPE	HUGUENOT	14:49:00	14:49:00	00:04:00			BELLVILLE						04:00:00	0	2.52
+WOLSELEY	1418	7	CAPE	PAARL	14:54:00	14:54:00	00:05:00			BELLVILLE						04:00:00	0	4.24
+WOLSELEY	1418	8	CAPE	KLAPMUTS	15:07:00	15:07:00	00:13:00			BELLVILLE						04:00:00	0	10.68
+WOLSELEY	1418	8	CAPE	MULDERSVLEI	15:15:00	15:15:00	00:08:00			BELLVILLE						04:00:00	0	5.79
+WOLSELEY	1418	9	CAPE	KRAAIFONTEIN	15:27:00	15:27:00	00:12:00			BELLVILLE						04:00:00	0	10.21
+WOLSELEY	1418	10	CAPE	EIKENFONTEIN	15:30:00	15:30:00	00:03:00			BELLVILLE						04:00:00	0	1.66
+WOLSELEY	1418	10	CAPE	BRACKENFELL	15:34:00	15:34:00	00:04:00		F 71010	BELLVILLE						04:00:00	0	3.37
+WOLSELEY	1418	11	CAPE	STIKLAND	15:51:00	15:51:00	00:17:00			BELLVILLE						04:00:00	0	3.85
+WOLSELEY	1418	12	CAPE	BELLVILLE	16:10:00	00:00:00	00:19:00		LN 1418	BELLVILLE						04:00:00	0	2.79
 `;
 
 
-describe('a ninth extract: thirty-five trains, one yard, and nothing over-counted', () => {
+describe('a ninth extract: sixty-two trains, one yard, and nothing over-counted', () => {
   const all = parseRunningTimes(B9);
   const byId = (id: string) => all.find((t) => t.train === id)!;
   type Sched = ReturnType<typeof byId>;
@@ -3845,19 +3945,21 @@ describe('a ninth extract: thirty-five trains, one yard, and nothing over-counte
   const stations = (t: Sched) => t.rows.map((r) => r.station);
 
   /**
-   * Thirty-five trains, and all thirty-five carry a summary row and tie their
+   * Sixty-two trains, and all sixty-two carry a summary row and tie their
    * stated throughput. Because every one of them runs through to its
    * destination, the day offsets supply the span and the check is not a
    * modular one.
    *
    * An earlier revision of this file claimed sixty trains across 1,497 rows.
-   * Twenty-five of them — the whole WESTS origin — had been reconstructed from
-   * the pattern of the series rather than transcribed from supplied text, and
-   * they are not evidence. They are gone, and so are the two findings that
-   * rested on them (see the note above the unrecorded-travel test).
+   * The twenty-five WESTS trains in that count had been reconstructed from the
+   * pattern of the hourly series rather than transcribed from supplied text,
+   * and they are not evidence. They were removed, and so were the two findings
+   * that rested on them (see the note above the unrecorded-travel test).
+   * WESTS and WOLSELEY were then re-supplied in full and read back in, which
+   * is how the count reached sixty-two.
    */
-  it('ties all thirty-five trains to their stated throughput', () => {
-    expect(all).toHaveLength(35);
+  it('ties all sixty-two trains to their stated throughput', () => {
+    expect(all).toHaveLength(62);
     for (const t of all) {
       expect([t.train, hasSummary(t)]).toEqual([t.train, true]);
       expect([t.train, validateSchedule(t).throughputTies]).toEqual([t.train, true]);
@@ -4104,7 +4206,7 @@ describe('a ninth extract: thirty-five trains, one yard, and nothing over-counte
   });
 
   /**
-   * Six of the thirty-five fail the elapsed identity, and all six fail in the
+   * Six of the sixty-two fail the elapsed identity, and all six fail in the
    * same direction: they under-count, by five seconds to 2m55s, because the
    * yard moves above were never written into the columns.
    *
@@ -4146,17 +4248,130 @@ describe('a ninth extract: thirty-five trains, one yard, and nothing over-counte
   });
 
   /**
-   * The whole WESTS origin and both WOLSELEY workings are absent from this
-   * fixture. They were supplied, and then lost before they could be captured
-   * row by row. Asserting their absence keeps a future paste from silently
-   * reinstating rows that cannot be traced to supplied text.
+   * WESTS, re-supplied in full on 2026-10-04 and read back in.
+   *
+   * 904 is the odd one out: a single node, WESTS to FYN-ISLANDVIE, 12:00 to
+   * 12:05, on the CONTAINER corridor. Everything else at this origin is a
+   * shunt car working WST/S651958 and coming back.
    */
-  it('holds no train from an origin that was never captured', () => {
-    expect(all.filter((t) => t.origin === 'WESTS')).toEqual([]);
-    expect(all.filter((t) => t.origin === 'WOLSELEY')).toEqual([]);
-    expect(new Set(all.map((t) => t.origin))).toEqual(
-      new Set(['WOR-NOORD', 'WORCESTER', 'WINDSORTONROA', 'BELA BELA']),
+  it('runs 904 out to FYN-ISLANDVIE and nothing else like it', () => {
+    const t = byId('904');
+    expect(t.origin).toBe('WESTS');
+    expect(t.destination).toBe('FYN-ISLANDVIE');
+    expect(t.rows).toHaveLength(1);
+    expect(new Set(t.rows.map((r) => r.corridor))).toEqual(new Set(['CONTAINER']));
+    expect(t.throughputRuntime).toBe(5);
+    expect(standing(t)).toBe(0);
+    expect(t.rows[0].standingReason).toBe('B RT');
+  });
+
+  /**
+   * Twenty-four shunt cars, one an hour, every hour. Each leaves on the hour,
+   * works WST/S651958 for exactly one minute, and is back six minutes after it
+   * left: two minutes out, one standing, three back.
+   *
+   * The grid is not quite a grid. 10001 through 230001 leave at 01:00 to
+   * 23:00; 240001 leaves at 00:01, one minute off the hour, and arrives at
+   * 00:07.
+   */
+  it('runs one shunt car an hour for twenty-four hours', () => {
+    const hourly = all.filter((t) => t.origin === 'WESTS' && t.train.endsWith('001'));
+    expect(hourly).toHaveLength(24);
+    for (const t of hourly) {
+      expect(t.destination).toBe('WESTS');
+      expect(t.rows).toHaveLength(2);
+      expect(stations(t)).toEqual(['WST/S651958', 'WESTS']);
+      expect(standing(t)).toBe(1);
+      expect([t.train, t.throughputRuntime]).toEqual([
+        t.train,
+        t.train === '220001' ? 3 : 6,
+      ]);
+    }
+    /** 01:00, 23:00 — and then 00:01, one minute off the hour. */
+    expect(byId('10001').originDeparture).toBe(60);
+    expect(byId('230001').originDeparture).toBe(23 * 60);
+    expect(byId('240001').originDeparture).toBe(1);
+    expect(byId('240001').destinationArrival).toBe(7);
+  });
+
+  /**
+   * 220001 is the one car that is not like the others. Every sibling declares
+   * two minutes out to the siding and three back; 220001 declares one and one,
+   * works it at 22:01 to 22:02 instead of 22:02 to 22:03, and is home in three
+   * minutes instead of six.
+   *
+   * It is not a typo the totals would catch: its stated throughput says
+   * 00:03:00 as well, so the whole record is internally consistent. It is
+   * simply a shorter job carrying the same shape, and it is the only one.
+   */
+  it('has exactly one hourly car that is half as long', () => {
+    const t = byId('220001');
+    expect(t.throughputRuntime).toBe(3);
+    expect(running(t)).toBe(2);
+    expect(t.rows[0].arrival).toBe(22 * 60 + 1);
+    expect(t.rows[0].departure).toBe(22 * 60 + 2);
+    expect(validateSchedule(t).throughputTies).toBe(true);
+    expect(validateSchedule(t).elapsedIdentityHolds).toBe(true);
+
+    const sixes = all.filter(
+      (x) => x.origin === 'WESTS' && x.train.endsWith('001') && x.train !== '220001',
     );
+    expect(sixes).toHaveLength(23);
+    for (const x of sixes) {
+      expect([x.train, running(x)]).toEqual([x.train, 5]);
+      expect([x.train, x.rows[0].pointToPointRuntime]).toEqual([x.train, 2]);
+      expect([x.train, x.rows[1].pointToPointRuntime]).toEqual([x.train, 3]);
+      /** The siding is worked two minutes out and one minute standing. */
+      expect(x.rows[0].departure - x.rows[0].arrival).toBe(1);
+    }
+  });
+
+  /**
+   * Two spellings of one job, and they always travel together. Sixteen cars
+   * say A SHUNT at the siding and RT at the terminus; eight say RANGEER and
+   * nothing at all. Not one car mixes them.
+   *
+   * So the two reason columns are not two independent fields here — they are
+   * one binary attribute written twice, in two vocabularies, on an otherwise
+   * mechanical series. Grouping on either column alone splits the fleet in the
+   * same place; grouping on both at once is the only safe rule.
+   */
+  it('files one job under two vocabularies, never mixed', () => {
+    const cars = all.filter((t) => t.origin === 'WESTS' && t.train.endsWith('001'));
+    const pairs = cars.map((t) => [t.rows[0].standingReason, t.rows[1].standingReason ?? '']);
+    expect(new Set(pairs.map((p) => p.join('|')))).toEqual(
+      new Set(['A SHUNT|RT', 'RANGEER|']),
+    );
+    expect(pairs.filter((p) => p[0] === 'A SHUNT')).toHaveLength(16);
+    expect(pairs.filter((p) => p[0] === 'RANGEER')).toHaveLength(8);
+  });
+
+  /**
+   * WOLSELEY, also re-supplied. 1417 climbs to CERES in two hours without
+   * stopping once; 1418 runs the same ground as half a dozen WOR-NOORD trains
+   * and takes four hours, nearly a quarter of it standing.
+   *
+   * 1417 also carries the same sequence number — 1 — on all five of its rows,
+   * which is the clearest case in the sample of NODE_Seq not being a position
+   * within the journey.
+   */
+  it('measures the two WOLSELEY workings', () => {
+    const a = byId('1417');
+    const b = byId('1418');
+    expect([a.origin, b.origin]).toEqual(['WOLSELEY', 'WOLSELEY']);
+    expect(a.destination).toBe('CERES');
+    expect(b.destination).toBe('BELLVILLE');
+    expect(a.rows).toHaveLength(5);
+    expect(b.rows).toHaveLength(19);
+    expect(standing(a)).toBe(0);
+    expect(a.throughputRuntime).toBe(120);
+    expect(b.throughputRuntime).toBe(240);
+    expect(standing(b)).toBe(57.5);
+    expect(new Set(a.rows.map((r) => r.nodeSeq ?? null)).size).toBe(1);
+    expect(b.rows.at(-1)!.standingReason).toBe('LN 1418');
+
+    /** 1418 carries the tenth escaped-ampersand row in the sample. */
+    expect(b.rows.some((r) => r.standingReason === 'X 18601 & F 71008')).toBe(true);
   });
 
   /**
