@@ -250,7 +250,8 @@ export function elapsedMinutes(s: TrainSchedule): Minutes | null {
   const first = s.rows.find((r) => r.departDay != null)?.departDay;
   const last = s.rows.filter((r) => r.arrival != null).at(-1);
   if (first == null || last?.arrival == null || last.departDay == null) return null;
-  return last.arrival + (last.departDay - first) * 1440 - s.originDeparture;
+  const elapsed = last.arrival + (last.departDay - first) * 1440 - s.originDeparture;
+  return elapsed < 0 ? elapsed + 1440 : elapsed;
 }
 
 /**
@@ -262,13 +263,21 @@ export function elapsedMinutes(s: TrainSchedule): Minutes | null {
  * minutes or 1629. Only the supplied rows carry that. Where they stop short of
  * the destination there is nothing to infer from, and null is returned rather
  * than a guess.
+ *
+ * The offsets themselves are not above suspicion. Train 18415 departs at
+ * 23:35 and arrives at 00:42, plainly the next morning, and carries
+ * Depart_Day = 0 on every row including the last — the offset was never
+ * incremented. A run cannot take negative time, so where the arithmetic says
+ * it does, the offset is treated as one day stale and corrected.
  */
 function arrivalDayOffset(s: TrainSchedule): number | null {
   const last = s.rows.filter((r) => r.arrival != null).at(-1);
   const first = s.rows.find((r) => r.departDay != null)?.departDay;
   if (last?.departDay == null || first == null) return null;
   if (last.station !== s.destination) return null;
-  return last.departDay - first;
+  let days = last.departDay - first;
+  if (s.destinationArrival + days * 1440 - s.originDeparture < 0) days += 1;
+  return days;
 }
 
 /**
