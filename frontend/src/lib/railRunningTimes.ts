@@ -301,7 +301,7 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
   const standingMismatches: string[] = [];
   let previousDeparture = s.originDeparture;
 
-  s.rows.forEach((r) => {
+  s.rows.forEach((r, i) => {
     if (r.arrival != null && r.pointToPointRuntime != null) {
       if (Math.abs(span(previousDeparture, r.arrival) - r.pointToPointRuntime) > EPS) {
         runtimeMismatches.push(r.station);
@@ -316,8 +316,18 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
      * as a mismatch: 435 minutes of phantom standing at POSTMASBURG, 410 at
      * POSTMASBURG again, 350, 733 and 373 elsewhere. Five trains, five false
      * positives, one cause.
+     *
+     * But 00:00:00 is genuinely ambiguous, and testing the departure alone is
+     * not enough. Train 8000 arrives at UMKOMAAS at midnight and departs at
+     * midnight, eleven rows before its journey ends; treating that as a
+     * terminus left the previous departure stale and reported the row after
+     * it as three and a half minutes adrift when it was exact. Train 1710
+     * departs HAMMARSDALE at a real midnight with five minutes of standing
+     * recorded against it. So the row must also be the LAST row, and any
+     * recorded standing time disqualifies it on its own.
      */
-    const isTerminus = r.departure === 0 && r.standingTime == null;
+    const isTerminus =
+      i === s.rows.length - 1 && r.departure === 0 && r.standingTime == null;
     if (r.arrival != null && r.departure != null && !isTerminus) {
       const standing = span(r.arrival, r.departure);
       if (Math.abs(standing - (r.standingTime ?? 0)) > EPS) {
