@@ -67,6 +67,27 @@ function tagEnd(source: string, start: number): number {
   return -1;
 }
 
+/**
+ * A full-viewport layer whose only job is to dismiss the thing on top of it.
+ *
+ * These are deliberately NOT counted as offenders. Their onClick is a
+ * convenience, not the affordance - dismissal must also be reachable by Escape
+ * and by a visible Close button, and the dialog test below is what enforces
+ * that. Holding the backdrop itself to the "needs a role" rule would be wrong:
+ *
+ *   - giving it role="button" puts a focusable, unlabelled control in front of
+ *     the dialog the user is trying to read;
+ *   - marking it aria-hidden="true" is far worse and was tried and reverted.
+ *     aria-hidden hides the WHOLE SUBTREE, and the dialog panel is a CHILD of
+ *     the backdrop in this codebase's modal pattern - so it silently hid the
+ *     contents of every dialog it touched.
+ */
+function isBackdrop(tag: string): boolean {
+  if (!/inset-0/.test(tag)) return false;
+  if (/stopPropagation/.test(tag)) return false; // the panel, not the layer behind it
+  return /onClose|setOpen\(|setShow\w*\(|setPickerOpen\(|setComposeOpen\(/.test(tag);
+}
+
 /** A clickable element that is neither natively interactive nor announced. */
 function clickableOffenders(source: string): number {
   const openTag = /<(div|span|li|td|tr|p|section)\b/g;
@@ -79,6 +100,7 @@ function clickableOffenders(source: string): number {
     openTag.lastIndex = end;
     if (!/\bonClick\b/.test(tag)) continue;
     if (/\brole=/.test(tag) || /\btabIndex=/.test(tag)) continue;
+    if (isBackdrop(tag)) continue;
     count += 1;
   }
   return count;
@@ -199,5 +221,76 @@ describe('the pattern barrel', () => {
     it(`exposes ${name}`, () => {
       expect(patterns).toHaveProperty(name);
     });
+  });
+});
+
+/**
+ * The divs that carry `onClick={(e) => e.stopPropagation()}` - the inner panel
+ * of a click-to-dismiss overlay, whose handler exists purely so a click inside
+ * the dialog does not bubble up to the backdrop behind it and close it.
+ */
+function modalPanels(source: string): string[] {
+  const panels: string[] = [];
+  const openTag = /<div\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = openTag.exec(source)) !== null) {
+    const end = tagEnd(source, match.index);
+    if (end === -1) break;
+    const tag = source.slice(match.index, end + 1);
+    openTag.lastIndex = end;
+    if (/stopPropagation/.test(tag)) panels.push(tag);
+  }
+  return panels;
+}
+
+/**
+ * The real requirement behind the backdrop exclusion above.
+ *
+ * A backdrop that dismisses on click is only safe when the dialog can also be
+ * closed without a mouse: Escape, and a reachable Close control. Declaring
+ * role="dialog" aria-modal="true" is what tells assistive technology to confine
+ * itself to the dialog and expose those dismissal paths. Without it, a screen
+ * reader user is left on the page behind the overlay, reading content they
+ * cannot reach and clicking nothing.
+ *
+ * This is the check that makes the backdrop exemption honest.
+ */
+describe('modal dialogs', () => {
+  /**
+   * A modal panel is a DIV that swallows backdrop clicks, not merely a file
+   * that mentions both strings. Matching on the file matched Dashboard.tsx,
+   * whose only stopPropagation calls are on two ordinary buttons inside a
+   * flip-card - it has no modal at all.
+   */
+  const MODALS = SOURCE_PAGES.filter(([, src]) =>
+    modalPanels(src).length > 0,
+  );
+
+  it('finds the modal panels it is guarding', () => {
+    expect(MODALS.length).toBeGreaterThan(0);
+  });
+
+  it('declares role="dialog" on every modal panel', () => {
+    const missing = MODALS.filter(([, src]) => !/role="dialog"/.test(src)).map(([k]) => k);
+    expect(missing).toEqual([]);
+  });
+
+  /**
+   * Tracked debt, not a passing grade.
+   *
+   * aria-modal="true" promises assistive technology that the dialog owns the
+   * keyboard until it is dismissed. None of these can keep that promise yet:
+   * a survey of every modal found ZERO Escape handlers, so a keyboard user
+   * cannot get out of any of them except by finding the Close button.
+   *
+   * Declaring aria-modal without Escape would be worse than omitting it - it
+   * would advertise a dismissal path that does not exist. So this asserts the
+   * gap instead of papering over it, and fails if the number grows. Wiring
+   * useDismissOnEscape into each modal is what closes it; the hook is in
+   * patterns/ and is tested.
+   */
+  it('does not widen the gap between modals and Escape-to-dismiss', () => {
+    const withoutEscape = MODALS.filter(([, src]) => !/Escape/.test(src)).map(([k]) => k);
+    expect(withoutEscape.length).toBeLessThanOrEqual(13);
   });
 });

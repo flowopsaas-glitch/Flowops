@@ -541,8 +541,7 @@ export default function RailOperations() {
         <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}>
           <div
             className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
+            onClick={(e) => e.stopPropagation()} role="dialog">
             <div className="mb-5 flex items-start justify-between">
               <div>
                 <div className="font-mono text-lg font-black text-emerald-400">{selected.consignmentNumber}</div>

@@ -18,6 +18,8 @@ export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
 export { ErrorState, errorMessageOf } from './ErrorState';
+
+export { useDismissOnEscape } from './useDismissOnEscape';
 export type { ErrorStateProps } from './ErrorState';
 
 export { PageHeader } from './PageHeader';

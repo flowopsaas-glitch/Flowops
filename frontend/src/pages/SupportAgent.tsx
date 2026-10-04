@@ -327,7 +327,7 @@ function EscalateModal({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()}>
+      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="flex items-center gap-2">
           <Ticket className="h-5 w-5 text-cyan-300" />
           <h2 className="text-lg font-black">Raise a support ticket</h2>

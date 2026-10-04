@@ -628,8 +628,7 @@ export default function EmailHub() {
         >
           <div
             className="w-full max-w-2xl rounded-[24px] border border-white/10 bg-[#0b1530] p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+            onClick={(e) => e.stopPropagation()} role="dialog">
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-xl font-black text-white">
                 <Send className="h-5 w-5" /> Compose email

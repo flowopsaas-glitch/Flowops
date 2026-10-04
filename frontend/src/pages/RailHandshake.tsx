@@ -49,7 +49,7 @@ import {
   handshakeCsvFilename,
   printHtmlDocument,
 } from "../lib/railHandshakeExport";
-import { DataTable, StatusBadge, type StatusTone } from "../components/patterns";
+import { DataTable, StatusBadge, useDismissOnEscape, type StatusTone } from "../components/patterns";
 
 const money = (v?: number | null) =>
   v == null ? "R0" : `R${Math.round(v).toLocaleString("en-ZA")}`;
@@ -440,6 +440,7 @@ function ReportDrawer({
   onResolve: (dev: HandshakeDeviation) => void;
   onDispute: (dev: HandshakeDeviation) => void;
 }) {
+  useDismissOnEscape(Boolean(onClose), onClose);
   const devs = report.deviations ?? [];
   // Report state AND the viewer's role must both allow an action.
   const canLogDeviation = canWrite && (report.status === "DRAFT" || report.status === "PENDING_TOC");
@@ -454,8 +455,7 @@ function ReportDrawer({
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
       <div
         className="h-full w-full max-w-3xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
+        onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mb-4 flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -636,9 +636,11 @@ function CreateReportModal({ busy, onClose, onCreate }: {
 }
 
 // ── Log deviation modal ─────────────────────────────────────────────────────────
-function LogDeviationModal({ busy, onClose, onLog }: {
+function LogDeviationModal({
+  busy, onClose, onLog }: {
   busy: boolean; onClose: () => void; onLog: (dto: Partial<HandshakeDeviation>) => void;
 }) {
+  useDismissOnEscape(Boolean(onClose), onClose);
   const [trainSlotRef, setTrainSlotRef] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
   const [category, setCategory] = useState<DeviationCategory>("DELAY");
@@ -718,7 +720,7 @@ function LogDeviationModal({ busy, onClose, onLog }: {
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-black text-white">{title}</h3>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">

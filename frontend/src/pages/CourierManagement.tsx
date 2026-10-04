@@ -225,7 +225,7 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()}>
+      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="flex items-center gap-2">
           <PackageCheck className="h-5 w-5 text-cyan-300" />
           <h2 className="text-lg font-black">New courier order</h2>
@@ -265,7 +265,7 @@ function PlanModal({ plan, onClose, onApply, applying, orders }: {
   const refOf = (id: string) => orders.find((o) => o.id === id)?.reference || id.slice(0, 6);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className={glassCard("flex max-h-[85vh] w-full max-w-2xl flex-col p-5")} onClick={(e) => e.stopPropagation()}>
+      <div className={glassCard("flex max-h-[85vh] w-full max-w-2xl flex-col p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-violet-300" />
           <h2 className="text-lg font-black">AI orchestration plan</h2>
