@@ -1104,12 +1104,17 @@ Two consequences:
 4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
    measuring any transit KPI, and §45 has now made it sharper: the mapping has
    to be per node.
-5. **The meaning of the frequency code `C`** (§44). Still unexplained; it does
-   not appear in the §48 frequencies at all.
+5. **The meaning of the frequency code `C`** (§44). Still unexplained, but no
+   longer entirely opaque: §49.4 establishes that every train whose frequency
+   contains `C` also carries a `C` flag on its first reason-bearing row. That
+   is an implication on four trains, not a semantics.
 6. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
    has appeared anywhere in 33a. Phase 7 remains BLOCKED.
-7. Every train not listed in §34 or §48.
+7. Every train not listed in §34, §48 or §49.
 8. **WITBANK, WYKOM and WELGELEE** — supplied once, but not captured. See §47.
+9. **A stale-offset train longer than a day.** §49.1 shows the one-day
+   correction cannot detect a run that is stale by more than a day. Nothing in
+   the corpus is known to be, and nothing would say so if it were.
 
 WESTS and WOLSELEY are **closed** — re-supplied in full on 2026-10-04 and
 verified row by row (§41).
@@ -1282,3 +1287,125 @@ raised. This extract already shows the same number doing different work at
 different origins is routine, and the fixtures will eventually contain a
 collision. The guard is in place so that the day it happens, a test fails
 rather than the merge passing quietly.
+
+## 49. An eleventh extract: KGR-WATERVAL and WAPADSKLOOF
+
+Captured verbatim from supplied text, **848 rows across 31 trains** — 29 at
+KGR-WATERVAL and 2 at WAPADSKLOOF, a new origin — and held as the fixture
+`B11`. Unlike §48 this is the **whole** of what was supplied, not a subset.
+`B9` and `B10` are untouched.
+
+**Twenty-nine of the thirty-one reconcile exactly.** The two that do not are
+each explained by a visible row, and neither is a new kind of error: one is a
+second instance of a defect the library already defends against, and the other
+is a known rule meeting a case it was not written for.
+
+### 49.1 A forty-row train whose days were never counted
+
+**8974** departs KGR-WATERVAL at 23:00 and arrives MEYERTON at 11:31 the next
+morning. The summary says 12:31:00. Every one of its 39 node rows carries
+`Depart_Day = 0`, including the ones at 01:12, 08:00 and 11:31.
+
+Read literally the offsets say the train arrived 689 minutes **before** it
+left. The library already corrects exactly this — the rule was written for
+train 18415, which departs 23:35 and arrives 00:42 with the offset never
+incremented — so `elapsedMinutes` adds the missing day back, returns 751, and
+the train ties perfectly.
+
+Three sibling trains settle that it is the offsets and not the timetable that
+are wrong. **7224, 7228 and 7428** all leave at 23:00, all stand two hours at
+KRUGERSDORP for a loco change (arrive 23:12, away 01:12), and all three carry
+`0` then `1`. Only 8974 does not.
+
+Two things follow, and the second is the one that matters.
+
+1. `spansDays()` reads the offsets directly, without the correction, and so
+   reports **false** for a train that plainly crosses midnight. The corrected
+   elapsed time and the uncorrected day count now disagree with each other.
+2. **The correction is only safe below 24 hours.** It adds exactly one day
+   when the arithmetic goes negative. A train with the same stale offset and a
+   run longer than a day would be corrected by one day and still be wrong — by
+   a whole further day — and nothing in the file would flag it, because the
+   corrected figure would be positive and would tie against a stated runtime
+   that is equally derived from the same bad column. 18415 was a 67-minute
+   train; 8974 is a 12½-hour one. The defect class is getting larger, and the
+   guard does not scale with it.
+
+### 49.2 Five minutes of standing recorded at the end of the journey
+
+**7428**'s last row is SASOLBURG: arrival 11:30:00, departure 00:00:00, eight
+minutes of running — and a standing time of `00:05:00`. It is the only
+terminus row in the extract that carries one.
+
+The library deliberately refuses to treat a last row as a terminus when it has
+a recorded standing time, because train **1710** departs HAMMARSDALE at a real
+midnight with five minutes against it, and treating that as an ending left the
+previous departure stale and misreported the following row. That rule is right
+for 1710 and wrong for this row, and **the two are not distinguishable from
+the columns alone**: both are a row at 00:00:00 with five minutes of standing.
+
+This is recorded rather than patched. Relaxing the terminus test to ignore
+standing would re-break 1710 and the five POSTMASBURG-class false positives it
+was written for — 435, 410, 350, 733 and 373 minutes of phantom standing. That
+trade is worse than one named exception. So 7428 stands as a known cost: one
+flagged standing mismatch, and five minutes of over-count, from one row.
+
+### 49.3 A leading B or C is a flag, not part of the reason
+
+Sixty-nine rows across all three fixtures open their reason with a bare `B` or
+`C` — `B SHUNT`, `C LOCO CHANGE`, `B TURN LOCO'S`, `B RT`, `B RANGEER`, or the
+letter alone.
+
+Within this extract all 28 of them sit on the train's **first node row**, with
+no exception. Checked against the whole corpus that rule is **false**: WELGEDAG
+1395 carries its `B` on ZESFONTEIN, the *second* node row, because its first
+row (COWLESDAM) has no reason at all.
+
+The rule that survives the wider check is narrower and better: **the flag is
+always on the first row that carries any reason at all.** Asserted across B9,
+B10 and B11 together — 69 flags, zero exceptions.
+
+This matters for any rule keyed on the reason string. Eleven trains here stand
+for a shunt at their first node and not one of them reads `SHUNT`; they read
+`B SHUNT`. A whole-string match silently drops the first node of most trains
+in the corpus.
+
+### 49.4 The first structural handle on frequency code `C`
+
+`C` has appeared in the Frequency column since §44 and has never been
+explained. Four trains here carry one:
+
+| Train | Frequency | Train type | First reason |
+| --- | --- | --- | --- |
+| 7224 | `YYYYYCY` | VACUUM TRAINS/VACUUM TRAIN | `C LOCO CHANGE` |
+| 8918 | `CCYCYCY` | LIGHTAIRBRAKE/LIGHTAIRBRAKE | `C SHUNT` |
+| 8957 | `YYCYYYC` | MEDIUM HEAVY/MEDIUM HEAVY | `C` |
+| 8974 | `CYCYYYY` | LIGHTAIRBRAKE/LIGHTAIRBRAKE | `C LOCO CHANGE` |
+
+**Every train whose frequency contains a `C` also carries a `C` flag on its
+first reason-bearing row.** The converse is false — 8633 and 8977 carry a `C`
+flag and run `YYYYYYY` — so this is an implication, not an equivalence.
+
+On four trains it is a weak implication, and it is **not** a reading of what
+`C` means. It is asserted because it is the first thing about `C` that is
+checkable at all, and because if a later extract breaks it, that is itself
+worth knowing. The meaning of `C` remains outstanding.
+
+### 49.5 Smaller findings, each asserted
+
+- **A train scheduled never to run.** 8456 carries frequency `NNNNNNN` — no
+  day of the week. It is otherwise a complete, tying 43-minute working to
+  LANGLAAGTE.
+- **A new train type and a new reason.** `LIGHTAIRBRAKE/LIGHTAIRBRAKE` (8918,
+  8974) and `CRANKING` (7224, 7228, 7428, 8974), the latter appearing dozens
+  of times as a uniform five minutes at consecutive nodes.
+- **Four workings to MAFIKENG**, all stated at twelve hours. 7226 and 7426
+  share every node and differ at exactly **two rows, by thirty seconds** —
+  BNS/S754935 departs 11:37:30 against 11:37:00, BOONS arrives 11:38:30
+  against 11:38:00. Everything else is identical. A tolerance of a minute
+  would call them the same train; they are not.
+- **5964 and 7235** are one path to SASOLBURG booked twice, clock for clock,
+  same frequency — the same pattern as WINBURG 5002/8906 in §48.
+- **WAPADSKLOOF** is a new origin with two trains, both sixteen-minute yard
+  moves out to WDF/S845043 and back to their own starting point, 70 minutes
+  apart.
