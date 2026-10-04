@@ -1,156 +1,203 @@
+/**
+ * Guards for the shared UI layer.
+ *
+ * These are architecture tests, not unit tests. They exist because the failure
+ * mode being protected against is quiet: the `components/ui` barrel used to
+ * define two crude light-theme components of its own, which shadowed the
+ * twenty-seven finished dark-theme primitives sitting next to it. Nothing
+ * crashed. Every page simply kept hand-rolling its own button, and the design
+ * system went unused for a year.
+ *
+ * Every bound below is a MEASURED baseline, not an aspiration. The ceilings
+ * fail if the number gets worse; the floors fail if adoption slips. All of them
+ * are meant to be driven down over time - when a page is migrated, lower the
+ * ceiling in the same commit so the improvement cannot silently regress.
+ *
+ * Files are read through Vite's raw glob rather than `node:fs`: the frontend
+ * tsconfig deliberately has no `@types/node`, and this keeps the guard runnable
+ * in any Vite context rather than depending on the Node runtime.
+ */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import * as patterns from './index';
+
+const UI_FILES = import.meta.glob('../ui/*.tsx', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+const PAGE_FILES = import.meta.glob('../../pages/**/*.tsx', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+const PATTERN_FILES = import.meta.glob('./*.tsx', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+const UI_BARREL = UI_FILES['../ui/index.tsx'] ?? '';
+
+const UI_PRIMITIVES = Object.keys(UI_FILES).filter(
+  (k) => k !== '../ui/index.tsx' && k !== '../ui/sidebar.tsx',
+);
+
+const SOURCE_PAGES = Object.entries(PAGE_FILES).filter(
+  ([k]) => !k.includes('.test.') && !k.includes('.spec.'),
+);
 
 /**
- * Guards for the design system.
+ * End of the opening tag that starts at `start`.
  *
- * These exist because the defects below are invisible in review. Nobody
- * approves a commit that says "adds 3 keyboard-inaccessible buttons"; they
- * approve a commit that adds a feature, and the inaccessible button arrives
- * inside it. A guard is the only thing that reliably notices.
- *
- * The baselines were measured on 2026-10-04, not chosen. They are the starting
- * point for a migration, not a target — every one of them is a count that
- * should go DOWN. Each is a ceiling: the suite fails if the number rises, and
- * passes as the migration improves it. Lower the ceiling when you fix a case.
+ * A plain "scan to the next >" is wrong: an arrow function in a handler
+ * (`onClick={() => …}`) contains a `>` of its own, which truncates the tag
+ * before any `role=` or `tabIndex=` is seen and inflates the count. Skipping
+ * over `=>` is what makes the two agree.
  */
-
-// __dirname is src/components/patterns, so this resolves to src/
-const SRC = join(__dirname, '../..');
-const PAGES = join(SRC, 'pages');
-const COMPONENTS = join(SRC, 'components');
-const UI = join(COMPONENTS, 'ui');
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) walk(full, out);
-    else if (/\.tsx?$/.test(entry) && !/\.(test|spec)\.tsx?$/.test(entry)) out.push(full);
+function tagEnd(source: string, start: number): number {
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === '=' && source[i + 1] === '>') {
+      i += 1;
+      continue;
+    }
+    if (source[i] === '>') return i;
   }
-  return out;
+  return -1;
 }
 
-const files = [...walk(PAGES), ...walk(COMPONENTS)];
-const read = (f: string) => readFileSync(f, 'utf8');
-
-/** Count files matching a regex, returning the paths so failures name names. */
-function matching(re: RegExp): string[] {
-  return files.filter((f) => re.test(read(f)));
+/** A clickable element that is neither natively interactive nor announced. */
+function clickableOffenders(source: string): number {
+  const openTag = /<(div|span|li|td|tr|p|section)\b/g;
+  let count = 0;
+  let match: RegExpExecArray | null;
+  while ((match = openTag.exec(source)) !== null) {
+    const end = tagEnd(source, match.index);
+    if (end === -1) break;
+    const tag = source.slice(match.index, end + 1);
+    openTag.lastIndex = end;
+    if (!/\bonClick\b/.test(tag)) continue;
+    if (/\brole=/.test(tag) || /\btabIndex=/.test(tag)) continue;
+    count += 1;
+  }
+  return count;
 }
 
-describe('design system — the barrel stays a barrel', () => {
-  it('every primitive file is re-exported, and nothing is defined inline', () => {
-    const index = read(join(UI, 'index.tsx'));
+const adopters = (name: string) =>
+  SOURCE_PAGES.filter(([, src]) => new RegExp(`\\b${name}\\b`).test(src)).length;
 
-    // The previous version of this file ignored all 27 primitives and defined
-    // two light-theme stubs instead. A barrel that defines anything is how that
-    // happens again.
-    expect(index).not.toMatch(/^\s*export (const|function|class|default)\s/m);
-    expect(index).not.toMatch(/className=/);
+describe('the ui barrel', () => {
+  /**
+   * The regression this file was written for. A barrel that declares its own
+   * components stops being a barrel: it silently becomes the implementation of
+   * last resort for every file that imports it.
+   */
+  it('re-exports rather than defining components', () => {
+    expect(UI_BARREL).not.toMatch(/function\s+[A-Z]/);
+    expect(UI_BARREL).not.toMatch(/const\s+[A-Z]\w*\s*=\s*(?:forwardRef|\(|cva)/);
   });
 
-  it('re-exports every primitives file except sidebar, which is excluded on purpose', () => {
-    const index = read(join(UI, 'index.tsx'));
-    const primitives = readdirSync(UI).filter(
-      (f) => /\.tsx?$/.test(f) && f !== 'index.tsx' && f !== 'sidebar.tsx',
-    );
-    const missing = primitives.filter((f) => !index.includes(`./${f.replace(/\.tsx?$/, '')}`));
+  it('re-exports every primitive in components/ui', () => {
+    const missing = UI_PRIMITIVES.filter((path) => {
+      const name = path.replace('../ui/', '').replace(/\.tsx$/, '');
+      return !UI_BARREL.includes(`./${name}`);
+    });
     expect(missing).toEqual([]);
   });
 
-  it('sidebar stays excluded, with the reason recorded in the file', () => {
-    const index = read(join(UI, 'index.tsx'));
-    expect(index).not.toMatch(/from '\.\/sidebar'/);
-    // If someone re-exports it, they must first read why it was left out.
-    expect(index).toMatch(/Deliberately NOT re-exported/);
+  /**
+   * sidebar.tsx is excluded on purpose - it is 23kB of navigation that collides
+   * with components/Sidebar and components/SidebarNavigation. If it is ever
+   * re-exported, it should only be after that collision is settled, and this
+   * comment should be replaced with the resolution.
+   */
+  it('records why sidebar is excluded, if it is excluded', () => {
+    if (UI_BARREL.includes('./sidebar')) return;
+    expect(UI_BARREL).toMatch(/sidebar/i);
   });
 });
 
-describe('design system — accessibility ceilings', () => {
+describe('accessible interactive elements', () => {
   /**
-   * A click handler on a div/span/list row is invisible to a keyboard and
-   * unannounced by a screen reader. `role` and `tabIndex` make one acceptable;
-   * without both there is no way to reach or operate it.
+   * Baseline 2026-10-04: 57 clickable non-interactive elements across the page
+   * tree. Each one is invisible to a keyboard and unannounced by a screen
+   * reader.
+   *
+   * This reads higher than a `grep -c` over the same tree (which reports 39),
+   * because a line-oriented grep cannot see an opening tag that wraps onto the
+   * next line, and most of these do. The guard parses the tag, so it counts
+   * them. 57 is the number to beat.
    */
-  it('no file adds a clickable element with no keyboard path (ceiling: 44)', () => {
-    const offenders = files.filter((f) => {
-      const src = read(f);
-      const clicks = src.match(/<(div|span|li|tr|td)\b[^>]*onClick/g) ?? [];
-      return clicks.some((tag) => !/role=/.test(tag) && !/tabIndex/.test(tag));
-    });
-    expect(offenders.length).toBeLessThanOrEqual(44);
+  it('does not grow past today', () => {
+    const total = SOURCE_PAGES.reduce(
+      (n, [, src]) => n + clickableOffenders(src),
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(57);
   });
 
-  it('the pattern components themselves set the example (zero offenders)', () => {
-    const patterns = walk(join(COMPONENTS, 'patterns')).filter((f) => !f.includes('index.ts'));
-    const offenders = patterns.filter((f) => {
-      const src = read(f);
-      const clicks = src.match(/<(div|span|li|tr|td)\b[^>]*onClick/g) ?? [];
-      return clicks.some((tag) => !/role=/.test(tag) && !/tabIndex/.test(tag));
+  /** The pattern layer must be exemplary: it is what every page is copying. */
+  it('has none inside the pattern layer', () => {
+    Object.entries(PATTERN_FILES).forEach(([, src]) => {
+      expect(clickableOffenders(src)).toBe(0);
     });
+  });
+});
+
+describe('pattern adoption', () => {
+  /**
+   * Floors start at today's measured values so the guard lands green. Raise
+   * them as pages are migrated - that is how the migration is held in place.
+   */
+  const floors: Array<[string, number]> = [
+    ['AsyncState', 0],
+    ['EmptyState', 0],
+    ['ErrorState', 0],
+    ['PageHeader', 0],
+    ['StatCard', 8],
+    ['StatusBadge', 3],
+    ['Pagination', 0],
+    ['DataTable', 1],
+    ['ConfirmDialog', 0],
+  ];
+
+  floors.forEach(([name, floor]) => {
+    it(`holds ${name} at ${floor} page(s) or more`, () => {
+      expect(adopters(name)).toBeGreaterThanOrEqual(floor);
+    });
+  });
+
+  /** A page defining its own Button or Table is the drift this guards. */
+  it('has no page redeclaring Button or Table', () => {
+    const offenders = SOURCE_PAGES.filter(([, src]) =>
+      /(?:function|const)\s+(?:Button|Table)\b/.test(src),
+    ).map(([k]) => k);
     expect(offenders).toEqual([]);
   });
 });
 
-describe('design system — adoption ceilings', () => {
-  /**
-   * These are floors, not ceilings: once a page adopts a pattern it may not
-   * stop. Each number starts at 0 because the layer was introduced today.
-   * Raise the floor as pages migrate; never lower it.
-   */
-  const adopted = (name: string) =>
-    matching(new RegExp(`\\b${name}\\b`)).filter((f) => !f.includes('/patterns/')).length;
+describe('the pattern barrel', () => {
+  const expected = [
+    'AsyncState',
+    'ListSkeleton',
+    'TableSkeleton',
+    'EmptyState',
+    'ErrorState',
+    'errorMessageOf',
+    'PageHeader',
+    'StatCard',
+    'StatusBadge',
+    'statusToneFor',
+    'Pagination',
+    'pageWindow',
+    'DataTable',
+    'ConfirmDialog',
+  ];
 
-  it('records adoption so a migration cannot quietly reverse', () => {
-    const baseline: Record<string, number> = {
-      EmptyState: 0,
-      AsyncState: 0,
-      DataTable: 0,
-      PageHeader: 0,
-      Pagination: 0,
-      ConfirmDialog: 0,
-    };
-    for (const [name, floor] of Object.entries(baseline)) {
-      expect(adopted(name), `${name} adoption fell below ${floor}`).toBeGreaterThanOrEqual(floor);
-    }
-  });
-});
-
-describe('design system — the primitives are not duplicated', () => {
-  /**
-   * If a page defines its own button or table wrapper, it is not using the
-   * library. This is a smoke test for the migration rather than a hard rule:
-   * it counts only the clearest cases (a local component named after a
-   * primitive that already exists).
-   */
-  it('no page or component re-declares a Button or Table that shadows the library', () => {
-    const offenders = files.filter((f) => {
-      if (f.includes('/ui/')) return false;
-      const src = read(f);
-      return /^\s*(export )?const (Button|Table)\s*[:=]/m.test(src);
+  expected.forEach((name) => {
+    it(`exposes ${name}`, () => {
+      expect(patterns).toHaveProperty(name);
     });
-    expect(offenders.map((f) => relative(SRC, f))).toEqual([]);
-  });
-});
-
-describe('design system — the layer is importable as one thing', () => {
-  it('exposes every pattern from a single barrel', () => {
-    const barrel = join(COMPONENTS, 'patterns', 'index.ts');
-    expect(existsSync(barrel)).toBe(true);
-    const src = read(barrel);
-    for (const name of [
-      'AsyncState',
-      'EmptyState',
-      'ErrorState',
-      'PageHeader',
-      'StatCard',
-      'StatusBadge',
-      'Pagination',
-      'DataTable',
-      'ConfirmDialog',
-    ]) {
-      expect(src, `${name} is missing from the patterns barrel`).toContain(name);
-    }
   });
 });

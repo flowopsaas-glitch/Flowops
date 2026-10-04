@@ -1,18 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { getHandshakeReport, listHandshakeReports } from '../api/railHandshakeApi';
+// Type-only imports are erased, so they are safe alongside vi.hoisted.
+import type {
+  HandshakeReport,
+  HandshakeDeviation,
+  HandshakeReportStatus,
+  DeviationCategory,
+  ResponsibleParty,
+} from '../api/railHandshakeApi';
 
 // ── Fixtures (hoisted: vi.mock factories run before module-level consts) ──────
 const h = vi.hoisted(() => {
-  const deviation = {
+  const deviation: HandshakeDeviation = {
     id: 'd1', reportId: 'r1', trainSlotRef: 'NS-0412', orderNumber: 'ORD-9', consignmentId: null,
-    category: 'DELAY', reason: 'Late release from yard', rootCause: null, location: 'Ermelo', occurredAt: '2026-10-01T06:30:00.000Z',
-    delayMinutes: 90, responsibleParty: 'IM', slotImpact: 'DELAYED', costZar: 12500, costRecovered: false,
+    category: 'DELAY' as DeviationCategory, reason: 'Late release from yard', rootCause: null, location: 'Ermelo', occurredAt: '2026-10-01T06:30:00.000Z',
+    delayMinutes: 90, responsibleParty: 'IM' as ResponsibleParty, slotImpact: 'DELAYED', costZar: 12500, costRecovered: false,
     status: 'LOGGED', escalationStage: 'NONE', disputeReason: null, resolutionNote: null, resolvedAt: null, escalatedAt: null,
     createdAt: '2026-10-01T08:00:00.000Z', updatedAt: '2026-10-01T08:00:00.000Z',
   };
-  const report = {
-    id: 'r1', reportNumber: 'HS-2026-00042', status: 'PENDING_TOC', reportDate: '2026-10-01T00:00:00.000Z',
+  const report: HandshakeReport = {
+    id: 'r1', reportNumber: 'HS-2026-00042', status: 'PENDING_TOC' as HandshakeReportStatus, reportDate: '2026-10-01T00:00:00.000Z',
     windowStart: '2026-10-01T00:00:00.000Z', windowEnd: '2026-10-02T00:00:00.000Z', railOperator: 'TRIM', corridor: 'Ore',
     signedOffAt: null, signedOffBy: null, imReference: 'TOL-7781', notes: null,
     createdAt: '2026-10-02T08:00:00.000Z', updatedAt: '2026-10-02T08:00:00.000Z', deviations: [deviation], openItems: 0,
@@ -53,7 +61,7 @@ vi.mock('../api/railHandshakeApi', async (importOriginal) => ({
 
 import RailHandshake from './RailHandshake';
 
-async function openReport(role: string, status = 'PENDING_TOC') {
+async function openReport(role: string, status: HandshakeReportStatus = 'PENDING_TOC') {
   h.auth.user = { role, email: 'u@toc.co.za', name: 'Test User' };
   h.report.status = status;
   render(<RailHandshake />);
@@ -152,7 +160,7 @@ describe('RailHandshake — role gating of mutating controls', () => {
 describe('RailHandshake — Cancel / reschedule (Annexure 20a · 20b) from a report', () => {
   const CANCEL = /Cancel \/ reschedule \(20a · 20b\)/;
 
-  it.each([['MANAGER', 'PENDING_TOC'], ['MANAGER', 'DRAFT'], ['DISPATCH', 'PENDING_TOC'], ['DISPATCH', 'DRAFT']])('%s sees it on a %s report', async (role, status) => {
+  it.each<[string, HandshakeReportStatus]>([['MANAGER', 'PENDING_TOC'], ['MANAGER', 'DRAFT'], ['DISPATCH', 'PENDING_TOC'], ['DISPATCH', 'DRAFT']])('%s sees it on a %s report', async (role, status) => {
     await openReport(role, status);
     expect(has(CANCEL)).toBe(true);
   });
@@ -162,7 +170,7 @@ describe('RailHandshake — Cancel / reschedule (Annexure 20a · 20b) from a rep
     expect(has(CANCEL)).toBe(false);
   });
 
-  it.each(['SIGNED_OFF', 'DISPUTED'])('it is not offered once the report is %s — a signed report takes no new deviations, even from a signatory', async (status) => {
+  it.each<HandshakeReportStatus>(['SIGNED_OFF', 'DISPUTED'])('it is not offered once the report is %s — a signed report takes no new deviations, even from a signatory', async (status) => {
     await openReport('MANAGER', status);
     expect(has(CANCEL)).toBe(false);
   });
