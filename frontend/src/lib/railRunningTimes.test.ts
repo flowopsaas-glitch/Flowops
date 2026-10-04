@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   CORRIDOR_TAXONOMY_NOTE,
+  hasSummary,
   distanceCovered,
   formatClock,
   isComplete,
@@ -184,5 +185,119 @@ describe('cross-document links', () => {
   it('records that the corridor taxonomies do not match', () => {
     expect(schedule().rows[0].corridor).toBe('CENTRAL');
     expect(CORRIDOR_TAXONOMY_NOTE).toMatch(/do not match/);
+  });
+});
+
+/**
+ * Second supplied extract: trains 8412, 8422, 8426, 10008, 10010 on the CAPE
+ * and ORELINE corridors. Two of its properties broke the first implementation.
+ */
+const BATCH2 = `Origin	Train	NODE_Seq	ENROUTE_Corridor	ENRTE_Station/siding number	ENROUTE_Arrival time	ENROUTE_Departure Time	Point to Point Runtime	Standingtime	StandingReason	Destination	Origin Departure Time	Destination Arrival Time	Sched	Frequency	Train Type	Train Throughput Runtime (from Origin to Destination)	Depart_Day	Distance
+SIN-MYN-WISST	8412	6	CAPE	BEK/S242799	16:29:00	16:30:00	00:01:00	00:01:00	SHUNT	POSTMASBURG						02:10:00	0	0.97
+SIN-MYN-WISST	8412	7	CAPE	BEESHOEK	16:31:00	16:31:00	00:01:00			POSTMASBURG						02:10:00	0	0.97
+SIN-MYN-WISST	8412	8	CAPE	POSTMASBURG	16:45:00	00:00:00	00:14:00		RT	POSTMASBURG						02:10:00	0	7.84
+SIN-MYN-WISST	8422	1	CAPE	SIN-MYN-WISST		15:10:00				POSTMASBURG	15:10:00	17:10:00	3	YYYYYYY	MEDIUM HEAVY/MEDIUM HEAVY	02:00:00	0
+SIN-MYN-WISST	8422	1	CAPE	GAMMAGARA	15:29:30	15:29:30	00:19:30		C	POSTMASBURG						02:00:00	0	3.25
+SIN-MYN-WISST	8422	2	CAPE	MOOKANENG	15:35:00	15:35:00	00:05:30			POSTMASBURG						02:00:00	0	9.63
+SIN-MYN-WISST	8422	2	CAPE	HAAKBOSLEEGTE	15:50:00	16:00:00	00:15:00	00:10:00	X8304	POSTMASBURG						02:00:00	0	5.04
+SIN-MYN-WISST	8422	3	CAPE	LOHATLHA	16:13:30	16:13:30	00:13:30			POSTMASBURG						02:00:00	0	10.57
+SIN-MYN-WISST	8422	4	CAPE	ERTSRAND	16:21:00	16:21:00	00:07:30			POSTMASBURG						02:00:00	0	5.57
+SIN-MYN-WISST	8422	4	CAPE	GLOSAM	16:25:00	16:25:00	00:04:00			POSTMASBURG						02:00:00	0	2.75
+SIN-MYN-WISST	8422	4	CAPE	PALINGPAN	16:32:00	16:32:00	00:07:00			POSTMASBURG						02:00:00	0	4.95
+SIN-MYN-WISST	8422	5	CAPE	BOKKOPPIE	16:40:30	16:40:30	00:08:30			POSTMASBURG						02:00:00	0	6.51
+SIN-MYN-WISST	8422	5	CAPE	BEESHOEK	16:52:30	16:52:30	00:12:00			POSTMASBURG						02:00:00	0	8.86
+SIN-MYN-WISST	8422	6	CAPE	BEK/S242799	16:53:30	16:54:30	00:01:00	00:01:00	SHUNT	POSTMASBURG						02:00:00	0	0.97
+SIN-MYN-WISST	8422	7	CAPE	BEESHOEK	16:55:30	16:55:30	00:01:00			POSTMASBURG						02:00:00	0	0.97
+SIN-MYN-WISST	8422	8	CAPE	POSTMASBURG	17:10:00	00:00:00	00:14:30		RT	POSTMASBURG						02:00:00	0	7.84
+SIN-MYN-WISST	8426	1	CAPE	SIN-MYN-WISST		16:00:00				POSTMASBURG	16:00:00	18:10:00	2	YYYYYYY	MEDIUM HEAVY/MEDIUM HEAVY	02:10:00	0
+SIN-MYN-WISST	8426	1	CAPE	GAMMAGARA	16:19:30	16:19:30	00:19:30		C	POSTMASBURG						02:10:00	0	3.25
+SIN-MYN-WISST	8426	2	CAPE	MOOKANENG	16:25:00	16:25:00	00:05:30			POSTMASBURG						02:10:00	0	9.63
+SIN-MYN-WISST	8426	2	CAPE	HAAKBOSLEEGTE	16:40:30	16:40:30	00:15:30			POSTMASBURG						02:10:00	0	5.04
+SIN-MYN-WISST	8426	3	CAPE	LOHATLHA	16:53:30	16:53:30	00:13:00			POSTMASBURG						02:10:00	0	10.57
+SIN-MYN-WISST	8426	4	CAPE	ERTSRAND	17:01:00	17:01:00	00:07:30			POSTMASBURG						02:10:00	0	5.57
+SIN-MYN-WISST	8426	4	CAPE	GLOSAM	17:05:00	17:05:00	00:04:00			POSTMASBURG						02:10:00	0	2.75
+SIN-MYN-WISST	8426	4	CAPE	PALINGPAN	17:12:00	17:12:00	00:07:00			POSTMASBURG						02:10:00	0	4.95
+SIN-MYN-WISST	8426	5	CAPE	BOKKOPPIE	17:20:30	17:20:30	00:08:30			POSTMASBURG						02:10:00	0	6.51
+SIN-MYN-WISST	8426	5	CAPE	BEESHOEK	17:32:30	17:52:00	00:12:00	00:19:30	X8417	POSTMASBURG						02:10:00	0	8.86
+SIN-MYN-WISST	8426	6	CAPE	BEK/S242799	17:53:00	17:54:00	00:01:00	00:01:00	SHUNT	POSTMASBURG						02:10:00	0	0.97
+SIN-MYN-WISST	8426	7	CAPE	BEESHOEK	17:55:00	17:55:00	00:01:00			POSTMASBURG						02:10:00	0	0.97
+SIN-MYN-WISST	8426	8	CAPE	POSTMASBURG	18:10:00	00:00:00	00:15:00		RT	POSTMASBURG						02:10:00	0	7.84
+SIN-MYN-WISST	10008	1	CAPE	SIN-MYN-WISST		11:40:00				GMA/S261955	11:40:00	11:47:00	3	YYYYYYY	HEAVYAIRBRAKE/HEAVYAIRBRAKE	00:07:00	0
+SIN-MYN-WISST	10008	1	CAPE	GAMMAGARA	11:42:30	11:42:30	00:02:30			GMA/S261955						00:07:00	0	3.25
+SIN-MYN-WISST	10008	2	ORELINE	GMA/S261955	11:47:00	00:00:00	00:04:30		SHUNT	GMA/S261955						00:07:00	0	0.96
+SIN-MYN-WISST	10010	1	CAPE	SIN-MYN-WISST		17:40:00				GMA/S261955	17:40:00	17:47:00	3	YYYYYYY	HEAVYAIRBRAKE/HEAVYAIRBRAKE	00:07:00	0
+SIN-MYN-WISST	10010	1	CAPE	GAMMAGARA	17:45:30	17:45:30	00:05:30			GMA/S261955						00:07:00	0	3.25
+SIN-MYN-WISST	10010	2	ORELINE	GMA/S261955	17:47:00	00:00:00	00:01:30		SHUNT	GMA/S261955						00:07:00	0	0.96`;
+
+describe('a second extract: continuations and termini', () => {
+  const trains = () => parseRunningTimes(BATCH2);
+  const byId = (id: string) => trains().find((t) => t.train === id)!;
+
+  /**
+   * BUG 1. Train 8412 begins at NODE_Seq 6 — its summary row lies above the
+   * cut. Keying rows on the preceding summary discarded all three of them.
+   */
+  it('keeps rows that appear before any summary row', () => {
+    expect(trains().map((t) => t.train)).toEqual(['8412', '8422', '8426', '10008', '10010']);
+    expect(byId('8412').rows).toHaveLength(3);
+    expect(distanceCovered(byId('8412'))).toBeCloseTo(9.78, 2);
+  });
+
+  it('marks a continuation as lacking its summary rather than as complete', () => {
+    expect(hasSummary(byId('8412'))).toBe(false);
+    expect(hasSummary(byId('8422'))).toBe(true);
+  });
+
+  /**
+   * BUG 2. Every terminus row carries Departure 00:00:00 with no standing
+   * time. Read as a real time it is 435 minutes of standing at POSTMASBURG.
+   */
+  it('does not read the terminus 00:00:00 as a departure', () => {
+    ['8422', '8426', '10008', '10010'].forEach((id) => {
+      const v = validateSchedule(byId(id));
+      expect(v.standingMismatches, `${id} terminus`).toEqual([]);
+      expect(v.runtimeMismatches, `${id} runtimes`).toEqual([]);
+      expect(v.throughputTies, `${id} throughput`).toBe(true);
+    });
+  });
+
+  it('validates every complete train in the extract', () => {
+    ['8422', '8426', '10008', '10010'].forEach((id) => {
+      const v = validateSchedule(byId(id));
+      expect(v.elapsedIdentityHolds, `${id} identity`).toBe(true);
+    });
+  });
+
+  it('ties the two Ore Line runs at 7 minutes over 4.21 km', () => {
+    ['10008', '10010'].forEach((id) => {
+      const t = byId(id);
+      expect(t.throughputRuntime).toBe(7);
+      expect(distanceCovered(t)).toBeCloseTo(4.21, 2);
+    });
+  });
+
+  /** 8422 and 8426 follow the same route; only the standing differs. */
+  it('shows 8426 losing 10 minutes to standing against 8422', () => {
+    const standing = (id: string) =>
+      byId(id).rows.reduce((n, r) => n + (r.standingTime ?? 0), 0);
+    expect(standing('8422')).toBe(11);
+    expect(standing('8426')).toBe(20.5);
+    expect(byId('8426').throughputRuntime - byId('8422').throughputRuntime).toBe(10);
+  });
+
+  /**
+   * Corridor is a per-ROW attribute, not per train: 10008 departs on CAPE and
+   * arrives on ORELINE. Any corridor rollup that reads it from the summary row
+   * will file the whole journey under the wrong corridor.
+   */
+  it('carries a corridor per row, which can change mid-journey', () => {
+    const rows = byId('10008').rows;
+    expect(rows.map((r) => r.corridor)).toEqual(['CAPE', 'ORELINE']);
+  });
+
+  /** HEAVYAIRBRAKE is a fourth vocabulary not in Annexure 40's three bands. */
+  it('maps HEAVYAIRBRAKE to the heavy band and flags unknown types as null', () => {
+    expect(shuntingBandFor('HEAVYAIRBRAKE/HEAVYAIRBRAKE')).toBe('heavy (>100 wagons)');
+    expect(shuntingBandFor('VACUUM TRAINS/VACUUM TRAIN')).toBeNull();
   });
 });

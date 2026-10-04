@@ -160,8 +160,17 @@ export function parseRunningTimes(tsv: string): TrainSchedule[] {
   const lines = tsv.split('\n').filter((l) => l.trim().length > 0);
   if (lines.length === 0) return [];
 
-  const out: TrainSchedule[] = [];
-  let current: TrainSchedule | null = null;
+  /**
+   * Rows are keyed on the TRAIN NUMBER, not on having seen a summary row.
+   *
+   * A pasted extract can begin mid-train. Sample 8412 starts at NODE_Seq 6
+   * with its summary row sitting above the cut, so the first row encountered
+   * for that train is an ordinary node row. The previous version skipped any
+   * row before the first summary (`if (!current) continue`), which silently
+   * discarded the whole train: three rows, 9.78 km, gone without a warning.
+   */
+  const byTrain = new Map<string, TrainSchedule>();
+  const order: string[] = [];
 
   for (const line of lines.slice(1)) {
     const f = line.split('\t');
@@ -172,15 +181,43 @@ export function parseRunningTimes(tsv: string): TrainSchedule[] {
      * the summary row's station field holds the origin name again.
      */
     const isSummary = !!f[11]?.trim();
-    if (isSummary) {
-      current = { ...toSchedule(f), rows: [] };
-      out.push(current);
-      continue;
+    const train = f[1]?.trim() || `?${order.length}`;
+
+    if (!byTrain.has(train)) {
+      byTrain.set(train, {
+        origin: f[0]?.trim() ?? '',
+        train,
+        destination: f[10]?.trim() ?? '',
+        originDeparture: 0,
+        destinationArrival: 0,
+        throughputRuntime: 0,
+        frequency: '',
+        trainType: '',
+        sched: null,
+        departDay: null,
+        rows: [],
+      });
+      order.push(train);
     }
-    if (!current) continue;
-    current.rows.push(toRow(f));
+
+    const entry = byTrain.get(train)!;
+    if (isSummary) Object.assign(entry, toSchedule(f));
+    else entry.rows.push(toRow(f));
   }
-  return out;
+
+  return order.map((t) => byTrain.get(t)!);
+}
+
+/**
+ * True when the train's summary row was present.
+ *
+ * Without it there is no origin departure, no destination arrival and no
+ * throughput, so the run cannot be validated end to end — only the rows that
+ * were supplied can be checked against each other. A continuation is not an
+ * error, but it must not be reported as a complete, validated schedule.
+ */
+export function hasSummary(s: TrainSchedule): boolean {
+  return s.frequency !== '' && s.throughputRuntime > 0;
 }
 
 /**
@@ -206,13 +243,24 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
         runtimeMismatches.push(r.station);
       }
     }
-    if (r.arrival != null && r.departure != null) {
+    /**
+     * The terminus row carries Departure = 00:00:00 and no standing time.
+     *
+     * That is not a departure at midnight, it is the absence of one — the
+     * journey ends there. Read literally it gives a standing period of
+     * (0 − arrival + 1440), which flagged EVERY complete train in the sample
+     * as a mismatch: 435 minutes of phantom standing at POSTMASBURG, 410 at
+     * POSTMASBURG again, 350, 733 and 373 elsewhere. Five trains, five false
+     * positives, one cause.
+     */
+    const isTerminus = r.departure === 0 && r.standingTime == null;
+    if (r.arrival != null && r.departure != null && !isTerminus) {
       const standing = span(r.arrival, r.departure);
       if (Math.abs(standing - (r.standingTime ?? 0)) > EPS) {
         standingMismatches.push(r.station);
       }
     }
-    if (r.departure != null) previousDeparture = r.departure;
+    if (r.departure != null && !isTerminus) previousDeparture = r.departure;
   });
 
   const totalRuntime = s.rows.reduce((n, r) => n + (r.pointToPointRuntime ?? 0), 0);
