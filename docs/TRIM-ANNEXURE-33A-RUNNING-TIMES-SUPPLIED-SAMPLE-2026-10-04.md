@@ -187,7 +187,8 @@ group rather than by row count:
 | 8422 | — | yes | 1–8 | Complete |
 | 8426 | — | yes | 1–8 | Complete |
 | **6455** | SIN-MYN-WISST → **NEWCASTLYSKOR** | yes (27:09 = 1629 min) | **1–65** | **Complete** |
-| 6431 | → NEWCASTLYSKOR | **no** | 54–65 only | **Continuation** |
+| **6431** | SIN-MYN-WISST → NEWCASTLYSKOR | **yes** (29:09 = 1749 min) | **1–65**, head joined to tail | **Complete** |
+| **2312** | SIN-MYN-WISST → **POSTMASBURG** | yes (02:17 = 137 min) | 1–6 | **Complete** |
 | 10008 | — | yes | 1–2 | Complete |
 | 10010 | — | yes | 1–2 | Complete |
 
@@ -330,5 +331,111 @@ a `RailSource` / `RailSourceException` normalisation layer rather than a parser.
 4. **6431** — sequence groups 1–53, and its summary row.
 5. **The 33a ↔ Annexure 43 corridor mapping** — the binding constraint.
 6. Every train not listed in §10.
+
+Paste as raw TSV, one row per line, no `" and "` joins.
+
+
+---
+
+## 17. Two trains, one route: where the time actually goes
+
+6455 and 6431 both run SIN-MYN-WISST → NEWCASTLYSKOR. They visit the **same
+142 nodes in the same order** over the **same 1035.85 km**.
+
+| | 6455 | 6431 | Delta |
+|---|---|---|---|
+| Running | 1308.0 min | 1314.9 min | **+6.9 (0.5%)** |
+| Standing | 321 min | 434 min | **+113** |
+| Total | 1629 min | 1749 min | **+120** |
+| Distance | 1035.85 km | 1035.85 km | 0 |
+
+**94% of the 120-minute gap between the two trains is standing time.**
+
+Running time across a thousand kilometres varies by half a percent. Standing
+time varies by nearly two hours. This is the second independent pair to say
+so — 8422 and 8426 showed the same on a corridor a tenth the length, with
+running times 30 seconds apart and the entire 10-minute gap standing.
+
+This decides where a reconciliation process should look. Running time is close
+to deterministic per section; the variance lives in standing. **The Daily
+Handshake is a standing-time problem, not a running-time problem.** Deviations
+should be attributed to causes like `BO`, `RM`, `X <train>` and
+`INSPECTION ROLL BY`, and the KPI set should weight standing above section
+performance.
+
+### Warronton, across every train that passes it
+
+| Train | Standing at Warronton | Reason |
+|---|---|---|
+| 7405 | 321 min | `BO` |
+| **6431** | **305 min** | `BO` |
+| 7403 | 195 min | `BO` |
+| 7407 | 195 min | `BO` |
+| 6455 | 169 min | `RM` |
+
+Five of five. It is the largest single standing cost anywhere in the sample,
+and it appears under two different reason codes, so the node is the problem
+and not the code.
+
+---
+
+## 18. A six-second defect, found by the identity
+
+6431's rows total **1748.9** minutes against a stated **1749**. The elapsed
+identity does not merely check a total — at this precision it localises a
+defect to one row:
+
+```
+TARENTAAL   arrival 16:02:00   departure 16:02:06   standing: (blank)
+```
+
+Six seconds of standing, dropped by the source because the standing column is
+empty. Sub-minute standing is systematically discarded, which means any
+reconciliation at second resolution will find gaps that are not errors in the
+parsing but omissions in the file.
+
+---
+
+## 19. What a reason code does and does not mean
+
+Three separate things have now been observed and should not be conflated:
+
+1. **A reason does not imply a stand.** 6431 records `X CONTAINER` at
+   DRIERUITERS and `C` at GAMMAGARA with the standing column empty. `C` has
+   appeared at GAMMAGARA on five trains now, always with no standing time.
+2. **A stand does not imply a reason.** 6455 stands 19 minutes at WEIR with
+   the field blank.
+3. **The terminus is not marked by its reason.** 2312 ends on `RT`; every
+   other train ends on `BO`; and `BO` also appears mid-journey at Warronton.
+   Only `Departure = 00:00:00` with no standing time identifies the end of a
+   run, and even that is a convention rather than a documented rule.
+
+The vocabulary is free text and now contains a compound value joined with a
+slash — `SHUNT / WAIT CROSSINGS`.
+
+---
+
+## 20. Fields that vary more than assumed
+
+- **`Sched` is not always 1.** 2312 carries **2**, so a timetable holds more
+  than one schedule and a train number alone does not identify a service.
+- **`Frequency` has two codes, not a boolean.** `YYYYYYY` (2312),
+  `YYYYAYY` (6455), `YYAYAYY` (7403) and **`AAAAAAA`** (6431). Capacity
+  planning cannot assume seven runs a week, and `Y` and `A` are not
+  "runs" and "does not run" — 6431 runs on all seven days.
+
+---
+
+## 21. Still required
+
+1. **7407** — rows for sequence groups 2–39. Summary held.
+2. **7403** — sequence groups 14–39. Head and summary held.
+3. **7405** — the ~30 intermediate rows between the groups supplied.
+4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint
+   on measuring any transit KPI.
+5. Every train not listed in §10.
+
+6431 and 2312 are now complete. **6455 and 6431 together are the reference
+pair** and are asserted end to end in the test suite.
 
 Paste as raw TSV, one row per line, no `" and "` joins.
