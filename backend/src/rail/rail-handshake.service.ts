@@ -113,18 +113,34 @@ export class RailHandshakeService {
   }
 
   /**
-   * The escalation ladder from Annexure 28. Given the time elapsed since the
-   * report window closed, returns the stage an OPEN item should be at.
-   *   ≤24h  → IM Customer Liaison Manager
-   *   ≤48h  → IM Head of Customer Liaison
-   *   ≤72h  → Route Logistics Forum
-   *   >72h  → dispute lodged with the Regulator
+   * The escalation ladder from Annexure 28, read with NS §6.6.1.14.1,
+   * §6.6.1.15.3 and §6.6.1.16. Given the time elapsed since the report window
+   * closed, returns the stage an OPEN item should be at.
+   *   ≤24h  → TRIM Access Seeker Liaison Manager
+   *   ≤48h  → TRIM Head of Access Seeker Service
+   *   ≤96h  → TRIM Head of Network Service Planning and Operations — reached
+   *           at 72h and held until the 96h resolve-by expires
+   *   >96h  → Route Logistics Forum, a later referral rather than a rung
+   *
+   * Two things this deliberately does not do. It never returns
+   * REGULATOR_DISPUTE: lodging with the Regulator is a decision a person makes,
+   * taken by lodgeDispute() once the item has been through the Forum, and the
+   * clock must never make it for them. And it does not move an item to the
+   * Forum at 72h — that rung belongs to the Head of NSP&O, who is entitled to
+   * the full 96h to resolve before anyone refers the item onward.
    */
   private stageForElapsedHours(hours: number): EscalationStage {
     if (hours <= 24) return EscalationStage.LIAISON_MANAGER_24H;
     if (hours <= 48) return EscalationStage.HEAD_LIAISON_48H;
-    if (hours <= 72) return EscalationStage.ROUTE_LOGISTICS_FORUM;
-    return EscalationStage.REGULATOR_DISPUTE;
+    if (hours <= 96) return EscalationStage.HEAD_NSPO_72H;
+    return EscalationStage.ROUTE_LOGISTICS_FORUM;
+  }
+
+  /** Annexure 28: the Head of NSP&O must resolve within 96h of the window closing. */
+  private static readonly RESOLVE_BY_HOURS = 96;
+
+  private resolveByFor(windowEnd: Date): Date {
+    return new Date(windowEnd.getTime() + RailHandshakeService.RESOLVE_BY_HOURS * 3_600_000);
   }
 
   private hoursSince(d: Date): number {
@@ -470,10 +486,20 @@ export class RailHandshakeService {
       const stage = this.stageForElapsedHours(elapsed);
       if (stage !== d.escalationStage) {
         const fromStage = d.escalationStage; // capture before the write is issued
+        // The 96h resolve-by is stamped once, the first time the item reaches
+        // the 72h rung. It is never re-stamped: the source fixes the deadline
+        // from the window end, not from whenever we happened to notice.
+        const reachedNspo = stage === EscalationStage.HEAD_NSPO_72H;
+        const resolveByAt =
+          reachedNspo && !d.resolveByAt ? this.resolveByFor(report.windowEnd) : d.resolveByAt;
         updates.push(
           this.prisma.railHandshakeDeviation.update({
             where: { id: d.id },
-            data: { escalationStage: stage, escalatedAt: new Date() },
+            data: {
+              escalationStage: stage,
+              escalatedAt: new Date(),
+              ...(reachedNspo && !d.resolveByAt ? { resolveByAt } : {}),
+            },
           }),
         );
         // The ladder moves with the clock, not with a person — so the audit
@@ -485,10 +511,11 @@ export class RailHandshakeService {
             {
               reportId: report.id, reportNumber: report.reportNumber,
               from: fromStage, to: stage, elapsedHoursSinceWindowEnd: Math.round(elapsed * 100) / 100,
+              resolveByAt: resolveByAt ? resolveByAt.toISOString() : null,
             },
           ),
         );
-        return { ...d, escalationStage: stage };
+        return { ...d, escalationStage: stage, resolveByAt };
       }
       return d;
     });

@@ -475,15 +475,33 @@ never as live controls (EXC-003).
 
 ## 6. Implementation gaps carried forward (from the source register, verified)
 
-| # | Gap | Where |
-| --- | --- | --- |
-| G-1 | Escalation ladder structure: the 72-hour rung belongs to the Head of NSP&O (NS) / IM Network Operations Manager (S5), not the Route Logistics Forum; the Forum is a later referral | `EscalationStage` enum |
-| G-2 | The 96-hour resolve-by step has no code counterpart | `EscalationStage` |
-| G-3 | 48-hour role-name drift across NS, S5 and code (Head of Access Seeker Service / Manager: Customer Service / Head of Customer Liaison) | EXC-017 |
-| G-4 | Deviation field **other Train Paths impacted** missing | `RailHandshakeDeviation` |
-| G-5 | Deviation field **SLA KPIs impacted** missing | `RailHandshakeDeviation` |
-| G-6 | No rail tests of any kind (verified 2026-09-27) | — |
-| G-7 | No monthly/weekly order models; no capacity/train-path/agreement/KPI/occurrence models | — |
+| # | Gap | Where | Status |
+| --- | --- | --- | --- |
+| G-1 | Escalation ladder structure: the 72-hour rung belongs to the Head of NSP&O (NS) / IM Network Operations Manager (S5), not the Route Logistics Forum; the Forum is a later referral | `EscalationStage` enum | **Closed** 2026-10-04 |
+| G-2 | The 96-hour resolve-by step has no code counterpart | `EscalationStage` | **Closed** 2026-10-04 |
+| G-3 | 48-hour role-name drift across NS, S5 and code (Head of Access Seeker Service / Manager: Customer Service / Head of Customer Liaison) | EXC-017 | **Recorded, not resolved** — see §6.1 |
+| G-4 | Deviation field **other Train Paths impacted** missing | `RailHandshakeDeviation` | **Closed** 2026-10-04 |
+| G-5 | Deviation field **SLA KPIs impacted** missing | `RailHandshakeDeviation` | **Closed** 2026-10-04 |
+| G-6 | No rail tests of any kind (verified 2026-09-27) | — | **Closed** — the finding predates the 33 rail test files now present |
+| G-7 | No monthly/weekly order models; no capacity/train-path/agreement/KPI/occurrence models | — | **Partially closed** — occurrence and train-path/slot models now exist; monthly/weekly order, capacity allocation, agreement and KPI do not |
+
+### 6.1 G-3 is recorded, not resolved — and that is deliberate
+
+G-1, G-2, G-4 and G-5 are closed by the wave 5 migration and the ladder
+rewrite. G-3 is **not**, and calling it closed would be the error the register
+exists to prevent.
+
+The 48-hour rung carries three different role names across three sources:
+"Head of Access Seeker Service" (the Network Statement), "Manager: Customer
+Service" (the S5 working) and "Head of Customer Liaison" (the previous code
+comment). Picking one is not a transcription question — it decides whose name
+appears on an escalation notice, and it is a decision reserved for the owner
+and the independent reviewer under EXC-017.
+
+What was done instead: the drift is recorded in the `EscalationStage` enum
+comment and in the service docblock, the enum value name is left unchanged so
+that no variant is encoded as the rule, and the display name is not
+re-touched. This is stated rather than left to look like an oversight.
 
 ## 7. Exception register — never silently normalised
 
