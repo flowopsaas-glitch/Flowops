@@ -23,6 +23,30 @@ does **not** start the Rail workstream, and nothing here is evidence that Rail i
 > and 40 in the requirement register's §3 and the "nothing" rows for them in this register's §3 — see §13.6.
 > Annexures 13, 14, 23, 24, 41 and 37–39, and Network Statement Chapters 2 and 5, are **still not supplied**.
 >
+> **Revision 10 — 2026-10-04.** The final Network Statement Version 4 was published on 18 September
+> 2026 and gazetted in **Gazette No. 55426** on 21 September 2026, governing **FY2026/27 and
+> FY2027/28**. Every V4 annexure TRIM publishes now has a known retrieval URL, and the complete map
+> — V4 governing set, V3 gap-filling set, and the confirmed-absent set — is recorded in
+> `docs/TRIM-SOURCE-RETRIEVAL-MANIFEST-2026-10-04.md`. This register remains a *transcription* of
+> text supplied in conversation, not of the binaries; no binary has been retrieved, hashed or
+> checked against this record, and §9 item 1 stays open.
+>
+> Three annexure identities recorded in earlier revisions were **wrong**, and are corrected here
+> rather than folded in: **33a is Point to Point Running Times** (not an ad-hoc slot form),
+> **29b is the Network Capacity Statement** (not a slot form), and **24 is the Interface Agreement**
+> (not the ITP). The ad-hoc slot process the earlier revisions attributed to 33a is **Annexure 32**.
+>
+> **Annexures 37, 38 and 39 are confirmed absent from both the V3 (2024/25) and V4 annexure
+> indexes.** They are not withheld from us — they are not published at all, being internal /
+> TOL-class. RAIL-011.1 and RAIL-011.2 stay evidence-blocked on that basis.
+>
+> Two further facts captured, both carrying the §11.0 period caveat because they come from the V3 /
+> 2025 publication set: the **15-step TOC application process** (TRIM Annual Train Path Allocation
+> page), in which the Route Logistics Forum and the Regulator sit in the *application-dispute* chain
+> — a distinct path from the Daily Handshake escalation ladder; and the **ad-hoc train path SLAs**
+> (announcement of 01 December 2025, NS V3 cl. 4.3.4): request ≥21 days before service, IM answers
+> within 1–14 days, new TOCs follow §4.3.2.
+>
 > **Revision 7 — 2026-09-27.** The project owner attests that the **capacity source is valid**: the
 > Annexure 33 capacity-statement workbook is now named in §1's provenance attestation, which previously
 > listed only the Volume 4 text, its annexure list and the Annexure 43 KPI extract. This was a real gap —

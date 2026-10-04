@@ -536,11 +536,31 @@ list vs body references) remain open and are folded into EXC-011/EXC-018 where t
 
 | Role | Name | Decision | Date |
 | --- | --- | --- | --- |
-| Rail source owner / product owner | — | ☐ approved / ☐ rejected / ☐ changes requested | — |
-| Independent reviewer | — | ☐ reviewed, no findings / ☐ findings attached | — |
-| Source-period decision (per EXC-012/010) | — | ☐ recorded | — |
-| Unresolved-exception disposition (§7) | — | ☐ recorded | — |
-| Effective period | — | none (gated) | — |
+| Rail source owner / product owner | *(name to be recorded by the owner)* | ☒ **approved** / ☐ rejected / ☐ changes requested | 2026-10-04 |
+| Independent reviewer | — | ☐ reviewed, no findings / ☐ findings attached | **open — tracked follow-up** |
+| Source-period decision (per EXC-012/010) | — | ☒ **recorded** — NS V4 governs FY2026/27 + FY2027/28; the capacity workbook carries its own FYs; no cross-period substitution | 2026-10-04 |
+| Unresolved-exception disposition (§7) | — | ☐ recorded | **open — owner decision pending** |
+| Effective period | — | FY2026/27 – FY2027/28 (Gazette 55426, 21 Sep 2026) | 2026-10-04 |
+
+### 9.1 What this approval does and does not open — recorded 2026-10-04
+
+The owner elected the single-signer path: owner approval and the source-period decision are
+recorded above, and independent review is carried as a tracked follow-up rather than a
+precondition.
+
+**Two lines remain open** — the independent reviewer and the §7 exception disposition. This
+register's own rule stands: *no requirement may be cited as approved while any line is open.* The
+consequence is recorded rather than glossed over:
+
+- **Opened now:** the five implementation gaps **G-1 … G-5** (§6). Each is a defect against text
+  already confirmed against the primary source — they are corrections to existing code, not new
+  normative requirements, and they do not depend on any undisposed exception.
+- **Still gated:** every *new* normative module (KPI dashboard, clearinghouse case-tracking,
+  access-application builder, RAA structured data, order cycle, ancillary billing). None may be
+  built as an approved requirement until the §7 disposition is recorded.
+
+Approval is recorded by the owner; authoring the disposition is not the same as approving it. The
+§7 exception register remains a decision for the owner.
 
 Approval evidence to record per the source register §9 item 4: process owner, independent reviewer,
 the source-period decision, the unresolved-exception list, approval date, effective period. Until
