@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { getHandshakeReport } from '../api/railHandshakeApi';
+import { getHandshakeReport, listHandshakeReports } from '../api/railHandshakeApi';
 
 // ── Fixtures (hoisted: vi.mock factories run before module-level consts) ──────
 const h = vi.hoisted(() => {
@@ -186,5 +186,63 @@ describe('RailHandshake — Cancel / reschedule (Annexure 20a · 20b) from a rep
     fireEvent.click(screen.getByRole('button', { name: 'stub-created' }));
     expect(screen.queryByRole('dialog', { name: 'change-modal-stub' })).toBeNull();
     await waitFor(() => expect(vi.mocked(getHandshakeReport).mock.calls.length).toBeGreaterThan(reads)); // the new deviation shows up
+  });
+});
+
+describe('the daily reports list', () => {
+  beforeEach(() => {
+    vi.mocked(listHandshakeReports).mockResolvedValue([h.report]);
+  });
+
+  it('surfaces a failed load instead of claiming there are no reports', async () => {
+    vi.mocked(listHandshakeReports).mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    // The previous implementation swallowed the failure with
+    // .catch(() => []), rendering the empty state. For an operator mid-dispute
+    // that is the worst possible message: it invites them to create a second
+    // report for an operating day that already has one.
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.queryByText(/No handshake reports yet/i)).toBeNull();
+    expect(screen.getByText(/technical details/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
+  });
+
+  it('offers to create the first report only when the list is genuinely empty', async () => {
+    vi.mocked(listHandshakeReports).mockResolvedValueOnce([]);
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    await waitFor(() => expect(screen.getByText(/No handshake reports yet/i)).toBeTruthy());
+    expect(screen.getByRole('button', { name: /create daily report/i })).toBeTruthy();
+  });
+
+  it('makes a report row reachable and operable from the keyboard', async () => {
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    // The row used to be a <tr onClick>, reachable by mouse only.
+    const row = await screen.findByRole('row', { name: /HS-2026-00042/ });
+    expect(row.getAttribute('tabindex')).toBe('0');
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+    await waitFor(() => expect(getHandshakeReport).toHaveBeenCalledWith('r1'));
+  });
+
+  it('sorts the operating day chronologically, not by its formatted string', async () => {
+    vi.mocked(listHandshakeReports).mockResolvedValueOnce([
+      { ...h.report, id: 'r2', reportNumber: 'HS-2026-00009', reportDate: '2026-09-30T00:00:00.000Z' },
+      { ...h.report, id: 'r1', reportNumber: 'HS-2026-00042', reportDate: '2026-10-01T00:00:00.000Z' },
+    ]);
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    await screen.findByText('HS-2026-00042');
+    fireEvent.click(screen.getByText('Operating day'));
+
+    const numbers = screen.getAllByRole('row').slice(1).map((r) => r.textContent);
+    // 30 Sep precedes 1 Oct even though "…00009" sorts after "…00042">
+    expect(numbers[0]).toContain('HS-2026-00009');
   });
 });

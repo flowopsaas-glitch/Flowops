@@ -49,6 +49,7 @@ import {
   handshakeCsvFilename,
   printHtmlDocument,
 } from "../lib/railHandshakeExport";
+import { DataTable, StatusBadge, type StatusTone } from "../components/patterns";
 
 const money = (v?: number | null) =>
   v == null ? "R0" : `R${Math.round(v).toLocaleString("en-ZA")}`;
@@ -59,6 +60,22 @@ const REPORT_STATUS_STYLE: Record<string, string> = {
   SIGNED_OFF: "bg-sky-500/15 text-sky-300 border-sky-500/30",
   DISPUTED: "bg-rose-500/15 text-rose-300 border-rose-500/30",
   CLOSED: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+};
+
+/**
+ * The same status, expressed as a design-system tone.
+ *
+ * REPORT_STATUS_STYLE is kept for the drawer, which renders its own chrome.
+ * New code should use this map with StatusBadge instead, so a status reads the
+ * same wherever it appears — the per-page colour choice is how DRAFT came to
+ * be grey in one place and blue in another.
+ */
+const REPORT_TONE: Record<string, StatusTone> = {
+  DRAFT: "neutral",
+  PENDING_TOC: "warning",
+  SIGNED_OFF: "info",
+  DISPUTED: "danger",
+  CLOSED: "success",
 };
 
 const DEV_STATUS_STYLE: Record<string, string> = {
@@ -120,6 +137,16 @@ export default function RailHandshake() {
   const [reports, setReports] = useState<HandshakeReport[]>([]);
   const [selected, setSelected] = useState<HandshakeReport | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * Recorded separately from `loading`.
+   *
+   * The load below used to swallow every failure with `.catch(() => [])`,
+   * which made a dead API indistinguishable from an empty one: the page said
+   * "No handshake reports yet" when the request had simply failed. That is the
+   * worst message to show an operator mid-dispute, because it invites them to
+   * create a duplicate report for a day that already exists.
+   */
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [busy, setBusy] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showLog, setShowLog] = useState(false);
@@ -127,13 +154,20 @@ export default function RailHandshake() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
+      // The overview is a secondary panel, so its failure is tolerated and it
+      // simply renders empty. The report list is the primary content: its
+      // failure is surfaced rather than swallowed, so a dead API can never be
+      // mistaken for an operating day with no reports.
       const [ov, rs] = await Promise.all([
         getHandshakeOverview().catch(() => null),
-        listHandshakeReports().catch(() => []),
+        listHandshakeReports(),
       ]);
       setOverview(ov);
       setReports(rs);
+    } catch (e) {
+      setLoadError(e);
     } finally {
       setLoading(false);
     }
@@ -235,48 +269,85 @@ export default function RailHandshake() {
       {/* Report list */}
       <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <h2 className="mb-3 text-sm font-bold uppercase tracking-widest text-slate-300">Daily reports</h2>
-        {loading ? (
-          <div className="flex items-center gap-2 py-8 text-slate-400">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-          </div>
-        ) : reports.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-500">
-            No handshake reports yet. Create a daily report to start reconciling deviations with the IM.
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-white/10">
-            <table className="w-full text-sm">
-              <thead className="bg-white/[0.03] text-left text-[11px] uppercase tracking-wider text-slate-400">
-                <tr>
-                  <th className="px-4 py-2">Report</th>
-                  <th className="px-4 py-2">Operating day</th>
-                  <th className="px-4 py-2">Corridor / IM</th>
-                  <th className="px-4 py-2">Open</th>
-                  <th className="px-4 py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {reports.map((r) => (
-                  <tr key={r.id} className="cursor-pointer hover:bg-white/[0.03]" onClick={() => void openReport(r.id)}>
-                    <td className="px-4 py-2.5 font-semibold text-white">{r.reportNumber}</td>
-                    <td className="px-4 py-2.5 text-slate-300">{new Date(r.reportDate).toLocaleDateString()}</td>
-                    <td className="px-4 py-2.5 text-slate-400">
-                      {r.corridor || "—"}{r.railOperator ? ` · ${r.railOperator}` : ""}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {(r.openItems ?? 0) > 0
-                        ? <span className="font-semibold text-amber-300">{r.openItems}</span>
-                        : <span className="text-slate-500">0</span>}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <Badge label={r.status.replace("_", " ")} cls={REPORT_STATUS_STYLE[r.status] ?? ""} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          label="Daily handshake reports"
+          rows={reports}
+          rowKey={(r) => r.id}
+          isLoading={loading}
+          error={loadError}
+          onRetry={() => void load()}
+          onRowClick={(r) => void openReport(r.id)}
+          rowActionLabel={(r) => `Open report ${r.reportNumber}`}
+          selectedKey={selected?.id ?? null}
+          empty={{
+            title: "No handshake reports yet",
+            description:
+              "Create a daily report to start reconciling deviations with the IM.",
+            action: canWrite ? (
+              <button
+                type="button"
+                onClick={() => setShowCreate(true)}
+                className="inline-flex items-center gap-2 rounded-md bg-sky-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" /> Create daily report
+              </button>
+            ) : undefined,
+          }}
+          columns={[
+            {
+              id: "report",
+              header: "Report",
+              sortable: true,
+              sortValue: (r) => r.reportNumber,
+              cell: (r) => <span className="font-semibold text-white">{r.reportNumber}</span>,
+            },
+            {
+              id: "day",
+              header: "Operating day",
+              sortable: true,
+              // Sort on the timestamp, not the formatted string: a locale date
+              // like "1/10/2026" sorts before "2/9/2026" lexically, which is
+              // not the chronological order an operator expects.
+              sortValue: (r) => new Date(r.reportDate).getTime(),
+              cell: (r) => (
+                <span className="text-slate-300">{new Date(r.reportDate).toLocaleDateString()}</span>
+              ),
+            },
+            {
+              id: "corridor",
+              header: "Corridor / IM",
+              cell: (r) => (
+                <span className="text-slate-400">
+                  {r.corridor || "\u2014"}
+                  {r.railOperator ? ` \u00b7 ${r.railOperator}` : ""}
+                </span>
+              ),
+            },
+            {
+              id: "open",
+              header: "Open",
+              sortable: true,
+              sortValue: (r) => r.openItems ?? 0,
+              cell: (r) =>
+                (r.openItems ?? 0) > 0 ? (
+                  <span className="font-semibold text-amber-300">{r.openItems}</span>
+                ) : (
+                  <span className="text-slate-500">0</span>
+                ),
+            },
+            {
+              id: "status",
+              header: "Status",
+              sortable: true,
+              sortValue: (r) => r.status,
+              cell: (r) => (
+                <StatusBadge tone={REPORT_TONE[r.status] ?? "neutral"}>
+                  {r.status.replace("_", " ")}
+                </StatusBadge>
+              ),
+            },
+          ]}
+        />
       </div>
 
       {/* Report detail drawer */}
