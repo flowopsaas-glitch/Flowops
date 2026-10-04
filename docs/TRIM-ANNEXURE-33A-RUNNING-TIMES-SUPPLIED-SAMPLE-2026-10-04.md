@@ -191,6 +191,14 @@ group rather than by row count:
 | **2312** | SIN-MYN-WISST → **POSTMASBURG** | yes (02:17 = 137 min) | 1–6 | **Complete** |
 | 10008 | — | yes | 1–2 | Complete |
 | 10010 | — | yes | 1–2 | Complete |
+| **113** | UBO-LOKO → BAYHEAD | yes (00:15 = 15 min) | 1–3 | **Complete** |
+| **1710** | UBO-LOKO → TALANA | yes (13:36 = 816 min) | 1–29 | **Complete** |
+| **6614** | UBO-LOKO → CATORIDGE | yes (01:53 = 113 min) | 1–7 | **Complete** |
+| **6616** | UBO-LOKO → CATORIDGE | yes (01:53 = 113 min) | 1–7 | **Complete** |
+| **8038** | UBO-LOKO → CATORIDGE | yes (01:53 = 113 min) | 1–7 | **Complete** |
+| **8040** | UBO-LOKO → ISIPINGO | yes (00:29 = 29 min) | 1–8 | **Complete** |
+| **8000** | WWH-LOKO → UKS/S650579 | yes (01:03 = 63 min) | 1–10 | **Complete** |
+| **8002** | WWH-LOKO → UKS/S650579 | yes (01:10 = 70 min) | 1–10 | **Complete** |
 
 **6455 is the reference train.** At 27h09m, 1036 km and 65 sequence groups it
 is the longest run supplied, and it is the only long haul whose totals
@@ -437,5 +445,115 @@ slash — `SHUNT / WAIT CROSSINGS`.
 
 6431 and 2312 are now complete. **6455 and 6431 together are the reference
 pair** and are asserted end to end in the test suite.
+
+Paste as raw TSV, one row per line, no `" and "` joins.
+
+
+---
+
+## 22. A second network: the Durban depots
+
+The seventh extract leaves the iron-ore corridors entirely for the Umbilo
+(`UBO-LOKO`) and Wentworth (`WWH-LOKO`) depots around Durban, on the
+`CONTAINER` and `NORTH` corridors. Eight trains, all complete, all short.
+
+**All eight tie on both measures** — elapsed against stated throughput, and
+sum(runtime) + sum(standing) against the same figure. This is the cleanest
+result from any extract, and it holds on a network the parser had never seen.
+
+Two differences from the ore corridors worth noting:
+
+- **`NORTH` leads here.** Every UBO-LOKO train opens on `NORTH` for one row
+  before switching to `CONTAINER`, the reverse of the CAPE/CENTRAL ordering.
+  1710 runs `NORTH` → `CONTAINER` → `NORTH`.
+- **`NORTH` is a real corridor, not an island.** Earlier it appeared only as
+  the single-row `WYKOM` anomaly; here it carries 13 consecutive rows on 1710.
+
+## 23. One timetable, three times a day
+
+6614, 6616 and 8038 cover the **same 32 nodes over the same 75.06 km** with the
+**same stated throughput of 01:53**, departing 06:54, 11:44 and 14:05. From
+`BOOTH` onward every point-to-point value is identical across all three.
+
+Where they differ is the yard:
+
+| | 6614 / 6616 | 8038 |
+|---|---|---|
+| Depot movements timed | 13, individually | none |
+| p2p into ROSSBURGH | 00:01:30 | **00:09:00** |
+
+6614 and 6616 record a runtime on each of thirteen depot movements; 8038
+records none of them and carries the whole nine minutes into ROSSBURGH. **The
+same journey, distributed two different ways, agreeing only in total.**
+
+This has a direct consequence: per-section analysis is not comparable across
+trains unless the yard convention is known, because the first row carrying a
+runtime may or may not represent the whole depot exit.
+
+## 24. One crossing accounts for most of a seven-minute gap
+
+8000 and 8002 cover the same 44.02 km to the same siding. 8000 takes 63
+minutes, 8002 takes 70.
+
+| Cause | Minutes |
+|---|---|
+| Crossing wait at WARNERBEACH (`X 0749`) | +6 |
+| Slower WARNERBEACH → WINKLESPRUIT section | +2 |
+| Quicker shunt at the far end | −0.5 |
+| **Net** | **+7** |
+
+A single crossing dominates the difference on a 44 km run. This is the third
+independent pair, after 8422/8426 and 6455/6431, to attribute nearly all of a
+journey-time difference to something other than running.
+
+## 25. `00:00:00` is three different things
+
+The fifth parser defect, and the reason this is recorded at length.
+`Departure = 00:00:00` was taken on its own to mean "the journey ends here".
+It is:
+
+1. **The absence of a departure** at the end of a run — most trains.
+2. **A real midnight departure** — 1710 leaves HAMMARSDALE at midnight with
+   five minutes of standing recorded against it, and continues.
+3. **A real midnight arrival** — 8000 reaches UMKOMAAS at midnight and departs
+   at midnight, eleven rows before its journey ends.
+
+Case 3 marked UMKOMAAS as the terminus, which left the previous departure
+stale and reported the following row as 3.5 minutes adrift when it was exact.
+The row's **position** and its **standing column** together are what separate
+the three cases.
+
+This is the general lesson of the whole file: no single column carries enough
+information to classify a row.
+
+## 26. Further field variation
+
+- **`Sched` reaches 3.** Every train in the first six extracts carried 1. It is
+  a real discriminator, not a constant.
+- **Train type has near-duplicates.** `VACUUM TRAINS/LIGHT LOCO-S` and
+  `VACUUM TRAINS/LIGHT LOCO` both appear, differing by a trailing `-S`. Any
+  grouping by type will silently split.
+- **Destination can be a siding.** 8000 and 8002 terminate at `UKS/S650579`.
+- **The destination can appear mid-journey.** 1710 reaches TALANA at 10:26,
+  shunts, works five sidings, and terminates at TALANA again at 10:51.
+- **Seconds now reach 1.** `00:01:01` to WENTWORTHPARK, `00:02:29` to JACOBS.
+  The sample began on whole and half minutes.
+- **Three more reason shapes:** `A RT`, `LN8814` / `LN8816` (each embedding a
+  number that is not the train's own), and `F 8946`.
+- **Zero dwell is the norm:** over 80% of rows arrive and depart in the same
+  instant, with no dwell recorded at all.
+
+## 27. Still required
+
+1. **7407** — rows for sequence groups 2–39. Summary held.
+2. **7403** — sequence groups 14–39. Head and summary held.
+3. **7405** — the ~30 intermediate rows between the groups supplied.
+4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint
+   on measuring any transit KPI.
+5. Every train not listed in §10.
+
+Eight of eight in this extract tie. Three reference results are now asserted
+end to end: the 6455/6431 route pair (§17), the 6614/6616/8038 timetable
+triplet (§23), and the 8000/8002 crossing (§24).
 
 Paste as raw TSV, one row per line, no `" and "` joins.
