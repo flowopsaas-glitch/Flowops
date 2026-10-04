@@ -199,6 +199,33 @@ group rather than by row count:
 | **8040** | UBO-LOKO → ISIPINGO | yes (00:29 = 29 min) | 1–8 | **Complete** |
 | **8000** | WWH-LOKO → UKS/S650579 | yes (01:03 = 63 min) | 1–10 | **Complete** |
 | **8002** | WWH-LOKO → UKS/S650579 | yes (01:10 = 70 min) | 1–10 | **Complete** |
+| **8942** | WATERVALBOVEN → WITBANK | yes (04:35) | 1–14 | Complete |
+| **14801** | WATERVALBOVEN → NELSPRUIT | yes (02:26) | 1–8 | Complete |
+| **17462** | WATERVALBOVEN → BSX/S749532 | yes (04:19) | 1–11 | Complete |
+| **18415** | WATERVALBOVEN → NGODWANA | yes (01:07) | 1–3 | **Complete** (day offset wrong — §29) |
+| **18420** | WATERVALBOVEN → ERMELO | yes (05:07) | 1–13 | Complete |
+| **18436** | WATERVALBOVEN → RTI/S743631 | yes (01:28) | 1–8 | Complete |
+| **18438** | WATERVALBOVEN → RTI/S743631 | yes (02:17) | 1–12 | Complete |
+| **18481** | WATERVALBOVEN → KAAPMUIDEN | yes (03:11) | 1–11 | Complete |
+| **18801** | WATERVALBOVEN → NELSPRUIT | yes (02:16) | 1–8 | Complete |
+| **18818** | WATERVALBOVEN → ERMELO | yes (05:07) | 1–13 | Complete |
+| **18820** | WATERVALBOVEN → SAAIWATER | yes (03:54) | 1–23 | Complete |
+| **18830** | WATERVALBOVEN → PSH/S742902 | yes (03:29) | 1–9 | Complete |
+| **18873** | WATERVALBOVEN → NELSPRUIT | yes (02:16) | 1–8 | Complete |
+| **28818** | WATERVALBOVEN → ERMELO | yes (05:07) | 1–13 | Complete |
+| **28820** | WATERVALBOVEN → CLA/S643963 | yes (01:43) | 1–6 | Complete |
+| **29405** | WATERVALBOVEN → RCBSKOONKAAI | yes (22:55) | 1–42 | Complete |
+| **88501** | WATERVALBOVEN → KAAPMUIDEN | yes (03:36) | 1–11 | Complete |
+| **88675** | WATERVALBOVEN → WATERVALONDER | yes (00:30) | 1–1 | Complete |
+| **88586** | WATERVALONDER → CPK-GOEDERE | yes (07:06) | 1–15 | Complete |
+| **88676** | WATERVALONDER → WATERVALBOVEN | yes (00:30) | 1–1 | Complete |
+| **4465** | WELVERDIEND → KLERKSDORP | yes (02:02) | 1–7 | Complete |
+| **7355** | WELVERDIEND → KLERKSDORP | yes (02:57) | 1–7 | Complete |
+| **8965** | WELVERDIEND → KLERKSDORP | yes (02:07) | 1–7 | Complete |
+| **7751** | WELVERDIEND → ROODEPOORT | yes (01:57) | 1–9 | Complete |
+| **7753** | WELVERDIEND → ROODEPOORT | yes (01:51) | 1–9 | Complete |
+| **8853** | WELVERDIEND → ROBINSON(T) | yes (01:24) | 1–6 | Complete |
+| 8915 | → KOMATIPOORT | **no** | 10–19 only | **Continuation** |
 
 **6455 is the reference train.** At 27h09m, 1036 km and 65 sequence groups it
 is the longest run supplied, and it is the only long haul whose totals
@@ -555,5 +582,119 @@ information to classify a row.
 Eight of eight in this extract tie. Three reference results are now asserted
 end to end: the 6455/6431 route pair (§17), the 6614/6616/8038 timetable
 triplet (§23), and the 8000/8002 crossing (§24).
+
+Paste as raw TSV, one row per line, no `" and "` joins.
+
+
+---
+
+## 28. Three trains, one route, byte-identical running
+
+4465, 7355 and 8965 all run WELVERDIEND → KLERKSDORP over the **same twelve
+nodes**, and their point-to-point values are **identical at every one of them:
+122 minutes of running on all three.**
+
+| | 4465 | 7355 | 8965 |
+|---|---|---|---|
+| Running | 122 | 122 | 122 |
+| Standing | 0 | 55 | 5 |
+| **Throughput** | **122** | **177** | **127** |
+| Train type | VACUUM TRAINS/VACUUM TRAIN | VACUUM TRAINS/MATERIAL TRN | MEDIUM HEAVY/MEDIUM HEAVY |
+
+**Every minute of the 55-minute spread is standing time.** 7355 stops for five
+minutes at eleven consecutive stations — GATSRAND through SANDPAN — working its
+way down the line. 8965 stops once. 4465 does not stop at all.
+
+This is the fourth group in the sample to attribute the difference between
+trains to standing rather than running, and the first to do it at **100%**:
+
+| Pair / group | Route | Share of gap that is standing |
+|---|---|---|
+| 8422 / 8426 | short corridor | ~100% |
+| 6455 / 6431 | 1036 km | 94% |
+| 8000 / 8002 | 44 km | ~86% (one crossing) |
+| **4465 / 7355 / 8965** | **Welverdiend–Klerksdorp** | **100%** |
+
+Running time on a given section behaves as a constant. Journey time is decided
+entirely by what happens standing still.
+
+## 29. `Depart_Day` is not merely absent — it is sometimes wrong
+
+The sixth parser defect, and the one that matters most for how the rest of the
+file should be treated.
+
+Train **18415 departs at 23:35 and arrives at 00:42** — plainly the next
+morning — and carries `Depart_Day = 0` on **every row including the last**. The
+offset was never incremented. Elapsed time therefore computed to **−1373
+minutes** against a stated 67.
+
+A run cannot take negative time, so where the arithmetic says it does, the
+offset is treated as one day stale and corrected.
+
+This is the second column found to hold a value that is simply **wrong** rather
+than absent. The consequence for the build: every column needs a plausibility
+rule, not merely a type, and an exception queue has to carry the row rather
+than drop it.
+
+## 30. One service, listed twice
+
+**18420 and 18818 are the same service under two train numbers.** Same origin,
+same destination, same departure of 10:05, same train type, same schedule, the
+same sixteen nodes and the same runtime at every one of them.
+
+28818 shares the node list and every runtime but departs at 05:23 and is typed
+as a light loco. Three trains, one timetable, at least one of them a duplicate.
+
+Capacity planning cannot count trains to count services.
+
+## 31. Passenger workings
+
+The first passenger services in the sample, and they bring their own standing
+vocabulary:
+
+- `PLATFORM` — 22 minutes at NELSPRUIT on 88501.
+- `PASSENGERS` — 10 minutes at WATERVALBOVEN on 88586.
+- `STEAM LOCO` — 25 minutes at RAYTON on 88586, which is typed
+  `PASSENGER TRN/ROVOS RAIL`.
+
+Two passenger type strings appear: `PASSENGER TRN/OOSTERLIJN` and
+`PASSENGER TRN/ROVOS RAIL`.
+
+The Rovos Rail working also carries sections no steam train achieves — 180 km/h
+into WIR-OOSBANK, 164 into QUEENSWOOD, 152 into CAPITALPARK. The distances and
+runtimes on that train do not describe the same journey.
+
+## 32. Further variation
+
+- **A third frequency code.** 88501 runs `NNNNNNY` — Sunday only. `Y`, `A` and
+  `N` are three states, and no service can be assumed daily.
+- **A terminus with no runtime.** 28820's last row records no point-to-point
+  runtime at all.
+- **Arrival time does not order the rows.** On 18801 and 18873, NLP-MATAFFIN is
+  reached at the same instant as WESTAFFIN, with no runtime between them. Two
+  nodes, one moment.
+- **The blank corridor recurs** — 18438's RTI/S743747 row.
+- **Stations repeat within a train** — 18438 visits BSX-RIETKUIL three times;
+  18820 visits SAAIWATER, SRW/S752649 and SRW/S752673 twice each.
+- **Corridors touched now number six:** `CENTRAL`, `CAPE`, `NORTHEAST`,
+  `ORELINE`, `CONTAINER`, `NORTH`, plus blank. 88586 crosses NORTHEAST then
+  CENTRAL; 7751 and 7753 run CENTRAL → CONTAINER → CENTRAL.
+- **Largest stand in the sample:** 29405 holds **353 minutes** at ERMELO under
+  `RM`, ahead of Warronton's 321 on 7405.
+- **A second reason compound:** `C SHUNT/8817` on 29405.
+
+## 33. Still required
+
+1. **7407** — rows for sequence groups 2–39. Summary held.
+2. **7403** — sequence groups 14–39. Head and summary held.
+3. **7405** — the ~30 intermediate rows between the groups supplied.
+4. **8915** — sequence groups 1–9 and its summary row.
+5. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint
+   on measuring any transit KPI.
+6. Every train not listed in §10.
+
+Four reference results are now asserted end to end: the 6455/6431 route pair
+(§17), the 6614/6616/8038 timetable triplet (§23), the 8000/8002 crossing
+(§24), and the 4465/7355/8965 group (§28).
 
 Paste as raw TSV, one row per line, no `" and "` joins.
