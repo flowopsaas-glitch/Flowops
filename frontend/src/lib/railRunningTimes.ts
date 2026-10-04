@@ -112,11 +112,66 @@ export interface ScheduleValidation {
   runtimeMismatches: string[];
   /** Rows whose Standing time disagrees with departure - arrival. */
   standingMismatches: string[];
+  /**
+   * Rows the clocks say the train travelled to, that carry no Point to Point
+   * Runtime at all.
+   *
+   * A null runtime is not the same thing as a zero runtime. Yard moves are
+   * recorded at five-second granularity — a shunt car arrives at 07:18:15 and
+   * departs at 07:18:20 — and the export leaves the runtime column blank rather
+   * than writing `00:00:05`. Read as zero, those rows are invisible; in fact
+   * they are where the two numeric columns stop adding up to the elapsed time.
+   *
+   * Reported rather than inferred: the missing seconds are genuinely absent
+   * from the source, and inventing them would put a number in the schedule
+   * that no supplied line supports.
+   */
+  unrecordedTravel: string[];
   /** sum(runtime) + sum(standing) vs last arrival - origin departure. */
   elapsedIdentityHolds: boolean;
 }
 
 const EPS = 1e-6;
+
+/**
+ * Decode the XML/HTML entities the workbook export leaves in its text columns.
+ *
+ * The crossing and shunting reasons are free text, and any reason that names
+ * two trains arrives HTML-escaped: `SHUNT &amp; X 1214`, `X 71008 &amp; 3474`,
+ * `RM X 81002 &amp; 71010`. Stored literally, every one of them is a distinct
+ * reason string from the unescaped form of itself, so a group-by on reason
+ * splits a single cause in two — and the ampersand is the one character that
+ * reliably appears, because it is what joins two train numbers.
+ *
+ * Only the five named entities the export is known to use are mapped, plus
+ * numeric character references. Anything unrecognised is left exactly as it
+ * was found: an unrecognised entity is a fact about the source, and silently
+ * dropping it would be worse than keeping it.
+ */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+
+export function decodeEntities(raw: string | null | undefined): string {
+  if (!raw) return '';
+  return raw.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (match, body: string) => {
+    if (body[0] === '#') {
+      const code =
+        body[1] === 'x' || body[1] === 'X'
+          ? parseInt(body.slice(2), 16)
+          : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? match;
+  });
+}
 
 function toRow(f: string[]): RunningTimeRow {
   const num = (v: string) => {
@@ -124,17 +179,17 @@ function toRow(f: string[]): RunningTimeRow {
     return t ? Number(t) : null;
   };
   return {
-    origin: f[0]?.trim() ?? '',
+    origin: decodeEntities(f[0]),
     train: f[1]?.trim() ?? '',
     nodeSeq: Number(f[2]) || 0,
-    corridor: f[3]?.trim() ?? '',
-    station: f[4]?.trim() ?? '',
+    corridor: decodeEntities(f[3]),
+    station: decodeEntities(f[4]),
     arrival: parseClock(f[5]),
     departure: parseClock(f[6]),
     pointToPointRuntime: parseClock(f[7]),
     standingTime: parseClock(f[8]),
-    standingReason: f[9]?.trim() || null,
-    destination: f[10]?.trim() ?? '',
+    standingReason: decodeEntities(f[9]) || null,
+    destination: decodeEntities(f[10]),
     distanceKm: num(f[18] ?? ''),
     departDay: num(f[17] ?? ''),
   };
@@ -146,14 +201,14 @@ function toSchedule(summary: string[]): Omit<TrainSchedule, 'rows'> {
     return t ? Number(t) : null;
   };
   return {
-    origin: summary[0]?.trim() ?? '',
+    origin: decodeEntities(summary[0]),
     train: summary[1]?.trim() ?? '',
-    destination: summary[10]?.trim() ?? '',
+    destination: decodeEntities(summary[10]),
     originDeparture: parseClock(summary[11]) ?? 0,
     destinationArrival: parseClock(summary[12]) ?? 0,
     throughputRuntime: parseClock(summary[16]) ?? 0,
     frequency: summary[14]?.trim() ?? '',
-    trainType: summary[15]?.trim() ?? '',
+    trainType: decodeEntities(summary[15]),
     sched: num(summary[13]),
     departDay: num(summary[17]),
     };
@@ -308,6 +363,7 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
 
   const runtimeMismatches: string[] = [];
   const standingMismatches: string[] = [];
+  const unrecordedTravel: string[] = [];
   let previousDeparture = s.originDeparture;
 
   s.rows.forEach((r, i) => {
@@ -315,6 +371,17 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
       if (Math.abs(span(previousDeparture, r.arrival) - r.pointToPointRuntime) > EPS) {
         runtimeMismatches.push(r.station);
       }
+    } else if (
+      /**
+       * Only where the summary row was supplied. A continuation begins
+       * mid-train with no origin departure to measure the first hop from, so
+       * the span there is meaningless rather than small.
+       */
+      hasSummary(s) &&
+      r.arrival != null &&
+      Math.abs(span(previousDeparture, r.arrival)) > EPS
+    ) {
+      unrecordedTravel.push(r.station);
     }
     /**
      * The terminus row carries Departure = 00:00:00 and no standing time.
@@ -359,6 +426,7 @@ export function validateSchedule(s: TrainSchedule): ScheduleValidation {
     throughputTies,
     runtimeMismatches,
     standingMismatches,
+    unrecordedTravel,
     elapsedIdentityHolds:
       elapsed != null && Math.abs(totalRuntime + totalStanding - elapsed) < EPS,
   };

@@ -683,7 +683,352 @@ runtimes on that train do not describe the same journey.
   `RM`, ahead of Warronton's 321 on 7405.
 - **A second reason compound:** `C SHUNT/8817` on 29405.
 
-## 33. Still required
+## 34. The ninth extract: sixty trains, and all sixty tie
+
+1,497 rows. Sixty trains. Five origins — WOR-NOORD (30 trains), WESTS (25),
+BELA BELA (3), WORCESTER (1), WINDSORTONROA (1).
+
+Every one of the sixty carries a summary row, runs through to its destination,
+and ties its stated throughput. Not one train in the extract is a fragment,
+which makes this the first batch that can be measured end to end in full.
+
+The tie is not a modular reading. Seven trains cross midnight and two cross two
+midnights, so the day offsets supply the span rather than a 24-hour wrap.
+
+| **83** | WOR-NOORD | 43 | 4:54 | 0:19 | 5:15 | KARRINGMELK |
+| **92** | WOR-NOORD | 31 | 4:37 | 0:43 | 5:20 | BELLVILLE |
+| **93** | WOR-NOORD | 25 | 3:42 | 0:48 | 4:30 | LAINGSBURG |
+| **1006** | WOR-NOORD | 11 | 0:58 | 0:07 | 1:05 | WSY/S148016 |
+| **1039** | WOR-NOORD | 17 | 1:32 | 0:33 | 2:05 | TOUWSRIVIER |
+| **1053** | WOR-NOORD | 17 | 1:44 | 0:11 | 1:55 | ASHTON |
+| **1104** | WOR-NOORD | 31 | 3:45 | 0:30 | 4:15 | BELLVILLE |
+| **1108** | WOR-NOORD | 19 | 2:00 | 0:05 | 2:05 | HERMON |
+| **1112** | WOR-NOORD | 27 | 3:46 | 0:04 | 3:50 | BELLVILLE |
+| **1173** | WOR-NOORD | 80 | 9:38 | 0:44 | 10:25 | VOORBAAI |
+| **1186** | WOR-NOORD | 27 | 3:42 | 0:43 | 4:25 | BELLVILLE |
+| **3221** | WOR-NOORD | 52 | 9:04 | 1:00 | 10:05 | VOORBAAI |
+| **3506** | WOR-NOORD | 40 | 2:48 | 0:37 | 3:25 | KAAPSTADPAS |
+| **3508** | WOR-NOORD | 40 | 2:52 | 0:32 | 3:24 | KAAPSTADPAS |
+| **4701** | WOR-NOORD | 14 | 0:42 | 0:39 | 1:21 | WOR-NOORD |
+| **4703** | WOR-NOORD | 6 | 0:18 | 0:15 | 0:33 | WOR-NOORD |
+| **4704** | WOR-NOORD | 38 | 1:54 | 1:51 | 3:45 | WOR-NOORD |
+| **4705** | WOR-NOORD | 2 | 0:06 | 0:03 | 0:09 | WOR-NOORD |
+| **4706** | WOR-NOORD | 22 | 1:06 | 1:03 | 2:09 | WOR-NOORD |
+| **4799** | WOR-NOORD | 34 | 0:34 | 0:33 | 1:07 | WOR-NOORD |
+| **8701** | WOR-NOORD | 14 | 0:42 | 0:39 | 1:21 | WOR-NOORD |
+| **8910** | WOR-NOORD | 38 | 1:54 | 1:51 | 3:45 | WOR-NOORD |
+| **8924** | WOR-NOORD | 38 | 1:54 | 1:51 | 3:45 | WOR-NOORD |
+| **8928** | WOR-NOORD | 38 | 1:54 | 1:51 | 3:45 | WOR-NOORD |
+| **8941** | WOR-NOORD | 102 | 16:27 | 7:48 | 24:15 | BEACONSFIELD |
+| **12024** | WOR-NOORD | 27 | 3:45 | 2:00 | 5:45 | BELLVILLE |
+| **12025** | WOR-NOORD | 4 | 0:24 | 0:00 | 0:24 | ORCHARD |
+| **17635** | WOR-NOORD | 102 | 16:25 | 5:20 | 21:45 | BEACONSFIELD |
+| **22024** | WOR-NOORD | 38 | 1:54 | 1:51 | 3:45 | WOR-NOORD |
+| **48915** | WOR-NOORD | 185 | 27:34 | 7:36 | 35:10 | KAZ-CITYDEEP |
+| **3510** | WORCESTER | 39 | 3:21 | 0:24 | 3:45 | KAAPSTADPAS |
+| **2138** | WINDSORTONROA | 10 | 1:10 | 0:26 | 1:36 | BEACONSFIELD |
+| **2206** | BELA BELA | 14 | 1:37 | 0:00 | 1:37 | PYRAMIDSUID |
+| **3001** | BELA BELA | 31 | 1:52 | 1:26 | 3:18 | NABOOMSPRUIT |
+| **48923** | BELA BELA | 132 | 30:34 | 4:08 | 34:42 | KINGSREST |
+| **904** | WESTS | 1 | 0:05 | 0:00 | 0:05 | FYN-ISLANDVIE |
+| **10001** | WESTS | 2 | 0:06 | 0:01 | 0:06 | WESTS |
+| **20001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **30001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **40001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **50001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **60001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **70001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **80001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **90001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **100001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **110001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **120001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **130001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **140001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **150001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **160001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **170001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **180001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **190001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **200001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **210001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **220001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **230001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+| **240001** | WESTS | 2 | 0:05 | 0:01 | 0:06 | WESTS |
+
+Two trains in this table are worth naming immediately, because they are the
+longest journeys in the sample so far: **48915** runs WOR-NOORD → KAZ-CITYDEEP
+in 35:10 and **48923** runs BELA BELA → KINGSREST in 34:42. Both are covered in
+§43.
+
+## 35. One yard, five train numbers
+
+The finding of this extract.
+
+**4704, 8910, 8924, 8928 and 22024** all work the same yard at WOR-NOORD and
+return to it. Every one of them visits the same thirty-nine nodes, runs **114
+minutes**, stands **111**, and takes **3:45**.
+
+They are not copies of each other's rows. The yard is swept in six independent
+blocks, and the five trains do not take the blocks in the same order:
+
+- **4704** and **8928** sweep `WOR/S160725 → WON/S161128` first, then
+  `WOR/S161063`, then `WON/S161438 → WOR/S145181 → WOR/S145173`.
+- **8910**, **8924** and **22024** sweep the `WON/S161438` block first, then
+  `WOR/S160725`, then `WOR/S161063`.
+
+The first three blocks are a rotation of each other; the remaining three are
+identical and in the same order. The total is invariant to the rotation,
+because the blocks are independent — which is precisely why the duplicate is
+invisible to a check that compares rows in file order, and visible at once to a
+check that compares the node set.
+
+Within the five:
+
+- **8910 ≡ 8924** — identical apart from the train number itself. Same 09:40
+  departure, same `YYYYAYY`, same runtimes at every node.
+- **22024** — the same shift at 09:40, differing only in frequency (`YAYAAAY`).
+- **4704** — 15:15, `YYYYYYY`, typed `VACUUM TRAINS/SHUNT CAR`.
+- **8928** — the same 15:15 shift as 4704, on `AYYAYAN`, typed
+  `MEDIUM HEAVY/MEDIUM HEAVY`.
+
+So one yard movement is filed five times, under three departure times, four
+frequencies and two train types.
+
+## 36. 8941 and 17635: one route, two rosters
+
+8941 and 17635 run WOR-NOORD → BEACONSFIELD over the **same 103 nodes in the
+same order**, and finish 150 minutes apart: **24:15** against **21:45**.
+
+Two of those minutes are running (987 against 985). The other **148 are
+standing** (468 against 320).
+
+They are not one train timed twice. They wait in different places:
+
+| Node | 8941 | 17635 |
+| --- | --- | --- |
+| DEAAR | 1:35 `SHUNT` | 0:30 `SHUNT` |
+| HOUTKRAAL | 1:34 `X 1210; 81600; 8732` | 0:10 `X8856` |
+| ORANJERIVIER | 0:44 `RM X 81002 & 71010` | 0:04 `X1256` |
+| POTFONTEIN | 0:04 `X 1450` | 0:37 `X1214` |
+| MODDERRIVIER | 0:13 `X 8924` | 0:36 `X8732; 1450` |
+| GRASPAN | 0:59 | 0:48 |
+| BEAUFORTWEST | 1:00 `BO` | 1:00 `BO` |
+
+Twenty-five of the 103 rows differ. The waits alternate: where one working
+gives thirty minutes or more, the other gives ten or less, five times over.
+These are two rosters planned against each other, and any model that treats
+them as one service measured twice will mis-state the capacity the section
+actually has.
+
+One further detail: 8941's terminus reason at BEACONSFIELD is **`LN 8941`** —
+the reason column naming the train it belongs to.
+
+## 37. The spread is standing — the fifth group, at 99.6%
+
+1112, 1186 and 12024 cover the **same 28 nodes** from WOR-NOORD to BELLVILLE.
+
+| | Running | Standing | Throughput |
+| --- | --- | --- | --- |
+| **1112** | 3:45.5 | 0:04.5 | 3:50 |
+| **1186** | 3:42 | 0:43 | 4:25 |
+| **12024** | 3:45 | 2:00 | 5:45 |
+
+The three running times are within **three and a half minutes of each other
+across the whole route** — one part in sixty. The standing times are 4.5, 43
+and 120 minutes.
+
+Fastest to slowest is 115 minutes. The standing spread is 115.5 minutes. This
+is the fifth group in this file to say it, and the first where the running time
+is constant to that tolerance — §28 reached 100% with identical runtimes on a
+twelve-node section; here it holds across twenty-eight.
+
+## 38. One movement, two rosters
+
+4701 and 8701 leave WOR-NOORD at 06:25 and return at 07:46. Same fifteen nodes,
+same 42 minutes running, same 39 standing, same 1:21, same schedule.
+
+They differ in exactly two columns:
+
+- **4701** — `YYYYYYY`, `VACUUM TRAINS/SHUNT CAR`
+- **8701** — `NYYYYYN`, `MEDIUM HEAVY/MEDIUM HEAVY`
+
+A duplicate check on the movement alone merges them into one train. A duplicate
+check that includes the rostering columns keeps them apart. Both answers are
+defensible and they produce **different train counts**, so any count quoted
+from this data has to say which rule it applied.
+
+## 39. 83 is 1173 stopped early
+
+83 works the first 43 nodes out of WOR-NOORD and terminates at KARRINGMELK.
+1173 works the same 43 nodes in the same order — and then carries on another 37
+to VOORBAAI, passing **through KARRINGMELK** on the way.
+
+Both carry the frequency code `YYYCYCY`, which appears nowhere else in the
+sample. They depart at different times (06:00 and 06:50) and are typed
+differently (`MATERIAL TRN` and `PICKUP TRAIN`).
+
+So one route appears once as a service in its own right and once as the first
+leg of a longer one. Counting trains counts it twice; counting route-kilometres
+counts it twice as well.
+
+## 40. The minute that never happened
+
+**WESTS 10001** arrives at `WST/S651958` at **01:04** and departs at **01:04**
+— it did not wait — and declares a standing time of **one minute** anyway.
+
+It is the only row in 1,497 where the two numeric columns claim *more* time
+than the clocks took.
+
+All twenty-three sibling shunt cars do the identical six-minute cycle and
+arrive at `H:03`, depart at `H:04`. 10001 arrives at `H:04` with a point-to-
+point of **four minutes** instead of three.
+
+The minute was not lost. It was moved from the dwell column into the running
+column. The total is unchanged, which is why the throughput still ties and why
+no totals-based check can see it — it takes a per-hop comparison to find.
+
+## 41. One shunt car an hour, for twenty-four hours
+
+WESTS runs 10001 at 01:00 through 240001 at midnight: one per hour, every hour.
+Every one is a six-minute round trip to the same siding and back, and the
+bodies are mechanically identical.
+
+The terminus reason is not:
+
+| Reason | Cars |
+| --- | --- |
+| `RANGEER` | 21 |
+| `RT` | 1 (10001) |
+| *(blank)* | 2 (70001, 80001) |
+
+Three spellings of the same ending on an otherwise generated series.
+
+## 42. Two defect classes, both now handled
+
+**Entities.** The reason column arrives HTML-escaped. Every reason naming two
+trains carries a literal `&amp;` where the ampersand belongs — nine rows across
+five trains:
+
+```
+SHUNT &amp; X 1214          (1039)
+SHUNT &amp; X 81002         (1039)
+SHUNT &amp; X 2025 / 2031   (1104)
+X 17005 &amp; F 71006       (1186)
+X 81600 &amp; 81002         (8941)
+X 71008 &amp; 3474          (8941)
+RM X 81002 &amp; 71010      (8941)
+X 18001 &amp; F 81002       (12024)
+X 18601 &amp; RF 71008      (12024, 1418)
+```
+
+Stored raw, each is a distinct reason from its own unescaped form, so any
+grouping on reason splits one cause in two — and the ampersand is exactly the
+character that appears, because it is what joins two train numbers. The parser
+now decodes the five named entities the export uses plus numeric character
+references; anything unrecognised is left untouched.
+
+**Unrecorded five-second moves.** Yard moves are recorded at five-second
+granularity and the export leaves the runtime column blank rather than writing
+`00:00:05`. **Thirty-five rows moved with no runtime recorded at all**, and
+thirty-five more waited five seconds with nothing in the standing column.
+
+A blank in these columns means *not written*, not *zero*. Read as zero, the
+elapsed identity silently fails on six trains:
+
+| Train | Unrecorded travel | Under-count |
+| --- | --- | --- |
+| **1173** | 17 rows | 2m 55s |
+| **83** | 10 rows | 1m 40s |
+| **1039** | 2 rows | 30s |
+| **1108** | 2 rows | 25s |
+| **1104** | 1 row | 15s |
+| **3221** | 1 row | 5s |
+
+All six still tie their stated throughput, because that figure is computed from
+the clocks and not from the two columns. **The columns are a rendering of the
+schedule, not its source of truth.**
+
+This is reported, not inferred. The missing seconds are genuinely absent; the
+parser now surfaces them as `unrecordedTravel` rather than inventing values no
+supplied line supports.
+
+## 43. Two trains that run into a third day
+
+- **48915** — WOR-NOORD 22:45 → KAZ-CITYDEEP 09:55, **35:10** (2,110 min).
+  `Depart_Day` runs 0 → 1 at KLEINSTRAAT and 1 → 2 at FENDYKE. Corridors
+  CAPE → CENTRAL → CONTAINER, with one row at VANDERBIJL carrying a **blank
+  corridor** between two CENTRAL rows.
+- **48923** — BELA BELA 19:59 → KINGSREST 06:41, **34:42** (2,082 min).
+  `Depart_Day` runs 0 → 1 at `LUD(STQLYN)` and 1 → 2 at BOUGHTON.
+
+Both restart their `NODE_Seq` counters mid-train, so the sequence number is not
+a position within the journey.
+
+Largest single stands in the extract:
+
+| Train | Node | Standing | Reason |
+| --- | --- | --- | --- |
+| 48915 | DEAAR | **1:50** | `SHUNT` |
+| 48923 | PYRAMIDSUID | 1:38 | *(none recorded)* |
+| 8941 | DEAAR | 1:35 | `SHUNT` |
+| 8941 | HOUTKRAAL | 1:34 | `X 1210; 81600; 8732` |
+| 8941 / 17635 | BEAUFORTWEST | 1:00 | `BO` |
+
+29405's 353 minutes at ERMELO (§32) remains the largest in the sample.
+
+## 44. A fourth frequency code
+
+The column now carries **`Y`, `N`, `A` and `C`**:
+
+- `YYYCYCY` — 83, 1173
+- `YCYCYYY` — 1108
+
+Three trains use `C`. Nothing in the supplied sources says what it means, and
+this document will not guess: a service whose `C` days are read as running, or
+as not running, is a service planned on the wrong days.
+
+Twenty-five distinct frequency strings now appear across sixty trains. Sixteen
+trains run `YYYYYYY`.
+
+## 45. Corridor is an attribute of the node, not of the train
+
+48923 crosses between `NORTHEAST`, `NORTH`, `CENTRAL` and `CONTAINER`
+**eleven times** on one journey, and does not settle: north of NEWCASTLE it
+alternates CONTAINER / NORTH / CONTAINER six times in twenty rows.
+
+48915 crosses CAPE → CENTRAL → CONTAINER → CENTRAL → CONTAINER.
+
+Two consequences:
+
+1. A train cannot be assigned a single corridor.
+2. Any KPI aggregated by corridor must be aggregated **per node** and then
+   summed — which is exactly the mapping §33 asks for, and which is still not
+   supplied.
+
+## 46. Still required
+
+1. **WATERVALBOVEN** — the whole origin is still outstanding. Its bodies were
+   not supplied with this extract.
+2. **WOLSELEY 1417 and 1418** — not supplied with this extract.
+3. **8915** — its head row arrived (WATERVALBOVEN 14:45 → KOMATIPOORT 21:40,
+   6:55, `YYYAAAY`) but the body is truncated at sequence group 9. The
+   terminus row is still missing.
+4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
+   measuring any transit KPI, and §45 has now made it sharper: the mapping has
+   to be per node.
+5. **The meaning of the frequency code `C`** (§44).
+6. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
+   has appeared anywhere in 33a. Phase 7 remains BLOCKED.
+7. Every train not listed in §34.
+
+Five reference results are now asserted end to end: the 6455/6431 route pair
+(§17), the 6614/6616/8038 timetable triplet (§23), the 8000/8002 crossing
+(§24), the 4465/7355/8965 group (§28), and the five-deep WOR-NOORD shunt pool
+(§35).
+
+Paste as raw TSV, one row per line, no `" and "` joins.
+
 
 1. **7407** — rows for sequence groups 2–39. Summary held.
 2. **7403** — sequence groups 14–39. Head and summary held.
