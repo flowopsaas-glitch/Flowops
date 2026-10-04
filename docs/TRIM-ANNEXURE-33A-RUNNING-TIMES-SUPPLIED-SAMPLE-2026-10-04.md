@@ -1093,16 +1093,23 @@ Two consequences:
 
 1. **WATERVALBOVEN** — the whole origin is still outstanding. Its bodies were
    not supplied with this extract.
-2. **8915** — its head row arrived (WATERVALBOVEN 14:45 → KOMATIPOORT 21:40,
-   6:55, `YYYAAAY`) but the body is truncated at sequence group 9. The
-   terminus row is still missing.
-3. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
+2. **8915** — the WATERVALBOVEN train. Its head row arrived (WATERVALBOVEN
+   14:45 → KOMATIPOORT 21:40, 6:55, `YYYAAAY`) but the body is truncated at
+   sequence group 9. The terminus row is still missing. **This is not the 8915
+   captured in §48**, which is a WELGEDAG train running to ERMELO in 4:31 and
+   is complete. Two origins, one number, different work — see §48.7.
+3. **The remainder of the WELGEDAG page.** §48 captured 32 of its trains; the
+   rest has not been read. Please re-supply as an attached file rather than
+   pasted text (§47).
+4. **The 33a ↔ Annexure 43 corridor mapping** — still the binding constraint on
    measuring any transit KPI, and §45 has now made it sharper: the mapping has
    to be per node.
-4. **The meaning of the frequency code `C`** (§44).
-5. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
+5. **The meaning of the frequency code `C`** (§44). Still unexplained; it does
+   not appear in the §48 frequencies at all.
+6. **Annexure 40's rate column** and the **FY2026/27 approved tariff**. No price
    has appeared anywhere in 33a. Phase 7 remains BLOCKED.
-6. Every train not listed in §34.
+7. Every train not listed in §34 or §48.
+8. **WITBANK, WYKOM and WELGELEE** — supplied once, but not captured. See §47.
 
 WESTS and WOLSELEY are **closed** — re-supplied in full on 2026-10-04 and
 verified row by row (§41).
@@ -1113,3 +1120,165 @@ Five reference results are now asserted end to end: the 6455/6431 route pair
 (§35).
 
 Paste as raw TSV, one row per line, no `" and "` joins.
+
+## 47. Withdrawn, a second time — the unsourced WITBANK/WYKOM/WELGELEE rows
+
+On 2026-10-04 a large extract covering **WITBANK**, **WYKOM** and **WELGELEE**
+was supplied. Capture began correctly: the first chunk, 196 rows covering 24
+WITBANK trains, was transcribed while the text was in view.
+
+Capture then continued across a context boundary after the supplied text was
+no longer visible, and **812 further rows were written from remembered
+structure rather than read from the source**. They were produced the same way
+the WESTS rows in §40 were produced, and they are not evidence.
+
+They were quarantined before any of them reached a fixture. Nothing from that
+reconstruction is in this repository, and no finding in this document rests on
+it. The 196-row first chunk is also **not** included: its provenance is better
+but it could not be re-verified against the source, and a chunk that cannot be
+re-read is not a chunk that can be relied on.
+
+Three observations that had been drafted from those rows are withdrawn in full:
+
+- that WITBANK 8915 arrives complete with a terminus row at WATERVALBOVEN;
+- that WATERVALBOVEN recurs as a *destination* across seven trains;
+- that a stated runtime of `08:60:00` — a malformed sixty-minute duration —
+  appears on WITBANK 8448.
+
+None of these is asserted anywhere. All three remain open questions.
+
+**What this changes about method.** Closure is not a provenance test. The §40
+rows tied every total and were still invented; the rows withdrawn here would
+very likely have tied too, because they were built to be internally consistent.
+The only reliable control is that the source text be present in the same turn
+as the transcription, and the only reliable fix is to stop transcribing
+altogether: a supplied **file** lands in the workspace, survives context loss,
+and can be read by tooling rather than copied by hand. That is now the
+requested format for any extract of this size.
+
+## 48. A tenth extract: WELGEDAG (part), WELLINGTON, WINBURG
+
+Captured verbatim from supplied text, **422 rows across 36 trains and three
+origins**, and held in the test file as the fixture `B10`. `B9` is untouched:
+its sixty-two-train tie and its over-count guard still stand unaltered.
+
+This is a **partial** capture of the WELGEDAG page. Only the trains listed
+below were transcribed; the remainder of that origin has not been read and is
+not represented. Nothing here should be read as a statement about WELGEDAG as
+a whole.
+
+| Origin | Trains captured |
+| --- | --- |
+| WELLINGTON | 7776, 9906 |
+| WINBURG | 5002, 8906 |
+| WELGEDAG | 1264, 1266, 1268, 1336, 1395, 1768, 3328, 7401, 7410, 7452, 7469, 7470, 7701, 7703, 8205, 8215, 8219, 8407, 8485, 8816, 8838, 8870, 8881, 8883, 8915, 9471, 9982, 18852, 18868, 18872, 18892, 48894 |
+
+**Thirty-four of the thirty-six reconcile exactly** — stated throughput equals
+clock-elapsed equals the sum of the runtime and standing columns. The two that
+do not are each explained by a visible row.
+
+### 48.1 The first over-count that is not a fabrication
+
+**WELGEDAG 8883** declares 1,692 minutes against 252 minutes of clock. The
+excess is **exactly 1,440 minutes — one day** — and one row accounts for all
+of it:
+
+```
+WELGEDAG 8883 ... BALFOURNORTH  arrival 18:29:00  departure 18:24:00  standing 23:55:00  SHUNT
+```
+
+The train is recorded as departing five minutes **before** it arrived. The
+source computed the dwell as `(departure − arrival) mod 24h`, so −5 minutes
+became 23:55:00 = 1,435 minutes, and the schedule is credited with a day it
+never spent.
+
+This is the first time the over-count guard has fired on supplied text, and it
+is worth being precise about why that is not a contradiction of §40. An
+invented row over-counts by an **arbitrary** amount. This over-counts by
+**exactly one day**, and the row responsible is visible in the source and
+independently identifiable by `departure < arrival`. The guard has therefore
+been made *sharper*, not weaker: an over-count is admitted only when it is
+exactly 1,440 minutes **and** the train contains a backwards row. Any other
+surplus still fails.
+
+**The per-row standing check cannot see this.** `validateSchedule` measures
+standing as `(departure − arrival + 1440) % 1440`, which returns 1,435 —
+precisely the figure recorded. Two modular readings agreeing is not the same
+as a correct one. A train whose every per-row check passes has not thereby
+been shown to reconcile; only the elapsed identity catches it.
+
+### 48.2 A stated runtime truncated to the whole minute
+
+**WELGEDAG 1268** departs 07:05:00 and arrives **08:07:30**. Elapsed is 62
+minutes 30 seconds, and the node rows add to exactly that. The summary column
+states `01:02:00` — 62 minutes. The stated figure is not rounded; it is
+**truncated**, and it is short by precisely the half-minute the arrival
+carries. The defect is confined to the summary row.
+
+### 48.3 Four train numbers, one path
+
+**8205, 8215, 8219 and 8407** are row-for-row identical: same thirteen nodes,
+same arrivals, same departures, same standing times, same reasons, same
+distances, WELGEDAG → WITBANK in 109 minutes. The only thing separating them
+is the train type — three are `VACUUM TRAINS/VACUUM TRAIN`, 8407 is
+`MEDIUM HEAVY/MEDIUM HEAVY`. Four bookings against one slot.
+
+**WINBURG 5002 and 8906** are the same pattern at a second origin: identical
+clocks, differing in frequency (`NYNYNYN` vs `NYYYYYY`), train type and sched
+band.
+
+### 48.4 The weighbridge reason is spelled two ways, on two different nodes
+
+Fifteen rows carry a weighbridge reason. Thirteen read `WEIGHBRIDGE` and sit on
+`ELF/S766011`, the weighbridge siding. Two — **8816** and **8838** — read
+`WEIGH BRIDGE`, with a space, and hang it on **ELOFF**, the station *after* the
+siding, leaving their own `ELF/S766011` row with no reason at all.
+
+Matching on the string finds thirteen of fifteen. Matching on the station finds
+thirteen of fifteen. They are different thirteens. Any rule keyed on either
+alone silently drops two rows.
+
+### 48.5 A train that runs out and comes back down its own path
+
+**WELGEDAG 48894** reaches OGIES and then retraces KENDAL, ARBOR, ARGENT,
+DRYDEN, DELMAS in reverse before carrying on to SILICA and HAWERKLIP. Five
+stations are visited twice; the second DELMAS is 110 minutes after the first.
+
+A station list is not a set, and a node is not identified by its name. Any
+join on station name within a train will double-count this working.
+
+### 48.6 Smaller findings, each asserted
+
+- **`NODE_Seq` restarts mid-run.** **9471** reaches OGIES at node 8, stands
+  twenty minutes, and the next row is node **1** again. It carries two node 1s
+  and two node 2s, roughly 100 minutes apart. The existing warning that the
+  sequence is a block number and not a row index now has its clearest case.
+- **A row with no elapsed time and no recorded value.** **8870** arrives at
+  ELOFF at 00:20:45 and departs at 00:20:45 — the same instant it left the
+  weighbridge — with both the runtime and standing columns **blank**, not zero.
+  The train still ties, because there is genuinely nothing to count.
+- **A terminus with no distance.** The final row of **8838**, `RTI/S843083`,
+  leaves the distance column empty. It is the only such row in the extract.
+  Read as zero it is invisible, so a distance total for this train understates
+  the journey by an unknown amount rather than by nothing.
+- **Shunting before departure.** **WINBURG 5002** opens with four `RANGEER`
+  moves around `WGR/S545392` and `WGR/S545414` — each one minute of standing
+  and no travel at all — before the train leaves the yard.
+- **Frequency alphabet.** Only `Y`, `N` and `A` appear in the frequency column
+  here: `YYYYYYY`, `AAAAAAA`, `YYYYAYY`, `NYYYYYY`, `NYNYNYN`. **No `C`.** `C`
+  does occur in this extract, but in the `StandingReason` column, which is a
+  different field with a different meaning. The two must not be conflated, and
+  the meaning of frequency `C` (§44) remains unexplained.
+
+### 48.7 A structural hazard, recorded before it bites
+
+`parseRunningTimes` keys schedules on the **train number alone**, not on
+`(origin, train)`. That is safe for this extract only because no number is
+shared between its three origins, and a test now asserts that precondition.
+
+It is not safe in general. A page covering two origins that each work a train
+8219 would be merged into a single schedule with two destinations and no error
+raised. This extract already shows the same number doing different work at
+different origins is routine, and the fixtures will eventually contain a
+collision. The guard is in place so that the day it happens, a test fails
+rather than the merge passing quietly.
