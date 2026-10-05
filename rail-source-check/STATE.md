@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-05 (round 10 — sandbox reset wiped /home/user/.cache, recovered from origin at 303e3f1; working dir now lives IN the repo; 1438 tail completed but DERIVED from 1222, needs source confirmation; round-10 paste of ~80 BEACONSFIELD workings lost from context, re-paste needed)
+Updated: 2026-10-05 (round 30 — BLOEMFONTEIN 6642 appended; 29 BLOEMFONTEIN workings remain, next 6944; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.

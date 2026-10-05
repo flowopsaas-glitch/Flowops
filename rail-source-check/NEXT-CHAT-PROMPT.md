@@ -27,9 +27,9 @@ from the branch alone.** That is what "100% production" means here.
 - **`rail-source-check/STATE.md`** — the running log. **Read it first, every
   session, before doing anything else.** It holds the round history, the
   near-duplicate verdicts, the quirk list, and the recovery procedures.
-- **`rail-source-check/*.txt`** — 12 data files, **13,049 rows, 332 distinct
+- **`rail-source-check/*.txt`** — 12 data files, **13,072 rows, 333 distinct
   workings, 26 depots**. Largest is
-  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,491 rows / 76 workings).
+  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,514 rows / 77 workings).
 - **`rail-source-check/verify_workings.py`** — the checker.
   Run `python3 verify_workings.py <file>` after every append.
 - **`rail-source-check/NEXT-CHAT-PROMPT.md`** — this file.
@@ -172,12 +172,12 @@ you need.
 
 ## CURRENT GAPS — what to ask me for next
 
-**Verified this session: 332 workings captured, 18 flagged, 4 depots at zero rows.**
+**Verified this session: 333 workings captured, 18 flagged, 4 depots at zero rows.**
 
-**Priority 1 — 30 BLOEMFONTEIN workings still at 0 rows.** Next is **6642**:
+**Priority 1 — 29 BLOEMFONTEIN workings still at 0 rows.** Next is **6944**:
 
 ```
-6642 6944 7000 7002 7266 7424 8000 8206 8605 8606 8642 8652 8855
+6944 7000 7002 7266 7424 8000 8206 8605 8606 8642 8652 8855
 8867 8875 8910 8914 8930 8935 8939 8941 8943 8945 8951 8955 8964 8965
 8969 8989 9000
 ```
