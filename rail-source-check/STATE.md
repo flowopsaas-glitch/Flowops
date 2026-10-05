@@ -426,3 +426,18 @@ Compared all fields other than working number and the four clock fields (arrival
 **31 workings** from the 66xx→9000 block still have 0 rows: **6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **6640**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,026 rows, 331 workings**; this batch is **2,468 rows / 75 workings**. Checker totals for this batch: **67 OK + 8 flagged**.
+
+## Round 29 — BLOEMFONTEIN 6640 (batch file now 2,491 rows / 76 workings)
+
+**23 rows appended (2,468 → 2,491); 76 workings, 68 OK + 8 flagged.** Pre-append count was 2,468; last row was 6636 step 10 KRO-GUNHILL 15:58:00. The dedupe check found **0 existing 6640 rows**. The staged paste and appended block match byte-for-byte (MD5 `39813c5de093d3f7b5df10adbe53e23f`).
+
+### 6640 — 23 rows, L2469–2491, 14:00 → KRO-GUNHILL 17:58, stated 03:58:00 == computed [OK]
+Header: n=2, YYYYYYY, VACUUM TRAINS/LIGHT LOCO, designation KRO-GUNHILL. Source quirks retained: LONGEND, ESTOIRE and DEBLOEM all print 14:00:00 with blank travel (ESTOIRE also has blank activity); KALKVLAKTE 16:44:00 has blank travel/dwell/activity, matching VIRGINIA's clock; KAREE 14:39/14:58 dwell 00:19:00 activity `P8980`; header distance is blank; terminal KRO-GUNHILL carries `RT`.
+
+### 6636 / 6640 compared after independent transcription
+Compared all fields other than working number and the four clock fields (arrival, departure, work start, work end): **no non-clock differences**. Every non-sentinel clock in 6640 is exactly **2 hours later** than in 6636; the terminal `00:00:00` departure sentinel remains the same. Both were transcribed from their own pasted rows, not derived from one another.
+
+### RE-PASTE REQUIRED (updated)
+**30 workings** from the 66xx→9000 block still have 0 rows: **6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **6642**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,049 rows, 332 workings**; this batch is **2,491 rows / 76 workings**. Checker totals for this batch: **68 OK + 8 flagged**.
