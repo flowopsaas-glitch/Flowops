@@ -368,3 +368,16 @@ KRO-GUNHILL family row counts on disk for reference: 5544 = 23, 18941 = 23, 6628
 
 ### RE-PASTE REQUIRED (updated)
 34 workings from that block still 0 rows: **6630, 6634, 6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot list unchanged.
+
+## Round 24 — BLOEMFONTEIN 6630 (batch file now 2,422 rows / 73 workings)
+**23 rows appended (2,399 → 2,422); 73 workings, 65 OK + 8 flagged.** Pre-append count confirmed 2,399; last row before the append was 6628 step 10 KRO-GUNHILL 07:58:00, no overlap. (The previous message was a repeat of 6628, verified byte-identical to L2377-2399 by md5 `a972e40556058c300f9af6ae2d29a38a` and NOT appended — second duplicate paste in a row after 6603.)
+
+### 6630 — 23 rows, L2400-2422, 13:00 → KRO-GUNHILL 16:58, stated 03:58:00 == computed [OK]
+n=2, YYYYYYY, VACUUM TRAINS/LIGHT LOCO, designation KRO-GUNHILL. Same quirks as 6628, kept verbatim: **LONGEND/ESTOIRE/DEBLOEM all print 13:00:00 with blank travel** (ESTOIRE also blank activity); **KALKVLAKTE 15:44:00 blank travel+dwell+activity**, the same clock as VIRGINIA; KAREE 13:39/13:58 dwell 00:19:00 activity `P8980`; header distance empty; terminal KRO-GUNHILL `RT`.
+
+### 6628 vs 6630 checked on disk — differ in exactly two header fields
+`diff <(sed -n '2377,2399p' | cut -f1,3,4,5,8,9,10,11,14,15,16,17,18,19) <(sed -n '2400,2422p' | same)` returns **one differing line — the header** — and inside it only two fields differ: **n = 1 (6628) vs 2 (6630)** and **description = `LIGHTAIRBRAKE/LIGHTAIRBRAKE` vs `VACUUM TRAINS/LIGHT LOCO`**. All 22 body rows match on every non-clock field, and every station clock in 6630 is exactly **9h later** than 6628's (04:00→13:00, BOSRAND 07:41→16:41, KRO-GUNHILL 07:58→16:58); both state 03:58:00. **Deriving one from the other would have silently produced the wrong n and the wrong description — the two least visible fields in the row.** Both were transcribed from their own pasted rows.
+For contrast, 6628/18941 differ in 19 lines (16 travel values plus description plus KAREE dwell/activity), and 6601/6603 differ in nothing but clocks. Three same-family pairs, three different degrees of similarity — no safe shortcut exists in this depot.
+
+### RE-PASTE REQUIRED (updated)
+33 workings from that block still 0 rows: **6634, 6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot list unchanged.
