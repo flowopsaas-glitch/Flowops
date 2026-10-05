@@ -411,3 +411,18 @@ Compared every field other than working number and the four clock fields (arriva
 The active data was present on the previous chat’s remote branch. Fetched that commit and used `git merge --ff-only FETCH_HEAD` while remaining on the current Arena branch; the fast-forward restored the complete `rail-source-check/` tree. No reset, checkout of another branch, or duplicate data append was performed. The active handoff prompt now points to the current branch, `arena/d016ab76-flowops`.
 
 Current verified totals remain **12 rail data files, 13,003 rows, 330 workings**; the Bloemfontein batch remains **2,445 rows / 74 workings**. The 32 still-missing Bloemfontein workings listed in round 26 remain unchanged; next is **6636**. Other open items remain as listed above.
+
+## Round 28 — BLOEMFONTEIN 6636 (batch file now 2,468 rows / 75 workings)
+
+**23 rows appended (2,445 → 2,468); 75 workings, 67 OK + 8 flagged.** Pre-append count was 2,445; last row was 6634 step 10 KRO-GUNHILL 13:58:00. The dedupe check found **0 existing 6636 rows**. The staged paste and appended block match byte-for-byte (MD5 `340b5a4519958ef801511405ac083a29`).
+
+### 6636 — 23 rows, L2446–2468, 12:00 → KRO-GUNHILL 15:58, stated 03:58:00 == computed [OK]
+Header: n=2, YYYYYYY, VACUUM TRAINS/LIGHT LOCO, designation KRO-GUNHILL. Source quirks retained: LONGEND, ESTOIRE and DEBLOEM all print 12:00:00 with blank travel (ESTOIRE also has blank activity); KALKVLAKTE 14:44:00 has blank travel/dwell/activity, matching VIRGINIA's clock; KAREE 12:39/12:58 dwell 00:19:00 activity `P8980`; header distance is blank; terminal KRO-GUNHILL carries `RT`.
+
+### 6634 / 6636 compared after independent transcription
+Compared all fields other than working number and the four clock fields (arrival, departure, work start, work end): **no non-clock differences**. Every non-sentinel clock in 6636 is exactly **2 hours later** than in 6634; the terminal `00:00:00` departure sentinel remains the same. Each working was transcribed from its own pasted rows; the comparison was not used to derive 6636.
+
+### RE-PASTE REQUIRED (updated)
+**31 workings** from the 66xx→9000 block still have 0 rows: **6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **6640**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,026 rows, 331 workings**; this batch is **2,468 rows / 75 workings**. Checker totals for this batch: **67 OK + 8 flagged**.

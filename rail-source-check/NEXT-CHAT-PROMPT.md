@@ -1,7 +1,7 @@
 # Handoff prompt — Rail working consolidation (Annexure_33a_NS_ver_4)
 
 Paste everything below the line into a new chat in this same workspace.
-All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; the restored data tree is now at `2073bb9`.
+All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; the data tree was restored at `2073bb9`; subsequent rounds are recorded below.
 
 ---
 
@@ -27,9 +27,9 @@ from the branch alone.** That is what "100% production" means here.
 - **`rail-source-check/STATE.md`** — the running log. **Read it first, every
   session, before doing anything else.** It holds the round history, the
   near-duplicate verdicts, the quirk list, and the recovery procedures.
-- **`rail-source-check/*.txt`** — 12 data files, **13,003 rows, 330 distinct
+- **`rail-source-check/*.txt`** — 12 data files, **13,026 rows, 331 distinct
   workings, 26 depots**. Largest is
-  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,445 rows / 74 workings).
+  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,468 rows / 75 workings).
 - **`rail-source-check/verify_workings.py`** — the checker.
   Run `python3 verify_workings.py <file>` after every append.
 - **`rail-source-check/NEXT-CHAT-PROMPT.md`** — this file.
@@ -130,7 +130,7 @@ cd /home/user/Flowops
 git fetch origin arena/d016ab76-flowops
 git reset --mixed FETCH_HEAD      # NEVER --hard
 git diff --stat                   # confirm only your intended +N lines
-git add -f rail-source-check/*.txt rail-source-check/STATE.md
+git add -f rail-source-check/*.txt rail-source-check/STATE.md rail-source-check/NEXT-CHAT-PROMPT.md
 git commit -m "rail-source-check round NN: ..." && git push origin arena/d016ab76-flowops
 git ls-remote origin arena/d016ab76-flowops
 ```
@@ -172,14 +172,14 @@ you need.
 
 ## CURRENT GAPS — what to ask me for next
 
-**Verified this session: 330 workings captured, 18 flagged, 4 depots at zero rows.**
+**Verified this session: 331 workings captured, 18 flagged, 4 depots at zero rows.**
 
-**Priority 1 — 32 BLOEMFONTEIN workings still at 0 rows.** Next is **6636**:
+**Priority 1 — 31 BLOEMFONTEIN workings still at 0 rows.** Next is **6640**:
 
 ```
-6636 6640 6642 6944 7000 7002 7266 7424 8000 8206 8605 8606 8642 8652
-8855 8867 8875 8910 8914 8930 8935 8939 8941 8943 8945 8951 8955 8964
-8965 8969 8989 9000
+6640 6642 6944 7000 7002 7266 7424 8000 8206 8605 8606 8642 8652 8855
+8867 8875 8910 8914 8930 8935 8939 8941 8943 8945 8951 8955 8964 8965
+8969 8989 9000
 ```
 
 **Priority 2 — 5 workings captured only partially** (head missing, checker
