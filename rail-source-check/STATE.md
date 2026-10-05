@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-05 (round 31 — BLOEMFONTEIN 6944 appended; 28 BLOEMFONTEIN workings remain, next 7000; current branch arena/d016ab76-flowops)
+Updated: 2026-10-05 (round 32 — BLOEMFONTEIN 7000 appended; 27 BLOEMFONTEIN workings remain, next 7002; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -456,3 +456,17 @@ Compared every field other than working number, four clock fields (arrival, depa
 **28 workings** from the 66xx→9000 block still have 0 rows: **7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **7000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,095 rows, 334 workings**; this batch is **2,537 rows / 78 workings**. Checker totals for this batch: **70 OK + 8 flagged**. Aggregate checker totals: **334 workings, 18 with issues**.
+
+## Round 32 — BLOEMFONTEIN 7000 (batch file now 2,564 rows / 79 workings)
+
+**27 rows appended (2,537 → 2,564); 79 workings, 71 OK + 8 flagged.** Pre-append count was 2,537; last row was 6944 step 10 KRO-GUNHILL 01:28:00, day flag 1. The dedupe check found **0 existing 7000 rows**. The staged paste and appended block match byte-for-byte (MD5 `0362b27e2fb40b036249ba37274c22af`).
+
+### 7000 — 27 rows, L2538–2564, 12:00 → BLOEMFONTEIN 14:19, stated 02:19:00 == computed [OK]
+Header: n=3, YYYYYYY, VACUUM TRAINS/SHUNT CAR, designation BLOEMFONTEIN. Source quirks retained: several same-time / seconds-apart shunt movements; blank travel on rows noted by the checker (including repeated BFG/BFX car rows); rows at step 12 BLOEMFONTEIN 14:13–14:14 and terminal step 14 have blank activity; header distance is blank; final departure sentinel is `00:00:00`. No values normalized.
+
+No nearest same-pattern BLOEMFONTEIN shunt working was present for comparison: 7002 remains absent. 7000 was transcribed directly from this paste; it must not be used to derive 7002.
+
+### RE-PASTE REQUIRED (updated)
+**27 workings** from the 66xx→9000 block still have 0 rows: **7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **7002**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,122 rows, 335 workings**; this batch is **2,564 rows / 79 workings**. Checker totals for this batch: **71 OK + 8 flagged**. Aggregate checker totals: **335 workings, 18 with issues**.
