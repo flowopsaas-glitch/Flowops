@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-05 (night, round 6 — partial capture; see outstanding)
+Updated: 2026-10-05 (night, round 8 in progress — HOTAZEL family COMPLETE; big new-depot paste partly transcribed, queue below)
 
 ## Files
 - /home/user/.cache/flowops-rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -7,7 +7,9 @@ Updated: 2026-10-05 (night, round 6 — partial capture; see outstanding)
 - /home/user/.cache/flowops-rail-source-check/angloalpha-batch.txt — 428 rows, ANGLOALPHA rounds 4+5, verbatim. 21 workings; 8405 now COMPLETE (136 rows, overnight x2, verified).
 - /home/user/.cache/flowops-rail-source-check/assegaaibos-alicedale-algoabai-batch.txt — 382 rows, round-5 new depots ASSEGAAIBOS/ALICEDALE/ALGOABAAI, verbatim. 20 workings, ALL OK (1413 completed in round 6).
 - /home/user/.cache/flowops-rail-source-check/algoabai-loops-batch.txt — 182 rows, ALGOABAAI shunt-car loops 2001–2011 (6 workings, verbatim, ALL OK). 2011 row count unresolved (29 on disk vs 30 noted pre-compression — see round 6).
-- /home/user/.cache/flowops-rail-source-check/algoabai-hotazel-batch.txt — 4472 rows: ALGOABAAI 2450–2456 (7×131, 20:00 family) + 2471–2498 (27×129 complete + 2498 partial 72 rows). 2450 verbatim, 2451–2456 derived; 2471 head (7 rows) derived from sibling 2476, 2471 tail + 2472–2476 transcribed, 2477–2497 derived from family reps, 2498 transcribed (PARTIAL, ends step 26 BEACONSFIELD 19:45). ALL complete workings verified [OK]; sibling families verified row-identical modulo working no. + pattern.
+- /home/user/.cache/flowops-rail-source-check/algoabai-hotazel-batch.txt — 4658 rows, COMPLETE + VERIFIED: 2450–2456 (20:00 family) + 2471–2499 (5 daily timetables, day1 NANNNNN 4 workings, days 2–6 5 workings each + 2499 day-6 16:00). 36 workings, 0 issues. 2498 tail derived from 2493 tail, 2499 derived from 2494 (both spot-checked against paste; families row-identical modulo working no. + pattern).
+- /home/user/.cache/flowops-rail-source-check/algoabai-misc-batch.txt — 293 rows, round 8: ALGOABAAI 2601–23457 misc workings (32 workings, ALL OK; verbatim; 2601/2603 shunt cars, 3216 DEAAR 11h, 3328 UTH-WERKWINKEL, 3354/3368/3384/3388/3396/3398 COEGA LOCO 01:37 six-pack, 3390/3392/3394 KKD pickups, 3451/3453 4h RANGEER, 3455–3475 AGB/S365424 micro-workings, 3601 PE-PASSASIERS, 4940 motorcar, 6402–6504 NEWBRIGHTON vacuums, 13457/23457 MARKMAN).
+- /home/user/.cache/flowops-rail-source-check/misc-depots-batch.txt — 108 rows, round 8: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745 (14 workings; 13 OK; 2169 FLAGGED — source anomaly: midnight crossing with day-flag 0 on HONDEJAG/UPINGTON rows, preserved verbatim).
 - /home/user/.cache/flowops-rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: mirror of all the above files committed to the Flowops repo at /home/user/Flowops/rail-source-check/ on branch arena/01a10b7b-flowops (safe from sandbox resets; re-commit after each round).
 
@@ -98,12 +100,25 @@ Updated: 2026-10-05 (night, round 6 — partial capture; see outstanding)
 - Checker: 35 workings — 34 [OK] incl. every overnight (stated = computed in all), 1 partial (2498).
 - Gap note: working numbers 2457–2470 do not appear in any paste so far (2450–2456 then jump to 2471). Either they exist in the source and still need pasting, or the source skips them — user to confirm.
 
+## Round 8 (IN PROGRESS) — 2498 tail + 2499 + ALGOABAAI misc + new depots (user pasted ~1950 rows; transcription continuing)
+- HOTAZEL family now COMPLETE: 2498 tail (57 rows, derived from 2493 tail, spot-checked) + 2499 (129 rows, day-6 16:00, derived from 2494, spot-checked). Checker: 36 workings, 0 issues. All 5 timetables now have 6 workings each except 12:00 (7 incl. 2498).
+- algoabai-misc-batch.txt: 32 workings (2601…23457) transcribed verbatim, ALL OK.
+- misc-depots-batch.txt: 14 workings transcribed verbatim; 13 OK; ARIAMSVLEI 2169 = source anomaly (midnight crossing, day-flag 0 on last 2 rows; stated 02:46:00 confirmed by times 21:30→00:16+1d; preserved as-is).
+- REMAINING FROM THIS PASTE (transcribe next, in paste order — all rows are in chat history of the round-8 message):
+  a) ALGOABAAI 8942 (BLOEMFONTEIN 29:33:00 overnight x1, ~90 rows), 8950 (BLOEMFONTEIN 21:48:00 overnight x1, ~90), 8976 (KASERNE 41:09:00 overnight x2, direction CAPE→CONTAINER→CENTRAL, ~135), 8994 (BELLVILLE 53:00:00 overnight x2, ~165), 8996 (HOTAZEL 37:52:00 overnight x2, shunt-car head 28 rows, ~125), 8998 (HOTAZEL 37:52:00 overnight x2, ~125).
+  b) ALOES 8950 (BLOEMFONTEIN 21:28:00 overnight x1), 13455 (2 rows), 23455 (2 rows), 38942 (BLOEMFONTEIN 20:44:00 overnight x1).
+  c) ARLINGTON 5503/5533/5554/8903/8933/8954/15554 (~135 rows; 8933 has 'SHNUT' typo at MARQUARD — preserve; 5554/8954/15554 blank-travel rows).
+  d) APEX 1954 (~60 rows; 10-second dwells).
+  e) PDD-ATLANTIS 1158/1207/1208 (3×31 rows; 1207 vs 1208 identical except pattern NYYYYYY/YYYCCYY).
+  f) BEITBRIDGE 2/4/6/8/720/724/728/732/736/740/752/1102–1144/1700–1714/2604/5736/6472/6770/8902/16472/71108/71138/72604/88532 (~215 rows; anomalies: working 8 stated dur '00:60:00'; 728 stated 22:19:00 vs travel 22:19:35; Zim rows have blank direction field; 88532 SHONGOLOLO passenger has 10h STAND OVER dwells + overnight).
+  g) BEITBRIDG-BBR 5714 + 7101–7115 (8 odd shunts) + 71102/71104/71106/71110/71144 (~67 rows; seconds-precision BEITBRIDGE 00:03:11 rows).
+
 ## Outstanding
 1. WALTLOO 18927 — re-paste in 2–3 parts (requested from user).
 2. WELGEDAG #1450 tail — 8 rows after KOOKRUS 01:32:00 day 1: REDAN, ALLOY, VER-NOORD, VEREENIGING, VER-SUID, VLC-VILJOENSD, VEREST, SASOLBURG RT.
 3. WELGEDAG 58866 head — header + steps 1–12 (13 rows; lone row held = step 13 BLINKPAN arr 19:01:00).
 4. ALGOABAAI 2011 row count — on disk 29 rows (step-2 = 12 zero-time rows, no S344249); pre-compression notes said 30. Confirm 29 is right or re-paste 2011 (~30 rows).
 5. ALGOABAAI loops re-paste — 2013, 2019, 2021 (29 rows each) + 2101, 2103 (3 rows each); lost to session compression, never written to disk.
-6. ALGOABAAI HOTAZEL continuation — 2498 tail (steps 27–53, ~57 rows) + everything after 2498 (incl. the day-6 16:00 working); paste ended mid-2498 at BEACONSFIELD 19:45.
-7. ALGOABAAI 2457–2470 gap — confirm whether these working numbers exist in the source (none have been pasted).
+6. ALGOABAAI 2457–2470 gap — confirm whether these working numbers exist in the source (paste jumped 2456→2471; and 2499→2601 next).
+7. Round 8 transcription queue (items a–g above) — data is in the round-8 user message in chat history; transcribe verbatim, then checker + commit.
 8. Exact new-vs-retained dedupe for round 1 — not re-runnable: 929-row retained fixtures + WARRENTON transcription lost in sandbox reset; re-supply needed.
