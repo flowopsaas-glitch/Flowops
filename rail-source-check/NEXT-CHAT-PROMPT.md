@@ -1,9 +1,11 @@
 # Handoff prompt — Rail working consolidation (Annexure_33a_NS_ver_4)
 
 Paste everything below the line into a new chat in this same workspace.
-All figures in it were read off disk on 2026-10-05 at commit `7fc28a3`.
+All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; the restored data tree is now at `2073bb9`.
 
 ---
+
+> **Current-session recovery (2026-10-05).** The prior chat’s committed rail-source tree was restored by a fast-forward onto the currently assigned `arena/d016ab76-flowops` branch. Stay on that branch and push only there. The repeated BLOEMFONTEIN 6634 paste matched the existing 23-row block exactly (L2423–2445; MD5 `2937669311f73e1f88053d0950bfaefb`), so it was not appended again. The next missing Bloemfontein working is 6636.
 
 ## MISSION
 
@@ -20,7 +22,7 @@ from the branch alone.** That is what "100% production" means here.
 
 ## WHERE THE WORK IS
 
-- Repo root `/home/user/Flowops`, branch **`arena/01a10b7b-flowops`**.
+- Repo root `/home/user/Flowops`, branch **`arena/d016ab76-flowops`**.
   Work only on this branch; push only to it.
 - **`rail-source-check/STATE.md`** — the running log. **Read it first, every
   session, before doing anything else.** It holds the round history, the
@@ -125,12 +127,12 @@ already produced one false "identical apart from the number" claim.
 
 ```bash
 cd /home/user/Flowops
-git fetch origin arena/01a10b7b-flowops
+git fetch origin arena/d016ab76-flowops
 git reset --mixed FETCH_HEAD      # NEVER --hard
 git diff --stat                   # confirm only your intended +N lines
 git add -f rail-source-check/*.txt rail-source-check/STATE.md
-git commit -m "rail-source-check round NN: ..." && git push origin arena/01a10b7b-flowops
-git ls-remote origin arena/01a10b7b-flowops
+git commit -m "rail-source-check round NN: ..." && git push origin arena/d016ab76-flowops
+git ls-remote origin arena/d016ab76-flowops
 ```
 
 ## RECOVERY — both have happened, repeatedly
@@ -140,7 +142,7 @@ work. This has happened ten times.** Symptom: `git log -1` shows `be1792d` and
 `git status --short` shows `?? rail-source-check/`.
 
 ```bash
-git fetch origin arena/01a10b7b-flowops
+git fetch origin arena/d016ab76-flowops
 git reset --mixed FETCH_HEAD
 git diff --stat
 ```
@@ -149,7 +151,7 @@ git diff --stat
 missing. The `checkout` is what restores them:
 
 ```bash
-git fetch origin arena/01a10b7b-flowops
+git fetch origin arena/d016ab76-flowops
 git reset --mixed FETCH_HEAD
 git checkout -- rail-source-check/
 ```

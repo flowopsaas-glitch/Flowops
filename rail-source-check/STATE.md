@@ -399,3 +399,15 @@ n=2, YYYYYYY, VACUUM TRAINS/LIGHT LOCO, designation KRO-GUNHILL. Same quirks ver
 
 ### RE-PASTE REQUIRED (updated)
 32 workings from that block still 0 rows: **6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot list unchanged.
+
+## Round 27 — exact re-paste of BLOEMFONTEIN 6634; no rows appended
+
+**0 rows appended.** The incoming 6634 working was already present from round 26. Following the dedupe-first rule, verified `beaufortwest-bultfontein-bloemfontein-batch.txt` at **2,445 rows**, with 6634 already occupying **L2423–2445 (23 rows)**. Reconstructed the 23 supplied TSV lines for comparison: **byte-identical** to disk, MD5 `2937669311f73e1f88053d0950bfaefb`. All 23 rows have 19 fields. The checker reports **10:00:00 → KRO-GUNHILL 13:58:00**, stated 03:58:00 == computed **[OK]**. No duplicate append and no data correction.
+
+### 6630 / 6634 comparison rechecked
+Compared every field other than working number and the four clock fields (arrival, departure, work start, work end): **no non-clock differences**. Every non-sentinel clock in 6634 is exactly 3 hours earlier than in 6630; the terminal `00:00:00` departure sentinel is identical in both. This confirms the recorded time-shift twin finding without using one working to derive the other.
+
+### Cross-session branch recovery
+The active data was present on the previous chat’s remote branch. Fetched that commit and used `git merge --ff-only FETCH_HEAD` while remaining on the current Arena branch; the fast-forward restored the complete `rail-source-check/` tree. No reset, checkout of another branch, or duplicate data append was performed. The active handoff prompt now points to the current branch, `arena/d016ab76-flowops`.
+
+Current verified totals remain **12 rail data files, 13,003 rows, 330 workings**; the Bloemfontein batch remains **2,445 rows / 74 workings**. The 32 still-missing Bloemfontein workings listed in round 26 remain unchanged; next is **6636**. Other open items remain as listed above.
