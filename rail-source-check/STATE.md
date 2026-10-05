@@ -386,3 +386,16 @@ For contrast, 6628/18941 differ in 19 lines (16 travel values plus description p
 The message was a repeat of **6630**, already captured in round 24. Verified against disk instead of appending: re-paste 23 rows, on-disk 6630 = 23 rows (L2400-2422), `diff` **IDENTICAL — every byte matches**, md5 `c6ff09c8f777909eb72a603196da282f` on both sides. File left at 2,422 rows / 73 workings / 8 flagged; nothing committed for data.
 **Duplicate-paste pattern now seen three times running (6603, 6628, 6630) — every other message repeats the previous working.** Standing protocol: on any paste, first check whether that (depot, working) already has rows; if it does, `diff` the paste against the on-disk block and report identical/different rather than appending. A duplicate that differs from disk would mean one of the two is wrong and must be investigated, not overwritten.
 Side benefit: these three repeats are independent byte-exact confirmations of the round-22/23/24 transcriptions (md5 matches), including blank travel fields, `P8980`, and the bare distance values.
+
+## Round 26 — BLOEMFONTEIN 6634 (batch file now 2,445 rows / 74 workings)
+**23 rows appended (2,422 → 2,445); 74 workings, 66 OK + 8 flagged.** Pre-append count confirmed 2,422; last row before the append was 6630 step 10 KRO-GUNHILL 16:58:00, no overlap. (Two further duplicate pastes of 6630 were received and skipped before this one; both verified md5-identical to L2400-2422, `c6ff09c8f777909eb72a603196da282f`.)
+
+### 6634 — 23 rows, L2423-2445, 10:00 → KRO-GUNHILL 13:58, stated 03:58:00 == computed [OK]
+n=2, YYYYYYY, VACUUM TRAINS/LIGHT LOCO, designation KRO-GUNHILL. Same quirks verbatim: LONGEND/ESTOIRE/DEBLOEM all at the header clock 10:00:00 with blank travel (ESTOIRE also blank activity); KALKVLAKTE 12:44:00 blank travel+dwell+activity, same clock as VIRGINIA; KAREE 10:39/10:58 dwell 00:19:00 activity `P8980`; header distance empty; terminal KRO-GUNHILL `RT`.
+
+### 6630 vs 6634 checked on disk — pure time-shift twins
+`diff <(sed -n '2400,2422p' | cut -f1,3,4,5,8,9,10,11,14,15,16,17,18,19) <(sed -n '2423,2445p' | same)` returns **no output**: the two workings are identical in every field except the working number and the clocks. Every station clock in 6634 is exactly **3h earlier** than 6630's (13:00→10:00, KALKVLAKTE 15:44→12:44, BOSRAND 16:41→13:41, KRO-GUNHILL 16:58→13:58); both state 03:58:00.
+**The 66xx KRO-GUNHILL group is therefore mixed, not uniform:** 6630/6634 are pure twins, but 6628 differs from both in **n (1 vs 2)** and **description (LIGHTAIRBRAKE/LIGHTAIRBRAKE vs VACUUM TRAINS/LIGHT LOCO)**, and 6628/18941 differ in 16 travel values as well. Whether a given pair is a twin cannot be known before the paste — so none may be derived.
+
+### RE-PASTE REQUIRED (updated)
+32 workings from that block still 0 rows: **6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot list unchanged.
