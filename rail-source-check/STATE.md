@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-05 (round 30 — BLOEMFONTEIN 6642 appended; 29 BLOEMFONTEIN workings remain, next 6944; current branch arena/d016ab76-flowops)
+Updated: 2026-10-05 (round 31 — BLOEMFONTEIN 6944 appended; 28 BLOEMFONTEIN workings remain, next 7000; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -441,3 +441,18 @@ Compared all fields other than working number and the four clock fields (arrival
 **30 workings** from the 66xx→9000 block still have 0 rows: **6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **6642**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,049 rows, 332 workings**; this batch is **2,491 rows / 76 workings**. Checker totals for this batch: **68 OK + 8 flagged**.
+
+## Round 31 — BLOEMFONTEIN 6944 (batch file now 2,537 rows / 78 workings)
+
+**23 rows appended (2,514 → 2,537); 78 workings, 70 OK + 8 flagged.** Pre-append count was 2,514; last row was 6642 step 10 KRO-GUNHILL 22:58:00. The dedupe check found **0 existing 6944 rows**. The staged paste and appended block match byte-for-byte (MD5 `73200d923fe782b470392dc89345d9f8`).
+
+### 6944 — 23 rows, L2515–2537, 21:30 → KRO-GUNHILL 01:28 (+1 day), stated 03:58:00 == computed [OK]
+Header: n=2, YYYYYYY, VACUUM TRAINS/LIGHT LOCO, designation KRO-GUNHILL. Source quirks retained: LONGEND, ESTOIRE and DEBLOEM all print 21:30:00 with blank travel (ESTOIRE also has blank activity); KALKVLAKTE 00:14:00 has blank travel/dwell/activity, matching VIRGINIA's clock; KAREE 22:09/22:28 dwell 00:19:00 activity `P8980`; header distance is blank; terminal KRO-GUNHILL carries `RT`. Day flag is 0 through THERON and changes to 1 at WELGELEE after midnight, as pasted.
+
+### 6642 / 6944 compared after independent transcription
+Compared every field other than working number, four clock fields (arrival, departure, work start, work end), and day flag: **no other-field differences**. Every non-sentinel clock in 6944 is **2 hours 30 minutes later** than in 6642 (modulo midnight); terminal departure `00:00:00` remains the same. 6944's post-midnight rows carry day flag 1, unlike the earlier 6642 working; the comparison was not used to derive 6944.
+
+### RE-PASTE REQUIRED (updated)
+**28 workings** from the 66xx→9000 block still have 0 rows: **7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **7000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,095 rows, 334 workings**; this batch is **2,537 rows / 78 workings**. Checker totals for this batch: **70 OK + 8 flagged**. Aggregate checker totals: **334 workings, 18 with issues**.

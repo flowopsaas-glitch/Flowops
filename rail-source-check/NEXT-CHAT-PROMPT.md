@@ -5,7 +5,7 @@ All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; th
 
 ---
 
-> **Current-session recovery (2026-10-05).** The prior chat’s committed rail-source tree was restored by a fast-forward onto the currently assigned `arena/d016ab76-flowops` branch. Stay on that branch and push only there. The repeated BLOEMFONTEIN 6634 paste matched the existing 23-row block exactly (L2423–2445; MD5 `2937669311f73e1f88053d0950bfaefb`), so it was not appended again. The next missing Bloemfontein working is 6636.
+> **Current-session recovery (2026-10-05).** The prior chat’s committed rail-source tree was restored by a fast-forward onto the currently assigned `arena/d016ab76-flowops` branch. Stay on that branch and push only there. The repeated BLOEMFONTEIN 6634 paste matched the existing 23-row block exactly (L2423–2445; MD5 `2937669311f73e1f88053d0950bfaefb`), so it was not appended again. At that recovery checkpoint, the next missing working was 6636; rounds 28–30 subsequently appended 6636, 6640 and 6642.
 
 ## MISSION
 
@@ -27,9 +27,9 @@ from the branch alone.** That is what "100% production" means here.
 - **`rail-source-check/STATE.md`** — the running log. **Read it first, every
   session, before doing anything else.** It holds the round history, the
   near-duplicate verdicts, the quirk list, and the recovery procedures.
-- **`rail-source-check/*.txt`** — 12 data files, **13,072 rows, 333 distinct
+- **`rail-source-check/*.txt`** — 12 data files, **13,095 rows, 334 distinct
   workings, 26 depots**. Largest is
-  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,514 rows / 77 workings).
+  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,537 rows / 78 workings).
 - **`rail-source-check/verify_workings.py`** — the checker.
   Run `python3 verify_workings.py <file>` after every append.
 - **`rail-source-check/NEXT-CHAT-PROMPT.md`** — this file.
@@ -172,12 +172,12 @@ you need.
 
 ## CURRENT GAPS — what to ask me for next
 
-**Verified this session: 333 workings captured, 18 flagged, 4 depots at zero rows.**
+**Verified this session: 334 workings captured, 18 flagged, 4 depots at zero rows.**
 
-**Priority 1 — 29 BLOEMFONTEIN workings still at 0 rows.** Next is **6944**:
+**Priority 1 — 28 BLOEMFONTEIN workings still at 0 rows.** Next is **7000**:
 
 ```
-6944 7000 7002 7266 7424 8000 8206 8605 8606 8642 8652 8855
+7000 7002 7266 7424 8000 8206 8605 8606 8642 8652 8855
 8867 8875 8910 8914 8930 8935 8939 8941 8943 8945 8951 8955 8964 8965
 8969 8989 9000
 ```
