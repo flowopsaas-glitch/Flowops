@@ -381,3 +381,8 @@ For contrast, 6628/18941 differ in 19 lines (16 travel values plus description p
 
 ### RE-PASTE REQUIRED (updated)
 33 workings from that block still 0 rows: **6634, 6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot list unchanged.
+
+## Round 25 — duplicate paste of 6630 (no rows appended)
+The message was a repeat of **6630**, already captured in round 24. Verified against disk instead of appending: re-paste 23 rows, on-disk 6630 = 23 rows (L2400-2422), `diff` **IDENTICAL — every byte matches**, md5 `c6ff09c8f777909eb72a603196da282f` on both sides. File left at 2,422 rows / 73 workings / 8 flagged; nothing committed for data.
+**Duplicate-paste pattern now seen three times running (6603, 6628, 6630) — every other message repeats the previous working.** Standing protocol: on any paste, first check whether that (depot, working) already has rows; if it does, `diff` the paste against the on-disk block and report identical/different rather than appending. A duplicate that differs from disk would mean one of the two is wrong and must be investigated, not overwritten.
+Side benefit: these three repeats are independent byte-exact confirmations of the round-22/23/24 transcriptions (md5 matches), including blank travel fields, `P8980`, and the bare distance values.
