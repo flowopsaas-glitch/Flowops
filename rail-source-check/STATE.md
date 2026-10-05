@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-05 (round 33 — BLOEMFONTEIN 7002 appended; 26 BLOEMFONTEIN workings remain, next 7266; current branch arena/d016ab76-flowops)
+Updated: 2026-10-05 (round 34 — BLOEMFONTEIN 7266 appended; 25 BLOEMFONTEIN workings remain, next 7424; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -488,3 +488,21 @@ At the start of this turn, the local branch ref had reset to base `be1792d` and 
 **26 workings** from the 66xx→9000 block still have 0 rows: **7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **7266**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,147 rows, 336 workings**; this batch is **2,589 rows / 80 workings**. Checker totals for this batch: **72 OK + 8 flagged**. Aggregate checker totals: **336 workings, 18 with issues**.
+
+## Round 34 — BLOEMFONTEIN 7266 (batch file now 2,612 rows / 81 workings)
+
+**23 rows appended (2,589 → 2,612); 81 workings, 73 OK + 8 flagged.** Pre-append count was 2,589; last row was 7002 step 12 BLOEMFONTEIN 03:26:00. The dedupe check found **0 existing 7266 rows**. The staged paste and appended block match byte-for-byte (MD5 `e6a5d5bad56452d55e781b10d2251178`).
+
+### 7266 — 23 rows, L2590–2612, 11:30 → KRO-GUNHILL 16:04, stated 04:34:00 == computed [OK]
+Header: n=2, CYYYYCY, VACUUM TRAINS/VACUUM TRAIN, designation KRO-GUNHILL. Source quirks retained: LONGEND and ESTOIRE both print 11:30:00 with blank travel; KAREE has travel 00:16:00 with blank dwell/activity; header distance is blank; terminal KRO-GUNHILL carries `RT` and travel 00:44:00. No values normalized.
+
+### 6636 / 7266 compared after independent transcription
+The 23-row blocks have the same step/direction/station sequence, but are **not** a pure time-shift pair. Differences occur in arrival (22 rows), departure (22), travel (19), dwell (1), activity (1), header work-start (1), header work-end (1), pattern (1), description (1), and work-duration (all 23 rows); no differences in the remaining fields. Each was transcribed from its own paste; the comparison was not used to derive 7266.
+
+### Checkout recovery this round
+The local ref again reset to base `be1792d`, with `rail-source-check/` untracked. Fetched the fixed branch at `4f7ca38` and used `git reset --mixed FETCH_HEAD` on the same branch; all 2,589 existing rows were retained and the tree was clean before the new append. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**25 workings** from the 66xx→9000 block still have 0 rows: **7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **7424**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,170 rows, 337 workings**; this batch is **2,612 rows / 81 workings**. Checker totals for this batch: **73 OK + 8 flagged**. Aggregate checker totals: **337 workings, 18 with issues**.
