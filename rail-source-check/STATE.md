@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-05 (round 32 — BLOEMFONTEIN 7000 appended; 27 BLOEMFONTEIN workings remain, next 7002; current branch arena/d016ab76-flowops)
+Updated: 2026-10-05 (round 33 — BLOEMFONTEIN 7002 appended; 26 BLOEMFONTEIN workings remain, next 7266; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -470,3 +470,21 @@ No nearest same-pattern BLOEMFONTEIN shunt working was present for comparison: 7
 **27 workings** from the 66xx→9000 block still have 0 rows: **7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **7002**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,122 rows, 335 workings**; this batch is **2,564 rows / 79 workings**. Checker totals for this batch: **71 OK + 8 flagged**. Aggregate checker totals: **335 workings, 18 with issues**.
+
+## Round 33 — BLOEMFONTEIN 7002 (batch file now 2,589 rows / 80 workings)
+
+**25 rows appended (2,564 → 2,589); 80 workings, 72 OK + 8 flagged.** Pre-append count was 2,564; last row was 7000 step 14 BLOEMFONTEIN 14:19:00. The dedupe check found **0 existing 7002 rows**. The staged paste and appended block match byte-for-byte (MD5 `ca253b77ba08de557a6622f3b79689f7`).
+
+### 7002 — 25 rows, L2565–2589, 01:00 → BLOEMFONTEIN 03:26, stated 02:26:00 == computed [OK]
+Header: n=3, YYYYYYY, VACUUM TRAINS/SHUNT CAR, designation BLOEMFONTEIN. Source quirks retained: blank travel/activity fields on several shunt-car rows; the checker notes blank travel at 10 rows; header distance is blank; final departure sentinel is `00:00:00`. No values normalized.
+
+### 7000 / 7002 compared after independent transcription
+The aligned header and first 24 station rows have the same step/direction/station sequence, but are **not** a pure time-shift pair. Across that aligned prefix, differences occur in arrival (24 rows), departure (25), travel (4), dwell (6), activity (7), header work-start (1), header work-end (1), and work-duration (all 25 rows); no differences in the remaining fields. 7000 has two additional final rows—step 13 BFX/S562181 and step 14 BLOEMFONTEIN—while 7002 ends at step 12 BLOEMFONTEIN. Both workings were transcribed from their own pastes; neither was derived from the other.
+
+### Checkout recovery this round
+At the start of this turn, the local branch ref had reset to base `be1792d` and `rail-source-check/` appeared untracked. Fetched the fixed branch at `20988cc` and used `git reset --mixed FETCH_HEAD` on the same branch; all 2,564 existing rows were retained and the tree was clean before the new append. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**26 workings** from the 66xx→9000 block still have 0 rows: **7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **7266**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,147 rows, 336 workings**; this batch is **2,589 rows / 80 workings**. Checker totals for this batch: **72 OK + 8 flagged**. Aggregate checker totals: **336 workings, 18 with issues**.
