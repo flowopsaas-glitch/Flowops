@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 40 — BLOEMFONTEIN 8652 appended; 18 BLOEMFONTEIN workings remain, next 8855; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 41 — BLOEMFONTEIN 8855 appended; 17 BLOEMFONTEIN workings remain, next 8867; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -12,7 +12,7 @@ Updated: 2026-10-06 (round 40 — BLOEMFONTEIN 8652 appended; 18 BLOEMFONTEIN wo
 - /home/user/Flowops/rail-source-check/misc-depots-batch.txt — 110 rows, rounds 8+9: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745/8014 (15 workings; 14 OK; 2169 FLAGGED — source anomaly: midnight crossing with day-flag 0 on HONDEJAG/UPINGTON rows, preserved verbatim).
 - /home/user/Flowops/rail-source-check/bledasdorp-bindura-beaconsfield-batch.txt — 1180 rows, rounds 9+10: BREDASDORP 78/5260, BLOEDRIVIER 5653, BINDURA 471/477, BEACONSFIELD 203/205/207/209/211/1041/1222/1224/1240/1250/1402/1414/1438 (18 workings; 18 OK per checker; 1438 tail L1139–L1180 is DERIVED from twin 1222, not verbatim — see round 10 / outstanding 9).
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
-- PERSISTENCE: the files above ARE the git-tracked copy (rail-source-check/ on branch arena/01a10b7b-flowops, pushed each round). /home/user/.cache is excluded from workspace snapshots and WAS DESTROYED by a mid-turn sandbox reset in round 10 — never use it for source data. Recovery recipe: cd /home/user/Flowops && git fetch origin arena/01a10b7b-flowops && git reset --hard FETCH_HEAD.
+- PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
 ## Round 1 (prior session — parts lost in sandbox reset)
 - 929 retained fixture rows: exact match vs paste (dedupe baseline). LOST in reset — re-supply needed to re-run exact new-vs-retained dedupe.
@@ -617,3 +617,21 @@ The local ref reset to base `be1792d`, with `rail-source-check/` untracked. Fetc
 **18 workings** from the 66xx→9000 block still have 0 rows: **8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8855**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,310 rows, 344 workings**; this batch is **2,752 rows / 88 workings**. Checker totals for this batch: **80 OK + 8 flagged**. Aggregate checker totals: **344 workings, 18 with issues**.
+
+## Round 41 — BLOEMFONTEIN 8855 (batch file now 2,845 rows / 89 workings)
+
+**93 rows appended (2,752 → 2,845); 89 workings, 81 OK + 8 flagged.** Pre-append count was 2,752; last row was 8652 step 11 KRO-GUNHILL 11:06:00. The dedupe check found **0 existing 8855 rows**. The independently transcribed paste and appended block match byte-for-byte (MD5 `4ab57514da883eba9dbc32a18e2a7170`); all 93 rows have 19 fields.
+
+### 8855 — 93 rows, L2753–2845, 22:35 → CAMBRIDGE 13:45 (+1 day), stated 15:10:00 == computed 15:10:00 [OK]
+Header: n=1, YYYYYYY, VACUUM TRAINS/VACUUM TRAIN, designation CAMBRIDGE. Source quirks retained: QTN-BERRYPARK has a blank direction; HERTZBERG is 23:57/00:11 with 00:14 dwell and activity `X 47014` on day flag 0, then WURASOORD at 00:11 begins day flag 1; 11 rows have blank travel (FERREIRA, HOPEORCHARDS, KAALSPRUIT, TIERPOORT, MEYERSPRUIT, WURASOORD, RIETWATER, POMPIE, KRUGERS, PAULING, VERLIGTING); terminal CAMBRIDGE carries `RT` and departure sentinel `00:00:00`; header distance is blank. No values normalized.
+
+### 8855 / 707990 compared after independent transcription
+Compared the common 80-row station-sequence prefix (BLOEMFONTEIN through BLANEY) across all 19 fields, excluding working number. Differences in that aligned prefix are only designation (all 80 rows: CAMBRIDGE vs BERLIN), header work-end, pattern, description, and work duration (all 80 rows); the other fields match. The station sequences then diverge: 8855 continues to BERLIN, while 707990 next enters BKJ/S440841; 8855 ends at CAMBRIDGE (93 rows), while 707990 has 91 rows. The comparison was done after independent transcription and was not used to derive 8855.
+
+### Checkout recovery this round
+The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. Fetched `origin arena/d016ab76-flowops` at `03c688a` and used `git reset --mixed FETCH_HEAD` on the same branch; all 2,752 existing rows were retained before append. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**17 workings** from the 66xx→9000 block still have 0 rows: **8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8867**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,403 rows, 345 workings**; this batch is **2,845 rows / 89 workings**. Checker totals for this batch: **81 OK + 8 flagged**. Aggregate checker totals: **345 workings, 18 with issues**.
