@@ -5,8 +5,8 @@ All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; th
 
 ---
 
-> **Earlier-session recovery (2026-10-05).** The prior chat’s committed rail-source tree was restored by a fast-forward onto the currently assigned `arena/d016ab76-flowops` branch. Stay on that branch and push only there. The repeated BLOEMFONTEIN 6634 paste matched the existing 23-row block exactly (L2423–2445; MD5 `2937669311f73e1f88053d0950bfaefb`), so it was not appended again. At that recovery checkpoint, the next missing working was 6636; rounds 28–41 subsequently appended 6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652 and 8855.
-> **Latest progress (2026-10-06 / round 41).** After a fresh dedupe confirmed 0 existing rows, BLOEMFONTEIN 8855 was independently transcribed from the user re-paste and appended as 93 rows at L2753–2845; all rows have 19 fields and the appended block matches the paste (MD5 `4ab57514da883eba9dbc32a18e2a7170`). Checker: 22:35 → CAMBRIDGE 13:45 +1 day, stated/computed 15:10:00, `[OK]`. The earlier provisional candidate was withdrawn; the current block is from the fresh paste, not from sibling 707990. Next missing working: 8867.
+> **Earlier-session recovery (2026-10-05).** The prior chat’s committed rail-source tree was restored by a fast-forward onto the currently assigned `arena/d016ab76-flowops` branch. Stay on that branch and push only there. The repeated BLOEMFONTEIN 6634 paste matched the existing 23-row block exactly (L2423–2445; MD5 `2937669311f73e1f88053d0950bfaefb`), so it was not appended again. At that recovery checkpoint, the next missing working was 6636; rounds 28–42 subsequently appended 6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855 and 8867.
+> **Latest progress (2026-10-06 / round 42).** BLOEMFONTEIN 8867 had 0 existing rows; 23 rows were transcribed from the current paste and appended at L2846–2868. All rows have 19 fields; the appended block matches the transcription (MD5 `23ca6ed7a1eaf1e9c7573000559be235`). Checker: 07:30 → MASERU 11:27, stated/computed 03:57:00, `[OK]`. It was compared with 5267 only after transcription; see STATE.md. Next missing working: 8875.
 
 ## MISSION
 
@@ -28,9 +28,9 @@ from the branch alone.** That is what "100% production" means here.
 - **`rail-source-check/STATE.md`** — the running log. **Read it first, every
   session, before doing anything else.** It holds the round history, the
   near-duplicate verdicts, the quirk list, and the recovery procedures.
-- **`rail-source-check/*.txt`** — 12 data files, **13,403 rows, 345 distinct
+- **`rail-source-check/*.txt`** — 12 data files, **13,426 rows, 346 distinct
   workings, 26 depots**. Largest is
-  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,845 rows / 89 workings).
+  `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,868 rows / 90 workings).
 - **`rail-source-check/verify_workings.py`** — the checker.
   Run `python3 verify_workings.py <file>` after every append.
 - **`rail-source-check/NEXT-CHAT-PROMPT.md`** — this file.
@@ -173,12 +173,12 @@ you need.
 
 ## CURRENT GAPS — what to ask me for next
 
-**Verified this session: 345 workings captured, 18 flagged.** BLOEMFONTEIN 8855 is complete and `[OK]`.
+**Verified this session: 346 workings captured, 18 flagged.** BLOEMFONTEIN 8855 and 8867 are complete and `[OK]`.
 
-**Priority 1 — 17 BLOEMFONTEIN workings still at 0 rows.** Next is **8867**:
+**Priority 1 — 16 BLOEMFONTEIN workings still at 0 rows.** Next is **8875**:
 
 ```
-8867 8875 8910 8914 8930 8935 8939 8941 8943
+8875 8910 8914 8930 8935 8939 8941 8943
 8945 8951 8955 8964 8965 8969 8989 9000
 ```
 

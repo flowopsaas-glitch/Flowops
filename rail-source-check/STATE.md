@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 41 — BLOEMFONTEIN 8855 appended; 17 BLOEMFONTEIN workings remain, next 8867; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 42 — BLOEMFONTEIN 8867 appended; 16 BLOEMFONTEIN workings remain, next 8875; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -639,3 +639,21 @@ The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. 
 **17 workings** from the 66xx→9000 block still have 0 rows: **8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8867**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,403 rows, 345 workings**; this batch is **2,845 rows / 89 workings**. Checker totals for this batch: **81 OK + 8 flagged**. Aggregate checker totals: **345 workings, 18 with issues**.
+
+## Round 42 — BLOEMFONTEIN 8867 (batch file now 2,868 rows / 90 workings)
+
+**23 rows appended (2,845 → 2,868); 90 workings, 82 OK + 8 flagged.** Pre-append count was 2,845; last row was 8855 step 20 CAMBRIDGE 13:45:00. After safe branch recovery, the dedupe check found **0 existing 8867 rows**. The transcription and appended block match byte-for-byte (MD5 `23ca6ed7a1eaf1e9c7573000559be235`); all 23 rows have 19 fields.
+
+### 8867 — 23 rows, L2846–2868, 07:30 → MASERU 11:27, stated 03:57:00 == computed 03:57:00 [OK]
+Header: n=3, YYYYYYY, MEDIUM HEAVY/MEDIUM HEAVY, designation MASERU. Source details retained: PELONOMI activity `B`; SANNASPOS 08:26/08:45 with 00:19 dwell and activity `X5568` (no intervening space); terminal MASERU carries `RT` and departure sentinel `00:00:00`; header distance is blank. No values normalized.
+
+### 8867 / 5267 compared after independent transcription
+Both 23-row workings have the same step/direction/station sequence. Compared across all fields, excluding the working number, only the header pattern and description differ: 8867 is `YYYYYYY` / `MEDIUM HEAVY/MEDIUM HEAVY`; 5267 is `YYCCCCY` / `VACUUM TRAINS/PICKUP TRAIN`. Every other field matches. 8867 was transcribed from its own paste; the comparison was performed afterward and was not used to derive it.
+
+### Checkout recovery this round
+The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. Fetched `origin arena/d016ab76-flowops` at `0f20f2d` and used `git reset --mixed FETCH_HEAD` on the same branch. Re-checked the 2,845-row file ending at 8855 and the zero-row dedupe before appending. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**16 workings** from the 66xx→9000 block still have 0 rows: **8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8875**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,426 rows, 346 workings**; this batch is **2,868 rows / 90 workings**. Checker totals for this batch: **82 OK + 8 flagged**. Aggregate checker totals: **346 workings, 18 with issues**.
