@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 49 — BLOEMFONTEIN 8939 appended; 10 BLOEMFONTEIN workings remain, next 8941; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 50 — BUFFALOHARBOU/BOSHOEK 98 rows appended; 10 BLOEMFONTEIN workings remain, next 8941; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -9,7 +9,7 @@ Updated: 2026-10-06 (round 49 — BLOEMFONTEIN 8939 appended; 10 BLOEMFONTEIN wo
 - /home/user/Flowops/rail-source-check/algoabai-loops-batch.txt — 182 rows, ALGOABAAI shunt-car loops 2001–2011 (6 workings, verbatim, ALL OK). 2011 row count unresolved (29 on disk vs 30 noted pre-compression — see round 6).
 - /home/user/Flowops/rail-source-check/algoabai-hotazel-batch.txt — 4658 rows, COMPLETE + VERIFIED: 2450–2456 (20:00 family) + 2471–2499 (5 daily timetables, day1 NANNNNN 4 workings, days 2–6 5 workings each + 2499 day-6 16:00). 36 workings, 0 issues. 2498 tail derived from 2493 tail, 2499 derived from 2494 (both spot-checked against paste; families row-identical modulo working no. + pattern).
 - /home/user/Flowops/rail-source-check/algoabai-misc-batch.txt — 293 rows, round 8: ALGOABAAI 2601–23457 misc workings (32 workings, ALL OK; verbatim; 2601/2603 shunt cars, 3216 DEAAR 11h, 3328 UTH-WERKWINKEL, 3354/3368/3384/3388/3396/3398 COEGA LOCO 01:37 six-pack, 3390/3392/3394 KKD pickups, 3451/3453 4h RANGEER, 3455–3475 AGB/S365424 micro-workings, 3601 PE-PASSASIERS, 4940 motorcar, 6402–6504 NEWBRIGHTON vacuums, 13457/23457 MARKMAN).
-- /home/user/Flowops/rail-source-check/misc-depots-batch.txt — 110 rows, rounds 8+9: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745/8014 (15 workings; 14 OK; 2169 FLAGGED — source anomaly: midnight crossing with day-flag 0 on HONDEJAG/UPINGTON rows, preserved verbatim).
+- /home/user/Flowops/rail-source-check/misc-depots-batch.txt — 208 rows, rounds 8+9+50: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745/8014, BUFFALOHARBOU 104/1016/1020/1052/1054/1058/1062, BOSHOEK 1310/1402/1404 (25 workings; 23 OK + 2 flagged: ARIAMSVLEI 2169 and BUFFALOHARBOU 1052; both source day-flag anomalies preserved verbatim).
 - /home/user/Flowops/rail-source-check/bledasdorp-bindura-beaconsfield-batch.txt — 1180 rows, rounds 9+10: BREDASDORP 78/5260, BLOEDRIVIER 5653, BINDURA 471/477, BEACONSFIELD 203/205/207/209/211/1041/1222/1224/1240/1250/1402/1414/1438 (18 workings; 18 OK per checker; 1438 tail L1139–L1180 is DERIVED from twin 1222, not verbatim — see round 10 / outstanding 9).
 - /home/user/Flowops/rail-source-check/beaconsfield-8965-28947-batch.txt — 1268 rows, 19 workings; checker: 17 OK + 2 flagged.
 - /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 3047 rows, 96 workings; checker: 88 OK + 8 flagged after round 49.
@@ -799,3 +799,18 @@ Both have 19 rows and the same station order. Fields differing (8939 vs 8606): 2
 **10 workings** from the 66xx→9000 BLOEMFONTEIN block still have 0 rows: **8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8941**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **13 rail data files, 13,938 rows, 389 workings, 27 depots**; this batch is **3,047 rows / 96 workings**. Checker totals for this batch: **88 OK + 8 flagged**. Aggregate checker totals: **389 workings, 18 with issues**.
+
+
+## Round 50 — BUFFALOHARBOU + BOSHOEK (misc-depots-batch now 208 rows / 25 workings)
+
+**98 rows appended (110 → 208), all 19 fields; 10 new workings.** Before append, the target ended at BLE-BELCON 8014 (L110); the scan across all rail `.txt` files found **0 existing rows** for all ten incoming depot/working pairs. The staged transcription matches the appended rows byte-for-byte; MD5 `5b4f96c40fe614861aa83df86a9e71b9`.
+
+- **BUFFALOHARBOU 104**, 61 rows, L111–171: 14:30 → BUFFALOHARBOU 16:16, stated/computed 01:46:00 [OK]. Shunt loop and zero-time rows preserved; header type `VACUUM TRAINS/SHUNT CAR`.
+- **BUFFALOHARBOU 1016**, L172–173; **1020**, L174–175; **1052**, L176–177; **1054**, L178–179; **1058**, L180–181; **1062**, L182–183 (2 rows each, EASTLONDON feeder workings). 1016/1020/1054/1058/1062 are [OK]. **1052 is flagged:** source prints 23:55 → 00:10 with day flag 0 on both rows; checker reports stated 00:15:00 / computed -24:15:00, arrival-before-previous-departure and travel/duration mismatches. Values and day flag left exactly as supplied.
+- **BOSHOEK 1310**, 11 rows, L184–194: 14:27 → RUSTENBURG 15:35, 01:08:00 [OK].
+- **BOSHOEK 1402**, 7 rows, L195–201: 08:24 → RUSTENBURG 09:30, 01:06:00 [OK]. Half-minute values preserved; header frequency `YYYAYYA`.
+- **BOSHOEK 1404**, 7 rows, L202–208: 17:30 → RUSTENBURG 18:02, 00:32:00 [OK].
+
+All ten workings were transcribed independently from this paste. No similar-work comparison was used to derive any row. Misc-depots checker now reports 25 workings, 23 OK + 2 flagged (existing ARIAMSVLEI 2169 plus BUFFALOHARBOU 1052).
+
+Current verified totals: **13 rail data files, 14,036 rows, 399 workings, 29 depots**; misc-depots is **208 rows / 25 workings**. Aggregate checker totals: **399 workings, 19 with issues** (380 OK). The remaining BLOEMFONTEIN gap list is unchanged: 10 workings, next 8941.
