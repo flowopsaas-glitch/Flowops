@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 40 is the latest completed append; 18 BLOEMFONTEIN workings remain, next 8855; 8855 dedupe found 0 rows but the source paste must be re-supplied; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 41 — BLOEMFONTEIN 8855 appended; 17 BLOEMFONTEIN workings remain, next 8867; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -618,6 +618,24 @@ The local ref reset to base `be1792d`, with `rail-source-check/` untracked. Fetc
 
 Current verified totals: **12 rail data files, 13,310 rows, 344 workings**; this batch is **2,752 rows / 88 workings**. Checker totals for this batch: **80 OK + 8 flagged**. Aggregate checker totals: **344 workings, 18 with issues**.
 
-## 2026-10-06 preflight — BLOEMFONTEIN 8855 (no transcription)
+## 2026-10-06 preflight correction — BLOEMFONTEIN 8855 (resolved in round 41)
 
-The dedupe check found **0 existing 8855 rows**; the target file had 2,752 rows and ended with BLOEMFONTEIN 8652. The original 8855 TSV was not present in the retained conversation context, so no source-faithful transcription could be made. A provisional, unverified 93-row candidate was withdrawn and is not source data; do not reuse it or derive 8855 from sibling 707990. Request the full 8855 paste again. The latest completed data state remains **2,752 rows / 88 workings** in this batch and **13,310 rows / 344 workings** overall.
+The initial dedupe found **0 existing 8855 rows**; the file had 2,752 rows and ended at 8652. The source block was not available in the retained context at that point, so a provisional candidate was withdrawn without being retained as source data. The user then re-pasted the complete source block; round 41 below was freshly transcribed from that paste, after re-checking the zero-row dedupe. The current 8855 block was not derived from 707990 or any sibling.
+
+## Round 41 — BLOEMFONTEIN 8855 (batch file now 2,845 rows / 89 workings)
+
+**93 rows appended (2,752 → 2,845); 89 workings, 81 OK + 8 flagged.** Pre-append count was 2,752; last row was 8652 step 11 KRO-GUNHILL 11:06:00. After safe branch recovery, the dedupe check again found **0 existing 8855 rows**. The 93-row transcription from the user's current paste and appended block match byte-for-byte (MD5 `4ab57514da883eba9dbc32a18e2a7170`); all rows have 19 fields.
+
+### 8855 — 93 rows, L2753–2845, 22:35 → CAMBRIDGE 13:45 (+1 day), stated 15:10:00 == computed 15:10:00 [OK]
+Header: n=1, YYYYYYY, VACUUM TRAINS/VACUUM TRAIN, designation CAMBRIDGE. Source quirks retained: QTN-BERRYPARK has a blank direction; HERTZBERG is 23:57/00:11 with 00:14 dwell and activity `X 47014` on day flag 0, then WURASOORD at 00:11 begins day flag 1; 11 rows have blank travel (FERREIRA, HOPEORCHARDS, KAALSPRUIT, TIERPOORT, MEYERSPRUIT, WURASOORD, RIETWATER, POMPIE, KRUGERS, PAULING, VERLIGTING); terminal CAMBRIDGE carries `RT` and departure sentinel `00:00:00`; header distance is blank. No values normalized.
+
+### 8855 / 707990 compared after independent transcription
+Compared the common 80-row station-sequence prefix (BLOEMFONTEIN through BLANEY) across all 19 fields, excluding working number. Differences in that aligned prefix are only designation (all 80 rows: CAMBRIDGE vs BERLIN), header work-end, pattern, description, and work duration (all 80 rows); the other fields match. The station sequences then diverge: 8855 continues to BERLIN, while 707990 next enters BKJ/S440841; 8855 ends at CAMBRIDGE (93 rows), while 707990 has 91 rows. This comparison was made only after transcription; no fields were derived from the sibling.
+
+### Checkout recovery this round
+The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. Fetched `origin arena/d016ab76-flowops` at `7da365c` and used `git reset --mixed FETCH_HEAD` on the same branch. Re-checked the 2,752-row file ending at 8652 and the zero-row dedupe before appending. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**17 workings** from the 66xx→9000 block still have 0 rows: **8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8867**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,403 rows, 345 workings**; this batch is **2,845 rows / 89 workings**. Checker totals for this batch: **81 OK + 8 flagged**. Aggregate checker totals: **345 workings, 18 with issues**.
