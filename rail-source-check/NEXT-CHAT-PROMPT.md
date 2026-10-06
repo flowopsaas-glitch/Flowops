@@ -6,7 +6,7 @@ All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; th
 ---
 
 > **Earlier-session recovery (2026-10-05).** The prior chat’s committed rail-source tree was restored by a fast-forward onto the currently assigned `arena/d016ab76-flowops` branch. Stay on that branch and push only there. The repeated BLOEMFONTEIN 6634 paste matched the existing 23-row block exactly (L2423–2445; MD5 `2937669311f73e1f88053d0950bfaefb`), so it was not appended again. At that recovery checkpoint, the next missing working was 6636; rounds 28–45 subsequently appended 6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910 and 8914.
-> **Latest progress (2026-10-06 / round 45).** BLOEMFONTEIN 8914 had 0 existing rows; 69 rows were transcribed from the current paste and appended at L2915–2983. All rows have 19 fields; the appended block matches the transcription (MD5 `012e9cc7e406765a637953bc789cc4b6`). Checker: 05:20 → KASERNE 06:28 +1 day, stated/computed 25:08:00, `[OK]`. It was compared with 8910 only after transcription; see STATE.md. Next missing working: 8930.
+> **Latest progress (2026-10-06 / round 46).** A new `belfast-batch.txt` was created from the current BELFAST paste: 333 rows, 37 workings, all 19 fields; MD5 `bd200999f292f592f0eea268918717ab`. Checker: 37 workings, 0 issues; all stated durations equal computed. BELFAST 2450/8434 were compared only after independent transcription; see STATE.md. Next missing BLOEMFONTEIN working: 8930.
 
 ## MISSION
 
@@ -28,8 +28,8 @@ from the branch alone.** That is what "100% production" means here.
 - **`rail-source-check/STATE.md`** — the running log. **Read it first, every
   session, before doing anything else.** It holds the round history, the
   near-duplicate verdicts, the quirk list, and the recovery procedures.
-- **`rail-source-check/*.txt`** — 12 data files, **13,541 rows, 349 distinct
-  workings, 26 depots**. Largest is
+- **`rail-source-check/*.txt`** — 13 data files, **13,874 rows, 386 distinct
+  workings, 27 depots**. Largest is
   `beaufortwest-bultfontein-bloemfontein-batch.txt` (2,983 rows / 93 workings).
 - **`rail-source-check/verify_workings.py`** — the checker.
   Run `python3 verify_workings.py <file>` after every append.
@@ -173,7 +173,7 @@ you need.
 
 ## CURRENT GAPS — what to ask me for next
 
-**Verified this session: 349 workings captured, 18 flagged.** BLOEMFONTEIN 8855, 8867, 8875, 8910 and 8914 are complete and `[OK]`.
+**Verified this session: 386 workings captured, 18 flagged.** BELFAST 100, 102, 104, 106, 108, 110, 112, 200, 202, 900, 902, 904, 906, 908, 910, 912, 914, 1407, 2450, 7752, 8206, 8208, 8216, 8309, 8326, 8329, 8403, 8406, 8412, 8426, 8434, 8449, 8456, 8471, 8608, 8660 and 9495 are complete and `[OK]`. BLOEMFONTEIN 8855, 8867, 8875, 8910 and 8914 are also complete and `[OK]`.
 
 **Priority 1 — 13 BLOEMFONTEIN workings still at 0 rows.** Next is **8930**:
 

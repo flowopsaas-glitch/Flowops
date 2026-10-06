@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 45 — BLOEMFONTEIN 8914 appended; 13 BLOEMFONTEIN workings remain, next 8930; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 46 — BELFAST 333 rows appended; 37 workings all OK; 13 BLOEMFONTEIN workings remain, next 8930; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -11,6 +11,10 @@ Updated: 2026-10-06 (round 45 — BLOEMFONTEIN 8914 appended; 13 BLOEMFONTEIN wo
 - /home/user/Flowops/rail-source-check/algoabai-misc-batch.txt — 293 rows, round 8: ALGOABAAI 2601–23457 misc workings (32 workings, ALL OK; verbatim; 2601/2603 shunt cars, 3216 DEAAR 11h, 3328 UTH-WERKWINKEL, 3354/3368/3384/3388/3396/3398 COEGA LOCO 01:37 six-pack, 3390/3392/3394 KKD pickups, 3451/3453 4h RANGEER, 3455–3475 AGB/S365424 micro-workings, 3601 PE-PASSASIERS, 4940 motorcar, 6402–6504 NEWBRIGHTON vacuums, 13457/23457 MARKMAN).
 - /home/user/Flowops/rail-source-check/misc-depots-batch.txt — 110 rows, rounds 8+9: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745/8014 (15 workings; 14 OK; 2169 FLAGGED — source anomaly: midnight crossing with day-flag 0 on HONDEJAG/UPINGTON rows, preserved verbatim).
 - /home/user/Flowops/rail-source-check/bledasdorp-bindura-beaconsfield-batch.txt — 1180 rows, rounds 9+10: BREDASDORP 78/5260, BLOEDRIVIER 5653, BINDURA 471/477, BEACONSFIELD 203/205/207/209/211/1041/1222/1224/1240/1250/1402/1414/1438 (18 workings; 18 OK per checker; 1438 tail L1139–L1180 is DERIVED from twin 1222, not verbatim — see round 10 / outstanding 9).
+- /home/user/Flowops/rail-source-check/beaconsfield-8965-28947-batch.txt — 1268 rows, 19 workings; checker: 17 OK + 2 flagged.
+- /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 2983 rows, 93 workings; checker: 85 OK + 8 flagged.
+- /home/user/Flowops/rail-source-check/beeshoek-bethlehem-batch.txt — 828 rows, 21 workings; checker: 19 OK + 2 flagged.
+- /home/user/Flowops/rail-source-check/belfast-batch.txt — 333 rows, BELFAST round 46, 37 workings, all OK; transcribed verbatim from the current paste.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
@@ -711,3 +715,30 @@ The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. 
 **13 workings** from the 66xx→9000 block still have 0 rows: **8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8930**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,541 rows, 349 workings**; this batch is **2,983 rows / 93 workings**. Checker totals for this batch: **85 OK + 8 flagged**. Aggregate checker totals: **349 workings, 18 with issues**.
+
+
+## Round 46 — BELFAST (new file `belfast-batch.txt`; 333 rows / 37 workings)
+
+**333 rows appended to a new dedicated file; all 333 have 19 fields, and all 37 workings pass the checker.** Before append, all 37 BELFAST working keys were checked across existing rail data (0 matches); the target file did not exist. It was created exclusively, verified at 0 rows with no final row, then appended. The staged 333-row transcription and file match byte-for-byte (`cmp`; MD5 `bd200999f292f592f0eea268918717ab`). Checker reports **37 workings, 0 with issues**.
+
+### BELFAST checker ranges and results
+
+All stated durations equal computed durations; all statuses are `[OK]`. Ranges are within `belfast-batch.txt`:
+
+`100` L1–3; `102` L4–6; `104` L7–9; `106` L10–12; `108` L13–15; `110` L16–18; `112` L19–21; `200` L22–28; `202` L29–35; `900` L36–38; `902` L39–41; `904` L42–44; `906` L45–47; `908` L48–50; `910` L51–53; `912` L54–56; `914` L57–59; `1407` L60–64; `2450` L65–77; `7752` L78–85; `8206` L86–107; `8208` L108–120; `8216` L121–133; `8309` L134–151; `8326` L152–164; `8329` L165–171; `8403` L172–189; `8406` L190–202; `8412` L203–215; `8426` L216–233; `8434` L234–246; `8449` L247–264; `8456` L265–273; `8471` L274–291; `8608` L292–304; `8660` L305–322; `9495` L323–333.
+
+Source details preserved, without normalization: blank fields and header distances; `NORTHEAST`→`NORTH` direction changes on 7752 and 9495; the seconds-level (`:30`) times and activity strings on 8206; overnight day flags on 8216 and 8412; repeated step numbers and shunt/activity values as pasted. No working was derived from another.
+
+### BELFAST 2450 / 8434 compared after independent transcription
+
+The two 13-row blocks have the same station sequence and are identical across the other 18 fields after excluding working number. This comparison followed independent transcription and was not used to derive either block.
+
+### Checkout recovery this round
+
+The local ref had reset to base `be1792d` with `rail-source-check/` untracked. Fetched `origin arena/d016ab76-flowops` and used `git reset --mixed FETCH_HEAD` on the same branch; recovered tip was `a6b8c0a`. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+
+**13 workings** from the 66xx→9000 BLOEMFONTEIN block still have 0 rows: **8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8930**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **13 rail data files, 13,874 rows, 386 workings, 27 depots**; this file is **333 rows / 37 workings**. Checker totals for BELFAST: **37 OK + 0 flagged**. Aggregate checker totals: **386 workings, 18 with issues**.
