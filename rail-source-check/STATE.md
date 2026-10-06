@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 44 — BLOEMFONTEIN 8910 appended; 14 BLOEMFONTEIN workings remain, next 8914; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 45 — BLOEMFONTEIN 8914 appended; 13 BLOEMFONTEIN workings remain, next 8930; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -693,3 +693,21 @@ The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. 
 **14 workings** from the 66xx→9000 block still have 0 rows: **8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8914**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,472 rows, 348 workings**; this batch is **2,914 rows / 92 workings**. Checker totals for this batch: **84 OK + 8 flagged**. Aggregate checker totals: **348 workings, 18 with issues**.
+
+## Round 45 — BLOEMFONTEIN 8914 (batch file now 2,983 rows / 93 workings)
+
+**69 rows appended (2,914 → 2,983); 93 workings, 85 OK + 8 flagged.** Pre-append count was 2,914; last row was 8910 step 10 KRO-GUNHILL 21:06:00. After safe branch recovery, the dedupe check found **0 existing 8914 rows**. The transcription and appended block match byte-for-byte (MD5 `012e9cc7e406765a637953bc789cc4b6`); all 69 rows have 19 fields.
+
+### 8914 — 69 rows, L2915–2983, 05:20 → KASERNE 06:28 (+1 day), stated 25:08:00 == computed 25:08:00 [OK]
+Header: n=1, YAYAYYA, MEDIUM HEAVY/MEDIUM HEAVY, designation KASERNE. Source details retained: LONGEND has activity `C` with blank travel/dwell; ESTOIRE, AMERIKA, and LEEUSTROOM have blank travel (ESTOIRE also has blank dwell/activity); KRO-GUNHILL prints 09:54/01:30 with 00:44 travel, 15:36 dwell, `RM`, and day flag 0; the terminal KASERNE carries `RT` and departure sentinel `00:00:00`; header distance is blank. Seconds-level times near the terminal and the mixed direction tokens are preserved. No values normalized.
+
+### 8914 / 8910 compared after independent transcription
+The first 23 rows share the same step/direction/station sequence through KRO-GUNHILL. Compared across all fields except working number, differences in that prefix are arrival (22 rows), departure (23 rows), travel (18 rows), dwell (3 rows), activity (2 rows), designation (23 rows), header work-start (1), work-end (1), n (1), pattern (1), description (1), and work duration (23 rows); all other fields match. 8914 continues beyond KRO-GUNHILL to KASERNE (69 rows total), while 8910 ends at KRO-GUNHILL (23 rows). 8914 was transcribed from its own paste; comparison was performed afterward and not used to derive it.
+
+### Checkout recovery this round
+The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. Fetched `origin arena/d016ab76-flowops` at `2a95681` and used `git reset --mixed FETCH_HEAD` on the same branch. Re-checked the 2,914-row file ending at 8910 and the zero-row dedupe before appending. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**13 workings** from the 66xx→9000 block still have 0 rows: **8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8930**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,541 rows, 349 workings**; this batch is **2,983 rows / 93 workings**. Checker totals for this batch: **85 OK + 8 flagged**. Aggregate checker totals: **349 workings, 18 with issues**.
