@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 50 — BUFFALOHARBOU/BOSHOEK 98 rows appended; 10 BLOEMFONTEIN workings remain, next 8941; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 51 — BLOEMHOF 244 rows appended; 10 BLOEMFONTEIN workings remain, next 8941; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -12,6 +12,7 @@ Updated: 2026-10-06 (round 50 — BUFFALOHARBOU/BOSHOEK 98 rows appended; 10 BLO
 - /home/user/Flowops/rail-source-check/misc-depots-batch.txt — 208 rows, rounds 8+9+50: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745/8014, BUFFALOHARBOU 104/1016/1020/1052/1054/1058/1062, BOSHOEK 1310/1402/1404 (25 workings; 23 OK + 2 flagged: ARIAMSVLEI 2169 and BUFFALOHARBOU 1052; both source day-flag anomalies preserved verbatim).
 - /home/user/Flowops/rail-source-check/bledasdorp-bindura-beaconsfield-batch.txt — 1180 rows, rounds 9+10: BREDASDORP 78/5260, BLOEDRIVIER 5653, BINDURA 471/477, BEACONSFIELD 203/205/207/209/211/1041/1222/1224/1240/1250/1402/1414/1438 (18 workings; 18 OK per checker; 1438 tail L1139–L1180 is DERIVED from twin 1222, not verbatim — see round 10 / outstanding 9).
 - /home/user/Flowops/rail-source-check/beaconsfield-8965-28947-batch.txt — 1268 rows, 19 workings; checker: 17 OK + 2 flagged.
+- /home/user/Flowops/rail-source-check/bloemhof-batch.txt — 244 rows, BLOEMHOF 1438/2226/2385/5453/8385/8908 (6 workings; 3 OK + 3 flagged; 8908 is partial through CAR/S242926 20:20:30; 1438/2226 have 30-second duration mismatches).
 - /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 3047 rows, 96 workings; checker: 88 OK + 8 flagged after round 49.
 - /home/user/Flowops/rail-source-check/beeshoek-bethlehem-batch.txt — 828 rows, 21 workings; checker: 19 OK + 2 flagged.
 - /home/user/Flowops/rail-source-check/belfast-batch.txt — 333 rows, BELFAST round 46, 37 workings, all OK; transcribed verbatim from the current paste.
@@ -139,6 +140,7 @@ Updated: 2026-10-06 (round 50 — BUFFALOHARBOU/BOSHOEK 98 rows appended; 10 BLO
 7. Round-8 queue items a–g — RE-PASTE REQUIRED (disk check 2026-10-05: 0 rows each): ALGOABAAI 8942/8950/8976/8994/8996/8998; ALOES 8950/13455/23455/38942 (the 47 'ALOES' rows on disk are the station column inside ALGOABAAI workings, not ALOES-depot workings); ARLINGTON 5503/5533/5554/8903/8933/8954/15554; APEX 1954; PDD-ATLANTIS 1158/1207/1208; BEITBRIDGE ~37 workings; BEITBRIDG-BBR ~14 workings. Anomaly checklist for the re-paste is in the Round 8 section.
 9. BEACONSFIELD 1438 tail — CLOSED BUT DERIVED, NEEDS SOURCE CONFIRMATION. The 42 rows (QUARRY 02:23 day 1 → BELLVILLE 10:10, L1139–L1180) were written in round 10 by time-shifting the verified twin working 1222, NOT transcribed verbatim from the paste. Structure check: 1438 vs 1222 are row-identical in step/station/direction/activity except EIKENFONTEIN step (19 vs 20); times reconcile to the stated 33:50:00 (checker OK). Activity codes (X 7311, X 7651, X 1101, X 2025 / 31, F 3506), the WOR-NOORD 01:15:00 RT SHUNT dwell and the 1222-pattern values are inherited and may not match the source. RE-PASTE the 1438 tail to confirm, or accept the derivation.
 8. Exact new-vs-retained dedupe for round 1 — not re-runnable: 929-row retained fixtures + WARRENTON transcription lost in sandbox reset; re-supply needed.
+10. BLOEMHOF 8908 tail — current paste stops after step 10 CAR/S242926 at 20:21:00 (file L244); remaining rows to designated destination BEACONSFIELD are outstanding. Do not infer the tail.
 
 ## Round 10 — BEACONSFIELD 1438 tail (derived) + round-10 paste LOST
 - Sandbox reset mid-turn wiped /home/user/.cache (excluded from snapshots) — the round-9 working copy there was destroyed. Recovered fully: fetched origin, reset branch to 303e3f1, diff vs the pre-reset copy = IDENTICAL (8,420 rows, 11 files). Working directory moved into the repo at /home/user/Flowops/rail-source-check/ so it survives resets. bledasdorp-bindura-beaconsfield-batch.txt is now 1,180 rows / 18 workings / 0 issues.
@@ -814,3 +816,19 @@ Current verified totals: **13 rail data files, 13,938 rows, 389 workings, 27 dep
 All ten workings were transcribed independently from this paste. No similar-work comparison was used to derive any row. Misc-depots checker now reports 25 workings, 23 OK + 2 flagged (existing ARIAMSVLEI 2169 plus BUFFALOHARBOU 1052).
 
 Current verified totals: **13 rail data files, 14,036 rows, 399 workings, 29 depots**; misc-depots is **208 rows / 25 workings**. Aggregate checker totals: **399 workings, 19 with issues** (380 OK). The remaining BLOEMFONTEIN gap list is unchanged: 10 workings, next 8941.
+
+
+## Round 51 — BLOEMHOF 1438 / 2226 / 2385 / 5453 / 8385 / 8908 (new file, 244 rows)
+
+**244 rows written to new file `bloemhof-batch.txt`; six BLOEMHOF workings had 0 existing rows across the rail data files.** All rows have 19 fields; staged transcription and file match byte-for-byte, MD5 `61c6245209412093c397300fbe72a7d3`.
+
+- **1438**, 51 rows, L1–51: 19:00 → BEACONSFIELD 23:23:30, stated 04:23:00 / computed 04:23:30 [ISSUES]. Source discrepancy is 30 seconds; not corrected. Blank travel on CAR/S242926 at L26 preserved.
+- **2226**, 51 rows, L52–102: same start/end and stated/computed 30-second discrepancy [ISSUES]. Header frequency `YYCYCYY`, type `VACUUM TRAINS/PICKUP TRAIN`; source values preserved.
+- **2385**, 42 rows, L103–144: 16:25 → KLERKSDORP 01:05+1d, stated/computed 08:40:00 [OK].
+- **5453**, 42 rows, L145–186: 16:25 → KLERKSDORP 01:05+1d, stated/computed 08:40:00 [OK]. Its header type is `MEDIUM HEAVY/MEDIUM HEAVY`, recorded from its own block.
+- **8385**, 34 rows, L187–220: 16:25 → KLERKSDORP 23:35, stated/computed 07:10:00 [OK].
+- **8908**, 24 rows, L221–244: PARTIAL. Header states 18:50 → BEACONSFIELD 23:25, 04:35:00; paste ends at step 10 CAR/S242926 20:20:30/20:21:00. Checker reports computed 01:30:30 at the supplied boundary and notes the row ends at CAR/S242926; no tail was inferred.
+
+Post-transcription comparisons only: 1438/2226 have the same 51-station order; differences are field 2 on all rows, arrival on 1, departure on 1, runtime on 2, standing time on 1, frequency on the header, and train type on the header. 2385/5453 have the same 42-station order and differ only in field 2 (train) and field 16 (train type). These comparisons were not used to derive any data. The activity strings `B SHUNT`, `RM SHUNT`, `X2448&amp;71008`, and `X 2442` / `X 2434`, half-minute times, blank fields, and day flags were preserved as pasted.
+
+Checker for BLOEMHOF: **6 workings, 3 OK + 3 flagged** (1438, 2226 duration discrepancies; 8908 partial). Aggregate verified totals: **14 rail data files, 14,280 rows, 405 workings, 30 depots**; **405 workings, 22 with issues** (383 OK). The BLOEMFONTEIN re-paste queue remains 10 workings, next 8941.
