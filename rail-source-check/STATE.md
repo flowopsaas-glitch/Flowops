@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-05 (round 35 — BLOEMFONTEIN 7424 appended; 24 BLOEMFONTEIN workings remain, next 8000; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 36 — BLOEMFONTEIN 8000 and 8206 appended; 22 BLOEMFONTEIN workings remain, next 8605; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -524,3 +524,24 @@ The local ref again reset to base `be1792d`, with `rail-source-check/` untracked
 **24 workings** from the 66xx→9000 block still have 0 rows: **8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8000**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,193 rows, 338 workings**; this batch is **2,635 rows / 82 workings**. Checker totals for this batch: **74 OK + 8 flagged**. Aggregate checker totals: **338 workings, 18 with issues**.
+
+## Round 36 — BLOEMFONTEIN 8000 and 8206 (batch file now 2,666 rows / 84 workings)
+
+**31 rows appended (2,635 → 2,666); 84 workings, 76 OK + 8 flagged.** The two working blocks were processed independently. Before 8000, count was 2,635 and the last row was 7424 step 10 KRO-GUNHILL 09:58:00; dedupe found 0 rows for 8000. Before 8206, count was 2,643 and the last row was 8000 step 5 VOL/S546666 09:29:00; dedupe found 0 rows for 8206. Both staged pastes match their appended blocks byte-for-byte: 8000 MD5 `37b7a4f39abb15d59efc83c640d7d954`; 8206 MD5 `9dc65635d59b8ad7b6a30cb9e70186a1`.
+
+### 8000 — 8 rows, L2636–2643, 09:00 → VOL/S546666 09:29, stated 00:29:00 == computed [OK]
+Header: n=3, NYYYYYY, VACUUM TRAINS/PICKUP TRAIN, designation VOL/S546666. Source quirks retained: pickup route includes DBM/S545864 and a return to DEBLOEM; VANTONDER has 00:10:00 dwell and activity `SHUNT`; terminal VOL/S546666 has `RT` and departure sentinel `00:00:00`; header distance is blank. Transcribed directly from its paste.
+
+### 8206 — 23 rows, L2644–2666, 07:40 → KRO-GUNHILL 11:28, stated 03:48:00 == computed [OK]
+Header: n=2, CYCYCYC, VACUUM TRAINS/VACUUM TRAIN, designation KRO-GUNHILL. Terminal KRO-GUNHILL carries `RT`, travel 00:14:00 and departure sentinel `00:00:00`; header distance is blank.
+
+### 7424 / 8206 compared after independent transcription
+The 23-row blocks have the same step/direction/station sequence. Compared all fields: only arrival (22 rows), departure (22), header work-start (1), header work-end (1), and pattern (1) differ. Every non-sentinel clock is exactly **1 hour 30 minutes later** in 8206; the terminal `00:00:00` sentinel is identical. All other fields, including travel, dwell, activity, duration, description and distance, match. Each was transcribed from its own paste; the comparison was not used to derive 8206.
+
+### Checkout recovery this round
+The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. Fetched the fixed branch at `0c98f5c` and used `git reset --mixed FETCH_HEAD` on the same branch; all 2,635 existing rows were retained and the tree was clean before the new appends. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**22 workings** from the 66xx→9000 block still have 0 rows: **8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8605**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,224 rows, 340 workings**; this batch is **2,666 rows / 84 workings**. Checker totals for this batch: **76 OK + 8 flagged**. Aggregate checker totals: **340 workings, 18 with issues**.
