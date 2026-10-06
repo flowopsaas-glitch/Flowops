@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 36 — BLOEMFONTEIN 8000 and 8206 appended; 22 BLOEMFONTEIN workings remain, next 8605; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 37 — BLOEMFONTEIN 8605 appended; 21 BLOEMFONTEIN workings remain, next 8606; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -545,3 +545,21 @@ The local ref had reset to base `be1792d`, with `rail-source-check/` untracked. 
 **22 workings** from the 66xx→9000 block still have 0 rows: **8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8605**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,224 rows, 340 workings**; this batch is **2,666 rows / 84 workings**. Checker totals for this batch: **76 OK + 8 flagged**. Aggregate checker totals: **340 workings, 18 with issues**.
+
+## Round 37 — BLOEMFONTEIN 8605 (batch file now 2,689 rows / 85 workings)
+
+**23 rows appended (2,666 → 2,689); 85 workings, 77 OK + 8 flagged.** Pre-append count was 2,666; last row was 8206 step 10 KRO-GUNHILL 11:28:00. The dedupe check found **0 existing 8605 rows**. The staged paste and appended block match byte-for-byte (MD5 `d708dc87cb17f8af384aae30b58f2817`).
+
+### 8605 — 23 rows, L2667–2689, 19:00 → KRO-GUNHILL 22:58, stated 03:58:00 == computed [OK]
+Header: n=2, CCCCCCC, LIGHTAIRBRAKE/LIGHTAIRBRAKE, designation KRO-GUNHILL. Source quirks retained: LONGEND, ESTOIRE and DEBLOEM all print 19:00:00 with blank travel; KALKVLAKTE 21:44:00 has blank travel/dwell/activity, matching VIRGINIA's clock; KAREE carries dwell 00:19:00 and activity `P8980`; header distance is blank; terminal KRO-GUNHILL carries `RT`. No values normalized.
+
+### 6642 / 8605 compared after independent transcription
+The 23-row blocks have the same step/direction/station sequence. Across all fields, **only pattern and description differ** (`YYYYYYY` / `VACUUM TRAINS/LIGHT LOCO` vs `CCCCCCC` / `LIGHTAIRBRAKE/LIGHTAIRBRAKE`); all remaining row values match. This is a near-duplicate, but 8605 was transcribed directly from its own paste, not derived from 6642.
+
+### Checkout recovery this round
+The local ref reset again to base `be1792d`, with `rail-source-check/` untracked. Fetched the fixed branch at `1ba79b5` and used `git reset --mixed FETCH_HEAD` on the same branch; all 2,666 existing rows were retained and the tree was clean before append. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**21 workings** from the 66xx→9000 block still have 0 rows: **8606, 8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8606**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,247 rows, 341 workings**; this batch is **2,689 rows / 85 workings**. Checker totals for this batch: **77 OK + 8 flagged**. Aggregate checker totals: **341 workings, 18 with issues**.
