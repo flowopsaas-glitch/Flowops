@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 46 — BELFAST 333 rows appended; 37 workings all OK; 13 BLOEMFONTEIN workings remain, next 8930; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 47 — BLOEMFONTEIN 8930 appended; 12 BLOEMFONTEIN workings remain, next 8935; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -12,7 +12,7 @@ Updated: 2026-10-06 (round 46 — BELFAST 333 rows appended; 37 workings all OK;
 - /home/user/Flowops/rail-source-check/misc-depots-batch.txt — 110 rows, rounds 8+9: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745/8014 (15 workings; 14 OK; 2169 FLAGGED — source anomaly: midnight crossing with day-flag 0 on HONDEJAG/UPINGTON rows, preserved verbatim).
 - /home/user/Flowops/rail-source-check/bledasdorp-bindura-beaconsfield-batch.txt — 1180 rows, rounds 9+10: BREDASDORP 78/5260, BLOEDRIVIER 5653, BINDURA 471/477, BEACONSFIELD 203/205/207/209/211/1041/1222/1224/1240/1250/1402/1414/1438 (18 workings; 18 OK per checker; 1438 tail L1139–L1180 is DERIVED from twin 1222, not verbatim — see round 10 / outstanding 9).
 - /home/user/Flowops/rail-source-check/beaconsfield-8965-28947-batch.txt — 1268 rows, 19 workings; checker: 17 OK + 2 flagged.
-- /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 2983 rows, 93 workings; checker: 85 OK + 8 flagged.
+- /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 3005 rows, 94 workings; checker: 86 OK + 8 flagged after round 47.
 - /home/user/Flowops/rail-source-check/beeshoek-bethlehem-batch.txt — 828 rows, 21 workings; checker: 19 OK + 2 flagged.
 - /home/user/Flowops/rail-source-check/belfast-batch.txt — 333 rows, BELFAST round 46, 37 workings, all OK; transcribed verbatim from the current paste.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
@@ -742,3 +742,22 @@ The local ref had reset to base `be1792d` with `rail-source-check/` untracked. F
 **13 workings** from the 66xx→9000 BLOEMFONTEIN block still have 0 rows: **8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8930**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **13 rail data files, 13,874 rows, 386 workings, 27 depots**; this file is **333 rows / 37 workings**. Checker totals for BELFAST: **37 OK + 0 flagged**. Aggregate checker totals: **386 workings, 18 with issues**.
+
+
+## Round 47 — BLOEMFONTEIN 8930 (batch file now 3,005 rows / 94 workings)
+
+**22 rows appended (2,983 → 3,005); 94 workings, 86 OK + 8 flagged.** Pre-append count was 2,983; last row was 8914 step 29 KASERNE 06:28:00. The dedupe check found **0 existing 8930 rows**. The staged transcription and appended block match byte-for-byte (`cmp`; MD5 `033a636ec6d61faeba79d7a24d0e85dc`); all 22 rows have 19 fields.
+
+### 8930 — 22 rows, L2984–3005, 07:27 → KRO-GUNHILL 11:06, stated 03:39:00 == computed 03:39:00 [OK]
+
+Header: n=1, YYYYYYY, MEDIUM HEAVY/MEDIUM HEAVY, designation KRO-GUNHILL. Source details retained: BFX-WISSELWERF carries activity `C`; direction changes from CAPE to CONTAINER at THERON; repeated step numbers and the blank fields are preserved; terminal KRO-GUNHILL carries `RT` and departure sentinel `00:00:00`; header distance is blank. No values normalized.
+
+### 8930 / 8910 compared after independent transcription
+
+8930 has 22 rows and begins BFX-WISSELWERF; 8910 has 23 rows and includes LONGEND and ESTOIRE before DEBLOEM. Their 20-row suffix from DEBLOEM through KRO-GUNHILL has the same station sequence. After that alignment, differences excluding working number occur in step (20 rows), arrival (20), departure (19), travel (20), dwell (2), work duration (20), and distance (1); headers also differ in departure, work-start/end, n, pattern, description, and duration. 8930 was transcribed from its own paste; the comparison was performed afterward and was not used to derive it.
+
+### RE-PASTE REQUIRED (updated)
+
+**12 workings** from the 66xx→9000 BLOEMFONTEIN block still have 0 rows: **8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8935**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **13 rail data files, 13,896 rows, 387 workings, 27 depots**; this batch is **3,005 rows / 94 workings**. Checker totals for this batch: **86 OK + 8 flagged**. Aggregate checker totals: **387 workings, 18 with issues**.
