@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-06 (round 38 — BLOEMFONTEIN 8606 appended; 20 BLOEMFONTEIN workings remain, next 8642; current branch arena/d016ab76-flowops)
+Updated: 2026-10-06 (round 39 — BLOEMFONTEIN 8642 appended; 19 BLOEMFONTEIN workings remain, next 8652; current branch arena/d016ab76-flowops)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -581,3 +581,21 @@ The local ref reset to base `be1792d`, with `rail-source-check/` untracked. Fetc
 **20 workings** from the 66xx→9000 block still have 0 rows: **8642, 8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8642**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
 
 Current verified totals: **12 rail data files, 13,266 rows, 342 workings**; this batch is **2,708 rows / 86 workings**. Checker totals for this batch: **78 OK + 8 flagged**. Aggregate checker totals: **342 workings, 18 with issues**.
+
+## Round 39 — BLOEMFONTEIN 8642 (batch file now 2,730 rows / 87 workings)
+
+**22 rows appended (2,708 → 2,730); 87 workings, 79 OK + 8 flagged.** Pre-append count was 2,708; last row was 8606 step 6 BEACONSFIELD 04:12:00. The dedupe check found **0 existing 8642 rows**. The staged paste and appended block match byte-for-byte (MD5 `cc46ee5b9595b5e55b5c76102f81747b`).
+
+### 8642 — 22 rows, L2709–2730, 17:40 → KRO-GUNHILL 21:19, stated 03:39:00 == computed [OK]
+Header: n=1, YYYYYYY, MEDIUM HEAVY/MEDIUM HEAVY, designation KRO-GUNHILL. Source quirks retained: first station BFX-WISSELWERF has activity `C`; header distance is blank; terminal KRO-GUNHILL has `RT`, travel 00:15:00 and departure sentinel `00:00:00`. No values normalized.
+
+### 8605 / 8642 checked after independent transcription
+The row sequences are not aligned: 8605 has 23 rows and begins LONGEND / ESTOIRE / DEBLOEM; 8642 has 22 rows and begins BFX-WISSELWERF / DEBLOEM. These are different routes and train descriptions, not a time-shift pair. 8642 was transcribed directly from its own paste.
+
+### Checkout recovery this round
+The local ref reset to base `be1792d`, with `rail-source-check/` untracked. Fetched the fixed branch at `d15bc5d` and used `git reset --mixed FETCH_HEAD` on the same branch; all 2,708 existing rows were retained and the tree was clean before append. No hard reset or branch switch.
+
+### RE-PASTE REQUIRED (updated)
+**19 workings** from the 66xx→9000 block still have 0 rows: **8652, 8855, 8867, 8875, 8910, 8914, 8930, 8935, 8939, 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000**. Next is **8652**. Plus **18927 head**, 4215 head, 3267, 4000, 4002, 4212, 4213, 4214; other-depot items remain as listed above.
+
+Current verified totals: **12 rail data files, 13,288 rows, 343 workings**; this batch is **2,730 rows / 87 workings**. Checker totals for this batch: **79 OK + 8 flagged**. Aggregate checker totals: **343 workings, 18 with issues**.
