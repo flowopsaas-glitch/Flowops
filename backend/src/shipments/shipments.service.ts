@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { pickAllowed } from '../common/pick-allowed.util';
+import { assertFleetDispatchAllowed } from '../fleet-maintenance/fleet-compliance';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 
 /** Client-writable Shipment fields (excludes id/companyId/timestamps). */
@@ -41,10 +42,13 @@ export class ShipmentsService {
     if (data.driverId) {
       const driver = await this.prisma.driver.findFirst({
         where: { id: data.driverId, companyId },
-        select: { id: true },
+        select: {
+          id: true, companyId: true, currentKm: true, nextServiceKm: true, nextServiceDate: true,
+        },
       });
       if (!driver) throw new BadRequestException('driverId does not belong to this company');
       if (assigningDriver) {
+        assertFleetDispatchAllowed(driver);
         await this.compliance.assertDispatchable(data.driverId, companyId);
       }
     }
@@ -193,7 +197,6 @@ export class ShipmentsService {
     // no-op, not a new dispatch.
     const assigning = Boolean(data.driverId) && data.driverId !== owned.driverId;
     await this.assertReferences(companyId, data, assigning);
-
     const updated = await this.prisma.shipment.update({ where: { id }, data });
     // Live-refresh the operations dashboard / live map (the frontend's
     // premium socket listens for `shipment-status-changed`).

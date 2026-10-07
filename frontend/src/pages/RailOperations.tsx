@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Train,
   Container as ContainerIcon,
@@ -386,12 +387,20 @@ export default function RailOperations() {
             </p>
           </div>
         </div>
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.07]"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/rail/timetable"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.07]"
+          >
+            <Train className="h-4 w-4" /> Timetable
+          </Link>
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.07]"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -541,8 +550,7 @@ export default function RailOperations() {
         <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}>
           <div
             className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
+            onClick={(e) => e.stopPropagation()} role="dialog">
             <div className="mb-5 flex items-start justify-between">
               <div>
                 <div className="font-mono text-lg font-black text-emerald-400">{selected.consignmentNumber}</div>

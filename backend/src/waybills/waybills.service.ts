@@ -10,6 +10,7 @@ import { guardTransition } from './waybill-status.machine';
 import { v4 as uuid } from 'uuid';
 import { BillingService } from '../billing/billing.service';
 import { EventsGateway } from '../gateway/events.gateway';
+import { assertFleetDispatchAllowed } from '../fleet-maintenance/fleet-compliance';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -266,9 +267,13 @@ export class WaybillsService {
     // driver and leak their name/phone via the dispatch notification).
     const driver = await this.prisma.driver.findFirst({
       where: { id: driverId, companyId },
-      select: { name: true, phone: true, vehicleType: true, vehicleReg: true },
+      select: {
+        id: true, companyId: true, name: true, phone: true, vehicleType: true, vehicleReg: true,
+        currentKm: true, nextServiceKm: true, nextServiceDate: true,
+      },
     });
     if (!driver) throw new NotFoundException('Driver not found in your company');
+    assertFleetDispatchAllowed(driver);
 
     // ── Compliance gate ──────────────────────────────────────────────────────
     // Manual assignment is a dispatch decision, so it must obey the SAME policy

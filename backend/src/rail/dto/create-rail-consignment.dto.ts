@@ -70,4 +70,8 @@ export class CreateRailConsignmentDto {
   /** Link to the controlled safety data sheet — never the file itself. */
   @RawString() @IsOptional() @IsString() @Matches(/^https:\/\/\S+$/, { message: 'msdsDocumentUrl must be an https:// link' }) @MaxLength(500)
   msdsDocumentUrl?: string;
+
+  @IsOptional()
+  @IsString({ each: true })
+  waybillIds?: string[];
 }

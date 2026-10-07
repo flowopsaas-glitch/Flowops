@@ -131,6 +131,7 @@ function makeDb() {
       reason: 'Late release from yard', rootCause: null, location: null, occurredAt: null, delayMinutes: 90,
       responsibleParty: 'IM', slotImpact: 'DELAYED', costZar: 1000, costRecovered: false, status: 'LOGGED',
       escalationStage: 'NONE', disputeReason: null, resolutionNote: null, resolvedAt: null, escalatedAt: null,
+      resolveByAt: null, otherTrainPathsImpacted: null, slaKpisImpacted: null,
       createdAt: db.seq, updatedAt: new Date(NOW), ...over,
     };
     db.deviations.push(row);
@@ -172,31 +173,57 @@ describe('escalation ladder — stageForElapsedHours()', () => {
     [24, EscalationStage.LIAISON_MANAGER_24H], // boundary is inclusive (<= 24)
     [24.01, EscalationStage.HEAD_LIAISON_48H],
     [48, EscalationStage.HEAD_LIAISON_48H],
-    [48.01, EscalationStage.ROUTE_LOGISTICS_FORUM],
-    [72, EscalationStage.ROUTE_LOGISTICS_FORUM],
-    [72.01, EscalationStage.REGULATOR_DISPUTE],
-    [96, EscalationStage.REGULATOR_DISPUTE],
-    [500, EscalationStage.REGULATOR_DISPUTE],
+    [48.01, EscalationStage.HEAD_NSPO_72H],
+    [72, EscalationStage.HEAD_NSPO_72H],
+    [72.01, EscalationStage.HEAD_NSPO_72H], // NSP&O holds it - they have until 96h
+    [96, EscalationStage.HEAD_NSPO_72H],    // resolve-by boundary is inclusive
+    [96.01, EscalationStage.ROUTE_LOGISTICS_FORUM],
+    [500, EscalationStage.ROUTE_LOGISTICS_FORUM],
   ])('%p h elapsed → %s', (hours, expected) => {
     expect(stage(hours)).toBe(expected);
   });
 
   /**
-   * CHARACTERISATION — pins today's behaviour so that changing it is a
-   * deliberate decision. The source differs (register §6.1, EXC-017): in
-   * Network Statement §6.6.1.14–16 the 72h rung is the TRIM Head of Network
-   * Service Planning & Operations, who resolves within 96h, and the Route
-   * Logistics Forum is a LATER referral before the Regulator. The code ladder
-   * puts the Forum at 72h and has no 96h step. These tests must be updated
-   * together with that decision, never silently.
+   * The ladder now follows Annexure 28 (NS §6.6.1.14.1/.15.3/.16), closing
+   * gaps G-1 and G-2.
+   *
+   * This replaces the characterisation tests that used to pin the old,
+   * compressed ladder. Those existed so that changing the ladder could not
+   * happen silently; the owner's approval of G-1..G-5 on 2026-10-04 was that
+   * decision, and they are updated rather than deleted. What changed is
+   * recorded in the source register as Revision 10 and in the wave 5
+   * migration, including the note that rows already sitting at
+   * ROUTE_LOGISTICS_FORUM keep their value while its meaning shifts.
    */
-  describe('known variance from the source (EXC-017)', () => {
-    it('the 72h rung is the Route Logistics Forum (source: Head of NSP&O)', () => {
-      expect(stage(72)).toBe(EscalationStage.ROUTE_LOGISTICS_FORUM);
+  describe('the ladder matches the source (gaps G-1 and G-2, closed)', () => {
+    it('the 72h rung is the Head of Network Service Planning and Operations, not the Route Logistics Forum', () => {
+      expect(stage(72)).toBe(EscalationStage.HEAD_NSPO_72H);
+      expect(stage(72)).not.toBe(EscalationStage.ROUTE_LOGISTICS_FORUM);
     });
-    it('there is no separate 96h resolve-by step: anything past 72h goes straight to the Regulator', () => {
-      expect(stage(73)).toBe(EscalationStage.REGULATOR_DISPUTE);
-      expect(stage(95)).toBe(EscalationStage.REGULATOR_DISPUTE);
+
+    it('the Head of NSP&O holds the item for the full 96h resolve-by before anyone refers it onward', () => {
+      expect(stage(73)).toBe(EscalationStage.HEAD_NSPO_72H);
+      expect(stage(95)).toBe(EscalationStage.HEAD_NSPO_72H);
+      expect(stage(96)).toBe(EscalationStage.HEAD_NSPO_72H);
+    });
+
+    it('the Forum is a later referral, reached only after the 96h resolve-by expires', () => {
+      expect(stage(96.01)).toBe(EscalationStage.ROUTE_LOGISTICS_FORUM);
+    });
+
+    it("the clock never lodges a dispute with the Regulator - that is a person's decision", () => {
+      for (const hours of [0, 24, 49, 73, 97, 500, 10_000]) {
+        expect(stage(hours)).not.toBe(EscalationStage.REGULATOR_DISPUTE);
+      }
+    });
+  });
+
+  describe('the 96h resolve-by deadline', () => {
+    it('is stamped from the window end, not from when the escalation was noticed', () => {
+      const { svc } = makeService();
+      const windowEnd = new Date('2026-10-01T08:00:00.000Z');
+      const resolveBy = (svc as any).resolveByFor(windowEnd) as Date;
+      expect(resolveBy.toISOString()).toBe('2026-10-05T08:00:00.000Z'); // windowEnd + 96h
     });
   });
 });
@@ -209,8 +236,9 @@ describe('escalation ladder — applied on read (getReport) and by the sweep', (
   it.each([
     [10, EscalationStage.LIAISON_MANAGER_24H, false],
     [30, EscalationStage.HEAD_LIAISON_48H, true],
-    [60, EscalationStage.ROUTE_LOGISTICS_FORUM, true],
-    [80, EscalationStage.REGULATOR_DISPUTE, true],
+    [60, EscalationStage.HEAD_NSPO_72H, true],
+    [80, EscalationStage.HEAD_NSPO_72H, true],
+    [100, EscalationStage.ROUTE_LOGISTICS_FORUM, true],
   ])('a report window that closed %ph ago puts an OPEN item at %s (persisted: %s)', async (hoursAgo, expected, persists) => {
     const { svc, prisma, seedReport, seedDeviation } = makeService();
     const rep = seedReport({ windowEnd: new Date(NOW - hoursAgo * H) });
@@ -220,22 +248,25 @@ describe('escalation ladder — applied on read (getReport) and by the sweep', (
 
     expect(out.deviations.find((d: Row) => d.id === dev.id)!.escalationStage).toBe(expected);
     if (persists) {
+      // The 96h resolve-by is stamped only when the item lands on the NSP&O rung.
+      const stampedDeadline = expected === EscalationStage.HEAD_NSPO_72H ? { resolveByAt: expect.any(Date) } : {};
       expect(prisma.railHandshakeDeviation.update).toHaveBeenCalledWith({
         where: { id: dev.id },
-        data: { escalationStage: expected, escalatedAt: expect.any(Date) },
+        data: { escalationStage: expected, escalatedAt: expect.any(Date), ...stampedDeadline },
       });
     } else {
       expect(prisma.railHandshakeDeviation.update).not.toHaveBeenCalled(); // already at the right rung
     }
   });
 
-  it('measures elapsed time from the report window END, not from when the item was flagged (current behaviour)', async () => {
-    // Flagged a moment ago (escalatedAt = now) on a report that closed 80h ago: it jumps straight to the Regulator rung.
+  it('measures elapsed time from the report window END, not from when the item was flagged', async () => {
+    // Flagged a moment ago (escalatedAt = now) on a report that closed 80h ago. Under the old ladder this
+    // jumped straight to the Regulator; it is now still with the Head of NSP&O, who has the full 96h.
     const { svc, seedReport, seedDeviation } = makeService();
     const rep = seedReport({ windowEnd: new Date(NOW - 80 * H) });
     const dev = seedDeviation(rep.id, openDev({ escalatedAt: new Date(NOW) }));
     const out = await svc.getReport('A', rep.id);
-    expect(out.deviations.find((d: Row) => d.id === dev.id)!.escalationStage).toBe(EscalationStage.REGULATOR_DISPUTE);
+    expect(out.deviations.find((d: Row) => d.id === dev.id)!.escalationStage).toBe(EscalationStage.HEAD_NSPO_72H);
   });
 
   it('only OPEN items climb: LOGGED, AGREED, RESOLVED and DISPUTED items are never moved', async () => {
@@ -300,7 +331,9 @@ describe('lodgeDispute — the Regulator rung', () => {
     return { ...s, rep, dev };
   };
 
-  it.each([EscalationStage.NONE, EscalationStage.LIAISON_MANAGER_24H, EscalationStage.HEAD_LIAISON_48H])(
+  // HEAD_NSPO_72H is refused too: the Head of NSP&O still has until 96h to
+  // resolve, and the Route Logistics Forum has not seen the item yet.
+  it.each([EscalationStage.NONE, EscalationStage.LIAISON_MANAGER_24H, EscalationStage.HEAD_LIAISON_48H, EscalationStage.HEAD_NSPO_72H])(
     'is refused while the item is still at %s',
     async (stage) => {
       const { svc, rep, dev, audit } = setup(stage);

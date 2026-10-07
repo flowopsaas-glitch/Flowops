@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { RailConsignmentStatus, RailHoldStatus } from '@prisma/client';
+import { IntermodalLegStatus, RailConsignmentStatus, RailHoldStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
@@ -91,42 +91,80 @@ export class RailService {
     };
   }
 
+  private readonly allowedTransitions: Record<RailConsignmentStatus, readonly RailConsignmentStatus[]> = {
+    PLANNED: ['WAGONS_ALLOCATED', 'CANCELLED'],
+    WAGONS_ALLOCATED: ['LOADING', 'CANCELLED'],
+    LOADING: ['DEPARTED', 'CANCELLED'],
+    DEPARTED: ['IN_TRANSIT', 'AT_INTERCHANGE', 'CANCELLED'],
+    IN_TRANSIT: ['AT_INTERCHANGE', 'ARRIVED', 'CANCELLED'],
+    AT_INTERCHANGE: ['IN_TRANSIT', 'ARRIVED', 'CANCELLED'],
+    ARRIVED: ['OFFLOADED', 'CANCELLED'],
+    OFFLOADED: ['COMPLETED'],
+    COMPLETED: [],
+    CANCELLED: [],
+  };
+
   // ── Consignment CRUD ─────────────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateRailConsignmentDto, actor: RailActor) {
     await this.assertEntitled(companyId);
+    const waybillIds = [...new Set(dto.waybillIds ?? [])];
+    if (waybillIds.length) {
+      const count = await this.prisma.waybill.count({
+        where: { id: { in: waybillIds }, companyId },
+      });
+      if (count !== waybillIds.length) {
+        throw new BadRequestException('One or more waybills do not belong to this company');
+      }
+    }
     const consignmentNumber = await this.nextConsignmentNumber(companyId);
-    const consignment = await this.prisma.railConsignment.create({
-      data: {
-        companyId,
-        consignmentNumber,
-        commodity: dto.commodity,
-        clientName: dto.clientName ?? null,
-        tonnage: dto.tonnage ?? null,
-        wagonsPlanned: dto.wagonsPlanned ?? null,
-        corridor: dto.corridor ?? null,
-        originSiding: dto.originSiding ?? null,
-        destinationSiding: dto.destinationSiding ?? null,
-        railOperator: dto.railOperator ?? null,
-        serviceRef: dto.serviceRef ?? null,
-        interchangePoint: dto.interchangePoint ?? null,
-        plannedDeparture: this.toDate(dto.plannedDeparture),
-        plannedArrival: this.toDate(dto.plannedArrival),
-        slaHours: dto.slaHours ?? null,
-        ...(dto.riskLevel ? { riskLevel: dto.riskLevel } : {}),
-        riskNote: dto.riskNote ?? null,
-        ...this.dgColumns(dto),
-      },
-    });
+    const consignment = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.railConsignment.create({
+        data: {
+          companyId,
+          consignmentNumber,
+          commodity: dto.commodity,
+          clientName: dto.clientName ?? null,
+          tonnage: dto.tonnage ?? null,
+          wagonsPlanned: dto.wagonsPlanned ?? null,
+          corridor: dto.corridor ?? null,
+          originSiding: dto.originSiding ?? null,
+          destinationSiding: dto.destinationSiding ?? null,
+          railOperator: dto.railOperator ?? null,
+          serviceRef: dto.serviceRef ?? null,
+          interchangePoint: dto.interchangePoint ?? null,
+          plannedDeparture: this.toDate(dto.plannedDeparture),
+          plannedArrival: this.toDate(dto.plannedArrival),
+          slaHours: dto.slaHours ?? null,
+          ...(dto.riskLevel ? { riskLevel: dto.riskLevel } : {}),
+          riskNote: dto.riskNote ?? null,
+          ...this.dgColumns(dto),
+        },
+      });
 
-    // Seed the timeline with the opening event.
-    await this.prisma.railConsignmentEvent.create({
-      data: {
-        consignmentId: consignment.id,
-        status: 'PLANNED',
-        note: 'Consignment created',
-        location: dto.originSiding ?? null,
-      },
+      if (waybillIds.length) {
+        const linked = await tx.waybill.updateMany({
+          where: { id: { in: waybillIds }, companyId, railConsignmentId: null },
+          data: { railConsignmentId: created.id },
+        });
+        if (linked.count !== waybillIds.length) {
+          throw new BadRequestException(
+            'One or more waybills are already linked to another rail consignment',
+          );
+        }
+      }
+
+      await tx.railConsignmentEvent.create({
+        data: {
+          consignmentId: created.id,
+          status: 'PLANNED',
+          note: waybillIds.length
+            ? `Consignment created with ${waybillIds.length} linked waybill(s)`
+            : 'Consignment created',
+          location: dto.originSiding ?? null,
+        },
+      });
+      return created;
     });
 
     await this.record(
@@ -199,6 +237,13 @@ export class RailService {
         wagons: { orderBy: { wagonNumber: 'asc' } },
         legs: { orderBy: { sequence: 'asc' } },
         events: { orderBy: { reachedAt: 'asc' } },
+        waybills: {
+          select: {
+            id: true, trackingNumber: true, status: true, totalAmount: true,
+            podDeliveredAt: true, createdAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
     if (!c) throw new NotFoundException('Rail consignment not found');
@@ -256,12 +301,18 @@ export class RailService {
       throw new BadRequestException(`Unknown status "${String(status).slice(0, 40)}". Use one of: ${Object.values(RailConsignmentStatus).join(', ')}.`);
     }
     const c = await this.get(companyId, id);
-
+    if (!Object.values(RailConsignmentStatus).includes(status as RailConsignmentStatus)) {
+      throw new BadRequestException(`Invalid rail consignment status: ${status}`);
+    }
+    const nextStatus = status as RailConsignmentStatus;
+    if (c.status === nextStatus) {
+      return c;
+    }
     // ── DISPATCH GATES: dangerous goods, and the weighbridge hold ──────────────
     // The brief says "DISPATCHED"; this model has no such status — DEPARTED is the dispatch event, and
     // IN_TRANSIT / AT_INTERCHANGE are covered too so a gate cannot be skipped by jumping ahead. Both gates are
     // evaluated together so the user is told everything that stops them, in one sentence.
-    if (isMovementStatus(status)) {
+    if (isMovementStatus(nextStatus)) {
       const dg = evaluateDangerousGoods(c, c.wagons);
       const dgBlocked = dg.required && !dg.ready;
       const held = c.holdStatus === RailHoldStatus.HOLD_FOR_LOAD_ADJUSTMENT;
@@ -273,26 +324,33 @@ export class RailService {
         await this.record(
           companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED,
           { type: RAIL_AUDIT_TARGET.CONSIGNMENT, id, name: c.consignmentNumber },
-          { attemptedStatus: status, from: c.status, missing: dg.missing, invalid: dg.invalid, ...(held ? { hold: { status: c.holdStatus, reason: c.holdReason ?? null } } : {}) },
+          { attemptedStatus: nextStatus, from: c.status, missing: dg.missing, invalid: dg.invalid, ...(held ? { hold: { status: c.holdStatus, reason: c.holdReason ?? null } } : {}) },
         );
         throw new BadRequestException(`Dispatch blocked — ${reasons.join('; and ')}.`);
       }
     }
 
-    const patch: any = { status: status as any };
-    if (status === 'DEPARTED' && !c.actualDeparture) patch.actualDeparture = new Date();
-    if (status === 'ARRIVED' && !c.actualArrival) patch.actualArrival = new Date();
+    if (!this.allowedTransitions[c.status].includes(nextStatus)) {
+      throw new BadRequestException(
+        `Cannot move rail consignment from ${c.status} to ${nextStatus}`,
+      );
+    }
 
-    await this.prisma.railConsignmentEvent.create({
-      data: {
-        consignmentId: id,
-        status: status as any,
-        note: note ?? null,
-        location: location ?? null,
-      },
+    const patch: Record<string, unknown> = { status: nextStatus };
+    if (nextStatus === 'DEPARTED' && !c.actualDeparture) patch.actualDeparture = new Date();
+    if (nextStatus === 'ARRIVED' && !c.actualArrival) patch.actualArrival = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.railConsignmentEvent.create({
+        data: {
+          consignmentId: id,
+          status: nextStatus,
+          note: note ?? null,
+          location: location ?? null,
+        },
+      });
+      return tx.railConsignment.update({ where: { id }, data: patch });
     });
-
-    const updated = await this.prisma.railConsignment.update({ where: { id }, data: patch });
 
     // Surface in AI Control Tower (best-effort — never blocks the transition).
     try {
@@ -300,8 +358,8 @@ export class RailService {
         data: {
           companyId,
           type: 'RAIL_MILESTONE',
-          title: `${c.consignmentNumber}: ${String(status).replace(/_/g, ' ').toLowerCase()}`,
-          body: note || `Rail consignment advanced to ${status}${location ? ` at ${location}` : ''}.`,
+          title: `${c.consignmentNumber}: ${String(nextStatus).replace(/_/g, ' ').toLowerCase()}`,
+          body: note || `Rail consignment advanced to ${nextStatus}${location ? ` at ${location}` : ''}.`,
           severity: 'info',
           resolved: true,
         },
@@ -493,22 +551,29 @@ export class RailService {
     const consignment = await this.get(companyId, consignmentId);
     const leg = await this.prisma.intermodalLeg.findFirst({ where: { id: legId, consignmentId } });
     if (!leg) throw new NotFoundException('Intermodal leg not found');
+    if (!Object.values(IntermodalLegStatus).includes(status as IntermodalLegStatus)) {
+      throw new BadRequestException(
+        `Invalid intermodal leg status: ${status}. Use one of: ${Object.values(IntermodalLegStatus).join(', ')}`,
+      );
+    }
+    const nextStatus = status as IntermodalLegStatus;
+    if (leg.status === nextStatus) return leg;
 
     const target = { type: RAIL_AUDIT_TARGET.LEG, id: legId };
 
     // ── State machine: reject unknown/illegal targets before touching data ──
-    if (!isLegalLegTransition(leg.status, status)) {
-      const message = describeLegTransition(leg.status, status);
+    if (!isLegalLegTransition(leg.status, nextStatus)) {
+      const message = describeLegTransition(leg.status, nextStatus);
       await this.record(companyId, actor, RAIL_AUDIT_ACTION.LEG_TRANSITION_REJECTED, target, {
         consignmentId, consignmentNumber: consignment.consignmentNumber,
-        from: leg.status, attempted: status, reason: 'illegal_transition',
+        from: leg.status, attempted: nextStatus, reason: 'illegal_transition',
       });
       throw new BadRequestException(message);
     }
 
     // ── Handoff gate: evidence + approval, checked before the write ──────────
     let readiness: HandoffReadiness | null = null;
-    if (status === 'HANDED_OVER' && leg.status !== 'HANDED_OVER') {
+    if (nextStatus === 'HANDED_OVER' && leg.status !== 'HANDED_OVER') {
       const evidence = await this.gatherHandoffEvidence(leg);
       readiness = evaluateHandoffReadiness(evidence);
       const approval = await this.findHandoffApproval(companyId, legId);
@@ -516,7 +581,7 @@ export class RailService {
       if (!readiness.ready) {
         await this.record(companyId, actor, RAIL_AUDIT_ACTION.HANDOFF_BLOCKED, target, {
           consignmentId, consignmentNumber: consignment.consignmentNumber,
-          attemptedStatus: status, blockers: readiness.blockers,
+          attemptedStatus: nextStatus, blockers: readiness.blockers,
           checks: readiness.checks.map((c) => ({ code: c.code, ok: c.ok })),
           fingerprint: readiness.fingerprint,
         });
@@ -528,7 +593,7 @@ export class RailService {
       if (!isApprovalValid(readiness, approval?.fingerprint)) {
         await this.record(companyId, actor, RAIL_AUDIT_ACTION.HANDOFF_BLOCKED, target, {
           consignmentId, consignmentNumber: consignment.consignmentNumber,
-          attemptedStatus: status, reason: approval ? 'stale_approval' : 'no_approval',
+          attemptedStatus: nextStatus, reason: approval ? 'stale_approval' : 'no_approval',
           fingerprint: readiness.fingerprint,
         });
         throw new ConflictException(
@@ -539,10 +604,10 @@ export class RailService {
       }
     }
 
-    const patch: any = { status: status as any };
+    const patch: Record<string, unknown> = { status: nextStatus };
     const now = new Date();
-    if (status === 'IN_PROGRESS' && !leg.actualStart) patch.actualStart = now;
-    if ((status === 'HANDED_OVER' || status === 'COMPLETED') && !leg.actualEnd) patch.actualEnd = now;
+    if (nextStatus === 'IN_PROGRESS' && !leg.actualStart) patch.actualStart = now;
+    if ((nextStatus === 'HANDED_OVER' || nextStatus === 'COMPLETED') && !leg.actualEnd) patch.actualEnd = now;
 
     const start = leg.actualStart ?? (patch.actualStart as Date | undefined);
     const end = (patch.actualEnd as Date | undefined) ?? leg.actualEnd ?? undefined;

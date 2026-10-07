@@ -138,3 +138,79 @@ export const addLeg = async (id: string, dto: Partial<IntermodalLeg>) =>
   unwrap(await api.post(`/rail/consignments/${id}/legs`, dto));
 export const advanceLeg = async (id: string, legId: string, status: string) =>
   unwrap(await api.post(`/rail/consignments/${id}/legs/${legId}/advance`, { status }));
+
+// ── Rail timetable imports ───────────────────────────────────────────────────
+export interface RailTimetableImport {
+  id: string;
+  sourceName: string;
+  rowCount: number;
+  importedBy?: string | null;
+  importedAt: string;
+  companyId?: string | null;
+}
+
+export interface RailTimetableRow {
+  id: string;
+  sourceRow: number;
+  origin: string;
+  train: string;
+  nodeSequence?: number | null;
+  corridor?: string | null;
+  station: string;
+  arrivalTime?: string | null;
+  departureTime?: string | null;
+  pointToPointRuntime?: string | null;
+  standingTime?: string | null;
+  standingReason?: string | null;
+  destination?: string | null;
+  originDepartureTime?: string | null;
+  destinationArrivalTime?: string | null;
+  scheduleCode?: string | null;
+  frequency?: string | null;
+  trainType?: string | null;
+  throughputRuntime?: string | null;
+  departDay?: number | null;
+  distanceKm?: number | null;
+  rawLine: string;
+}
+
+export const importRailTimetable = async (file: File): Promise<RailTimetableImport> => {
+  const form = new FormData();
+  form.append("file", file);
+  return unwrap(await api.post(`/rail/schedules/import`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  }));
+};
+
+export const listRailTimetableImports = async (): Promise<RailTimetableImport[]> => {
+  const result = unwrap(await api.get(`/rail/schedules/imports`));
+  if (!Array.isArray(result)) throw new Error("Unexpected timetable import response");
+  return result;
+};
+
+export const listRailTimetableRows = async (
+  importId: string,
+  f: { q?: string; page?: number; limit?: number } = {},
+): Promise<{ data: RailTimetableRow[]; total: number; page: number; limit: number }> => {
+  const qs = new URLSearchParams(
+    Object.entries(f).filter(([, value]) => value !== undefined && value !== "") as [string, string][],
+  ).toString();
+  const result = unwrap(await api.get(
+    `/rail/schedules/imports/${encodeURIComponent(importId)}/rows${qs ? `?${qs}` : ""}`,
+  ));
+  if (
+    !result ||
+    !Array.isArray(result.data) ||
+    !Number.isFinite(Number(result.total)) ||
+    !Number.isFinite(Number(result.page)) ||
+    !Number.isFinite(Number(result.limit))
+  ) {
+    throw new Error("Unexpected timetable rows response");
+  }
+  return {
+    data: result.data,
+    total: Number(result.total),
+    page: Number(result.page),
+    limit: Number(result.limit),
+  };
+};

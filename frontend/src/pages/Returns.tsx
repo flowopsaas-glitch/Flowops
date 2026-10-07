@@ -424,7 +424,7 @@ function ResolveModal({
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()}>
+      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-black">{title}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-5 w-5" /></button>

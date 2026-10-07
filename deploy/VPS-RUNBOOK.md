@@ -456,3 +456,38 @@ docker inspect flowops-postgres-backup-1 --format 'postgres-backup health={{.Sta
 ```
 At gate step 12, deploy the branch normally and delete `/root/flowops-f5-f9.yml`
 — the canonical compose file carries the same pin + healthchecks.
+
+### Intermittent Cloudflare 502s
+
+A 502 that appears and disappears on refresh while the internal origins remain
+healthy indicates a tunnel connector problem, not an application deployment.
+The VPS override uses HTTP/2 by default because it is less sensitive to UDP
+path failures than QUIC. Keep the tunnel transport consistent across deploys;
+override it only when the VPS network has been verified to support QUIC:
+
+```bash
+export CLOUDFLARED_PROTOCOL=http2
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d cloudflared
+```
+
+Check connector readiness and recent reconnects without restarting application
+services:
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml exec -T \
+  frontend curl -fsS http://cloudflared:2000/ready
+docker logs --since=15m flowops-cloudflared-1 2>&1 \
+  | grep -Ei 'Registered tunnel connection|Serve tunnel|origin|error|failed'
+```
+
+Then verify all public routes repeatedly. One successful request is not enough
+to clear an intermittent tunnel incident:
+
+```bash
+for i in 1 2 3 4 5 6; do
+  curl -fsS -o /dev/null -w "app=%{http_code} " https://app.flowop.work/
+  curl -fsS -o /dev/null -w "api=%{http_code} " https://api.flowop.work/health
+  curl -fsS -o /dev/null -w "driver=%{http_code}\n" https://driver.flowop.work/
+  sleep 10
+done
+```

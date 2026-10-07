@@ -9,12 +9,25 @@
  * `getDangerousGoods`, status validation, and the dispatch gate (see the last block).
  */
 import { BadRequestException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
-import { RailConsignmentStatus, UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { RailService } from './rail.service';
 import { RAIL_AUDIT_ACTION, RailActor } from './rail-audit';
 
 const H = 3_600_000;
 const MANAGER: RailActor = { id: 'u-mgr', email: 'mia@toc.co.za', name: 'Mia Manager', role: UserRole.MANAGER };
+const MOVEMENT_TRANSITIONS = [
+  ['LOADING', 'DEPARTED'],
+  ['DEPARTED', 'IN_TRANSIT'],
+  ['DEPARTED', 'AT_INTERCHANGE'],
+] as const;
+const NON_MOVEMENT_TRANSITIONS = [
+  ['PLANNED', 'WAGONS_ALLOCATED'],
+  ['WAGONS_ALLOCATED', 'LOADING'],
+  ['IN_TRANSIT', 'ARRIVED'],
+  ['ARRIVED', 'OFFLOADED'],
+  ['OFFLOADED', 'COMPLETED'],
+  ['PLANNED', 'CANCELLED'],
+] as const;
 
 type Row = Record<string, any>;
 
@@ -44,7 +57,7 @@ function makeDb() {
     events: db.events.filter((e) => e.consignmentId === c.id).map((e) => ({ ...e })),
   });
 
-  const prisma = {
+  const prisma: any = {
     railConsignment: {
       count: jest.fn(async ({ where }: any) => db.consignments.filter((c) => matches(c, where)).length),
       create: jest.fn(async ({ data }: any) => {
@@ -145,6 +158,7 @@ function makeDb() {
       }),
     },
   };
+  prisma.$transaction = jest.fn((callback: (tx: any) => Promise<any>) => callback(prisma));
 
   const seedConsignment = (over: Row = {}) => {
     const row = {
@@ -224,9 +238,11 @@ describe('rail entitlement gate', () => {
 
     expect(billing.hasFeature).toHaveBeenCalledTimes(calls.length);
     expect(billing.hasFeature).toHaveBeenCalledWith('A', 'rail');
-    for (const table of Object.values(prisma)) {
+    for (const [name, table] of Object.entries(prisma)) {
+      if (name === '$transaction') continue;
       for (const fn of Object.values(table)) expect(fn).not.toHaveBeenCalled();
     }
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
 
@@ -362,6 +378,8 @@ describe('consignment lifecycle', () => {
     const { svc, seedConsignment } = makeService();
     const c = seedConsignment();
 
+    await svc.advanceStatus('A', c.id, 'WAGONS_ALLOCATED', MANAGER);
+    await svc.advanceStatus('A', c.id, 'LOADING', MANAGER);
     const departed = await svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER, 'left yard', 'Hotazel');
     expect(departed.actualDeparture).toBeInstanceOf(Date);
     const firstStamp = departed.actualDeparture;
@@ -370,6 +388,7 @@ describe('consignment lifecycle', () => {
     const again = await svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER);
     expect(again.actualDeparture).toEqual(firstStamp); // never overwritten
 
+    await svc.advanceStatus('A', c.id, 'IN_TRANSIT', MANAGER);
     const arrived = await svc.advanceStatus('A', c.id, 'ARRIVED', MANAGER);
     expect(arrived.actualArrival).toBeInstanceOf(Date);
   });
@@ -393,7 +412,7 @@ describe('consignment lifecycle', () => {
   it('advanceStatus: a failing AiEvent write never blocks the transition', async () => {
     const { svc, prisma, seedConsignment } = makeService();
     (prisma.aiEvent.create as jest.Mock).mockRejectedValue(new Error('events table locked'));
-    const c = seedConsignment();
+    const c = seedConsignment({ status: 'DEPARTED' });
     await expect(svc.advanceStatus('A', c.id, 'IN_TRANSIT', MANAGER)).resolves.toMatchObject({ status: 'IN_TRANSIT' });
   });
 
@@ -495,7 +514,7 @@ describe('consignment lifecycle', () => {
     it('dwell never goes negative', async () => {
       const { svc, seedConsignment, seedLeg } = makeService();
       const c = seedConsignment();
-      const leg = seedLeg(c.id, { status: 'IN_PROGRESS', actualStart: new Date(Date.now() + 3 * H) }); // clock skew: start "in the future"
+      const leg = seedLeg(c.id, { status: 'HANDED_OVER', actualStart: new Date(Date.now() + 3 * H) }); // clock skew: start "in the future"
       const out = await svc.advanceLeg('A', c.id, leg.id, 'COMPLETED', MANAGER);
       expect(out.dwellHours).toBe(0);
     });
@@ -658,11 +677,13 @@ describe('consignment lifecycle', () => {
   it('records the full lifecycle as one audit event per transition, all tenant-attributed', async () => {
     const { svc, audit } = makeService();
     const c = await svc.create('A', { commodity: 'Coal' }, MANAGER);
+    await svc.advanceStatus('A', c.id, 'WAGONS_ALLOCATED', MANAGER);
     await svc.advanceStatus('A', c.id, 'LOADING', MANAGER);
     await svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER);
     await svc.cancel('A', c.id, MANAGER);
     expect(auditActions(audit)).toEqual([
-      'consignment.created', 'consignment.status_advanced', 'consignment.status_advanced', 'consignment.cancelled',
+      'consignment.created', 'consignment.status_advanced', 'consignment.status_advanced',
+      'consignment.status_advanced', 'consignment.cancelled',
     ]);
     for (const e of auditEntries(audit)) {
       expect(e).toMatchObject({ actorType: 'tenant', actorId: 'u-mgr', metadata: { module: 'rail', companyId: 'A' } });
@@ -685,8 +706,6 @@ describe('dangerous goods', () => {
     isDangerousGoods: true, unNumber: 'UN1203', imdgClass: '3', placardRef: 'Placard 3 — flammable liquid',
     emergencyContact24h: '+27 11 555 0100', msdsDocumentUrl: 'https://example.org/msds/petrol.pdf',
   };
-  const MOVEMENT = ['DEPARTED', 'IN_TRANSIT', 'AT_INTERCHANGE'];
-  const NOT_MOVEMENT = Object.values(RailConsignmentStatus).filter((st) => !MOVEMENT.includes(st));
 
   describe('stored values are normalised, and only what was sent is touched', () => {
     it('create: "un 1203" → UN1203, class upper-cased, blanks → NULL, flag defaults to false', async () => {
@@ -836,9 +855,9 @@ describe('dangerous goods', () => {
   describe('the dispatch gate (the brief says "DISPATCHED"; this model\'s dispatch event is DEPARTED)', () => {
     const blockedBody = { ...DG_FULL, placardRef: null, msdsDocumentUrl: null };
 
-    it.each(MOVEMENT)('a DG consignment with missing details cannot move to %s — nothing changes except one audit entry', async (status) => {
+    it.each(MOVEMENT_TRANSITIONS)('a DG consignment with missing details cannot move from %s to %s — nothing changes except one audit entry', async (from, status) => {
       const { svc, prisma, db, audit, seedConsignment } = makeService();
-      const c = seedConsignment({ status: 'LOADING', consignmentNumber: 'RAIL-DG-3', ...blockedBody });
+      const c = seedConsignment({ status: from, consignmentNumber: 'RAIL-DG-3', ...blockedBody });
       const before = JSON.stringify([db.consignments, db.wagons, db.events]);
 
       await expect(svc.advanceStatus('A', c.id, status, MANAGER, 'leaving', 'Hotazel')).rejects.toThrow(/Dispatch blocked — dangerous-goods details are incomplete: consignment: missing Placard reference, Safety data sheet \(MSDS\) link/);
@@ -851,7 +870,7 @@ describe('dangerous goods', () => {
       expect(auditActions(audit)).toEqual([RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED]);
       expect(auditEntries(audit)[0]).toMatchObject({
         action: 'consignment.dispatch_blocked', actorType: 'tenant', actorId: 'u-mgr', targetType: 'rail_consignment', targetId: c.id, targetName: 'RAIL-DG-3',
-        metadata: { module: 'rail', companyId: 'A', actorRole: 'MANAGER', attemptedStatus: status, from: 'LOADING', invalid: [], missing: [{ scope: 'CONSIGNMENT', ref: 'RAIL-DG-3', fields: ['placardRef', 'msdsDocumentUrl'] }] },
+        metadata: { module: 'rail', companyId: 'A', actorRole: 'MANAGER', attemptedStatus: status, from, invalid: [], missing: [{ scope: 'CONSIGNMENT', ref: 'RAIL-DG-3', fields: ['placardRef', 'msdsDocumentUrl'] }] },
       });
     });
 
@@ -861,9 +880,9 @@ describe('dangerous goods', () => {
       await expect(svc.advanceStatus('A', c.id, 'AT_INTERCHANGE', MANAGER)).rejects.toThrow(/Dispatch blocked/);
     });
 
-    it.each(NOT_MOVEMENT)('moving to %s is NOT gated — paperwork can be finished while loading, and a cancel is never trapped', async (status) => {
+    it.each(NON_MOVEMENT_TRANSITIONS)('moving from %s to %s is NOT gated — paperwork can be finished while loading, and a cancel is never trapped', async (from, status) => {
       const { svc, audit, seedConsignment } = makeService();
-      const c = seedConsignment({ status: 'PLANNED', ...blockedBody });
+      const c = seedConsignment({ status: from, ...blockedBody });
       await expect(svc.advanceStatus('A', c.id, status, MANAGER)).resolves.toMatchObject({ status });
       expect(auditActions(audit)).toEqual([RAIL_AUDIT_ACTION.CONSIGNMENT_STATUS_ADVANCED]);
     });
@@ -874,9 +893,9 @@ describe('dangerous goods', () => {
       await expect(svc.cancel('A', c.id, MANAGER)).resolves.toMatchObject({ status: 'CANCELLED' });
     });
 
-    it.each(MOVEMENT)('a DG consignment whose details are complete moves to %s normally', async (status) => {
+    it.each(MOVEMENT_TRANSITIONS)('a DG consignment whose details are complete moves from %s to %s normally', async (from, status) => {
       const { svc, audit, seedConsignment } = makeService();
-      const c = seedConsignment({ status: 'LOADING', ...DG_FULL });
+      const c = seedConsignment({ status: from, ...DG_FULL });
       const out = await svc.advanceStatus('A', c.id, status, MANAGER, 'go', 'Hotazel');
       expect(out.status).toBe(status);
       if (status === 'DEPARTED') expect(out.actualDeparture).toBeInstanceOf(Date);
@@ -933,13 +952,11 @@ describe('dangerous goods', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('weighbridge hold gate', () => {
   const HOLD = { holdStatus: 'HOLD_FOR_LOAD_ADJUSTMENT', holdReason: 'Overloaded: W1 (3.2 t over). Reduce the load and re-weigh the wagon within its limit.', holdSetAt: new Date('2026-10-02T08:00:00Z') };
-  const MOVEMENT = ['DEPARTED', 'IN_TRANSIT', 'AT_INTERCHANGE'];
-  const NOT_MOVEMENT = Object.values(RailConsignmentStatus).filter((st) => !MOVEMENT.includes(st));
   const DG_BAD = { isDangerousGoods: true, unNumber: 'UN1203', imdgClass: '3' }; // placard, contact and MSDS missing
 
-  it.each(MOVEMENT)('a consignment on HOLD_FOR_LOAD_ADJUSTMENT cannot move to %s — nothing changes except one audit entry', async (status) => {
+  it.each(MOVEMENT_TRANSITIONS)('a consignment on HOLD_FOR_LOAD_ADJUSTMENT cannot move from %s to %s — nothing changes except one audit entry', async (from, status) => {
     const { svc, prisma, db, audit, seedConsignment } = makeService();
-    const c = seedConsignment({ status: 'LOADING', consignmentNumber: 'RAIL-H-1', ...HOLD });
+    const c = seedConsignment({ status: from, consignmentNumber: 'RAIL-H-1', ...HOLD });
     const before = JSON.stringify([db.consignments, db.wagons, db.events]);
 
     await expect(svc.advanceStatus('A', c.id, status, MANAGER, 'leaving')).rejects.toThrow(
@@ -953,7 +970,7 @@ describe('weighbridge hold gate', () => {
     expect(auditActions(audit)).toEqual([RAIL_AUDIT_ACTION.CONSIGNMENT_DISPATCH_BLOCKED]);
     expect(auditEntries(audit)[0]).toMatchObject({
       action: 'consignment.dispatch_blocked', actorId: 'u-mgr', targetId: c.id, targetName: 'RAIL-H-1',
-      metadata: { companyId: 'A', attemptedStatus: status, from: 'LOADING', hold: { status: 'HOLD_FOR_LOAD_ADJUSTMENT', reason: HOLD.holdReason } },
+      metadata: { companyId: 'A', attemptedStatus: status, from, hold: { status: 'HOLD_FOR_LOAD_ADJUSTMENT', reason: HOLD.holdReason } },
     });
   });
 
@@ -963,9 +980,9 @@ describe('weighbridge hold gate', () => {
     await expect(svc.advanceStatus('A', c.id, 'AT_INTERCHANGE', MANAGER)).rejects.toThrow(/held for load adjustment/);
   });
 
-  it.each(NOT_MOVEMENT)('moving to %s is NOT gated by the hold — the load can be adjusted while loading, and a cancel is never trapped', async (status) => {
+  it.each(NON_MOVEMENT_TRANSITIONS)('moving from %s to %s is NOT gated by the hold — the load can be adjusted while loading, and a cancel is never trapped', async (from, status) => {
     const { svc, seedConsignment } = makeService();
-    const c = seedConsignment({ status: 'PLANNED', ...HOLD });
+    const c = seedConsignment({ status: from, ...HOLD });
     await expect(svc.advanceStatus('A', c.id, status, MANAGER)).resolves.toMatchObject({ status });
   });
 

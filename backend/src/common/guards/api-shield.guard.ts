@@ -109,8 +109,12 @@ export class ApiShieldGuard implements CanActivate {
 
     // 2. Check request body size (prevent DoS via large payloads)
     const contentLength = parseInt(request.headers['content-length'] || '0', 10);
-    if (contentLength > 10 * 1024 * 1024) {
-      // 10MB max
+    const isTimetableUpload =
+      method === 'POST' &&
+      (path.endsWith('/rail/schedules/import') || path.endsWith('/owner/rail/schedules/import')) &&
+      (request.headers['content-type'] || '').includes('multipart/form-data');
+    const maxBodySize = isTimetableUpload ? 26 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (contentLength > maxBodySize) {
       this.recordViolation(ip, 'oversized_payload');
       throw new HttpException('Request body too large.', 413);
     }

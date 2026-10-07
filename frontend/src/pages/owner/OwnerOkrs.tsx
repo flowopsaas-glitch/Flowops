@@ -344,7 +344,7 @@ export default function OwnerOkrs() {
       {/* New objective modal */}
       {showNewObj && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => !busy && setShowNewObj(false)}>
-          <div className="w-full max-w-md rounded-2xl border border-white/12 bg-[#0b1226] p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-2xl border border-white/12 bg-[#0b1226] p-6" onClick={(e) => e.stopPropagation()} role="dialog">
             <h3 className="text-lg font-black text-white mb-4">New objective</h3>
             <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-1">Objective</label>
             <input

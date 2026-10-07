@@ -15,8 +15,9 @@ import { ANCILLARY_SERVICE_CATALOG } from './catalog/ancillary-services.catalog'
 import { CANCELLATION_CODE_CATALOG } from './catalog/cancellation-codes.catalog';
 
 const docs = join(__dirname, '..', '..', '..', 'docs');
-const register = readFileSync(join(docs, 'RAIL-NETWORK-STATEMENT-V4-SOURCE-REGISTER-2026-09-26.md'), 'utf8');
-const audit = readFileSync(join(docs, 'RAIL-RASA-AUDIT-2026-10-02.md'), 'utf8');
+const normalizeNewlines = (text: string) => text.replace(/\r\n/g, '\n');
+const register = normalizeNewlines(readFileSync(join(docs, 'RAIL-NETWORK-STATEMENT-V4-SOURCE-REGISTER-2026-09-26.md'), 'utf8'));
+const audit = normalizeNewlines(readFileSync(join(docs, 'RAIL-RASA-AUDIT-2026-10-02.md'), 'utf8'));
 
 describe('rail documents stay in sync with the typed catalogs', () => {
   it('source register §13 equals the generated full capture', () => {

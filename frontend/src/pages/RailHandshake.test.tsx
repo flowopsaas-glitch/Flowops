@@ -1,18 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { getHandshakeReport } from '../api/railHandshakeApi';
+import { getHandshakeReport, listHandshakeReports } from '../api/railHandshakeApi';
+// Type-only imports are erased, so they are safe alongside vi.hoisted.
+import type {
+  HandshakeReport,
+  HandshakeDeviation,
+  HandshakeReportStatus,
+  DeviationCategory,
+  ResponsibleParty,
+} from '../api/railHandshakeApi';
 
 // ── Fixtures (hoisted: vi.mock factories run before module-level consts) ──────
 const h = vi.hoisted(() => {
-  const deviation = {
+  const deviation: HandshakeDeviation = {
     id: 'd1', reportId: 'r1', trainSlotRef: 'NS-0412', orderNumber: 'ORD-9', consignmentId: null,
-    category: 'DELAY', reason: 'Late release from yard', rootCause: null, location: 'Ermelo', occurredAt: '2026-10-01T06:30:00.000Z',
-    delayMinutes: 90, responsibleParty: 'IM', slotImpact: 'DELAYED', costZar: 12500, costRecovered: false,
+    category: 'DELAY' as DeviationCategory, reason: 'Late release from yard', rootCause: null, location: 'Ermelo', occurredAt: '2026-10-01T06:30:00.000Z',
+    delayMinutes: 90, responsibleParty: 'IM' as ResponsibleParty, slotImpact: 'DELAYED', costZar: 12500, costRecovered: false,
     status: 'LOGGED', escalationStage: 'NONE', disputeReason: null, resolutionNote: null, resolvedAt: null, escalatedAt: null,
     createdAt: '2026-10-01T08:00:00.000Z', updatedAt: '2026-10-01T08:00:00.000Z',
   };
-  const report = {
-    id: 'r1', reportNumber: 'HS-2026-00042', status: 'PENDING_TOC', reportDate: '2026-10-01T00:00:00.000Z',
+  const report: HandshakeReport = {
+    id: 'r1', reportNumber: 'HS-2026-00042', status: 'PENDING_TOC' as HandshakeReportStatus, reportDate: '2026-10-01T00:00:00.000Z',
     windowStart: '2026-10-01T00:00:00.000Z', windowEnd: '2026-10-02T00:00:00.000Z', railOperator: 'TRIM', corridor: 'Ore',
     signedOffAt: null, signedOffBy: null, imReference: 'TOL-7781', notes: null,
     createdAt: '2026-10-02T08:00:00.000Z', updatedAt: '2026-10-02T08:00:00.000Z', deviations: [deviation], openItems: 0,
@@ -53,7 +61,7 @@ vi.mock('../api/railHandshakeApi', async (importOriginal) => ({
 
 import RailHandshake from './RailHandshake';
 
-async function openReport(role: string, status = 'PENDING_TOC') {
+async function openReport(role: string, status: HandshakeReportStatus = 'PENDING_TOC') {
   h.auth.user = { role, email: 'u@toc.co.za', name: 'Test User' };
   h.report.status = status;
   render(<RailHandshake />);
@@ -152,7 +160,7 @@ describe('RailHandshake — role gating of mutating controls', () => {
 describe('RailHandshake — Cancel / reschedule (Annexure 20a · 20b) from a report', () => {
   const CANCEL = /Cancel \/ reschedule \(20a · 20b\)/;
 
-  it.each([['MANAGER', 'PENDING_TOC'], ['MANAGER', 'DRAFT'], ['DISPATCH', 'PENDING_TOC'], ['DISPATCH', 'DRAFT']])('%s sees it on a %s report', async (role, status) => {
+  it.each<[string, HandshakeReportStatus]>([['MANAGER', 'PENDING_TOC'], ['MANAGER', 'DRAFT'], ['DISPATCH', 'PENDING_TOC'], ['DISPATCH', 'DRAFT']])('%s sees it on a %s report', async (role, status) => {
     await openReport(role, status);
     expect(has(CANCEL)).toBe(true);
   });
@@ -162,7 +170,7 @@ describe('RailHandshake — Cancel / reschedule (Annexure 20a · 20b) from a rep
     expect(has(CANCEL)).toBe(false);
   });
 
-  it.each(['SIGNED_OFF', 'DISPUTED'])('it is not offered once the report is %s — a signed report takes no new deviations, even from a signatory', async (status) => {
+  it.each<HandshakeReportStatus>(['SIGNED_OFF', 'DISPUTED'])('it is not offered once the report is %s — a signed report takes no new deviations, even from a signatory', async (status) => {
     await openReport('MANAGER', status);
     expect(has(CANCEL)).toBe(false);
   });
@@ -186,5 +194,63 @@ describe('RailHandshake — Cancel / reschedule (Annexure 20a · 20b) from a rep
     fireEvent.click(screen.getByRole('button', { name: 'stub-created' }));
     expect(screen.queryByRole('dialog', { name: 'change-modal-stub' })).toBeNull();
     await waitFor(() => expect(vi.mocked(getHandshakeReport).mock.calls.length).toBeGreaterThan(reads)); // the new deviation shows up
+  });
+});
+
+describe('the daily reports list', () => {
+  beforeEach(() => {
+    vi.mocked(listHandshakeReports).mockResolvedValue([h.report]);
+  });
+
+  it('surfaces a failed load instead of claiming there are no reports', async () => {
+    vi.mocked(listHandshakeReports).mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    // The previous implementation swallowed the failure with
+    // .catch(() => []), rendering the empty state. For an operator mid-dispute
+    // that is the worst possible message: it invites them to create a second
+    // report for an operating day that already has one.
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.queryByText(/No handshake reports yet/i)).toBeNull();
+    expect(screen.getByText(/technical details/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
+  });
+
+  it('offers to create the first report only when the list is genuinely empty', async () => {
+    vi.mocked(listHandshakeReports).mockResolvedValueOnce([]);
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    await waitFor(() => expect(screen.getByText(/No handshake reports yet/i)).toBeTruthy());
+    expect(screen.getByRole('button', { name: /create daily report/i })).toBeTruthy();
+  });
+
+  it('makes a report row reachable and operable from the keyboard', async () => {
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    // The row used to be a <tr onClick>, reachable by mouse only.
+    const row = await screen.findByRole('row', { name: /HS-2026-00042/ });
+    expect(row.getAttribute('tabindex')).toBe('0');
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+    await waitFor(() => expect(getHandshakeReport).toHaveBeenCalledWith('r1'));
+  });
+
+  it('sorts the operating day chronologically, not by its formatted string', async () => {
+    vi.mocked(listHandshakeReports).mockResolvedValueOnce([
+      { ...h.report, id: 'r2', reportNumber: 'HS-2026-00009', reportDate: '2026-09-30T00:00:00.000Z' },
+      { ...h.report, id: 'r1', reportNumber: 'HS-2026-00042', reportDate: '2026-10-01T00:00:00.000Z' },
+    ]);
+    h.auth.user = { role: 'MANAGER', email: 'u@toc.co.za', name: 'Test User' };
+    render(<RailHandshake />);
+
+    await screen.findByText('HS-2026-00042');
+    fireEvent.click(screen.getByText('Operating day'));
+
+    const numbers = screen.getAllByRole('row').slice(1).map((r) => r.textContent);
+    // 30 Sep precedes 1 Oct even though "…00009" sorts after "…00042">
+    expect(numbers[0]).toContain('HS-2026-00009');
   });
 });

@@ -630,8 +630,7 @@ export default function BillingPlans() {
         >
           <div
             className="w-full max-w-md rounded-[24px] border border-white/12 bg-[#0b1226] p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+            onClick={(e) => e.stopPropagation()} role="dialog">
             <div className="flex items-center gap-3 mb-1">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500/15 ring-1 ring-sky-500/25">
                 <Sparkles className="h-5 w-5 text-sky-300" />

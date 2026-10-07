@@ -162,7 +162,7 @@ function ZAuditModal({ draft, onClose, onFinalized }: { draft: any; onClose: () 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0b1628] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0b1628] shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
           <div className="flex items-center gap-3">

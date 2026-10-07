@@ -1,8 +1,8 @@
 ﻿import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-    FaLink, FaUsers, FaTag, FaEnvelope, FaWhatsapp, FaBoxOpen, 
-    FaMapMarkerAlt, 
+    FaLink, FaUsers, FaTag, FaEnvelope, FaWhatsapp, FaBoxOpen,
+    FaMapMarkerAlt,
     FaTruck, FaMagic, FaFileAlt, FaReceipt, FaRoute,
     FaSignOutAlt, FaShieldAlt, FaCheckCircle
 } from "react-icons/fa";
@@ -175,6 +175,3 @@ export default function DashboardSidebar() {
         </SidebarProvider>
     )
 }
-
-
-

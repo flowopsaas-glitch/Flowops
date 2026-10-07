@@ -35,7 +35,8 @@ function makeHarness(waybillOverrides: Row = {}) {
     waybill: {
       updateMany: jest.fn(async ({ where, data }: any) => {
         // CAS: only matches while the status is the one that was validated.
-        if (where.status && db.waybill.status !== where.status) return { count: 0 };
+        if (typeof where.status === 'string' && db.waybill.status !== where.status) return { count: 0 };
+        if (where.status?.notIn?.includes(db.waybill.status)) return { count: 0 };
         if (where.attemptCount !== undefined && db.waybill.attemptCount !== where.attemptCount) {
           return { count: 0 };
         }

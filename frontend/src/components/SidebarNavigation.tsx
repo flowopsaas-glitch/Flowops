@@ -58,7 +58,7 @@ export const SidebarNavigation = ({ role, subscription }: { role: string; subscr
       try {
         const res = await fetch("/api/ai-workflow/summary"); // backend endpoint returning counts
         const data = await res.json();
-        setBadges(data); // e.g., { PendingCollections: 12, DriverRequests: 5, LowStock: 3 }
+        setBadges(data); // e.g., { PendingCollections: 12, LowStock: 3 }
       } catch (err) {
         console.error("Failed to fetch AI workflow data", err);
       }
@@ -116,4 +116,3 @@ export const SidebarNavigation = ({ role, subscription }: { role: string; subscr
     </div>
   );
 };
-

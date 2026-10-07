@@ -1,8 +1,8 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
-import { isLegalTransition } from '../waybills/waybill-status.machine';
+import { guardTransition, isLegalTransition } from '../waybills/waybill-status.machine';
 import { WaybillStatus, FailedDeliveryReason } from '@prisma/client';
 import { withCompanyId } from '../common/security/tenant.util';
 
@@ -13,6 +13,9 @@ export const FAILED_DELIVERY_REASONS: readonly string[] = [
   'ACCESS_RESTRICTED', 'BUSINESS_CLOSED', 'NO_SAFE_DROP_LOCATION', 'COD_PAYMENT_UNAVAILABLE',
   'DAMAGED_IN_TRANSIT', 'WEATHER_OR_HAZARD', 'VEHICLE_BREAKDOWN', 'OUTSIDE_DELIVERY_WINDOW', 'OTHER',
 ];
+
+const EXCEPTION_ACTIONS = ['REVIEWED', 'ESCALATION_STARTED', 'REATTEMPT_CONFIRMED', 'RETURN_CONFIRMED'] as const;
+type ExceptionAction = typeof EXCEPTION_ACTIONS[number];
 
 /** Hub intake/arrival are the only transitions this service may perform. */
 const HUB_TARGET_STATUSES: readonly WaybillStatus[] = ['AT_ORIGIN_HUB', 'AT_DESTINATION_HUB'];
@@ -167,7 +170,12 @@ export class LogisticsOpsService {
       // at once must not both increment from the same base. The loser retries
       // against fresh state instead of double-counting an attempt.
       const claimed = await tx.waybill.updateMany({
-        where: { id: waybillId, companyId, attemptCount },
+        where: {
+          id: waybillId,
+          companyId,
+          attemptCount: wb.attemptCount,
+          status: { notIn: ['DELIVERED', 'RETURNED', 'CANCELLED'] },
+        },
         data,
       });
       if (claimed.count === 0) {
@@ -209,6 +217,95 @@ export class LogisticsOpsService {
       `Failed attempt ${newAttemptCount}/${maxAttempts} for ${wb.trackingNumber}: [${reasonCode}] ${dto.reason}`,
     );
     return { ...updated, exhausted, nextAttemptAt, reasonCode };
+  }
+
+  async acknowledgeException(
+    waybillId: string,
+    companyId: string,
+    action: string,
+    note?: string,
+    nextAttemptAt?: string,
+    actor?: { id?: string; role?: string },
+  ) {
+    const waybill = await this.prisma.waybill.findFirst({
+      where: { id: waybillId, companyId, status: { in: ['FAILED_DELIVERY', 'RETURNED'] } },
+      select: { id: true, trackingNumber: true, status: true, attemptCount: true, maxAttempts: true },
+    });
+    if (!waybill) throw new NotFoundException('Open delivery exception not found');
+
+    const normalised = String(action ?? '').toUpperCase().trim();
+    if (!(EXCEPTION_ACTIONS as readonly string[]).includes(normalised)) {
+      throw new BadRequestException(`Unsupported exception action. Use: ${EXCEPTION_ACTIONS.join(', ')}`);
+    }
+    const role = String(actor?.role ?? '').toUpperCase();
+    const privilegedActions = ['ESCALATION_STARTED', 'REATTEMPT_CONFIRMED', 'RETURN_CONFIRMED'];
+    if (privilegedActions.includes(normalised) && !['ADMIN', 'COMPANY_ADMIN', 'MANAGER', 'DISPATCH'].includes(role)) {
+      throw new ForbiddenException('Only operations staff may confirm this exception action');
+    }
+
+    const parsedNextAttempt = nextAttemptAt ? new Date(nextAttemptAt) : new Date();
+    if (normalised === 'REATTEMPT_CONFIRMED' && Number.isNaN(parsedNextAttempt.getTime())) {
+      throw new BadRequestException('nextAttemptAt must be a valid date');
+    }
+    if (normalised === 'REATTEMPT_CONFIRMED' && waybill.status !== 'FAILED_DELIVERY') {
+      throw new BadRequestException('Only failed deliveries can be confirmed for reattempt');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let status = waybill.status;
+      if (normalised === 'REATTEMPT_CONFIRMED') {
+        guardTransition(waybill.status, 'OUT_FOR_DELIVERY', {
+          waybillId,
+          trackingNumber: waybill.trackingNumber,
+          actor: actor?.id ?? 'operations',
+        }, (message) => { throw new BadRequestException(message); });
+        status = 'OUT_FOR_DELIVERY';
+        await tx.waybill.update({
+          where: { id: waybillId },
+          data: {
+            status,
+            returnToSender: false,
+            nextAttemptAt: parsedNextAttempt,
+          },
+        });
+      } else if (normalised === 'RETURN_CONFIRMED') {
+        await tx.waybill.update({
+          where: { id: waybillId },
+          data: { returnToSender: true, nextAttemptAt: null },
+        });
+      }
+
+      return tx.trackingEvent.create({
+        data: {
+          waybillId,
+          companyId,
+          event: `EXCEPTION_${normalised}`,
+          status,
+          description: note?.trim() || `Exception ${normalised.toLowerCase().replaceAll('_', ' ')} by operations`,
+          actorType: actor?.role ?? 'OPERATIONS',
+          actorId: actor?.id,
+          metadata: {
+            action: normalised as ExceptionAction,
+            nextAttemptAt: normalised === 'REATTEMPT_CONFIRMED' ? parsedNextAttempt : null,
+            attemptCount: waybill.attemptCount,
+            maxAttempts: waybill.maxAttempts,
+          },
+        },
+      });
+    });
+
+    if (normalised === 'ESCALATION_STARTED' || normalised === 'RETURN_CONFIRMED') {
+      await this.prisma.notification.create({
+        data: {
+          companyId,
+          title: normalised === 'ESCALATION_STARTED' ? 'Delivery exception escalated' : 'Return to sender confirmed',
+          body: `${waybill.trackingNumber}: ${note?.trim() || normalised.toLowerCase().replaceAll('_', ' ')}`,
+          type: 'DISPATCH',
+        },
+      });
+    }
+
+    return result;
   }
 
   /** Coerce a client-supplied reason code to a valid FailedDeliveryReason.

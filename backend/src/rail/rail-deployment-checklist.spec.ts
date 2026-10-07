@@ -16,7 +16,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(__dirname, '..', '..', '..');
-const doc = readFileSync(join(root, 'docs', 'RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md'), 'utf8');
+const normalizeNewlines = (text: string) => text.replace(/\r\n/g, '\n');
+const doc = normalizeNewlines(readFileSync(join(root, 'docs', 'RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md'), 'utf8'));
 const migrationsDir = join(root, 'backend', 'prisma', 'migrations');
 
 interface Cmd { kind: string; text: string; raw: string }
@@ -24,8 +25,25 @@ const commands: Cmd[] = [...doc.matchAll(/<!-- CMD ([^>]+?) -->\n```text\n([\s\S
 const approved = commands.filter((c) => c.kind.startsWith('approved'));
 const readOnly = commands.filter((c) => c.kind.startsWith('read-only'));
 
-const railMigrations = readdirSync(migrationsDir).filter((d) => /_rail_wave\d/.test(d) && existsSync(join(migrationsDir, d, 'migration.sql'))).sort();
-const sqlOf = (m: string) => readFileSync(join(migrationsDir, m, 'migration.sql'), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n');
+/**
+ * This spec exists to keep the deployment checklist honest about the release it
+ * describes: the rail pricing deployment of 2026-10-03, RELEASE_SHA `be1792d`,
+ * which shipped waves 2, 3 and 4.
+ *
+ * The filter below therefore names those waves explicitly rather than taking
+ * every `rail_wave` it finds. That is scoping, not exclusion — and it is
+ * deliberate, because a later wave is a different release with its own
+ * document. Silently folding new waves into this guard would make the counts,
+ * the rollback block and the "no drops" claim describe a release that never
+ * happened.
+ *
+ * The tripwire test further down fails if any *other* wave appears, so a new
+ * one cannot be forgotten here.
+ */
+const DEPLOYMENT_WAVES = /_rail_wave(2|3|4)_/;
+
+const railMigrations = readdirSync(migrationsDir).filter((d) => DEPLOYMENT_WAVES.test(d) && existsSync(join(migrationsDir, d, 'migration.sql'))).sort();
+const sqlOf = (m: string) => normalizeNewlines(readFileSync(join(migrationsDir, m, 'migration.sql'), 'utf8')).split('\n').filter((l) => !l.startsWith('--')).join('\n');
 
 describe('checklist — the command rules', () => {
   it('has a meaningful number of commands (the parser is not vacuous)', () => {
@@ -98,6 +116,47 @@ describe('checklist — the command rules', () => {
   });
 });
 
+/**
+ * Regressions from the first real run (2026-10-03, RELEASE_SHA be1792d).
+ *
+ * These are not style opinions — each one is a thing that was wrong in the document, was only caught because a step was
+ * held and verified rather than trusted, and would otherwise be re-introduced by the next edit.
+ */
+describe('checklist — regressions from the 2026-10-03 run', () => {
+  const cmd = (kind: string) => {
+    const found = commands.find((c) => c.kind === kind);
+    expect(found).toBeDefined();
+    return found!;
+  };
+
+  it('V6b does not use the blunt pattern that can never report zero', () => {
+    // 'error|exception|prisma' reported 7 on a perfectly healthy deploy: PrismaModule/PrismaService startup lines, and
+    // five `Mapped {…}` routes whose PATHS contain error/exception (/observability/client-error, /operations/exception-sla,
+    // /owner/observatory/errors, …). A check that can never read 0 is worse than no check — it trains the operator to
+    // wave through a non-zero result.
+    const v6b = cmd('read-only V6b').text;
+    expect(v6b).not.toMatch(/grep -ciE 'error\|exception\|prisma'/);
+    expect(v6b).toMatch(/grep -v 'Mapped \{'/); // drop route-registration lines before counting
+    expect(v6b).not.toMatch(/grep -i\b/); // case-sensitive: match the ERROR severity, not "client-error"
+  });
+
+  it('Step 6 bounds the frontend build (its package.json hardcodes --max-old-space-size=8192 on a 2 GB host)', () => {
+    // A CLI flag beats NODE_OPTIONS, so --memory is the only lever that can bound this build. The host has 1.9 Gi RAM.
+    expect(cmd('approved 6').text).toMatch(/build frontend --memory \d+m/);
+  });
+
+  it('records the run that proved the document wrong, so the next operator reads it first', () => {
+    expect(doc).toMatch(/## 8\. Corrections from the 2026-10-03 run/);
+    for (const lesson of [
+      'A green exit code is not a verified state.',
+      'The backend does not need a raised heap.',
+      'The frontend is the real memory risk',
+    ]) {
+      expect(doc).toContain(lesson);
+    }
+  });
+});
+
 describe('checklist — each gated step names its blast radius and its rollback', () => {
   const sections = [...doc.matchAll(/### Step (\d+)[^\n]*\n([\s\S]*?)(?=\n### |\n## )/g)].map((m) => ({ n: Number(m[1]), body: m[2] }));
 
@@ -126,6 +185,23 @@ describe('checklist — it agrees with the migrations it describes', () => {
   it('there are exactly three rail migrations, and the document names each of them', () => {
     expect(railMigrations).toHaveLength(3);
     for (const m of railMigrations) expect(doc).toContain(m);
+  });
+
+  /**
+   * TRIPWIRE. Every rail wave in the tree that this spec does not cover, listed
+   * by name. Wave 5 is recorded here because it is known and deliberately out
+   * of scope: it is the TRIM TOC Operations workstream, not part of the
+   * pricing release this checklist governs.
+   *
+   * Adding a wave to this list is a decision that must be justified in the
+   * comment above. If a wave appears that is not listed, this fails — which is
+   * the point: the alternative is a new migration quietly changing the counts
+   * and the rollback block of a document that describes a release already run.
+   */
+  it('names every rail wave this spec deliberately does not cover', () => {
+    const allWaves = readdirSync(migrationsDir).filter((d) => /_rail_wave\d/.test(d)).sort();
+    const uncovered = allWaves.filter((d) => !DEPLOYMENT_WAVES.test(d));
+    expect(uncovered).toEqual(['20261004000000_rail_wave5_handshake_ladder_gaps']);
   });
 
   const count = (re: RegExp) => railMigrations.reduce((n, m) => n + (sqlOf(m).match(re)?.length ?? 0), 0);

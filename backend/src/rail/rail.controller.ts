@@ -1,7 +1,10 @@
 import {
   Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards,
+  UploadedFile, UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { RailService } from './rail.service';
 import { CreateRailConsignmentDto } from './dto/create-rail-consignment.dto';
 import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';
@@ -12,6 +15,9 @@ import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RAIL_READ_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
+import { RailHandoffService } from './rail-handoff.service';
+import { AddHandoffEvidenceDto, CreateHandoffReadinessDto } from './dto/handoff.dto';
+import { RailTimetableService } from './rail-timetable.service';
 
 /**
  * Class-level roles are the READ set (includes VIEWER); every mutating handler
@@ -23,7 +29,11 @@ import { RAIL_READ_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
 @Roles(...RAIL_READ_ROLES)
 @Controller('rail')
 export class RailController {
-  constructor(private readonly rail: RailService) {}
+  constructor(
+    private readonly rail: RailService,
+    private readonly handoff: RailHandoffService,
+    private readonly timetable: RailTimetableService,
+  ) {}
 
   // ── Command centre ───────────────────────────────────────────────────────────
 
@@ -178,5 +188,101 @@ export class RailController {
     @Body() dto: AdvanceStatusDto,
   ) {
     return this.rail.advanceLeg(u.companyId, id, legId, dto.status, u);
+  }
+
+  // ── Rail-to-final-mile handoff ────────────────────────────────────────────
+
+  @Get('handoffs')
+  @ApiOperation({ summary: 'List rail-to-final-mile handoff readiness records' })
+  listHandoffs(@CurrentUser() u: AuthenticatedUser) {
+    return this.handoff.list(u.companyId);
+  }
+
+  @Get('handoffs/:id')
+  @ApiOperation({ summary: 'Get handoff readiness and chain-of-custody evidence' })
+  getHandoff(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
+    return this.handoff.get(u.companyId, id);
+  }
+
+  @Post('consignments/:id/handoffs')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Create a guarded rail-to-final-mile handoff readiness record' })
+  createHandoff(
+    @CurrentUser() u: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CreateHandoffReadinessDto,
+  ) {
+    return this.handoff.create(u.companyId, id, dto);
+  }
+
+  @Post('handoffs/:id/evidence')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Attach evidence to a handoff readiness record' })
+  addHandoffEvidence(
+    @CurrentUser() u: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: AddHandoffEvidenceDto,
+  ) {
+    return this.handoff.addEvidence(u.companyId, id, dto);
+  }
+
+  @Post('handoffs/:id/evidence/:evidenceId/verify')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Verify handoff evidence' })
+  verifyHandoffEvidence(
+    @CurrentUser() u: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+  ) {
+    return this.handoff.verifyEvidence(u.companyId, id, evidenceId);
+  }
+
+  @Post('handoffs/:id/evaluate')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Evaluate evidence and guarded readiness requirements' })
+  evaluateHandoff(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
+    return this.handoff.evaluate(u.companyId, id);
+  }
+
+  @Post('handoffs/:id/complete')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Complete a READY handoff and record final-mile acceptance' })
+  completeHandoff(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
+    return this.handoff.complete(u.companyId, id, u.id);
+  }
+
+  // ── Rail timetable ────────────────────────────────────────────────────────
+
+  @Post('schedules/import')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Import an Annexure 33a tab-separated rail timetable' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  importTimetable(
+    @CurrentUser() u: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.timetable.importFile(u.companyId, u.id, file);
+  }
+
+  @Get('schedules/imports')
+  @ApiOperation({ summary: 'List this tenant’s rail timetable imports' })
+  listTimetableImports(@CurrentUser() u: AuthenticatedUser) {
+    return this.timetable.listImports(u.companyId);
+  }
+
+  @Get('schedules/imports/:id/rows')
+  @ApiOperation({ summary: 'List and filter stops from a rail timetable import' })
+  listTimetableRows(
+    @CurrentUser() u: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query('origin') origin?: string,
+    @Query('train') train?: string,
+    @Query('corridor') corridor?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.timetable.listRows(u.companyId, id, { origin, train, corridor, q, page, limit });
   }
 }

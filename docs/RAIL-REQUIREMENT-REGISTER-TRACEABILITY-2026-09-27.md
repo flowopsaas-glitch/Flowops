@@ -475,15 +475,33 @@ never as live controls (EXC-003).
 
 ## 6. Implementation gaps carried forward (from the source register, verified)
 
-| # | Gap | Where |
-| --- | --- | --- |
-| G-1 | Escalation ladder structure: the 72-hour rung belongs to the Head of NSP&O (NS) / IM Network Operations Manager (S5), not the Route Logistics Forum; the Forum is a later referral | `EscalationStage` enum |
-| G-2 | The 96-hour resolve-by step has no code counterpart | `EscalationStage` |
-| G-3 | 48-hour role-name drift across NS, S5 and code (Head of Access Seeker Service / Manager: Customer Service / Head of Customer Liaison) | EXC-017 |
-| G-4 | Deviation field **other Train Paths impacted** missing | `RailHandshakeDeviation` |
-| G-5 | Deviation field **SLA KPIs impacted** missing | `RailHandshakeDeviation` |
-| G-6 | No rail tests of any kind (verified 2026-09-27) | — |
-| G-7 | No monthly/weekly order models; no capacity/train-path/agreement/KPI/occurrence models | — |
+| # | Gap | Where | Status |
+| --- | --- | --- | --- |
+| G-1 | Escalation ladder structure: the 72-hour rung belongs to the Head of NSP&O (NS) / IM Network Operations Manager (S5), not the Route Logistics Forum; the Forum is a later referral | `EscalationStage` enum | **Closed** 2026-10-04 |
+| G-2 | The 96-hour resolve-by step has no code counterpart | `EscalationStage` | **Closed** 2026-10-04 |
+| G-3 | 48-hour role-name drift across NS, S5 and code (Head of Access Seeker Service / Manager: Customer Service / Head of Customer Liaison) | EXC-017 | **Recorded, not resolved** — see §6.1 |
+| G-4 | Deviation field **other Train Paths impacted** missing | `RailHandshakeDeviation` | **Closed** 2026-10-04 |
+| G-5 | Deviation field **SLA KPIs impacted** missing | `RailHandshakeDeviation` | **Closed** 2026-10-04 |
+| G-6 | No rail tests of any kind (verified 2026-09-27) | — | **Closed** — the finding predates the 33 rail test files now present |
+| G-7 | No monthly/weekly order models; no capacity/train-path/agreement/KPI/occurrence models | — | **Partially closed** — occurrence and train-path/slot models now exist; monthly/weekly order, capacity allocation, agreement and KPI do not |
+
+### 6.1 G-3 is recorded, not resolved — and that is deliberate
+
+G-1, G-2, G-4 and G-5 are closed by the wave 5 migration and the ladder
+rewrite. G-3 is **not**, and calling it closed would be the error the register
+exists to prevent.
+
+The 48-hour rung carries three different role names across three sources:
+"Head of Access Seeker Service" (the Network Statement), "Manager: Customer
+Service" (the S5 working) and "Head of Customer Liaison" (the previous code
+comment). Picking one is not a transcription question — it decides whose name
+appears on an escalation notice, and it is a decision reserved for the owner
+and the independent reviewer under EXC-017.
+
+What was done instead: the drift is recorded in the `EscalationStage` enum
+comment and in the service docblock, the enum value name is left unchanged so
+that no variant is encoded as the rule, and the display name is not
+re-touched. This is stated rather than left to look like an oversight.
 
 ## 7. Exception register — never silently normalised
 
@@ -536,11 +554,31 @@ list vs body references) remain open and are folded into EXC-011/EXC-018 where t
 
 | Role | Name | Decision | Date |
 | --- | --- | --- | --- |
-| Rail source owner / product owner | — | ☐ approved / ☐ rejected / ☐ changes requested | — |
-| Independent reviewer | — | ☐ reviewed, no findings / ☐ findings attached | — |
-| Source-period decision (per EXC-012/010) | — | ☐ recorded | — |
-| Unresolved-exception disposition (§7) | — | ☐ recorded | — |
-| Effective period | — | none (gated) | — |
+| Rail source owner / product owner | *(name to be recorded by the owner)* | ☒ **approved** / ☐ rejected / ☐ changes requested | 2026-10-04 |
+| Independent reviewer | — | ☐ reviewed, no findings / ☐ findings attached | **open — tracked follow-up** |
+| Source-period decision (per EXC-012/010) | — | ☒ **recorded** — NS V4 governs FY2026/27 + FY2027/28; the capacity workbook carries its own FYs; no cross-period substitution | 2026-10-04 |
+| Unresolved-exception disposition (§7) | — | ☐ recorded | **open — owner decision pending** |
+| Effective period | — | FY2026/27 – FY2027/28 (Gazette 55426, 21 Sep 2026) | 2026-10-04 |
+
+### 9.1 What this approval does and does not open — recorded 2026-10-04
+
+The owner elected the single-signer path: owner approval and the source-period decision are
+recorded above, and independent review is carried as a tracked follow-up rather than a
+precondition.
+
+**Two lines remain open** — the independent reviewer and the §7 exception disposition. This
+register's own rule stands: *no requirement may be cited as approved while any line is open.* The
+consequence is recorded rather than glossed over:
+
+- **Opened now:** the five implementation gaps **G-1 … G-5** (§6). Each is a defect against text
+  already confirmed against the primary source — they are corrections to existing code, not new
+  normative requirements, and they do not depend on any undisposed exception.
+- **Still gated:** every *new* normative module (KPI dashboard, clearinghouse case-tracking,
+  access-application builder, RAA structured data, order cycle, ancillary billing). None may be
+  built as an approved requirement until the §7 disposition is recorded.
+
+Approval is recorded by the owner; authoring the disposition is not the same as approving it. The
+§7 exception register remains a decision for the owner.
 
 Approval evidence to record per the source register §9 item 4: process owner, independent reviewer,
 the source-period decision, the unresolved-exception list, approval date, effective period. Until

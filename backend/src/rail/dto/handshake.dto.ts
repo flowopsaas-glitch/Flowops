@@ -82,6 +82,14 @@ export class LogDeviationDto {
 
   @IsOptional() @IsNumber() @Min(0)
   costZar?: number;
+
+  /** NS §6.6.1.3.3 — other Train Paths impacted or delayed by this deviation. */
+  @IsOptional() @IsString() @MaxLength(2000)
+  otherTrainPathsImpacted?: string;
+
+  /** NS §6.6.1.3.3 — which SLA KPIs this deviation affected. */
+  @IsOptional() @IsString() @MaxLength(2000)
+  slaKpisImpacted?: string;
 }
 
 export class UpdateDeviationDto {
@@ -114,6 +122,14 @@ export class UpdateDeviationDto {
 
   @RawBoolean() @IsOptional() @IsBoolean()
   costRecovered?: boolean;
+
+  /** NS §6.6.1.3.3 — other Train Paths impacted or delayed by this deviation. */
+  @IsOptional() @IsString() @MaxLength(2000)
+  otherTrainPathsImpacted?: string;
+
+  /** NS §6.6.1.3.3 — which SLA KPIs this deviation affected. */
+  @IsOptional() @IsString() @MaxLength(2000)
+  slaKpisImpacted?: string;
 }
 
 /** TOC review of a deviation line: agree, or flag as an OPEN (disputed) item. */
