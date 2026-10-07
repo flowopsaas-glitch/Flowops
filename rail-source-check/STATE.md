@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 54 — BOTHAVILLE and BIJLKOR depots added; 17 data files / 15,139 rows / 430 workings / 33 depots; BIJLKOR 5931 is a PARTIAL extract, its tail must still be re-supplied; next BLOEMFONTEIN working remains 8941; work is being committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+Updated: 2026-10-07 (round 55 — BIJLKOR 5931 COMPLETED (tail received, now [OK]) + 29 new BIJLKOR workings appended; 17 data files / 15,620 rows / 459 workings / 33 depots; BIJLKOR 8466 is a PARTIAL extract, its tail must be re-supplied; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -1046,3 +1046,146 @@ The 22nd flag is BIJLKOR 5931, which is a **truncated paste**, not a source anom
    8955, 8964, 8965, 8969, 8989, 9000; the five partials + BIJLKOR 5931 now six; the whole missing
    depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2; BEACONSFIELD 1438
    re-transcription).
+
+## Round 55 — BIJLKOR 5931 completed + 29 further BIJLKOR workings (481 rows appended)
+
+**The round-54 partial is closed.** The re-supplied paste carried the `5931` tail followed by 29
+workings not previously held. All of it was transcribed from the paste in hand; nothing was derived,
+inferred, reformatted or repaired.
+
+### BIJLKOR 5931 — COMPLETE (was flagged partial in round 54)
+
+Appended its 29 missing rows (from `NODE_Seq` 7 `SYBRAND` 23:01:00 through `NODE_Seq` 32 `ERMELO`
+04:32:00 `BO`). **Boundary verified before appending:** the file ended `NODE_Seq 7 SKANSDAM 22:59:00`
+and the new block resumed `NODE_Seq 7 SYBRAND 23:01:00`, whose own `Point to Point Runtime` cell
+(`00:02:00`) matches the 2-minute gap — contiguous, no overlap, no missing row.
+
+5931 now spans **L599-638 (40 lines): 22:00:00 → 04:32:00, stated 06:32:00 / computed 06:32:00,
+overnight ×1 — `[OK]`.** The round-54 duration mismatch was purely an artefact of the truncation and
+has disappeared, exactly as predicted. Note `NODE_Seq 7` occurs twice in this working (`SKANSDAM`
+and `SYBRAND`) and `NODE_Seq 30` twice (`WEBBSRUS`, `HAMELFONTEIN`) — preserved verbatim.
+
+### The 29 new workings (452 rows) — all `[OK]`
+
+| working | lines | rows | times | stated / computed |
+|---|---|---|---|---|
+| 6253 | L639-690 | 52 | 12:11:00 → 20:44:00 | 08:33:00 / 08:33:00 |
+| 6437 | L691-743 | 53 | 15:50:00 → 00:15:00 | 08:25:00 / 08:25:00 (overnight ×1) |
+| 6453 | L744-794 | 51 | 12:11:00 → 20:25:00 | 08:14:00 / 08:14:00 |
+| 7203 | L795-796 | 2 | 01:31:00 → 01:32:00 | 00:01:00 / 00:01:00 |
+| 7205 | L797-839 | 43 | 07:40:00 → 12:08:00 | 04:28:00 / 04:28:00 |
+| 7207 | L840-872 | 33 | 08:00:00 → 10:24:00 | 02:24:00 / 02:24:00 |
+| 7216 | L873-896 | 24 | 05:22:00 → 08:25:00 | 03:03:00 / 03:03:00 |
+| 7255 | L897-939 | 43 | 15:00:00 → 19:29:00 | 04:29:00 / 04:29:00 |
+| 7277 | L940-972 | 33 | 13:30:00 → 15:54:00 | 02:24:00 / 02:24:00 |
+| 7282 | L973-974 | 2 | 20:15:00 → 21:00:00 | 00:45:00 / 00:45:00 |
+| 7301 | L975-976 | 2 | 01:31:00 → 01:32:00 | 00:01:00 / 00:01:00 |
+| 7303 | L977-978 | 2 | 03:30:00 → 03:31:00 | 00:01:00 / 00:01:00 |
+| 7305 | L979-980 | 2 | 05:30:00 → 05:31:00 | 00:01:00 / 00:01:00 |
+| 7307 | L981-982 | 2 | 07:30:00 → 07:31:00 | 00:01:00 / 00:01:00 |
+| 7309 | L983-984 | 2 | 09:30:00 → 09:31:00 | 00:01:00 / 00:01:00 |
+| 7311 | L985-986 | 2 | 11:30:00 → 11:31:00 | 00:01:00 / 00:01:00 |
+| 7313 | L987-988 | 2 | 13:30:00 → 13:31:00 | 00:01:00 / 00:01:00 |
+| 7315 | L989-990 | 2 | 15:30:00 → 15:31:00 | 00:01:00 / 00:01:00 |
+| 7317 | L991-992 | 2 | 17:30:00 → 17:31:00 | 00:01:00 / 00:01:00 |
+| 7319 | L993-994 | 2 | 19:30:00 → 19:31:00 | 00:01:00 / 00:01:00 |
+| 7321 | L995-996 | 2 | 21:30:00 → 21:31:00 | 00:01:00 / 00:01:00 |
+| 7323 | L997-998 | 2 | 23:30:00 → 23:31:00 | 00:01:00 / 00:01:00 |
+| 7324 | L999-1007 | 9 | 05:10:00 → 05:59:00 | 00:49:00 / 00:49:00 |
+| 7348 | L1008-1016 | 9 | 13:54:00 → 14:43:00 | 00:49:00 / 00:49:00 |
+| 7352 | L1017-1025 | 9 | 11:25:00 → 12:14:00 | 00:49:00 / 00:49:00 |
+| 7454 | L1026-1034 | 9 | 11:25:00 → 12:14:00 | 00:49:00 / 00:49:00 |
+| 7472 | L1035-1036 | 2 | 20:15:00 → 21:00:00 | 00:45:00 / 00:45:00 |
+| 7949 | L1037-1076 | 40 | 22:00:00 → 04:58:00 | 06:58:00 / 06:58:00 (overnight ×1) |
+| **8466** | **L1077-1090** | **14** | **04:20:00 → 06:06:30** | **19:30:00 / 01:46:30** |
+
+### BIJLKOR 8466 is a PARTIAL EXTRACT — tail needed
+
+The paste ended mid-working at `NODE_Seq` 9 `ROOIVLEI` 06:06:30 (`Depart_Day` 0), while the header
+designates **THABAZIMBI** with a stated `Train Throughput Runtime` of **19:30:00**. The checker's
+duration mismatch is caused by the truncation, not by a source anomaly. **The remainder, from
+`NODE_Seq` 10 onward, must be re-supplied.** No tail was invented and no row was added.
+
+### Dedupe / pre-append evidence
+
+- Per-working scan before the append: `5931` 11 rows (the existing partial — expected), and
+  **0 rows** for each of 6253, 6437, 6453, 7203, 7205, 7207, 7216, 7255, 7277, 7282, 7301, 7303,
+  7305, 7307, 7309, 7311, 7313, 7315, 7317, 7319, 7321, 7323, 7324, 7348, 7352, 7454, 7472, 7949,
+  8466.
+- Whole-block check against the entire corpus: **0 byte-identical rows**, **0 colliding
+  `(depot, working, NODE_Seq, station)` keys**.
+- 481 rows written to scratch part files, `awk`-verified at **19 fields per row, 0 exceptions**,
+  then appended in source order. Target line count before: 609; after: **1090** (609 + 481).
+
+### Sibling comparisons (run only after every row was transcribed; nothing derived from them)
+
+Every field compared (`f1, f3-f19`; the working number is the only field excluded).
+
+- **7282 vs 7472** — 2 rows each, identical `(NODE_Seq, station)` sequence: **ALL fields identical
+  apart from the working number.** This is the first field-identical (non-trivial) sibling pair found
+  in this depot; both are `BIJLKOR → LEEUHOF` feeder trains running 20:15:00 → 21:00:00. They were
+  still transcribed independently and both retained — **a re-paste must not be assumed**, and an
+  identical twin is not a duplicate row set.
+- **8 vs 12**, **12 vs 18** (13 rows each): arrival 12, departure 12, header work-start 1, work-end 1.
+- **7205 vs 7255** (43 rows each): arrival 42, departure 42, dwell 1, activity 1, header times 1+1,
+  duration 43.
+- **7207 vs 7277** (33 rows each): arrival 32, departure 32, travel 1, dwell 1, activity 1, header
+  times 1+1.
+- **5303 vs 7301**, and each consecutive pair across **7301→7303→…→7323** (2 rows each): arrival 1,
+  departure 1, header work-start 1, work-end 1, and — on 5303/7301, 7303/7305, 7305/7307, 7315/7317,
+  7317/7319 — `Train Type` 1 (the `AMSA IRON ORE` members are 7305 and 7317).
+- **7324 vs 7348**, **7348 vs 7352**, **7352 vs 7454** (9 rows each): arrival 8, departure 8, header
+  times 1+1, `Train Type` 1; 7352 vs 7454 differ **only** in `Train Type`.
+- **7216 vs 7324** — different shapes (24 vs 9 rows). Both open with the same nine-station prefix
+  (`BIJLKOR → LEEUHOF → DUNCANVILLE → VER-NOORD → ALLOY → REDAN → KOOKRUS → MEYERTON`, then
+  7216 continues to `HENLYONKLIP` while 7324 terminates at `MTN/S743518`). On those first eight
+  rows they differ in arrival (8), departure (8), travel (3 — `LEEUHOF` 00:08:00 vs 00:18:00,
+  `ALLOY` 00:04:00 vs 00:03:00, `KOOKRUS` 00:05:30 vs 00:06:00, `MEYERTON` 00:10:00 vs 00:05:00),
+  activity 1 (`LEEUHOF` `B` vs blank), `Destination`, and duration — plus the header's `Sched`
+  (2 vs 3), `Frequency` (`YAYAAYY` vs `YYYYYYY`), `Train Type`, work-start/end and duration.
+  After `MEYERTON` 7216 continues through `HENLYONKLIP`, `DALESIDE`, `SKANSDAM`, `SYBRAND`,
+  `ROODE`, `ROOIVLEI`, `VLAKFONTEIN`, `WITHOK`, `AURUM`, `COWLESDAM`, `WELGEDAG`, `SUNDRA`,
+  `ELF/S766011`, `ELOFF`, `DELMAS` and `DMS/S742171`.
+- **5931 vs 7949** (40 rows each, both `BIJLKOR → ERMELO`): arrival 39, departure 38, travel 14,
+  header work-end 1, duration 40, `Depart_Day` 1. Same station sequence, genuinely different timings.
+- **6253 vs 6453** — 52 vs 51 rows; 6253 carries a final `NEWCASTLYSKOR` row that 6453 lacks.
+  51 rows align: arrival 2, departure 3, travel 4, activity 3, `Destination` **51** (6253 →
+  `NEWCASTLYSKOR`, 6453 → `WYKOM`), header work-end 1, `Train Type` 1, duration 51.
+- **6437 vs 6253** — 53 vs 52; 6437 carries `SIGNALHILL`, 6253 does not. 52 rows align: arrival 51,
+  departure 51, travel 8, dwell 3, activity 4, `NODE_Seq` 1, header times 1+1, `Train Type` 1,
+  duration 52, `Depart_Day` 1, distance 1.
+- **6437 vs 6453** — 53 vs 51; 6437 carries `SIGNALHILL` and `NEWCASTLYSKOR`. 51 rows align:
+  arrival 50, departure 51, travel 11, dwell 3, activity 3, `Destination` 51, header times 1+1,
+  duration 51.
+
+**Structural finding** (observation only, nothing edited): the three `NEWCASTLYSKOR`/`WYKOM`
+workings are not row-identical — `6453` ends at `WYKOM`, `6253` continues to `NEWCASTLYSKOR`, and
+`6437` additionally carries a `SIGNALHILL` row before `NEWCASTLYSKOR`. `6437`'s `WYKOM` row carries a
+`00:05:00` dwell with activity `SHUNT` where 6253's has none.
+
+### Anomalies preserved verbatim (not corrected)
+
+`7282`/`7472` `LEEUHOF → LEEUHOF` (origin and destination both read `LEEUHOF`); `7203`'s `YAYAYYY`
+pattern and `8466`'s `YYYYAYA`; `7216`'s `YAYAAYY`; `DELMAS` activity `TRACK WARRENT` (7216);
+`ELF/S766011` weighbridge rows with blank travel; `HENLYONKLIP` `P57284` (8466) and `P2463 H`
+(earlier rounds); `8466`'s 00:14:00 dwell at `HENLYONKLIP`; terminating `00:00:00` rows with
+`BO`/`RT`/`C`/`B` activities; `BIJ/S74xxxx` and `YSK/S750166` siding rows in the shunt-car loops;
+`MTN/S743518` and `DMS/S742171` end-of-working rows.
+
+### Aggregate after round 55 (measured)
+
+**17 rail data files, 15,620 rows, 459 workings, 33 depots; 437 `[OK]` + 22 flagged.**
+(After round 54 it was 17 / 15,139 / 430 / 33 with 408 + 22. This round added 481 rows and 29 new
+workings, and converted one flag into a pass: the 22nd flag is now **BIJLKOR 8466** (truncated paste)
+in place of BIJLKOR 5931 (resolved).)
+`bijlkor-batch.txt` itself: **1090 rows, 45 workings, 44 `[OK]` + 1 flagged**, MD5
+`c6f9368b54270d2cb5697c426833c476`.
+
+### Outstanding after this round
+
+1. **BIJLKOR 8466 tail** — the remainder from `NODE_Seq` 10 onward, to THABAZIMBI (stated 19:30:00).
+2. The branch decision from round 54 (still unanswered).
+3. Everything listed in rounds 50-54 (BLOEMFONTEIN 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969,
+   8989, 9000; the partials — now headed by BIJLKOR 8466 in place of the completed 5931;
+   the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
+   BEACONSFIELD 1438 re-transcription).
