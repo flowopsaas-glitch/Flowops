@@ -3,14 +3,15 @@ import { CodService } from './cod.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { CodSettlementService } from './cod-settlement.service';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 // ── Minimal Prisma mock ──────────────────────────────────────────────────────
 
 const makeWaybill = (overrides: Record<string, unknown> = {}) => ({
   id: 'wb1', trackingNumber: 'FO-00001', codAmount: 250, codCollected: false,
   companyId: 'co1',
-  shipments: [{ driverId: 'drv1', driver: { id: 'drv1', name: 'Sipho' } }],
+  shipments: [{ driverId: 'drv1', driver: { id: 'drv1', companyId: 'co1', isActive: true, name: 'Sipho' } }],
   ...overrides,
 });
 
@@ -26,6 +27,7 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     },
     waybill: {
       findFirst:  jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findMany:   jest.fn().mockResolvedValue([]),
       update:     jest.fn(),
       aggregate:  jest.fn().mockResolvedValue({ _sum: { codAmount: 0 }, _count: { id: 0 } }),
@@ -47,6 +49,9 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     shipment: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    invoiceItem: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'ii1', invoice: { id: 'inv1', status: 'SENT' } }),
+    },
     // Inner tx: settleDriver reads the wallet, does a guarded updateMany, then
     // re-reads. recordCollection upserts + re-reads. Defaults model a
     // sufficient balance so the guarded decrement succeeds (count: 1).
@@ -58,11 +63,8 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
         updateMany:       jest.fn().mockResolvedValue({ count: 1 }),
         update:           jest.fn().mockResolvedValue(makeWallet(0)),
       },
-      codTransaction: { create: jest.fn() },
-      waybill: {
-        update: jest.fn(),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
+      codTransaction: { create: jest.fn().mockResolvedValue({ id: 'ct1' }) },
+      waybill: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     })),
     ...overrides,
   } as unknown as PrismaService;
@@ -73,15 +75,20 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
 describe('CodService', () => {
   let svc: CodService;
   let prisma: ReturnType<typeof makePrisma>;
+  let notifications: { notifyWaybillStatus: jest.Mock };
+  let gateway: { emitShipmentUpdate: jest.Mock };
 
   beforeEach(async () => {
     prisma = makePrisma();
+    notifications = { notifyWaybillStatus: jest.fn() };
+    gateway = { emitShipmentUpdate: jest.fn() };
     const module = await Test.createTestingModule({
       providers: [
         CodService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: { notifyWaybillStatus: jest.fn() } },
-        { provide: EventsGateway, useValue: { emitShipmentUpdate: jest.fn() } },
+        { provide: NotificationsService, useValue: notifications },
+        { provide: EventsGateway, useValue: gateway },
+        CodSettlementService,
       ],
     }).compile();
     svc = module.get(CodService);
@@ -100,9 +107,13 @@ describe('CodService', () => {
       await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(BadRequestException);
     });
 
-    it('throws BadRequestException when COD already collected', async () => {
+    it('throws ConflictException when COD has already been collected (guarded by the CAS claim)', async () => {
       (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill({ codCollected: true }));
-      await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(BadRequestException);
+      (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
+        waybill: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) }, // already claimed
+        driverWallet: {}, codTransaction: {},
+      }));
+      await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(ConflictException);
     });
 
     it('throws BadRequestException when no driver assigned', async () => {
@@ -136,17 +147,6 @@ describe('CodService', () => {
       await expect(
         svc.recordCollection('wb1', 'co1', undefined, { collectedAmount: -10 }),
       ).rejects.toThrow(BadRequestException);
-    });
-
-    it('rejects a concurrent collection after the waybill claim is lost', async () => {
-      (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill());
-      (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
-        waybill: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      }));
-
-      await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(
-        BadRequestException,
-      );
     });
   });
 
@@ -216,9 +216,38 @@ describe('CodService', () => {
           recipientEmail: null, status: 'IN_TRANSIT', companyId: 'co1',
         },
       }]);
-      (prisma.waybill.update as jest.Mock).mockResolvedValue({});
+      (prisma.waybill.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
       const res = await svc.checkGeofence('drv1', 'co1', -26.2041, 28.0473);
       expect(res.triggered).toContain('FO-001');
+      expect(prisma.waybill.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'OUT_FOR_DELIVERY' } }),
+      );
+    });
+
+    it('REGRESSION: a parcel delivered while the loop ran is not dragged back to OUT_FOR_DELIVERY', async () => {
+      (prisma.shipment.findMany as jest.Mock).mockResolvedValue([{
+        driverId: 'drv1',
+        status: 'IN_TRANSIT',
+        waybill: {
+          id: 'wb1', trackingNumber: 'FO-003', recipientName: 'Test',
+          recipientLat: -26.2040, recipientLng: 28.0472,
+          recipientEmail: null, status: 'IN_TRANSIT', companyId: 'co1',
+        },
+      }]);
+      // The compare-and-set finds nothing: a POD (or a failed attempt) moved the
+      // parcel on between the read above and this write.
+      (prisma.waybill.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+
+      const res = await svc.checkGeofence('drv1', 'co1', -26.2041, 28.0473);
+
+      expect(res.triggered).toHaveLength(0);
+      expect(prisma.waybill.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'wb1', companyId: 'co1', status: 'IN_TRANSIT' },
+        }),
+      );
+      // No "arriving today" notification for a parcel that already arrived.
+      expect(notifications.notifyWaybillStatus).not.toHaveBeenCalled();
     });
 
     it('does NOT trigger when driver is outside the radius', async () => {

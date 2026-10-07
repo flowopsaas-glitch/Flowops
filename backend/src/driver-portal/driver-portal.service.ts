@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -8,7 +9,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { DriverSafetyService } from '../driver-safety/driver-safety.service';
-import { guardTransition } from '../waybills/waybill-status.machine';
+import { EpodService } from '../epod/epod.service';
+import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
+import { AuditService } from '../audit/audit.service';
+import { legalPredecessorStatuses } from '../waybills/waybill-status.machine';
 
 @Injectable()
 export class DriverPortalService {
@@ -19,6 +23,9 @@ export class DriverPortalService {
     private notifications: NotificationsService,
     private gateway: EventsGateway,
     private safety: DriverSafetyService,
+    private epod: EpodService,
+    private compliance: DriverComplianceService,
+    private audit: AuditService,
   ) {}
 
   /**
@@ -155,57 +162,179 @@ export class DriverPortalService {
    * at the destination branch. Marks manifest as dispatched and updates all
    * waybills to COLLECTED (received at destination hub, ready for last-mile).
    */
+  /**
+   * confirmLinehaulDelivery — driver confirms the trunk haul arrived at the
+   * destination branch.
+   *
+   * Hardened:
+   *  - the manifest is claimed with a compare-and-set on `dispatched: false`, so
+   *    a double-tap (or a retried request) cannot deliver the same manifest
+   *    twice and re-run the reassignment side effects;
+   *  - the claim, the manifest stamp, every waybill move to AT_DESTINATION_HUB
+   *    and the last-mile hand-over to a compliant driver happen in ONE
+   *    transaction — there is no window where the branch has the cargo but the
+   *    system still shows it on the road (or vice versa);
+   *  - only COMPLIANT drivers are chosen for the onward leg (the same policy as
+   *    auto-dispatch), and a waybill that is already IN_TRANSIT with another
+   *    driver is never silently re-pointed;
+   *  - the status whitelist is DERIVED from the waybill state machine
+   *    (`legalPredecessorStatuses`), not hand-written: the old hard-coded list
+   *    also accepted COLLECTED and OUT_FOR_DELIVERY → AT_DESTINATION_HUB, which
+   *    the machine refuses. Anything the machine refuses is left untouched,
+   *    reported to the driver and audited — never silently skipped.
+   */
   async confirmLinehaulDelivery(manifestId: string, driverId: string, companyId: string) {
     const manifest = await this.prisma.manifest.findFirst({
-      where: { id: manifestId, driverId, dispatched: false },
+      where: { id: manifestId, driverId, companyId, dispatched: false },
       include: { waybills: true, branch: { select: { name: true } } },
     });
 
     if (!manifest) {
-      throw new Error('Manifest not found, already delivered, or not assigned to you');
+      throw new NotFoundException(
+        'Manifest not found, already delivered, or not assigned to you',
+      );
     }
 
-    // Mark manifest as delivered
-    await this.prisma.manifest.update({
-      where: { id: manifestId },
-      data: { dispatched: true, dispatchedAt: new Date() },
+    const waybillIds = (manifest.waybills ?? []).map((mw: any) => mw.waybillId).filter(Boolean);
+
+    // Candidates for the last-mile leg are resolved BEFORE the transaction so a
+    // slow compliance check does not hold row locks; the same list is applied
+    // inside. Only driver ids are carried in.
+    const candidates = await this.prisma.driver.findMany({
+      where: { companyId, isActive: true, status: 'AVAILABLE', id: { not: driverId } },
+      orderBy: { lastSeen: 'desc' },
+      take: 10,
+      select: {
+        id: true, companyId: true, isActive: true, status: true,
+        licenseExpiry: true, insuranceExpiry: true, backgroundCheckExpiry: true,
+        nextServiceDate: true, currentKm: true, nextServiceKm: true,
+        complianceHold: true, complianceHoldReason: true,
+      },
     });
+    const eligibleDriverId =
+      this.compliance
+        .filterDispatchable(candidates.map((d) => ({ ...d, driverId: d.id })))
+        .map(({ snapshot }) => snapshot.driverId)[0] ?? null;
 
-    // Update all waybills in the manifest to AT_DESTINATION_HUB (arrived at receiving branch)
-    const waybillIds = manifest.waybills.map((mw: any) => mw.waybillId);
-    if (waybillIds.length > 0) {
-      await this.prisma.waybill.updateMany({
-        where: { id: { in: waybillIds } },
-        data: { status: 'AT_DESTINATION_HUB' },
+    // Only states the state machine actually allows to arrive at a hub. A
+    // parcel that never reached AT_ORIGIN_HUB / IN_TRANSIT has a chain-of-
+    // custody gap; asserting the jump away would hide it.
+    const arrivalsFrom = legalPredecessorStatuses('AT_DESTINATION_HUB');
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Compare-and-set: exactly one caller can flip `dispatched`.
+      const claim = await tx.manifest.updateMany({
+        where: { id: manifestId, driverId, dispatched: false },
+        data: { dispatched: true, dispatchedAt: new Date() },
       });
+      if (claim.count === 0) {
+        throw new ConflictException('This manifest was already confirmed delivered');
+      }
 
-      // Auto-reassign each waybill to the nearest available driver at the destination branch
-      for (const wbId of waybillIds) {
-        const availableDriver = await this.prisma.driver.findFirst({
-          where: { companyId, isActive: true, status: 'AVAILABLE', id: { not: driverId } },
-          orderBy: { lastSeen: 'desc' },
+      let moved = 0;
+      const skipped: Array<{ waybillId: string; trackingNumber: string | null; status: string | null }> = [];
+      for (const waybillId of waybillIds) {
+        // Tenant-scoped CAS per waybill: only parcels the machine allows to
+        // arrive move to the destination hub. A parcel that was cancelled in
+        // the meantime — or that was never scanned through the origin hub — is
+        // left alone and reported below.
+        const moved1 = await tx.waybill.updateMany({
+          where: { id: waybillId, companyId, status: { in: arrivalsFrom } },
+          data: { status: 'AT_DESTINATION_HUB' },
         });
-        if (availableDriver) {
-          const existingShipment = await this.prisma.shipment.findFirst({ where: { waybillId: wbId, companyId } });
-          if (existingShipment) {
-            await this.prisma.shipment.update({ where: { id: existingShipment.id }, data: { driverId: availableDriver.id, status: 'PENDING' } });
+        if (moved1.count === 0) {
+          const current = await tx.waybill.findFirst({
+            where: { id: waybillId, companyId },
+            select: { status: true, trackingNumber: true },
+          });
+          skipped.push({
+            waybillId,
+            trackingNumber: current?.trackingNumber ?? null,
+            status: current?.status ?? null, // null = not in this tenant at all
+          });
+          continue;
+        }
+        moved++;
+
+        await tx.trackingEvent.create({
+          data: {
+            waybillId,
+            companyId,
+            event: 'ARRIVED',
+            status: 'AT_DESTINATION_HUB',
+            description: `Linehaul ${manifest.code} arrived at ${manifest.branch?.name ?? 'destination branch'}.`,
+            actorType: 'DRIVER',
+            actorId: driverId,
+            metadata: { manifestId, manifestCode: manifest.code },
+          },
+        });
+
+        // Last-mile hand-over, if a compliant driver is available.
+        if (eligibleDriverId) {
+          const existing = await tx.shipment.findFirst({ where: { waybillId, companyId } });
+          if (existing) {
+            if (existing.driverId === eligibleDriverId && existing.status === 'PENDING') {
+              // already staged for this driver — idempotent, nothing to do.
+            } else if (existing.status === 'IN_TRANSIT' && existing.driverId !== eligibleDriverId) {
+              // Someone is already carrying it: leave custody alone.
+            } else {
+              await tx.shipment.update({
+                where: { id: existing.id },
+                data: { driverId: eligibleDriverId, status: 'PENDING' },
+              });
+            }
           } else {
-            await this.prisma.shipment.create({ data: { waybillId: wbId, companyId, driverId: availableDriver.id, status: 'PENDING' } });
+            await tx.shipment.create({
+              data: { waybillId, companyId, driverId: eligibleDriverId, status: 'PENDING' },
+            });
           }
         }
       }
-    }
+
+      return { moved, eligibleDriverId, skipped };
+    });
 
     this.logger.log(
       `Linehaul ${manifest.code} delivered by driver ${driverId} to branch ${manifest.branch?.name ?? manifestId}. ` +
-      `${waybillIds.length} waybills marked AT_DESTINATION_HUB (ready for last-mile).`,
+      `${result.moved} waybills marked AT_DESTINATION_HUB (ready for last-mile).`,
     );
+
+    // Every parcel that did NOT move is a chain-of-custody gap: audit it with
+    // the exact pair that was refused, so the origin hub can be told to scan
+    // what it is holding instead of the record quietly diverging from the truck.
+    for (const skip of result.skipped) {
+      await this.audit.record({
+        action: 'waybill.transition_rejected',
+        actorType: 'tenant',
+        actorId: driverId,
+        targetType: 'waybill',
+        targetId: skip.waybillId,
+        targetName: skip.trackingNumber,
+        metadata: {
+          companyId,
+          manifestId,
+          manifestCode: manifest.code,
+          from: skip.status,
+          attempted: 'AT_DESTINATION_HUB',
+          reason: skip.status === null ? 'not_in_tenant' : 'illegal_transition',
+          source: 'driver-portal.linehaul',
+        },
+      });
+    }
 
     return {
       success: true,
       manifestCode: manifest.code,
       destinationBranch: manifest.branch?.name ?? 'Unknown',
-      waybillsDelivered: waybillIds.length,
+      waybillsDelivered: result.moved,
+      // Explicit about what happens next: a branch with no compliant driver
+      // keeps the parcels at the hub awaiting manual dispatch.
+      reassignedTo: result.eligibleDriverId,
+      awaitingManualDispatch: waybillIds.length > 0 && !result.eligibleDriverId,
+      // Parcels the manifest listed that could not legally arrive: dispatch has
+      // to fix the origin scan (or investigate) — this list is the work queue.
+      waybillsSkipped: result.skipped.length,
+      skippedWaybills: result.skipped,
     };
   }
 
@@ -241,84 +370,120 @@ export class DriverPortalService {
     companyId: string,
     body: { parcelCount?: number; notes?: string },
   ) {
-    // 1. Find and validate the collection
+    if (!collectionId || !driverId || !companyId) {
+      throw new BadRequestException('Collection, driver and tenant context are required');
+    }
+
+    // 1. Find and validate the collection — tenant + assigned-driver scoped, so
+    //    a driver can never confirm someone else's (or another tenant's) pickup.
     const collection = await this.prisma.collection.findFirst({
       where: { id: collectionId, driverId, companyId },
     });
     if (!collection) {
-      throw new Error('Collection not found or not assigned to this driver');
+      throw new NotFoundException('Collection not found or not assigned to this driver');
     }
-    // Idempotent: if this collection was already confirmed (e.g. an offline
-    // action being replayed by the driver app's sync engine after a flaky
-    // connection), don't error and don't create a second waybill — just report
-    // success so the queued mutation is cleared.
+
+    // 2. Idempotency: a replayed offline confirmation must not create a second
+    //    waybill. The provenance link (sourceCollectionId) makes the answer
+    //    exact — no guessing a waybill by client name.
     if (collection.status === 'COLLECTED') {
       const existing = await this.prisma.waybill.findFirst({
-        where: { companyId, senderName: collection.clientName, status: { not: 'DELIVERED' } },
-        orderBy: { createdAt: 'desc' },
+        where: { companyId, sourceCollectionId: collectionId },
         select: { id: true, trackingNumber: true, status: true },
       });
       return {
         success: true,
         alreadyConfirmed: true,
         collection: { id: collectionId, status: 'COLLECTED' },
-        waybill: existing ? { id: existing.id, trackingNumber: existing.trackingNumber, status: existing.status } : null,
+        waybill: existing
+          ? { id: existing.id, trackingNumber: existing.trackingNumber, status: existing.status }
+          : null,
         message: 'Collection was already confirmed.',
       };
     }
 
-    // 2. Mark as COLLECTED
-    await this.prisma.collection.update({
-      where: { id: collectionId },
-      data: {
-        status: 'COLLECTED',
-        pickedUpAt: new Date(),
-        notes: body.notes ? `${collection.notes ?? ''}\nDriver: ${body.notes}`.trim() : collection.notes,
-      },
-    });
-
-    // 3. Auto-create a Waybill from the collection data.
-    //    IMPORTANT (chain of custody): a freshly-collected parcel is NOT yet
-    //    "in transit". It becomes COLLECTED and must be RECEIVED at the depot
-    //    (warehouse clerk check-in → AT_ORIGIN_HUB) before it can be loaded
-    //    onto a linehaul or sent out for local delivery. We no longer jump it
-    //    straight to IN_TRANSIT and auto-assign a final-mile driver, because
-    //    that bypassed the depot + linehaul steps of real freight procedure.
     const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
-    const waybill = await this.prisma.waybill.create({
-      data: {
-        trackingNumber,
-        companyId,
-        status: 'COLLECTED',
-        senderName: collection.clientName,
-        senderPhone: collection.clientPhone,
-        senderAddress: collection.pickupAddress,
-        recipientName: collection.clientName, // same client — dispatch sets the real recipient on dispatch
-        recipientPhone: collection.clientPhone,
-        recipientAddress: collection.pickupAddress, // placeholder until dispatch sets delivery address
-        weight: 0,
-        totalAmount: 0,
-        description: `Collection pickup — ${body.parcelCount ?? 1} parcel(s). ${body.notes ?? ''}`.trim(),
-      },
+    const pickedUpAt = new Date();
+
+    // 3. ONE transaction: claim the collection (compare-and-set on status), then
+    //    create the waybill + its custody shipment. A failure anywhere rolls the
+    //    whole thing back — a COLLECTED collection without a waybill (or a
+    //    waybill with no custody record) can no longer exist.
+    const created = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.collection.updateMany({
+        where: { id: collectionId, driverId, companyId, status: { not: 'COLLECTED' } },
+        data: {
+          status: 'COLLECTED',
+          pickedUpAt,
+          notes: body.notes ? `${collection.notes ?? ''}\nDriver: ${body.notes}`.trim() : collection.notes,
+        },
+      });
+      if (claim.count === 0) {
+        // Another tap (or a concurrent replay) already confirmed it.
+        const existing = await tx.waybill.findFirst({
+          where: { companyId, sourceCollectionId: collectionId },
+          select: { id: true, trackingNumber: true, status: true },
+        });
+        return { alreadyConfirmed: true as const, waybill: existing };
+      }
+
+      // 4. Waybill at COLLECTED (a freshly-collected parcel is NOT yet in
+      //    transit; the depot receive step decides the onward leg).
+      const waybill = await tx.waybill.create({
+        data: {
+          trackingNumber,
+          companyId,
+          status: 'COLLECTED',
+          sourceCollectionId: collectionId,
+          senderName: collection.clientName,
+          senderPhone: collection.clientPhone,
+          senderAddress: collection.pickupAddress,
+          recipientName: collection.clientName,
+          recipientPhone: collection.clientPhone,
+          recipientAddress: collection.pickupAddress,
+          weight: 0,
+          totalAmount: 0,
+          description: `Collection pickup — ${body.parcelCount ?? 1} parcel(s). ${body.notes ?? ''}`.trim(),
+        },
+      });
+
+      // 5. Custody: the collecting driver holds the parcel en route to the depot.
+      await tx.shipment.create({
+        data: { waybillId: waybill.id, companyId, driverId, status: 'PENDING' },
+      });
+
+      await tx.trackingEvent.create({
+        data: {
+          waybillId: waybill.id,
+          companyId,
+          event: 'COLLECTED',
+          status: 'COLLECTED',
+          description: `Parcel collected from ${collection.clientName} at ${collection.pickupAddress}. Awaiting depot receive.`,
+          actorType: 'DRIVER',
+          actorId: driverId,
+          metadata: { collectionId },
+        },
+      });
+
+      return { alreadyConfirmed: false as const, waybill };
     });
 
-    // 4. Create the Shipment record linking waybill ↔ collecting driver, but as
-    //    PENDING (not auto-dispatched). The parcel is in the collecting driver's
-    //    possession en route to the depot; the depot receive step + dispatch
-    //    decide the onward leg. We keep the collecting driver on the shipment so
-    //    the parcel's current custody is traceable.
-    await this.prisma.shipment.create({
-      data: {
-        waybillId: waybill.id,
-        companyId,
-        driverId,
-        status: 'PENDING',
-      },
-    });
+    if (created.alreadyConfirmed) {
+      return {
+        success: true,
+        alreadyConfirmed: true,
+        collection: { id: collectionId, status: 'COLLECTED' },
+        waybill: created.waybill ?? null,
+        message: 'Collection was already confirmed.',
+      };
+    }
 
-    this.logger.log(`Collection ${collectionId} confirmed → Waybill ${trackingNumber} created as COLLECTED (awaiting depot receive) by driver ${driverId}`);
+    const waybill = created.waybill!;
+    this.logger.log(
+      `Collection ${collectionId} confirmed → Waybill ${trackingNumber} created as COLLECTED (awaiting depot receive) by driver ${driverId}`,
+    );
 
-    // 5. Emit real-time update to dispatch board
+    // 6. Realtime fan-out is best-effort and happens after the commit.
     try {
       this.gateway.emitToCompany(companyId, 'collection-confirmed', {
         collectionId,
@@ -338,6 +503,16 @@ export class DriverPortalService {
     };
   }
 
+  /**
+   * Driver-app POD capture.
+   *
+   * The write itself goes through EpodService.capture(): one transaction that
+   * checks custody, validates the lifecycle, claims the delivery with a
+   * compare-and-set and stores the POD evidence + delivery status together.
+   * This method only adds the driver-app specifics: the driver identity comes
+   * from the token (never the body), and the customer notification / realtime
+   * fan-out happen after the commit.
+   */
   async recordPod(body: {
     waybillId: string;
     driverId: string;
@@ -346,86 +521,54 @@ export class DriverPortalService {
     imageUrl?: string;
     recipientName?: string;
     notes?: string;
+    lat?: number;
+    lng?: number;
   }) {
-    // Chain of custody + tenant isolation: a driver may only POD a waybill that
-    // belongs to their company AND is dispatched to them. Previously this
-    // updated ANY waybill by client-supplied id → any driver could mark any
-    // tenant's parcel DELIVERED. driverId/companyId come from the driver token.
-    // companyId and driverId are REQUIRED, not optional spreads: if a future
-    // caller forgets one, the filter used to collapse to "any waybill by id",
-    // which is the cross-tenant hole this block was written to close.
+    // Fail closed: these come from the driver token via the controller. If a
+    // future caller forgets one, we must not degrade to "any waybill by id".
     if (!body.companyId || !body.driverId) {
       throw new BadRequestException('Driver and tenant context are required to capture POD');
     }
-    const waybill = await this.prisma.waybill.findFirst({
-      where: {
-        id: body.waybillId,
-        companyId: body.companyId,
-        shipments: { some: { driverId: body.driverId } },
+    if (!body.waybillId) {
+      throw new BadRequestException('waybillId is required');
+    }
+
+    const epod = await this.epod.capture(
+      body.companyId,
+      {
+        waybillId: body.waybillId,
+        driverId: body.driverId,
+        signatureUrl: body.signatureUrl,
+        photoUrls: body.imageUrl ? [body.imageUrl] : [],
+        recipientName: body.recipientName,
+        notes: body.notes,
+        geoLat: body.lat,
+        geoLng: body.lng,
       },
-      select: { id: true, status: true, trackingNumber: true, companyId: true },
+      { driverId: body.driverId, role: 'DRIVER' },
+    );
+
+    const updated = await this.prisma.waybill.findFirst({
+      where: { id: body.waybillId, companyId: body.companyId },
     });
-    if (!waybill) {
-      throw new NotFoundException('Waybill not found or not assigned to you');
-    }
 
-    if (waybill.status === 'DELIVERED') {
-      return this.prisma.waybill.findUniqueOrThrow({ where: { id: waybill.id } });
-    }
-
-    guardTransition(waybill.status, 'DELIVERED', {
-      waybillId: waybill.id,
-      trackingNumber: waybill.trackingNumber,
-      actor: body.driverId ?? 'driver-portal',
-    }, (message) => { throw new BadRequestException(message); });
-
-    const deliveredAt = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.waybill.updateMany({
-        where: {
-          id: waybill.id,
-          companyId: waybill.companyId,
-          status: { not: 'DELIVERED' },
-        },
-        data: {
+    // ── Close the loop (after the commit; failures here cannot un-deliver) ──
+    if (updated) {
+      void this.notifications.notifyWaybillStatus(updated as any);
+      void this.notifications.sendRatingRequest(updated as any);
+      try {
+        this.gateway.emitShipmentUpdate(updated.companyId, {
+          waybillId: updated.id,
+          trackingNumber: updated.trackingNumber,
           status: 'DELIVERED',
-          podSignatureUrl: body.signatureUrl,
-          podImageUrl: body.imageUrl,
-          podRecipient: body.recipientName,
-          podDeliveredAt: deliveredAt,
-        },
-      });
-
-      if (result.count === 0) {
-        return tx.waybill.findUniqueOrThrow({ where: { id: waybill.id } });
+          source: 'driver-pod',
+        });
+      } catch (err: any) {
+        this.logger.warn(`POD realtime emit failed: ${err?.message ?? err}`);
       }
-
-      await tx.shipment.updateMany({
-        where: { waybillId: body.waybillId, companyId: waybill.companyId },
-        data: { status: 'DELIVERED', deliveredAt },
-      });
-
-      return tx.waybill.findUniqueOrThrow({ where: { id: waybill.id } });
-    });
-
-    // ── Close the loop ───────────────────────────────────────────────────
-    // A field POD is a real DELIVERED event. Mirror the office delivery path:
-    // notify the customer, request a rating, and live-refresh the dispatch
-    // board. All best-effort — none of this can break the POD write itself.
-    void this.notifications.notifyWaybillStatus(updated as any);
-    void this.notifications.sendRatingRequest(updated as any);
-    try {
-      this.gateway.emitShipmentUpdate(updated.companyId, {
-        waybillId: updated.id,
-        trackingNumber: updated.trackingNumber,
-        status: 'DELIVERED',
-        source: 'driver-pod',
-      });
-    } catch (err: any) {
-      this.logger.warn(`POD realtime emit failed: ${err?.message ?? err}`);
     }
 
-    return updated;
+    return { ...(updated as any), epodId: epod.id, podStatus: epod.status };
   }
 
   async getMessages(driverId: string, limit = 50, skip = 0) {

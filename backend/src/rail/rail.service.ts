@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { IntermodalLegStatus, RailConsignmentStatus, RailHoldStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
@@ -6,7 +6,16 @@ import { AuditService } from '../audit/audit.service';
 import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, recordRailAudit,
 } from './rail-audit';
+import {
+  describeLegTransition,
+  evaluateHandoffReadiness,
+  HandoffEvidence,
+  HandoffReadiness,
+  isApprovalValid,
+  isLegalLegTransition,
+} from './rail-handoff.policy';
 import { evaluateDangerousGoods, isMovementStatus, normaliseUnNumber } from './rail-dangerous-goods';
+import { boundedAverage, rollingWindow, safeRate } from '../common/kpi/kpi-math';
 import { CreateRailConsignmentDto } from './dto/create-rail-consignment.dto';
 import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';
 import { CreateWagonDto } from './dto/wagon.dto';
@@ -93,14 +102,6 @@ export class RailService {
     OFFLOADED: ['COMPLETED'],
     COMPLETED: [],
     CANCELLED: [],
-  };
-
-  private readonly allowedLegTransitions: Record<IntermodalLegStatus, readonly IntermodalLegStatus[]> = {
-    PENDING: ['IN_PROGRESS', 'DELAYED'],
-    IN_PROGRESS: ['HANDED_OVER', 'DELAYED'],
-    HANDED_OVER: ['COMPLETED', 'DELAYED'],
-    DELAYED: ['IN_PROGRESS', 'HANDED_OVER', 'COMPLETED'],
-    COMPLETED: [],
   };
 
   // ── Consignment CRUD ─────────────────────────────────────────────────────────
@@ -445,23 +446,162 @@ export class RailService {
   }
 
   /**
-   * Record a handoff on a leg. When a leg completes we stamp actualEnd and, if
-   * we have both actual timestamps, compute the dwell (idle) hours — the core
-   * "handoff gap" metric operators can never see today.
+   * Handoff readiness report for a leg.
+   *
+   * Read-only: evaluates the prerequisite evidence (leg started, receiver named,
+   * location known, tariff/billing evidence stored AND priced, no load hold) and
+   * reports whether a handover may be recorded, plus whether an approval exists
+   * that covers the CURRENT evidence (the approval is fingerprinted).
+   */
+  async handoffReadiness(companyId: string, consignmentId: string, legId: string) {
+    const consignment = await this.get(companyId, consignmentId);
+    const leg = await this.prisma.intermodalLeg.findFirst({ where: { id: legId, consignmentId } });
+    if (!leg) throw new NotFoundException('Intermodal leg not found');
+
+    const evidence = await this.gatherHandoffEvidence(leg);
+    const readiness = evaluateHandoffReadiness(evidence);
+    const approval = await this.findHandoffApproval(companyId, legId);
+
+    return {
+      consignmentId,
+      consignmentNumber: consignment.consignmentNumber,
+      legId,
+      status: leg.status,
+      ...readiness,
+      approval: approval
+        ? {
+            approvedAt: approval.createdAt,
+            approvedBy: approval.actorEmail ?? approval.actorId ?? null,
+            coversCurrentEvidence: isApprovalValid(readiness, approval.fingerprint),
+          }
+        : null,
+      /** True only when the evidence is complete AND an approval covers it. */
+      canHandOver: readiness.ready && isApprovalValid(readiness, approval?.fingerprint),
+    };
+  }
+
+  /**
+   * Approve a leg's handoff readiness — the auditable "who signed off which
+   * step" record.
+   *
+   * Refuses (and audits the refusal) when the evidence is incomplete, so an
+   * approval can never exist ahead of its evidence. The approval stores the
+   * evidence fingerprint; if the evidence later changes, the approval stops
+   * covering it and the handoff is refused again until it is re-approved.
+   */
+  async approveHandoffReadiness(
+    companyId: string,
+    consignmentId: string,
+    legId: string,
+    actor: RailActor,
+    note?: string,
+  ) {
+    const consignment = await this.get(companyId, consignmentId);
+    const leg = await this.prisma.intermodalLeg.findFirst({ where: { id: legId, consignmentId } });
+    if (!leg) throw new NotFoundException('Intermodal leg not found');
+
+    const evidence = await this.gatherHandoffEvidence(leg);
+    const readiness = evaluateHandoffReadiness(evidence);
+    const target = { type: RAIL_AUDIT_TARGET.LEG, id: legId };
+
+    if (!readiness.ready) {
+      await this.record(
+        companyId, actor, RAIL_AUDIT_ACTION.HANDOFF_READINESS_BLOCKED, target,
+        {
+          consignmentId, consignmentNumber: consignment.consignmentNumber,
+          blockers: readiness.blockers,
+          checks: readiness.checks.map((c) => ({ code: c.code, ok: c.ok })),
+          fingerprint: readiness.fingerprint,
+        },
+      );
+      throw new BadRequestException(
+        `Handoff readiness cannot be approved — incomplete evidence: ${readiness.blockers.join('; ')}`,
+      );
+    }
+
+    await this.record(
+      companyId, actor, RAIL_AUDIT_ACTION.HANDOFF_READINESS_APPROVED, target,
+      {
+        consignmentId, consignmentNumber: consignment.consignmentNumber,
+        note: note ?? null,
+        fingerprint: readiness.fingerprint,
+        // One entry per step that this approval signs off, attributed to the
+        // approver — the record an auditor asks for ("who approved each step").
+        approvedSteps: readiness.checks.map((c) => ({ step: c.code, label: c.label, detail: c.detail })),
+      },
+    );
+
+    return {
+      approved: true as const,
+      legId,
+      fingerprint: readiness.fingerprint,
+      approvedSteps: readiness.checks.map((c) => c.code),
+      approvedBy: actor.email ?? actor.id,
+      approvedAt: new Date(),
+    };
+  }
+
+  /**
+   * Advance an intermodal leg. Handovers (HANDED_OVER) are gated: the leg must
+   * have started, the receiver and location must be recorded, billing evidence
+   * must be stored and priced, and a readiness approval must cover exactly this
+   * evidence. Illegal transitions are rejected before any write.
    */
   async advanceLeg(companyId: string, consignmentId: string, legId: string, status: string, actor: RailActor) {
     const consignment = await this.get(companyId, consignmentId);
     const leg = await this.prisma.intermodalLeg.findFirst({ where: { id: legId, consignmentId } });
     if (!leg) throw new NotFoundException('Intermodal leg not found');
     if (!Object.values(IntermodalLegStatus).includes(status as IntermodalLegStatus)) {
-      throw new BadRequestException(`Invalid intermodal leg status: ${status}`);
+      throw new BadRequestException(
+        `Invalid intermodal leg status: ${status}. Use one of: ${Object.values(IntermodalLegStatus).join(', ')}`,
+      );
     }
     const nextStatus = status as IntermodalLegStatus;
     if (leg.status === nextStatus) return leg;
-    if (!this.allowedLegTransitions[leg.status].includes(nextStatus)) {
-      throw new BadRequestException(
-        `Cannot move intermodal leg from ${leg.status} to ${nextStatus}`,
-      );
+
+    const target = { type: RAIL_AUDIT_TARGET.LEG, id: legId };
+
+    // ── State machine: reject unknown/illegal targets before touching data ──
+    if (!isLegalLegTransition(leg.status, nextStatus)) {
+      const message = describeLegTransition(leg.status, nextStatus);
+      await this.record(companyId, actor, RAIL_AUDIT_ACTION.LEG_TRANSITION_REJECTED, target, {
+        consignmentId, consignmentNumber: consignment.consignmentNumber,
+        from: leg.status, attempted: nextStatus, reason: 'illegal_transition',
+      });
+      throw new BadRequestException(message);
+    }
+
+    // ── Handoff gate: evidence + approval, checked before the write ──────────
+    let readiness: HandoffReadiness | null = null;
+    if (nextStatus === 'HANDED_OVER' && leg.status !== 'HANDED_OVER') {
+      const evidence = await this.gatherHandoffEvidence(leg);
+      readiness = evaluateHandoffReadiness(evidence);
+      const approval = await this.findHandoffApproval(companyId, legId);
+
+      if (!readiness.ready) {
+        await this.record(companyId, actor, RAIL_AUDIT_ACTION.HANDOFF_BLOCKED, target, {
+          consignmentId, consignmentNumber: consignment.consignmentNumber,
+          attemptedStatus: nextStatus, blockers: readiness.blockers,
+          checks: readiness.checks.map((c) => ({ code: c.code, ok: c.ok })),
+          fingerprint: readiness.fingerprint,
+        });
+        throw new BadRequestException(
+          `Handoff blocked — evidence incomplete: ${readiness.blockers.join('; ')}`,
+        );
+      }
+
+      if (!isApprovalValid(readiness, approval?.fingerprint)) {
+        await this.record(companyId, actor, RAIL_AUDIT_ACTION.HANDOFF_BLOCKED, target, {
+          consignmentId, consignmentNumber: consignment.consignmentNumber,
+          attemptedStatus: nextStatus, reason: approval ? 'stale_approval' : 'no_approval',
+          fingerprint: readiness.fingerprint,
+        });
+        throw new ConflictException(
+          approval
+            ? 'Handoff blocked — the readiness approval was granted for different evidence (it changed since sign-off). Re-approve readiness.'
+            : 'Handoff blocked — no handoff readiness approval recorded. Approve readiness (or ask an authorised user to) before handing over.',
+        );
+      }
     }
 
     const patch: Record<string, unknown> = { status: nextStatus };
@@ -475,13 +615,73 @@ export class RailService {
       patch.dwellHours = Math.max(0, (end.getTime() - start.getTime()) / 3_600_000);
     }
 
-    const updated = await this.prisma.intermodalLeg.update({ where: { id: legId }, data: patch });
+    // Compare-and-set on the status we validated: if another operator moved this
+    // leg between the read and the write, we refuse instead of overwriting.
+    const claimed = await this.prisma.intermodalLeg.updateMany({
+      where: { id: legId, consignmentId, status: leg.status as any },
+      data: patch,
+    });
+    if (claimed.count === 0) {
+      throw new ConflictException('Leg status changed while advancing — refresh and try again');
+    }
+
+    const updated = await this.prisma.intermodalLeg.findFirstOrThrow({
+      where: { id: legId, consignmentId },
+    });
+
     await this.record(
-      companyId, actor, RAIL_AUDIT_ACTION.LEG_ADVANCED,
-      { type: RAIL_AUDIT_TARGET.LEG, id: legId },
-      { consignmentId, consignmentNumber: consignment.consignmentNumber, from: leg.status, to: status, dwellHours: patch.dwellHours ?? null },
+      companyId, actor, RAIL_AUDIT_ACTION.LEG_ADVANCED, target,
+      {
+        consignmentId, consignmentNumber: consignment.consignmentNumber,
+        from: leg.status, to: status, dwellHours: patch.dwellHours ?? null,
+        handoffFingerprint: readiness?.fingerprint ?? null,
+      },
     );
     return updated;
+  }
+
+  /** Assemble the handoff evidence snapshot for a leg (single source of truth). */
+  private async gatherHandoffEvidence(leg: {
+    id: string; status: string; actualStart?: Date | null; handler?: string | null;
+    toLocation?: string | null; consignmentId: string;
+  }): Promise<HandoffEvidence> {
+    const tariff = await this.prisma.railTariffCalculation.findFirst({
+      where: { consignmentId: leg.consignmentId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, status: true, holdTriggered: true },
+    });
+    return {
+      legId: leg.id,
+      status: leg.status,
+      actualStart: leg.actualStart ?? null,
+      handler: leg.handler ?? null,
+      toLocation: leg.toLocation ?? null,
+      tariff: tariff ?? null,
+    };
+  }
+
+  /** Latest readiness approval for a leg, read from the immutable audit trail. */
+  private async findHandoffApproval(companyId: string, legId: string) {
+    const row = await this.prisma.auditLog.findFirst({
+      where: {
+        action: RAIL_AUDIT_ACTION.HANDOFF_READINESS_APPROVED,
+        targetType: RAIL_AUDIT_TARGET.LEG,
+        targetId: legId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!row) return null;
+    const metadata = (row.metadata ?? {}) as Record<string, any>;
+    // Defence in depth: an audit row for another tenant must never satisfy a
+    // readiness check (audit rows are filtered by tenant in metadata).
+    if (metadata.companyId && metadata.companyId !== companyId) return null;
+    return {
+      id: row.id,
+      createdAt: row.createdAt,
+      actorId: row.actorId,
+      actorEmail: row.actorEmail,
+      fingerprint: metadata.fingerprint as string | undefined,
+    };
   }
 
   // ── KPIs / dashboard ─────────────────────────────────────────────────────────
@@ -544,37 +744,52 @@ export class RailService {
 
     // On-time %: only the arrived+planned consignments (bounded) — select just the
     // two timestamps we need, never the full row graph.
+    // On-time + transit: only consignments that ACTUALLY arrived inside the last
+    // 90 days and carried a planned arrival. CANCELLED never counts, a missing
+    // estimate is not "late", and one stuck 5-month-old row cannot set the number.
+    const window = rollingWindow(90);
     const arrivedRows = await this.prisma.railConsignment.findMany({
-      where: { companyId, actualArrival: { not: null }, plannedArrival: { not: null } },
+      where: {
+        companyId,
+        status: { notIn: ['CANCELLED', 'PLANNED', 'WAGONS_ALLOCATED', 'LOADING'] },
+        actualArrival: { not: null, gte: window.start, lt: window.end },
+        plannedArrival: { not: null },
+      },
       select: { actualArrival: true, plannedArrival: true, actualDeparture: true },
       take: 1000,
     });
     const onTime = arrivedRows.filter(
       (c) => c.actualArrival!.getTime() <= c.plannedArrival!.getTime(),
     );
-    const onTimePct = arrivedRows.length
-      ? Math.round((onTime.length / arrivedRows.length) * 100)
-      : null;
+    const onTimePct = safeRate(onTime.length, arrivedRows.length).percentage;
 
-    // Average corridor transit time (hours) for departed+arrived consignments.
-    const withTransit = arrivedRows.filter((c) => c.actualDeparture && c.actualArrival);
-    const avgTransitHours = withTransit.length
-      ? Math.round(
-          withTransit.reduce(
-            (s, c) => s + (c.actualArrival!.getTime() - c.actualDeparture!.getTime()) / 3_600_000,
-            0,
-          ) / withTransit.length,
-        )
-      : null;
+    // Average corridor transit time (hours) — bounded: a negative duration (clock
+    // skew) or a >30-day one is bad data and is dropped, not averaged in.
+    const transit = boundedAverage(
+      arrivedRows.map((c) =>
+        c.actualDeparture && c.actualArrival
+          ? (c.actualArrival.getTime() - c.actualDeparture.getTime()) / 3_600_000
+          : null,
+      ),
+      { min: 0, max: 30 * 24, unit: 'hours', trimFrom: 20 },
+    );
+    const avgTransitHours = transit.value;
 
-    // Average interchange dwell (hours): DB average over legs that recorded dwell,
-    // scoped to this tenant's consignments. No JS flatMap over every leg.
-    const dwellAgg = await this.prisma.intermodalLeg.aggregate({
+    // Average interchange dwell (hours): DB aggregate over legs that recorded a
+    // dwell, scoped to this tenant, bounded to a plausible 120 h. The sample
+    // count travels with the value; legs outside the bounds are excluded and
+    // counted instead of dragging the average.
+    const dwellSamples = await this.prisma.intermodalLeg.findMany({
       where: { dwellHours: { not: null }, consignment: { companyId } },
-      _avg: { dwellHours: true },
+      select: { dwellHours: true },
+      take: 5000,
     });
-    const avgInterchangeDwellHours =
-      dwellAgg._avg.dwellHours != null ? Math.round(dwellAgg._avg.dwellHours * 10) / 10 : null;
+    const dwell = boundedAverage(dwellSamples.map((l) => l.dwellHours), {
+      min: 0,
+      max: 120,
+      unit: 'hours',
+    });
+    const avgInterchangeDwellHours = dwell.value;
 
     // Corridor breakdown — grouped sum/count in one DB query.
     const corridorGroups = await this.prisma.railConsignment.groupBy({

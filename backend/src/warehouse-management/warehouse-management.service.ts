@@ -1044,8 +1044,13 @@ Return ONLY valid JSON:
 
     for (const line of allLines) {
       if (line.suggestedBinId) {
-        const bin = await this.prisma.binLocation.findUnique({
-          where: { id: line.suggestedBinId },
+        // Tenant-scoped read: a suggested bin id is client/data-derived, so a
+        // lookup by id alone could pull another tenant's warehouse layout into
+        // this wave. Restricted to the caller's company (and the warehouse).
+        // BinLocation has no companyId of its own — tenancy comes from its
+        // warehouse, so the relation filter is the tenant scope.
+        const bin = await this.prisma.binLocation.findFirst({
+          where: { id: line.suggestedBinId, zone: { warehouse: { companyId } } },
           include: { zone: true },
         });
         const zoneName = bin?.zone?.name || 'UNKNOWN';
@@ -1064,11 +1069,17 @@ Return ONLY valid JSON:
 
     // Mark all wave orders as IN_PROGRESS
     const waveId = `WAVE-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`;
+    // Claim every order with a company-scoped, status-guarded update: if the
+    // pick order was already waved/reassigned between the read and this write,
+    // it must not be silently re-claimed into a second wave.
     for (const order of waveOrders) {
-      await this.prisma.pickOrder.update({
-        where: { id: order.id },
+      const claimed = await this.prisma.pickOrder.updateMany({
+        where: { id: order.id, companyId, warehouseId, status: 'PENDING' },
         data: { status: 'IN_PROGRESS' },
       });
+      if (claimed.count === 0) {
+        this.logger.warn(`Pick order ${order.id} was claimed by another wave — skipping`);
+      }
     }
 
     this.logger.log(`Wave ${waveId}: ${waveOrders.length} orders, ${totalLines} lines across ${Object.keys(zoneGroups).length} zones`);

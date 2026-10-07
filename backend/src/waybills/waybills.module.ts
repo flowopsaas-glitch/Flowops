@@ -7,9 +7,10 @@ import { LabelService } from './label.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { EcommerceModule } from '../ecommerce/ecommerce.module';
 import { GatewayModule } from '../gateway/gateway.module';
+import { ComplianceModule } from '../common/compliance/compliance.module';
 
 @Module({
-  imports: [
+  imports: [ComplianceModule,
     MulterModule.register({ storage: memoryStorage() }),
     NotificationsModule,
     EcommerceModule,

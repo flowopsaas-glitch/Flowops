@@ -1,5 +1,6 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { DriverPortalService } from "./driver-portal.service";
+import { legalPredecessorStatuses } from "../waybills/waybill-status.machine";
 
 /**
  * Driver portal — chain-of-custody and tenant-isolation tests.
@@ -22,13 +23,15 @@ describe("DriverPortalService", () => {
   let prisma: any;
   let notifications: any;
   let gateway: any;
+  let epod: any;
+  let compliance: any;
+  let audit: any;
 
   beforeEach(() => {
     prisma = {
       waybill: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
-        findUniqueOrThrow: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
@@ -46,25 +49,63 @@ describe("DriverPortalService", () => {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
-      driver: { findFirst: jest.fn(), findUnique: jest.fn() },
+      driver: { findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
       driverChatMessage: {
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
       },
+      trackingEvent: { create: jest.fn() },
+      // The linehaul confirmation runs in one transaction; the mock executes the
+      // callback against the same jest mocks so assertions see every write.
+      $transaction: jest.fn(async (fn: any) => fn(tx(prisma))),
     };
-    prisma.$transaction = jest.fn((callback: (tx: any) => Promise<any>) => callback(prisma));
+    function tx(p: any) {
+      return {
+        manifest: {
+          updateMany: jest.fn(async () => p.manifest.updateManyResult ?? { count: 1 }),
+        },
+        waybill: {
+          updateMany: jest.fn(async (args: any) => {
+            p.waybill.updateManyCalls = [...(p.waybill.updateManyCalls ?? []), args];
+            return p.waybill.updateManyResult ?? { count: 1 };
+          }),
+          findFirst: jest.fn(async () =>
+            p.waybill.currentResult ?? { status: "CANCELLED", trackingNumber: "WB-CANCELLED" },
+          ),
+        },
+        trackingEvent: { create: jest.fn() },
+        shipment: {
+          findFirst: jest.fn(),
+          update: jest.fn(),
+          create: jest.fn(),
+        },
+      };
+    }
     notifications = {
       notifyWaybillStatus: jest.fn().mockResolvedValue(undefined),
       sendRatingRequest: jest.fn().mockResolvedValue(undefined),
     };
     gateway = { emitShipmentUpdate: jest.fn() };
+    audit = { record: jest.fn(async () => 'audit-1') };
+    // EpodService owns the POD write path (custody, duplicate guard, one
+    // transaction); this suite pins the driver-app wiring around it.
+    epod = { capture: jest.fn() };
+    compliance = {
+      // The compliance gate is exercised in its own suite; here it must simply
+      // not block unless a test says so.
+      filterDispatchable: jest.fn((rows: any[]) => rows.map((snapshot) => ({ snapshot, compliance: {} }))),
+      assertDispatchable: jest.fn(),
+    };
     service = new DriverPortalService(
       prisma,
       notifications,
       gateway,
       {} as any, // DriverSafetyService — not used on these paths
+      epod,
+      compliance,
+      audit,
     );
   });
 
@@ -81,6 +122,12 @@ describe("DriverPortalService", () => {
       imageUrl: "https://cdn/pod.png",
       recipientName: "T. Mokoena",
     };
+    const deliveredWaybill = {
+      id: "wb-1",
+      trackingNumber: "WB-2026-0001",
+      status: "DELIVERED",
+      companyId: "company-1",
+    };
 
     it("rejects when companyId is missing (must fail closed, not degrade)", async () => {
       await expect(
@@ -90,9 +137,9 @@ describe("DriverPortalService", () => {
           companyId: "",
         }),
       ).rejects.toThrow(BadRequestException);
-      // No DB call may happen before the guard.
-      expect(prisma.waybill.findFirst).not.toHaveBeenCalled();
-      expect(prisma.waybill.update).not.toHaveBeenCalled();
+      // Nothing may be written before the guard.
+      expect(epod.capture).not.toHaveBeenCalled();
+      expect(prisma.waybill.updateMany).not.toHaveBeenCalled();
     });
 
     it("rejects when driverId is missing (must fail closed, not degrade)", async () => {
@@ -103,77 +150,55 @@ describe("DriverPortalService", () => {
           companyId: "company-1",
         }),
       ).rejects.toThrow(BadRequestException);
-      expect(prisma.waybill.findFirst).not.toHaveBeenCalled();
-      expect(prisma.waybill.update).not.toHaveBeenCalled();
+      expect(epod.capture).not.toHaveBeenCalled();
     });
 
-    it("scopes the lookup to the token company AND assigned driver", async () => {
-      prisma.waybill.findFirst.mockResolvedValue(null);
-      await expect(service.recordPod(pod)).rejects.toThrow(NotFoundException);
-      expect(prisma.waybill.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            id: "wb-1",
-            companyId: "company-1",
-            shipments: { some: { driverId: "driver-1" } },
-          },
-        }),
+    it("delegates the write (custody + duplicate guard + atomicity) to EpodService", async () => {
+      epod.capture.mockResolvedValue({ id: "epod-1", status: "CAPTURED" });
+      prisma.waybill.findFirst.mockResolvedValue(deliveredWaybill);
+
+      await service.recordPod(pod);
+
+      expect(epod.capture).toHaveBeenCalledWith(
+        "company-1",
+        {
+          waybillId: "wb-1",
+          driverId: "driver-1",
+          signatureUrl: "https://cdn/sig.png",
+          photoUrls: ["https://cdn/pod.png"],
+          recipientName: "T. Mokoena",
+          notes: undefined,
+          geoLat: undefined,
+          geoLng: undefined,
+        },
+        { driverId: "driver-1", role: "DRIVER" },
       );
     });
 
-    it("refuses when the waybill belongs to another tenant or another driver", async () => {
-      // The scoped lookup returning null is the whole authorisation check.
-      prisma.waybill.findFirst.mockResolvedValue(null);
-      await expect(service.recordPod(pod)).rejects.toThrow(
-        "Waybill not found or not assigned to you",
-      );
-      expect(prisma.waybill.update).not.toHaveBeenCalled();
+    it("refuses when the waybill belongs to another tenant or another driver (surfaces the ePOD decision)", async () => {
+      epod.capture.mockRejectedValue(new NotFoundException("Waybill not found"));
+      await expect(service.recordPod(pod)).rejects.toThrow("Waybill not found");
+      // A refused capture must not notify anyone or push realtime updates.
+      expect(notifications.notifyWaybillStatus).not.toHaveBeenCalled();
+      expect(gateway.emitShipmentUpdate).not.toHaveBeenCalled();
     });
 
-    it("marks DELIVERED, syncs the shipment, and closes the loop", async () => {
-      const updated = {
-        id: "wb-1",
-        trackingNumber: "WB-2026-0001",
-        status: "DELIVERED",
-        companyId: "company-1",
-      };
-      prisma.waybill.findFirst.mockResolvedValue({
-        id: "wb-1",
-        status: "IN_TRANSIT",
-        companyId: "company-1",
-        trackingNumber: "WB-2026-0001",
-      });
-      prisma.waybill.updateMany.mockResolvedValue({ count: 1 });
-      prisma.waybill.findUniqueOrThrow.mockResolvedValue(updated);
-      prisma.shipment.updateMany.mockResolvedValue({ count: 1 });
+    it("surfaces a duplicate ePOD submission as a conflict and stays silent", async () => {
+      epod.capture.mockRejectedValue(new ConflictException("An ePOD has already been captured for this waybill"));
+      await expect(service.recordPod(pod)).rejects.toThrow(ConflictException);
+      expect(notifications.sendRatingRequest).not.toHaveBeenCalled();
+    });
+
+    it("returns the delivered waybill plus the ePOD id, and closes the loop after the commit", async () => {
+      epod.capture.mockResolvedValue({ id: "epod-1", status: "CAPTURED" });
+      prisma.waybill.findFirst.mockResolvedValue(deliveredWaybill);
 
       const result = await service.recordPod(pod);
 
-      expect(result).toEqual(updated);
-      expect(prisma.waybill.updateMany).toHaveBeenCalledWith({
-        where: {
-          id: "wb-1",
-          companyId: "company-1",
-          status: { not: "DELIVERED" },
-        },
-        data: {
-          status: "DELIVERED",
-          podSignatureUrl: "https://cdn/sig.png",
-          podImageUrl: "https://cdn/pod.png",
-          podRecipient: "T. Mokoena",
-          podDeliveredAt: expect.any(Date),
-        },
-      });
-      // Shipment row must follow the waybill or the dispatch board lies.
-      expect(prisma.shipment.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { waybillId: "wb-1", companyId: "company-1" },
-          data: expect.objectContaining({ status: "DELIVERED" }),
-        }),
-      );
-      // Best-effort side effects all fire.
-      expect(notifications.notifyWaybillStatus).toHaveBeenCalledWith(updated);
-      expect(notifications.sendRatingRequest).toHaveBeenCalledWith(updated);
+      expect(result).toMatchObject({ ...deliveredWaybill, epodId: "epod-1", podStatus: "CAPTURED" });
+      // Side effects run after the atomic write committed.
+      expect(notifications.notifyWaybillStatus).toHaveBeenCalledWith(deliveredWaybill);
+      expect(notifications.sendRatingRequest).toHaveBeenCalledWith(deliveredWaybill);
       expect(gateway.emitShipmentUpdate).toHaveBeenCalledWith("company-1", {
         waybillId: "wb-1",
         trackingNumber: "WB-2026-0001",
@@ -183,19 +208,8 @@ describe("DriverPortalService", () => {
     });
 
     it("still returns the POD when realtime emit fails (best-effort)", async () => {
-      prisma.waybill.findFirst.mockResolvedValue({
-        id: "wb-1",
-        status: "IN_TRANSIT",
-        companyId: "company-1",
-        trackingNumber: "WB-2026-0001",
-      });
-      prisma.waybill.updateMany.mockResolvedValue({ count: 1 });
-      prisma.waybill.findUniqueOrThrow.mockResolvedValue({
-        id: "wb-1",
-        trackingNumber: "WB-2026-0001",
-        companyId: "company-1",
-      });
-      prisma.shipment.updateMany.mockResolvedValue({ count: 1 });
+      epod.capture.mockResolvedValue({ id: "epod-1", status: "CAPTURED" });
+      prisma.waybill.findFirst.mockResolvedValue(deliveredWaybill);
       gateway.emitShipmentUpdate.mockImplementation(() => {
         throw new Error("gateway down");
       });
@@ -272,51 +286,104 @@ describe("DriverPortalService", () => {
   // ── Linehaul chain of custody ───────────────────────────────────────────
 
   describe("confirmLinehaulDelivery", () => {
-    it("refuses a manifest that is not assigned to this driver", async () => {
+    const manifest = {
+      id: "man-1",
+      code: "MF-001",
+      driverId: "driver-1",
+      dispatched: false,
+      waybills: [{ waybillId: "wb-1" }, { waybillId: "wb-2" }],
+      branch: { name: "Johannesburg DC" },
+    };
+
+    it("refuses a manifest that is not assigned to this driver (scoped lookup)", async () => {
       prisma.manifest.findFirst.mockResolvedValue(null);
       await expect(
         service.confirmLinehaulDelivery("man-1", "driver-1", "company-1"),
-      ).rejects.toThrow(
-        "Manifest not found, already delivered, or not assigned to you",
-      );
+      ).rejects.toThrow(NotFoundException);
       expect(prisma.manifest.update).not.toHaveBeenCalled();
     });
 
-    it("marks the manifest dispatched and advances its waybills", async () => {
-      prisma.manifest.findFirst.mockResolvedValue({
-        id: "man-1",
-        code: "MF-001",
-        waybills: [{ waybillId: "wb-1" }, { waybillId: "wb-2" }],
-        branch: { name: "Johannesburg DC" },
-      });
-      prisma.manifest.update.mockResolvedValue({});
-      prisma.waybill.updateMany.mockResolvedValue({ count: 2 });
-      prisma.driver.findFirst.mockResolvedValue(null); // no reassignment targets
+    it("claims the manifest, moves its waybills to the destination hub and hands over inside ONE transaction", async () => {
+      prisma.manifest.findFirst.mockResolvedValue(manifest);
+      prisma.driver.findMany.mockResolvedValue([
+        { id: "driver-9", companyId: "company-1", isActive: true, status: "AVAILABLE" },
+      ]);
 
-      const result = await service.confirmLinehaulDelivery(
-        "man-1",
-        "driver-1",
-        "company-1",
-      );
+      const result = await service.confirmLinehaulDelivery("man-1", "driver-1", "company-1");
 
-      expect(result).toEqual({
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({
         success: true,
         manifestCode: "MF-001",
         destinationBranch: "Johannesburg DC",
         waybillsDelivered: 2,
+        reassignedTo: "driver-9",
+        awaitingManualDispatch: false,
       });
-      expect(prisma.manifest.update).toHaveBeenCalledWith(
+    });
+
+    it("reports parcels left awaiting manual dispatch when no compliant driver is free", async () => {
+      prisma.manifest.findFirst.mockResolvedValue(manifest);
+      prisma.driver.findMany.mockResolvedValue([]); // nobody available
+
+      const result = await service.confirmLinehaulDelivery("man-1", "driver-1", "company-1");
+      expect(result).toMatchObject({ reassignedTo: null, awaitingManualDispatch: true });
+    });
+
+    it("a second confirmation is refused by the compare-and-set (no double delivery)", async () => {
+      prisma.manifest.findFirst.mockResolvedValue(manifest);
+      prisma.driver.findMany.mockResolvedValue([]);
+      prisma.manifest.updateManyResult = { count: 0 }; // the claim is already taken
+
+      await expect(
+        service.confirmLinehaulDelivery("man-1", "driver-1", "company-1"),
+      ).rejects.toThrow(ConflictException);
+      prisma.manifest.updateManyResult = undefined;
+    });
+
+    it("skips a waybill that is no longer in a movable state, reports it, and audits the refusal", async () => {
+      prisma.manifest.findFirst.mockResolvedValue(manifest);
+      prisma.driver.findMany.mockResolvedValue([]);
+      prisma.waybill.updateManyResult = { count: 0 }; // e.g. cancelled mid-route
+      prisma.waybill.currentResult = { status: "CANCELLED", trackingNumber: "WB-2026-0001" };
+
+      const result = await service.confirmLinehaulDelivery("man-1", "driver-1", "company-1");
+
+      expect(result).toMatchObject({ waybillsDelivered: 0, waybillsSkipped: 2 });
+      expect(result.skippedWaybills[0]).toMatchObject({
+        trackingNumber: "WB-2026-0001",
+        status: "CANCELLED",
+      });
+      // The gap must be on the audit rail, not only in the response.
+      expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: "man-1" },
-          data: expect.objectContaining({ dispatched: true }),
+          action: "waybill.transition_rejected",
+          targetType: "waybill",
+          targetId: "wb-1",
+          metadata: expect.objectContaining({
+            attempted: "AT_DESTINATION_HUB",
+            from: "CANCELLED",
+            reason: "illegal_transition",
+            source: "driver-portal.linehaul",
+          }),
         }),
       );
-      expect(prisma.waybill.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: { in: ["wb-1", "wb-2"] } },
-          data: { status: "AT_DESTINATION_HUB" },
-        }),
-      );
+      prisma.waybill.updateManyResult = undefined;
+    });
+
+    it("derives the compare-and-set whitelist from the state machine, not by hand", async () => {
+      prisma.manifest.findFirst.mockResolvedValue(manifest);
+      prisma.driver.findMany.mockResolvedValue([]);
+
+      await service.confirmLinehaulDelivery("man-1", "driver-1", "company-1");
+
+      // The whitelist the CAS actually used must equal what the machine says.
+      // Hand-written, it previously accepted COLLECTED and OUT_FOR_DELIVERY —
+      // two jumps the machine refuses.
+      const used = prisma.waybill.updateManyCalls[0].where.status.in;
+      expect([...used].sort()).toEqual(legalPredecessorStatuses("AT_DESTINATION_HUB").sort());
+      expect(used).not.toContain("COLLECTED");
+      expect(used).not.toContain("OUT_FOR_DELIVERY");
     });
   });
 

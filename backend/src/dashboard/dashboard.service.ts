@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { KpiConsistencyService, KPI_NO_DATA_NOTE } from '../common/kpi/kpi-consistency.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 
 /** Average road speed used for ETA estimates (km/h).
@@ -8,7 +9,15 @@ const AVG_SPEED_KMH = 40;
 
 @Injectable()
 export class DashboardService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    /**
+     * All KPI maths goes through the shared service so a rate with no data is
+     * reported as "—" (null) and never as a bogus 0/100%, averages exclude
+     * impossible samples, and the sample size travels with each number.
+     */
+    private kpiMath: KpiConsistencyService,
+  ) {}
 
   async getMetrics(companyId: string) {
     const [
@@ -73,35 +82,68 @@ export class DashboardService {
     ]);
 
     const round = (n: number) => Math.round(n * 10) / 10;
-    const delta = (value: number, prev: number) =>
-      prev > 0 ? round(((value - prev) / prev) * 100) : null;
 
+    /**
+     * A KPI point. `value`/`previous` are null when there is no valid data for
+     * the window — the UI shows "—" and reads `hasData`/`sampleSize`, instead of
+     * comparing 0% against 0% and reporting a fake trend. A delta is only
+     * computed when BOTH windows have data and the previous value is positive.
+     */
     const kpi = (
-      value: number,
-      prev: number,
+      rate: { percentage: number | null; hasData: boolean },
+      prev: { percentage: number | null; hasData: boolean },
       unit: 'percent' | 'hours' | 'currency',
       goodDirection: 'up' | 'down',
-    ) => ({
-      value: round(value),
-      previous: round(prev),
-      delta: delta(value, prev),
-      unit,
-      goodDirection,
-    });
+      sampleSize?: number,
+    ) => {
+      const value = rate.percentage;
+      const previous = prev.percentage;
+      return {
+        value: value == null ? null : round(value),
+        previous: previous == null ? null : round(previous),
+        delta:
+          value != null && previous != null && previous > 0
+            ? round(((value - previous) / previous) * 100)
+            : null,
+        unit,
+        goodDirection,
+        hasData: rate.hasData,
+        ...(sampleSize != null ? { sampleSize } : {}),
+      };
+    };
 
     return {
       period: '30d',
-      onTimeDeliveryRate: kpi(current.onTimeRate, previous.onTimeRate, 'percent', 'up'),
-      deliverySuccessRate: kpi(current.deliverySuccessRate, previous.deliverySuccessRate, 'percent', 'up'),
-      avgDeliveryHours: kpi(current.avgDeliveryHours, previous.avgDeliveryHours, 'hours', 'down'),
-      revenuePerWaybill: kpi(current.revenuePerWaybill, previous.revenuePerWaybill, 'currency', 'up'),
-      exceptionRate: kpi(current.exceptionRate, previous.exceptionRate, 'percent', 'down'),
+      noDataNote: KPI_NO_DATA_NOTE,
+      onTimeDeliveryRate: kpi(current.onTime, previous.onTime, 'percent', 'up', current.onTime.denominator),
+      deliverySuccessRate: kpi(
+        current.deliverySuccess, previous.deliverySuccess, 'percent', 'up', current.deliverySuccess.denominator,
+      ),
+      avgDeliveryHours: {
+        value: current.avgDeliveryHours.value == null ? null : round(current.avgDeliveryHours.value),
+        previous: previous.avgDeliveryHours.value == null ? null : round(previous.avgDeliveryHours.value),
+        delta:
+          current.avgDeliveryHours.value != null && previous.avgDeliveryHours.value != null && previous.avgDeliveryHours.value > 0
+            ? round(((current.avgDeliveryHours.value - previous.avgDeliveryHours.value) / previous.avgDeliveryHours.value) * 100)
+            : null,
+        unit: 'hours' as const,
+        goodDirection: 'down' as const,
+        hasData: current.avgDeliveryHours.value != null,
+        // Sample size + how many records were dropped as impossible (clock skew).
+        sampleSize: current.avgDeliveryHours.count,
+        excludedSamples: current.avgDeliveryHours.excluded,
+      },
+      revenuePerWaybill: kpi(
+        current.revenuePerWaybill, previous.revenuePerWaybill, 'currency', 'up', current.revenuePerWaybill.denominator,
+      ),
+      exceptionRate: kpi(current.exception, previous.exception, 'percent', 'down', current.exception.denominator),
       outstandingRevenue: {
         value: round(overdue._sum.total || 0),
         previous: null,
         delta: null,
         unit: 'currency' as const,
         goodDirection: 'down' as const,
+        hasData: true,
       },
     };
   }
@@ -199,12 +241,30 @@ export class DashboardService {
     };
   }
 
-  /** Computes the KPI inputs for a single [start, end) window. */
+  /**
+   * Computes the KPI inputs for a single [start, end) window.
+   *
+   * Validity rules applied here (all through KpiConsistencyService):
+   *  - on-time is judged ONLY on shipments that were delivered inside the window
+   *    AND carried an estimate; shipments without one are not "late";
+   *  - a delivery whose timestamps are impossible (arrived before it was picked
+   *    up, i.e. clock skew or bad data) is excluded from the duration average
+   *    rather than dragging it negative; the same bounds reject implausible
+   *    multi-month values;
+   *  - rates with no denominator are null so the API can say "no data".
+   */
   private async windowMetrics(companyId: string, start: Date, end: Date) {
     const [shipments, delivered, failed, returned, invoiceAgg, waybillCount] =
       await Promise.all([
         this.prisma.shipment.findMany({
-          where: { companyId, deliveredAt: { gte: start, lt: end } },
+          // Only completed deliveries inside the window: a shipment whose
+          // deliveredAt is set but which was never actually completed (status
+          // not DELIVERED) is partial data and must not count as an outcome.
+          where: {
+            companyId,
+            status: 'DELIVERED',
+            deliveredAt: { gte: start, lt: end },
+          },
           select: { createdAt: true, deliveredAt: true, estimatedDelivery: true },
         }),
         this.prisma.waybill.count({
@@ -227,27 +287,28 @@ export class DashboardService {
 
     let onTimeNum = 0;
     let onTimeDen = 0;
-    let totalHours = 0;
-    let deliveredWithDates = 0;
+    const durations: Array<number | null> = [];
     for (const s of shipments) {
-      if (!s.deliveredAt) continue;
+      if (!s.deliveredAt) continue; // defensive: the query filters these out
       if (s.estimatedDelivery) {
         onTimeDen++;
         if (s.deliveredAt <= s.estimatedDelivery) onTimeNum++;
       }
-      totalHours += (s.deliveredAt.getTime() - s.createdAt.getTime()) / 3_600_000;
-      deliveredWithDates++;
+      const hours = (s.deliveredAt.getTime() - s.createdAt.getTime()) / 3_600_000;
+      // Negative (arrived before pickup) or absurd (>30 days) durations are data
+      // errors, not logistics; `average()` drops them and reports how many.
+      durations.push(hours);
     }
 
     const outcomeTotal = delivered + failed + returned;
     const revenue = invoiceAgg._sum.total || 0;
 
     return {
-      onTimeRate: onTimeDen ? (onTimeNum / onTimeDen) * 100 : 0,
-      deliverySuccessRate: outcomeTotal ? (delivered / outcomeTotal) * 100 : 0,
-      exceptionRate: outcomeTotal ? ((failed + returned) / outcomeTotal) * 100 : 0,
-      avgDeliveryHours: deliveredWithDates ? totalHours / deliveredWithDates : 0,
-      revenuePerWaybill: waybillCount ? revenue / waybillCount : 0,
+      onTime: this.kpiMath.rate(onTimeNum, onTimeDen),
+      deliverySuccess: this.kpiMath.rate(delivered, outcomeTotal),
+      exception: this.kpiMath.rate(failed + returned, outcomeTotal),
+      avgDeliveryHours: this.kpiMath.average(durations, { min: 0, max: 30 * 24, unit: 'hours' }),
+      revenuePerWaybill: this.kpiMath.rate(revenue, waybillCount),
     };
   }
 

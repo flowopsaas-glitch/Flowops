@@ -34,6 +34,8 @@ import { PaystackModule } from './paystack/paystack.module';
 import { AiModule } from './ai/ai.module';
 import { OwnerModule } from './owner/owner.module';
 import { StorageModule } from './storage/storage.module';
+import { ComplianceModule } from './common/compliance/compliance.module';
+import { KpiModule } from './common/kpi/kpi.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { EmailModule } from './email/email.module';
 import { CodModule } from './cod/cod.module';
@@ -217,6 +219,12 @@ import { DispatchModule } from './dispatch/dispatch.module';
     OwnerModule,
 
     // Real-time Socket.IO gateway
+    // Shared, cross-cutting policy services (@Global):
+    //  - ComplianceModule: ONE driver-compliance policy for every dispatch,
+    //    assignment and route-creation path.
+    //  - KpiModule: safe aggregation (null — never a bogus 0% — on no data).
+    ComplianceModule,
+    KpiModule,
     GatewayModule,
   ],
   controllers: [AppController],
