@@ -6,7 +6,7 @@ import { RailService } from './rail.service';
 import { CreateRailConsignmentDto } from './dto/create-rail-consignment.dto';
 import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';
 import { CreateWagonDto } from './dto/wagon.dto';
-import { CreateIntermodalLegDto, AdvanceStatusDto } from './dto/intermodal-leg.dto';
+import { CreateIntermodalLegDto, AdvanceStatusDto, ApproveHandoffReadinessDto } from './dto/intermodal-leg.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -132,9 +132,45 @@ export class RailController {
     return this.rail.addLeg(u.companyId, id, dto, u);
   }
 
+  /**
+   * Read-only handoff readiness report: prerequisite checks for a custody
+   * handover (leg started, receiver named, location recorded, tariff/billing
+   * evidence stored and PRICED, no load hold) plus whether a readiness approval
+   * exists that covers the current evidence fingerprint.
+   */
+  @Get('consignments/:id/legs/:legId/handoff-readiness')
+  @ApiOperation({ summary: 'Handoff readiness report for a leg' })
+  handoffReadiness(
+    @CurrentUser() u: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('legId') legId: string,
+  ) {
+    return this.rail.handoffReadiness(u.companyId, id, legId);
+  }
+
+  /** Auditable sign-off; refused while the evidence is incomplete. */
+  @Post('consignments/:id/legs/:legId/handoff-readiness/approve')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Approve handoff readiness' })
+  approveHandoffReadiness(
+    @CurrentUser() u: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('legId') legId: string,
+    @Body() dto: ApproveHandoffReadinessDto,
+  ) {
+    return this.rail.approveHandoffReadiness(u.companyId, id, legId, u, dto?.note);
+  }
+
+  /**
+   * Advance an intermodal leg (auto-computes dwell hours at handoff).
+   * HANDED_OVER is gated: the leg must have started, the handler and location
+   * must be recorded, the consignment must have a PRICED tariff calculation,
+   * there must be no load-adjustment hold, and a readiness approval must cover
+   * the current evidence. Illegal transitions are rejected and audited.
+   */
   @Post('consignments/:id/legs/:legId/advance')
   @Roles(...RAIL_WRITE_ROLES)
-  @ApiOperation({ summary: 'Advance an intermodal leg (auto-computes dwell hours at handoff)' })
+  @ApiOperation({ summary: 'Advance an intermodal leg' })
   advanceLeg(
     @CurrentUser() u: AuthenticatedUser,
     @Param('id') id: string,

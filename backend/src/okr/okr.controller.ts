@@ -2,18 +2,18 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OkrService } from './okr.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
-import { Public } from '../common/decorators/public.decorator';
+import { OwnerOnly } from '../common/decorators/owner-only.decorator';
 
 /**
  * OKR routes — platform-owner only. Mirrors the OwnerController auth pattern:
- * @Public() bypasses the global tenant JwtAuthGuard, OwnerAuthGuard enforces
- * the owner JWT.
+ * @OwnerOnly() makes the global tenant JwtAuthGuard stand down and is REQUIRED
+ * by OwnerAuthGuard, which enforces the owner JWT.
  */
 @ApiTags('Owner OKRs')
 @ApiBearerAuth()
 @Controller('owner/okrs')
 @UseGuards(OwnerAuthGuard)
-@Public()
+@OwnerOnly()
 export class OkrController {
   constructor(private readonly svc: OkrService) {}
 

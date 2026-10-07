@@ -8,14 +8,17 @@ import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GatewayModule } from '../gateway/gateway.module';
 import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
+import { EpodModule } from '../epod/epod.module';
+import { ComplianceModule } from '../common/compliance/compliance.module';
 
 @Module({
-  imports: [
+  imports: [ComplianceModule,
     ConfigModule,
     AuthModule,
     NotificationsModule,
     GatewayModule,
     DriverSafetyModule,
+    EpodModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (cfg: ConfigService) => ({

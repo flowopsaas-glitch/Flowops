@@ -3,14 +3,15 @@ import { CodService } from './cod.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { CodSettlementService } from './cod-settlement.service';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 // ── Minimal Prisma mock ──────────────────────────────────────────────────────
 
 const makeWaybill = (overrides: Record<string, unknown> = {}) => ({
   id: 'wb1', trackingNumber: 'FO-00001', codAmount: 250, codCollected: false,
   companyId: 'co1',
-  shipments: [{ driverId: 'drv1', driver: { id: 'drv1', name: 'Sipho' } }],
+  shipments: [{ driverId: 'drv1', driver: { id: 'drv1', companyId: 'co1', isActive: true, name: 'Sipho' } }],
   ...overrides,
 });
 
@@ -26,6 +27,7 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     },
     waybill: {
       findFirst:  jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findMany:   jest.fn().mockResolvedValue([]),
       update:     jest.fn(),
       aggregate:  jest.fn().mockResolvedValue({ _sum: { codAmount: 0 }, _count: { id: 0 } }),
@@ -47,6 +49,9 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     shipment: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    invoiceItem: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'ii1', invoice: { id: 'inv1', status: 'SENT' } }),
+    },
     // Inner tx: settleDriver reads the wallet, does a guarded updateMany, then
     // re-reads. recordCollection upserts + re-reads. Defaults model a
     // sufficient balance so the guarded decrement succeeds (count: 1).
@@ -58,8 +63,8 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
         updateMany:       jest.fn().mockResolvedValue({ count: 1 }),
         update:           jest.fn().mockResolvedValue(makeWallet(0)),
       },
-      codTransaction: { create: jest.fn() },
-      waybill: { update: jest.fn() },
+      codTransaction: { create: jest.fn().mockResolvedValue({ id: 'ct1' }) },
+      waybill: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     })),
     ...overrides,
   } as unknown as PrismaService;
@@ -79,6 +84,7 @@ describe('CodService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notifyWaybillStatus: jest.fn() } },
         { provide: EventsGateway, useValue: { emitShipmentUpdate: jest.fn() } },
+        CodSettlementService,
       ],
     }).compile();
     svc = module.get(CodService);
@@ -97,9 +103,13 @@ describe('CodService', () => {
       await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(BadRequestException);
     });
 
-    it('throws BadRequestException when COD already collected', async () => {
+    it('throws ConflictException when COD has already been collected (guarded by the CAS claim)', async () => {
       (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill({ codCollected: true }));
-      await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(BadRequestException);
+      (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
+        waybill: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) }, // already claimed
+        driverWallet: {}, codTransaction: {},
+      }));
+      await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(ConflictException);
     });
 
     it('throws BadRequestException when no driver assigned', async () => {

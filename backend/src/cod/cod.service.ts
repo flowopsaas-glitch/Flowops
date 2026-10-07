@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { guardTransition } from '../waybills/waybill-status.machine';
+import { CodSettlementService } from './cod-settlement.service';
 import { Money } from '../common/money.util';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class CodService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private gateway: EventsGateway,
+    private settlements: CodSettlementService,
   ) {}
 
   // ── Summary KPIs ───────────────────────────────────────────────────────────
@@ -75,88 +77,28 @@ export class CodService {
 
   // ── Record cash collection ─────────────────────────────────────────────────
 
+  /**
+   * Record a COD collection.
+   *
+   * All of the integrity work (tenant check, driver mapping, billing evidence,
+   * the compare-and-set that makes double settlement impossible, the wallet
+   * credit and the ledger row) lives in CodSettlementService and happens in ONE
+   * transaction. This method is the office-facing entry point and adds nothing
+   * on top — which is what makes the office path and the driver-app path settle
+   * identically.
+   */
   async recordCollection(
     waybillId: string,
     companyId: string,
     actorId?: string,
     opts?: { collectedAmount?: number; note?: string },
   ) {
-    const waybill = await this.prisma.waybill.findFirst({
-      where: { id: waybillId, companyId },
-      include: { shipments: { take: 1, include: { driver: true } } },
-    });
-    if (!waybill) throw new NotFoundException('Waybill not found');
-    if (!waybill.codAmount || waybill.codAmount <= 0)
-      throw new BadRequestException('Waybill has no COD amount');
-    if (waybill.codCollected)
-      throw new BadRequestException('COD already collected for this waybill');
-
-    const driverId = waybill.shipments[0]?.driverId;
-    if (!driverId) throw new BadRequestException('No driver assigned to this waybill');
-
-    // ── Over/under-collection ────────────────────────────────────────────
-    // The amount OWED is server-authoritative (waybill.codAmount). The driver
-    // may report a different amount ACTUALLY collected at the door (short-pay,
-    // over-pay, or exact). We record the real amount + the discrepancy so cash
-    // handling reflects reality instead of assuming the driver always collected
-    // exactly the owed amount. The WALLET accrues what was actually collected.
-    const owed = Money.round(waybill.codAmount);
-    let collected = owed; // default: exact collection when no amount is supplied
-    if (opts?.collectedAmount !== undefined) {
-      const c = Number(opts.collectedAmount);
-      if (!Number.isFinite(c) || c < 0) {
-        throw new BadRequestException('Collected amount must be a non-negative number');
-      }
-      collected = Money.round(c);
-    }
-    const discrepancy = Money.subtract(collected, owed); // <0 short, >0 over, 0 exact
-
-    const discNote =
-      discrepancy === 0 ? '' :
-      discrepancy < 0 ? ` (SHORT by R${Math.abs(discrepancy).toFixed(2)})` :
-      ` (OVER by R${discrepancy.toFixed(2)})`;
-
-    return this.prisma.$transaction(async (tx) => {
-      // Accrue the ACTUAL collected amount to the driver's wallet.
-      await tx.driverWallet.upsert({
-        where: { driverId },
-        update: {
-          balance:        { increment: collected },
-          totalCollected: { increment: collected },
-        },
-        create: {
-          driverId,
-          balance:        collected,
-          totalCollected: collected,
-        },
-      });
-
-      // Re-fetch the updated balance for the transaction record
-      const wallet = await tx.driverWallet.findUniqueOrThrow({ where: { driverId } });
-
-      await tx.codTransaction.create({
-        data: {
-          walletId: wallet.id, waybillId, companyId,
-          type: 'COLLECTION', amount: collected, balance: wallet.balance,
-          note: (opts?.note ? `${opts.note} — ` : '') +
-                `Collected R${collected.toFixed(2)} for ${waybill.trackingNumber}${discNote}`,
-        },
-      });
-
-      await tx.waybill.update({
-        where: { id: waybillId },
-        data: {
-          codCollected: true,
-          codCollectedAt: new Date(),
-          codCollectedAmount: collected,
-          codDiscrepancy: discrepancy,
-        },
-      });
-
-      return {
-        collected, owed, discrepancy, driverId, walletBalance: wallet.balance,
-        exact: discrepancy === 0,
-      };
+    return this.settlements.recordCollection({
+      waybillId,
+      companyId,
+      collectedAmount: opts?.collectedAmount,
+      note: opts?.note,
+      actorId,
     });
   }
 
@@ -167,53 +109,9 @@ export class CodService {
 
   // ── Settle driver (driver remits cash to company) ─────────────────────────
 
+  /** Delegates to the single atomic settlement path (tenant + balance guarded). */
   async settleDriver(driverId: string, amount: number, companyId: string, note?: string) {
-    if (!Number.isFinite(amount) || amount <= 0)
-      throw new BadRequestException('Settlement amount must be a positive number');
-
-    // Tenant safety: the wallet's driver MUST belong to the caller's company.
-    // Previously this looked up by driverId only, letting company A settle a
-    // driver in company B (cross-tenant cash operation).
-    const driver = await this.prisma.driver.findFirst({
-      where: { id: driverId, companyId },
-      select: { id: true },
-    });
-    if (!driver) throw new NotFoundException('Driver not found');
-
-    return this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.driverWallet.findUnique({ where: { driverId } });
-      if (!wallet) throw new NotFoundException('Driver wallet not found');
-
-      // Atomic, guarded decrement: only succeeds if the balance still covers
-      // the amount at write time. updateMany returns count 0 if the WHERE
-      // (balance >= amount) no longer holds — closing the TOCTOU race that let
-      // concurrent/double settlements drive the balance negative or double-spend.
-      const dec = await tx.driverWallet.updateMany({
-        where: { driverId, balance: { gte: amount } },
-        data: {
-          balance:       { decrement: amount },
-          totalSettled:  { increment: amount },
-          lastSettledAt: new Date(),
-        },
-      });
-      if (dec.count === 0) {
-        throw new BadRequestException(
-          `Settlement amount (${amount}) exceeds current balance (${wallet.balance}).`,
-        );
-      }
-
-      const updated = await tx.driverWallet.findUniqueOrThrow({ where: { driverId } });
-
-      await tx.codTransaction.create({
-        data: {
-          walletId: wallet.id, companyId,
-          type: 'SETTLEMENT', amount, balance: updated.balance,
-          note: note || 'Manual settlement',
-        },
-      });
-
-      return { settled: amount, newBalance: updated.balance };
-    });
+    return this.settlements.settleDriver(driverId, amount, companyId, note);
   }
 
   // ── List all driver wallets ────────────────────────────────────────────────

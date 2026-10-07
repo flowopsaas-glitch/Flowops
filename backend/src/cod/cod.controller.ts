@@ -3,6 +3,8 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CodService } from './cod.service';
 import { CodGuardianService } from './cod-guardian.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
@@ -29,7 +31,13 @@ export class CodController {
     return this.svc.getOutstandingWaybills(u.companyId);
   }
 
+  /**
+   * Recording collected cash is a money movement, so it is restricted to the
+   * roles that own reconciliation. A DRIVER or VIEWER token must not be able to
+   * credit a wallet through this office endpoint.
+   */
   @Post('collect/:waybillId')
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @RequireFeature('codReconciliation')
   recordCollection(
     @Param('waybillId') waybillId: string,
@@ -42,7 +50,12 @@ export class CodController {
     });
   }
 
+  /**
+   * Settling cash back to the company. Restricted to the finance/ops roles —
+   * this endpoint moves money out of a driver wallet.
+   */
   @Post('settle/:driverId')
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @RequireFeature('codReconciliation')
   settle(
     @Param('driverId') driverId: string,
@@ -66,6 +79,9 @@ export class CodController {
     @Body() body: { driverId: string; lat: number; lng: number; radiusM?: number },
     @CurrentUser() u: AuthenticatedUser,
   ) {
+    // The endpoint is open to any authenticated tenant user because the driver
+    // app posts it, but a caller may only report a position for a driver in
+    // their own company: the service resolves the driver tenant-scoped first.
     return this.svc.checkGeofence(body.driverId, u.companyId, body.lat, body.lng, body.radiusM ?? 500);
   }
 

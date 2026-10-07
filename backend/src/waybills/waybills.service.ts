@@ -10,6 +10,7 @@ import { guardTransition } from './waybill-status.machine';
 import { v4 as uuid } from 'uuid';
 import { BillingService } from '../billing/billing.service';
 import { EventsGateway } from '../gateway/events.gateway';
+import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 
 @Injectable()
 export class WaybillsService {
@@ -22,6 +23,7 @@ export class WaybillsService {
     private ecommerce: EcommerceService,
     private billing: BillingService,
     private gateway: EventsGateway,
+    private compliance: DriverComplianceService,
   ) {}
 
   /** Realtime emits are best-effort — they must never break a write. */
@@ -213,17 +215,17 @@ export class WaybillsService {
       // transitions to DELIVERED, the linked shipment must also advance.
       if (dto.status === 'DELIVERED') {
         await this.prisma.shipment.updateMany({
-          where: { waybillId: id },
+          where: { waybillId: id, companyId },
           data: { status: 'DELIVERED', deliveredAt: new Date() },
         });
       } else if (dto.status === 'IN_TRANSIT') {
         await this.prisma.shipment.updateMany({
-          where: { waybillId: id },
+          where: { waybillId: id, companyId },
           data: { status: 'IN_TRANSIT' },
         });
       } else if (dto.status === 'FAILED_DELIVERY') {
         await this.prisma.shipment.updateMany({
-          where: { waybillId: id },
+          where: { waybillId: id, companyId },
           data: { status: 'FAILED' },
         });
       }
@@ -255,8 +257,36 @@ export class WaybillsService {
     });
     if (!driver) throw new NotFoundException('Driver not found in your company');
 
+    // ── Compliance gate ──────────────────────────────────────────────────────
+    // Manual assignment is a dispatch decision, so it must obey the SAME policy
+    // as auto-dispatch. Without this, a non-compliant driver could always be
+    // assigned by hand — the single most likely way to bypass the rule.
+    await this.compliance.assertDispatchable(driverId, companyId);
+
+    // Terminal/closed waybills cannot receive a driver.
+    if (['DELIVERED', 'CANCELLED', 'RETURNED'].includes(waybill.status)) {
+      throw new BadRequestException(
+        `Waybill ${waybill.trackingNumber} is ${waybill.status} and cannot be assigned`,
+      );
+    }
+
+    const newStatus: WaybillStatus = waybill.status === 'PENDING' ? 'IN_TRANSIT' : waybill.status;
+
     return this.prisma.$transaction(async (tx) => {
-      // Upsert the linked shipment
+      // Compare-and-set: only advance the waybill if nobody changed its status
+      // between the read above and this write. Concurrent assignment jobs then
+      // cannot both "succeed" — the loser gets a clear 409 from the count check.
+      const claimed = await tx.waybill.updateMany({
+        where: { id: waybillId, companyId, status: waybill.status },
+        data: { status: newStatus },
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException(
+          'Waybill status changed while assigning — refresh and try again',
+        );
+      }
+
+      // Upsert the linked shipment (tenant-scoped on every branch).
       const existing = await tx.shipment.findFirst({
         where: { waybillId, companyId },
       });
@@ -270,17 +300,9 @@ export class WaybillsService {
             data: { waybillId, companyId, driverId, status: 'IN_TRANSIT' },
           });
 
-      // Advance the waybill so it leaves the pending/unassigned queue
-      // For same-day couriers, assignment = pickup = in transit
-      const newStatus = waybill.status === 'PENDING' ? 'IN_TRANSIT' : waybill.status;
-      if (newStatus !== waybill.status) {
-        await tx.waybill.update({
-          where: { id: waybillId },
-          data: { status: newStatus },
-        });
-      }
-
       // ── DISPATCH NOTIFICATION — notify recipient a driver is on the way ──
+      // Fired after the commit (fire-and-forget) so a notification outage can
+      // never roll back a valid assignment.
       void this.notifications.notifyDriverDispatched(waybill, driver);
 
       return { success: true, shipmentId: shipment.id };

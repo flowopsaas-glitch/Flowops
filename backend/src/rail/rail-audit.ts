@@ -38,6 +38,14 @@ export const RAIL_AUDIT_ACTION = {
   WAGON_REMOVED: 'consignment.wagon_removed',
   LEG_ADDED: 'consignment.leg_added',
   LEG_ADVANCED: 'consignment.leg_advanced',
+  /** A leg transition refused by the leg state machine (audited, never applied). */
+  LEG_TRANSITION_REJECTED: 'consignment.leg_transition_rejected',
+  /** A handoff readiness approval — one audit row per leg, naming the approver. */
+  HANDOFF_READINESS_APPROVED: 'handoff.readiness_approved',
+  /** A readiness approval refused because the evidence was incomplete. */
+  HANDOFF_READINESS_BLOCKED: 'handoff.readiness_blocked',
+  /** A HANDED_OVER transition refused (missing/stale approval or incomplete evidence). */
+  HANDOFF_BLOCKED: 'handoff.blocked',
   // ── Slot applications (Wave 2) ─────────────────────────────────────────────
   SLOT_CREATED: 'slot_application.created',
   SLOT_UPDATED: 'slot_application.updated',

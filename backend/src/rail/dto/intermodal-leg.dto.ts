@@ -40,3 +40,14 @@ export class AdvanceStatusDto {
   @IsOptional() @IsString()
   location?: string;
 }
+
+/**
+ * Readiness approval for a custody handover on an intermodal leg. The approval
+ * is recorded against the exact evidence snapshot it was granted for, so any
+ * later change to the evidence invalidates it (and the handover is refused
+ * until readiness is re-approved).
+ */
+export class ApproveHandoffReadinessDto {
+  @IsOptional() @IsString()
+  note?: string;
+}

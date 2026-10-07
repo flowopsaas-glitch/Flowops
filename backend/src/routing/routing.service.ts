@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 
 export type Stop = {
@@ -63,8 +64,31 @@ export class RoutingService {
   constructor(
     private prisma: PrismaService,
     private config?: ConfigService,
+    /**
+     * Compliance is the third argument so existing constructions keep working;
+     * when it is absent the driver-scoped optimisations still enforce tenant
+     * ownership but cannot assert compliance. Nest always injects it.
+     */
+    private compliance?: DriverComplianceService,
   ) {
     this.OSRM_BASE = this.config?.get<string>('OSRM_BASE_URL', 'https://router.project-osrm.org') ?? 'https://router.project-osrm.org';
+  }
+
+  /**
+   * Tenant-scope + compliance check for a driver a route is being built for.
+   * Compliance is enforced whenever the service is wired with the shared
+   * policy (always, in the Nest app).
+   */
+  private async assertDriverUsable(companyId: string, driverId: string): Promise<void> {
+    if (this.compliance) {
+      await this.compliance.assertDispatchable(driverId, companyId);
+      return;
+    }
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId },
+      select: { id: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
   }
 
   private dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
@@ -349,7 +373,14 @@ export class RoutingService {
       status: { notIn: ['CANCELLED', 'COLLECTED'] },
     };
     if (opts.collectionIds?.length) where.id = { in: opts.collectionIds };
-    if (opts.driverId) where.driverId = opts.driverId;
+    if (opts.driverId) {
+      // Route creation for a driver is a dispatch decision: refuse a driver who
+      // is not dispatchable under the shared compliance policy (expired licence,
+      // insurance, background check, overdue service, hold, inactive …) instead
+      // of planning a run that operations cannot legally execute.
+      await this.assertDriverUsable(companyId, opts.driverId);
+      where.driverId = opts.driverId;
+    }
 
     const all = await this.prisma.collection.findMany({
       where,
@@ -401,9 +432,11 @@ export class RoutingService {
     };
     if (opts.waybillIds?.length) where.id = { in: opts.waybillIds };
 
-    // If driverId specified, filter by shipments assigned to that driver
+    // If driverId specified, filter by shipments assigned to that driver — but
+    // only after the same compliance gate every other dispatch path applies.
     let driverFilter: any = {};
     if (opts.driverId) {
+      await this.assertDriverUsable(companyId, opts.driverId);
       driverFilter = { shipments: { some: { driverId: opts.driverId } } };
     }
 
