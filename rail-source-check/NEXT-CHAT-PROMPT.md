@@ -6,7 +6,7 @@ All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; th
 ---
 
 > **Earlier-session recovery (2026-10-05).** The prior chat’s committed rail-source tree was restored by a fast-forward onto the currently assigned `arena/d016ab76-flowops` branch. Stay on that branch and push only there. The repeated BLOEMFONTEIN 6634 paste matched the existing 23-row block exactly (L2423–2445; MD5 `2937669311f73e1f88053d0950bfaefb`), so it was not appended again. At that recovery checkpoint, the next missing working was 6636; rounds 28–45 subsequently appended 6636, 6640, 6642, 6944, 7000, 7002, 7266, 7424, 8000, 8206, 8605, 8606, 8642, 8652, 8855, 8867, 8875, 8910 and 8914.
-> **Latest progress (2026-10-06 / round 51).** Added a new `bloemhof-batch.txt` with 244 rows (all 19 fields; MD5 `61c6245209412093c397300fbe72a7d3`) for BLOEMHOF 1438, 2226, 2385, 5453, 8385, and partial 8908. Checker: 2385/5453/8385 `[OK]`; 1438/2226 retain their supplied 30-second duration mismatch; 8908 paste ends at step 10 CAR/S242926 and remains partial. Similar workings were compared only after independent transcription. Next BLOEMFONTEIN working: 8941.
+> **Latest progress (2026-10-07 / round 52).** `bloemhof-batch.txt` now has 303 rows (all 19 fields; MD5 `ac92ec046d59b84fa26f2fc7878d7b43`): BLOEMHOF 8908 is complete at L221–269 (49 rows, 18:50 → BEACONSFIELD 23:25, 04:35:00 [OK]) after appending its 25-row tail; new 8985 is L270–303 (34 rows, 13:00 → KLERKSDORP 19:55, 06:55:00 [OK]). Pre-append checks found 0 exact duplicate tail rows for 8908 and 0 existing 8985 rows. 8985 was transcribed independently, then compared with 8385: both have the same 34-row station sequence; differences (excluding working number) are arrival (33), departure (33), travel (11), dwell (15), activity (4), header work-start/end/pattern/description (1 each), and duration (34). Current verified totals: 14 files, 14,339 rows, 406 workings, 30 depots; 385 `[OK]`, 21 flagged. Next BLOEMFONTEIN working: 8941.
 
 ## MISSION
 
@@ -28,7 +28,7 @@ from the branch alone.** That is what "100% production" means here.
 - **`rail-source-check/STATE.md`** — the running log. **Read it first, every
   session, before doing anything else.** It holds the round history, the
   near-duplicate verdicts, the quirk list, and the recovery procedures.
-- **`rail-source-check/*.txt`** — 14 data files, **14,280 rows, 405 distinct
+- **`rail-source-check/*.txt`** — 14 data files, **14,339 rows, 406 distinct
   workings, 30 depots**. Largest is
   `algoabai-hotazel-batch.txt` (4,658 rows / 36 workings).
 - **`rail-source-check/verify_workings.py`** — the checker.
@@ -173,7 +173,7 @@ you need.
 
 ## CURRENT GAPS — what to ask me for next
 
-**Verified this session: 405 workings captured, 22 flagged.** BELFAST 100, 102, 104, 106, 108, 110, 112, 200, 202, 900, 902, 904, 906, 908, 910, 912, 914, 1407, 2450, 7752, 8206, 8208, 8216, 8309, 8326, 8329, 8403, 8406, 8412, 8426, 8434, 8449, 8456, 8471, 8608, 8660 and 9495 are complete and `[OK]`. BLOEMFONTEIN 8855, 8867, 8875, 8910, 8914, 8930, 8935 and 8939; BUFFALOHARBOU 104, 1016, 1020, 1054, 1058, 1062; BOSHOEK 1310, 1402, 1404; and BLOEMHOF 2385, 5453, 8385 are also complete and `[OK]`.
+**Verified this session: 406 workings captured, 21 flagged.** BELFAST 100, 102, 104, 106, 108, 110, 112, 200, 202, 900, 902, 904, 906, 908, 910, 912, 914, 1407, 2450, 7752, 8206, 8208, 8216, 8309, 8326, 8329, 8403, 8406, 8412, 8426, 8434, 8449, 8456, 8471, 8608, 8660 and 9495 are complete and `[OK]`. BLOEMFONTEIN 8855, 8867, 8875, 8910, 8914, 8930, 8935 and 8939; BUFFALOHARBOU 104, 1016, 1020, 1054, 1058, 1062; BOSHOEK 1310, 1402, 1404; and BLOEMHOF 2385, 5453, 8385, 8908, 8985 are also complete and `[OK]`.
 
 **Priority 1 — 10 BLOEMFONTEIN workings still at 0 rows.** Next is **8941**:
 
@@ -182,7 +182,7 @@ you need.
 8989 9000
 ```
 
-**Priority 2 — 6 workings captured only partially** (a source head or tail is missing): `BEACONSFIELD 8965` L1-22, `BEAUFORTWEST 97` L1-16, `BLOEMFONTEIN 4215` L999-1031, `BLOEMFONTEIN 18927` L2129-2187 (need the head through ELSTOW 10:56:00), `WELGEDAG 58866` L1-1, and `BLOEMHOF 8908` L221-244 (paste ends after CAR/S242926 at 20:21:00; tail to BEACONSFIELD remains outstanding).
+**Priority 2 — 5 workings captured only partially** (a source head or tail is missing): `BEACONSFIELD 8965` L1-22, `BEAUFORTWEST 97` L1-16, `BLOEMFONTEIN 4215` L999-1031, `BLOEMFONTEIN 18927` L2129-2187 (need the head through ELSTOW 10:56:00), `WELGEDAG 58866` L1-1.
 
 **Priority 3 — never captured:** `BLOEMFONTEIN` 3267, 4000, 4002, 4212, 4213,
 4214 · `BEACONSFIELD 1438` (its L1139-1180 is still derived from 1222 and must
@@ -194,11 +194,11 @@ BFX-PASSASRS 52045/53547/56564/57035/57284 (0).**
 **Also outstanding:** round 8 part 2 (queue a–g, ~620 rows) was never captured
 and needs re-pasting.
 
-## THE 22 FLAGGED WORKINGS — flagged, never corrected
+## THE 21 FLAGGED WORKINGS — flagged, never corrected
 
 `ANGLOALPHA` 7460, 7468, 8205 · `BEACONSFIELD` 8965, 28941 · `BEAUFORTWEST` 97,
 8924 · `BLOEMFONTEIN` 2273, 2412, 4215, 5598, 6008, 18927 · `BEESHOEK` 7403,
-7407 · `BLOEMHOF` 1438, 2226, 8908 · `BUFFALOHARBOU` 1052 · `ARIAMSVLEI` 2169 · `WALTLOO` 8961 · `WELGEDAG` 58866.
+7407 · `BLOEMHOF` 1438, 2226 · `BUFFALOHARBOU` 1052 · `ARIAMSVLEI` 2169 · `WALTLOO` 8961 · `WELGEDAG` 58866.
 
 Do not "fix" any of these. STATE.md documents each one.
 
