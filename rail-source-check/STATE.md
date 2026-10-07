@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 58 — BLINKPAN 89309 completed (steps 1–6 merged with the round-57 header; now `[OK]`) plus new workings 89509 and 95809: 23 rows, L579-601, blinkpan-batch.txt now 601 rows / 71 workings. Corpus: 18 data files / 16,813 rows / 547 workings / 34 depots, 525 [OK] + 22 flagged, MD5 `f50080d6fc70c34f4b97134c3300017f`. The rest of the round-58 paste (BLACKHILL, BLANEY, BUCKINGHAM, BOWKERSPARK, BELLVILLE) never reached the disk and must be re-pasted — see Round 58; BIJLKOR 17207 head, 8856 tail and 9409/9443/16453/17205 are also still owed; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+Updated: 2026-10-07 (round 58, part 2 — the re-pasted new-depot batch was transcribed and appended as five new files: `blackhill-batch.txt` 89 rows / 15 workings, `blaney-batch.txt` 70 / 1, `buckingham-batch.txt` 24 / 1, `bowkerspark-batch.txt` 10 / 2, and `bellville-batch.txt` 630 / 27 — **823 rows total, all 19 fields**, 0 byte-identical rows and 0 colliding `(depot, working, NODE_Seq, station)` keys against the whole 16,813-row corpus. Corpus now: **23 data files / 17,636 rows / 593 workings / 39 depots; 570 [OK] + 23 flagged.** The only new flag is `BELLVILLE 1414`, which is **PARTIAL** — the re-paste stopped at step 6 `KALBASKRAAL` 11:55:30, so `1414` steps 9–20 and everything after `1414` are still owed; three cells carry `&amp;` exactly as received (`75` `ORDER &amp; SHUNT`, `1211`/`1411` `R.T.O. &amp; X 1428`) and the query is open. No belville/bellville file existed anywhere in the repository or on any remote branch, so the new file uses the source's own spelling `BELLVILLE`. BIJLKOR 17207 head, 8856 tail and 9409/9443/16453/17205 are also still owed; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -20,6 +20,11 @@ Updated: 2026-10-07 (round 58 — BLINKPAN 89309 completed (steps 1–6 merged w
 - /home/user/Flowops/rail-source-check/bothaville-batch.txt — 120 rows, round 54, new depot BOTHAVILLE (5506, 8982, 8986 — 3 workings, all OK); MD5 `f694b22e702962bef2e0e0a7324d840b`.
 - /home/user/Flowops/rail-source-check/blinkpan-batch.txt — 601 rows, rounds 57–58, new depot BLINKPAN (71 workings; 70 OK + 1 flagged: 80109 day-flag anomaly). 80109–89109 are the forty-six coal workings; 89309 was COMPLETED in round 58 (steps 1–6 at L579-585 merged with the round-57 header at L578) and 89509 (L586-593) / 95809 (L594-601) were added. MD5 `f50080d6fc70c34f4b97134c3300017f`.
 - /home/user/Flowops/rail-source-check/bijlkor-batch.txt — 1682 rows, rounds 54–57, depot BIJLKOR (62 workings, 0 flagged). Grew 609 → 1090 (round 55) → 1550 (round 56) → 1682 (round 57). 8466 is complete (round 56); 8856 is NOT on disk (transcription stopped at BEAUFORTWEST, round 56) and 17207's head is still owed (round 57). MD5 `410c3b09f3f254fdadb4fb679804da8f`.
+- /home/user/Flowops/rail-source-check/blackhill-batch.txt — 89 rows, round 58 part 2, NEW depot BLACKHILL (15 workings, all `[OK]`: 500, 510, 1000, 1100, 1700, 1710, 2000, 2010, 4952, 8804, 8808, 9082, 9084, 9086, 9088). Corridors NORTH 61 rows / NORTHEAST 28 — `8804` and `8808` run NORTH at both ends with their middle 14 rows (`SKOONGESIG`–`PIENAARSPOORT`) tagged NORTHEAST, preserved as pasted. MD5 `9665150a06f7a9e52bf15de236a34d83`.
+- /home/user/Flowops/rail-source-check/blaney-batch.txt — 70 rows, round 58 part 2, NEW depot BLANEY (one working, `9005`, steps 1–11: BLANEY → BKJ/FJN/ANR sidings → FORTJACKSON → EGERTON → ARNOLDTON → WILSONIA/DAWN/HORSESHOE/HIGHGATE → CAMBRIDGE, 12:50:00 → 14:25:00, 01:35:00, `[OK]`; `VACUUM TRAINS/PICKUP TRAIN`). MD5 `3827b6002ff002820d0d4b68ffe89dc3`.
+- /home/user/Flowops/rail-source-check/buckingham-batch.txt — 24 rows, round 58 part 2, NEW depot BUCKINGHAM (one working, `7224`, steps 1–16: BUCKINGHAM → BKM sidings → VENTERSDORP → MAKOKSKRAAL → GATIEP → BODENSTEIN → TATODI → COLIGNY, 11:30:00 → 13:48:00, 02:18:00, `[OK]`). MD5 `8c6e89fc66588001fbeb1c8460642133`.
+- /home/user/Flowops/rail-source-check/bowkerspark-batch.txt — 10 rows, round 58 part 2, NEW depot BOWKERSPARK (`7011` and `7013`: BOWKERSPARK → FLOWERS → AMBERDALE → QTN-BERRYPARK → QUEENSTOWN, 00:30:00 each, both `[OK]`; `VACUUM TRAINS/FEEDER TRAIN`). The two `QTN-BERRYPARK` rows carry a **blank `ENROUTE_Corridor`** — preserved exactly as pasted. MD5 `a6c620d67f4c92bfc267e5eb81747e41`.
+- /home/user/Flowops/rail-source-check/bellville-batch.txt — 630 rows, round 58 part 2, NEW depot BELLVILLE (27 workings 75–1414 as pasted; corridor CAPE 623 rows / ORELINE 7). 26 `[OK]` + 1 flagged: **`1414` is PARTIAL** — the paste stopped at step 6 `KALBASKRAAL` 11:55:30 (stated 04:25:00 / computed 01:10:00), so `1414` steps 9–20 and everything after `1414` are owed. Three cells carry `&amp;` verbatim (`75` `ORDER &amp; SHUNT`; `1211`/`1411` `R.T.O. &amp; X 1428`). MD5 `04dbdeb409f62c676731a7eb73aeb23b`.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
@@ -1423,9 +1428,12 @@ so it must be re-pasted before it can be added. Nothing from it was invented or 
 (Two staging files briefly created without a source were deleted unappended; no corpus file was ever
 touched by them — `git status` stayed clean at `b868931`.)
 
+**UPDATE (2026-10-07, part 2): the batch WAS re-pasted and is now appended — see *Round 58, part 2* below.** The re-paste was truncated again at the same place (BELLVILLE `1414`, step 6 `KALBASKRAAL`), so `1414` steps 9–20 and everything after `1414` remain owed; nothing was reconstructed from siblings.
+
 ### Outstanding after this round
 1. **Re-paste owed — round 58:** the BLACKHILL, BLANEY, BUCKINGHAM, BOWKERSPARK and BELLVILLE paste
    content, including BELLVILLE `1414` steps 9–20 and everything after `1414`.
+   **(partly closed in part 2)** — all five depots were re-pasted and appended; still owed: BELLVILLE `1414` steps 9–20 and everything after `1414`).
 2. **Re-paste owed — earlier rounds:** BIJLKOR `17207` head (header through `BIJ/S750557` 22:26:00),
    BIJLKOR `8856` tail (`BEAUFORTWEST` day-1 20:25:00 onward) and BIJLKOR `9409`, `9443`, `16453`,
    `17205`. The 7-row `17207` tail stays held at `/home/user/r57/held-17207-tail.txt` — never
@@ -1435,3 +1443,78 @@ touched by them — `git status` stayed clean at `b868931`.)
    (BEACONSFIELD 8965, BEAUFORTWEST 97, BLOEMFONTEIN 4215, BLOEMFONTEIN 18927, WELGEDAG 58866);
    the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
    BEACONSFIELD 1438 re-transcription.
+
+### Round 58, part 2 — the re-pasted batch (BLACKHILL, BLANEY, BUCKINGHAM, BOWKERSPARK, BELLVILLE)
+
+**This supersedes the "never reached the disk" paragraph above** — the batch was re-pasted and
+transcribed the same day. Nothing in it was reconstructed from siblings.
+
+Source: raw-chat paste, **823 rows**, all 19 fields. Staged in `/home/user/r58/` and copied into five
+new corpus files:
+
+| file | rows | workings | lines | MD5 |
+|---|---|---|---|---|
+| `blackhill-batch.txt` (NEW depot) | 89 | 15 | L1-89 | `9665150a06f7a9e52bf15de236a34d83` |
+| `blaney-batch.txt` (NEW depot) | 70 | 1 | L1-70 | `3827b6002ff002820d0d4b68ffe89dc3` |
+| `buckingham-batch.txt` (NEW depot) | 24 | 1 | L1-24 | `8c6e89fc66588001fbeb1c8460642133` |
+| `bowkerspark-batch.txt` (NEW depot) | 10 | 2 | L1-10 | `a6c620d67f4c92bfc267e5eb81747e41` |
+| `bellville-batch.txt` (NEW depot) | 630 | 27 | L1-630 | `04dbdeb409f62c676731a7eb73aeb23b` |
+
+**Pre-append gates** (against the whole 18-file / 16,813-row corpus): 0 byte-identical rows;
+0 `(Origin, Train, NODE_Seq, station)` collisions; 0 payload-internal duplicate keys; all five depots
+had **0 rows** anywhere and no similarly-named file existed. Cross-depot working-number reuse is
+informational only (`BLACKHILL 1000` also at BLOEMFONTEIN/BRONKHORSTSPR, `BLACKHILL 8808` at WALTLOO,
+`BELLVILLE 1407` at ALGOABAAI/BELFAST, `BELLVILLE 1414` at BEACONSFIELD) — depot-scoped, no conflict.
+Each created file is byte-identical to its staged payload (BELLVILLE = `cat bell-a…bell-e`,
+MD5 re-verified after the cat).
+
+**Post-append verification** — checker per file: BLACKHILL **15 workings / 0 issues**; BLANEY **1 / 0**;
+BUCKINGHAM **1 / 0**; BOWKERSPARK **2 / 0**; BELLVILLE **27 / 1**. The single flag is **`1414`, the
+partial** — the paste stopped at `KALBASKRAAL` 11:55:30 (stated 04:25:00 vs computed 01:10:00; the
+checker itself notes "ends at KALBASKRAAL (designated destination SALKOR)"). Every other working's
+runtime reconciles exactly. Blank-travel rows (siding hops with `arr` = `dep`) are reported as notes
+only: BLANEY 9005 (44 rows), and in BELLVILLE `87` (7), `1101` (1), `1185` (1), `1187` (3), `1205` (1),
+`1211` (2), `1243` (7), `1410` (1), `1411` (2), `1413` (1).
+
+**Anomaly / open query (kept verbatim, nothing corrected):** three cells carry `&amp;` —
+BELLVILLE `75` `KALBASKRAAL` `ORDER &amp; SHUNT` and `1211`/`1411` `KRAAIFONTEIN` `R.T.O. &amp; X 1428`.
+Almost certainly a chat-transport HTML-escaping of `&`, but transcribed **exactly as received** and left
+pending the user's word; one line changes them to `&` if the source has a plain ampersand.
+
+**Sibling comparisons (post-transcription, station-keyed alignment, read-only):**
+- `1205` vs `1410`, and `1211` vs `1411` — identical row-for-row apart from `Train Type`
+  (`VACUUM TRAINS/VACUUM TRAIN` vs `MEDIUM HEAVY/MEDIUM HEAVY`).
+- `1410` vs `1413` — same 37 rows: 6 arrivals, 5 departures, 4 dwells (`MAMREWEG` 00:03:00 vs 00:01:00),
+  3 travels, 2 activity strings (`R.T.O.` vs `RTO`; `R.T.O. / SHUNT` vs `RTO/SHUNT`).
+- `1407` vs `1211` — same 37-row route, genuinely different duty: `Runtime` 04:20:00 vs 05:30:00,
+  22 activity cells, 20 dwells, 15 `Depart_Day` flags, 12 travels.
+- `88` vs `1184` and `88` vs `1330` — same 10 rows; `Runtime` 00:30:00 vs 00:35:00 / 00:33:00,
+  travel 4 / 7, dwell+activity 2 (both blank in the later pair), `Train Type` differs.
+- `1214` vs `1330` — `1214` runs KENTEMADE→KENSINGTON→YSTERPLAAT→PAARDENEILAND, `1330` runs BULLNOSE;
+  2 `NODE_Seq` values and 1 `Distance` differ.
+- `1112` vs `1186` — same 13 rows, clock times only, plus `Frequency` `NYYYYYN` vs `YYYYYYY`.
+- `1206` vs `1404` — same 11 rows, clock times, 3 travels, `Frequency` `YYCCYYY` vs `YYYYYYY`.
+- `75` vs `87` — share their first 11 rows (through `KLIPHEUWEL`, `WINTERVOGEL` and `KALBASKRAAL`; only the times differ), then `75` → Langebaanweg → `SALKOR` while `87` →
+  Malmesbury → `DEHOEK`; `87` vs `1243` — `1243` continues past `DEHOEK` to `KLAWER`.
+- BLACKHILL `500`/`1000`/`1700`/`2000`, `510`/`1100`/`1710`/`2010`, `8804` vs `8808`, and
+  `9082`/`9084`/`9086`/`9088` — all identical apart from clock times (`9088` starts 00:01:00).
+- BOWKERSPARK `7011` vs `7013` — clock times plus 3 activity cells (`FLOWERS` blank vs `B`;
+  `QTN-BERRYPARK` `RANGEER` vs `SHUNT`; `QUEENSTOWN` blank vs `RT`).
+- `BLANEY 9005` and `BUCKINGHAM 7224` are the only workings of their new depots — no sibling
+  working exists in the corpus, so no comparison applies.
+
+**Corridors after round 58:** CAPE 11,612 · CENTRAL 2,676 · CONTAINER 1,903 · NORTH 922 ·
+NORTHEAST 472 · ORELINE 9 · blank 42 (the two `QTN-BERRYPARK` rows in BOWKERSPARK).
+
+**Aggregate after round 58 (measured): 23 rail data files, 17,636 rows, 593 workings, 39 depots;
+570 `[OK]` + 23 flagged.**
+
+**Outstanding after part 2:** BELLVILLE `1414` steps 9–20 (from `KALBASKRAAL` 11:55:30) and every
+working after `1414` — the paste was again truncated at that point; BIJLKOR `17207` head, `8856` tail,
+`9409`, `9443`, `16453`, `17205`; the round-54 branch decision; the BLOEMFONTEIN queue and the other
+partials listed above.
+
+**Committed** on the session branch `arena/25d10ae6-flowops` (round-58 part 2: the five new data
+files plus this ledger update); pushed to `origin`. The branch mandate from round 54 is still
+unresolved. The staged payloads remain in `/home/user/r58/` (`blackhill.txt`, `blaney.txt`,
+`buckingham.txt`, `bowkerspark.txt`, `bell-a.txt` … `bell-e.txt`).
