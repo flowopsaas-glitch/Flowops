@@ -74,34 +74,51 @@ export class EpodService {
       ? (dto.driverId ?? assignedDriverId ?? null)
       : (callerDriverId ?? assignedDriverId ?? null);
 
-    const epod = await this.prisma.electronicPod.create({
-      data: {
-        companyId,
-        waybillId: dto.waybillId,
-        driverId: attributedDriverId ?? undefined,
-        status: 'CAPTURED',
-        signatureUrl: dto.signatureUrl,
-        photoUrls: dto.photoUrls || [],
-        recipientName: dto.recipientName,
-        recipientId: dto.recipientId,
-        notes: dto.notes,
-        geoLat: dto.geoLat,
-        geoLng: dto.geoLng,
-        capturedAt: new Date(),
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // Claim the delivery transition before creating the POD. This makes
+      // concurrent mobile retries mutually exclusive and prevents duplicate
+      // POD rows or a POD whose waybill was never advanced.
+      const deliveredAt = new Date();
+      const claim = await tx.waybill.updateMany({
+        where: {
+          id: dto.waybillId,
+          companyId,
+          status: { not: 'DELIVERED' },
+        },
+        data: { status: 'DELIVERED', podDeliveredAt: deliveredAt },
+      });
 
-    // Advance the waybill (and keep the linked shipment in sync) to DELIVERED.
-    await this.prisma.waybill.update({
-      where: { id: dto.waybillId },
-      data: { status: 'DELIVERED', podDeliveredAt: new Date() },
-    });
-    await this.prisma.shipment.updateMany({
-      where: { waybillId: dto.waybillId, companyId },
-      data: { status: 'DELIVERED' },
-    });
+      if (claim.count === 0) {
+        const existing = await tx.electronicPod.findFirst({
+          where: { waybillId: dto.waybillId, companyId },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (existing) return existing;
+        throw new BadRequestException('Waybill is already delivered without a captured ePOD');
+      }
 
-    return epod;
+      await tx.shipment.updateMany({
+        where: { waybillId: dto.waybillId, companyId },
+        data: { status: 'DELIVERED', deliveredAt: deliveredAt },
+      });
+
+      return tx.electronicPod.create({
+        data: {
+          companyId,
+          waybillId: dto.waybillId,
+          driverId: attributedDriverId ?? undefined,
+          status: 'CAPTURED',
+          signatureUrl: dto.signatureUrl,
+          photoUrls: dto.photoUrls || [],
+          recipientName: dto.recipientName,
+          recipientId: dto.recipientId,
+          notes: dto.notes,
+          geoLat: dto.geoLat,
+          geoLng: dto.geoLng,
+          capturedAt: deliveredAt,
+        },
+      });
+    });
   }
 
   async findAll(companyId: string, query?: { status?: string; waybillId?: string }) {

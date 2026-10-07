@@ -83,9 +83,17 @@ type ExceptionSla = {
     recipientName?: string | null;
     recipientAddress?: string | null;
     riskLevel?: string | null;
+    attemptCount: number;
+    maxAttempts: number;
+    nextAttemptAt?: string | null;
+    lastAttemptReasonCode?: string | null;
+    returnToSender: boolean;
+    driver?: { id: string; name: string } | null;
+    action: "RETURN_TO_SENDER" | "ESCALATE_NOW" | "REATTEMPT_DUE" | "REVIEW";
     ageHours: number;
     breached: boolean;
   }>;
+  byReason: Record<string, number>;
   note: string;
 };
 
@@ -154,6 +162,7 @@ export default function OperationsDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [acknowledging, setAcknowledging] = useState<string | null>(null);
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     if (mode === "refresh") setRefreshing(true);
@@ -169,6 +178,22 @@ export default function OperationsDashboard() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  }, []);
+
+  const acknowledgeException = useCallback(async (waybillId: string, action: string) => {
+    setAcknowledging(waybillId);
+    try {
+      await api.post(`/waybills/${waybillId}/exception-action`, {
+        action,
+        note: `Action selected from operations exception queue: ${action}`,
+      });
+      const raw: any = await api.get("/operations/exception-sla");
+      setSla(raw?.data ?? raw);
+    } catch (e: any) {
+      setError(e?.message || "Could not record exception action");
+    } finally {
+      setAcknowledging(null);
     }
   }, []);
 
@@ -598,7 +623,7 @@ export default function OperationsDashboard() {
 
         {/* ── Exception SLA tracker ── */}
         {sla && sla.openCount > 0 && (
-          <ExceptionSlaPanel sla={sla} onView={() => navigate("/high-risk-queue")} />
+          <ExceptionSlaPanel sla={sla} onView={() => navigate("/high-risk-queue")} onAcknowledge={acknowledgeException} acknowledging={acknowledging} />
         )}
 
         {/* ── Unassigned collections ── */}
@@ -680,7 +705,14 @@ function fmtAge(h: number): string {
   return `${(h / 24).toFixed(1)}d`;
 }
 
-function ExceptionSlaPanel({ sla, onView }: { sla: ExceptionSla; onView: () => void }) {
+function exceptionActionLabel(action: ExceptionSla["watch"][number]["action"]): string {
+  return action === "RETURN_TO_SENDER" ? "Return to sender"
+    : action === "ESCALATE_NOW" ? "Escalate now"
+      : action === "REATTEMPT_DUE" ? "Reattempt due"
+        : "Review";
+}
+
+function ExceptionSlaPanel({ sla, onView, onAcknowledge, acknowledging }: { sla: ExceptionSla; onView: () => void; onAcknowledge: (id: string, action: string) => Promise<void>; acknowledging: string | null }) {
   const segs = [
     { v: sla.buckets.lt4, cls: "bg-emerald-400", label: "<4h" },
     { v: sla.buckets.h4_12, cls: "bg-sky-400", label: "4–12h" },
@@ -753,6 +785,32 @@ function ExceptionSlaPanel({ sla, onView }: { sla: ExceptionSla; onView: () => v
                 {w.status === "FAILED_DELIVERY" ? "Failed" : "Returned"}
               </span>
               <span className="min-w-0 flex-1 truncate text-[11px] text-white/55">{w.recipientName ?? w.recipientAddress ?? "—"}</span>
+              <span className="hidden md:inline text-[10px] text-white/35 shrink-0">
+                {w.lastAttemptReasonCode?.replaceAll("_", " ") ?? "Unspecified"}
+              </span>
+              <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold shrink-0 ${
+                w.action === "ESCALATE_NOW" ? "border-rose-500/30 bg-rose-500/10 text-rose-300"
+                  : w.action === "REATTEMPT_DUE" ? "border-sky-500/30 bg-sky-500/10 text-sky-300"
+                    : w.action === "RETURN_TO_SENDER" ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                      : "border-white/10 bg-white/5 text-white/50"
+              }`}>
+                {exceptionActionLabel(w.action)}
+              </span>
+              <select
+                defaultValue="REVIEWED"
+                aria-label={`Action for ${w.trackingNumber}`}
+                onChange={(event) => {
+                  const action = event.target.value;
+                  if (action) void onAcknowledge(w.id, action);
+                }}
+                disabled={acknowledging === w.id}
+                className="hidden lg:inline-flex rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[9px] font-bold text-white/60 hover:bg-white/10 transition disabled:cursor-wait disabled:opacity-50"
+              >
+                <option value="REVIEWED">Review</option>
+                <option value="ESCALATION_STARTED">Escalate</option>
+                <option value="REATTEMPT_CONFIRMED">Reattempt</option>
+                <option value="RETURN_CONFIRMED">Return</option>
+              </select>
               {w.breached
                 ? <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-bold text-rose-300 shrink-0">breached · {fmtAge(w.ageHours)}</span>
                 : <span className="text-[10px] text-white/40 shrink-0">{fmtAge(w.ageHours)}</span>}

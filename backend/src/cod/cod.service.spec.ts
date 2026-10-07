@@ -59,7 +59,10 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
         update:           jest.fn().mockResolvedValue(makeWallet(0)),
       },
       codTransaction: { create: jest.fn() },
-      waybill: { update: jest.fn() },
+      waybill: {
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
     })),
     ...overrides,
   } as unknown as PrismaService;
@@ -133,6 +136,17 @@ describe('CodService', () => {
       await expect(
         svc.recordCollection('wb1', 'co1', undefined, { collectedAmount: -10 }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a concurrent collection after the waybill claim is lost', async () => {
+      (prisma.waybill.findFirst as jest.Mock).mockResolvedValue(makeWaybill());
+      (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
+        waybill: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      }));
+
+      await expect(svc.recordCollection('wb1', 'co1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

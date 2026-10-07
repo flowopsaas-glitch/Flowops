@@ -197,4 +197,51 @@ describe('ApiShieldGuard', () => {
       }
     });
   });
+
+  describe('timetable upload size limit', () => {
+    it('allows imports up to the route-specific 26 MB limit', () => {
+      const call = run({
+        method: 'POST',
+        path: '/api/v1/rail/schedules/import',
+        headers: {
+          'content-length': String(25 * 1024 * 1024),
+          'content-type': 'multipart/form-data; boundary=upload',
+        },
+      });
+      expect(call()).toBe(true);
+    });
+
+    it('applies the same limit to owner timetable imports', () => {
+      const call = run({
+        method: 'POST',
+        path: '/api/v1/owner/rail/schedules/import',
+        headers: {
+          'content-length': String(25 * 1024 * 1024),
+          'content-type': 'multipart/form-data; boundary=upload',
+        },
+      });
+      expect(call()).toBe(true);
+    });
+
+    it('keeps the 10 MB limit for non-import rail routes', () => {
+      const call = run({
+        method: 'POST',
+        path: '/api/v1/rail/consignments',
+        headers: { 'content-length': String(11 * 1024 * 1024) },
+      });
+      expect(call).toThrow(HttpException);
+    });
+
+    it('rejects timetable imports over 26 MB', () => {
+      const call = run({
+        method: 'POST',
+        path: '/api/v1/rail/schedules/import',
+        headers: {
+          'content-length': String(27 * 1024 * 1024),
+          'content-type': 'multipart/form-data; boundary=upload',
+        },
+      });
+      expect(call).toThrow(HttpException);
+    });
+  });
 });

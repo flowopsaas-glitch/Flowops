@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { pickAllowed } from '../common/pick-allowed.util';
+import { assertFleetDispatchAllowed } from '../fleet-maintenance/fleet-compliance';
 
 /** Client-writable Shipment fields (excludes id/companyId/timestamps). */
 const SHIPMENT_FIELDS = [
@@ -142,6 +143,14 @@ export class ShipmentsService {
   }
 
   async create(companyId: string, dto: any) {
+    if (dto?.driverId) {
+      const driver = await this.prisma.driver.findFirst({
+        where: { id: dto.driverId, companyId },
+        select: { id: true, companyId: true, currentKm: true, nextServiceKm: true, nextServiceDate: true },
+      });
+      if (!driver) throw new NotFoundException('Driver not found in your company');
+      assertFleetDispatchAllowed(driver);
+    }
     return this.prisma.shipment.create({
       data: { ...pickAllowed(dto, SHIPMENT_FIELDS), companyId } as any,
     });
@@ -151,6 +160,14 @@ export class ShipmentsService {
     // Tenant-scoped: verify the shipment belongs to the caller before mutating.
     const owned = await this.prisma.shipment.findFirst({ where: { id, companyId }, select: { id: true } });
     if (!owned) throw new NotFoundException('Shipment not found');
+    if (dto?.driverId) {
+      const driver = await this.prisma.driver.findFirst({
+        where: { id: dto.driverId, companyId },
+        select: { id: true, companyId: true, currentKm: true, nextServiceKm: true, nextServiceDate: true },
+      });
+      if (!driver) throw new NotFoundException('Driver not found in your company');
+      assertFleetDispatchAllowed(driver);
+    }
     const updated = await this.prisma.shipment.update({ where: { id }, data: pickAllowed(dto, SHIPMENT_FIELDS) });
     // Live-refresh the operations dashboard / live map (the frontend's
     // premium socket listens for `shipment-status-changed`).

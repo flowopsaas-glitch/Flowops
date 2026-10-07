@@ -39,6 +39,19 @@ export class LogisticsOpsController {
     return this.svc.recordFailedAttempt(id, u.companyId, body);
   }
 
+  /** POST /waybills/:id/exception-action — acknowledge the next ops action. */
+  @Post('waybills/:id/exception-action')
+  acknowledgeException(
+    @Param('id') id: string,
+    @CurrentUser() u: any,
+    @Body() body: { action: string; note?: string; nextAttemptAt?: string },
+  ) {
+    return this.svc.acknowledgeException(id, u.companyId, body?.action, body?.note, body?.nextAttemptAt, {
+      id: u.id ?? u.sub,
+      role: u.role,
+    });
+  }
+
   // ── Address Book ────────────────────────────────────────────────────────
 
   /** GET /address-book — list saved addresses */

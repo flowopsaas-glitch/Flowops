@@ -37,19 +37,13 @@ export const navigation: NavItem[] = [
   { name: "ðŸ” Track Shipment", page: "TrackShipment", icon: MapIcon },
   { name: "Driver App", page: "DriverApp", icon: Truck, roles: ["OPS", "ADMIN"] },
   { name: "WhatsApp Hub", page: "WhatsAppHub", icon: MessageCircle, roles: ["ADMIN", "OWNER"] },
-  { name: "Production", page: "ProductionProcesses", icon: Settings, roles: ["OPS", "ADMIN"] },
-  { name: "Capacity Planning", page: "CapacityPlanning", icon: Sparkles, roles: ["ADMIN", "OWNER"] },
-  { name: "MRP System", page: "MRPSystem", icon: Package, roles: ["ADMIN", "OWNER"], subscription: ["Ultimate"] },
-  { name: "Location Analysis", page: "LocationAnalysis", icon: MapIcon, roles: ["ADMIN", "OWNER"] },
   { name: "Carriers", page: "CarrierManagement", icon: Truck },
   { name: "Waybills", page: "Waybills", icon: FileText },
   { name: "Clients", page: "Clients", icon: Users, roles: ["SALES", "ADMIN"] },
   { name: "Live Tracking", page: "LiveTracking", icon: MapIcon, roles: ["OPS", "ADMIN"] },
   { name: "Route Optimizer", page: "RouteOptimizer", icon: Sparkles, roles: ["OPS", "ADMIN"] },
-  { name: "Stock", page: "Stock", icon: Package, roles: ["OPS", "ADMIN"] },
   { name: "Drivers", page: "Drivers", icon: Users, roles: ["OPS", "ADMIN"] },
   { name: "Routes", page: "Routes", icon: Route, roles: ["OPS", "ADMIN"] },
-  { name: "Driver Requests", page: "DriverRequests", icon: Truck, roles: ["OPS", "ADMIN"] },
   { name: "Deliveries", page: "Deliveries", icon: Truck, roles: ["OPS", "ADMIN"] },
   { name: "Quotes", page: "Quotes", icon: FileText, roles: ["SALES", "ADMIN"] },
   { name: "Invoices", page: "Invoices", icon: Receipt, roles: ["SALES", "ADMIN"] },
@@ -65,7 +59,7 @@ export const SidebarNavigation = ({ role, subscription }: { role: string; subscr
       try {
         const res = await fetch("/api/ai-workflow/summary"); // backend endpoint returning counts
         const data = await res.json();
-        setBadges(data); // e.g., { PendingCollections: 12, DriverRequests: 5, LowStock: 3 }
+        setBadges(data); // e.g., { PendingCollections: 12, LowStock: 3 }
       } catch (err) {
         console.error("Failed to fetch AI workflow data", err);
       }
@@ -123,4 +117,3 @@ export const SidebarNavigation = ({ role, subscription }: { role: string; subscr
     </div>
   );
 };
-

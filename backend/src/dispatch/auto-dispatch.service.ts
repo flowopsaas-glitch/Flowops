@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { decideFleetCompliance } from '../fleet-maintenance/fleet-compliance';
 
 /**
  * AUTO-DISPATCH ENGINE — World-Class Intelligent Driver Assignment
@@ -64,10 +65,11 @@ export class AutoDispatchService {
   async dispatch(
     companyId: string,
     waybillId: string,
-    opts?: { mode?: DispatchMode; maxCandidates?: number },
+    opts?: { mode?: DispatchMode; maxCandidates?: number; assign?: boolean },
   ): Promise<AutoDispatchResult> {
     const mode = opts?.mode || 'INTELLIGENT';
     const maxCandidates = opts?.maxCandidates || 10;
+    const assign = opts?.assign ?? true;
 
     // Get waybill details
     const waybill = await this.prisma.waybill.findFirst({
@@ -89,6 +91,7 @@ export class AutoDispatchService {
       select: {
         id: true, name: true, phone: true, status: true,
         lastLat: true, lastLng: true, vehicleType: true,
+        currentKm: true, nextServiceKm: true, nextServiceDate: true,
       },
     });
 
@@ -111,7 +114,9 @@ export class AutoDispatchService {
     const pickupLat = waybill.senderLat || waybill.recipientLat;
     const pickupLng = waybill.senderLng || waybill.recipientLng;
 
-    const candidates: DispatchCandidate[] = drivers.map(driver => {
+    const candidates: DispatchCandidate[] = drivers
+      .filter((driver) => decideFleetCompliance(driver).allowed)
+      .map(driver => {
       let score = 100;
       let reason = '';
 
@@ -153,7 +158,7 @@ export class AutoDispatchService {
         vehicleType: driver.vehicleType || undefined,
         status: driver.status,
       };
-    });
+      });
 
     // Sort by score (highest first)
     candidates.sort((a, b) => b.score - a.score);
@@ -162,21 +167,59 @@ export class AutoDispatchService {
     const selected = candidates[0] || null;
 
     if (selected && selected.score >= 20) {
-      // Auto-assign: create shipment for this driver
-      await this.prisma.shipment.create({
-        data: {
+      if (!assign) {
+        return {
+          assigned: false,
           waybillId: waybill.id,
-          driverId: selected.driverId,
-          companyId,
-          status: 'PENDING',
-        },
+          trackingNumber: waybill.trackingNumber,
+          selectedDriver: selected,
+          candidates: candidates.slice(0, maxCandidates),
+          mode,
+          reason: 'Preview only — no driver assigned',
+        };
+      }
+
+      const assignment = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.shipment.findFirst({
+          where: {
+            waybillId: waybill.id,
+            companyId,
+            status: { in: ['PENDING', 'IN_TRANSIT'] },
+          },
+          select: { id: true, driverId: true },
+        });
+
+        if (existing) return { created: false, driverId: existing.driverId };
+
+        const shipment = await tx.shipment.create({
+          data: {
+            waybillId: waybill.id,
+            driverId: selected.driverId,
+            companyId,
+            status: 'PENDING',
+          },
+          select: { driverId: true },
+        });
+
+        await tx.waybill.update({
+          where: { id: waybill.id },
+          data: { status: 'OUT_FOR_DELIVERY' },
+        });
+
+        return { created: true, driverId: shipment.driverId };
       });
 
-      // Update waybill status
-      await this.prisma.waybill.update({
-        where: { id: waybill.id },
-        data: { status: 'OUT_FOR_DELIVERY' },
-      });
+      if (!assignment.created) {
+        return {
+          assigned: true,
+          waybillId: waybill.id,
+          trackingNumber: waybill.trackingNumber,
+          selectedDriver: null,
+          candidates: candidates.slice(0, maxCandidates),
+          mode,
+          reason: 'Waybill is already assigned; duplicate assignment skipped',
+        };
+      }
 
       this.logger.log(`Auto-dispatched ${waybill.trackingNumber} → ${selected.driverName} (score: ${selected.score}, ${selected.distanceKm}km)`);
 
@@ -234,17 +277,10 @@ export class AutoDispatchService {
 
   /** Get dispatch suggestions without actually assigning. */
   async suggest(companyId: string, waybillId: string): Promise<DispatchCandidate[]> {
-    const result = await this.dispatch(companyId, waybillId, { mode: 'INTELLIGENT' });
-    // Rollback the assignment if it was made
-    if (result.assigned && result.selectedDriver) {
-      await this.prisma.shipment.deleteMany({
-        where: { waybillId, driverId: result.selectedDriver.driverId, status: 'PENDING' as any },
-      });
-      await this.prisma.waybill.update({
-        where: { id: waybillId },
-        data: { status: 'PENDING' },
-      });
-    }
+    const result = await this.dispatch(companyId, waybillId, {
+      mode: 'INTELLIGENT',
+      assign: false,
+    });
     return result.candidates;
   }
 

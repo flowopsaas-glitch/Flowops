@@ -117,6 +117,26 @@ export class CodService {
       ` (OVER by R${discrepancy.toFixed(2)})`;
 
     return this.prisma.$transaction(async (tx) => {
+      // Claim the waybill before touching the wallet. The guarded update makes
+      // concurrent retries mutually exclusive and prevents duplicate cash
+      // credits for the same COD collection.
+      const claim = await tx.waybill.updateMany({
+        where: {
+          id: waybillId,
+          companyId,
+          codCollected: false,
+        },
+        data: {
+          codCollected: true,
+          codCollectedAt: new Date(),
+          codCollectedAmount: collected,
+          codDiscrepancy: discrepancy,
+        },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException('COD already collected for this waybill');
+      }
+
       // Accrue the ACTUAL collected amount to the driver's wallet.
       await tx.driverWallet.upsert({
         where: { driverId },
@@ -140,16 +160,6 @@ export class CodService {
           type: 'COLLECTION', amount: collected, balance: wallet.balance,
           note: (opts?.note ? `${opts.note} — ` : '') +
                 `Collected R${collected.toFixed(2)} for ${waybill.trackingNumber}${discNote}`,
-        },
-      });
-
-      await tx.waybill.update({
-        where: { id: waybillId },
-        data: {
-          codCollected: true,
-          codCollectedAt: new Date(),
-          codCollectedAmount: collected,
-          codDiscrepancy: discrepancy,
         },
       });
 

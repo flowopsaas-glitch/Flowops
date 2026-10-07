@@ -25,13 +25,13 @@ export function pushPermission(): NotificationPermission | 'unsupported' {
   return Notification.permission;
 }
 
-function urlBase64ToUint8Array(base64: string): Uint8Array {
+function urlBase64ToArrayBuffer(base64: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
   const raw = atob(b64);
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
+  return out.buffer;
 }
 
 /**
@@ -55,7 +55,7 @@ export async function enablePush(): Promise<'enabled' | 'denied' | 'unsupported'
     const existing = await reg.pushManager.getSubscription();
     const sub = existing ?? await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
+      applicationServerKey: urlBase64ToArrayBuffer(publicKey),
     });
 
     const json = sub.toJSON() as any;

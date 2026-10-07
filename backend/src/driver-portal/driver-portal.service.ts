@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { DriverSafetyService } from '../driver-safety/driver-safety.service';
+import { guardTransition } from '../waybills/waybill-status.machine';
 
 @Injectable()
 export class DriverPortalService {
@@ -362,28 +363,49 @@ export class DriverPortalService {
         companyId: body.companyId,
         shipments: { some: { driverId: body.driverId } },
       },
-      select: { id: true },
+      select: { id: true, status: true, trackingNumber: true, companyId: true },
     });
     if (!waybill) {
       throw new NotFoundException('Waybill not found or not assigned to you');
     }
 
-    const updated = await this.prisma.waybill.update({
-      where: { id: body.waybillId },
-      data: {
-        status: 'DELIVERED',
-        podSignatureUrl: body.signatureUrl,
-        podImageUrl: body.imageUrl,
-        podRecipient: body.recipientName,
-      },
-    });
+    if (waybill.status === 'DELIVERED') {
+      return this.prisma.waybill.findUniqueOrThrow({ where: { id: waybill.id } });
+    }
 
-    // ── Update the linked Shipment to DELIVERED ─────────────────────────
-    // The Shipment model has its own status field. Without this update, the
-    // Shipments page keeps showing IN_TRANSIT even after POD is captured.
-    await this.prisma.shipment.updateMany({
-      where: { waybillId: body.waybillId },
-      data: { status: 'DELIVERED', deliveredAt: new Date() },
+    guardTransition(waybill.status, 'DELIVERED', {
+      waybillId: waybill.id,
+      trackingNumber: waybill.trackingNumber,
+      actor: body.driverId ?? 'driver-portal',
+    }, (message) => { throw new BadRequestException(message); });
+
+    const deliveredAt = new Date();
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.waybill.updateMany({
+        where: {
+          id: waybill.id,
+          companyId: waybill.companyId,
+          status: { not: 'DELIVERED' },
+        },
+        data: {
+          status: 'DELIVERED',
+          podSignatureUrl: body.signatureUrl,
+          podImageUrl: body.imageUrl,
+          podRecipient: body.recipientName,
+          podDeliveredAt: deliveredAt,
+        },
+      });
+
+      if (result.count === 0) {
+        return tx.waybill.findUniqueOrThrow({ where: { id: waybill.id } });
+      }
+
+      await tx.shipment.updateMany({
+        where: { waybillId: body.waybillId, companyId: waybill.companyId },
+        data: { status: 'DELIVERED', deliveredAt },
+      });
+
+      return tx.waybill.findUniqueOrThrow({ where: { id: waybill.id } });
     });
 
     // ── Close the loop ───────────────────────────────────────────────────

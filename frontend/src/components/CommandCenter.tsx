@@ -87,9 +87,6 @@ export default function CommandCenter() {
       // AI / Ops tooling
       { key: "WhatsAppHub", label: "WhatsApp Hub", keywords: ["whatsapp", "messages", "automation"], group: "Tools" },
       { key: "RouteOptimizer", label: "Route Optimizer", keywords: ["route", "optimizer", "ai"], group: "Tools" },
-      { key: "CapacityPlanning", label: "Capacity Planning", keywords: ["capacity", "planning"], group: "Tools" },
-      { key: "MRPSystem", label: "MRP System", keywords: ["mrp", "stock", "planning"], group: "Tools" },
-      { key: "LocationAnalysis", label: "Location Analysis", keywords: ["location", "analysis"], group: "Tools" },
       { key: "CarrierManagement", label: "Carrier Management", keywords: ["carrier", "courier"], group: "Tools" },
       { key: "TrackShipment", label: "Track Shipment", keywords: ["track", "tracking", "public"], group: "Tools" }
     ],

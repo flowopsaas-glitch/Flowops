@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 const h = vi.hoisted(() => {
   // ToastProvider's real showToast is a stable useCallback. A mock that returns a NEW function on every render would make
@@ -68,7 +69,7 @@ import RailOperations from './RailOperations';
 
 const open = async (role: string) => {
   h.auth.user = { role, email: 'u@x.co' };
-  render(<RailOperations />);
+  render(<MemoryRouter><RailOperations /></MemoryRouter>);
   const tabs = await screen.findByRole('tablist', { name: /Rail operations sections/ });
   // let the first load finish, so no state update lands after the test's assertions
   const table = await screen.findByRole('table');

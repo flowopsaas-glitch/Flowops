@@ -247,6 +247,10 @@ model Company {
   supportTickets        SupportTicket[]
   courierOrders         CourierOrder[]
   integrationCredentials IntegrationCredential[]
+  railConsignments    RailConsignment[]
+  railHandoffReadinesses RailHandoffReadiness[]
+  railHandoffEvidence RailHandoffEvidence[]
+  railScheduleImports RailScheduleImport[]
 
   // Process Control (Process Book) + Product master data
   processDefinitions    ProcessDefinition[]
@@ -1130,6 +1134,8 @@ model Waybill {
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  railConsignmentId String?
+  railConsignment RailConsignment? @relation(fields: [railConsignmentId], references: [id], onDelete: SetNull)
 
   originBranchId String?
   originBranch   Branch? @relation("OriginBranch", fields: [originBranchId], references: [id])
@@ -1143,11 +1149,13 @@ model Waybill {
   inboxItem        WaybillInboxItem?
   codTransactions  CodTransaction[]
   returns          Return[]
+  railHandoffEvidence RailHandoffEvidence[]
 
   @@unique([trackingNumber, companyId])
   @@index([companyId, status])
   @@index([companyId, createdAt])
   @@index([companyId, updatedAt])
+  @@index([railConsignmentId])
   @@index([status, updatedAt])
   @@map("waybills")
 }
@@ -2587,6 +2595,7 @@ model Warehouse {
   pickOrders     PickOrder[]
   cycleCounts    CycleCount[]
   dockSlots      DockSlot[]
+  railHandoffReadinesses RailHandoffReadiness[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -3856,6 +3865,28 @@ enum IntermodalLegStatus {
   DELAYED
 }
 
+enum HandoffReadinessStatus {
+  DRAFT
+  BLOCKED
+  READY
+  HANDED_OVER
+}
+
+enum HandoffEvidenceType {
+  RAIL_RELEASE
+  WAREHOUSE_RECEIPT
+  WAYBILL_SCAN
+  CARRIER_ACCEPTANCE
+  COD_RECONCILIATION
+  BILLING_RELEASE
+}
+
+enum HandoffEvidenceStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 model RailConsignment {
   id                String                @id @default(cuid())
   consignmentNumber String // RAIL-2026-00042 (unique per tenant)
@@ -3904,12 +3935,15 @@ model RailConsignment {
   holdClearedAt DateTime?
 
   companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   wagons Wagon[]
   legs   IntermodalLeg[]
   events RailConsignmentEvent[]
+  waybills Waybill[]
+  handoffReadinesses RailHandoffReadiness[]
 
   @@unique([consignmentNumber, companyId])
   @@index([companyId, status])
@@ -3966,8 +4000,63 @@ model IntermodalLeg {
   dwellHours    Float?              // dwell/idle time at the handoff (computed)
   note          String?             @db.Text
 
+  handoffReadinesses RailHandoffReadiness[]
+
   @@index([consignmentId])
   @@map("intermodal_legs")
+}
+
+model RailHandoffReadiness {
+  id           String                @id @default(cuid())
+  companyId    String
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  consignmentId String
+  consignment  RailConsignment       @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  legId        String?
+  leg          IntermodalLeg?        @relation(fields: [legId], references: [id], onDelete: SetNull)
+  warehouseId  String?
+  warehouse    Warehouse?            @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
+  status       HandoffReadinessStatus @default(DRAFT)
+  blockedReasons Json?
+  notes        String?               @db.Text
+  handedOverAt DateTime?
+  handedOverBy String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  evidence     RailHandoffEvidence[]
+
+  @@index([companyId, status])
+  @@index([consignmentId])
+  @@index([warehouseId])
+  @@map("rail_handoff_readiness")
+}
+
+model RailHandoffEvidence {
+  id           String                @id @default(cuid())
+  companyId    String
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  readinessId  String
+  readiness    RailHandoffReadiness  @relation(fields: [readinessId], references: [id], onDelete: Cascade)
+  waybillId    String?
+  waybill      Waybill?              @relation(fields: [waybillId], references: [id], onDelete: SetNull)
+
+  type         HandoffEvidenceType
+  status       HandoffEvidenceStatus @default(PENDING)
+  reference    String?
+  evidenceUrl  String?
+  capturedBy   String?
+  capturedAt   DateTime              @default(now())
+  verifiedBy   String?
+  verifiedAt   DateTime?
+  rejectedReason String?             @db.Text
+  metadata     Json?
+
+  @@index([companyId, type, status])
+  @@index([readinessId, type])
+  @@index([waybillId])
+  @@map("rail_handoff_evidence")
 }
 
 model RailConsignmentEvent {
@@ -3981,6 +4070,57 @@ model RailConsignmentEvent {
 
   @@index([consignmentId])
   @@map("rail_consignment_events")
+}
+
+model RailScheduleImport {
+  id           String             @id @default(cuid())
+  companyId    String?
+  company      Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  scopeKey     String
+  sourceName   String
+  sourceHash   String
+  rowCount     Int
+  importedBy   String?
+  importedAt   DateTime           @default(now())
+  rows         RailScheduleRow[]
+
+  @@unique([scopeKey, sourceHash])
+  @@index([companyId, importedAt])
+  @@index([scopeKey, importedAt])
+  @@map("rail_schedule_imports")
+}
+
+model RailScheduleRow {
+  id                       String            @id @default(cuid())
+  companyId                String?
+  importId                 String
+  scheduleImport           RailScheduleImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  sourceRow                Int
+  origin                   String
+  train                    String
+  nodeSequence             Int?
+  corridor                 String?
+  station                  String
+  arrivalTime              String?
+  departureTime            String?
+  pointToPointRuntime      String?
+  standingTime             String?
+  standingReason           String?
+  destination              String?
+  originDepartureTime      String?
+  destinationArrivalTime   String?
+  scheduleCode             String?
+  frequency                String?
+  trainType                String?
+  throughputRuntime        String?
+  departDay                Int?
+  distanceKm               Float?
+  rawLine                  String            @db.Text
+
+  @@unique([importId, sourceRow])
+  @@index([importId, train])
+  @@index([companyId, origin, train])
+  @@map("rail_schedule_rows")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

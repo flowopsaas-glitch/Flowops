@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
     FaStream, FaLink, FaCog, FaUsers, FaTag, FaEnvelope, FaWhatsapp, FaBoxOpen, 
     FaFileInvoiceDollar, FaCloud, FaUserShield, FaBox, FaMapMarkerAlt, 
-    FaTruck, FaMicrochip, FaMagic, FaFileAlt, FaReceipt, FaRoute,
+    FaTruck, FaMagic, FaFileAlt, FaReceipt, FaRoute,
     FaSignOutAlt, FaShieldAlt, FaCheckCircle
 } from "react-icons/fa";
 import { Link, useLocation as useRouterLocation } from 'react-router-dom'
@@ -31,19 +31,13 @@ const menuItems = [
     { icon: FaBoxOpen, label: 'Collections', path: '/collections', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
 { icon: FaWhatsapp, label: 'WhatsApp Hub', path: '/whatsapp', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'], plan: ['Enterprise'] },
 { icon: FaEnvelope, label: 'Email', path: '/email', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaMicrochip, label: 'Production', path: '/production', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaMagic, label: 'Capacity Planning', path: '/capacity-planning', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaBox, label: 'MRP System', path: '/mrp-system', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaMapMarkerAlt, label: 'Location Analysis', path: '/location-analysis', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaTruck, label: 'Carriers', path: '/carriers', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaFileAlt, label: 'Waybills', path: '/waybills', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaUsers, label: 'Clients', path: '/clients', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaMapMarkerAlt, label: 'Live Tracking', path: '/live-tracking', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaMagic, label: 'Route Optimizer', path: '/route-optimizer', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaBox, label: 'Stock', path: '/stock', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaUsers, label: 'Drivers', path: '/drivers', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaRoute, label: 'Routes', path: '/routes', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaTruck, label: 'Driver Requests', path: '/driver-requests', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaTruck, label: 'Deliveries', path: '/deliveries', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaFileAlt, label: 'Quotes', path: '/quotes', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaReceipt, label: 'Invoices', path: '/invoices', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
@@ -184,6 +178,4 @@ export default function DashboardSidebar() {
         </SidebarProvider>
     )
 }
-
-
 

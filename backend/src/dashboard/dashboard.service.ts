@@ -478,12 +478,21 @@ export class DashboardService {
       select: {
         id: true, trackingNumber: true, status: true, updatedAt: true,
         recipientName: true, recipientAddress: true, riskLevel: true,
+        attemptCount: true, maxAttempts: true, nextAttemptAt: true,
+        lastAttemptReasonCode: true, lastAttemptNote: true, returnToSender: true,
+        codAmount: true, codCollected: true, codDiscrepancy: true,
+        shipments: {
+          select: { driver: { select: { id: true, name: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
       orderBy: { updatedAt: 'asc' }, // oldest first
       take: 500,
     });
 
     const buckets = { lt4: 0, h4_12: 0, h12_24: 0, gt24: 0 };
+    const byReason: Record<string, number> = {};
     let breached = 0;
     let oldestHours = 0;
 
@@ -495,6 +504,9 @@ export class DashboardService {
       else buckets.gt24 += 1;
       if (ageHours >= SLA_HOURS) breached += 1;
       oldestHours = Math.max(oldestHours, ageHours);
+      const reason = w.lastAttemptReasonCode ?? 'UNSPECIFIED';
+      byReason[reason] = (byReason[reason] ?? 0) + 1;
+      const driver = w.shipments[0]?.driver ?? null;
       return {
         id: w.id,
         trackingNumber: w.trackingNumber,
@@ -502,8 +514,28 @@ export class DashboardService {
         recipientName: w.recipientName,
         recipientAddress: w.recipientAddress,
         riskLevel: w.riskLevel,
+        attemptCount: w.attemptCount,
+        maxAttempts: w.maxAttempts,
+        nextAttemptAt: w.nextAttemptAt,
+        lastAttemptReasonCode: w.lastAttemptReasonCode,
+        lastAttemptNote: w.lastAttemptNote,
+        returnToSender: w.returnToSender,
+        cod: w.codAmount && w.codAmount > 0
+          ? {
+              amount: w.codAmount,
+              collected: w.codCollected,
+              discrepancy: w.codDiscrepancy,
+            }
+          : null,
+        driver,
         ageHours: Math.round(ageHours * 10) / 10,
         breached: ageHours >= SLA_HOURS,
+        action:
+          w.returnToSender ? 'RETURN_TO_SENDER'
+            : ageHours >= SLA_HOURS ? 'ESCALATE_NOW'
+              : w.nextAttemptAt && new Date(w.nextAttemptAt).getTime() <= now
+                ? 'REATTEMPT_DUE'
+                : 'REVIEW',
       };
     });
 
@@ -515,6 +547,7 @@ export class DashboardService {
       breachRatePct: open.length ? Math.round((breached / open.length) * 1000) / 10 : 0,
       oldestHours: Math.round(oldestHours * 10) / 10,
       buckets,
+      byReason,
       watch: aged.slice(0, 10), // oldest first
       note:
         'Open exceptions are waybills still in FAILED_DELIVERY / RETURNED. Age is measured from the last status change; a 24h actioning SLA flags breaches.',
