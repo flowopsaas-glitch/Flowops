@@ -16,7 +16,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(__dirname, '..', '..', '..');
-const doc = readFileSync(join(root, 'docs', 'RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md'), 'utf8');
+const normalizeNewlines = (text: string) => text.replace(/\r\n/g, '\n');
+const doc = normalizeNewlines(readFileSync(join(root, 'docs', 'RAIL-RASA-DEPLOYMENT-CHECKLIST-2026-10-02.md'), 'utf8'));
 const migrationsDir = join(root, 'backend', 'prisma', 'migrations');
 
 interface Cmd { kind: string; text: string; raw: string }
@@ -42,7 +43,7 @@ const readOnly = commands.filter((c) => c.kind.startsWith('read-only'));
 const DEPLOYMENT_WAVES = /_rail_wave(2|3|4)_/;
 
 const railMigrations = readdirSync(migrationsDir).filter((d) => DEPLOYMENT_WAVES.test(d) && existsSync(join(migrationsDir, d, 'migration.sql'))).sort();
-const sqlOf = (m: string) => readFileSync(join(migrationsDir, m, 'migration.sql'), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n');
+const sqlOf = (m: string) => normalizeNewlines(readFileSync(join(migrationsDir, m, 'migration.sql'), 'utf8')).split('\n').filter((l) => !l.startsWith('--')).join('\n');
 
 describe('checklist — the command rules', () => {
   it('has a meaningful number of commands (the parser is not vacuous)', () => {

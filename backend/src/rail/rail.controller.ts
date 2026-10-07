@@ -169,6 +169,7 @@ export class RailController {
   }
 
   @Post('consignments/:id/handoffs')
+  @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Create a guarded rail-to-final-mile handoff readiness record' })
   createHandoff(
     @CurrentUser() u: AuthenticatedUser,
@@ -179,6 +180,7 @@ export class RailController {
   }
 
   @Post('handoffs/:id/evidence')
+  @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Attach evidence to a handoff readiness record' })
   addHandoffEvidence(
     @CurrentUser() u: AuthenticatedUser,
@@ -189,6 +191,7 @@ export class RailController {
   }
 
   @Post('handoffs/:id/evidence/:evidenceId/verify')
+  @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Verify handoff evidence' })
   verifyHandoffEvidence(
     @CurrentUser() u: AuthenticatedUser,
@@ -199,12 +202,14 @@ export class RailController {
   }
 
   @Post('handoffs/:id/evaluate')
+  @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Evaluate evidence and guarded readiness requirements' })
   evaluateHandoff(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
     return this.handoff.evaluate(u.companyId, id);
   }
 
   @Post('handoffs/:id/complete')
+  @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Complete a READY handoff and record final-mile acceptance' })
   completeHandoff(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
     return this.handoff.complete(u.companyId, id, u.id);
@@ -213,6 +218,7 @@ export class RailController {
   // ── Rail timetable ────────────────────────────────────────────────────────
 
   @Post('schedules/import')
+  @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Import an Annexure 33a tab-separated rail timetable' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))

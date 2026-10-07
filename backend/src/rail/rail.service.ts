@@ -307,12 +307,6 @@ export class RailService {
     if (c.status === nextStatus) {
       return c;
     }
-    if (!this.allowedTransitions[c.status].includes(nextStatus)) {
-      throw new BadRequestException(
-        `Cannot move rail consignment from ${c.status} to ${nextStatus}`,
-      );
-    }
-
     // ── DISPATCH GATES: dangerous goods, and the weighbridge hold ──────────────
     // The brief says "DISPATCHED"; this model has no such status — DEPARTED is the dispatch event, and
     // IN_TRANSIT / AT_INTERCHANGE are covered too so a gate cannot be skipped by jumping ahead. Both gates are
@@ -333,6 +327,12 @@ export class RailService {
         );
         throw new BadRequestException(`Dispatch blocked — ${reasons.join('; and ')}.`);
       }
+    }
+
+    if (!this.allowedTransitions[c.status].includes(nextStatus)) {
+      throw new BadRequestException(
+        `Cannot move rail consignment from ${c.status} to ${nextStatus}`,
+      );
     }
 
     const patch: Record<string, unknown> = { status: nextStatus };

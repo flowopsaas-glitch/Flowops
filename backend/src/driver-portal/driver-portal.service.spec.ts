@@ -28,6 +28,7 @@ describe("DriverPortalService", () => {
       waybill: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
@@ -53,6 +54,7 @@ describe("DriverPortalService", () => {
         updateMany: jest.fn(),
       },
     };
+    prisma.$transaction = jest.fn((callback: (tx: any) => Promise<any>) => callback(prisma));
     notifications = {
       notifyWaybillStatus: jest.fn().mockResolvedValue(undefined),
       sendRatingRequest: jest.fn().mockResolvedValue(undefined),
@@ -135,26 +137,37 @@ describe("DriverPortalService", () => {
         status: "DELIVERED",
         companyId: "company-1",
       };
-      prisma.waybill.findFirst.mockResolvedValue({ id: "wb-1" });
-      prisma.waybill.update.mockResolvedValue(updated);
+      prisma.waybill.findFirst.mockResolvedValue({
+        id: "wb-1",
+        status: "IN_TRANSIT",
+        companyId: "company-1",
+        trackingNumber: "WB-2026-0001",
+      });
+      prisma.waybill.updateMany.mockResolvedValue({ count: 1 });
+      prisma.waybill.findUniqueOrThrow.mockResolvedValue(updated);
       prisma.shipment.updateMany.mockResolvedValue({ count: 1 });
 
       const result = await service.recordPod(pod);
 
       expect(result).toEqual(updated);
-      expect(prisma.waybill.update).toHaveBeenCalledWith({
-        where: { id: "wb-1" },
+      expect(prisma.waybill.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: "wb-1",
+          companyId: "company-1",
+          status: { not: "DELIVERED" },
+        },
         data: {
           status: "DELIVERED",
           podSignatureUrl: "https://cdn/sig.png",
           podImageUrl: "https://cdn/pod.png",
           podRecipient: "T. Mokoena",
+          podDeliveredAt: expect.any(Date),
         },
       });
       // Shipment row must follow the waybill or the dispatch board lies.
       expect(prisma.shipment.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { waybillId: "wb-1" },
+          where: { waybillId: "wb-1", companyId: "company-1" },
           data: expect.objectContaining({ status: "DELIVERED" }),
         }),
       );
@@ -170,8 +183,14 @@ describe("DriverPortalService", () => {
     });
 
     it("still returns the POD when realtime emit fails (best-effort)", async () => {
-      prisma.waybill.findFirst.mockResolvedValue({ id: "wb-1" });
-      prisma.waybill.update.mockResolvedValue({
+      prisma.waybill.findFirst.mockResolvedValue({
+        id: "wb-1",
+        status: "IN_TRANSIT",
+        companyId: "company-1",
+        trackingNumber: "WB-2026-0001",
+      });
+      prisma.waybill.updateMany.mockResolvedValue({ count: 1 });
+      prisma.waybill.findUniqueOrThrow.mockResolvedValue({
         id: "wb-1",
         trackingNumber: "WB-2026-0001",
         companyId: "company-1",
