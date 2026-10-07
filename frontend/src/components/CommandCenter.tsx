@@ -58,16 +58,18 @@ export default function CommandCenter() {
 
   const commands: Command[] = useMemo(
     () => [
-      // Operations
+      // Operations — only commands whose destination has an active route in
+      // App.tsx. Commands for retired/legacy destinations (DriverApp,
+      // CustomerPortal, CapacityPlanning, MRPSystem, LocationAnalysis) and the
+      // duplicate folder-style entries (operations/Dispatch,
+      // operations/Collections) were removed in the 2026-10-07
+      // release-readiness audit. See docs/RELEASE-READINESS-AUDIT-2026-10-07.md.
       { key: "Dashboard", label: "Dashboard", keywords: ["home", "overview", "control tower"], group: "Operations" },
       { key: "Dispatch", label: "Dispatch", keywords: ["dispatch", "jobs", "assign"], group: "Operations", hint: "Ops queue" },
-      { key: "operations/Dispatch", label: "Operations â€¢ Dispatch", keywords: ["dispatch", "ops"], group: "Operations", hint: "If you use folders" },
       { key: "Collections", label: "Collections", keywords: ["collections", "orders", "jobs"], group: "Operations" },
-      { key: "operations/Collections", label: "Operations â€¢ Collections", keywords: ["collections", "ops"], group: "Operations" },
       { key: "LiveTracking", label: "Live Tracking", keywords: ["tracking", "live", "map"], group: "Operations" },
 
       // Drivers
-      { key: "DriverApp", label: "Driver App", keywords: ["driver", "mobile", "app"], group: "Drivers" },
       { key: "Drivers", label: "Drivers", keywords: ["drivers", "people"], group: "Drivers" },
       { key: "Routes", label: "Routes", keywords: ["routes", "route"], group: "Drivers" },
 
@@ -77,19 +79,15 @@ export default function CommandCenter() {
 
       // Sales
       { key: "Quotes", label: "Quotes", keywords: ["quote", "pricing"], group: "Sales" },
-      { key: "CustomerPortal", label: "Customer Portal", keywords: ["customer", "portal", "client"], group: "Sales" },
       { key: "Clients", label: "Clients", keywords: ["clients", "customers"], group: "Sales" },
 
       // Admin / Tools
       { key: "Settings", label: "Settings", keywords: ["settings", "config"], group: "Admin" },
-      { key: "admin/AdminApprovalDashboard", label: "Admin â€¢ Approval Dashboard", keywords: ["admin", "approval"], group: "Admin" },
+      { key: "admin/AdminApprovalDashboard", label: "Admin • Approval Dashboard", keywords: ["admin", "approval"], group: "Admin" },
 
       // AI / Ops tooling
       { key: "WhatsAppHub", label: "WhatsApp Hub", keywords: ["whatsapp", "messages", "automation"], group: "Tools" },
       { key: "RouteOptimizer", label: "Route Optimizer", keywords: ["route", "optimizer", "ai"], group: "Tools" },
-      { key: "CapacityPlanning", label: "Capacity Planning", keywords: ["capacity", "planning"], group: "Tools" },
-      { key: "MRPSystem", label: "MRP System", keywords: ["mrp", "stock", "planning"], group: "Tools" },
-      { key: "LocationAnalysis", label: "Location Analysis", keywords: ["location", "analysis"], group: "Tools" },
       { key: "CarrierManagement", label: "Carrier Management", keywords: ["carrier", "courier"], group: "Tools" },
       { key: "TrackShipment", label: "Track Shipment", keywords: ["track", "tracking", "public"], group: "Tools" }
     ],

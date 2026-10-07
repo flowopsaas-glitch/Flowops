@@ -1,37 +1,30 @@
-﻿import {
+import {
   LayoutDashboard,
-  Package,
   Truck,
   Route,
   FileText,
   Receipt,
   Users,
   Sparkles,
-  MessageCircle,
-  Settings,
   Map as MapIcon,
 } from "lucide-react";
 
+// Navigation entries whose destination has an active route in App.tsx.
+// Entries for retired/legacy destinations (customer-portal, track-shipment,
+// driver-app, whatsapp-hub, production-processes, capacity-planning,
+// mrp-system, location-analysis, stock, driver-requests, deliveries) were
+// removed in the 2026-10-07 release-readiness audit: those pages have no
+// active route, so the links led nowhere. See
+// docs/RELEASE-READINESS-AUDIT-2026-10-07.md.
 export const navigation = [
   { name: "Dashboard", page: "dashboard", icon: LayoutDashboard },
-  { name: "📦 Book Shipment", page: "customer-portal", icon: Package },
-  { name: "🔍 Track Shipment", page: "track-shipment", icon: MapIcon },
-  { name: "Driver App", page: "driver-app", icon: Truck },
-  { name: "WhatsApp Hub", page: "whatsapp-hub", icon: MessageCircle },
-  { name: "Production", page: "production-processes", icon: Settings },
-  { name: "Capacity Planning", page: "capacity-planning", icon: Sparkles },
-  { name: "MRP System", page: "mrp-system", icon: Package },
-  { name: "Location Analysis", page: "location-analysis", icon: MapIcon },
   { name: "Carriers", page: "carriers", icon: Truck },
   { name: "Waybills", page: "waybills", icon: FileText },
   { name: "Clients", page: "clients", icon: Users },
   { name: "Live Tracking", page: "live-tracking", icon: MapIcon },
   { name: "Route Optimizer", page: "route-optimizer", icon: Sparkles },
-  { name: "Stock", page: "stock", icon: Package },
   { name: "Drivers", page: "drivers", icon: Users },
   { name: "Routes", page: "routes", icon: Route },
-  { name: "Driver Requests", page: "driver-requests", icon: Truck },
-  { name: "Deliveries", page: "deliveries", icon: Truck },
   { name: "Quotes", page: "quotes", icon: FileText },
   { name: "Invoices", page: "invoices", icon: Receipt },
 ];
