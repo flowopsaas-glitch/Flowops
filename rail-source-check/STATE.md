@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 57 — NEW DEPOT BLINKPAN added (69 workings, 578 rows, blinkpan-batch.txt) plus BIJLKOR 17305-17321 and 18551 (132 rows): 18 data files / 16,790 rows / 545 workings / 34 depots, 522 [OK] + 23 flagged; BIJLKOR 17207 head, BLINKPAN 89309 steps, BIJLKOR 8856 tail and 9409/9443/16453/17205 are still owed — see Round 57; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+Updated: 2026-10-07 (round 58 — BLINKPAN 89309 completed (steps 1–6 merged with the round-57 header; now `[OK]`) plus new workings 89509 and 95809: 23 rows, L579-601, blinkpan-batch.txt now 601 rows / 71 workings. Corpus: 18 data files / 16,813 rows / 547 workings / 34 depots, 525 [OK] + 22 flagged, MD5 `f50080d6fc70c34f4b97134c3300017f`. The rest of the round-58 paste (BLACKHILL, BLANEY, BUCKINGHAM, BOWKERSPARK, BELLVILLE) never reached the disk and must be re-pasted — see Round 58; BIJLKOR 17207 head, 8856 tail and 9409/9443/16453/17205 are also still owed; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -18,7 +18,7 @@ Updated: 2026-10-07 (round 57 — NEW DEPOT BLINKPAN added (69 workings, 578 row
 - /home/user/Flowops/rail-source-check/belfast-batch.txt — 333 rows, BELFAST round 46, 37 workings, all OK; transcribed verbatim from the current paste.
 - /home/user/Flowops/rail-source-check/bronkhorstspruit-batch.txt — 71 rows, round 53, new depot BRONKHORSTSPR (workings 1000, 2702, 4202, 7433, 16465 — 5 workings, all OK); MD5 `54cfbb251e244c7aef454dc15a960025`.
 - /home/user/Flowops/rail-source-check/bothaville-batch.txt — 120 rows, round 54, new depot BOTHAVILLE (5506, 8982, 8986 — 3 workings, all OK); MD5 `f694b22e702962bef2e0e0a7324d840b`.
-- /home/user/Flowops/rail-source-check/blinkpan-batch.txt — 578 rows, round 57, new depot BLINKPAN (69 workings; 67 OK + 2 flagged: 80109 day-flag anomaly, 89309 header-only partial). 80109–89109 are the forty-six coal workings; 89309's steps are owed. MD5 `d78b4817c00db61fe832c26092d1e77b`.
+- /home/user/Flowops/rail-source-check/blinkpan-batch.txt — 601 rows, rounds 57–58, new depot BLINKPAN (71 workings; 70 OK + 1 flagged: 80109 day-flag anomaly). 80109–89109 are the forty-six coal workings; 89309 was COMPLETED in round 58 (steps 1–6 at L579-585 merged with the round-57 header at L578) and 89509 (L586-593) / 95809 (L594-601) were added. MD5 `f50080d6fc70c34f4b97134c3300017f`.
 - /home/user/Flowops/rail-source-check/bijlkor-batch.txt — 1682 rows, rounds 54–57, depot BIJLKOR (62 workings, 0 flagged). Grew 609 → 1090 (round 55) → 1550 (round 56) → 1682 (round 57). 8466 is complete (round 56); 8856 is NOT on disk (transcription stopped at BEAUFORTWEST, round 56) and 17207's head is still owed (round 57). MD5 `410c3b09f3f254fdadb4fb679804da8f`.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
@@ -1373,6 +1373,65 @@ new depot; the flag list gained BIJLKOR-adjacent `BLINKPAN 80109` and the header
    `9409`, `9443`, `16453`, `17205`.
 2. The branch decision from round 54 (still unanswered).
 3. BLOEMFONTEIN queue 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000; the other partials
+   (BEACONSFIELD 8965, BEAUFORTWEST 97, BLOEMFONTEIN 4215, BLOEMFONTEIN 18927, WELGEDAG 58866);
+   the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
+   BEACONSFIELD 1438 re-transcription.
+
+## Round 58 — BLINKPAN 89309 completed + 89509 / 95809 (blinkpan-batch.txt now 601 rows / 71 workings)
+
+### What was appended
+Payload `/home/user/r58/blinkpan-add.txt` — **23 rows**, all 19 fields:
+- **89309 steps 1–6** (7 rows, `BROODSNYERSPL` 21:32:00 → `EML-LUGREMTER` 23:15:00). Round 57 had
+  stored only 89309's header row (old L578); these rows complete the working, which the checker now
+  reads as **L578-585, 21:11:00 → 23:15:00, stated/computed 02:04:00, `[OK]`**.
+- **89509** (8 rows, L586-593) and **95809** (8 rows, L594-601) — header + 7 steps each, the same
+  `BLINKPAN → EML-LUGREMTER` profile as the whole 80109–89309 family. This closes round 57's
+  outstanding item 1 (`BLINKPAN 89309 steps`).
+
+### Pre-append gates (all against the whole 18-file corpus)
+- 0 byte-identical rows; 0 `(Origin, Train, NODE_Seq, station)` collisions.
+- `89309`: exactly 1 stored row (the L578 header) — boundary contiguous:
+  header `21:11:00` + 00:21:00 = first new step `BROODSNYERSPL` arr `21:32:00`, the same
+  +21 min step as siblings 88509/88709/88909/89109.
+- `89509` / `95809`: 0 rows corpus-wide; neither working number appears at any other depot.
+- Target before: 578 rows, MD5 `d78b4817c00db61fe832c26092d1e77b` (round-57 state).
+
+### Post-append verification
+- `blinkpan-batch.txt`: **601 rows / 71 workings / MD5 `f50080d6fc70c34f4b97134c3300017f`**;
+  appended range **L579-601**; `tail -23` MD5 `99d9f0d044d97d1ce3e2f5214625e896` = payload MD5
+  (byte-identical); the round-57 header row is untouched at L578.
+- Checker: 71 workings, **1 with issues — `80109` only** (the preserved day-flag anomaly);
+  `89309` clears. Per-sibling counts now 8 rows for 89309 / 89509 / 95809.
+- Corpus: **18 files / 16,813 rows / 547 workings / 34 depots; 525 `[OK]` + 22 flagged**
+  (round 57: 16,790 / 545 / 522 + 23).
+
+### Sibling comparisons (station-keyed alignment, header rows kept; run only after transcription; read-only)
+- **88509 vs 88709**, **89109 vs 89309**, **89309 vs 89509** — identical station sequences, and
+  every field identical except the clock: 7 arrivals, 7 departures, `Origin Departure Time` and
+  `Destination Arrival Time` (each pair differs by exactly +30 min).
+- **89509 vs 95809** and **89309 vs 95809** — same sequence; clock times differ; `Activity` differs
+  on 2 rows (`BROODSNYERSPL` `C` vs blank, `EML-LUGREMTER` `RT` vs blank).
+- Observation (not a correction): `95809`'s clock times are identical to `88509`'s
+  (19:11:00 → 21:15:00) while its two `Activity` cells are blank, so the rows are not byte-identical.
+  Kept exactly as pasted.
+
+### Round-58 source handling — what was NOT appended
+The round-58 chat paste continued with a new-depot batch (BLACKHILL; BLANEY; BUCKINGHAM;
+BOWKERSPARK; and a large BELLVILLE batch, truncated mid-`1414` at `seq 6 KALBASKRAAL`).
+**That portion never reached the disk** — the session state was condensed before it was transcribed —
+so it must be re-pasted before it can be added. Nothing from it was invented or reconstructed.
+(Two staging files briefly created without a source were deleted unappended; no corpus file was ever
+touched by them — `git status` stayed clean at `b868931`.)
+
+### Outstanding after this round
+1. **Re-paste owed — round 58:** the BLACKHILL, BLANEY, BUCKINGHAM, BOWKERSPARK and BELLVILLE paste
+   content, including BELLVILLE `1414` steps 9–20 and everything after `1414`.
+2. **Re-paste owed — earlier rounds:** BIJLKOR `17207` head (header through `BIJ/S750557` 22:26:00),
+   BIJLKOR `8856` tail (`BEAUFORTWEST` day-1 20:25:00 onward) and BIJLKOR `9409`, `9443`, `16453`,
+   `17205`. The 7-row `17207` tail stays held at `/home/user/r57/held-17207-tail.txt` — never
+   append it alone.
+3. The branch decision from round 54 (still unanswered).
+4. BLOEMFONTEIN queue 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000; the other partials
    (BEACONSFIELD 8965, BEAUFORTWEST 97, BLOEMFONTEIN 4215, BLOEMFONTEIN 18927, WELGEDAG 58866);
    the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
    BEACONSFIELD 1438 re-transcription.
