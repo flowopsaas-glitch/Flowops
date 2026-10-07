@@ -2,13 +2,11 @@
 
 import {
   LayoutDashboard,
-  Package,
   Truck,
   MapIcon,
   Users,
   FileText,
   Receipt,
-  Settings,
   Sparkles,
   MessageCircle
 } from "lucide-react";
@@ -29,26 +27,21 @@ interface NavigationItem {
   icon: any;
 }
 
+// Only destinations with an active route in App.tsx. Stale links to legacy
+// destinations (CustomerPortal, TrackShipment, DriverApp, ProductionProcesses,
+// CapacityPlanning, MRPSystem, LocationAnalysis, Stock, DriverRequests,
+// Deliveries) were removed in the 2026-10-07 release-readiness audit — those
+// pages have no active route. See docs/RELEASE-READINESS-AUDIT-2026-10-07.md.
 const ALL_NAVIGATION: NavigationItem[] = [
   { name: "Dashboard", page: "Dashboard", icon: LayoutDashboard },
-  { name: "📦 Book Shipment", page: "CustomerPortal", icon: Package },
-  { name: "🔍 Track Shipment", page: "TrackShipment", icon: MapIcon },
-  { name: "Driver App", page: "DriverApp", icon: Truck },
   { name: "WhatsApp Hub", page: "WhatsAppHub", icon: MessageCircle },
-  { name: "Production", page: "ProductionProcesses", icon: Settings },
-  { name: "Capacity Planning", page: "CapacityPlanning", icon: Sparkles },
-  { name: "MRP System", page: "MRPSystem", icon: Package },
-  { name: "Location Analysis", page: "LocationAnalysis", icon: MapIcon },
   { name: "Carriers", page: "CarrierManagement", icon: Truck },
   { name: "Waybills", page: "Waybills", icon: FileText },
   { name: "Clients", page: "Clients", icon: Users },
   { name: "Live Tracking", page: "LiveTracking", icon: MapIcon },
   { name: "Route Optimizer", page: "RouteOptimizer", icon: Sparkles },
-  { name: "Stock", page: "Stock", icon: Package },
   { name: "Drivers", page: "Drivers", icon: Users },
   { name: "Routes", page: "Routes", icon: Truck },
-  { name: "Driver Requests", page: "DriverRequests", icon: Truck },
-  { name: "Deliveries", page: "Deliveries", icon: Truck },
   { name: "Quotes", page: "Quotes", icon: FileText },
   { name: "Invoices", page: "Invoices", icon: Receipt },
 ];
