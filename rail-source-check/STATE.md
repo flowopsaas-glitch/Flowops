@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 56 — BIJLKOR 8466 tail appended, working now COMPLETE/[OK]; 7 further BIJLKOR workings (8499/8501/8503/8551/8586/8850/8952) appended: 17 data files / 16,080 rows / 466 workings / 33 depots, 445 [OK] + 21 flagged; BIJLKOR 8856 and workings 9409/9443/16453/17205/17207 are WITHHELD and must be re-pasted — see Round 56; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+Updated: 2026-10-07 (round 57 — NEW DEPOT BLINKPAN added (69 workings, 578 rows, blinkpan-batch.txt) plus BIJLKOR 17305-17321 and 18551 (132 rows): 18 data files / 16,790 rows / 545 workings / 34 depots, 522 [OK] + 23 flagged; BIJLKOR 17207 head, BLINKPAN 89309 steps, BIJLKOR 8856 tail and 9409/9443/16453/17205 are still owed — see Round 57; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -18,7 +18,8 @@ Updated: 2026-10-07 (round 56 — BIJLKOR 8466 tail appended, working now COMPLE
 - /home/user/Flowops/rail-source-check/belfast-batch.txt — 333 rows, BELFAST round 46, 37 workings, all OK; transcribed verbatim from the current paste.
 - /home/user/Flowops/rail-source-check/bronkhorstspruit-batch.txt — 71 rows, round 53, new depot BRONKHORSTSPR (workings 1000, 2702, 4202, 7433, 16465 — 5 workings, all OK); MD5 `54cfbb251e244c7aef454dc15a960025`.
 - /home/user/Flowops/rail-source-check/bothaville-batch.txt — 120 rows, round 54, new depot BOTHAVILLE (5506, 8982, 8986 — 3 workings, all OK); MD5 `f694b22e702962bef2e0e0a7324d840b`.
-- /home/user/Flowops/rail-source-check/bijlkor-batch.txt — 609 rows, round 54, new depot BIJLKOR (16 workings; 15 OK + 1 flagged). 5931 is a PARTIAL extract ending at NODE_Seq 7 SKANSDAM 22:59:00, destination ERMELO stated 06:32:00 — tail not yet supplied. MD5 `ef82c23ec49c21a735854e6cc1ecd084`.
+- /home/user/Flowops/rail-source-check/blinkpan-batch.txt — 578 rows, round 57, new depot BLINKPAN (69 workings; 67 OK + 2 flagged: 80109 day-flag anomaly, 89309 header-only partial). 80109–89109 are the forty-six coal workings; 89309's steps are owed. MD5 `d78b4817c00db61fe832c26092d1e77b`.
+- /home/user/Flowops/rail-source-check/bijlkor-batch.txt — 1682 rows, rounds 54–57, depot BIJLKOR (62 workings, 0 flagged). Grew 609 → 1090 (round 55) → 1550 (round 56) → 1682 (round 57). 8466 is complete (round 56); 8856 is NOT on disk (transcription stopped at BEAUFORTWEST, round 56) and 17207's head is still owed (round 57). MD5 `410c3b09f3f254fdadb4fb679804da8f`.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
@@ -1284,3 +1285,94 @@ CONTAINER 1805, NORTHEAST 444, NORTH 257, blank 40, ORELINE 2.
    (BEACONSFIELD 8965, BEAUFORTWEST 97, BLOEMFONTEIN 4215, BLOEMFONTEIN 18927, WELGEDAG 58866);
    the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
    BEACONSFIELD 1438 re-transcription. **BIJLKOR 8466 is now closed.**
+
+## Round 57 — BIJLKOR 17207 tail + 10 more BIJLKOR workings + the NEW DEPOT BLINKPAN (69 workings)
+
+**Source** — raw-chat continuation paste: the `17207` tail, BIJLKOR `17305`–`17321` (nine
+one-minute shunt runs), BIJLKOR `18551`, then the whole **BLINKPAN** batch. The paste truncates
+immediately after the `89309` header row, so that working's steps are still owed.
+
+### Appended
+
+| target | rows | workings | range | file MD5 |
+|---|---|---|---|---|
+| `bijlkor-batch.txt` | +132 (1,550 → **1,682**) | +10 (52 → **62**) | L1551-1682 | `ae1d85f6…` → **`410c3b09f3f254fdadb4fb679804da8f`** |
+| `blinkpan-batch.txt` (NEW) | **578** | **69** | L1-578 | **`d78b4817c00db61fe832c26092d1e77b`** |
+
+BIJLKOR detail: `17305`, `17307`, `17309`, `17311`, `17313`, `17315`, `17317`, `17319`, `17321`
+are nine identical `BIJLKOR → YSK/S750166` two-row runs at 04:00, 06:00, 08:00 … 20:00
+(`MEDIUM HEAVY/MEDIUM HEAVY`, `00:01:00`, 0.54 km). `18551` L1569-1682 (114 rows) is a second
+`BIJLKOR → BAYHEAD` vacuum run, 06:08:00 → 03:30:00, stated/computed 21:22:00, `[OK]`.
+
+BLINKPAN (34th depot) — 69 workings, all `NORTH`, 578 rows:
+`100`/`700`/`1300`/`2000` (13 rows each, identical shunt loops at 01:00/07:00/13:00/20:00 via
+`BIK/S740004`, `BIK/S750654`, `BIK/S750689`, `BIK/S751626`, `BIK/S754986`, `BIK/S750662`);
+`2154`/`2156`/`2158`/`2160` (2 rows, `BLINKPAN → VANDYKSDRIF`); `7722` (6, → `OGIES`);
+`7749` (8, → `ERMELO`); `7788` (15, → `WELGEDAG`); `7790` (15, → `WELGEDAG`, day-1);
+`8192` (5, → `SAAIWATER`); `9403`/`9407`/`9413`/`9425`/`9427` (10 each, → `CAMDEN`);
+`58859`/`58871` (15 each, → `WELGEDAG`); `62192` (5, → `SAAIWATER`); the forty-six
+`80109`–`89109` coal workings (8 rows each, 22:11 → 20:41 starts at 30-minute spacing,
+`HEAVYAIRBRAKE/COAL-HEAVY`, → `EML-LUGREMTER`); `89254` (15, → `WELGEDAG`); `89309` (header only).
+
+### Withheld — not appended, re-paste owed
+
+- **BIJLKOR 17207** — only its *tail* was delivered (7 rows: `BIJ/S743607` 22:27:00 →
+  `BIJLKOR` 22:39:00). The working's head (header + the out pass + the first return rows, i.e.
+  everything up to `BIJ/S750557` 22:26:00) was never transcribed and is not on disk, so appending
+  the tail alone would create a header-less fragment. It is held verbatim in
+  `/home/user/r57/held-17207-tail.txt` and will be merged once the head arrives.
+- **BLINKPAN 89309** — the paste stopped after its header; the header row itself *was* appended
+  (matching the WELGEDAG 58866 precedent for header-only partials) and is flagged by the checker.
+  Its step rows are owed.
+
+### Anomalies preserved (not corrected)
+
+- **BLINKPAN 80109** — every row carries `Depart_Day` 0 although the run crosses midnight
+  (`23:49:00` → `00:15:00`), so the checker reads the last leg as backwards and reports a
+  −22:04:00 duration. Its three siblings `80309`/`80509`/`80709` roll the flag (`80309`: last three
+  rows day 1; `80509`: last four; `80709`: all post-midnight rows). `80109` is kept exactly as
+  pasted and joins the flag list.
+- **BLINKPAN 2154** — `Frequency` `AYYYYYY` (its three siblings are `YYYYYYY`).
+- `ELF/S766011` weighbridge micro-dwells (`00:00:15` travel, `00:02:30` dwell, 0.1 km) in
+  `7788`/`7790`/`58859`/`58871`/`89254`; `SUNDRA` shares `NODE_Seq` 12 with `ELF/S766011`.
+
+### Sibling comparisons (run only after independent transcription; read-only; work number excluded)
+
+- **18551 vs 8503** — 114 rows each, same station sequence, same start/end (`BIJLKOR` 06:08:00 →
+  `BAYHEAD` 03:30:00, 21:22:00): travel 14, arrival 9, departure 9, activity 2 (`SYBRAND`
+  `F18601 F 8466` vs `F 18601 F 8466`; `RIETVALLEI` `X2472 8814 8812` vs `X 2472/8814`),
+  `Train Type` 1 (`VACUUM TRAINS/VACUUM TRAIN` vs `MEDIUM HEAVY/MEDIUM HEAVY`). Genuinely
+  different timings, not a duplicate.
+- **100 / 700 / 1300 / 2000** — identical apart from clock times (arrival 12, departure 12,
+  header times 2 each).
+- **2154 / 2156 / 2158 / 2160** — identical apart from clock times; 2154 alone differs in
+  `Frequency`.
+- **7788 vs 7790** — same sequence: clock times 14+14, `Depart_Day` 11, activity 1
+  (`VANDYKSDRIF` blank vs `B`).
+- **58859 vs 7788**, **58871 vs 7788** — same sequence and travel: clock times 14+14; `58859` also
+  `Depart_Day` 6 and `Train Type` `MEDIUM HEAVY/THUTHUKA`; `58871` only `Train Type`
+  `MEDIUM HEAVY/MAJUBA`.
+- **89254 vs 7788** — same sequence: `Runtime` all 15 rows (02:37:00 vs 02:52:00), clock times,
+  travel 8, activity 3 (`VANDYKSDRIF` `B` vs blank, `ARBOR` `SHUNT` vs blank, `WELGEDAG` `RT` vs
+  blank) and dwell 1 (`ARBOR` `00:10:00` vs blank).
+- **7722 vs 8192** — 8192 stops at `SAAIWATER`; 7722 continues to `OGIES` (6 vs 5 rows), runtime
+  01:04:00 vs 00:48:00, `Depart_Day` 4, `VANDYKSDRIF` dwell+activity present only in 8192.
+- **80109 vs 80309 / 80309 vs 80509** — same sequence; `Depart_Day` 3 resp. 1 (see anomaly above).
+
+### Aggregate after round 57 (measured)
+
+**18 rail data files, 16,790 rows, 545 workings, 34 depots; 522 `[OK]` + 23 flagged.**
+(Round 56: 17 / 16,080 / 466 / 33 with 445 + 21. This round added 710 rows, 79 new workings and one
+new depot; the flag list gained BIJLKOR-adjacent `BLINKPAN 80109` and the header-only `BLINKPAN
+89309`.) `bijlkor-batch.txt`: 1,682 rows, 62 workings, 0 flagged.
+
+### Outstanding after this round
+
+1. **Re-paste owed**: BIJLKOR `17207` head (header through `BIJ/S750557` 22:26:00), BLINKPAN
+   `89309` steps, BIJLKOR `8856` tail (`BEAUFORTWEST` day-1 20:25:00 onward) and BIJLKOR
+   `9409`, `9443`, `16453`, `17205`.
+2. The branch decision from round 54 (still unanswered).
+3. BLOEMFONTEIN queue 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000; the other partials
+   (BEACONSFIELD 8965, BEAUFORTWEST 97, BLOEMFONTEIN 4215, BLOEMFONTEIN 18927, WELGEDAG 58866);
+   the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
+   BEACONSFIELD 1438 re-transcription.
