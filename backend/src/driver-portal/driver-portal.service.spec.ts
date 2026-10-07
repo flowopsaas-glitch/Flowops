@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { DriverPortalService } from "./driver-portal.service";
+import { legalPredecessorStatuses } from "../waybills/waybill-status.machine";
 
 /**
  * Driver portal — chain-of-custody and tenant-isolation tests.
@@ -24,6 +25,7 @@ describe("DriverPortalService", () => {
   let gateway: any;
   let epod: any;
   let compliance: any;
+  let audit: any;
 
   beforeEach(() => {
     prisma = {
@@ -64,7 +66,15 @@ describe("DriverPortalService", () => {
         manifest: {
           updateMany: jest.fn(async () => p.manifest.updateManyResult ?? { count: 1 }),
         },
-        waybill: { updateMany: jest.fn(async () => p.waybill.updateManyResult ?? { count: 1 }) },
+        waybill: {
+          updateMany: jest.fn(async (args: any) => {
+            p.waybill.updateManyCalls = [...(p.waybill.updateManyCalls ?? []), args];
+            return p.waybill.updateManyResult ?? { count: 1 };
+          }),
+          findFirst: jest.fn(async () =>
+            p.waybill.currentResult ?? { status: "CANCELLED", trackingNumber: "WB-CANCELLED" },
+          ),
+        },
         trackingEvent: { create: jest.fn() },
         shipment: {
           findFirst: jest.fn(),
@@ -78,6 +88,7 @@ describe("DriverPortalService", () => {
       sendRatingRequest: jest.fn().mockResolvedValue(undefined),
     };
     gateway = { emitShipmentUpdate: jest.fn() };
+    audit = { record: jest.fn(async () => 'audit-1') };
     // EpodService owns the POD write path (custody, duplicate guard, one
     // transaction); this suite pins the driver-app wiring around it.
     epod = { capture: jest.fn() };
@@ -94,6 +105,7 @@ describe("DriverPortalService", () => {
       {} as any, // DriverSafetyService — not used on these paths
       epod,
       compliance,
+      audit,
     );
   });
 
@@ -329,14 +341,49 @@ describe("DriverPortalService", () => {
       prisma.manifest.updateManyResult = undefined;
     });
 
-    it("skips a waybill that is no longer in a movable state instead of forcing AT_DESTINATION_HUB", async () => {
+    it("skips a waybill that is no longer in a movable state, reports it, and audits the refusal", async () => {
       prisma.manifest.findFirst.mockResolvedValue(manifest);
       prisma.driver.findMany.mockResolvedValue([]);
       prisma.waybill.updateManyResult = { count: 0 }; // e.g. cancelled mid-route
+      prisma.waybill.currentResult = { status: "CANCELLED", trackingNumber: "WB-2026-0001" };
 
       const result = await service.confirmLinehaulDelivery("man-1", "driver-1", "company-1");
-      expect(result).toMatchObject({ waybillsDelivered: 0 });
+
+      expect(result).toMatchObject({ waybillsDelivered: 0, waybillsSkipped: 2 });
+      expect(result.skippedWaybills[0]).toMatchObject({
+        trackingNumber: "WB-2026-0001",
+        status: "CANCELLED",
+      });
+      // The gap must be on the audit rail, not only in the response.
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "waybill.transition_rejected",
+          targetType: "waybill",
+          targetId: "wb-1",
+          metadata: expect.objectContaining({
+            attempted: "AT_DESTINATION_HUB",
+            from: "CANCELLED",
+            reason: "illegal_transition",
+            source: "driver-portal.linehaul",
+          }),
+        }),
+      );
       prisma.waybill.updateManyResult = undefined;
+    });
+
+    it("derives the compare-and-set whitelist from the state machine, not by hand", async () => {
+      prisma.manifest.findFirst.mockResolvedValue(manifest);
+      prisma.driver.findMany.mockResolvedValue([]);
+
+      await service.confirmLinehaulDelivery("man-1", "driver-1", "company-1");
+
+      // The whitelist the CAS actually used must equal what the machine says.
+      // Hand-written, it previously accepted COLLECTED and OUT_FOR_DELIVERY —
+      // two jumps the machine refuses.
+      const used = prisma.waybill.updateManyCalls[0].where.status.in;
+      expect([...used].sort()).toEqual(legalPredecessorStatuses("AT_DESTINATION_HUB").sort());
+      expect(used).not.toContain("COLLECTED");
+      expect(used).not.toContain("OUT_FOR_DELIVERY");
     });
   });
 

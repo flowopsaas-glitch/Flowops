@@ -76,8 +76,9 @@ function makeHarness(overrides: Row = {}) {
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
 
-  const svc = new EpodService(prisma as any);
-  return { svc, prisma, tx, db, waybill };
+  const audit = { record: jest.fn(async () => 'audit-1') };
+  const svc = new EpodService(prisma as any, audit as any);
+  return { svc, prisma, tx, db, waybill, audit };
 }
 
 const DTO = { waybillId: 'wb-1', signatureUrl: 'https://cdn/sig.png', recipientName: 'T. Mokoena' };
@@ -104,6 +105,45 @@ describe('EpodService.capture — custody and state', () => {
   it('refuses to deliver a parcel that is not out for delivery', async () => {
     const { svc } = makeHarness({ status: 'PENDING' });
     await expect(svc.capture('co-1', DTO, { driverId: 'drv-1' })).rejects.toThrow(BadRequestException);
+  });
+
+  it('refuses — and AUDITS — a capture of a parcel that never went out for delivery', async () => {
+    // AT_DESTINATION_HUB is capturable per CAPTURABLE_WAYBILL_STATUSES, but the
+    // state machine does not allow AT_DESTINATION_HUB → DELIVERED. Without the
+    // audit row this refusal would leave no trace at all.
+    const { svc, audit, tx } = makeHarness({ status: 'AT_DESTINATION_HUB' });
+
+    await expect(svc.capture('co-1', DTO, { driverId: 'drv-1' })).rejects.toThrow(BadRequestException);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'waybill.transition_rejected',
+        targetType: 'waybill',
+        targetId: 'wb-1',
+        metadata: expect.objectContaining({
+          from: 'AT_DESTINATION_HUB',
+          attempted: 'DELIVERED',
+          reason: 'illegal_transition',
+          source: 'epod.capture',
+        }),
+      }),
+    );
+    // A refused state must not have moved the parcel or the POD.
+    expect(tx.waybill.updateMany).not.toHaveBeenCalled();
+    expect(tx.electronicPod.create).not.toHaveBeenCalled();
+  });
+
+  it('a parcel that failed its first attempt can be delivered on the retry visit', async () => {
+    const { svc, audit, tx } = makeHarness({ status: 'FAILED_DELIVERY' });
+
+    const pod = await svc.capture('co-1', DTO, { driverId: 'drv-1' });
+
+    expect(pod.status).toBe('CAPTURED');
+    expect(tx.waybill.updateMany).toHaveBeenCalled();
+    // A legal transition is not a rejection — nothing on the audit rail.
+    expect(audit.record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'waybill.transition_rejected' }),
+    );
   });
 
   it('lets an operations role capture on behalf of the assigned driver', async () => {

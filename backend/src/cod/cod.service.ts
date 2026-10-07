@@ -185,15 +185,19 @@ export class CodService {
       if (dist > radiusM) continue;
 
       // Within geofence — advance to OUT_FOR_DELIVERY through the state machine
-      // (was a raw update bypassing guardTransition). Honours
-      // WAYBILL_STRICT_TRANSITIONS: logged-only until strict mode is on.
+      // (this used to be a raw update that bypassed it entirely).
       guardTransition(waybill.status as any, 'OUT_FOR_DELIVERY', {
         waybillId: waybill.id, trackingNumber: waybill.trackingNumber, actor: 'geofence',
       });
-      await this.prisma.waybill.update({
-        where: { id: waybill.id },
+      // Compare-and-set, not a blind write: the shipment list was read before
+      // the loop, so between then and here a POD or a failed attempt may have
+      // moved this parcel on. A blind update would drag a DELIVERED parcel back
+      // to OUT_FOR_DELIVERY and re-fire the customer "arriving today" message.
+      const advanced = await this.prisma.waybill.updateMany({
+        where: { id: waybill.id, companyId, status: 'IN_TRANSIT' },
         data: { status: 'OUT_FOR_DELIVERY' },
       });
+      if (advanced.count === 0) continue;
       // Note: the linked Shipment intentionally stays IN_TRANSIT — ShipmentStatus
       // has no OUT_FOR_DELIVERY state; the shipment advances to DELIVERED/FAILED
       // at POD/failed-attempt time. So there is no waybill/shipment split here.

@@ -37,33 +37,111 @@
 
 **Regression tests (#10)** — 7 new suites: owner-auth guard, compliance policy, COD settlement (double-credit + concurrency), ePOD (duplicate/concurrent capture), dispatch (read-only suggest, CAS under concurrency), KPI maths, hub transitions + address-book scoping.
 
+**Follow-up round — the three deferred recommendations, closed end-to-end**
+
+- **Strict transitions are now the default.** `waybill-status.machine.ts` rewritten: `WAYBILL_TRANSITION_MODE=strict|warn|off` (default **strict**), the legacy boolean `WAYBILL_STRICT_TRANSITIONS` still honoured (`true`→strict, `false`→warn), and an unknown value falls back to **strict** — never to "allow". An illegal transition is refused before any write and recorded as an audit row (`waybill.transition_rejected`: from / attempted / source / enforcement), from `waybills.update`, `waybills.batchScan`, `epod.capture` and the linehaul arrival. Two real state bugs surfaced while auditing the callers:
+  - `FAILED_DELIVERY → DELIVERED` was missing from the table, so a parcel that failed its first attempt could not be signed for on the retry visit (ePOD lists `FAILED_DELIVERY` as capturable). Fixed, with a test.
+  - the linehaul arrival used a **hand-written** status whitelist that also accepted `COLLECTED` and `OUT_FOR_DELIVERY` → `AT_DESTINATION_HUB` — two jumps the machine refuses. The whitelist is now derived (`legalPredecessorStatuses()`), parcels that cannot legally arrive are left untouched, reported to the driver (`waybillsSkipped` / `skippedWaybills`) and audited per parcel.
+- **A status-regression window in geofence auto-advance is closed.** `checkGeofence` read the in-transit list once and then wrote `OUT_FOR_DELIVERY` with a blind `update`: a POD landing in between was dragged back, and the customer got a second "arriving today" message. It is now a compare-and-set on `status: 'IN_TRANSIT'`, and a lost race changes nothing and notifies nobody.
+- **Document enforcement has an operating story.** New `compliance/drivers` API (`GET /` fleet report, `GET /:id`, `PATCH /:id` audited evidence, `PATCH /:id/hold` supervisory hold) so a tenant can backfill the dates the policy judges. `summary.documentCoveragePercentage` and `summary.readyToRequireDocuments` say exactly when it is safe to flip `DRIVER_REQUIRE_DOCUMENTS`. An empty body on the hold endpoint is a 400 (it used to read as "lift the hold").
+- **Migrations verified on a real PostgreSQL engine.** All 7 migrations apply in order and build the committed datamodel exactly (145 tables / 2243 columns / 95 enums / 402 indexes / 150 FKs, **0 differences**) — see §3 and §5.
+
 ## 2. Files modified
 
-New (production): `src/common/compliance/{driver-compliance.policy.ts,driver-compliance.service.ts,compliance.module.ts}`, `src/common/kpi/{kpi-math.ts,kpi-consistency.service.ts,kpi.module.ts}`, `src/common/decorators/owner-only.decorator.ts`*, `src/cod/cod-settlement.service.ts`, `src/rail/rail-handoff.policy.ts`.
-New (tests): `src/common/guards/owner-auth.guard.spec.ts`, `src/common/compliance/driver-compliance.policy.spec.ts`, `src/common/kpi/kpi-math.spec.ts`, `src/cod/cod-settlement.service.spec.ts`, `src/epod/epod.service.spec.ts`, `src/dispatch/auto-dispatch.service.spec.ts`, `src/logistics-ops/logistics-ops.service.spec.ts`.
+New (production): `src/common/compliance/{driver-compliance.policy.ts,driver-compliance.service.ts,driver-compliance.controller.ts,compliance.module.ts}`, `src/common/kpi/{kpi-math.ts,kpi-consistency.service.ts,kpi.module.ts}`, `src/common/decorators/owner-only.decorator.ts`*, `src/cod/cod-settlement.service.ts`, `src/rail/rail-handoff.policy.ts`.
+New (tests): `src/common/guards/owner-auth.guard.spec.ts`, `src/common/compliance/driver-compliance.policy.spec.ts`, `src/common/compliance/driver-compliance.service.spec.ts`, `src/common/kpi/kpi-math.spec.ts`, `src/cod/cod-settlement.service.spec.ts`, `src/epod/epod.service.spec.ts`, `src/dispatch/auto-dispatch.service.spec.ts`, `src/logistics-ops/logistics-ops.service.spec.ts`, `src/waybills/waybill-status.machine.spec.ts`.
 New (migrations): `prisma/migrations/20261007090000_driver_compliance_fields/`, `prisma/migrations/20261007120000_waybill_source_collection/`.
-Modified: app.module, cod/{controller,module,service,service.spec}, collections/{module,service}, common/guards/{jwt-auth,owner-auth}, dashboard/{module,service}, dispatch/{auto-dispatch.service,module}, driver-portal/{module,service,service.spec}, epod/epod.service, logistics-ops/{module,service}, okr/okr.controller, owner/owner.controller, rail/{controller,rail-audit,rail.service,rail.service.spec,dto/intermodal-leg.dto}, routing/{module,service}, shipments/{module,service}, warehouse-management.service, waybills/{module,service}, prisma/schema.prisma.
+Modified: app.module, cod/{controller,module,service,service.spec}, collections/{module,service}, common/guards/{jwt-auth,owner-auth}, dashboard/{module,service}, dispatch/{auto-dispatch.service,module}, driver-portal/{module,service,service.spec}, epod/epod.service, logistics-ops/{module,service}, okr/okr.controller, owner/owner.controller, rail/{controller,rail-audit,rail.service,rail.service.spec,dto/intermodal-leg.dto}, routing/{module,service}, shipments/{module,service}, warehouse-management.service, waybills/{module,service,waybill-status.machine,waybill-status.machine.spec}, prisma/schema.prisma, `backend/.env.example`, `docs/BACKEND.md`.
 Deleted: cod-settlement.guard.ts, owner-auth.guard.fixed.ts, fleet-compliance.guard.ts, kpi-consistency.guard.ts, epod-guard.service.ts, rail-timetable-scoped.service.ts (all unreferenced).
 
 ## 3. Validation commands run
 
 | Command | Result |
 |---|---|
-| `npx jest` | 57/57 suites, 1958/1958 tests pass |
-| `npx tsc --noEmit -p tsconfig.build.json` | clean (was failing on 4 pre-existing files) |
+| `npx jest` | **59/59 suites, 2004/2004 tests pass** |
+| `npx tsc --noEmit -p tsconfig.build.json` | clean |
 | `npm run build` (nest build) | clean |
 | `npx eslint "src/**/*.ts"` | clean (0 errors, 0 warnings) |
 | `npm run schema:validate:offline` | ✓ valid |
 | `node scripts/verify-migrations.mjs` | ✓ 7 migrations well-formed |
+| `node ../docs/tools/verify-migrations-pglite.mjs` (PGlite = PostgreSQL compiled to WASM) | ✓ all 7 migrations applied in order; catalog vs datamodel **0 differences** (145 tables / 2243 columns / 95 enums) |
 | `npm run rbac:test` | 7/7 pass |
 | `npm run release:safety:test` | 40/40 pass |
-| `node scripts/tenant-scope-audit.mjs --format summary` | 329 findings, 228 guarded, 101 unscoped (all verified: owner/platform scope or guarded by a preceding scoped read) |
+| `node scripts/tenant-scope-audit.mjs --format json` | 329 findings across 120 service files: 224 guarded, 105 flagged (all inspected by hand — owner/platform scope, or guarded by a preceding company-scoped read) |
+
+The PGlite run is the integration evidence for the schema: it applies every
+migration to an empty PostgreSQL engine in order, step by step, and then compares
+the resulting catalog against `schema.prisma` — tables, columns, types,
+nullability, defaults, enum labels, primary keys, unique constraints, `@@index`
+lists and foreign keys. It is able to fail (a dropped index, a changed column
+type and an extra column were each reported when tried).
+
+Not run here: `npm run test:integration` needs a live PostgreSQL server (the
+sandbox has none and Prisma's engine binaries are unreachable), so the
+transaction/compare-and-set behaviour is proven by the 2004 unit tests against
+mocks plus the real-engine schema run above, not by a live database.
 
 ## 4. Remaining risks / follow-ups
 
-1. **`WAYBILL_STRICT_TRANSITIONS`** — the waybill state machine still logs illegal transitions by default; consider enabling strict mode now that callers have been audited.
-2. **`DRIVER_REQUIRE_DOCUMENTS`** — missing licence/insurance/background-check blocks dispatch only when this env flag is on; enable after backfilling driver document dates.
-3. **Schema changes** — two additive migrations were added (`driver_compliance_fields`, `waybill_source_collection`); they must be applied in order on deploy, and `prisma generate` re-run (the offline stub used here is a sandbox-only workaround).
-4. **Manual settlement of PayPal/Paystack-style refunds and other out-of-band wallet movements** are still unrestricted beyond `UserRole`; a dedicated "wallet ADJUSTMENT" flow with dual control may be worth adding.
-5. **Tenant-scope audit residue** — the tool cannot see inline guards in `auth`, `owner`, `webhooks`, `process-control`, `fleet-maintenance`, `ai/platform-protection` and `alerting`; each flagged line was checked by hand and is either owner/platform scope or guarded by a preceding company-scoped read.
-6. **No integration DB run** — the sandbox has no Postgres, so the transaction/CAS behaviour is proven by unit tests against mocks plus schema validation, not by a live database run.
+1. **`WAYBILL_TRANSITION_MODE` — resolved.** Strict is the default; `warn`/`off`
+   exist for a deliberate incident decision and are never reached by accident
+   (an unrecognised value falls back to strict). Remove the legacy
+   `WAYBILL_STRICT_TRANSITIONS` from your environment once you have confirmed
+   `strict` behaviour in production — while it is set, it wins.
+2. **`DRIVER_REQUIRE_DOCUMENTS` — still off by default, now with a safe way on.**
+   Missing documents block dispatch only when the flag is on (expired/invalid
+   documents, a compliance hold and an overdue service always block). Backfill
+   through `PATCH /api/v1/compliance/drivers/:id`, then flip the flag when
+   `GET /api/v1/compliance/drivers` reports `summary.readyToRequireDocuments:
+   true`. Flipping it before backfilling will stop dispatch for undocumented
+   drivers — that is the point, but it is a visible operational event, so do it
+   tenant by tenant.
+3. **Migrations — verified offline and on a real engine; the deploy step
+   remains.** Apply in order (`npx prisma migrate deploy` applies
+   `20261007090000_driver_compliance_fields` then
+   `20261007120000_waybill_source_collection`), then re-run `npx prisma
+   generate` so the client knows about the seven new `drivers` columns and
+   `waybills.sourceCollectionId`. Both are strictly additive (nullable columns
+   except `complianceHold`, which is `NOT NULL DEFAULT false` and backfills
+   atomically) — the rollback is `DROP COLUMN` for the columns added. The
+   offline Prisma stub used in this sandbox is a workaround, not a substitute
+   for the real client.
+4. **Wallet out-of-band movements** (refunds, manual credits) are still only
+   `UserRole`-restricted; a dedicated `wallet ADJUSTMENT` flow with dual control
+   is worth adding.
+5. **Tenant-scope audit residue** — the scanner cannot see inline guards in
+   `auth`, `owner`, `webhooks`, `process-control`, `fleet-maintenance`,
+   `ai/platform-protection` and `alerting`. Every flagged line was read: they
+   are owner/platform scope, self-generated webhook writes, or guarded by a
+   preceding company-scoped read.
+6. **No live-database run of the integration suite.** The sandbox has no
+   PostgreSQL server and Prisma's engine binaries are unreachable, so
+   `npm run test:integration` was not executed. Mitigation: the migrations were
+   applied to a real PostgreSQL engine in-process (PGlite) with a 0-difference
+   catalog comparison, and every concurrency guarantee has a unit test that
+   models the losing race. Run `npm run test:integration` against a disposable
+   database in CI before the release.
+
+## 5. Releasing this
+
+```bash
+# 1. backend env — the two switches (see backend/.env.example for comments)
+WAYBILL_TRANSITION_MODE=strict     # default; warn/off only for an incident
+DRIVER_REQUIRE_DOCUMENTS=false     # flip per tenant once documented
+
+# 2. migrate, in order, then regenerate the client
+cd backend
+npx prisma migrate deploy          # 20261007090000 → 20261007120000
+npx prisma generate
+
+# 3. confirm the two new surfaces are live
+GET   /api/v1/compliance/drivers                     # fleet report + coverage
+GET   /api/v1/rail/consignments/:id/legs/:legId/handoff-readiness
+
+# 4. watch the audit rail for the first day of strict mode
+#    audit_logs.action IN ('waybill.transition_rejected','driver.compliance_evidence_updated')
+```
+
+Strict mode is intentionally noisy in `audit_logs` and quiet in the UI: a
+refused transition is a real-world event worth a look, and the row carries the
+attempted pair, the calling source and the enforcement mode.

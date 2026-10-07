@@ -11,6 +11,8 @@ import { EventsGateway } from '../gateway/events.gateway';
 import { DriverSafetyService } from '../driver-safety/driver-safety.service';
 import { EpodService } from '../epod/epod.service';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
+import { AuditService } from '../audit/audit.service';
+import { legalPredecessorStatuses } from '../waybills/waybill-status.machine';
 
 @Injectable()
 export class DriverPortalService {
@@ -23,6 +25,7 @@ export class DriverPortalService {
     private safety: DriverSafetyService,
     private epod: EpodService,
     private compliance: DriverComplianceService,
+    private audit: AuditService,
   ) {}
 
   /**
@@ -173,7 +176,12 @@ export class DriverPortalService {
    *    system still shows it on the road (or vice versa);
    *  - only COMPLIANT drivers are chosen for the onward leg (the same policy as
    *    auto-dispatch), and a waybill that is already IN_TRANSIT with another
-   *    driver is never silently re-pointed.
+   *    driver is never silently re-pointed;
+   *  - the status whitelist is DERIVED from the waybill state machine
+   *    (`legalPredecessorStatuses`), not hand-written: the old hard-coded list
+   *    also accepted COLLECTED and OUT_FOR_DELIVERY → AT_DESTINATION_HUB, which
+   *    the machine refuses. Anything the machine refuses is left untouched,
+   *    reported to the driver and audited — never silently skipped.
    */
   async confirmLinehaulDelivery(manifestId: string, driverId: string, companyId: string) {
     const manifest = await this.prisma.manifest.findFirst({
@@ -208,6 +216,11 @@ export class DriverPortalService {
         .filterDispatchable(candidates.map((d) => ({ ...d, driverId: d.id })))
         .map(({ snapshot }) => snapshot.driverId)[0] ?? null;
 
+    // Only states the state machine actually allows to arrive at a hub. A
+    // parcel that never reached AT_ORIGIN_HUB / IN_TRANSIT has a chain-of-
+    // custody gap; asserting the jump away would hide it.
+    const arrivalsFrom = legalPredecessorStatuses('AT_DESTINATION_HUB');
+
     const result = await this.prisma.$transaction(async (tx) => {
       // Compare-and-set: exactly one caller can flip `dispatched`.
       const claim = await tx.manifest.updateMany({
@@ -219,19 +232,28 @@ export class DriverPortalService {
       }
 
       let moved = 0;
+      const skipped: Array<{ waybillId: string; trackingNumber: string | null; status: string | null }> = [];
       for (const waybillId of waybillIds) {
-        // Tenant-scoped CAS per waybill: only parcels still ON THE ROAD move to
-        // the destination hub. A parcel that was cancelled in the meantime is
-        // left alone (and counted as not moved).
+        // Tenant-scoped CAS per waybill: only parcels the machine allows to
+        // arrive move to the destination hub. A parcel that was cancelled in
+        // the meantime — or that was never scanned through the origin hub — is
+        // left alone and reported below.
         const moved1 = await tx.waybill.updateMany({
-          where: {
-            id: waybillId,
-            companyId,
-            status: { in: ['IN_TRANSIT', 'COLLECTED', 'AT_ORIGIN_HUB', 'OUT_FOR_DELIVERY'] },
-          },
+          where: { id: waybillId, companyId, status: { in: arrivalsFrom } },
           data: { status: 'AT_DESTINATION_HUB' },
         });
-        if (moved1.count === 0) continue;
+        if (moved1.count === 0) {
+          const current = await tx.waybill.findFirst({
+            where: { id: waybillId, companyId },
+            select: { status: true, trackingNumber: true },
+          });
+          skipped.push({
+            waybillId,
+            trackingNumber: current?.trackingNumber ?? null,
+            status: current?.status ?? null, // null = not in this tenant at all
+          });
+          continue;
+        }
         moved++;
 
         await tx.trackingEvent.create({
@@ -269,13 +291,36 @@ export class DriverPortalService {
         }
       }
 
-      return { moved, eligibleDriverId };
+      return { moved, eligibleDriverId, skipped };
     });
 
     this.logger.log(
       `Linehaul ${manifest.code} delivered by driver ${driverId} to branch ${manifest.branch?.name ?? manifestId}. ` +
       `${result.moved} waybills marked AT_DESTINATION_HUB (ready for last-mile).`,
     );
+
+    // Every parcel that did NOT move is a chain-of-custody gap: audit it with
+    // the exact pair that was refused, so the origin hub can be told to scan
+    // what it is holding instead of the record quietly diverging from the truck.
+    for (const skip of result.skipped) {
+      await this.audit.record({
+        action: 'waybill.transition_rejected',
+        actorType: 'tenant',
+        actorId: driverId,
+        targetType: 'waybill',
+        targetId: skip.waybillId,
+        targetName: skip.trackingNumber,
+        metadata: {
+          companyId,
+          manifestId,
+          manifestCode: manifest.code,
+          from: skip.status,
+          attempted: 'AT_DESTINATION_HUB',
+          reason: skip.status === null ? 'not_in_tenant' : 'illegal_transition',
+          source: 'driver-portal.linehaul',
+        },
+      });
+    }
 
     return {
       success: true,
@@ -286,6 +331,10 @@ export class DriverPortalService {
       // keeps the parcels at the hub awaiting manual dispatch.
       reassignedTo: result.eligibleDriverId,
       awaitingManualDispatch: waybillIds.length > 0 && !result.eligibleDriverId,
+      // Parcels the manifest listed that could not legally arrive: dispatch has
+      // to fix the origin scan (or investigate) — this list is the work queue.
+      waybillsSkipped: result.skipped.length,
+      skippedWaybills: result.skipped,
     };
   }
 

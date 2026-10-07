@@ -7,8 +7,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CaptureEpodDto, VerifyEpodDto, DisputeEpodDto } from './dto/epod.dto';
-import { guardTransition } from '../waybills/waybill-status.machine';
+import {
+  getTransitionMode,
+  guardTransition,
+  illegalTransitionMessage,
+  isLegalTransition,
+} from '../waybills/waybill-status.machine';
 
 /**
  * Actor context for an ePOD capture. Carries who is capturing so we can enforce
@@ -57,7 +63,10 @@ const CAPTURABLE_WAYBILL_STATUSES = ['OUT_FOR_DELIVERY', 'AT_DESTINATION_HUB', '
 export class EpodService {
   private readonly logger = new Logger(EpodService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async capture(companyId: string, dto: CaptureEpodDto, actor: EpodActor = {}) {
     if (!dto?.waybillId) throw new BadRequestException('waybillId is required');
@@ -125,18 +134,37 @@ export class EpodService {
         `Waybill ${waybill.trackingNumber} is ${waybill.status}; a POD can only be captured for ${CAPTURABLE_WAYBILL_STATUSES.join('/')}.`,
       );
     }
-    guardTransition(
-      waybill.status,
-      'DELIVERED',
-      {
-        waybillId: waybill.id,
-        trackingNumber: (waybill as any).trackingNumber,
-        actor: actor.driverId ?? actor.userId ?? 'epod',
-      },
-      (msg) => {
-        throw new BadRequestException(msg);
-      },
-    );
+    const transitionCtx = {
+      waybillId: waybill.id,
+      trackingNumber: (waybill as any).trackingNumber,
+      actor: actor.driverId ?? actor.userId ?? 'epod',
+    };
+    // Audit the ATTEMPT before refusing it. In strict mode (the default) the
+    // refusal happens before any write, so this audit row is the only evidence
+    // that someone tried to complete a parcel that never went out for delivery
+    // — exactly the case a settlement dispute turns on.
+    if (!isLegalTransition(waybill.status, 'DELIVERED')) {
+      await this.audit.record({
+        action: 'waybill.transition_rejected',
+        actorType: 'tenant',
+        actorId: actor.driverId ?? actor.userId ?? null,
+        targetType: 'waybill',
+        targetId: waybill.id,
+        targetName: (waybill as any).trackingNumber ?? null,
+        metadata: {
+          companyId,
+          from: waybill.status,
+          attempted: 'DELIVERED',
+          reason: 'illegal_transition',
+          source: 'epod.capture',
+          enforcement: getTransitionMode(),
+          detail: illegalTransitionMessage(waybill.status, 'DELIVERED', transitionCtx),
+        },
+      });
+    }
+    guardTransition(waybill.status, 'DELIVERED', transitionCtx, (msg) => {
+      throw new BadRequestException(msg);
+    });
 
     // Attribute the capture to the assigned driver when the client didn't send
     // one (or sent a mismatching id) — never trust a client-supplied driverId

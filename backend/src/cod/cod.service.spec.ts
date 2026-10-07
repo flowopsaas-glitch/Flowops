@@ -75,15 +75,19 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
 describe('CodService', () => {
   let svc: CodService;
   let prisma: ReturnType<typeof makePrisma>;
+  let notifications: { notifyWaybillStatus: jest.Mock };
+  let gateway: { emitShipmentUpdate: jest.Mock };
 
   beforeEach(async () => {
     prisma = makePrisma();
+    notifications = { notifyWaybillStatus: jest.fn() };
+    gateway = { emitShipmentUpdate: jest.fn() };
     const module = await Test.createTestingModule({
       providers: [
         CodService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: { notifyWaybillStatus: jest.fn() } },
-        { provide: EventsGateway, useValue: { emitShipmentUpdate: jest.fn() } },
+        { provide: NotificationsService, useValue: notifications },
+        { provide: EventsGateway, useValue: gateway },
         CodSettlementService,
       ],
     }).compile();
@@ -212,9 +216,38 @@ describe('CodService', () => {
           recipientEmail: null, status: 'IN_TRANSIT', companyId: 'co1',
         },
       }]);
-      (prisma.waybill.update as jest.Mock).mockResolvedValue({});
+      (prisma.waybill.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
       const res = await svc.checkGeofence('drv1', 'co1', -26.2041, 28.0473);
       expect(res.triggered).toContain('FO-001');
+      expect(prisma.waybill.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'OUT_FOR_DELIVERY' } }),
+      );
+    });
+
+    it('REGRESSION: a parcel delivered while the loop ran is not dragged back to OUT_FOR_DELIVERY', async () => {
+      (prisma.shipment.findMany as jest.Mock).mockResolvedValue([{
+        driverId: 'drv1',
+        status: 'IN_TRANSIT',
+        waybill: {
+          id: 'wb1', trackingNumber: 'FO-003', recipientName: 'Test',
+          recipientLat: -26.2040, recipientLng: 28.0472,
+          recipientEmail: null, status: 'IN_TRANSIT', companyId: 'co1',
+        },
+      }]);
+      // The compare-and-set finds nothing: a POD (or a failed attempt) moved the
+      // parcel on between the read above and this write.
+      (prisma.waybill.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+
+      const res = await svc.checkGeofence('drv1', 'co1', -26.2041, 28.0473);
+
+      expect(res.triggered).toHaveLength(0);
+      expect(prisma.waybill.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'wb1', companyId: 'co1', status: 'IN_TRANSIT' },
+        }),
+      );
+      // No "arriving today" notification for a parcel that already arrived.
+      expect(notifications.notifyWaybillStatus).not.toHaveBeenCalled();
     });
 
     it('does NOT trigger when driver is outside the radius', async () => {

@@ -31,6 +31,34 @@ npm run start:dev
 
 See `backend/.env.example` for the full list with comments.
 
+### Two switches worth knowing before a release
+
+**`WAYBILL_TRANSITION_MODE`** (`strict` | `warn` | `off`, default **strict**)
+— the waybill lifecycle is enforced by one state machine
+(`src/waybills/waybill-status.machine.ts`). In strict mode an illegal status
+move is refused *before* any write and recorded as an audit row
+(`waybill.transition_rejected`) with the attempted pair and the calling source;
+`warn` logs and allows (for a live incident only), `off` is silent. The legacy
+boolean `WAYBILL_STRICT_TRANSITIONS` still works (`true` → strict, `false` →
+warn) — migrate it off.
+
+**`DRIVER_REQUIRE_DOCUMENTS`** (`true` | `false`, default **false**) — when on,
+a driver with a *missing* licence, insurance or background-check date cannot be
+dispatched (expired/invalid documents, a compliance hold and an overdue service
+always block, regardless of this flag). Roll it on per tenant once the fleet is
+documented:
+
+```bash
+GET   /api/v1/compliance/drivers          # summary.documentCoveragePercentage,
+                                          # summary.readyToRequireDocuments
+PATCH /api/v1/compliance/drivers/:id      # { licenseExpiry, insuranceExpiry, … }
+```
+
+`readyToRequireDocuments === true` means every driver in the fleet has all three
+documents on file — that is the moment to flip the flag. Every evidence change
+is audited (`driver.compliance_evidence_updated`) with before/after values, and
+a compliance hold requires a reason.
+
 ---
 
 ## Setting up WhatsApp (Meta Cloud API)
@@ -191,6 +219,7 @@ curl http://localhost:3000/api/v1/paystack/verify/<reference> \
 | Paystack | `/api/v1/paystack` | initialize, verify, subscribe, cancel, plans, webhook |
 | AI | `/api/v1/ai` | Copilot, events, supervisor, email hub |
 | Owner | `/api/v1/owner` | Tenant management, platform metrics |
+| Compliance | `/api/v1/compliance` | `GET /drivers` (fleet compliance report), `GET /drivers/:id`, `PATCH /drivers/:id` (record evidence: expiry dates, hold), `PATCH /drivers/:id/hold` |
 | Storage | (internal) | Cloudflare R2 upload/download |
 
 Full interactive docs: `GET http://localhost:3000/docs` (Swagger UI, non-production only)
