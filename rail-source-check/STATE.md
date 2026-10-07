@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 52 — BLOEMHOF 8908 completed and 8985 added; 10 BLOEMFONTEIN workings remain, next 8941; current branch arena/d016ab76-flowops)
+Updated: 2026-10-07 (round 54 — BOTHAVILLE and BIJLKOR depots added; 17 data files / 15,139 rows / 430 workings / 33 depots; BIJLKOR 5931 is a PARTIAL extract, its tail must still be re-supplied; next BLOEMFONTEIN working remains 8941; work is being committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -16,6 +16,9 @@ Updated: 2026-10-07 (round 52 — BLOEMHOF 8908 completed and 8985 added; 10 BLO
 - /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 3047 rows, 96 workings; checker: 88 OK + 8 flagged after round 49.
 - /home/user/Flowops/rail-source-check/beeshoek-bethlehem-batch.txt — 828 rows, 21 workings; checker: 19 OK + 2 flagged.
 - /home/user/Flowops/rail-source-check/belfast-batch.txt — 333 rows, BELFAST round 46, 37 workings, all OK; transcribed verbatim from the current paste.
+- /home/user/Flowops/rail-source-check/bronkhorstspruit-batch.txt — 71 rows, round 53, new depot BRONKHORSTSPR (workings 1000, 2702, 4202, 7433, 16465 — 5 workings, all OK); MD5 `54cfbb251e244c7aef454dc15a960025`.
+- /home/user/Flowops/rail-source-check/bothaville-batch.txt — 120 rows, round 54, new depot BOTHAVILLE (5506, 8982, 8986 — 3 workings, all OK); MD5 `f694b22e702962bef2e0e0a7324d840b`.
+- /home/user/Flowops/rail-source-check/bijlkor-batch.txt — 609 rows, round 54, new depot BIJLKOR (16 workings; 15 OK + 1 flagged). 5931 is a PARTIAL extract ending at NODE_Seq 7 SKANSDAM 22:59:00, destination ERMELO stated 06:32:00 — tail not yet supplied. MD5 `ef82c23ec49c21a735854e6cc1ecd084`.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
@@ -902,3 +905,144 @@ files, 14,410 rows, 411 workings, 31 depots**; **390 OK + 21 with issues**.
 this round but are **not yet transcribed to disk**. Also note the BIJLKOR 1428 block introduces
 `ORELINE` as a 7th corridor value and carries the H1/H2 missing-runtime rows, and its `NODE_Seq`
 restarts (1–25, then 1–7, then 1–20).
+
+## Round 54 — BOTHAVILLE (3 workings) + BIJLKOR (16 workings) transcribed and verified
+
+**Two new depots.** Both were confirmed absent from the corpus before transcription (scan across all
+rail `.txt` files: **0 rows** for BOTHAVILLE, **0 rows** for BIJLKOR). Pre-append corpus state was
+**15 files / 14,410 rows**. Both files were written from the paste in hand; no value was inferred,
+corrected, normalised, reordered, padded or repaired. Nothing was derived from a sibling.
+
+### bothaville-batch.txt — 120 rows, 3 workings, all OK
+
+MD5 `f694b22e702962bef2e0e0a7324d840b`. 120 rows, **all 19 fields**, no blank lines.
+
+- **5506**, L1-40 (40 rows): 09:35:00 → 14:17:00, stated 04:42:00 / computed 04:42:00 [OK].
+- **8982**, L41-80 (40 rows): 09:00:00 → 13:09:00, stated 04:09:00 / computed 04:09:00 [OK].
+- **8986**, L81-120 (40 rows): 21:00:00 → 01:09:00, stated 04:09:00 / computed 04:09:00 [OK], overnight x1
+  (`Depart_Day` steps 0→1 at WHITES). Terminating `00:00:00` + `RT` rows preserved.
+
+Checker for BOTHAVILLE: **3 workings, 3 OK, 0 flagged.** Duplicated `NODE_Seq` values (1/13/31/34/35)
+and blank departures (CHRISBOUW / FRIEDESHEIM-type rows) preserved as pasted.
+
+### bijlkor-batch.txt — 609 rows, 16 workings, 15 OK + 1 flagged
+
+MD5 `ef82c23ec49c21a735854e6cc1ecd084`. 609 rows, **all 19 fields**, no blank lines. Written as five
+part files, concatenated in order, then verified in full (all five parts removed afterwards).
+
+| working | lines | rows | times | stated / computed | verdict |
+|---|---|---|---|---|---|
+| 8 | L1-13 | 13 | 09:00:00 → 09:19:00 | 00:19:00 / 00:19:00 | [OK] |
+| 12 | L14-26 | 13 | 12:00:00 → 12:19:00 | 00:19:00 / 00:19:00 | [OK] |
+| 18 | L27-39 | 13 | 18:00:00 → 18:19:00 | 00:19:00 / 00:19:00 | [OK] |
+| 1428 | L40-224 | 185 | 13:02:00 → 10:45:00 | 45:43:00 / 45:43:00 | [OK] overnight x2 |
+| 1785 | L225-226 | 2 | 09:25:00 → 10:10:00 | 00:45:00 / 00:45:00 | [OK] |
+| 2244 | L227-301 | 75 | 09:52:00 → 21:35:00 | 11:43:00 / 11:43:00 | [OK] |
+| 2434 | L302-395 | 94 | 08:37:00 → 23:48:00 | 15:11:00 / 15:11:00 | [OK] |
+| 2436 | L396-487 | 92 | 17:50:00 → 21:36:00 | 27:46:00 / 27:46:00 | [OK] overnight x1 |
+| 2440 | L488-580 | 93 | 21:02:00 → 15:16:00 | 18:14:00 / 18:14:00 | [OK] overnight x1 |
+| 5232 | L581-582 | 2 | 02:18:00 → 03:03:00 | 00:45:00 / 00:45:00 | [OK] |
+| 5236 | L583-590 | 8 | 10:00:00 → 10:45:00 | 00:45:00 / 00:45:00 | [OK] |
+| 5244 | L591-592 | 2 | 16:48:00 → 17:06:00 | 00:18:00 / 00:18:00 | [OK] |
+| 5303 | L593-594 | 2 | 03:30:00 → 03:31:00 | 00:01:00 / 00:01:00 | [OK] |
+| 5309 | L595-596 | 2 | 09:30:00 → 09:31:00 | 00:01:00 / 00:01:00 | [OK] |
+| 5311 | L597-598 | 2 | 11:30:00 → 11:31:00 | 00:01:00 / 00:01:00 | [OK] |
+| **5931** | **L599-609** | **11** | **22:00:00 → 22:59:00** | **06:32:00 / 00:59:00** | **PARTIAL** |
+
+**BIJLKOR 5931 is a PARTIAL EXTRACT — the paste itself was truncated.** It ends at `NODE_Seq` 7,
+`SKANSDAM 22:59:00`, while its header designates **ERMELO** with a stated
+`Train Throughput Runtime` of **06:32:00**. The checker's duration mismatch is *entirely explained*
+by the missing tail: there is no source anomaly here. **The remainder must be re-supplied.**
+No tail was invented, and no row was added to close the gap.
+
+Blank travel values (checker skips and notes, does not fail): `1428` — `LAPLAISANTE` (L204),
+`EIKENFONTEIN` (L221), `STIKLAND` (L223); `2244` — `FERNDALE` (L267); `2436` — `VANDERBIJLPAR` (L400).
+
+Preserved verbatim from the paste, among others: repeated `NODE_Seq` within workings (1428 restarts,
+2434/2436/2440 restarts); `1428` spans CENTRAL→CAPE across two days with the
+**5 blank-corridor `VANDERBIJL` rows** (L44/232/307/401/492 — `ENROUTE_Corridor` empty, kept empty);
+`KLEIGROND` with a bare `B` activity and no arrival; `X 7973 X 7931`, `P 2463 H`, `WEIGHBRIDGE`,
+`INSPECTION ROLL BY`, `F2120` activity texts; the 6h49 `X`-dwell at WARRENTON in 2436; terminating
+`00:00:00` + `RT` / `BO` rows.
+
+### Sibling comparisons (run only after independent transcription; no value derived from them)
+
+Every field was compared (`f1, f3-f19`; the working number is the only field excluded). No comparison
+was used to produce, complete or check off any value — all transcription was finished first.
+
+*bothaville-batch.txt*
+- **8982 vs 8986** (40 vs 40 rows, identical `(NODE_Seq, station)` sequence): differ in
+  `ENROUTE_Arrival time` (39), `ENROUTE_Departure Time` (39), header `Origin Departure Time` (1),
+  header `Destination Arrival Time` (1), `Depart_Day` (6). Travel, dwell, activity and distance are
+  identical throughout.
+- **5506 vs 8982** (40 vs 40, identical sequence): differ in arrival (39), departure (39),
+  `Point to Point Runtime` (22), `Standingtime` (21), `StandingReason` (21), header
+  `Origin Departure Time` (1), header `Destination Arrival Time` (1), `Train Type` (1),
+  `Train Throughput Runtime` (40).
+
+*bijlkor-batch.txt*
+- **8 vs 12** and **12 vs 18** (13 rows each, identical sequences): differ in arrival (12),
+  departure (12), header work-start (1), header work-end (1). All else identical.
+- **5303 vs 5309**, **5309 vs 5311** (2 rows each): arrival (1), departure (1), header work-start (1),
+  header work-end (1).
+- **1785 vs 5232** (2 rows each): the same four fields plus `Train Type` (1).
+- **2434 vs 2436**: 2434 has 94 rows, 2436 has 92; comparing 2434 with its GMA pair removed
+  (`GMA/S261955` + the following `GAMMAGARA`, which 2436 does not contain) gives 92 vs 92 with the
+  `(NODE_Seq, station)` sequence matching except one `NODE_Seq` cell. Differ in arrival (91),
+  departure (91), travel (73), dwell (25), activity (23), `NODE_Seq` (1), header work-start (1),
+  header work-end (1), `Frequency` (1), `Train Type` (1), `Train Throughput Runtime` (92),
+  `Depart_Day` (52).
+- **2434 vs 2440**: 2434 has 94 rows, 2440 has 93; dropping 2434's `LEEUHOF` row (absent from 2440)
+  gives 93 vs 93 on the same station sequence. Differ in `NODE_Seq` (92), arrival (92), departure
+  (92), travel (45), dwell (17), activity (13), header work-start (1), header work-end (1),
+  `Frequency` (1), `Train Throughput Runtime` (93), `Depart_Day` (70), `Distance` (1).
+- **2436 vs 2440**: 2436 has 92 rows with `LEEUHOF` (absent from 2440); 2440 has 93 rows including
+  the GMA pair (absent from 2436). After removing each of those, 91 vs 91 on the same sequence.
+  Differ in `NODE_Seq` (90), arrival (90), departure (90), travel (69), dwell (23), activity (24),
+  header work-start (1), header work-end (1), `Frequency` (1), `Train Type` (1),
+  `Train Throughput Runtime` (91), `Depart_Day` (16), `Distance` (1).
+
+**Structural finding from the comparisons** (observation only, nothing edited): `2434` carries two
+rows `2436` lacks — `GMA/S261955` (corridor `ORELINE`) and `GAMMAGARA`; `2436` carries a `LEEUHOF`
+row that `2440` lacks; `2440` carries the `GMA/S261955` row but not `GAMMAGARA`. The three workings
+are therefore *not* row-identical siblings, and the `LEEUHOF` row is in 2434 and 2436 only.
+
+### Correction to the Round 53 note
+
+Round 53 predicted that BIJLKOR **1428** "introduces `ORELINE` as a 7th corridor value". Measured on
+disk this round, that is wrong: **`ORELINE` occurs exactly twice corpus-wide, both in `bijlkor-batch.txt`
+— `2434` `NODE_Seq` 37 and `2440` `NODE_Seq` 36, both at station `GMA/S261955`.** `1428` carries no
+`ORELINE` row. It is still a genuine 7th corridor value, just from a different working. The
+`NODE_Seq`-restart observation for 1428 (1-25, then 1-7, then 1-20) is correct and preserved.
+
+Also measured this round: the corpus carries **40 blank-corridor rows** and the corridor vocabulary is
+now `CAPE` 10911, `CENTRAL` 2204, `CONTAINER` 1386, `NORTHEAST` 444, `NORTH` 152, blank 40,
+`ORELINE` 2. (The round-53 note gave blank = 33 across 19 workings; the current measured figure is 40,
+of which BIJLKOR contributes 5. The earlier figure is superseded.)
+
+### Branch mandate — still unresolved
+
+The standing mandate names branch `arena/d016ab76-flowops`; this session is bound to
+`arena/25d10ae6-flowops`. Round 53 was committed on the session branch at `0aed311`, and round 54 is
+committed there too. The three options offered (open a PR into `arena/d016ab76-flowops` / continue on
+the session branch and merge manually / start a new session pinned to `d016ab76`) have **not been
+answered**. No work has been lost: the session branch is pushed to the remote on every round, and
+`d016ab76` still holds rounds up to 52. Until a decision is given, keep committing to the session
+branch — never switch branches, never hard-reset.
+
+### Aggregate after round 54 (measured, not assumed)
+
+**17 rail data files, 15,139 rows, 430 distinct `(depot, working)` pairs, 33 depots;
+408 `[OK]` + 22 flagged.** (Round-53 close was 15 files / 14,410 rows / 411 workings / 31 depots;
+390 `[OK]` + 21 flagged. BOTHAVILLE and BIJLKOR together add 729 rows, 19 workings and 2 depots.)
+The 22nd flag is BIJLKOR 5931, which is a **truncated paste**, not a source anomaly — see above.
+
+### Outstanding after this round
+
+1. **BIJLKOR 5931 tail** — the remaining rows from `NODE_Seq` 8 onward, to ERMELO. Re-supply the
+   missing portion of the paste; do not transcribe it from anywhere else.
+2. The branch decision above.
+3. Everything already listed as outstanding in rounds 50-53 (BLOEMFONTEIN 8941, 8943, 8945, 8951,
+   8955, 8964, 8965, 8969, 8989, 9000; the five partials + BIJLKOR 5931 now six; the whole missing
+   depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2; BEACONSFIELD 1438
+   re-transcription).
