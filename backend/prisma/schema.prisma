@@ -596,6 +596,22 @@ model Driver {
   nextServiceDate DateTime?  // calendar-based service due date
   vehicleNotes    String?    // free-form notes (tyre condition, defects etc.)
 
+  // ── Dispatch compliance (single source of truth: DriverComplianceService) ──
+  // These dates are the evidence a dispatcher must be able to trust. A NULL
+  // means "not on file" — the policy reports that as UNVERIFIED rather than
+  // silently assuming the document exists. An expired date is always blocking
+  // on every assignment path (auto-dispatch, manual assign, route creation).
+  licenseExpiry         DateTime? // professional driving permit / licence
+  insuranceExpiry       DateTime? // goods-in-transit / vehicle cover
+  backgroundCheckExpiry DateTime? // police clearance / vetting
+
+  // An explicit operational hold (set by ops, e.g. pending an incident
+  // investigation). While true the driver cannot be dispatched, on any path.
+  complianceHold       Boolean   @default(false)
+  complianceHoldReason String?
+  complianceHoldAt     DateTime?
+  complianceHoldBy     String?
+
   chatMessages    DriverChatMessage[]
 
   companyId String
@@ -1116,6 +1132,12 @@ model Waybill {
   pocCollectionPhotoUrl    String?  // Photo of parcels at collection (condition evidence)
   pocCollectedAt           DateTime? // Timestamp of collection signatures
 
+  // Provenance: the Collection row this waybill was created from. Set exactly
+  // once, inside the same transaction that marks the collection COLLECTED, so a
+  // replayed offline confirmation finds its waybill instead of creating a second
+  // one (and so the pickup can always be traced back to its collection).
+  sourceCollectionId       String?
+
   // Delivery attempts (3x retry before return-to-sender)
   attemptCount    Int       @default(0)   // Number of delivery attempts made
   maxAttempts     Int       @default(3)   // Max attempts before return (configurable)
@@ -1146,6 +1168,7 @@ model Waybill {
 
   @@unique([trackingNumber, companyId])
   @@index([companyId, status])
+  @@index([sourceCollectionId])
   @@index([companyId, createdAt])
   @@index([companyId, updatedAt])
   @@index([status, updatedAt])

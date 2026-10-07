@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { pickAllowed } from '../common/pick-allowed.util';
+import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 
 /** Client-writable Shipment fields (excludes id/companyId/timestamps). */
 const SHIPMENT_FIELDS = [
@@ -16,7 +17,38 @@ export class ShipmentsService {
   constructor(
     private prisma: PrismaService,
     private gateway: EventsGateway,
+    private compliance: DriverComplianceService,
   ) {}
+
+  /**
+   * Validate the tenant-owned references a shipment write is allowed to carry.
+   *
+   * A shipment row links a waybill to a driver; both must belong to the caller's
+   * company. Without this, `POST /shipments { waybillId: <other tenant> }`
+   * silently attached this tenant's row to another tenant's parcel, and a driver
+   * from any tenant could be assigned here (bypassing dispatch entirely).
+   * When a driver is being (re)assigned, the shared compliance policy applies —
+   * this is a dispatch decision however it is made.
+   */
+  private async assertReferences(companyId: string, data: any, assigningDriver: boolean) {
+    if (data.waybillId) {
+      const waybill = await this.prisma.waybill.findFirst({
+        where: { id: data.waybillId, companyId },
+        select: { id: true },
+      });
+      if (!waybill) throw new BadRequestException('waybillId does not belong to this company');
+    }
+    if (data.driverId) {
+      const driver = await this.prisma.driver.findFirst({
+        where: { id: data.driverId, companyId },
+        select: { id: true },
+      });
+      if (!driver) throw new BadRequestException('driverId does not belong to this company');
+      if (assigningDriver) {
+        await this.compliance.assertDispatchable(data.driverId, companyId);
+      }
+    }
+  }
 
   private safeEmit(fn: () => void): void {
     try { fn(); } catch (err: any) { this.logger.warn(`Shipment realtime emit failed: ${err?.message ?? err}`); }
@@ -142,16 +174,27 @@ export class ShipmentsService {
   }
 
   async create(companyId: string, dto: any) {
-    return this.prisma.shipment.create({
-      data: { ...pickAllowed(dto, SHIPMENT_FIELDS), companyId } as any,
-    });
+    const data = pickAllowed(dto, SHIPMENT_FIELDS) as any;
+    await this.assertReferences(companyId, data, Boolean(data.driverId));
+    return this.prisma.shipment.create({ data: { ...data, companyId } as any });
   }
 
   async update(id: string, companyId: string, dto: any) {
     // Tenant-scoped: verify the shipment belongs to the caller before mutating.
-    const owned = await this.prisma.shipment.findFirst({ where: { id, companyId }, select: { id: true } });
+    const owned = await this.prisma.shipment.findFirst({
+      where: { id, companyId },
+      select: { id: true, driverId: true },
+    });
     if (!owned) throw new NotFoundException('Shipment not found');
-    const updated = await this.prisma.shipment.update({ where: { id }, data: pickAllowed(dto, SHIPMENT_FIELDS) });
+
+    const data = pickAllowed(dto, SHIPMENT_FIELDS) as any;
+    // A driver change on this endpoint IS a dispatch: same references check and
+    // same compliance policy as auto-dispatch. Re-setting the same driver is a
+    // no-op, not a new dispatch.
+    const assigning = Boolean(data.driverId) && data.driverId !== owned.driverId;
+    await this.assertReferences(companyId, data, assigning);
+
+    const updated = await this.prisma.shipment.update({ where: { id }, data });
     // Live-refresh the operations dashboard / live map (the frontend's
     // premium socket listens for `shipment-status-changed`).
     this.safeEmit(() => this.gateway.emitShipmentUpdate(companyId, {

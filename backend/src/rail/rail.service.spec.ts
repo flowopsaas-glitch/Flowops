@@ -21,6 +21,7 @@ type Row = Record<string, any>;
 function makeDb() {
   const db = {
     consignments: [] as Row[], events: [] as Row[], wagons: [] as Row[], legs: [] as Row[], aiEvents: [] as Row[], seq: 0,
+    tariffs: [] as Row[], auditRows: [] as Row[],
   };
   const id = (p: string) => `${p}-${++db.seq}`;
 
@@ -103,7 +104,39 @@ function makeDb() {
         Object.assign(row, data);
         return { ...row };
       }),
+      // Compare-and-set used by the hardened advanceLeg: only matches when the
+      // leg is still in the status it was validated against.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const row = db.legs.find((l) => matches(l, where));
+        if (!row) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      }),
+      findFirstOrThrow: jest.fn(async ({ where }: any) => {
+        const row = db.legs.find((l) => matches(l, where));
+        if (!row) throw new Error('leg not found');
+        return { ...row };
+      }),
       aggregate: jest.fn(async () => ({ _avg: { dwellHours: null } })),
+      findMany: jest.fn(async ({ where }: any) => db.legs.filter((l) => matches(l, where)).map((l) => ({ ...l }))),
+    },
+    // Handoff gating reads: the saved tariff calculation for the consignment
+    // and the readiness approval written to the audit trail.
+    railTariffCalculation: {
+      findFirst: jest.fn(async ({ where }: any) => db.tariffs.find((t) => matches(t, where)) ?? null),
+      create: jest.fn(async ({ data }: any) => {
+        const row = { id: id('tc'), createdAt: new Date(), ...data };
+        db.tariffs.push(row);
+        return row;
+      }),
+    },
+    auditLog: {
+      findFirst: jest.fn(async ({ where }: any) => db.auditRows.find((a) => matches(a, where)) ?? null),
+      create: jest.fn(async ({ data }: any) => {
+        const row = { id: id('aud'), createdAt: new Date(), ...data };
+        db.auditRows.push(row);
+        return row;
+      }),
     },
     aiEvent: {
       create: jest.fn(async ({ data }: any) => {
@@ -121,6 +154,22 @@ function makeDb() {
     db.consignments.push(row);
     return row;
   };
+  /** Seed a PRICED tariff calculation — the billing evidence a handoff requires. */
+  const seedPricedTariff = (consignmentId: string, over: Row = {}) => {
+    const row = { id: id('tc'), companyId: 'A', consignmentId, status: 'PRICED', holdTriggered: false, createdAt: new Date(), ...over };
+    db.tariffs.push(row);
+    return row;
+  };
+  /** Approve handoff readiness the way the API does: through the audit trail. */
+  const seedHandoffApproval = (legId: string, fingerprint: string, companyId = 'A') => {
+    const row = {
+      id: id('aud'), action: 'handoff.readiness_approved', targetType: 'rail_intermodal_leg', targetId: legId,
+      actorType: 'tenant', actorId: 'u-mgr', actorEmail: 'mgr@flowops.test', createdAt: new Date(),
+      metadata: { module: 'rail', companyId, fingerprint },
+    };
+    db.auditRows.push(row);
+    return row;
+  };
   const seedWagon = (consignmentId: string, over: Row = {}) => {
     const row = { id: id('wag'), consignmentId, wagonNumber: 'MNR-000001', ...over };
     db.wagons.push(row);
@@ -131,13 +180,19 @@ function makeDb() {
     db.legs.push(row);
     return row;
   };
-  return { db, prisma, seedConsignment, seedWagon, seedLeg };
+  return { db, prisma, seedConsignment, seedWagon, seedLeg, seedPricedTariff, seedHandoffApproval };
 }
 
 function makeService(opts: { entitled?: boolean } = {}) {
   const harness = makeDb();
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
-  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  // AuditService.record persists to `audit_logs` in production, which is what
+  // the handoff approval lookup reads back — mirror that here.
+  const audit = {
+    record: jest.fn(async (entry: any) => {
+      harness.db.auditRows.push({ id: `aud-${harness.db.auditRows.length + 1}`, createdAt: new Date(), ...entry });
+    }),
+  };
   const svc = new RailService(harness.prisma as any, billing as any, audit as any);
   return { svc, billing, audit, ...harness };
 }
@@ -273,6 +328,7 @@ describe('tenant isolation', () => {
       ...(prisma.railConsignment.findMany as jest.Mock).mock.calls.map(([a]) => a.where),
       ...(prisma.wagon.count as jest.Mock).mock.calls.map(([a]) => a.where),
       ...(prisma.intermodalLeg.aggregate as jest.Mock).mock.calls.map(([a]) => a.where),
+      ...(prisma.intermodalLeg.findMany as jest.Mock).mock.calls.map(([a]) => a.where),
     ];
     expect(wheres.length).toBeGreaterThanOrEqual(8);
     for (const w of wheres) {
@@ -402,19 +458,29 @@ describe('consignment lifecycle', () => {
       });
     });
 
-    it('IN_PROGRESS stamps actualStart; HANDED_OVER stamps actualEnd and computes dwell hours', async () => {
-      const { svc, audit, seedConsignment, seedLeg } = makeService();
+    it('IN_PROGRESS stamps actualStart; a readiness-approved HANDED_OVER stamps actualEnd and computes dwell hours', async () => {
+      const { svc, audit, seedConsignment, seedLeg, seedPricedTariff, seedHandoffApproval } = makeService();
       const c = seedConsignment();
-      const leg = seedLeg(c.id, { actualStart: new Date(Date.now() - 5 * H), status: 'IN_PROGRESS' });
+      const leg = seedLeg(c.id, {
+        actualStart: new Date(Date.now() - 5 * H), status: 'IN_PROGRESS',
+        handler: 'Transnet Freight Rail', toLocation: 'Hotazel Yard',
+      });
+      seedPricedTariff(c.id);
+      const readiness = await svc.handoffReadiness('A', c.id, leg.id);
+      expect(readiness.ready).toBe(true);
+      seedHandoffApproval(leg.id, readiness.fingerprint);
 
       const out = await svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER);
 
       expect(out.actualEnd).toBeInstanceOf(Date);
       expect(out.dwellHours).toBeCloseTo(5, 1);
+      expect(auditActions(audit)).toEqual(['consignment.leg_advanced']);
       expect(auditEntries(audit)[0]).toMatchObject({
         action: 'consignment.leg_advanced', metadata: { from: 'IN_PROGRESS', to: 'HANDED_OVER' },
       });
       expect(auditEntries(audit)[0].metadata.dwellHours).toBeCloseTo(5, 1);
+      // The handover references the approval's evidence fingerprint.
+      expect(auditEntries(audit)[0].metadata.handoffFingerprint).toBe(readiness.fingerprint);
     });
 
     it('starting a leg stamps actualStart and computes no dwell yet', async () => {
@@ -429,9 +495,163 @@ describe('consignment lifecycle', () => {
     it('dwell never goes negative', async () => {
       const { svc, seedConsignment, seedLeg } = makeService();
       const c = seedConsignment();
-      const leg = seedLeg(c.id, { actualStart: new Date(Date.now() + 3 * H) }); // clock skew: start "in the future"
+      const leg = seedLeg(c.id, { status: 'IN_PROGRESS', actualStart: new Date(Date.now() + 3 * H) }); // clock skew: start "in the future"
       const out = await svc.advanceLeg('A', c.id, leg.id, 'COMPLETED', MANAGER);
       expect(out.dwellHours).toBe(0);
+    });
+
+    it('rejects an illegal leg transition (COMPLETED is terminal) and audits the refusal without moving the leg', async () => {
+      const { svc, audit, db, seedConsignment, seedLeg } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { status: 'COMPLETED', actualStart: new Date(Date.now() - 9 * H), actualEnd: new Date() });
+
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'IN_PROGRESS', MANAGER)).rejects.toThrow(/terminal/i);
+
+      expect(db.legs[0].status).toBe('COMPLETED');
+      expect(auditEntries(audit)).toEqual([
+        expect.objectContaining({ action: 'consignment.leg_transition_rejected', metadata: expect.objectContaining({ from: 'COMPLETED', attempted: 'IN_PROGRESS' }) }),
+      ]);
+    });
+
+    it('rejects an unknown leg status listing the valid statuses', async () => {
+      const { svc, db, seedConsignment, seedLeg } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { status: 'IN_PROGRESS', actualStart: new Date() });
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'SHIPPED', MANAGER))
+        .rejects.toThrow(/Use one of: PENDING, IN_PROGRESS, HANDED_OVER, COMPLETED, DELAYED/);
+      expect(db.legs[0].status).toBe('IN_PROGRESS');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Handoff gating (evidence ordering + approval)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('handoff gating', () => {
+    const startedLeg = () => ({ actualStart: new Date(Date.now() - 4 * H), status: 'IN_PROGRESS' });
+
+    it('HANDED_OVER is refused while the billing evidence is missing — and the refusal is audited, not applied', async () => {
+      const { svc, audit, db, seedConsignment, seedLeg } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg(), handler: 'TFR', toLocation: 'Hotazel' });
+
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER))
+        .rejects.toThrow(/BILLING_EVIDENCE: No saved tariff calculation/);
+
+      expect(db.legs[0].status).toBe('IN_PROGRESS');
+      expect(db.legs[0].actualEnd).toBeNull();
+      expect(auditEntries(audit)).toEqual([
+        expect.objectContaining({ action: 'handoff.blocked', metadata: expect.objectContaining({ attemptedStatus: 'HANDED_OVER' }) }),
+      ]);
+    });
+
+    it('HANDED_OVER is refused while the leg has not started (ordering) — even with billing evidence in place', async () => {
+      const { svc, seedConsignment, seedLeg, seedPricedTariff } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { status: 'PENDING', handler: 'TFR', toLocation: 'Hotazel' });
+      seedPricedTariff(c.id);
+
+      // PENDING → HANDED_OVER is itself illegal (must start first).
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER))
+        .rejects.toThrow(/Illegal leg transition PENDING → HANDED_OVER/);
+    });
+
+    it('a handler and location are required before custody moves', async () => {
+      const { svc, seedConsignment, seedLeg, seedPricedTariff } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg() }); // no handler, no location
+      seedPricedTariff(c.id);
+
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER))
+        .rejects.toThrow(/HANDLER_ASSIGNED: No handler recorded.*LOCATION_RECORDED: No handover location recorded/s);
+    });
+
+    it('a PRICED tariff alone is not enough — a readiness approval must cover the evidence', async () => {
+      const { svc, seedConsignment, seedLeg, seedPricedTariff } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg(), handler: 'TFR', toLocation: 'Hotazel' });
+      seedPricedTariff(c.id);
+
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER))
+        .rejects.toThrow(/no handoff readiness approval recorded/i);
+    });
+
+    it('an approval granted before the evidence changed no longer covers it (stale approval)', async () => {
+      const { svc, seedConsignment, seedLeg, seedPricedTariff, seedHandoffApproval } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg(), handler: 'TFR', toLocation: 'Hotazel' });
+      seedPricedTariff(c.id);
+      seedHandoffApproval(leg.id, 'stale-fingerprint-from-an-earlier-evidence-state');
+
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER))
+        .rejects.toThrow(/granted for different evidence/);
+    });
+
+    it('approveHandoffReadiness refuses while evidence is incomplete and audits the blocker list', async () => {
+      const { svc, audit, seedConsignment, seedLeg } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg() });
+      await expect(svc.approveHandoffReadiness('A', c.id, leg.id, MANAGER))
+        .rejects.toThrow(/incomplete evidence/);
+      expect(auditEntries(audit)).toEqual([
+        expect.objectContaining({
+          action: 'handoff.readiness_blocked',
+          metadata: expect.objectContaining({ blockers: expect.arrayContaining([expect.stringContaining('BILLING_EVIDENCE')]) }),
+        }),
+      ]);
+    });
+
+    it('the full sequence works: approve readiness, then hand over; readiness report names the approver and steps', async () => {
+      const { svc, audit, seedConsignment, seedLeg, seedPricedTariff } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg(), handler: 'TFR', toLocation: 'Hotazel' });
+      seedPricedTariff(c.id);
+
+      const approval = await svc.approveHandoffReadiness('A', c.id, leg.id, MANAGER, 'paperwork checked');
+      expect(approval.approvedSteps).toEqual(
+        expect.arrayContaining(['LEG_STARTED', 'HANDLER_ASSIGNED', 'LOCATION_RECORDED', 'BILLING_EVIDENCE', 'HOLD_CLEARED']),
+      );
+
+      const report = await svc.handoffReadiness('A', c.id, leg.id);
+      expect(report).toMatchObject({ ready: true, canHandOver: true });
+      expect(report.approval).toMatchObject({ approvedBy: 'mia@toc.co.za', coversCurrentEvidence: true });
+
+      const out = await svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER);
+      expect(out.status).toBe('HANDED_OVER');
+      expect(auditActions(audit)).toEqual(['handoff.readiness_approved', 'consignment.leg_advanced']);
+    });
+
+    it('another tenant\'s approval row can never satisfy the gate', async () => {
+      const { svc, seedConsignment, seedLeg, seedPricedTariff, seedHandoffApproval } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg(), handler: 'TFR', toLocation: 'Hotazel' });
+      seedPricedTariff(c.id);
+      const readiness = await svc.handoffReadiness('A', c.id, leg.id);
+      seedHandoffApproval(leg.id, readiness.fingerprint, 'B'); // approval belongs to tenant B
+
+      await expect(svc.advanceLeg('A', c.id, leg.id, 'HANDED_OVER', MANAGER))
+        .rejects.toThrow(/no handoff readiness approval recorded/i);
+    });
+
+    it('a load-adjustment hold blocks the handoff even when everything else is in place', async () => {
+      const { svc, seedConsignment, seedLeg, seedPricedTariff } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { ...startedLeg(), handler: 'TFR', toLocation: 'Hotazel' });
+      seedPricedTariff(c.id, { holdTriggered: true });
+
+      const report = await svc.handoffReadiness('A', c.id, leg.id);
+      expect(report.ready).toBe(false);
+      expect(report.blockers.join(' ')).toMatch(/HOLD_CLEARED/);
+    });
+
+    it('IN_PROGRESS and DELAYED are not gated (only the custody handover is)', async () => {
+      const { svc, seedConsignment, seedLeg } = makeService();
+      const c = seedConsignment();
+      const leg = seedLeg(c.id, { status: 'PENDING' });
+      const started = await svc.advanceLeg('A', c.id, leg.id, 'IN_PROGRESS', MANAGER);
+      expect(started.actualStart).toBeInstanceOf(Date);
+      const delayed = await svc.advanceLeg('A', c.id, leg.id, 'DELAYED', MANAGER);
+      expect(delayed.status).toBe('DELAYED');
     });
   });
 

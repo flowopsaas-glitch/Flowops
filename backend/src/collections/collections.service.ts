@@ -1,16 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../push/push.service';
+import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 
 @Injectable()
 export class CollectionsService {
+  private readonly logger = new Logger(CollectionsService.name);
+
   constructor(
     private prisma: PrismaService,
     private geo: GeocodingService,
     private notifications: NotificationsService,
     private push: PushService,
+    private compliance: DriverComplianceService,
   ) {}
 
   async findAll(companyId: string, query?: any) {
@@ -259,13 +263,31 @@ export class CollectionsService {
     };
   }
 
+  /**
+   * Driver suggestions for a collection. Suggestions are a dispatch decision,
+   * so they obey the shared compliance policy: an expired licence, a hold or an
+   * overdue service removes a driver from the list here, exactly as it does in
+   * auto-dispatch.
+   */
   async autoSuggest(id: string, companyId: string) {
-    // Return available drivers as suggestions
     const drivers = await this.prisma.driver.findMany({
       where: { companyId, status: 'AVAILABLE', isActive: true },
-      take: 5,
+      take: 20,
+      select: {
+        id: true, name: true, phone: true, vehicleType: true, vehicleReg: true,
+        companyId: true, isActive: true, status: true,
+        licenseExpiry: true, insuranceExpiry: true, backgroundCheckExpiry: true,
+        nextServiceDate: true, currentKm: true, nextServiceKm: true,
+        complianceHold: true, complianceHoldReason: true,
+      },
     });
-    return { drivers, suggestedDriver: drivers[0] ?? null };
+    const eligible = this.compliance
+      .filterDispatchable(
+        drivers.map((d) => ({ ...d, driverId: d.id })),
+        { availableStatuses: ['AVAILABLE'] },
+      )
+      .map(({ snapshot }) => snapshot);
+    return { drivers: eligible.slice(0, 5), suggestedDriver: eligible[0] ?? null };
   }
 
   /**
@@ -285,60 +307,108 @@ export class CollectionsService {
   ) {
     const collection = await this.findOne(id, companyId);
     if (collection.status === 'COLLECTED') {
-      return { success: false, message: 'Already collected' };
+      // Replayed/duplicate confirmation: return the waybill that was created for
+      // this collection (exact link, not a name guess) instead of creating a second.
+      const existing = await this.prisma.waybill.findFirst({
+        where: { companyId, sourceCollectionId: id },
+        select: { id: true, trackingNumber: true, status: true },
+      });
+      return {
+        success: false,
+        alreadyCollected: true,
+        collection: { id, status: 'COLLECTED' },
+        waybill: existing,
+        message: 'Already collected',
+      };
     }
 
-    // 1. Mark as COLLECTED
-    await this.prisma.collection.update({
-      where: { id },
-      data: { status: 'COLLECTED', pickedUpAt: new Date() },
-    });
-
-    // 2. Generate tracking number and create Waybill.
-    //    Chain of custody: the parcel is COLLECTED, not yet IN_TRANSIT. It must
-    //    be received at the depot (warehouse clerk → AT_ORIGIN_HUB) before it's
-    //    loaded onto a linehaul or dispatched for local delivery. We capture the
-    //    real delivery address here if the dispatcher provided one, but we do
-    //    NOT auto-dispatch a final-mile driver — the depot receive + dispatch
-    //    decide the onward leg.
     const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
-    const waybill = await this.prisma.waybill.create({
-      data: {
-        trackingNumber,
-        companyId,
-        status: 'COLLECTED',
-        senderName: collection.clientName,
-        senderPhone: collection.clientPhone,
-        senderEmail: collection.clientEmail ?? undefined,
-        senderAddress: collection.pickupAddress,
-        recipientName: body.recipientName ?? collection.clientName,
-        recipientPhone: body.recipientPhone ?? collection.clientPhone,
-        recipientAddress: body.deliveryAddress ?? collection.pickupAddress,
-        weight: 0,
-        totalAmount: 0,
-        description: `Collection pickup — ${body.parcelCount ?? 1} parcel(s). ${body.notes ?? ''}`.trim(),
-      },
-    });
 
-    // 3. Create the Shipment linking waybill ↔ collecting driver as PENDING
-    //    (custody tracking), NOT auto-dispatched. If no driver collected it yet,
-    //    leave it unassigned for the depot to route.
-    const custodyDriverId = collection.driverId ?? null;
-    if (custodyDriverId) {
-      await this.prisma.shipment.create({
+    // ONE transaction: claim the collection (compare-and-set), create the
+    // waybill (with its provenance link) and record custody. Either all of it
+    // happened or none of it did — a COLLECTED collection can no longer exist
+    // without its waybill.
+    const created = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.collection.updateMany({
+        where: { id, companyId, status: { not: 'COLLECTED' } },
+        data: { status: 'COLLECTED', pickedUpAt: new Date() },
+      });
+      if (claim.count === 0) {
+        const existing = await tx.waybill.findFirst({
+          where: { companyId, sourceCollectionId: id },
+          select: { id: true, trackingNumber: true, status: true },
+        });
+        return { alreadyCollected: true as const, waybill: existing };
+      }
+
+      const waybill = await tx.waybill.create({
+        data: {
+          trackingNumber,
+          companyId,
+          status: 'COLLECTED',
+          sourceCollectionId: id,
+          senderName: collection.clientName,
+          senderPhone: collection.clientPhone,
+          senderEmail: collection.clientEmail ?? undefined,
+          senderAddress: collection.pickupAddress,
+          recipientName: body.recipientName ?? collection.clientName,
+          recipientPhone: body.recipientPhone ?? collection.clientPhone,
+          recipientAddress: body.deliveryAddress ?? collection.pickupAddress,
+          weight: 0,
+          totalAmount: 0,
+          description: `Collection pickup — ${body.parcelCount ?? 1} parcel(s). ${body.notes ?? ''}`.trim(),
+        },
+      });
+
+      const custodyDriverId = collection.driverId ?? null;
+      if (custodyDriverId) {
+        // The driver physically has the parcel, so custody is recorded even if
+        // they are not dispatchable — but the situation is logged for operations
+        // rather than hidden.
+        if (this.compliance) {
+          const check = await this.compliance.evaluate(custodyDriverId, companyId);
+          if (!check.compliant) {
+            this.logger.warn(
+              `Custody recorded for non-dispatchable driver ${custodyDriverId} on collection ${id}: ${check.blockers
+                .map((b) => b.code)
+                .join(', ')}`,
+            );
+          }
+        }
+        await tx.shipment.create({
+          data: { waybillId: waybill.id, companyId, driverId: custodyDriverId, status: 'PENDING' },
+        });
+      }
+
+      await tx.trackingEvent.create({
         data: {
           waybillId: waybill.id,
           companyId,
-          driverId: custodyDriverId,
-          status: 'PENDING',
+          event: 'COLLECTED',
+          status: 'COLLECTED',
+          description: `Parcel collected from ${collection.clientName} at ${collection.pickupAddress}. Awaiting depot receive.`,
+          actorType: 'DISPATCH',
+          metadata: { collectionId: id },
         },
       });
+
+      return { alreadyCollected: false as const, waybill };
+    });
+
+    if (created.alreadyCollected) {
+      return {
+        success: false,
+        alreadyCollected: true,
+        collection: { id, status: 'COLLECTED' },
+        waybill: created.waybill ?? null,
+        message: 'Already collected',
+      };
     }
 
     return {
       success: true,
       collection: { id, status: 'COLLECTED' },
-      waybill: { id: waybill.id, trackingNumber, status: 'COLLECTED' },
+      waybill: { id: created.waybill!.id, trackingNumber, status: 'COLLECTED' },
       awaitingDepotReceive: true,
       message: `Collected! Waybill ${trackingNumber} created. Receive it at the depot before loading or delivery.`,
     };

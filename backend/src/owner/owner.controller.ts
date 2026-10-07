@@ -8,14 +8,20 @@ import { IntegrationSentinelService } from '../ai/integration-sentinel.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { Public } from '../common/decorators/public.decorator';
+import { OwnerOnly } from '../common/decorators/owner-only.decorator';
 
-/** All owner routes require the owner JWT — bypass the global tenant JwtAuthGuard. */
+/**
+ * All owner routes require the platform-owner JWT.
+ *
+ * @OwnerOnly() (not @Public()) is what makes the global tenant JwtAuthGuard
+ * stand down — OwnerAuthGuard then fails closed unless this metadata is present,
+ * so an owner endpoint can never become anonymous by accident.
+ */
 @ApiTags('Owner (Platform Admin)')
 @ApiBearerAuth()
 @Controller('owner')
 @UseGuards(OwnerAuthGuard)
-@Public() // Skip global JwtAuthGuard; OwnerAuthGuard handles auth here
+@OwnerOnly()
 export class OwnerController {
   constructor(
     private readonly svc: OwnerService,
@@ -301,10 +307,20 @@ export class OwnerController {
   }
 }
 
-/** Admin approval requests (also accessible by tenant admins checking status). */
+/**
+ * Admin approval requests.
+ *
+ * These were reachable by ANY authenticated tenant user (the controller had no
+ * guard and the global tenant guard only checks that a JWT exists), so a
+ * finance user in one tenant could approve/reject another tenant's requests.
+ * Approval is an owner decision: mark the controller owner-only and run the
+ * owner guard, exactly like /owner/approval-requests.
+ */
 @ApiTags('Admin')
 @ApiBearerAuth()
 @Controller('admin')
+@UseGuards(OwnerAuthGuard)
+@OwnerOnly()
 export class AdminController {
   constructor(private readonly svc: OwnerService) {}
 
@@ -314,12 +330,12 @@ export class AdminController {
   }
 
   @Post('approval-requests/:id/approve')
-  approveRequest(@Param('id') id: string) {
-    return this.svc.approveRequest(id);
+  approveRequest(@Param('id') id: string, @CurrentUser() owner: any) {
+    return this.svc.approveRequest(id, owner);
   }
 
   @Post('approval-requests/:id/reject')
-  rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.svc.rejectRequest(id, body?.reason);
+  rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }, @CurrentUser() owner: any) {
+    return this.svc.rejectRequest(id, body?.reason, owner);
   }
 }
