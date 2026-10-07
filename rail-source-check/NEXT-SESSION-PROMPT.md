@@ -1,5 +1,40 @@
 # NEXT SESSION PROMPT — Rail working consolidation (Annexure_33a_NS_ver_4)
 
+## 0. BOOTSTRAP — if this file or the whole `rail-source-check/` folder is missing
+
+The rail corpus lives on branch **`arena/25d10ae6-flowops`** of `github.com/flowopsaas-glitch/Flowops`.
+`main` does **not** contain `rail-source-check/`, so on any other branch this file and the data are
+simply absent. Two ways to get them:
+
+**A — add the folder to the workspace you already have open** (no branch switch; your own uncommitted
+work is untouched). In the VS Code terminal, from the repo root:
+
+```bash
+git fetch origin arena/25d10ae6-flowops
+git checkout FETCH_HEAD -- rail-source-check/
+```
+
+The 23 data `.txt` files are git-ignored (`.gitignore` line 42) so they can never be staged by
+accident; the four `.md`/`.py` files will appear as staged additions on your branch — if your next
+commit is not about rail work, unstage them with `git reset -- rail-source-check`.
+
+**B — isolate the rail work in its own clone** (recommended when your main workspace is busy):
+
+```bash
+git clone https://github.com/flowopsaas-glitch/Flowops Flowops-rail
+cd Flowops-rail
+git checkout arena/25d10ae6-flowops
+code .            # then open this folder in VS Code
+```
+
+Sanity check that the bootstrap worked — from `rail-source-check/`:
+
+```bash
+python3 append_gate.py --corpus     # expect 23 files / 17,636 rows / 593 workings / 39 depots / 23 flagged
+```
+
+---
+
 **How to use this file.** Open the repo in VS Code and start your assistant chat with:
 
 > Read `rail-source-check/NEXT-SESSION-PROMPT.md` in full and follow it exactly.
