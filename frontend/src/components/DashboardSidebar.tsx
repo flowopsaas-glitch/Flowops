@@ -1,8 +1,8 @@
 ﻿import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-    FaStream, FaLink, FaCog, FaUsers, FaTag, FaEnvelope, FaWhatsapp, FaBoxOpen, 
-    FaFileInvoiceDollar, FaCloud, FaUserShield, FaBox, FaMapMarkerAlt, 
+    FaLink, FaUsers, FaTag, FaEnvelope, FaWhatsapp, FaBoxOpen,
+    FaMapMarkerAlt,
     FaTruck, FaMagic, FaFileAlt, FaReceipt, FaRoute,
     FaSignOutAlt, FaShieldAlt, FaCheckCircle
 } from "react-icons/fa";
@@ -23,11 +23,14 @@ import { Button } from '@/components/ui/button';
 import { FLOWOPS_HTTP_ORIGIN } from '@/lib/env';
 import { clearSession, getAccessToken, getStoredUser } from '@/lib/session';
 
+// Menu items — only destinations with an active route in App.tsx.
+// Stale links to legacy paths (/workflows, /customer-portal, /track-shipment,
+// /driver-app, /production, /capacity-planning, /mrp-system,
+// /location-analysis, /stock, /driver-requests, /deliveries, /cost-tracker,
+// /outlook, /cloud-storage, /supervisor, /admin/tenant-settings) were removed
+// in the 2026-10-07 release-readiness audit — those pages have no active
+// route. See docs/RELEASE-READINESS-AUDIT-2026-10-07.md.
 const menuItems = [
-    { icon: FaStream, label: 'Dashboard', path: '/workflows', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaBox, label: 'Book Shipment', path: '/customer-portal', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaMapMarkerAlt, label: 'Track Shipment', path: '/track-shipment', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaTruck, label: 'Driver App', path: '/driver-app', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaBoxOpen, label: 'Collections', path: '/collections', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
 { icon: FaWhatsapp, label: 'WhatsApp Hub', path: '/whatsapp', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'], plan: ['Enterprise'] },
 { icon: FaEnvelope, label: 'Email', path: '/email', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
@@ -38,15 +41,9 @@ const menuItems = [
     { icon: FaMagic, label: 'Route Optimizer', path: '/route-optimizer', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaUsers, label: 'Drivers', path: '/drivers', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaRoute, label: 'Routes', path: '/routes', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaTruck, label: 'Deliveries', path: '/deliveries', roles: ['ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaFileAlt, label: 'Quotes', path: '/quotes', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
     { icon: FaReceipt, label: 'Invoices', path: '/invoices', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'] },
-    { icon: FaFileInvoiceDollar, label: 'CostTracker PO', path: '/cost-tracker', roles: ['ADMIN', 'ULTIMATE_OWNER'], plan: ['Pro', 'Enterprise'] },
-    { icon: FaEnvelope, label: 'Outlook Mail', path: '/outlook', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'], plan: ['Pro', 'Enterprise'] },
-    { icon: FaCloud, label: 'Cloud PODs', path: '/cloud-storage', roles: ['USER', 'ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'ULTIMATE_OWNER'], plan: ['Pro', 'Enterprise'] },
-    { icon: FaUserShield, label: 'AI Supervisor', path: '/supervisor', roles: ['ULTIMATE_OWNER'] },
     { icon: FaShieldAlt, label: 'Admin Approvals', path: '/admin/approvals', roles: ['ULTIMATE_OWNER'] },
-    { icon: FaCog, label: 'Settings', path: '/admin/tenant-settings', roles: ['ADMIN', 'COMPANY_ADMIN', 'ULTIMATE_OWNER'] },
 ];
 
 export default function DashboardSidebar() {
@@ -178,4 +175,3 @@ export default function DashboardSidebar() {
         </SidebarProvider>
     )
 }
-

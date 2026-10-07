@@ -2,7 +2,6 @@
 
 import {
   LayoutDashboard,
-  Package,
   Truck,
   MapIcon,
   Users,
@@ -28,11 +27,13 @@ interface NavigationItem {
   icon: any;
 }
 
+// Only destinations with an active route in App.tsx. Stale links to legacy
+// destinations (CustomerPortal, TrackShipment, DriverApp, ProductionProcesses,
+// CapacityPlanning, MRPSystem, LocationAnalysis, Stock, DriverRequests,
+// Deliveries) were removed in the 2026-10-07 release-readiness audit — those
+// pages have no active route. See docs/RELEASE-READINESS-AUDIT-2026-10-07.md.
 const ALL_NAVIGATION: NavigationItem[] = [
   { name: "Dashboard", page: "Dashboard", icon: LayoutDashboard },
-  { name: "📦 Book Shipment", page: "CustomerPortal", icon: Package },
-  { name: "🔍 Track Shipment", page: "TrackShipment", icon: MapIcon },
-  { name: "Driver App", page: "DriverApp", icon: Truck },
   { name: "WhatsApp Hub", page: "WhatsAppHub", icon: MessageCircle },
   { name: "Carriers", page: "CarrierManagement", icon: Truck },
   { name: "Waybills", page: "Waybills", icon: FileText },
@@ -41,7 +42,6 @@ const ALL_NAVIGATION: NavigationItem[] = [
   { name: "Route Optimizer", page: "RouteOptimizer", icon: Sparkles },
   { name: "Drivers", page: "Drivers", icon: Users },
   { name: "Routes", page: "Routes", icon: Truck },
-  { name: "Deliveries", page: "Deliveries", icon: Truck },
   { name: "Quotes", page: "Quotes", icon: FileText },
   { name: "Invoices", page: "Invoices", icon: Receipt },
 ];

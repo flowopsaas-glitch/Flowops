@@ -2,7 +2,6 @@
 import React, { useMemo, useState } from "react";
 import {
   LayoutDashboard,
-  Package,
   Truck,
   Route,
   FileText,
@@ -23,11 +22,14 @@ import { cn } from "@/lib/utils";
 import { base44 } from "@/api";
 import { clearSession } from "@/lib/session";
 
+// Navigation entries whose destination has an active route in App.tsx.
+// Stale links to legacy destinations (CustomerPortal, TrackShipment, DriverApp,
+// ProductionProcesses, CapacityPlanning, MRPSystem, LocationAnalysis, Stock,
+// DriverRequests, Deliveries) were removed in the 2026-10-07 release-readiness
+// audit — those pages have no active route. See
+// docs/RELEASE-READINESS-AUDIT-2026-10-07.md.
 const navigation = [
   { name: "Dashboard", page: "Dashboard", icon: LayoutDashboard },
-  { name: "ðŸ“¦ Book Shipment", page: "CustomerPortal", icon: Package },
-  { name: "ðŸ” Track Shipment", page: "TrackShipment", icon: MapIcon },
-  { name: "Driver App", page: "DriverApp", icon: Truck },
   { name: "WhatsApp Hub", page: "WhatsAppHub", icon: MessageCircle },
   { name: "Carriers", page: "CarrierManagement", icon: Truck },
   { name: "Waybills", page: "Waybills", icon: FileText },
@@ -36,7 +38,6 @@ const navigation = [
   { name: "Route Optimizer", page: "RouteOptimizer", icon: Sparkles },
   { name: "Drivers", page: "Drivers", icon: Users },
   { name: "Routes", page: "Routes", icon: Route },
-  { name: "Deliveries", page: "Deliveries", icon: Truck },
   { name: "Quotes", page: "Quotes", icon: FileText },
   { name: "Invoices", page: "Invoices", icon: Receipt },
 ];
@@ -199,5 +200,4 @@ export default function AppSidebar({ currentPage, onNavigate, brand = "FlowOps" 
     </>
   );
 }
-
 
