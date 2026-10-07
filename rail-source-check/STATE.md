@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 55 — BIJLKOR 5931 COMPLETED (tail received, now [OK]) + 29 new BIJLKOR workings appended; 17 data files / 15,620 rows / 459 workings / 33 depots; BIJLKOR 8466 is a PARTIAL extract, its tail must be re-supplied; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+Updated: 2026-10-07 (round 56 — BIJLKOR 8466 tail appended, working now COMPLETE/[OK]; 7 further BIJLKOR workings (8499/8501/8503/8551/8586/8850/8952) appended: 17 data files / 16,080 rows / 466 workings / 33 depots, 445 [OK] + 21 flagged; BIJLKOR 8856 and workings 9409/9443/16453/17205/17207 are WITHHELD and must be re-pasted — see Round 56; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -1189,3 +1189,98 @@ in place of BIJLKOR 5931 (resolved).)
    8989, 9000; the partials — now headed by BIJLKOR 8466 in place of the completed 5931;
    the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
    BEACONSFIELD 1438 re-transcription).
+
+## Round 56 — BIJLKOR continuation paste (8466 tail + 7 of 13 new workings; the rest withheld)
+
+**Source** — raw-chat continuation paste: the `8466` tail, then workings `8499`, `8501`, `8503`,
+`8551`, `8586`, `8850`, `8856`, `8952`, `9409`, `9443`, `16453`, `17205`, `17207`. The paste
+truncates mid-`17207` (last line seq 2 `BIJ/S750557` 22:25:00 → 22:26:00). Provisional inventory
+total was 823 rows (8466 tail 51 + 772 across the 13 workings).
+
+**Transcribed and appended (460 rows, 8 workings touched):**
+
+| working | rows | lines | result |
+|---|---|---|---|
+| 8466 (tail, seq 10 → 17) | 51 | L1091-1141 | completes the working — now `[OK]` |
+| 8499 → PYRAMIDSUID | 31 | L1142-1172 | new, `[OK]` |
+| 8501 → MAYDONWHARF | 117 | L1173-1289 | new, `[OK]` |
+| 8503 → BAYHEAD | 114 | L1290-1403 | new, `[OK]` |
+| 8551 → MAYDONWHARF | 117 | L1404-1520 | new, `[OK]` |
+| 8586 → WELGEDAG | 19 | L1521-1539 | new, `[OK]` |
+| 8850 → MTN/S743518 | 9 | L1540-1548 | new, `[OK]` |
+| 8952 → LEEUHOF | 2 | L1549-1550 | new, `[OK]` |
+
+**Withheld / not transcribed — re-paste required (nothing invented):**
+
+- **8856** — transcription stopped mid-working at `BEAUFORTWEST` (day-1 20:25:00). The header's
+  stated `45:43:00` throughput runtime and destination arrival `10:45:00` (13:02 + 45:43) prove the
+  working continues (`BEAUFORTWEST` is a crew-change `BO`, not the destination). 108 of the ~185
+  rows were written to scratch (`/home/user/r56/part6a.txt`) and deliberately **not** appended.
+  Its blank-corridor `VANDERBIJL` row and the `LAPLAISANTE`/`EIKENFONTEIN`/`STIKLAND`
+  blank-travel rows are still owed.
+- **9409, 9443, 16453, 17205, 17207** — never written to disk; the paste text is no longer
+  available to the transcriber. `17207` additionally had its own tail missing in the paste.
+
+**8503 row count note** — the provisional inventory said 115; the working on disk is **114 rows**
+(1 header + 113) and every consecutive leg reconciles exactly (previous departure + next travel =
+next arrival) while the final arrival matches the header (`06:08:00 + 21:22:00` = day-1 03:30:00).
+Treat 115 as a miscount in the provisional inventory.
+
+**Gate before append** — target `bijlkor-batch.txt` was 1,090 rows / MD5 `c6f9368b54270d2cb5697c426833c476`;
+last existing `8466` row = seq 9 `ROOIVLEI` dep 06:06:30, new seq 10 `VLAKFONTEIN` arr 06:10:30 with
+travel 00:04:00 ⇒ contiguous boundary. 0 byte-identical rows against the target **and** against the
+whole corpus; 0 `(depot, working, NODE_Seq, station)` key collisions; all seven new working numbers
+absent corpus-wide.
+
+**Append + verification** — 1,090 → 1,550 rows (+460); new rows are exactly L1091-1550; all rows
+19 fields; payload MD5 `8867a91f59c7ecfc91f3597d75c80e3c`; `tail -460` of the file compares
+byte-identical to the payload; file MD5 `ae1d85f6f5d87f7ef589d362a00c8ea3`. Checker:
+**52 workings, 0 with issues** — `8466` L1077-1141 (65 lines, 19:30:00 stated = computed) is now
+`[OK]`, clearing the round-55 flag; `8499`/`8501`/`8503`/`8551`/`8586`/`8850`/`8952` also `[OK]`.
+
+### Sibling comparisons (run only after independent transcription; read-only; work number excluded)
+
+- **8501 vs 8551** — 117 rows each, **same station sequence** (none only-in): travel 8, arrival 6,
+  departure 6, activity 5, `Train Type` 1 (`MEDIUM HEAVY/MEDIUM HEAVY` vs `VACUUM TRAINS/VACUUM TRAIN`).
+  `8501` `UMBILO` 03:21:37 / `8551` 03:23:29 etc. are genuine timing differences.
+- **8501 vs 8503** — 117 vs 114: both end the run through `ROSSBURGH`; `8501` continues
+  `BOOTH` → `UMBILO` → `CONGELLA` → `DALBRIDGE` → `MAYDONWHARF`, `8503` terminates at `BAYHEAD`.
+  `Destination` 113, travel 14, arrival 10, departure 10, activity 3 (`SYBRAND` `F18601 F8466` vs
+  `F 18601 F 8466`; `RIETVALLEI` `X2472 8814 8812` vs `X 2472/8814`; `MOUNTVERNON` `F 0219` vs blank).
+- **8503 vs 8551** — 114 vs 117: `8503`'s `BAYHEAD` against `8551`'s
+  `UMBILO`/`CONGELLA`/`DALBRIDGE`/`MAYDONWHARF`; travel 15, arrival 10, departure 10, activity 4,
+  `Train Type` 1.
+- **8499 vs 8586** — 31 vs 19: shared 18-row prefix `BIJLKOR → … → COWLESDAM`, then `8499` runs the
+  NORTH corridor (`ZESFONTEIN` … `KAMEELDRIF` → `PYRAMIDSUID`) while `8586` ends at `WELGEDAG`;
+  `Sched` 1 vs 2, `Train Type` 1 (`MEDIUM HEAVY/TSHIKONDENI` vs `VACUUM TRAINS/VACUUM TRAIN`);
+  `SYBRAND` carries `00:31:00` dwell + activity `F 7166` in 8499, blank dwell **and** blank activity
+  in 8586.
+- **8499 vs 8850** — 31 vs 9: shared 8-row prefix `BIJLKOR → … → MEYERTON`; `8850` ends
+  `MTN/S743518`; `Sched` 1 vs 3.
+- **8850 vs 7324** — 9 rows each, identical station sequence and identical travel/dwell/activity:
+  the two differ only in clock times (arrival 8, departure 8), header times 1+1 and `Train Type`
+  (`MEDIUM HEAVY/MEDIUM HEAVY` vs `VACUUM TRAINS/VACUUM TRAIN`).
+- **8586 vs 8850** — 19 vs 9: shared prefix `BIJLKOR → … → COWLESDAM`.
+- **8952 vs 8850** — 8952 is the two-row `BIJLKOR → LEEUHOF` shuttle (`VACUUM TRAINS/SHUNT CAR`,
+  `Sched` 3): only `LEEUHOF` is shared.
+- **Not run** — `16453` vs `6253` and `9409` vs `9443`: those workings are not yet transcribed.
+
+### Aggregate after round 56 (measured)
+
+**17 rail data files, 16,080 rows, 466 workings, 33 depots; 445 `[OK]` + 21 flagged.**
+(Round 55: 17 / 15,620 / 459 / 33 with 437 + 22. This round added 460 rows and 7 new workings, and
+converted the 22nd flag into a pass: `BIJLKOR 8466`.) Corridors: CAPE 10911, CENTRAL 2621,
+CONTAINER 1805, NORTHEAST 444, NORTH 257, blank 40, ORELINE 2.
+`bijlkor-batch.txt`: **1,550 rows, 52 workings, all 52 `[OK]`**, MD5
+`ae1d85f6f5d87f7ef589d362a00c8ea3`.
+
+### Outstanding after this round
+
+1. **Re-paste owed**: BIJLKOR `8856` (from `BEAUFORTWEST`, day-1 20:25:00, onward — or the whole
+   working), plus `9409`, `9443`, `16453`, `17205` and `17207` (the last of these is itself a partial
+   whose tail was never supplied).
+2. The branch decision from round 54 (still unanswered).
+3. BLOEMFONTEIN queue 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000; the other partials
+   (BEACONSFIELD 8965, BEAUFORTWEST 97, BLOEMFONTEIN 4215, BLOEMFONTEIN 18927, WELGEDAG 58866);
+   the wholly missing depots WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS; round-8 part 2;
+   BEACONSFIELD 1438 re-transcription. **BIJLKOR 8466 is now closed.**
