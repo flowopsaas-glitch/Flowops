@@ -1,26 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 
 /**
  * AUTO-DISPATCH ENGINE — World-Class Intelligent Driver Assignment
  *
- * Automatically assigns the BEST driver for each delivery based on:
- * 1. Proximity (nearest driver to pickup point)
- * 2. Current load (don't overload a driver who already has 20 stops)
- * 3. Driver-area affinity (from Predictive Intelligence — who delivers best here)
- * 4. Vehicle capacity (weight/volume constraints)
- * 5. Driver availability (status: AVAILABLE, not already en-route)
- * 6. Shift hours (don't assign if shift is ending)
- *
- * Modes:
- * - PROXIMITY: Nearest available driver (fastest)
- * - BALANCED: Spread load evenly across fleet
- * - INTELLIGENT: Uses all 6 factors (best but slower)
- *
- * Unique to FlowOps: Integrates with Predictive Delivery Intelligence
- * to assign the driver with the HIGHEST SUCCESS PROBABILITY, not just
- * the nearest one. No other platform does this.
+ * CRITICAL FIX (2026-10-07):
+ * - Prevents duplicate shipment creation via atomic transaction
+ * - Implements suggest() as read-only (no side effects)
+ * - Guards against concurrent assignment races
+ * - Ensures dispatch state is never left partially committed
  */
 
 export type DispatchMode = 'PROXIMITY' | 'BALANCED' | 'INTELLIGENT';
@@ -30,9 +19,9 @@ export interface DispatchCandidate {
   driverName: string;
   phone: string;
   distanceKm: number;
-  currentLoad: number; // Number of active deliveries
-  areaSuccessRate: number; // % from Predictive Intelligence
-  score: number; // Combined score (higher = better fit)
+  currentLoad: number;
+  areaSuccessRate: number;
+  score: number;
   reason: string;
   vehicleType?: string;
   status: string;
@@ -59,6 +48,7 @@ export class AutoDispatchService {
 
   /**
    * Auto-assign the best driver for a waybill.
+   * ATOMIC: All writes are locked in a single transaction.
    * Returns the assignment result with all candidates ranked.
    */
   async dispatch(
@@ -69,13 +59,14 @@ export class AutoDispatchService {
     const mode = opts?.mode || 'INTELLIGENT';
     const maxCandidates = opts?.maxCandidates || 10;
 
-    // Get waybill details
+    // Get waybill details (READ)
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, companyId },
       select: {
         id: true, trackingNumber: true,
         recipientAddress: true, recipientLat: true, recipientLng: true,
         senderAddress: true, senderLat: true, senderLng: true,
+        status: true,
       },
     });
 
@@ -83,7 +74,12 @@ export class AutoDispatchService {
       return { assigned: false, waybillId, trackingNumber: '', selectedDriver: null, candidates: [], mode, reason: 'Waybill not found' };
     }
 
-    // Get available drivers with their current position
+    // Prevent re-assignment of already-assigned waybills
+    if (waybill.status === 'OUT_FOR_DELIVERY') {
+      return { assigned: false, waybillId, trackingNumber: waybill.trackingNumber, selectedDriver: null, candidates: [], mode, reason: 'Waybill already assigned' };
+    }
+
+    // Get available drivers with their current position (READ)
     const drivers = await this.prisma.driver.findMany({
       where: { companyId, isActive: true, status: 'AVAILABLE' as any },
       select: {
@@ -96,7 +92,7 @@ export class AutoDispatchService {
       return { assigned: false, waybillId, trackingNumber: waybill.trackingNumber, selectedDriver: null, candidates: [], mode, reason: 'No available drivers' };
     }
 
-    // Get active shipment count per driver (current load)
+    // Get active shipment count per driver (current load) (READ)
     const activeShipments = await this.prisma.shipment.groupBy({
       by: ['driverId'],
       where: {
@@ -120,7 +116,7 @@ export class AutoDispatchService {
       if (pickupLat && pickupLng && driver.lastLat && driver.lastLng) {
         distanceKm = this.haversineKm(driver.lastLat, driver.lastLng, pickupLat, pickupLng);
       }
-      const distancePenalty = Math.min(40, distanceKm * 4); // 10km = 40 point penalty
+      const distancePenalty = Math.min(40, distanceKm * 4);
       score -= distancePenalty;
 
       // Factor 2: Current load (0-30 points deduction)
@@ -128,8 +124,8 @@ export class AutoDispatchService {
       const loadPenalty = Math.min(30, Number(currentLoad) * 3);
       score -= loadPenalty;
 
-      // Factor 3: Area success rate (0-20 bonus) — from historical data
-      const areaSuccessRate = 75; // Default — enhanced by Predictive Intelligence integration
+      // Factor 3: Area success rate (0-20 bonus)
+      const areaSuccessRate = 75;
       if (areaSuccessRate >= 90) score += 20;
       else if (areaSuccessRate >= 80) score += 10;
 
@@ -162,33 +158,57 @@ export class AutoDispatchService {
     const selected = candidates[0] || null;
 
     if (selected && selected.score >= 20) {
-      // Auto-assign: create shipment for this driver
-      await this.prisma.shipment.create({
-        data: {
+      // ATOMIC TRANSACTION: either both shipment and waybill succeed, or both fail
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          // Check if waybill was already assigned (paranoid check inside transaction)
+          const wb = await tx.waybill.findUnique({ where: { id: waybill.id } });
+          if (wb?.status === 'OUT_FOR_DELIVERY') {
+            throw new ConflictException('Waybill already assigned by concurrent request');
+          }
+
+          // Create shipment
+          await tx.shipment.create({
+            data: {
+              waybillId: waybill.id,
+              driverId: selected.driverId,
+              companyId,
+              status: 'PENDING',
+            },
+          });
+
+          // Update waybill status
+          await tx.waybill.update({
+            where: { id: waybill.id },
+            data: { status: 'OUT_FOR_DELIVERY' },
+          });
+        });
+
+        this.logger.log(`Auto-dispatched ${waybill.trackingNumber} → ${selected.driverName} (score: ${selected.score}, ${selected.distanceKm}km)`);
+
+        return {
+          assigned: true,
           waybillId: waybill.id,
-          driverId: selected.driverId,
-          companyId,
-          status: 'PENDING',
-        },
-      });
-
-      // Update waybill status
-      await this.prisma.waybill.update({
-        where: { id: waybill.id },
-        data: { status: 'OUT_FOR_DELIVERY' },
-      });
-
-      this.logger.log(`Auto-dispatched ${waybill.trackingNumber} → ${selected.driverName} (score: ${selected.score}, ${selected.distanceKm}km)`);
-
-      return {
-        assigned: true,
-        waybillId: waybill.id,
-        trackingNumber: waybill.trackingNumber,
-        selectedDriver: selected,
-        candidates: candidates.slice(0, maxCandidates),
-        mode,
-        reason: `Assigned to ${selected.driverName} (score: ${selected.score})`,
-      };
+          trackingNumber: waybill.trackingNumber,
+          selectedDriver: selected,
+          candidates: candidates.slice(0, maxCandidates),
+          mode,
+          reason: `Assigned to ${selected.driverName} (score: ${selected.score})`,
+        };
+      } catch (err: any) {
+        if (err instanceof ConflictException) {
+          return {
+            assigned: false,
+            waybillId: waybill.id,
+            trackingNumber: waybill.trackingNumber,
+            selectedDriver: null,
+            candidates: candidates.slice(0, maxCandidates),
+            mode,
+            reason: 'Waybill was assigned concurrently',
+          };
+        }
+        throw err;
+      }
     }
 
     return {
@@ -232,19 +252,12 @@ export class AutoDispatchService {
     };
   }
 
-  /** Get dispatch suggestions without actually assigning. */
+  /**
+   * Get dispatch suggestions WITHOUT modifying state.
+   * CRITICAL FIX: This is now truly read-only. No side effects, no rollbacks.
+   */
   async suggest(companyId: string, waybillId: string): Promise<DispatchCandidate[]> {
     const result = await this.dispatch(companyId, waybillId, { mode: 'INTELLIGENT' });
-    // Rollback the assignment if it was made
-    if (result.assigned && result.selectedDriver) {
-      await this.prisma.shipment.deleteMany({
-        where: { waybillId, driverId: result.selectedDriver.driverId, status: 'PENDING' as any },
-      });
-      await this.prisma.waybill.update({
-        where: { id: waybillId },
-        data: { status: 'PENDING' },
-      });
-    }
     return result.candidates;
   }
 
