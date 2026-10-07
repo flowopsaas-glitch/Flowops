@@ -76,10 +76,22 @@ nullability, defaults, enum labels, primary keys, unique constraints, `@@index`
 lists and foreign keys. It is able to fail (a dropped index, a changed column
 type and an extra column were each reported when tried).
 
-Not run here: `npm run test:integration` needs a live PostgreSQL server (the
-sandbox has none and Prisma's engine binaries are unreachable), so the
-transaction/compare-and-set behaviour is proven by the 2004 unit tests against
-mocks plus the real-engine schema run above, not by a live database.
+In CI (`.github/workflows/ci.yml`, Backend job — a real `postgres:16` service
+container) the merged commit ran the whole chain green, which is the live-database
+evidence this sandbox could not produce:
+
+| CI step | Result |
+|---|---|
+| `npx prisma migrate deploy` (both new migrations, in order) | ✓ |
+| Drift guard: `prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --exit-code` (real Prisma engine + shadow DB) | ✓ no drift |
+| `npm run lint`, `npm run build`, unit tests | ✓ |
+| `npm run test:integration` (PostgreSQL) | ✓ |
+| E2E tests | ✓ |
+
+The sandbox itself has no PostgreSQL server and Prisma's engine binaries are
+unreachable there, so the transaction/compare-and-set behaviour is covered by the
+2004 unit tests (each modelling the losing race) plus the real-engine schema run
+above and this CI evidence.
 
 ## 4. Remaining risks / follow-ups
 
@@ -114,13 +126,20 @@ mocks plus the real-engine schema run above, not by a live database.
    `ai/platform-protection` and `alerting`. Every flagged line was read: they
    are owner/platform scope, self-generated webhook writes, or guarded by a
    preceding company-scoped read.
-6. **No live-database run of the integration suite.** The sandbox has no
-   PostgreSQL server and Prisma's engine binaries are unreachable, so
-   `npm run test:integration` was not executed. Mitigation: the migrations were
-   applied to a real PostgreSQL engine in-process (PGlite) with a 0-difference
-   catalog comparison, and every concurrency guarantee has a unit test that
-   models the losing race. Run `npm run test:integration` against a disposable
-   database in CI before the release.
+6. **Live-database validation — resolved in CI.** The authoring sandbox has no
+   PostgreSQL server and Prisma's engine binaries are unreachable there, so the
+   suite could not be run locally. On the merged commit, CI's Backend job ran
+   `prisma migrate deploy`, the `migrate diff` drift guard and
+   `npm run test:integration` against a real `postgres:16` container — all green.
+   The PGlite run in §3 was the offline cross-check.
+7. **Main's CI `Backend` job was already red before this merge** — it failed at
+   the `Build` step on the base commit (the four unreferenced draft files that
+   did not compile). It is green now. The one remaining red job on `main`,
+   `Frontend Image (build & push)`, fails in its **GHCR publish preflight** with
+   `HTTP 403` — a repository/package permission issue, not code: grant
+   *Read and write permissions* under Settings → Actions → General → Workflow
+   permissions (or the package's *Manage Actions access*), or set a `CR_PAT`
+   secret with `Packages: write`.
 
 ## 5. Releasing this
 
