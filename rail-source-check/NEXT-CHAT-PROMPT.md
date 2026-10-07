@@ -1,6 +1,8 @@
 # Handoff prompt — Rail working consolidation (Annexure_33a_NS_ver_4)
 
 Paste everything below the line into a new chat in this same workspace.
+> **VS Code sessions:** use `rail-source-check/NEXT-SESSION-PROMPT.md` instead — it is self-contained,
+> includes the start-of-session integrity checks and the new `append_gate.py`, and assumes no sandbox.
 All figures in it were first read off disk on 2026-10-05 at commit `7fc28a3`; the data tree was restored at `2073bb9`; subsequent rounds are recorded below.
 
 ---
