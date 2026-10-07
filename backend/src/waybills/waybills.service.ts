@@ -11,6 +11,7 @@ import { v4 as uuid } from 'uuid';
 import { BillingService } from '../billing/billing.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class WaybillsService {
@@ -24,6 +25,7 @@ export class WaybillsService {
     private billing: BillingService,
     private gateway: EventsGateway,
     private compliance: DriverComplianceService,
+    private audit: AuditService,
   ) {}
 
   /** Realtime emits are best-effort — they must never break a write. */
@@ -194,12 +196,23 @@ export class WaybillsService {
 
   async update(id: string, companyId: string, dto: any) {
     const existing = await this.findOne(id, companyId);
-    // Guard the lifecycle transition. Non-breaking in this phase: illegal jumps
-    // are logged (not blocked) until WAYBILL_STRICT_TRANSITIONS is enabled.
+    // Guard the lifecycle transition. Strict by default: an illegal jump is
+    // refused BEFORE any write and the refusal is audited, so a scrambled
+    // lifecycle is a recorded event rather than a surprise for the customer.
     if (dto.status && dto.status !== existing.status) {
       guardTransition(existing.status, dto.status, {
         waybillId: id, trackingNumber: existing.trackingNumber, actor: 'waybills.update',
-      }, (msg) => { throw new BadRequestException(msg); });
+      }, (msg) => {
+        void this.audit.record({
+          action: 'waybill.transition_rejected',
+          actorType: 'tenant',
+          targetType: 'waybill',
+          targetId: id,
+          targetName: existing.trackingNumber,
+          metadata: { from: existing.status, attempted: dto.status, reason: 'illegal_transition', source: 'waybills.update' },
+        });
+        throw new BadRequestException(msg);
+      });
     }
     const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
     if (dto.status && dto.status !== existing.status) {
@@ -333,12 +346,22 @@ export class WaybillsService {
         results.push({ trackingNumber: tn, result: 'unchanged', id: waybill.id });
         continue;
       }
-      // Enforce the lifecycle even on bulk warehouse scans, so a scan can't
-      // jump a parcel to an illegal state (e.g. PENDING → DELIVERED). Honours
-      // WAYBILL_STRICT_TRANSITIONS: logged-only until strict mode is enabled.
+      // Enforce the lifecycle even on bulk warehouse scans, so a scan cannot
+      // jump a parcel to an illegal state (e.g. PENDING → DELIVERED). Refusals
+      // are audited per parcel and reported in this batch's result list.
       guardTransition(waybill.status, targetStatus as WaybillStatus, {
         waybillId: waybill.id, trackingNumber: waybill.trackingNumber, actor: 'waybills.batchScan',
-      }, (msg) => { throw new BadRequestException(msg); });
+      }, (msg) => {
+        void this.audit.record({
+          action: 'waybill.transition_rejected',
+          actorType: 'tenant',
+          targetType: 'waybill',
+          targetId: waybill.id,
+          targetName: waybill.trackingNumber,
+          metadata: { from: waybill.status, attempted: targetStatus, reason: 'illegal_transition', source: 'waybills.batchScan' },
+        });
+        throw new BadRequestException(msg);
+      });
       const updated = await this.prisma.waybill.update({
         where: { id: waybill.id },
         data: { status: targetStatus as any },
