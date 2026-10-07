@@ -134,12 +134,17 @@ above and this CI evidence.
    The PGlite run in §3 was the offline cross-check.
 7. **Main's CI `Backend` job was already red before this merge** — it failed at
    the `Build` step on the base commit (the four unreferenced draft files that
-   did not compile). It is green now. The one remaining red job on `main`,
-   `Frontend Image (build & push)`, fails in its **GHCR publish preflight** with
-   `HTTP 403` — a repository/package permission issue, not code: grant
-   *Read and write permissions* under Settings → Actions → General → Workflow
-   permissions (or the package's *Manage Actions access*), or set a `CR_PAT`
-   secret with `Packages: write`.
+   did not compile). It is green now. The remaining red jobs on `main` are the
+   two image publishers (`Backend Image` and `Frontend Image (build & push)`),
+   which fail in their **GHCR publish preflight** with `HTTP 403` ("this job's
+   token cannot publish"). That is a repository/package permission setting, not
+   code — and it matters beyond a red badge: on a `main` push no image reaches
+   the registry, so a deploy that pulls from GHCR would silently run the previous
+   image. Fix one of: (1) Settings → Actions → General → Workflow permissions →
+   *Read and write*; (2) the package's *Manage Actions access* → grant this
+   repository *Write*; (3) a `CR_PAT` secret (fine-grained PAT with
+   `Packages: write`), which the login step falls back to. On pull requests the
+   same jobs pass, because they build and smoke-test without pushing.
 
 ## 5. Releasing this
 
