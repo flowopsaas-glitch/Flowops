@@ -1,6 +1,6 @@
 # FlowOps — Release-Readiness Audit (2026-10-07)
 
-**Status: READY for production, subject to the live-VPS verification steps in §8.**
+**Status: READY for production, subject to the live-VPS verification steps in §9.**
 
 This audit was requested as a deep, end-to-end review of the platform ahead of a
 merge + VPS pull. It covers: repository/commit hygiene (duplicates), navigation
@@ -174,6 +174,30 @@ finding is outdated. CI additionally gates on `npm run migrations:verify`.
   against real Postgres/Redis services. `deploy.yml` is manual-only and
   refuses to run without a configured target — no accidental auto-deploys.
 
+## 6b. Dependency security audit (fixed)
+
+`npm audit` was run against all three lockfiles (the CI Trivy gate scans
+`frontend/` and `backend/` for CRITICAL library CVEs and fails on any).
+
+| Package | Finding | Fix |
+|---|---|---|
+| `backend` — `proxy-addr` 2.0.7 (transitive via `express`) | **CRITICAL** — GHSA-jqcg-44mw-7w3h, IP spoofing via IPv4-mapped IPv6 trust subnet (advisory published 2026-10-05; main's last CI run predated it, which is why the Trivy job only started failing now) | Bumped to **2.0.8** via `npm audit fix` (lockfile-only, patch-level; also pulled `compression` 1.8.2 and `ts-loader` 9.6.2). `package.json` untouched |
+| `frontend` — `source-map-js` 1.2.1 | HIGH — GHSA-68fv-2mgg-jv7q (event-loop DoS) | Bumped to **1.2.2**; frontend now reports **0 vulnerabilities** |
+| `driver-portal` — 9 HIGH + 1 moderate (axios, brace-expansion, browserslist, fast-uri, nanoid, postcss, react-router(-dom), source-map-js) | HIGH | Fixed via `npm audit fix`; driver-portal now reports **0 vulnerabilities** |
+
+After the fixes: **0 CRITICAL anywhere**; frontend and driver-portal are fully
+clean. The backend still carries 40 HIGH / 13 moderate / 1 low advisories
+(mostly `@nestjs/cli`'s webpack chain); clearing those needs breaking upgrades
+(`npm audit fix --force` would jump `@nestjs/cli` to v12) and is scheduled as
+follow-up work, not part of this release.
+
+**Pre-existing driver-portal type error (fixed):** `driver-portal` failed
+`tsc --noEmit` on the base commit (`src/services/push.ts` — `Uint8Array` vs
+`BufferSource` under TS 5.7+ TypedArray generics). Fixed by typing
+`urlBase64ToUint8Array` as returning `Uint8Array<ArrayBuffer>`. Typecheck and
+`vite build` now pass. This failure predates this audit (verified against the
+base lockfile) and is not covered by any CI job — worth adding one.
+
 ## 7. Validation results (all local checks green)
 
 | Check | Result |
@@ -182,8 +206,13 @@ finding is outdated. CI additionally gates on `npm run migrations:verify`.
 | Frontend ESLint (changed files) | **PASS — 0 errors** (30 pre-existing warnings) |
 | Frontend unit tests (`vitest run`) | **PASS — 502/502 across 24 files** |
 | Frontend production build (`vite build` + PWA) | **PASS** (167 precache entries) |
-| Backend build (`nest build`) | **PASS** |
-| Backend unit tests (`jest`) | **PASS — 1834/1834 across 50 suites** |
+| Frontend `npm audit` | **PASS — 0 vulnerabilities** |
+| Backend build (`nest build`) | **PASS** (re-run after lockfile fix) |
+| Backend unit tests (`jest`) | **PASS — 1834/1834 across 50 suites** (re-run after lockfile fix) |
+| Backend `npm audit --audit-level=critical` | **PASS — 0 critical** |
+| Driver-portal typecheck (`tsc --noEmit`) | **PASS** (was failing pre-existing; fixed) |
+| Driver-portal build (`vite build` + PWA) | **PASS** |
+| Driver-portal `npm audit` | **PASS — 0 vulnerabilities** |
 | `deploy.sh` / `deploy/vps-deploy.sh` syntax | **PASS** (`bash -n`) |
 | CRLF-aware whitespace check | **PASS** (edited CRLF files keep their CRLF convention; no mixed-ending regressions) |
 | Post-change re-verification of deleted files | **PASS** (tsc + tests + build confirm nothing referenced them) |
@@ -203,7 +232,32 @@ Notes:
   `scripts/check-compose-ports.sh` could not be run locally; CI's compose job
   covers this on the PR.
 
-## 8. Remaining items & boundaries
+## 8. CI run analysis (PR #444)
+
+First CI run: **8 of 10 jobs passed** — Compose Config (port-leak guard),
+Frontend (typecheck + lint + tests + build), Backend (generate + migrations
+verify + tooling + 1834 tests), E2E Tests, Frontend Image, Schema SQL,
+Terraform, Detect. Two failures, both analysed:
+
+1. **Dependency Security Scan (Trivy) — caused by a real, newly published
+   advisory, now fixed in this PR.** GHSA-jqcg-44mw-7w3h (proxy-addr,
+   CRITICAL) was published 2026-10-05, after main's last green run on
+   2026-10-03. The scan compares lockfiles, which were byte-identical to
+   main's, so this was a latent pre-existing vulnerability, not a regression
+   from this diff. Fixed in §6b; the Trivy gate is expected green on re-run.
+2. **Backend Image (build & push) — pre-existing, not caused by this PR.**
+   The job fails identically on every recent `main` run (including the base
+   commit `be1792d`). The workflow itself documents the cause: GHCR publish
+   authorization (`denied: permission_denied: read_package`) — the job token
+   cannot publish to the user-owned `ghcr.io/flowopsaas-glitch/flowops-backend`
+   package and no `CR_PAT` secret is configured. The job's own preflight step
+   prints the remediation: grant the repo write workflow permissions, grant
+   the repository Write on the package's "Manage Actions access", or add a
+   `CR_PAT` secret. **This does not block VPS deploys**: the production stack
+   builds from source (`docker compose build` against `./backend`), it does
+   not pull the GHCR image (`BACKEND_IMAGE` is an optional override).
+
+## 9. Remaining items & boundaries
 
 1. **Live VPS verification (blocked here, not by the code).** No SSH
    credentials/route to `164.160.89.97` exist in this environment. After the
@@ -243,8 +297,17 @@ Notes:
    cleaned (§3), so mounting it is now safe.
 5. **Jest open-handle warning** — cosmetic; worth a `--detectOpenHandles` pass
    in a future hardening sprint.
+6. **Backend Image CI job (GHCR publish)** — pre-existing on `main`; needs a
+   repository/admin fix (workflow permissions, package access, or a `CR_PAT`
+   secret — the job's preflight prints the exact steps). Does not affect VPS
+   deploys, which build from source.
+7. **Backend HIGH advisories (40)** — require breaking upgrades
+   (`@nestjs/cli` v12 chain); scheduled as follow-up, not release-blocking
+   (CI gates on CRITICAL only).
+8. **Add a driver-portal CI job** — its typecheck was failing on `main`
+   unnoticed (fixed here); a typecheck+build job would catch regressions.
 
-## 9. Change summary (this audit)
+## 10. Change summary (this audit)
 
 - `frontend/src/components/layout/AppLayout.tsx` — removed duplicate "Drivers" nav item (live surface).
 - `frontend/src/components/layout/navigation.ts` — stale links removed (11 entries).
