@@ -1,10 +1,14 @@
 # NEXT SESSION PROMPT — Rail working consolidation (Annexure_33a_NS_ver_4)
 
-## 0. BOOTSTRAP — if this file or the whole `rail-source-check/` folder is missing
+## 0. BOOTSTRAP — only needed if this file or the whole `rail-source-check/` folder is missing
 
-The rail corpus lives on branch **`arena/25d10ae6-flowops`** of `github.com/flowopsaas-glitch/Flowops`.
-`main` does **not** contain `rail-source-check/`, so on any other branch this file and the data are
-simply absent. Two ways to get them:
+**Status 2026-10-07: the corpus is on `main` @ `6426c7f`** (merged in PR #443), byte-identical to
+`arena/25d10ae6-flowops` @ `ae1d067` — the sandbox session branch that wrote rounds 53–58. If your
+workspace is on `main`, run `git pull --ff-only` and skip this section; everything below is only for
+a workspace parked on an older branch or commit.
+
+The corpus also lives on branch **`arena/25d10ae6-flowops`** of `github.com/flowopsaas-glitch/Flowops`.
+Two ways to pull it into a workspace that lacks it:
 
 **A — add the folder to the workspace you already have open** (no branch switch; your own uncommitted
 work is untouched). In the VS Code terminal, from the repo root:
@@ -87,11 +91,15 @@ alone. The end state is "100 % production".
   `append_gate.py` (pre-append gates / post-append verify / corpus audit),
   `STATE.md` (the running ledger — **read it first every session**),
   `NEXT-CHAT-PROMPT.md` (rolling handoff), `FIELD-NAMES.md` (authoritative field list + source header).
-- **Branch situation (must be settled by the user, do not guess):** the standing mandate names
-  `arena/d016ab76-flowops` (holds rounds up to 52, head `921eaa4`); the newest data (rounds 53–58)
-  is on `arena/25d10ae6-flowops` (head `97cbefc`). Check out the branch with the newest corpus, or
-  merge it into the mandated branch, and record the decision in STATE.md. Never `git reset --hard`;
-  never silently switch branches mid-session.
+- **Where the work lives (settled 2026-10-07):** `main` @ `6426c7f` (PR #443) carries the complete
+  corpus — all 23 data files, `STATE.md`, both handoff prompts and `append_gate.py` — byte-identical
+  (all 29 files) to `arena/25d10ae6-flowops` @ `ae1d067`, the sandbox session branch that wrote
+  rounds 53–58. **Work on `main`.** (History note: the two branches diverged from `be1792d`; main
+  received the files via PR #443 from `arena/01a10170-flowops`, not by merging the session commits —
+  so any PR raised from `arena/25d10ae6-flowops` would list all 29 files even though the data content
+  is identical.) The older mandate branch `arena/d016ab76-flowops` (rounds ≤52, head `921eaa4`) is
+  historical. Never `git reset --hard`; never switch branches mid-session; record the branch you
+  actually used in STATE.md and push every finished round.
 - Staging: keep pastes in `uploads/` (git-ignored, `.gitignore` line 54), e.g.
   `uploads/round-59/blinkpan.txt`. Nothing enters `rail-source-check/` until the gates pass.
 

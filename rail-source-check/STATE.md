@@ -1518,3 +1518,23 @@ partials listed above.
 files plus this ledger update); pushed to `origin`. The branch mandate from round 54 is still
 unresolved. The staged payloads remain in `/home/user/r58/` (`blackhill.txt`, `blaney.txt`,
 `buckingham.txt`, `bowkerspark.txt`, `bell-a.txt` … `bell-e.txt`).
+
+## Corpus location — on `main` since 2026-10-07
+
+`main` @ `6426c7f` — *feat(rail): source traceability, handoff readiness and timetable (#443)*, from
+`arena/01a10170-flowops`, merged 2026-10-07 20:24 UTC — now carries the whole `rail-source-check/`
+tree. Verified byte-by-byte: **all 29 files are identical** to the sandbox session branch
+`arena/25d10ae6-flowops` @ `ae1d067` (round 58 part 2), and `append_gate.py --corpus` run against the
+merged copy reports **23 files / 17,636 rows / 593 workings / 39 depots; 570 `[OK]` + 23 flagged** —
+exactly the numbers in this ledger.
+
+Lineage note: the two branches diverged from `be1792d`; main received the files through PR #443's
+branch, not by merging the session commits, so a PR raised from `arena/25d10ae6-flowops` would display
+all 29 rail files even though their content is identical (a data no-op to merge).
+
+The VPS deploy of 2026-10-07 22:33 SAST pulled `6426c7f`: 9 migrations found / 4 newly applied
+(rail wave5 handshake ladder gaps, driver compliance fields, waybill source collection, rail handoff
+timetable), tunnel-only posture verified (no host ports), api `/health` OK, all containers healthy.
+From now on `main` is the canonical home of the corpus; the sandbox session branch remains the
+sandbox write path.
+
