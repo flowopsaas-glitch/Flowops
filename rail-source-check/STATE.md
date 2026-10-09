@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-09 (round 62 — two workings pasted: **`BELLVILLE 1429` appended (NEW working, 28 rows, all 19 fields, L690-717, gates PASS, `[OK]` — stated/computed 04:10:00)** and **`BELLVILLE 1428` HELD in full, nothing appended** — the two paste blocks were joined inline ("and") on `1428`'s last line, leaving that row's `Distance` cell **unreadable** (empty+tab / literal spaces / 18-field row all fit the rendering); per the rules no reading may be authored, so all 17 rows of `1428` are held pending a re-paste of that one row. `bellville-batch.txt` is now 717 rows / 30 workings / 29 `[OK]` + 1 flagged (`1417`'s 30-second mismatch), MD5 `7347368592a496fb0fe4f81d40013ea6`. Corpus now: **23 data files / 17,723 rows / 596 workings / 39 depots; 573 [OK] + 23 flagged.** Still owed: **`1428` (held — one cell)**, BELLVILLE workings after `1429` (and `1415`/`1416` + anything between `1418` and `1428` — unanswered); BIJLKOR `17207`/`8856` whole plus `9409`/`9443`/`16453`/`17205`; the `&amp;` query stays open; next BLOEMFONTEIN working remains 8941; committed on arena/a620a55a-flowops — see Round 62 note and Round 54 for the unresolved branch mandate)
+Updated: 2026-10-09 (round 63 — the round-62 hold is closed: **the user clarified that the "and" at the paste join was connector prose ("please remove the 'and' it was just to show that im adding more"), resolving `1428`'s final-row `Distance` as empty (standard 19-field row, trailing tab)**; `1428` appended in full (17 rows, L718-734, `[OK]` 00:38:00) and **`BELLVILLE 1431` appended (NEW working, 50 rows, all 19 fields, L735-784, gates PASS, `[OK]` 09:40:00 overnight ×1)**. `bellville-batch.txt` is now 784 rows / 32 workings / 31 `[OK]` + 1 flagged (`1417`), MD5 `c465ac3fbf4667112d1d3bc6cad393d6`. Corpus now: **23 data files / 17,790 rows / 598 workings / 39 depots; 575 [OK] + 23 flagged.** Still owed: BELLVILLE workings after `1431` (ask whether `1430` exists; `1415`/`1416` still unanswered); BIJLKOR `17207`/`8856` whole plus `9409`/`9443`/`16453`/`17205`; the `&amp;` query stays open; next BLOEMFONTEIN working remains 8941; committed on arena/a620a55a-flowops — see Round 63 note and Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -24,7 +24,7 @@ Updated: 2026-10-09 (round 62 — two workings pasted: **`BELLVILLE 1429` append
 - /home/user/Flowops/rail-source-check/blaney-batch.txt — 70 rows, round 58 part 2, NEW depot BLANEY (one working, `9005`, steps 1–11: BLANEY → BKJ/FJN/ANR sidings → FORTJACKSON → EGERTON → ARNOLDTON → WILSONIA/DAWN/HORSESHOE/HIGHGATE → CAMBRIDGE, 12:50:00 → 14:25:00, 01:35:00, `[OK]`; `VACUUM TRAINS/PICKUP TRAIN`). MD5 `3827b6002ff002820d0d4b68ffe89dc3`.
 - /home/user/Flowops/rail-source-check/buckingham-batch.txt — 24 rows, round 58 part 2, NEW depot BUCKINGHAM (one working, `7224`, steps 1–16: BUCKINGHAM → BKM sidings → VENTERSDORP → MAKOKSKRAAL → GATIEP → BODENSTEIN → TATODI → COLIGNY, 11:30:00 → 13:48:00, 02:18:00, `[OK]`). MD5 `8c6e89fc66588001fbeb1c8460642133`.
 - /home/user/Flowops/rail-source-check/bowkerspark-batch.txt — 10 rows, round 58 part 2, NEW depot BOWKERSPARK (`7011` and `7013`: BOWKERSPARK → FLOWERS → AMBERDALE → QTN-BERRYPARK → QUEENSTOWN, 00:30:00 each, both `[OK]`; `VACUUM TRAINS/FEEDER TRAIN`). The two `QTN-BERRYPARK` rows carry a **blank `ENROUTE_Corridor`** — preserved exactly as pasted. MD5 `a6c620d67f4c92bfc267e5eb81747e41`.
-- /home/user/Flowops/rail-source-check/bellville-batch.txt — 717 rows, rounds 58 part 2 – 62, depot BELLVILLE (30 workings 75–1429 as pasted; corridor CAPE 709 rows / ORELINE 8). 29 `[OK]` + 1 flagged: **`1417`** carries a 30-second stated-vs-computed duration mismatch (stated 02:40:00 vs computed 02:40:30), preserved verbatim. `1414` completed round 59 (L620-656); `1417` round 60 (L657-676); `1418` round 61 (L677-689); `1429` round 62 (L690-717). **`1428` is HELD in full (round 62)** — its final row's `Distance` cell is unreadable at the paste join; nothing of `1428` is on disk. Workings after `1429` are still owed (and `1415`/`1416` + anything between `1418` and `1428`). Three cells carry `&amp;` verbatim (`75` `ORDER &amp; SHUNT`; `1211`/`1411` `R.T.O. &amp; X 1428`) — open query. MD5 `7347368592a496fb0fe4f81d40013ea6`.
+- /home/user/Flowops/rail-source-check/bellville-batch.txt — 784 rows, rounds 58 part 2 – 63, depot BELLVILLE (32 workings 75–1431 as pasted; corridor CAPE 776 rows / ORELINE 8). 31 `[OK]` + 1 flagged: **`1417`** carries a 30-second stated-vs-computed duration mismatch (stated 02:40:00 vs computed 02:40:30), preserved verbatim. `1414` completed round 59 (L620-656); `1417` round 60 (L657-676); `1418` round 61 (L677-689); `1429` round 62 (L690-717); `1428` round 63 (L718-734, the round-62 hold closed by the user's "remove the 'and'" clarification — `Distance` empty on its final row); `1431` round 63 (L735-784, overnight to KLAWER). Workings after `1431` are still owed (ask whether `1430` exists; `1415`/`1416` + the `1418`→`1428` gap question). Three cells carry `&amp;` verbatim (`75` `ORDER &amp; SHUNT`; `1211`/`1411` `R.T.O. &amp; X 1428`) — open query. MD5 `c465ac3fbf4667112d1d3bc6cad393d6`.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
@@ -1830,3 +1830,96 @@ whole missing depots; the `&amp;` query; the branch mandate (round 54).
 
 **Committed** on `arena/a620a55a-flowops`. Staged payloads remain at
 `/home/user/Flowops/uploads/round-62/` (including the held `1428` head).
+
+## Round 63 — `1428` cell RESOLVED (user: the "and" was connector prose) and closed; **BELLVILLE `1431`** (NEW working, 50 rows, `[OK]` overnight) appended
+
+**Sources:** (1) the user's clarification of the round-62 paste join — *"please remove the 'and' it
+was just to show that im adding more"* — plus (2) a new paste: **BELLVILLE `1431`** (50 rows:
+header `BELLVILLE` 16:00:00 → `KLAWER` 01:40:00, `09:40:00`, Sched 3, `YYYYYYY`,
+`LIGHTAIRBRAKE/LIGHTAIRBRAKE`, then 49 rows through the Malmesbury/Klawer line, terminating
+`KLAWER` 01:40:00 → 00:00:00 `RT`). The user again joined prose inline with the paste ("im adding
+more: BELLVILLE 1431 …"); the prose was excluded from the rows (tab-field boundary check + the
+19-field gate confirm it never entered the payload).
+
+**`1428` final row — resolved and appended (rule 7 trail).** The round-62 hold was caused by the
+inline "and" connector sitting on `1428`'s last line, leaving that row's `Distance` cell
+unreadable (three readings fit the rendering: empty+trailing-tab / literal spaces / 18-field row).
+The user's 2026-10-09 instruction removes the connector as non-data ("it was just to show that im
+adding more"), leaving a standard **19-field row with `Distance` empty (trailing tab)** — the
+paste's universal convention for distance-less rows (cf. `1428` seq 11 `TBD/S161195`, `1431`'s
+`PQB/S147346`/return-`PIKETBERG` rows) and the corpus field model (§5). The row as appended:
+`BELLVILLE 1428 12 CAPE TABLEBAYDOCKS 16:58:00 00:00:00 00:01:00 · RT TABLEBAYDOCKS [5 blanks]
+00:38:00 0 [Distance empty]`. Rows 1–16 were staged in round 62 at
+`uploads/round-62/bellville-1428-head-16rows.txt` and are byte-identical in the appended block.
+
+**Rows:** `1428` 17 rows appended (17 new / 0 duplicate / 0 unclear; all × 19 fields) · `1431` 50
+rows appended (50 new / 0 duplicate / 0 unclear; all × 19 fields). Payloads:
+`uploads/round-63/bellville-1428.txt` MD5 `d498b1f96bd5ee27eb2476646a578d3b`;
+`uploads/round-63/bellville-1431.txt` MD5 `c3b637243441bbe523394231cdfec1ca`; combined append
+payload `uploads/round-63/bellville-1428+1431-combined.txt` MD5
+`0c83ee1a4bc0a8517a6ebc7b2be1f545`.
+
+**Line ranges:** `1428` **L718-734**; `1431` **L735-784** (append-only; `1429` L690-717 untouched).
+NOTE the file's block order is completion order: `1428` completes one round after its paste
+(append-only forbids inserting before `1429`); within-working row order is intact.
+
+**Checksums:** target `bellville-batch.txt` after append **`c465ac3fbf4667112d1d3bc6cad393d6`**
+(was `7347368592a496fb0fe4f81d40013ea6`).
+
+**Gates:** round-start git check first (per the §11 trap): HEAD `eb579f2`, worktree clean. §4
+baseline confirmed 23 files / 17,723 rows / 596 workings / 39 depots / 23 flagged. Pre-append
+gates both PASS: `1428` 17 rows `fields={19: 17}`, `1431` 50 rows `fields={19: 50}`; 0
+byte-identical rows each; 0 `(depot, working, NODE_Seq, station)` collisions corpus-wide; both
+**NEW** workings (0 rows corpus-wide). Post-append: `tail-67` == combined payload: True; target
+minus combined payload == HEAD copy -> append-only: **PASS**.
+
+**Checker (`verify_workings.py bellville-batch.txt`):** **32 workings, 1 with issues** —
+`1428` **L718-734, 16:20:00 → 16:58:00, stated 00:38:00 / computed 00:38:00, `[OK]`**;
+`1431` **L735-784, 16:00:00 → 01:40:00, stated 09:40:00 / computed 09:40:00, overnight ×1,
+`[OK]`**. The single issue remains `1417`'s preserved 30-second mismatch.
+
+**Anomalies preserved verbatim — `1428`:** docks shunt chain `TABLEBAYDOCKS` / `TBD/S160628` /
+`TBD/S161195` (repeating `TABLEBAYDOCKS` as both place and shunt code); half-minute clock
+`16:55:31`; sub-minute legs `00:00:31` (seq 10) / `00:00:29` (seq 11); blank `Distance` on seq 11
+`TBD/S161195`; blank `Distance` on the final row (the resolved cell); `Type`
+`LIGHTAIRBRAKE/CONTAINER TRN`. **`1431`:** half-minute clock `21:15:30`/`21:16:00`/`21:17:30`/
+`21:18:00` with `00:01:30` legs and `00:00:30` stands (`PQB/S147346` + return `PIKETBERG`);
+second-level times `00:14:10`/`00:14:20`/`00:14:30`/`00:14:45`/`00:19:00` with `00:00:10`/
+`00:00:15`/`00:04:15` legs (`GRAAFWATER`/`GWS/S147559`); blank `Distance` on 3 rows (header,
+`PQB/S147346`, return `PIKETBERG`); one-decimal distances `13.8` / `12.6` (×2); `NODE_Seq` shared
+across stations (seq 26 spans 7 rows incl. the midnight roll; seq 29 spans 4); reason strings
+`B`, `R.T.O.`, `R.T.O. SHUNT`, `SHUNT`, `XP SHUNT`, `X 4418`, `X 4492`, `RT` exactly as pasted;
+shunt codes `DEH/S…`, `PQB/S…`, `POO/S…`, `ENK/S…`, `GWS/S…`; the `Depart_Day` roll 0→1 at
+`GRAAFWATER` 00:14:00. The `&amp;` query and the `1415`/`1416` question remain **open**.
+
+**Sibling comparisons (read-only, station-keyed walk, header kept):** `1428` vs **`1418`**
+(L677-689) — 13/17 align: the same 16:20 departure pair into the docks; `1418` terminates at
+`TABLEBAYDOCKS` 16:55:00 (`RT`) while `1428` arrives 16:52:00 and then does the four-row docks
+shunt chain to 16:58:00; diffs: `Train`/`Throughput Runtime` ×13 (`00:38:00` vs `00:35:00`),
+header `DestArr` 1, and the terminus-shaped row (`Arr`/`Dep`/`P2P`/`Standingtime`/
+`StandingReason` ×1 each). `1429` shares only the header station. `1431` vs **`87`** (L50-76) —
+27/50 align (`87`'s whole route = `1431`'s first stretch through `DEHOEK`); diffs `Train`/`Dep`/
+`Dest`/`Runtime` ×27, `Arr` ×26, `Standingtime`/`StandingReason` ×14 (`R.T.O.` vs
+`ORDER / SHUNT`), `Point-to-Point Runtime` ×11 (`MIKPUNT` 00:04:00 vs blank — the recurring
+blank-travel cell in the older workings). `1414`/`75` align 11/50 — the shared
+`BELLVILLE`→`KALBASKRAAL` stretch, after which `75`/`1414`/`1429` turn to `LANGEENHEID`/`SALKOR`
+while `87`/`1431` run `ABBOTSDALE`→`MALMESBURY`→`DEHOEK` (and `1431` on to `KLAWER`). Nothing was
+taken from any sibling.
+
+**Corridors after round 63 (measured from disk):** CAPE 11,765 · CENTRAL 2,676 · CONTAINER 1,903 ·
+NORTH 922 · NORTHEAST 472 · ORELINE 10 · blank 42. (`bellville-batch.txt` is now CAPE 776 /
+ORELINE 8.)
+
+**Aggregate after round 63 (measured): 23 rail data files, 17,790 rows, 598 workings, 39 depots;
+575 `[OK]` + 23 flagged.**
+
+**Outstanding after round 63:** BELLVILLE workings after `1431` — and ask whether **`1430`**
+exists (the pastes jump `1429` → `1431`), plus the standing `1415`/`1416` question; BIJLKOR
+`17207` **whole** (head *and* tail), `8856` **whole** from its header, `9409`, `9443`, `16453`,
+`17205`; the BLOEMFONTEIN queue (next `8941`); the on-disk partials BEACONSFIELD `8965`,
+BEAUFORTWEST `97`, BLOEMFONTEIN `4215`, BLOEMFONTEIN `18927`, WELGEDAG `58866`; BEACONSFIELD
+`1438` re-transcription (derived); round-8 part 2 (~620 rows); the whole missing depots; the
+`&amp;` query; the branch mandate (round 54).
+
+**Committed** on `arena/a620a55a-flowops`. Staged payloads remain at
+`/home/user/Flowops/uploads/round-63/`.
