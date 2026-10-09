@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 58, part 2 — the re-pasted new-depot batch was transcribed and appended as five new files: `blackhill-batch.txt` 89 rows / 15 workings, `blaney-batch.txt` 70 / 1, `buckingham-batch.txt` 24 / 1, `bowkerspark-batch.txt` 10 / 2, and `bellville-batch.txt` 630 / 27 — **823 rows total, all 19 fields**, 0 byte-identical rows and 0 colliding `(depot, working, NODE_Seq, station)` keys against the whole 16,813-row corpus. Corpus now: **23 data files / 17,636 rows / 593 workings / 39 depots; 570 [OK] + 23 flagged.** The only new flag is `BELLVILLE 1414`, which is **PARTIAL** — the re-paste stopped at step 6 `KALBASKRAAL` 11:55:30, so `1414` steps 9–20 and everything after `1414` are still owed; three cells carry `&amp;` exactly as received (`75` `ORDER &amp; SHUNT`, `1211`/`1411` `R.T.O. &amp; X 1428`) and the query is open. No belville/bellville file existed anywhere in the repository or on any remote branch, so the new file uses the source's own spelling `BELLVILLE`. BIJLKOR 17207 head, 8856 tail and 9409/9443/16453/17205 are also still owed; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+Updated: 2026-10-09 (round 59 — the `BELLVILLE 1414` remainder arrived as a complete paste and was appended verbatim: **26 rows, all 19 fields**, at `bellville-batch.txt` L631-656, boundary contiguous (+30 s = stated `00:00:30`), 0 byte-identical rows and 0 colliding keys against the whole 17,636-row corpus, `tail -26` byte-identical to the payload. `1414` is **COMPLETED** — L620-656, 10:45:00 → 15:10:00, stated/computed 04:25:00, `[OK]` — and leaves the flagged list. `bellville-batch.txt` is now 656 rows / 27 workings / **all `[OK]`**, MD5 `0c0d047769765efa0052497aaa57c9f1`. Corpus now: **23 data files / 17,662 rows / 593 workings / 39 depots; 571 [OK] + 22 flagged.** Still owed: BELLVILLE workings after `1414`; BIJLKOR `17207` **whole** (head *and* tail — the old-sandbox tail is not on this branch) and `8856` **whole** from its header (round 56 withheld its 108 rows; nothing of it is on disk), plus `9409`/`9443`/`16453`/`17205`; the `&amp;` query stays open; next BLOEMFONTEIN working remains 8941; committed on arena/a620a55a-flowops (this Arena session's pinned branch off main@6426c7f — see Round 59 note and Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -24,7 +24,7 @@ Updated: 2026-10-07 (round 58, part 2 — the re-pasted new-depot batch was tran
 - /home/user/Flowops/rail-source-check/blaney-batch.txt — 70 rows, round 58 part 2, NEW depot BLANEY (one working, `9005`, steps 1–11: BLANEY → BKJ/FJN/ANR sidings → FORTJACKSON → EGERTON → ARNOLDTON → WILSONIA/DAWN/HORSESHOE/HIGHGATE → CAMBRIDGE, 12:50:00 → 14:25:00, 01:35:00, `[OK]`; `VACUUM TRAINS/PICKUP TRAIN`). MD5 `3827b6002ff002820d0d4b68ffe89dc3`.
 - /home/user/Flowops/rail-source-check/buckingham-batch.txt — 24 rows, round 58 part 2, NEW depot BUCKINGHAM (one working, `7224`, steps 1–16: BUCKINGHAM → BKM sidings → VENTERSDORP → MAKOKSKRAAL → GATIEP → BODENSTEIN → TATODI → COLIGNY, 11:30:00 → 13:48:00, 02:18:00, `[OK]`). MD5 `8c6e89fc66588001fbeb1c8460642133`.
 - /home/user/Flowops/rail-source-check/bowkerspark-batch.txt — 10 rows, round 58 part 2, NEW depot BOWKERSPARK (`7011` and `7013`: BOWKERSPARK → FLOWERS → AMBERDALE → QTN-BERRYPARK → QUEENSTOWN, 00:30:00 each, both `[OK]`; `VACUUM TRAINS/FEEDER TRAIN`). The two `QTN-BERRYPARK` rows carry a **blank `ENROUTE_Corridor`** — preserved exactly as pasted. MD5 `a6c620d67f4c92bfc267e5eb81747e41`.
-- /home/user/Flowops/rail-source-check/bellville-batch.txt — 630 rows, round 58 part 2, NEW depot BELLVILLE (27 workings 75–1414 as pasted; corridor CAPE 623 rows / ORELINE 7). 26 `[OK]` + 1 flagged: **`1414` is PARTIAL** — the paste stopped at step 6 `KALBASKRAAL` 11:55:30 (stated 04:25:00 / computed 01:10:00), so `1414` steps 9–20 and everything after `1414` are owed. Three cells carry `&amp;` verbatim (`75` `ORDER &amp; SHUNT`; `1211`/`1411` `R.T.O. &amp; X 1428`). MD5 `04dbdeb409f62c676731a7eb73aeb23b`.
+- /home/user/Flowops/rail-source-check/bellville-batch.txt — 656 rows, rounds 58 part 2 + 59, depot BELLVILLE (27 workings 75–1414 as pasted; corridor CAPE 648 rows / ORELINE 8). **All 27 `[OK]`** — `1414` was completed in round 59 (remainder appended at L631-656; `1414` now L620-656, 10:45:00 → 15:10:00, stated/computed 04:25:00). Workings after `1414` are still owed. Three cells carry `&amp;` verbatim (`75` `ORDER &amp; SHUNT`; `1211`/`1411` `R.T.O. &amp; X 1428`) — open query. MD5 `0c0d047769765efa0052497aaa57c9f1`.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
@@ -1518,3 +1518,74 @@ partials listed above.
 files plus this ledger update); pushed to `origin`. The branch mandate from round 54 is still
 unresolved. The staged payloads remain in `/home/user/r58/` (`blackhill.txt`, `blaney.txt`,
 `buckingham.txt`, `bowkerspark.txt`, `bell-a.txt` … `bell-e.txt`).
+
+## Round 59 — BELLVILLE `1414` remainder (26 rows) — `1414` COMPLETED (`bellville-batch.txt` now 656 rows / 27 workings, ALL `[OK]`)
+
+**Source:** one chat paste — the `1414` remainder only: step 7 `KBA/S160342` 11:56:00 through
+step 20 `SALKOR` 15:10:00 → 00:00:00 (terminus row). The paste was **complete**: it ends at the
+designated destination `SALKOR`, matching the working header's `Destination Arrival Time`
+(`10:45:00` dep, `15:10:00` arr, `04:25:00` runtime). "Everything after `1414`" has not arrived
+yet.
+
+**Rows:** 26 new / 0 duplicate / 0 unclear. All 26 rows are exactly **19 fields**. Payload staged at
+`/home/user/Flowops/uploads/round-59/bellville-1414-remainder.txt` (git-ignored), MD5
+`898dfe4dd980ae553d28ae9054a26b66`.
+
+**Line ranges:** appended at `bellville-batch.txt` **L631-656** (append-only — nothing else
+touched). `1414` now spans **L620-656** (37 rows: header + 36).
+
+**Checksums:** payload `898dfe4dd980ae553d28ae9054a26b66` · target after append
+`bellville-batch.txt` **`0c0d047769765efa0052497aaa57c9f1`** (was
+`04dbdeb409f62c676731a7eb73aeb23b`).
+
+**Pre-append gates (`append_gate.py`):** 26 rows, `fields={19: 26}`; 0 byte-identical rows; 0
+`(depot, working, NODE_Seq, station)` collisions corpus-wide; 11 existing `1414` rows located at
+L620-630; boundary contiguous — last corpus row `1414` seq 6 `KALBASKRAAL` dep 11:55:30 → first
+payload row seq 7 `KBA/S160342` arr 11:56:00, clock delta **+30 s** = stated `Point-to-Point
+Runtime` `00:00:30`. RESULT: PASS (exit 0).
+
+**Post-append verification:** `tail -26` bytes of target == payload bytes: True; "target minus
+payload == HEAD copy" append-only: PASS. Checker `verify_workings.py bellville-batch.txt`:
+**27 workings, 0 with issues** — `1414` reads **L620-656, 10:45:00 → 15:10:00, stated 04:25:00 /
+computed 04:25:00, `[OK]`** (note only: `~ blank travel (check skipped): L627 MIKPUNT`, a
+pre-existing row). **`BELLVILLE 1414` leaves the flagged list — the partial is CLOSED.**
+
+**Anomalies preserved verbatim (nothing corrected):** station `JANUARIESKRAA` (13-char source
+spelling, seq 9); terminus row seq 20 `SALKOR` carries `ENROUTE_Departure` `00:00:00` (same
+convention as `BLACKHILL 9088`) and corridor **`ORELINE`** on that single row while the other 25
+rows are `CAPE`; `Distance` values `11.9` and `23` without decimals; `X 1410`, `R.T.O. / SHUNT` and
+`RT` activity strings exactly as pasted; seq 11 `DARLING` carries `StandingReason` `SHUNT` with
+blank `Standingtime`. Repeated `NODE_Seq` (9×5, 12×5, 15×3, 18×3) and repeated stations
+(`KALBASKRAAL`, `DARLING`, `KOPERFONTEIN`, `BERGRIVIER`) are source-normal. The `&amp;` query
+(round 58) remains **open** — those three cells were not part of this paste.
+
+**Sibling comparisons (read-only, post-hoc):** the only other `1414` in the corpus is
+`BEACONSFIELD 1414` (`bledasdorp-bindura-beaconsfield-batch.txt` L921-1050, 130 rows,
+`BEACONSFIELD` → `BELLVILLE`, 22:30:00 → 08:10:00 day-1, stated 33:40:00) — a **different working**
+sharing the number (cross-depot reuse, as recorded in round 58). No same-working sibling exists;
+no field comparison applies and nothing was taken from it.
+
+**Corridors after round 59 (measured from disk):** CAPE 11,637 · CENTRAL 2,676 · CONTAINER 1,903 ·
+NORTH 922 · NORTHEAST 472 · ORELINE 10 · blank 42. (`bellville-batch.txt` itself is now
+CAPE 648 / ORELINE 8.)
+
+**Aggregate after round 59 (measured): 23 rail data files, 17,662 rows, 593 workings, 39 depots;
+571 `[OK]` + 22 flagged.**
+
+**Outstanding after round 59:** BELLVILLE workings **after** `1414` (the next paste should continue
+from there); BIJLKOR `17207` — the **whole working** (head *and* tail: the 7-row tail was only ever
+held in the old sandbox and is **not** on this branch, so ask for both) — and `8856` — also the
+**whole working** from its header (round 56 deliberately withheld its 108 rows; nothing of `8856`
+is on disk) — plus `9409`, `9443`, `16453`, `17205`; the BLOEMFONTEIN queue (next `8941`); the
+on-disk partials BEACONSFIELD `8965` (L1-22), BEAUFORTWEST `97` (L1-16), BLOEMFONTEIN `4215`
+(L999-1031), BLOEMFONTEIN `18927` (L2129-2187), WELGEDAG `58866` (L1-1); BEACONSFIELD `1438`
+L1139-1180 re-transcription (derived, needs source + approval); round-8 part 2 (~620 rows); the
+whole missing depots; the `&amp;` query; the branch mandate (round 54).
+
+**Committed** on `arena/a620a55a-flowops` — this Arena session's pinned branch (the session harness
+pins the branch; it is cut from `main@6426c7f`, which carries the whole corpus byte-identical to
+`arena/25d10ae6-flowops` @ `ae1d067` via PR #443). Note: `arena/25d10ae6-flowops` @ `ef13d85`
+additionally refreshes §0/§3 of `NEXT-SESSION-PROMPT.md` and adds a corpus-location note to this
+ledger — that refresh is **not** in this branch's copy of those two files. The round-54 branch
+mandate is still the user's call. Staged payload remains at
+`/home/user/Flowops/uploads/round-59/bellville-1414-remainder.txt`.

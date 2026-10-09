@@ -30,7 +30,7 @@ code .            # then open this folder in VS Code
 Sanity check that the bootstrap worked — from `rail-source-check/`:
 
 ```bash
-python3 append_gate.py --corpus     # expect 23 files / 17,636 rows / 593 workings / 39 depots / 23 flagged
+python3 append_gate.py --corpus     # expect 23 files / 17,662 rows / 593 workings / 39 depots / 22 flagged
 ```
 
 ---
@@ -110,11 +110,11 @@ Expected audit output (if **any** number differs, stop and report — do not tra
 | measure | expected |
 |---|---|
 | files | 23 |
-| rows | 17,636 |
+| rows | 17,662 |
 | workings | 593 |
 | depots | 39 |
-| flagged workings | 23 |
-| `[OK]` workings | 570 |
+| flagged workings | 22 |
+| `[OK]` workings | 571 |
 
 If your Python is invoked as `python` on Windows, use that; the scripts are pure standard library.
 
@@ -185,7 +185,7 @@ travel/dwell vs clocks, stated vs computed duration, and duplicate rows. Blank t
 Quirks: `tail -1` on a `.txt` returns a blank line — always count with `awk 'NF' | wc -l`;
 the per-file totals loop must grep `total:` (do not read the last line of output).
 
-## 8. CURRENT STATE — 23 files / 17,636 rows / 593 workings / 39 depots / 570 `[OK]` + 23 flagged
+## 8. CURRENT STATE — 23 files / 17,662 rows / 593 workings / 39 depots / 571 `[OK]` + 22 flagged
 
 Newest files (round 58, head `97cbefc`):
 
@@ -195,33 +195,38 @@ Newest files (round 58, head `97cbefc`):
 | `blaney-batch.txt` (NEW depot, round 58 p2) | 70 | 1 | `3827b6002ff002820d0d4b68ffe89dc3` |
 | `buckingham-batch.txt` (NEW depot, round 58 p2) | 24 | 1 | `8c6e89fc66588001fbeb1c8460642133` |
 | `bowkerspark-batch.txt` (NEW depot, round 58 p2) | 10 | 2 | `a6c620d67f4c92bfc267e5eb81747e41` |
-| `bellville-batch.txt` (NEW depot, round 58 p2) | 630 | 27 | `04dbdeb409f62c676731a7eb73aeb23b` |
+| `bellville-batch.txt` (rounds 58 p2 + 59) | 656 | 27 | `0c0d047769765efa0052497aaa57c9f1` |
 | `blinkpan-batch.txt` (NEW depot, round 58) | 601 | 71 | `f50080d6fc70c34f4b97134c3300017f` |
 | `bijlkor-batch.txt` (rounds 54–57) | 1682 | 62 | `410c3b09f3f254fdadb4fb679804da8f` |
 
 Every other file's rows/workings/MD5 and round history is in `STATE.md` ("## Files" section).
 
-**The 23 flagged workings — preserved anomalies, never "fixed":**
+**The 22 flagged workings — preserved anomalies, never "fixed":**
 ANGLOALPHA 7460/7468/8205 · BEACONSFIELD 8965/28941 · BEAUFORTWEST 97/8924 ·
 BLOEMFONTEIN 2273/2412/4215/5598/6008/18927 · BEESHOEK 7403/7407 · BLOEMHOF 1438/2226 ·
-ARIAMSVLEI 2169 · BUFFALOHARBOU 1052 · WALTLOO 8961 · WELGEDAG 58866 · BLINKPAN 80109 ·
-BELLVILLE 1414 (partial). Notes: `BLINKPAN 80109` keeps `Depart_Day` 0 across midnight (siblings
+ARIAMSVLEI 2169 · BUFFALOHARBOU 1052 · WALTLOO 8961 · WELGEDAG 58866 · BLINKPAN 80109.
+(`BELLVILLE 1414` was the 23rd flag — the partial closed in round 59 and the working is now
+`[OK]`.) Notes: `BLINKPAN 80109` keeps `Depart_Day` 0 across midnight (siblings
 roll the flag); `BLINKPAN 2154` carries `Frequency` `AYYYYYY`; several are **partials** awaiting a
 re-paste (see §9).
 
 ## 9. THE QUEUE — what the user will paste next (priority order)
 
-1. **BELLVILLE `1414` remainder + everything after `1414`.** The last row on disk is `1414`
-   `NODE_Seq` 6 `KALBASKRAAL` 11:55:00 → 11:55:30; earlier notes indicate `1414` runs to about
-   step 20. Continue from the first row that follows, and append any further workings that arrive.
-2. **BIJLKOR**: `17207` head (header through `BIJ/S750557` 22:26:00), `8856` tail
-   (`BEAUFORTWEST` day-1 20:25:00 onward), and `9409`, `9443`, `16453`, `17205` (never on disk).
-   *Caution:* the previously held 7-row `17207` tail lives in the old sandbox — if it is not in
-   your copy, ask for head **and** tail. Never append a header-less fragment.
+1. **BELLVILLE — everything after `1414`.** `1414` itself is COMPLETED (round 59: L620-656,
+   10:45:00 → 15:10:00, stated/computed 04:25:00, `[OK]`; the paste ended exactly at the
+   designated destination `SALKOR`). The next paste should continue with the workings that
+   follow `1414` in the source.
+2. **BIJLKOR**: `17207` — the **whole working** (header through `BIJ/S750557` 22:26:00 **and**
+   `BEAUFORTWEST` day-1 20:25:00 onward) — `8856` — the **whole working** from its header —
+   and `9409`, `9443`, `16453`, `17205` (never on disk). *Measured 2026-10-09:* none of these
+   six trains has a single row on this branch (0 mentions corpus-wide) — the 7-row `17207` tail
+   was only ever held in the old sandbox and round 56 deliberately withheld `8856`'s 108 rows,
+   so ask for `17207` and `8856` complete, headers included. Never append a header-less fragment.
 3. **BLOEMFONTEIN** queue: 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000.
 4. **Partials already on disk awaiting their remainder** — treat with care, append only new rows:
    BEACONSFIELD 8965 (L1-22), BEAUFORTWEST 97 (L1-16), BLOEMFONTEIN 4215 (L999-1031,
-   partial-start), BLOEMFONTEIN 18927 (L2129-2187), WELGEDAG 58866 (L1-1), BIJLKOR 8856 (prefix).
+   partial-start), BLOEMFONTEIN 18927 (L2129-2187), WELGEDAG 58866 (L1-1). (`BIJLKOR 8856` is
+   NOT on disk at all — see item 2.)
 5. **Re-transcribe (derived, therefore not trustworthy):** BEACONSFIELD `1438` L1139-1180 was
    built from twin `1222`, not from source — replace only when the source rows arrive, byte-verified,
    with the user's approval.
@@ -283,6 +288,6 @@ re-paste (see §9).
 
 ## 14. FIRST REPLY THE USER EXPECTS
 
-> Checks run: corpus = 23 files / 17,636 rows / 593 workings / 39 depots / 23 flagged;
+> Checks run: corpus = 23 files / 17,662 rows / 593 workings / 39 depots / 22 flagged;
 > HEAD = 97cbefc (branch …); worktree clean. Rules understood: verbatim only, blank-safe,
 > dedupe-first, append-only, ask on any truncation or ambiguity. Ready — paste the next extract.
