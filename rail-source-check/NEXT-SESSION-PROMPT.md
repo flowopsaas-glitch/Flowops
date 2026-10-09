@@ -30,7 +30,7 @@ code .            # then open this folder in VS Code
 Sanity check that the bootstrap worked — from `rail-source-check/`:
 
 ```bash
-python3 append_gate.py --corpus     # expect 23 files / 17,682 rows / 594 workings / 39 depots / 23 flagged
+python3 append_gate.py --corpus     # expect 23 files / 17,695 rows / 595 workings / 39 depots / 23 flagged
 ```
 
 ---
@@ -110,11 +110,11 @@ Expected audit output (if **any** number differs, stop and report — do not tra
 | measure | expected |
 |---|---|
 | files | 23 |
-| rows | 17,682 |
-| workings | 594 |
+| rows | 17,695 |
+| workings | 595 |
 | depots | 39 |
 | flagged workings | 23 |
-| `[OK]` workings | 571 |
+| `[OK]` workings | 572 |
 
 If your Python is invoked as `python` on Windows, use that; the scripts are pure standard library.
 
@@ -185,7 +185,7 @@ travel/dwell vs clocks, stated vs computed duration, and duplicate rows. Blank t
 Quirks: `tail -1` on a `.txt` returns a blank line — always count with `awk 'NF' | wc -l`;
 the per-file totals loop must grep `total:` (do not read the last line of output).
 
-## 8. CURRENT STATE — 23 files / 17,682 rows / 594 workings / 39 depots / 571 `[OK]` + 23 flagged
+## 8. CURRENT STATE — 23 files / 17,695 rows / 595 workings / 39 depots / 572 `[OK]` + 23 flagged
 
 Newest files (round 58, head `97cbefc`):
 
@@ -195,7 +195,7 @@ Newest files (round 58, head `97cbefc`):
 | `blaney-batch.txt` (NEW depot, round 58 p2) | 70 | 1 | `3827b6002ff002820d0d4b68ffe89dc3` |
 | `buckingham-batch.txt` (NEW depot, round 58 p2) | 24 | 1 | `8c6e89fc66588001fbeb1c8460642133` |
 | `bowkerspark-batch.txt` (NEW depot, round 58 p2) | 10 | 2 | `a6c620d67f4c92bfc267e5eb81747e41` |
-| `bellville-batch.txt` (rounds 58 p2 – 60) | 676 | 28 | `5caaf5f67920a7d581f118f0d26046a9` |
+| `bellville-batch.txt` (rounds 58 p2 – 61) | 689 | 29 | `22909cd6fcd18c0e8dfeb73e889ce9e6` |
 | `blinkpan-batch.txt` (NEW depot, round 58) | 601 | 71 | `f50080d6fc70c34f4b97134c3300017f` |
 | `bijlkor-batch.txt` (rounds 54–57) | 1682 | 62 | `410c3b09f3f254fdadb4fb679804da8f` |
 
@@ -214,10 +214,11 @@ re-paste (see §9).
 
 ## 9. THE QUEUE — what the user will paste next (priority order)
 
-1. **BELLVILLE — everything after `1417`.** `1414` completed round 59 (L620-656, `[OK]`);
+1. **BELLVILLE — everything after `1418`.** `1414` completed round 59 (L620-656, `[OK]`);
    `1417` captured round 60 (L657-676 — flagged: stated `02:40:00` vs computed `02:40:30`,
-   preserved). The paste jumped `1414` → `1417`: **ask the user whether `1415`/`1416` exist in
-   the source.** Continue with the workings that follow `1417`.
+   preserved); `1418` captured round 61 (L677-689, `[OK]`). The pastes jumped `1414` → `1417` →
+   `1418`: **ask the user whether `1415`/`1416` exist in the source.** Continue with the
+   workings that follow `1418`.
 2. **BIJLKOR**: `17207` — the **whole working** (header through `BIJ/S750557` 22:26:00 **and**
    `BEAUFORTWEST` day-1 20:25:00 onward) — `8856` — the **whole working** from its header —
    and `9409`, `9443`, `16453`, `17205` (never on disk). *Measured 2026-10-09:* none of these
@@ -247,6 +248,12 @@ re-paste (see §9).
 
 ## 11. TRAPS — already-paid-for lessons; do not repeat
 
+- Run the §4 git checks at the **start of every round**, not only at session start: in round 61
+  the sandbox reset the local ref to the branch point **mid-round** (HEAD silently back at
+  `6426c7f`); the post-append verify's "target minus payload == HEAD copy" check caught it. If
+  that check fires, stop and inspect `git log -1` before touching anything (§13 recovery:
+  `git fetch` + `git reset --mixed FETCH_HEAD`, never `--hard`, and no `git checkout --` when
+  uncommitted appends are in the worktree).
 - Sibling alignment: **do not** use `difflib.SequenceMatcher` (it matched 1 of 94 rows when
   `NODE_Seq` restarts); **do not** drop the header row. Use a station-keyed sequential walk,
   header kept, and report counts per differing field. Unequal lengths → the walk, not `zip`.
@@ -290,6 +297,6 @@ re-paste (see §9).
 
 ## 14. FIRST REPLY THE USER EXPECTS
 
-> Checks run: corpus = 23 files / 17,682 rows / 594 workings / 39 depots / 23 flagged;
+> Checks run: corpus = 23 files / 17,695 rows / 595 workings / 39 depots / 23 flagged;
 > HEAD = 97cbefc (branch …); worktree clean. Rules understood: verbatim only, blank-safe,
 > dedupe-first, append-only, ask on any truncation or ambiguity. Ready — paste the next extract.
