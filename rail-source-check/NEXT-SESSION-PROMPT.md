@@ -1,5 +1,20 @@
 # NEXT SESSION PROMPT — Rail working consolidation (Annexure_33a_NS_ver_4)
 
+## Supplemental full-source snapshot (supplied 2026-10-09)
+
+The complete supplied 19-column Annexure 33a TSV is present, unchanged, at
+[`Annexure_33a_NS_ver_4_supplied_full.tsv`](./Annexure_33a_NS_ver_4_supplied_full.tsv): 1 header
++ 251,678 rows, 13,471 Origin/Train workings across 688 Origins. SHA-256:
+`CCC51A630491B4C0E4F195A78D2E3935EE8C28C68B9E6B6336E29E4FFD729044`. The production parser
+accepted the full file.
+
+This source snapshot is separate from the 23 curated `.txt` batches, whose corpus audit counts
+remain unchanged. Reconciliation found 17,074 exact row matches, 103 source rows with a conflicting
+curated `(Origin, Train, NODE_Seq, station)` key, and 562 existing curated rows absent from the
+snapshot. Do not overwrite, merge, or discard either side of these differences without source
+review. The user explicitly authorized committing this one unchanged snapshot; that is not general
+authorization to commit future raw pastes.
+
 ## 0. BOOTSTRAP — if this file or the whole `rail-source-check/` folder is missing
 
 The rail corpus lives on branch **`arena/25d10ae6-flowops`** of `github.com/flowopsaas-glitch/Flowops`.
@@ -14,9 +29,11 @@ git fetch origin arena/25d10ae6-flowops
 git checkout FETCH_HEAD -- rail-source-check/
 ```
 
-The 23 data `.txt` files are git-ignored (`.gitignore` line 42) so they can never be staged by
-accident; the four `.md`/`.py` files will appear as staged additions on your branch — if your next
-commit is not about rail work, unstage them with `git reset -- rail-source-check`.
+The 23 curated data `.txt` files are git-ignored (`.gitignore` line 42) and must be force-added
+for a rail data commit. The full-source `.tsv` above is tracked separately as the one explicitly
+authorized exception. The four `.md`/`.py` files and `.tsv` will appear as staged additions on your
+branch — if your next commit is not about rail work, unstage them with
+`git reset -- rail-source-check`.
 
 **B — isolate the rail work in its own clone** (recommended when your main workspace is busy):
 

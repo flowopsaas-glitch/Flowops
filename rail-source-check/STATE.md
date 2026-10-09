@@ -1,5 +1,21 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-07 (round 58, part 2 — the re-pasted new-depot batch was transcribed and appended as five new files: `blackhill-batch.txt` 89 rows / 15 workings, `blaney-batch.txt` 70 / 1, `buckingham-batch.txt` 24 / 1, `bowkerspark-batch.txt` 10 / 2, and `bellville-batch.txt` 630 / 27 — **823 rows total, all 19 fields**, 0 byte-identical rows and 0 colliding `(depot, working, NODE_Seq, station)` keys against the whole 16,813-row corpus. Corpus now: **23 data files / 17,636 rows / 593 workings / 39 depots; 570 [OK] + 23 flagged.** The only new flag is `BELLVILLE 1414`, which is **PARTIAL** — the re-paste stopped at step 6 `KALBASKRAAL` 11:55:30, so `1414` steps 9–20 and everything after `1414` are still owed; three cells carry `&amp;` exactly as received (`75` `ORDER &amp; SHUNT`, `1211`/`1411` `R.T.O. &amp; X 1428`) and the query is open. No belville/bellville file existed anywhere in the repository or on any remote branch, so the new file uses the source's own spelling `BELLVILLE`. BIJLKOR 17207 head, 8856 tail and 9409/9443/16453/17205 are also still owed; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+Updated: 2026-10-09 (full-source snapshot supplied; curated transcript corpus remains at round 58, part 2 — the re-pasted new-depot batch was transcribed and appended as five new files: `blackhill-batch.txt` 89 rows / 15 workings, `blaney-batch.txt` 70 / 1, `buckingham-batch.txt` 24 / 1, `bowkerspark-batch.txt` 10 / 2, and `bellville-batch.txt` 630 / 27 — **823 rows total, all 19 fields**, 0 byte-identical rows and 0 colliding `(depot, working, NODE_Seq, station)` keys against the whole 16,813-row corpus. Corpus now: **23 data files / 17,636 rows / 593 workings / 39 depots; 570 [OK] + 23 flagged.** The only new flag is `BELLVILLE 1414`, which is **PARTIAL** — the re-paste stopped at step 6 `KALBASKRAAL` 11:55:30, so `1414` steps 9–20 and everything after `1414` are still owed; three cells carry `&amp;` exactly as received (`75` `ORDER &amp; SHUNT`, `1211`/`1411` `R.T.O. &amp; X 1428`) and the query is open. No belville/bellville file existed anywhere in the repository or on any remote branch, so the new file uses the source's own spelling `BELLVILLE`. BIJLKOR 17207 head, 8856 tail and 9409/9443/16453/17205 are also still owed; next BLOEMFONTEIN working remains 8941; work is committed on arena/25d10ae6-flowops — see Round 54 for the unresolved branch mandate)
+
+## Supplemental full-source snapshot — supplied 2026-10-09
+
+Per the user's explicit request, the complete supplied Annexure 33a TSV is included unchanged at
+[`Annexure_33a_NS_ver_4_supplied_full.tsv`](./Annexure_33a_NS_ver_4_supplied_full.tsv). It is
+25,491,037 bytes (SHA-256
+`CCC51A630491B4C0E4F195A78D2E3935EE8C28C68B9E6B6336E29E4FFD729044`), with 1 header and
+251,678 data rows, all 19 columns. The production timetable parser accepts all rows; the source
+contains 13,471 distinct Origin/Train workings across 688 Origins.
+
+This immutable snapshot is separate from the 23 manually curated transcript batches below. A
+read-only reconciliation found 17,074 exact row matches, 103 source rows whose
+`(Origin, Train, NODE_Seq, station)` key collides with a different curated row, and 562 curated
+rows not present in the supplied snapshot. No curated row was replaced or deduplicated. Keep the
+snapshot and batches distinct until the source-version/key differences are reviewed; this snapshot
+is an explicitly authorized exception to the usual rule against committing raw chat pastes.
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.

@@ -6,6 +6,10 @@
 **Sample:** train **2469**, **ANGLOALPHA → NATALSPRUIT**, **CENTRAL** corridor
 **Status:** VERIFIED. Partial — **37.3% of the journey**.
 
+The full supplied 19-column source is now preserved separately and unchanged in
+[`rail-source-check/Annexure_33a_NS_ver_4_supplied_full.tsv`](../rail-source-check/Annexure_33a_NS_ver_4_supplied_full.tsv).
+This document remains the verification record for the original partial sample.
+
 ---
 
 ## 1. Why this file matters more than its rank suggested
