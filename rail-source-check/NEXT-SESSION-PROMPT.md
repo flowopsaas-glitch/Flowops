@@ -30,7 +30,7 @@ code .            # then open this folder in VS Code
 Sanity check that the bootstrap worked — from `rail-source-check/`:
 
 ```bash
-python3 append_gate.py --corpus     # expect 27 files / 27,993 rows / 799 workings / 43 depots / 32 flagged
+python3 append_gate.py --corpus     # expect 672 files / 251,678 rows / 13,471 workings / 688 depots / 629 flagged
 ```
 
 ---
@@ -83,7 +83,9 @@ alone. The end state is "100 % production".
 ## 3. WHERE EVERYTHING IS
 
 - Repo: `https://github.com/flowopsaas-glitch/Flowops` (folder `Flowops/` in VS Code).
-- Corpus: `rail-source-check/` — 23 data files, `verify_workings.py` (checker),
+- Corpus: `rail-source-check/` — 672 data files (complete Annexure 33a mirror; per-file
+  census in `EXTRACT-IMPORT-MANIFEST.md`, preserved anomalies in `FLAGGED-WORKINGS.md`),
+  `verify_workings.py` (checker),
   `append_gate.py` (pre-append gates / post-append verify / corpus audit),
   `STATE.md` (the running ledger — **read it first every session**),
   `NEXT-CHAT-PROMPT.md` (rolling handoff), `FIELD-NAMES.md` (authoritative field list + source header).
@@ -109,12 +111,12 @@ Expected audit output (if **any** number differs, stop and report — do not tra
 
 | measure | expected |
 |---|---|
-| files | 27 |
-| rows | 27,993 |
-| workings | 799 |
-| depots | 43 |
-| flagged workings | 32 |
-| `[OK]` workings | 767 |
+| files | 672 |
+| rows | 251,678 |
+| workings | 13,471 |
+| depots | 688 |
+| flagged workings | 629 |
+| `[OK]` workings | 12,842 |
 
 If your Python is invoked as `python` on Windows, use that; the scripts are pure standard library.
 
@@ -141,9 +143,9 @@ If your Python is invoked as `python` on Windows, use that; the scripts are pure
 - Depot name is field 1 (`Origin`); several depot names (BLACKHILL, BLANEY, BOWKERSPARK, BERRYPARK…)
   also occur as *station* names inside other depots' files — gate on field 1, never on a name grep.
 - Corridors in use: CAPE, CENTRAL, CONTAINER, NORTH, NORTHEAST, ORELINE, plus
-  **blank** (currently 105 rows — preserved as received, not an error). Corpus mix at 27,993
-  rows: CAPE 19,624 · CENTRAL 4,359 · CONTAINER 2,200 · NORTH 1,065 · NORTHEAST 625 ·
-  ORELINE 15 · blank 105.
+  **blank** (4,358 rows — preserved as received, not an error). Corpus mix at 251,678
+  rows: NORTH 80,991 · CAPE 65,324 · CONTAINER 35,663 · CENTRAL 35,446 · NORTHEAST 20,937 ·
+  ORELINE 8,959 · blank 4,358.
 
 ## 6. THE WORK CYCLE (per paste)
 
@@ -187,81 +189,53 @@ travel/dwell vs clocks, stated vs computed duration, and duplicate rows. Blank t
 Quirks: `tail -1` on a `.txt` returns a blank line — always count with `awk 'NF' | wc -l`;
 the per-file totals loop must grep `total:` (do not read the last line of output).
 
-## 8. CURRENT STATE — 27 files / 27,993 rows / 799 workings / 43 depots / 767 `[OK]` + 32 flagged
+## 8. CURRENT STATE — 672 files / 251,678 rows / 13,471 workings / 688 depots / 12,842 `[OK]` + 629 flagged
 
-Newest files (round 66):
+Round 67 bulk-imported the **complete** Annexure 33a mirror: **645 new `<origin>-batch.txt`
+files** + 6 majority-file appends (223,685 rows). Per-file rows/workings/flags/MD5 for all 672
+files: **`rail-source-check/EXTRACT-IMPORT-MANIFEST.md`**. Round history in `STATE.md`.
+Landmark files: `bellville-batch.txt` (8,460 rows / 146 workings, `6c4601f43be336b24bb5923392ca2d12`),
+`bijlkor-batch.txt` (2,051 / 68, `b9a101e753c96fd49fd2a8d46412c433`), the six round-66 depot files.
 
-| file | rows | workings | MD5 |
-|---|---|---|---|
-| `bellville-batch.txt` (rounds 58 p2 – 66; COMPLETE 146/146) | 8,460 | 146 | `6c4601f43be336b24bb5923392ca2d12` |
-| `beaufortwest-bultfontein-bloemfontein-batch.txt` (BLOEMFONTEIN COMPLETE 100/100) | 3,913 | 112 | `b0cc2cac72b551291a4b89155e0dda89` |
-| `warrenton-batch.txt` (NEW depot, round 66) | 730 | 21 | `4a0610fe1bfcb40e76f7969ca697b00c` |
-| `beitbridge-batch.txt` (NEW depot, round 66) | 185 | 37 | `c04155bf40e673279472978c097cc59e` |
-| `bitterfontein-batch.txt` (NEW depot, round 66) | 83 | 2 | `35faec6f38ccfa020e71098319473f32` |
-| `bfx-passasrs-batch.txt` (NEW depot, round 66) | 255 | 5 | `30e2bf53482ae236f3493401be8442b1` |
-| `bijlkor-batch.txt` (rounds 54–57 + 64–65; COMPLETE 68/68) | 2,051 | 68 | `b9a101e753c96fd49fd2a8d46412c433` |
-
-Every other file's rows/workings/MD5 and round history is in `STATE.md` ("## Files" section).
-
-**The 32 flagged workings — preserved source anomalies, never "fixed" (16 carried + 16 new
-in round 66):** ANGLOALPHA 7460/7468/8205 · BEACONSFIELD 28941 · BEAUFORTWEST 8924 ·
-BLOEMFONTEIN 2273/2412 · BEESHOEK 7403/7407 · BLOEMHOF 1438/2226 · ARIAMSVLEI 2169 ·
-BUFFALOHARBOU 1052 · WALTLOO 8961 · BLINKPAN 80109 · BELLVILLE 1417 (30-s stated-vs-computed —
-confirmed in the annexure extract **and** the native xlsx) · plus round-66 arrivals:
-BELLVILLE 2025/4425/12031 (stated `16:52:00` vs computed `16:52:30`), BELLVILLE 9997
-(`00:16:00` vs `00:16:56`), BELLVILLE 12217 (`38:00:00` vs `38:00:30`), BELLVILLE 2221
-(midnight non-roll at `BEC-OUTERREIN`), WARRENTON 2207 (non-roll at `OLEA`), WARRENTON 2667/2669
-(30 s each), BEITBRIDGE 8 (**stated duration literally `00:60:00`**), BEITBRIDGE 728 (35 s),
-BEITBRIDGE 1118/1120/5736 (travel mismatch `COLLEENBAWN` stated `00:24:00` vs computed
-`00:38:00`), BEITBRIDGE 6770 (non-roll at `NYUNDO`), BFX-PASSASRS 53547 (non-roll at `ARUNDEL`).
-Notes: `BLINKPAN 80109` keeps `Depart_Day` 0 across midnight (siblings roll the flag);
-`BLINKPAN 2154` carries `Frequency` `AYYYYYY`; `8856`-class train numbers repeat across
+**629 flagged workings — preserved source anomalies, never "fixed".** The full list is
+**`rail-source-check/FLAGGED-WORKINGS.md`** (629 lines). Classes: 30/35/56-second
+stated-vs-computed duration mismatches (e.g. BELLVILLE 1417 `02:40:00` vs `02:40:30` — confirmed
+in the extract **and** the native xlsx), midnight `Depart_Day` non-rolls (BELLVILLE 2221,
+WARRENTON 2207, BEITBRIDGE 6770, BFX-PASSASRS 53547), travel-vs-clock mismatches (BEITBRIDGE
+1118/1120/5736 at `COLLEENBAWN` stated `00:24:00` vs computed `00:38:00`), unparseable stated
+durations (BEITBRIDGE 8 literally `00:60:00`). Notes: `BLINKPAN 80109` keeps `Depart_Day` 0
+across midnight; `BLINKPAN 2154` carries `Frequency` `AYYYYYY`; train numbers repeat across
 origins — always pair (Origin, Train).
 
-## 9. THE QUEUE — what is left (priority order)
+## 9. THE QUEUE — what is left
 
-> **Intake channel — SERVED.** The full 251,678-row Annexure 33a extract is in the repo as
-> `sources/Annexure_33a_NS_ver_4 (3).zip` (commit `8d30089`) with working copy
-> `uploads/round-65/annexure33a-extract.txt` (MD5 `1cd978f5a0e5c5528886aa0c66047cb6`; 251,678
-> data rows + header, 19 fields each) — the **source of record** (user mandate: "the ann 33a
-> is from transnet so we have to follow it"; see `RECONCILIATION-33A.md`). The native workbook
-> `sources/Annexure 33a_NS ver.4 (2).xlsx` + **`sources/Annexure 43 KPIs (2).xlsx`** arrived in
-> round 66 (commit `e24e70c`); Annexure 43 is surveyed in
-> `docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md` and the UI plan in
-> `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md`. Rows sourced from the extract record provenance
-> "33a extract zip `8d30089`" and are gated identically to pasted rows.
+> **The data corpus is COMPLETE (round 67):** every Annexure 33a row is captured — 251,678/251,678
+> byte-identical, 672 files / 13,471 workings / 688 depots. The source of record is
+> `uploads/round-65/annexure33a-extract.txt` (zip `8d30089`, MD5 `1cd978f5a0e5c5528886aa0c66047cb6`)
+> with the native workbook `sources/Annexure 33a_NS ver.4 (2).xlsx` as corroboration. Row
+> provenance: "33a extract zip `8d30089`".
 
-1. **E-AMP-01 (decision, quick):** the native xlsx literally stores `&amp;` in 179 cells where
-   the extract has `&` (`RECONCILIATION-33A.md` §Native xlsx cross-check). The corpus currently
-   follows the extract rendering everywhere. **Ask: keep `&` or flip the 179 cells to `&amp;`?**
-2. **Corpus-scope call (decision, big):** the extract has **688 origins / 251,678 rows**; the
-   corpus covers **43 depots / 27,993 rows** (BELLVILLE, BLOEMFONTEIN, BIJLKOR and the four
-   previously-missing depots are now COMPLETE). The other **645 origins / 223,685 rows** can be
-   imported wholesale from the extract in a few large gated rounds, or the corpus stays
-   queue-driven. **Ask which.**
-3. **Related origin names — ask before ingesting** (not on any queue; different Origin strings):
-   `BEITBRIDG-BBR` (61 rows / 14 workings), `BFX-HAMILTON` (95 / 1), `PE-PASSASIERS` (608 / 7).
-4. **Round-8 part 2** (~620 rows) — the lost paste was never identified by depot/working. The
-   extract may already contain these rows; **ask which depot/workings the round-8 part-2 paste
-   covered**, or whether to drop the item.
-5. **Still owed outside the extract:** nothing on the pasted-corpus side — BELLVILLE (146/146),
-   BLOEMFONTEIN (100/100), BIJLKOR (68/68), WARRENTON/BEITBRIDGE/BITTERFONTEIN/BFX-PASSASRS and
-   all partials are complete vs the extract. BEACONSFIELD `1438`'s derived rows were replaced in
-   round 65's reconciliation (queue item closed; round record wins).
+1. **Nothing owed on the pasted/extract corpus.** BELLVILLE 146/146 · BLOEMFONTEIN 100/100 ·
+   BIJLKOR 68/68 · WARRENTON/BEITBRIDGE/BITTERFONTEIN/BFX-PASSASRS whole · all 688 origins
+   whole. If the user pastes any working again: byte-dedupe first (it will match), report, append
+   nothing.
+2. **If a NEW Annexure 33a version arrives** (ver. 5+): treat as a new source — full cell-by-cell
+   diff vs the corpus (the round-65/66 methodology in `RECONCILIATION-33A.md`), report the
+   divergence map, and ask before swapping (the mandate resolves divergence in the annexure's
+   favour, but version changes are surfaced first).
+3. **UI build** — the recommended RAIL sidebar/pages (`docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md`):
+   sidebar section, Timetable Explorer, Corridor KPIs (Annexure 43), Network Sources. Next in
+   the product queue after that: Slots & Capacity (needs Annexure 33b), Tariffs (needs rates),
+   variance "Actual" leg (needs operational actuals).
+4. **Wanted source files** are listed in `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md` §5
+   (33b XLSM + approved tariff rates head the list).
 
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
-1. **E-AMP-01 — ampersand rendering.** ANSWERED as to fact: the native Annexure 33a xlsx cells
-   **literally contain `&amp;`** (179 cells, 95 workings — the three historical `75`/`1211`/`1411`
-   cells among them). The TSV extract has plain `&`; the corpus follows the extract. **Remaining
-   decision:** keep `&` (current) or flip the 179 cells to `&amp;` for native fidelity.
-2. **Corpus scope** — bulk-import the other 645 extract origins (223,685 rows) or stay
-   queue-driven? (§9 item 2.) Also: ingest `BEITBRIDG-BBR` / `BFX-HAMILTON` / `PE-PASSASIERS`?
-3. **Round-8 part 2 identity** — which depot/workings did that ~620-row paste cover?
-4. **BELLVILLE file naming** — settled: the source's own spelling `bellville-batch.txt` is used;
-   no `belville*` file exists anywhere. Only reopen if the user has external files under another
-   spelling.
-5. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.
+1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.
+   (Everything else is closed: E-AMP-01 → KEEP the extract's `&` (round 67, evidence-based);
+   corpus scope → complete mirror; related origins → included; round-8 part 2 → superseded;
+   BELLVILLE naming → settled on `bellville-batch.txt`.)
 
 ## 11. TRAPS — already-paid-for lessons; do not repeat
 
@@ -314,7 +288,8 @@ origins — always pair (Origin, Train).
 
 ## 14. FIRST REPLY THE USER EXPECTS
 
-> Checks run: corpus = 27 files / 27,993 rows / 799 workings / 43 depots / 32 flagged;
-> HEAD = <hash> (branch arena/a620a55a-flowops); worktree clean. Rules understood: verbatim only,
-> blank-safe, dedupe-first, append-only, ask on any truncation or ambiguity. Ready — the queue
-> is extract-driven (§9) and the open decisions are E-AMP-01, corpus scope, round-8 part 2.
+> Checks run: corpus = 672 files / 251,678 rows / 13,471 workings / 688 depots / 629 flagged
+> (complete Annexure 33a mirror); HEAD = <hash> (branch arena/a620a55a-flowops); worktree clean.
+> Rules understood: verbatim only, blank-safe, dedupe-first, append-only, ask on any truncation
+> or ambiguity. The data corpus is complete — remaining work is UI, new annexure versions, and
+> the branch mandate. Ready.

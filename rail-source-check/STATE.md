@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-10 (round 66 — **two new Transnet files landed** (`sources/Annexure 33a_NS ver.4 (2).xlsx` native 33a + **`Annexure 43 KPIs (2).xlsx`** — KPI framework + 10 corridor baseline/target sheets; both commit `e24e70c`) and the queue was driven hard from the 33a extract: **BELLVILLE completed** (114 workings / 7,676 rows after `1431` — `1451`…`48915`; `1415`/`1416`/`1430` **do not exist in the source**, nor `1419`–`1427`), **BLOEMFONTEIN completed** (queue 10 = `8941`…`9000` + 6 depot-completion extras `3267`/`4000`/`4002`/`4212`/`4213`/`4214`, 847 rows), and the **4 missing depots landed whole**: WARRENTON (730 rows/21), BEITBRIDGE (185/37), BITTERFONTEIN (83/2), BFX-PASSASRS (255/5). All 6 gates PASS, append-only verify PASS, **27,993/27,993 rows byte-identical to the annexure**. Checker: **16 new source anomalies preserved → 32 flagged** (incl. BEITBRIDGE 8's literal `00:60:00`). Native-xlsx cross-check: content identical to the TSV extract except float repr noise + **179 cells where the xlsx literally stores `&amp;`** (§10 query #1 answered — the source has `&amp;`; open decision E-AMP-01: keep extract `&` or flip). Annexure 43 surveyed (`docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md`) and the product plan written (`docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md`: RAIL sidebar section, 9 pages, 10 panels, 11 wanted sources). Corpus now: **27 data files / 27,993 rows / 799 workings / 43 depots; 767 [OK] + 32 flagged.** Remaining: round-8 part 2, the 645 other extract origins (223,685 rows — scope call), E-AMP-01, branch mandate — see Round 66 note)
+Updated: 2026-10-10 (round 67 — **THE CORPUS IS THE COMPLETE ANNEXURE 33a MIRROR.** User: "go with your recommendations world class end to end" → all four decisions executed: **E-AMP-01 = KEEP the extract's `&`** (evidence: the zip contains only the TSV; the "(2)" xlsx is the sole artifact holding literal `&amp;` — a rendering quirk of that workbook; corpus stays uniform, verification invariant = byte-identical to the extract); **bulk import DONE** — 223,685 rows / 12,672 workings / 651 targets (645 new `<origin>-batch.txt` files + 6 majority-file appends: ALGOABAAI→algoabai-hotazel 1,645, BEACONSFIELD→beaconsfield-8965-28947 3,762, BEAUFORTWEST→beaufortwest-… 25, BETHLEHEM→beeshoek-bethlehem 225, WALTLOO→wakefield-warden-waltloo 176, WELGEDAG→welgedag-… 4,051) — gate PASS (0 dups/0 collisions/all NEW), append-only PASS on every file, **251,678/251,678 rows byte-identical to the extract (complete mirror)**; related origins (BEITBRIDG-BBR/BFX-HAMILTON/PE-PASSASIERS) included automatically; round-8 part 2 closed as superseded. Checker over the whole mirror: **13,471 workings / 12,842 [OK] + 629 flagged source anomalies (all preserved — `FLAGGED-WORKINGS.md`)**. `append_gate.py` patched O(n) (per-working index; behaviour identical). Per-file census: `EXTRACT-IMPORT-MANIFEST.md`. Corpus: **672 files / 251,678 rows / 13,471 workings / 688 depots.** Remaining: UI build (RAIL sidebar + pages), operational actuals, branch mandate — see Round 67 note)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 139 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -2233,3 +2233,52 @@ bulk from the same extract (a few large gated rounds) or kept queue-driven — u
 14 workings), `BFX-HAMILTON` (95 / 1), `PE-PASSASIERS` (608 / 7); (4) **round-8 part 2**
 (~620 rows) — the lost paste is still unidentified (which depot/workings?); (5) branch mandate
 (round 54). Committed on `arena/a620a55a-flowops`.
+
+## Round 67 — **the bulk import: corpus = complete Annexure 33a mirror** (223,685 rows / 12,672 workings / 651 targets) + E-AMP-01 resolved
+
+**User mandate (2026-10-10): "lets go with your recommendations world class end to end"** — all four
+decision items executed:
+
+1. **E-AMP-01 = KEEP the extract's plain `&` (RESOLVED).** Evidence: `sources/Annexure_33a_NS_ver_4 (3).zip`
+   contains **only** the TSV (`Annexure_33a_NS_ver_4 (3).txt`) — no xlsx. The "(2)" xlsx is the
+   sole artifact storing literal `&amp;` in those 179 cells; it is a rendering quirk of that
+   workbook's export pipeline. The corpus standard stays the extract rendering (`&`) everywhere —
+   one uniform rule, one verification invariant (every corpus row byte-identical to the extract).
+   The xlsx quirk stays documented in `RECONCILIATION-33A.md`; nothing flipped.
+2. **Bulk import = DONE (the corpus-scope call: complete the mirror).** Every extract row not
+   already in the corpus was appended verbatim, in extract source order: **223,685 rows /
+   12,672 workings**, staged as `uploads/round-67/extract-import-combined.txt` (MD5
+   `47ebfdbe4e92fafae50eb593f80bcd6f`), targets per `uploads/round-67/target-plan.txt`:
+   **645 new `<safe-origin>-batch.txt` files** (one per new Origin; names mapped lowercase with
+   `[^a-z0-9]+`→`-`, uniqueness asserted) + **6 majority-file appends** (ALGOABAAI 1,645 rows →
+   `algoabai-hotazel-batch.txt`; BEACONSFIELD 3,762 → `beaconsfield-8965-28947-batch.txt`;
+   BEAUFORTWEST 25 → `beaufortwest-bultfontein-bloemfontein-batch.txt`; BETHLEHEM 225 →
+   `beeshoek-bethlehem-batch.txt`; WALTLOO 176 → `wakefield-warden-waltloo-batch.txt`;
+   WELGEDAG 4,051 → `welgedag-wellington-winburg-balance.txt`). Zero continuations (every missing
+   row belonged to a wholly-new working — no partials anywhere). Pre-append gate **PASS** (all
+   223,685 rows 19 fields; 0 byte-identical rows; 0 (Origin, Train, NODE_Seq, station) collisions;
+   12,672 workings all NEW). Post-append: every file's appended block byte-equals its slice AND
+   every pre-image equals the HEAD copy (append-only proven per file; official `--verify` PASS on
+   all 6 appends). Extract-internal duplicates: none (251,678 distinct rows).
+3. **Related origins included** (`BEITBRIDG-BBR` 61, `BFX-HAMILTON` 95, `PE-PASSASIERS` 608 rows)
+   as part of the full mirror.
+4. **Round-8 part 2 CLOSED as superseded** — the lost ~620-row paste is moot: its rows, whatever
+   they were, are in the source of record and now in the corpus. No re-paste needed.
+
+**Checker over the whole mirror (S6): 13,471 workings / 12,842 `[OK]` + 629 flagged** — every
+flag is a genuine source anomaly preserved verbatim (30/35/56-second stated-vs-computed classes,
+midnight `Depart_Day` non-rolls, `COLLEENBAWN`-style travel mismatches, BEITBRIDGE 8's literal
+`00:60:00`, …). Full list: **`rail-source-check/FLAGGED-WORKINGS.md`** (629 lines). The previous
+32 flags are a subset.
+
+**Corpus totals: 672 files / 251,678 rows / 13,471 workings / 688 depots** — byte-identical to
+Annexure 33a **251,678/251,678 (complete mirror, 0 exceptions)**. Corridor mix: NORTH 80,991 ·
+CAPE 65,324 · CONTAINER 35,663 · CENTRAL 35,446 · NORTHEAST 20,937 · ORELINE 8,959 · blank 4,358.
+Per-file rows/workings/flags/MD5: **`rail-source-check/EXTRACT-IMPORT-MANIFEST.md`**.
+
+**Tooling:** `append_gate.py` patched for O(n) behaviour-identical per-working indexing (check [3]
+was O(workings × corpus) and timed out at 223k rows; first-row lookup precomputed likewise).
+
+**Still owed:** UI build (the recommended RAIL sidebar/pages — next commit), operational actuals
+(SPRINT) for the variance "Actual" leg, future Annexure 33a versions (same reconciliation
+treatment), branch mandate (round 54). Committed on `arena/a620a55a-flowops`.

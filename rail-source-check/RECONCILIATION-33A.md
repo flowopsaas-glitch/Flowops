@@ -98,9 +98,12 @@ Implications (recorded, not applied):
    cells across 95 (Origin, Train) workings). The chat pastes were faithful; the TSV extract is
    the decoded rendering. The corpus currently follows the **extract** rendering (`&`) per the
    round-65 swap — uniform across all rows.
-2. **Open decision for the user (E-AMP-01):** keep the extract rendering (`&`, current) or flip
-   the 179 cells to the native-xlsx rendering (`&amp;`). Either way the change is one mechanical
-   pass; nothing else differs. Until answered, the corpus standard stays = the extract.
+2. **E-AMP-01 RESOLVED (round 67, user: "go with your recommendations"): KEEP the extract
+   rendering (`&`).** Evidence: the zip contains **only** the TSV — no xlsx — and the "(2)"
+   xlsx is the sole artifact storing literal `&amp;` (a rendering quirk of that workbook's
+   export pipeline). The corpus is uniform on the extract rendering and the verification
+   invariant is clean: every corpus row byte-identical to the extract (251,678/251,678 after the
+   round-67 bulk import). Nothing flipped; the xlsx quirk stays documented here.
 3. The native xlsx confirms `BELLVILLE 1417`'s 30-second mismatch is in the source workbook too.
 
 Affected (Origin, Train) pairs for the 179 cells (xlsx `&amp;` vs extract `&`): ALGOABAAI 8994 ·
