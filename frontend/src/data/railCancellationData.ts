@@ -154,3 +154,57 @@ export const cancellationReasons: CancellationReason[] = [
 ];
 
 export const cancellationExit = 'Process exit: TOC Charges and Penalties Process (see /rail/tariffs, Tables 21–22 and section 5.2.11).';
+
+/** Annexure 21 — Clearinghouse Process Narrative v5 (30 Sep 2024) — round 73.
+ * File: sources/Annexure 21_2024.09.30_Clearinghouse_Process_Narrative_v5 (1).pdf
+ * SHA-256 9da1762f0dc4c6a023502cc30aa11c6eba317de44bdcdfe7d2484e23e9b34feb (3 p, CONFIDENTIAL).
+ * V3-ERA (E-ANX21-01): page-2 header prints "CLEARINGHOUSE PROCESS NARRATIVE V4" under the v5
+ * cover — preserved as delivered. Verbatim where quoted. */
+export const clearinghouse = {
+  file: "sources/Annexure 21_2024.09.30_Clearinghouse_Process_Narrative_v5 (1).pdf",
+  sha256: "9da1762f0dc4c6a023502cc30aa11c6eba317de44bdcdfe7d2484e23e9b34feb",
+  title: "CLEARINGHOUSE PROCESS NARRATIVE VERSION 5",
+  headerQuirk: "CONFIDENTIAL · 30 September 2024 · page-2 header reads “CLEARINGHOUSE PROCESS NARRATIVE V4 · Updated: 30 September 2024” (E-ANX21-01, preserved).",
+  owner: "Thembi Lekganyane",
+  compilers: ["Thembi Lekganyane", "Eric Peete", "Siphesihle Dhlamini", "Sally Dorasamy", "Jánis Myburgh", "Mashudu Sigidane"],
+  purpose: "This document summarises the purpose of the Clearinghouse process, where multiple parties participate at local, corridor and national level to identify the correct reasons and responsible parties for every TOC train cancellation. It also provides the key business rules that govern the Clearinghouse, as well as a process narrative that explains step-by-step how the daily Clearinghouse is conducted.",
+  revisions: [
+    "0.1 · 21 Jan 2022 · Corridor and National Clearinghouse process (preceding formation of the Infrastructure Manager)",
+    "1 · 20 Jun 2022 · First Clearinghouse narrative that include TOCs",
+    "2 · 27 Oct 2023 · Updated Clearinghouse narrative that includes the roles of the IM and TOCs",
+    "3 · 11 Mar 2023 · Updated Clearinghouse narrative that incorporates correct IM role names",
+    "4 · 11 Mar 2023 · Updated, edited version",
+    "5 · 30 Sep 2024 · Correct the spelling error and update the current process owner",
+  ],
+  approvals: ["Process Owner — Eric Peete", "Process Owner — Siphesihle Dhlamini", "Head of Business Improvements — Thembi Lekganyane", "Head of Interim IM — Thembi Lekganyane"],
+  overview: "The role of the Clearinghouse is to create a vehicle for the Infrastructure Manager to review train cancellation reasons jointly with all parties and to ensure that all train cancellation reasons are appropriately allocated to the correct parties for root cause analysis and resolution.",
+  definitions: [
+    "Clearinghouse: The Clearinghouse Process involves the discussion and allocation of train cancellation reasons at an operational level at the daily Service Quality Meetings (SQM), the escalation of reason allocation differences at a Corridor level to the Corridor Clearinghouse and the final resolution of reason allocation differences and final approval of train cancellation reasons at the National Clearinghouse.",
+    "TEMS: Train Execution Management System",
+    "TOMS: Transnet Occurrence Management System",
+  ],
+  inputs: ["TEMS Cancellation Reports", "TOMS Incident Reports", "Corridor Clearinghouse reports with changes and reason allocation differences for train cancellations"],
+  outputs: ["Verified Train Cancellations of the Previous Day", "Root Cause Reasons Identified for Train Cancellations", "Record of All Changes and reason allocations", "Actions and Trends", "Daily Handshake Reports"],
+  businessRules: [
+    "The National Clearinghouse must be conducted daily at 12h00 from Tuesday to Fridays and at 10h30 on Mondays.",
+    "There is a 24-hour window that is allowed for the discussion and dispute of train cancellation reasons.",
+    "The root cause reason is determined and captured based on information available at the time. Root causes are updated as new information becomes available (from SQM level to Corridor level to National Level).",
+    "Train Cancellations older than 48 hours will not be open for dispute.",
+    "Changes to cancellation reasons after a Board of Inquiry will only be made retrospectively if written evidence is provided by Transnet Security or Transnet Risk Management.",
+    "Train Operating Companies (TOCs) must ensure that their designated, authorised representatives attend the daily SQM meetings, Corridor Clearinghouse meetings as well as the National Clearinghouse meetings.",
+    "Penalties and fines which become due to either the Infrastructure Manager (IM) or a Train Operating Company (TOC) must be handled in accordance with the SLAs and contracts which have been agreed and signed between the two parties.",
+  ],
+  process: [
+    "The Infrastructure Manager (IM) through the Operations Manager discusses and allocates train cancellations reasons to the appropriate owner at the daily Service Quality Meeting (SQM).",
+    "Any disputes against the allocation of train cancellations must be discussed and resolved at the daily SQM.",
+    "Any unresolved disputes raised at the SQM must be escalated to the Corridor Clearinghouse.",
+    "The IM through the Execution Manager (Planning and Execution) will conduct the Corridor Clearinghouse and attempt to resolve all disputes which have been escalated from the various SQM meetings within the Corridor.",
+    "Should the Execution Manager not successfully resolve the disputes, these issues must be escalated to the national Clearinghouse.",
+    "The IM Head of Planning and Execution will conduct the National Clearinghouse and attempt to resolve all disputes. Attendees include the Infrastructure Manager Representative, each TOC Representative as well as the representatives of TFR Operations and any other relevant invitees. Attendees will identify the cause(s) of each train cancellation, allocate each train cancellation to the relevant responsible party (whose actions and/or omissions were the cause of the cancellation), and identify appropriate measures to mitigate future train cancellations arising from the same or similar circumstances.",
+    "Should there still be unresolved disputes, the Clearinghouse stakeholders will determine the root cause by doing further investigations on the relevant cancellations, to be resolved and coordinated by the Network Operations Interface Manager within 48 hours.",
+    "The Clearinghouse stakeholders will then report their findings to the Chairperson of the National Clearinghouse once the investigations have been concluded and the dispute has been resolved.",
+    "The IM Customer Liaison Officer will then ensure that TEMS and TOMS systems are updated accordingly.",
+    "The Execution Manager will then provide a list of trains requiring re-planning to the Planning Manager and maintain a record of this.",
+  ],
+  linkNote: "Governance layer over Annexure 20a/20b: the 48-hour dispute cutoff here matches 20a's >48h cancellation gate; reason rows allocated here are the 82 rows of 20b. Disputes beyond the Clearinghouse escalate per Annexure 35 (/rail/access, Disputes tab).",
+};

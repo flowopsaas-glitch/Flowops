@@ -116,3 +116,44 @@ export const publicationNotice = {
   timelineNote: "E-NSV4-T16 RESOLVED: these are the official Table 16 milestone timelines — the NS body's Table 16 cells did not extract from its PDF text layer; the Publication Notice carries the dates.",
   enhancements: "Enhancements include clearer recognition of Access Seekers, expanded provisions for ad hoc applications, improved visibility of available capacity, strengthened governance principles and greater clarity regarding supporting and ancillary services required for rail operations. Developed through extensive engagement with train operating companies, freight owners, customers, regulators, industry associations and government stakeholders.",
 };
+
+/** Annexure 32 — Ad Hoc TOC Slot Requests Process (filename v1.5) — round 73.
+ * File: sources/Annexure 32_Ad_Hoc_TOC_Slot_Requests_Process_v1.5 (1).pdf
+ * SHA-256 65cd5142b2d36f6d1b0a5499a173c8fa1825b78774c8a4b1577516ce05744ef9 (1 p, flowchart).
+ * V3-ERA (E-ANX32-01): filename prints v1.5 while the flowchart's REVISION HISTORY prints
+ * "Version 0.1 captured on 19 Oct 2022 / Revised Version 1.0 on 17 Dec 2024" — preserved.
+ * E-ANX32-02: printed step numbers run 1–14 with gaps (8 and 9 not printed/recovered) and two
+ * duplicate labels (two "6"s and two "14"s) — reproduced exactly, never renumbered. */
+export const adHocSlots = {
+  file: "sources/Annexure 32_Ad_Hoc_TOC_Slot_Requests_Process_v1.5 (1).pdf",
+  sha256: "65cd5142b2d36f6d1b0a5499a173c8fa1825b78774c8a4b1577516ce05744ef9",
+  title: "Apply for Ad Hoc Slot",
+  revisionHistory: ["Version 0.1 captured on 19 Oct 2022", "Revised Version 1.0 on 17 Dec 2024"],
+  lanes: ["TOC", "Head Network Service Planning", "Business Development Officer", "Rolling Stock Technical Specialist (may be outsourced)"],
+  timings: [
+    { anchor: "21 days before execution", detail: "Ad-hoc train request lead time (as printed on the flowchart)." },
+    { anchor: "Within 7 days", detail: "Assess slot application and allocation." },
+  ],
+  steps: [
+    { n: "1", text: "Submit Request for Ad-hoc Train" },
+    { n: "2", text: "Review TOC Ad-hoc Train Request" },
+    { n: "3", text: "Communicate the rejected ad-hoc request application — Assess Technical Compliance (axle mass, conforming to rail gauge, working within safety regulations, adhering to HAZMAT, adhering to train dynamics and train design, speed profiles, diesel tunnel limitations, etc.). Do they meet the minimum requirements? No → Receive the rejected Ad-hoc request." },
+    { n: "4", text: "Validate Requestor" },
+    { n: "5", text: "On-board Requestor - (Refer to TOC On-boarding Process) — New TOC (decision: New or existing TOC?); Existing TOC → Slot applications email / Online Published Available Slots." },
+    { n: "6", text: "Assess if suitable slot is available and negotiate availability and timelines — decision: Suitable slot available? Yes / No." },
+    { n: "6", text: "Receive Rejected Ad Hoc Movement Request to TOC [duplicate printed number — preserved]" },
+    { n: "7", text: "Validate TOC Rolling Stock Technical Specification — All Technical Specs Accepted/Rejected. Existing TOCs already validated; New TOCs require a longer validation process, follow application process in Chapter 4 of the Network Statement for new applicants." },
+    { n: "10", text: "Assess Operational Risk of Ad hoc Request" },
+    { n: "11", text: "Close and communicate Rejected Ad Hoc Slot or Loco Movement Request" },
+    { n: "12", text: "Receive Communication of Rejected Ad Hoc Movement Request" },
+    { n: "13", text: "Communicate pro-forma ad hoc request slot Specifications — Receive Pro-forma Slot Specifications; Receive Order Confirmation." },
+    { n: "14", text: "Confirm pro-forma Slot Specifications" },
+    { n: "14", text: "Refer to TOC Quoting Process [duplicate printed number — preserved]" },
+  ],
+  notes: [
+    "TOL named on the flowchart as the communication system.",
+    "Steps 8 and 9 are not printed in the source flowchart text layer (numbering jumps 7 → 10) — preserved as delivered (E-ANX32-02).",
+    "Apply for Ad Hoc Slot appears twice on the sheet (swimlane title + activity label) — as printed.",
+  ],
+  quirks: "E-ANX32-01 (preserved): filename/cover v1.5 vs revision history max “Revised Version 1.0 on 17 Dec 2024”. E-ANX32-02 (preserved): duplicate step numbers 6 and 14; missing 8–9.",
+};

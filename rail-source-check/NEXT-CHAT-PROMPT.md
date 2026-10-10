@@ -294,3 +294,13 @@ capacity statement, period-caveated), 35 (dispute resolution v01) + the V4 Publi
 (with the official application timelines — Table 16 gap closed) are live at /rail/access. Anx 15
 re-upload deduped. The V4 page publishes only 10 docs; everything else lives as 2024/25 V3-era
 downloads on the older annexure page. State of truth: STATE.md "Round 72".
+
+### ROUND 73 ADDENDUM (2026-10-10)
+
+Round 73 complete: the five priority 2024/25 grabs landed and are live — Annexure 1 (2024/25
+Revised Shutdown Schedule, signed 23 Jul 2024) at /rail/timetable, Annexure 18 (occurrence roles
+& costs) and 22 (loading profiles, RSE/TE/LPR/0010 Rev 6) at /rail/occurrence, Annexure 21
+(Clearinghouse Process Narrative v5) at /rail/cancellations, Annexure 32 (Ad Hoc Slot Requests)
+at /rail/access. All period-labeled (E-ANX1-01 etc.); V4's 2026/27 provisional shut schedule is
+still open. Register 21 of 44. Corpus unchanged (672 files / 251,678 rows / 629 flagged). State
+of truth: STATE.md "Round 73".

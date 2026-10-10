@@ -190,6 +190,16 @@ timelines from the Publication Notice (V4-11), Annexure 29a/29b application (29b
 Annexure 28 handshake 19-step process, Annexure 35 dispute ladder to the Regulator). Sidebar
 RAIL now 13 items.
 
+**Built round 73:** five 2024/25-era annexures productised onto existing domain pages —
+**Timetable** gained a collapsible "2024/25 Revised Shutdown Schedule" panel (Anx 1: windows,
+corridors, depot groups, 22-signatory chain; E-ANX1-02 colour-coding never reconstructed);
+**Occurrence & policy** gained "Roles & costs (Annexure 18)" (tables 1.1.1.1–1.1.1.3 with the
+preserved slash-pair cells) and "Loading profiles (Annexure 22)" (RSE/TE/LPR/0010 Rev 6 ore
+specification) tabs; **Cancellations** gained the "Annexure 21 — Clearinghouse" section (business
+rules + SQM→Corridor→National process, 48-hour dispute cutoff aligned with 20a); **Access &
+disputes** gained an "Ad hoc slots (32)" tab (21-day lead, 7-day assessment, step numbers
+preserved with gaps 8–9 and duplicates). Register 21 of 44 delivered.
+
 **Planned next (needs sources):** Tariffs rate values (approved ancillary schedule),
 Annexure 33 appended section-level data file (slots + N1/N2 classification), Possession
 elevation screens, Compliance & DG screens, variance Actual leg (SPRINT actuals),

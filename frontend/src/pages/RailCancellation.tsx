@@ -7,12 +7,15 @@ import {
   cancellationSource,
   cancellationSteps,
   cancellationSystems,
+  clearinghouse,
 } from "../data/railCancellationData";
 
 /**
  * Cancellations page — built round 71 from Annexure 20a (Cancel or Re-Plan/Re-Schedule TOC Train
  * Process v4) and Annexure 20b (Cancellation reasons v1.3). Process steps and reason rows are
  * transcribed/verbatim; version history and the TFR-confidential sign-off marker preserved.
+ * Round 73 added Annexure 21 (Clearinghouse Process Narrative v5) — the reason-allocation and
+ * dispute layer over 20a/20b.
  */
 
 const PARTY_STYLES: Record<string, string> = {
@@ -182,6 +185,69 @@ export default function RailCancellation() {
           Mixed attributions ("Could be Force Majeure, Infrastructure Manager or Rail Operations" ·
           "Could be Infrastructure Manager or Rail Operations") are preserved exactly as printed —
           never normalised to a single party.
+        </p>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-slate-800">
+          Annexure 21 — Clearinghouse Process Narrative v5 (30 Sep 2024)
+        </h2>
+        <div className="mt-2 rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
+          <b>{clearinghouse.title} · {clearinghouse.headerQuirk}</b>
+          <p className="mt-1">{clearinghouse.overview}</p>
+          <p className="mt-1">{clearinghouse.linkNote}</p>
+        </div>
+        <div className="mt-2 grid gap-3 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-800">Definitions · inputs · outputs</h3>
+            <ul className="mt-1 space-y-1.5 text-xs text-slate-600">
+              {clearinghouse.definitions.map((d) => (
+                <li key={d} className="border-l-2 border-teal-200 pl-2">{d}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-slate-600">
+              <b className="text-slate-800">Inputs:</b> {clearinghouse.inputs.join(" · ")}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              <b className="text-slate-800">Outputs:</b> {clearinghouse.outputs.join(" · ")}
+            </p>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Owner: {clearinghouse.owner} · Compilers: {clearinghouse.compilers.join(", ")} ·
+              Approvals: {clearinghouse.approvals.join(" · ")}.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-800">Business rules (verbatim)</h3>
+            <ul className="mt-1 space-y-1.5 text-xs text-slate-600">
+              {clearinghouse.businessRules.map((r) => (
+                <li key={r} className="border-l-2 border-amber-200 pl-2">{r}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Version history as printed: {clearinghouse.revisions.join(" · ")}.
+            </p>
+          </div>
+        </div>
+        <h3 className="mt-3 text-sm font-semibold text-slate-800">
+          Daily Clearinghouse process — SQM → Corridor → National
+        </h3>
+        <ol className="mt-2 space-y-1.5">
+          {clearinghouse.process.map((p, i) => (
+            <li key={i} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">
+                {i + 1}
+              </span>
+              <p className="text-xs text-slate-700">{p}</p>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+          <b>E-ANX21-01 (preserved).</b> The page-2 header prints "CLEARINGHOUSE PROCESS NARRATIVE
+          V4" beneath the v5 cover — kept as delivered, never corrected.
+        </div>
+        <p className="mt-2 text-[11px] text-slate-500">
+          Source: <code className="rounded bg-slate-100 px-1">{clearinghouse.file}</code> · sha256{" "}
+          {clearinghouse.sha256.slice(0, 16)}… · CONFIDENTIAL.
         </p>
       </div>
     </div>

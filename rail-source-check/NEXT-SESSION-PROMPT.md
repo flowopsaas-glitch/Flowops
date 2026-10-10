@@ -292,6 +292,25 @@ origins — always pair (Origin, Train).
 - **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
   migration `20261007170000`.
 
+### 9J. Round 73 closeout (2026-10-10) — Anx 1/18/21/22/32 landed (the five priority 2024/25 grabs)
+
+- Upload `cbbb722` = the five priority wants from the 2024/25 annexure page (V3-03/07/13/14/27),
+  all NEW (no dedupe). No ref reset (ff-only to `cbbb722`). Period labels E-ANX1-01/02,
+  E-ANX18-00/01/02, E-ANX21-01, E-ANX22-00/01, E-ANX32-01/02 all preserved and flagged.
+- Productised: `/rail/timetable` shutdown panel (Anx 1) · `/rail/occurrence` tabs Roles & costs
+  (18) + Loading profiles (22) · `/rail/cancellations` Clearinghouse section (21) · `/rail/access`
+  Ad hoc slots tab (32). Register **21 of 44** delivered. Sidebar RAIL still 13 items.
+- **Remaining from the 2024/25 page (all optional):** 19a POSMOR `4038`, 19b TWR `4039`, 19c
+  General Appendix `4040`, 24 Interface Agreement `4018`, 25 Self Screening `4019`, 26
+  Environmental `4020`, 27 Risk Guidelines `4022`, 27a `4021`, 27b `4046`, 30 Credit `4026`,
+  31 NDA `4027`, 34 Volume Confirmation `4035`, 16 Faculty of Rail contacts `4017`, 23 Shunting
+  specs `4015`, 13 Pantograph `4012`, 14 Diesel Nozzle `4013`. SKIP: NS V3 `4010`, Addendum `5238`.
+  NEVER re-upload the 10 V4 docs.
+- **Still open regardless:** ancillary/yard/marshalling rate values (NS 5.2.7 "future version"),
+  SPRINT actuals, Annexure 33 appended section-level data file, Anx 1 2026/27 provisional (V4).
+- **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
+  migration `20261007170000`.
+
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
 1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.

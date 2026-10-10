@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   accessSources,
+  adHocSlots,
   applicationForm,
   capacityStatement29b,
   disputeProcess,
@@ -12,14 +13,15 @@ import {
  * Access & Disputes page — built round 72 from Annexure 28 (Daily Handshake Process v2.5),
  * Annexure 29a (Network Access Application Form), Annexure 29b (Network Capacity Statement —
  * V3-era, period-caveated), Annexure 35 (Dispute Resolution v01) and the NS V4 Publication Notice
- * (V4-11). Process steps transcribed from the flowcharts; quirks preserved and flagged.
+ * (V4-11); round 73 added Annexure 32 (Ad Hoc TOC Slot Requests). Process steps transcribed from
+ * the flowcharts; quirks preserved and flagged.
  */
 
 function Steps({ steps, accent }: { steps: Array<{ n: string; text: string }>; accent: string }) {
   return (
     <div className="grid gap-2 lg:grid-cols-2">
-      {steps.map((s) => (
-        <div key={s.n} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-3">
+      {steps.map((s, i) => (
+        <div key={`${s.n}-${i}`} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-3">
           <span
             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white ${accent}`}
           >
@@ -33,19 +35,19 @@ function Steps({ steps, accent }: { steps: Array<{ n: string; text: string }>; a
 }
 
 export default function RailAccess() {
-  const [tab, setTab] = useState<"application" | "handshake" | "disputes" | "timelines">("timelines");
+  const [tab, setTab] = useState<"application" | "handshake" | "disputes" | "timelines" | "adhoc">("timelines");
 
   return (
     <div className="space-y-4">
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-          Annexure 28 · 29a · 29b · 35 · Publication Notice
+          Annexure 28 · 29a · 29b · 32 · 35 · Publication Notice
         </p>
         <h1 className="mt-1 text-2xl font-semibold text-slate-900">Access &amp; disputes</h1>
         <p className="mt-1 max-w-3xl text-sm text-slate-600">
-          How to apply for network access (29a/29b), the daily IM↔TOC handshake (28), how disputes
-          escalate to the Regulator (35), and the official V4 application timelines (Publication
-          Notice, V4-11).
+          How to apply for network access (29a/29b), ad hoc slot requests (32), the daily IM↔TOC
+          handshake (28), how disputes escalate to the Regulator (35), and the official V4
+          application timelines (Publication Notice, V4-11).
         </p>
       </div>
 
@@ -54,6 +56,7 @@ export default function RailAccess() {
           [
             ["timelines", "Timelines & notice (V4-11)"],
             ["application", "Application (29a / 29b)"],
+            ["adhoc", "Ad hoc slots (32)"],
             ["handshake", "Daily handshake (28)"],
             ["disputes", "Dispute resolution (35)"],
           ] as const
@@ -189,6 +192,34 @@ export default function RailAccess() {
           <p className="text-[11px] text-slate-500">
             Source: <code className="rounded bg-slate-100 px-1">{accessSources.file35}</code> · sha256{" "}
             {accessSources.sha256_35.slice(0, 16)}….
+          </p>
+        </>
+      )}
+
+      {tab === "adhoc" && (
+        <>
+          <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
+            <b>Annexure 32 — Apply for Ad Hoc Slot ({adHocSlots.title}).</b> Ad hoc train-path
+            requests: TOC submits at least <b>21 days before execution</b>; slot application and
+            allocation assessed <b>within 7 days</b>. Lanes: {adHocSlots.lanes.join(" · ")}.
+            Revisions as printed: {adHocSlots.revisionHistory.join(" · ")}.
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {adHocSlots.timings.map((t) => (
+              <div key={t.anchor} className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-sm font-semibold text-slate-800">{t.anchor}</p>
+                <p className="mt-0.5 text-xs text-slate-600">{t.detail}</p>
+              </div>
+            ))}
+          </div>
+          <Steps steps={adHocSlots.steps} accent="bg-teal-700" />
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+            <b>E-ANX32-01 / E-ANX32-02 (preserved).</b> {adHocSlots.quirks} Notes:{" "}
+            {adHocSlots.notes.join(" ")}
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Source: <code className="rounded bg-slate-100 px-1">{adHocSlots.file}</code> · sha256{" "}
+            {adHocSlots.sha256.slice(0, 16)}….
           </p>
         </>
       )}

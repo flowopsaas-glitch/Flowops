@@ -2452,3 +2452,34 @@ items.
 
 **Verification (round 72):** `npm ci` · `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 · vitest
 **749/749 pass**.
+
+## Round 73 — Anx 1 (Shutdown Schedule), 18 (Occurrence Roles), 21 (Clearinghouse), 22 (Loading Profiles), 32 (Ad Hoc Slots) (2026-10-10)
+
+Upload `cbbb722` (5 files, all NEW — zero hash collisions with `sources/`, no dedupe removals).
+No ref reset this round (HEAD stayed at `f4c6d17`; simple `git fetch` + ff-only to `cbbb722`).
+All five = the priority grabs from the 2024/25 annexure page (V3-03/07/13/14/27) — period
+labels applied throughout.
+
+**Highlights:** Anx 1 = **2024/25 REVISED** shutdown schedule signed 23 Jul 2024 (CEO Russell
+Baatjies; 22-signatory chain; 8 total-shut windows; E-ANX1-01 — V4 still wants the 2026/27
+provisional; E-ANX1-02 — colour-coded window↔corridor pairing NOT reconstructed). Anx 18 =
+roles/costs tables 1.1.1.1–1.1.1.3 (16+13+17 rows; pre-IM note E-ANX18-00; slash-pair cells
+E-ANX18-01/02 preserved). Anx 21 = **Clearinghouse Process Narrative v5** (30 Sep 2024) — the
+reason-allocation layer over 20a/20b: SQM→Corridor→National, National Clearinghouse 12h00
+Tue–Fri/10h30 Mon, 24h dispute window, **>48h cutoff matching 20a's gate**, 48h Network
+Operations Interface Manager investigation (E-ANX21-01: page-2 header prints V4). Anx 22 =
+RSE/TE/LPR/0010 Rev 6 (23 Mar 2018) ore-loading spec (9 product densities; skew 5t/5t; 100mm
+rule; E-ANX22-01 filename/title divergence). Anx 32 = Ad Hoc Slot flowchart (21-day lead,
+7-day assessment; E-ANX32-01 filename v1.5 vs rev-history v1.0; E-ANX32-02 steps 8–9 missing,
+6/14 duplicated — never renumbered).
+
+**Productised:** `/rail/timetable` shutdown panel (Anx 1) · `/rail/occurrence` tabs "Roles &
+costs (18)" + "Loading profiles (22)" · `/rail/cancellations` Clearinghouse section (21) ·
+`/rail/access` "Ad hoc slots (32)" tab. Register flips 1/18/21/22/32 → **21 of 44 delivered**.
+Sidebar RAIL still 13 items (no new pages).
+
+**Corpus unchanged:** §4 baseline verified before work — **672 files / 251,678 rows / 13,471
+workings / 688 depots / 629 flagged (12,842 [OK])**.
+
+**Verification (round 73):** `npm ci` (node_modules intact) · `tsc --noEmit` EXIT 0 · `vite
+build` EXIT 0 · vitest **749/749 pass** (see commit).
