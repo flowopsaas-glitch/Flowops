@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-10 (round 65 — **the full 33a extract landed** (`sources/Annexure_33a_NS_ver_4 (3).zip` → 25.5 MB TSV, MD5 `1cd978f5a0e5c5528886aa0c66047cb6`, verified 251,678 data rows × 19 fields) and the **whole BIJLKOR queue was taken from it**: `8856` (185 rows — the round-56 withheld working, whole at last, day-roll 0→1→2 to `BELLVILLE`), `9409` (40), `9443` (40), `16453` (52), `17205` (31) — 348 rows appended, gates PASS, all `[OK]`. Fidelity map vs the extract: **17,249 exact / 103 same-key-different-field / 459 curated-only**; the **`&amp;` query is answered — the source has plain `&`** (chat escaping artifact; curated rows untouched, awaiting the user's word). `bijlkor-batch.txt` is now 2,051 rows / 68 workings / 0 flagged, MD5 `b9a101e753c96fd49fd2a8d46412c433`. Corpus now: **23 data files / 18,159 rows / 604 workings / 39 depots; 581 [OK] + 23 flagged.** **Then the user's mandate settled the source hierarchy ("the ann 33a is from transnet so we have to follow it") and the full reconciliation was applied** (52 blocks / 8 files — see `RECONCILIATION-33A.md`): 31 chat-artifact/`RT` cells + 20 `ALGOABAAI` freq cells corrected to annexure values; 12 version-divergent blocks swapped to annexure rows; 459 curated-only rows retired; the 5 on-disk partials (`8965`/`97`/`4215`/`18927`/`58866`) completed from the annexure — post-swap **all 18,217 corpus rows are byte-identical to annexure rows (0 exceptions)**; **7 partial/derived flags lifted → 16 flagged remain** (source anomalies, incl. `1417`'s 30 s now confirmed *in the annexure itself*). Corpus now: **23 data files / 18,217 rows / 604 workings / 39 depots; 588 [OK] + 16 flagged.** Still owed: BELLVILLE after `1431` (extract knows `1430`/`1415`/`1416`), BLOEMFONTEIN queue, missing depots, round-8 part 2, branch mandate; committed on arena/a620a55a-flowops — see Rounds 64–65 notes and Round 54 for the unresolved branch mandate)
+Updated: 2026-10-10 (round 66 — **two new Transnet files landed** (`sources/Annexure 33a_NS ver.4 (2).xlsx` native 33a + **`Annexure 43 KPIs (2).xlsx`** — KPI framework + 10 corridor baseline/target sheets; both commit `e24e70c`) and the queue was driven hard from the 33a extract: **BELLVILLE completed** (114 workings / 7,676 rows after `1431` — `1451`…`48915`; `1415`/`1416`/`1430` **do not exist in the source**, nor `1419`–`1427`), **BLOEMFONTEIN completed** (queue 10 = `8941`…`9000` + 6 depot-completion extras `3267`/`4000`/`4002`/`4212`/`4213`/`4214`, 847 rows), and the **4 missing depots landed whole**: WARRENTON (730 rows/21), BEITBRIDGE (185/37), BITTERFONTEIN (83/2), BFX-PASSASRS (255/5). All 6 gates PASS, append-only verify PASS, **27,993/27,993 rows byte-identical to the annexure**. Checker: **16 new source anomalies preserved → 32 flagged** (incl. BEITBRIDGE 8's literal `00:60:00`). Native-xlsx cross-check: content identical to the TSV extract except float repr noise + **179 cells where the xlsx literally stores `&amp;`** (§10 query #1 answered — the source has `&amp;`; open decision E-AMP-01: keep extract `&` or flip). Annexure 43 surveyed (`docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md`) and the product plan written (`docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md`: RAIL sidebar section, 9 pages, 10 panels, 11 wanted sources). Corpus now: **27 data files / 27,993 rows / 799 workings / 43 depots; 767 [OK] + 32 flagged.** Remaining: round-8 part 2, the 645 other extract origins (223,685 rows — scope call), E-AMP-01, branch mandate — see Round 66 note)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 139 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -2144,3 +2144,92 @@ string-replace briefly rewrote three historical ledger lines (Round-2 heading, t
 the heading was restored to its original number and the Files lines annotated with
 before/after context. The queue's partials item and the `&amp;` query are **closed**; the
 `89309` steps item was stale (already complete).
+
+## Round 66 — **new Transnet files (native 33a xlsx + Annexure 43 KPIs) + the queue completed** (BELLVILLE whole, BLOEMFONTEIN whole, 4 missing depots whole)
+
+**Sources (commit `e24e70c`, user upload "Add files via upload"):**
+- `sources/Annexure 33a_NS ver.4 (2).xlsx` — native Annexure 33a workbook (15,258,573 bytes,
+  SHA-256 `93b4d44929c037a799969a5b2a5efa514af4abbd7e2711ac0e072ece77745dd5`, sheet
+  `_00750_Report_Train_Route`, 251,678 data rows). **Cross-checked cell-by-cell against the
+  zip's TSV extract: identical content except float repr noise (`19.420000000000002`-style,
+  13,472 rows, all float-equal) and 179 cells where the xlsx literally stores `&amp;` where the
+  extract has `&`** — full map in `RECONCILIATION-33A.md` §"Native xlsx cross-check". This
+  **answers the §10 `&amp;` query: the source cells themselves contain `&amp;`** (the chat
+  pastes were faithful; the TSV extract is a decoded rendering). Open decision **E-AMP-01**:
+  keep the extract rendering (`&`, current corpus standard, uniform) or flip the 179 cells to
+  the native rendering — one mechanical pass either way; user's call.
+- `sources/Annexure 43 KPIs (2).xlsx` — **Annexure 43 KPIs** (51,984 bytes, SHA-256
+  `18e137f75057f57b05ce3196c2d4b5b4b8c83e35bc57c590ea3c49d89b65fd15`), 12 sheets: Future +
+  Current KPI Framework + 10 train-path sheets (Ore, Manganese, Magnetite,
+  Musina-Pyramid_Hoedspruit, Vereeniging-Danskraal-East Lond, Mafikeng-Beacosnfield_Potch,
+  Lephalale-Richardsbay, Johannesburg-Durban, Rayton-Komatipoort_Richards Bay,
+  Johannesburg-Cape Town) with baseline→target per KPI. Surveyed in
+  `docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md` (transit-speed serials × 24 = hours; UOM
+  contradiction recorded as E-43-01, not resolved). The retrieval manifest's format question is
+  answered (XLSX) and V4-05/V4-10 rows filled in `docs/TRIM-SOURCE-RETRIEVAL-MANIFEST-2026-10-04.md`.
+  The 2026-10-04 chat sample (`TRIM-ANNEXURE-43-40-SUPPLIED-SOURCE`) is superseded by this binary.
+
+**Extract-derived appends (provenance: "33a extract zip `8d30089`", MD5 `1cd978f5a0e5c5528886aa0c66047cb6`) —
+all six payloads staged under `uploads/round-66/`, all 19 fields on every row, all gates PASS
+(0 byte-identical rows, 0 key collisions, every working NEW):**
+
+1. **BELLVILLE — everything after `1431`, WHOLE DEPOT COMPLETE** — `uploads/round-66/bellville-after-1431.txt`
+   (MD5 `b9a8fab7ba002513cb5faf01c6f9cfd9`, 114 workings / 7,676 rows, extract order
+   `1451`,`1453`,`1461`,`1558`,`2024`,`2025`,`2032`,`2153`,`2221`,`2255`,`2401`,`2407`,`4403`,
+   `4425`,`4431`,`4443`,`5261`,`5295`,`5297`,`5453`,`5501`,`5503`,`5505`,`5507`,`5532`,`6200`–
+   `6412` (even+63xx/64xx series), `7311`,`7443`,`7463`,`7469`,`7641`,`7651`, the `77xx` stubs,
+   `8415`–`8991`, `99xx`, `11206`–`21209`, `38915`,`48915`) appended to `bellville-batch.txt`
+   **L785-8460** (now 8,460 rows / 146 workings / 145 extract-matched). Tail-7676 == payload;
+   "target minus payload == HEAD copy" append-only **PASS**. Queue questions **answered from the
+   extract**: `1415`, `1416`, `1430` **do not exist** in Annexure 33a (neither do `1419`–`1427` —
+   the gap is genuine in the source).
+2. **BLOEMFONTEIN — queue + depot completion, WHOLE** — `uploads/round-66/bloemfontein-queue-and-completion.txt`
+   (MD5 `fab1084281dd6dddb982879eef7a1ce3`, 16 workings / 847 rows) appended to
+   `beaufortwest-bultfontein-bloemfontein-batch.txt` **L3067-3913** (now 3,913 rows / 112
+   workings). Queue 10 = `8941`(83), `8943`(23), `8945`(19), `8951`(83), `8955`(19), `8964`(93),
+   `8965`(19), `8969`(19), `8989`(22), `9000`(3); plus 6 beyond-queue workings taken to complete
+   the depot from the source of record (mission = mirror the annexure): `3267`(87), `4000`(53),
+   `4002`(45), `4212`(93), `4213`(93), `4214`(93). BLOEMFONTEIN now holds **100/100** extract
+   workings. Append-only PASS. (BLOEMFONTEIN `8943` ≠ BELLVILLE `8943` — pair (Origin, Train).)
+3. **WARRENTON (NEW depot)** — `warrenton-batch.txt` (MD5 `4a0610fe1bfcb40e76f7969ca697b00c`,
+   730 rows / 21 workings).
+4. **BEITBRIDGE (NEW depot)** — `beitbridge-batch.txt` (MD5 `c04155bf40e673279472978c097cc59e`,
+   185 rows / 37 workings).
+5. **BITTERFONTEIN (NEW depot)** — `bitterfontein-batch.txt` (MD5 `35faec6f38ccfa020e71098319473f32`,
+   83 rows / 2 workings — `72` (42), `4446` (41)).
+6. **BFX-PASSASRS (NEW depot)** — `bfx-passasrs-batch.txt` (MD5 `30e2bf53482ae236f3493401be8442b1`,
+   255 rows / 5 workings).
+
+**Checker — 16 NEW source anomalies preserved verbatim (never "fixed"), 32 flagged total:**
+- BELLVILLE `2025` / `4425` / `12031` (identical class: stated `16:52:00` vs computed `16:52:30`,
+  blank travel at `LAPLAISANTE`), `9997` (stated `00:16:00` vs computed `00:16:56`), `12217`
+  (stated `38:00:00` vs computed `38:00:30`), `2221` (day not rolled at `BEC-OUTERREIN`:
+  arr `00:05:00` after dep `23:50:00`).
+- WARRENTON `2207` (midnight non-roll at `OLEA`), `2667` (30 s), `2669` (30 s).
+- BEITBRIDGE `8` (**stated duration literally `00:60:00`** — unparseable, preserved), `728`
+  (35 s + overnight), `1118` / `1120` / `5736` (travel mismatch at `COLLEENBAWN`: stated
+  `00:24:00` vs computed `00:38:00`), `6770` (midnight non-roll at `NYUNDO`).
+- BFX-PASSASRS `53547` (midnight non-roll at `ARUNDEL`).
+- BLOEMFONTEIN's 16 new workings all `[OK]`; BITTERFONTEIN both `[OK]`.
+- Prior 16 flags all still present (unchanged). `[OK]` = 767 of 799.
+
+**Post-append verification:** whole-corpus extract-identity **27,993/27,993 rows byte-identical to
+the annexure extract (0 exceptions)**. `append_gate.py --corpus`: **27 files / 27,993 rows / 799
+workings / 43 depots / 32 flagged.** Corridors/siblings: none run this round (pure source-order
+transcription; sibling comparisons queued for the BELLVILLE large-pair set next round if wanted).
+
+**Product work (user's question — pages/sidebar panels):** `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md`
+— promote rail to its own **RAIL** sidebar section (9 items), 8 pages (Timetable Explorer
+power-up, Corridor KPIs, Slots & Capacity, Tariffs, Occurrences & Possessions, Compliance & DG,
+Network Sources, variance panel), 10 dashboard panels, and the **11 wanted source files**
+(33b capacity XLSM + approved tariff rates head the list). Annexure 43 survey:
+`docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md`.
+
+**Still owed / decisions:** (1) **E-AMP-01** — extract `&` vs native `&amp;` rendering for the 179
+cells (user's call); (2) **corpus-scope call** — the extract has **688 origins**; the corpus
+covers 43 (27,993 of 251,678 rows). The other **645 origins / 223,685 rows** can be imported in
+bulk from the same extract (a few large gated rounds) or kept queue-driven — user's call;
+(3) related origin names **not** on any queue, ask before ingesting: `BEITBRIDG-BBR` (61 rows /
+14 workings), `BFX-HAMILTON` (95 / 1), `PE-PASSASIERS` (608 / 7); (4) **round-8 part 2**
+(~620 rows) — the lost paste is still unidentified (which depot/workings?); (5) branch mandate
+(round 54). Committed on `arena/a620a55a-flowops`.

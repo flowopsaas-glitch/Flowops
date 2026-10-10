@@ -76,3 +76,42 @@ Pre-reconciliation values are preserved in git (commit before this one) and in t
 STATE.md note. **Going forward: the corpus mirrors the annexure; appends continue to be gated
 byte-verbatim rows, and any future divergence is resolved in the annexure's favour per the
 mandate.**
+
+## Native xlsx cross-check (round 66, 2026-10-10)
+
+The user uploaded the native workbook `sources/Annexure 33a_NS ver.4 (2).xlsx` (commit `e24e70c`;
+SHA-256 `93b4d44929c037a799969a5b2a5efa514af4abbd7e2711ac0e072ece77745dd5`). Every one of its
+251,679 rows was compared cell-by-cell against the zip's TSV extract (the corpus's declared
+source of record). Verdict:
+
+- **Row count and ordering identical** (251,678 data rows + header).
+- **All numeric cells equal or float-equal** — the only differences are IEEE-754 repr noise in the
+  xlsx XML (`19.420000000000002` vs `19.42`; 13,472 rows affected, all float-equal).
+- **179 cells differ textually — and all 179 are one single class: the xlsx cells literally store
+  `&amp;` (HTML-escaped ampersand as text) where the TSV extract has plain `&`.** No other
+  content differences exist.
+
+Implications (recorded, not applied):
+
+1. **§10 query #1 is answered by evidence:** the source itself carries `&amp;` in those cells (e.g.
+   BELLVILLE `75` step 6 `ORDER &amp; SHUNT`, `1211`/`1411` `R.T.O. &amp; X 1428`, plus 176 more
+   cells across 95 (Origin, Train) workings). The chat pastes were faithful; the TSV extract is
+   the decoded rendering. The corpus currently follows the **extract** rendering (`&`) per the
+   round-65 swap — uniform across all rows.
+2. **Open decision for the user (E-AMP-01):** keep the extract rendering (`&`, current) or flip
+   the 179 cells to the native-xlsx rendering (`&amp;`). Either way the change is one mechanical
+   pass; nothing else differs. Until answered, the corpus standard stays = the extract.
+3. The native xlsx confirms `BELLVILLE 1417`'s 30-second mismatch is in the source workbook too.
+
+Affected (Origin, Train) pairs for the 179 cells (xlsx `&amp;` vs extract `&`): ALGOABAAI 8994 ·
+BEACONSFIELD 1222/1224/1240/1250/1402/1414/1438/2912/8602/8606/8912/8924/8941/8945/8988 ·
+BEAUFORTWEST 1416/1450/1452/8924 · BELLVILLE 75/1211/1411/2153/7469/8469/8485/8605/8669/8943 ·
+BLOEMHOF 2385/5453 · CALEDON 5268/5296/5298/76 · DEAAR 1240/1426/2024/2132 · DURBANPAS 67208 ·
+ERMELO 1416 · ERTS 8802 · JOHANNESBURG 71006/71008/71204/78091 · JUPITER 1412 ·
+KAAPSTADPAS 14203/14205/14255/14257/17005/17007/17011/17289/18001 · KASERNE 1210/1460/8910 ·
+MAFIKENG 2254 · NATALSPRUIT 1472 · NEWBRIGHTON 8928/8994/18928 · NEWCASTLE 5519/8943 ·
+NEWCASTLYSKOR 1451/1453/8517 · NMY/S752681 54481/54483/54485 · NOUPOORT 14204 ·
+PYRAMIDSUID 1410 · ROOIKOP 7650 · SASOLBURG 5948/5964 · SENTRARAND 1391/1440/8914 ·
+SPRINGS 1412 · TOUWSRIVIER 1038 · VYF/S754331 74489 · WELGEDAG 1450 · WITBANK 1450 ·
+WOLSELEY 1418 · WOR-NOORD 1039/1104/1186/12024/8941. (Round-66 BELLVILLE appends included some
+of these workings; their rows carry the extract rendering like the rest of the corpus.)

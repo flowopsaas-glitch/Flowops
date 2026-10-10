@@ -116,9 +116,15 @@ for **every** supplied binary. No binary is committed to this repository.
 | --- | --- | --- | --- | --- | --- | --- |
 | V4-01 | | | | | | FY26/27–27/28 |
 | V4-02 | | | | | | FY26/27–27/28 |
+| V4-05 | `Annexure_33a_NS_ver_4 (3).zip` (extract TSV MD5 `1cd978f5a0e5c5528886aa0c66047cb6`) + native `Annexure 33a_NS ver.4 (2).xlsx` | zip commit `8d30089`; xlsx `93b4d44929c037a799969a5b2a5efa514af4abbd7e2711ac0e072ece77745dd5` | 3,220,461 + 15,258,573 | ZIP(TSV+XLSX) / XLSX | 2026-10-10 (user upload via GitHub) | FY26/27–27/28 |
 | V4-07 | | | | | | FY26/27–27/28 |
-| V4-10 | | | | | | FY26/27–27/28 |
+| V4-10 | `Annexure 43 KPIs (2).xlsx` | `18e137f75057f57b05ce3196c2d4b5b4b8c83e35bc57c590ea3c49d89b65fd15` | 51,984 | **XLSX** (format question resolved) | 2026-10-10 (user upload, commit `e24e70c`) | FY26/27–27/28 |
 | *(remaining rows added on receipt)* | | | | | | |
+
+**Storage note (user-directed exception):** these three binaries live under `sources/` and are
+tracked on `arena/a620a55a-flowops` — the owner directed the 33a sources into Git deliberately;
+surveyed in `docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md` (43) and
+`rail-source-check/RECONCILIATION-33A.md` (33a).
 
 ## 5. The 15-step TOC application process — evidence for the guided builder
 
