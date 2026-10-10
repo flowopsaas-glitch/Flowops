@@ -8,6 +8,13 @@ import {
   type RailTimetableImport,
   type RailTimetableRow,
 } from "../api/railApi";
+import {
+  shutdownContact,
+  shutdownDepots,
+  shutdownSignOff,
+  shutdownSource,
+  shutdownWindows,
+} from "../data/railShutdownData";
 import { useToast } from "../components/ToastProvider";
 
 const PAGE_SIZE = 100;
@@ -125,6 +132,59 @@ export default function RailTimetable() {
           />
         </label>
       </div>
+
+      <details className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+        <summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-emerald-300">
+          Annexure 1 — 2024/25 Revised Shutdown Schedule (signed 23 July 2024) · E-ANX1-01
+        </summary>
+        <div className="mt-3 space-y-3 text-sm text-slate-300">
+          <p className="text-xs text-slate-400">
+            {shutdownSource.title} {shutdownSource.periodLabel} Windows below are timetable
+            occupation periods planned around; corridor pairing is colour-coded in the source
+            calendar and is not reconstructed here (E-ANX1-02).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {shutdownWindows.map((w) => (
+              <span
+                key={w.window}
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-200"
+              >
+                {w.window}
+                {w.days ? ` · ${w.days} days` : ""}
+                {w.corridorAsPrinted ? ` · ${w.corridorAsPrinted}` : ""}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400">
+            Corridors as printed: {shutdownSource.corridors.join(" · ")}. Day-type legend:{" "}
+            {shutdownSource.legend.join(" · ")}.
+          </p>
+          <details>
+            <summary className="cursor-pointer text-xs font-semibold text-slate-300">
+              Depot groups ({shutdownDepots.length}) &amp; sign-off chain (
+              {shutdownSignOff.length} signatories)
+            </summary>
+            <ul className="mt-2 grid gap-1 text-xs text-slate-400 lg:grid-cols-2">
+              {shutdownDepots.map((d) => (
+                <li key={d} className="truncate">• {d}</li>
+              ))}
+            </ul>
+            <ul className="mt-2 grid gap-1 text-xs text-slate-400 lg:grid-cols-2">
+              {shutdownSignOff.map((s) => (
+                <li key={s.name}>
+                  • {s.position} — <b className="text-slate-200">{s.name}</b>
+                  {s.date ? ` (${s.date})` : ""}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[11px] text-slate-500">{shutdownContact}</p>
+          </details>
+          <p className="text-[11px] text-slate-500">
+            Source: <code className="rounded bg-white/10 px-1">{shutdownSource.file}</code> ·
+            sha256 {shutdownSource.sha256.slice(0, 16)}… · {shutdownSource.pages} pages.
+          </p>
+        </div>
+      </details>
 
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">

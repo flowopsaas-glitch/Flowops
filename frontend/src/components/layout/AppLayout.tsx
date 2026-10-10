@@ -7,7 +7,7 @@ import {
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, BarChart3, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, Train, Handshake, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight, PieChart, Brain,
-  BookOpen, Boxes,
+  BookOpen, Boxes, Database,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -30,7 +30,7 @@ type NavItem = {
   desc: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  section: "CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN";
+  section: "CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN";
   /** Gate visibility/access against the tenant nav-permission matrix. Items
    *  without a key are always visible (e.g. operational pages without a
    *  dedicated permission flag). */
@@ -159,8 +159,8 @@ function SidebarContent(props: {
   collapsed?: boolean;
   ent?: Entitlements | null;
 }) {
-  const sections: ("CORE" | "OPS" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN")[] = 
-    ["CORE", "OPS", "COMMUNICATIONS", "BILLING", "INSIGHTS", "AI", "ADMIN"];
+  const sections: ("CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN")[] = 
+    ["CORE", "OPS", "RAIL", "COMMUNICATIONS", "BILLING", "INSIGHTS", "AI", "ADMIN"];
   const { collapsed } = props;
 
   // Accordion: which sections are open. Default open; a section is folded only
@@ -374,8 +374,19 @@ export default function AppLayout() {
     { section: "OPS", label: "ESG & Carbon", desc: "Fleet emissions & compliance", to: "/esg", icon: Activity, perm: "driverDispatch" },
     { section: "OPS", label: "Manifests", desc: "Load & route grouping", to: "/manifests", icon: Layers, perm: "waybillInbox" },
     { section: "OPS", label: "Depots", desc: "Hubs & branch locations", to: "/depots", icon: Building2, perm: "driverDispatch" },
-    { section: "OPS", label: "Rail & Intermodal", desc: "Consignment lifecycle & road↔rail↔port (Enterprise)", to: "/rail", icon: Train, perm: "rail", entitlement: "rail" },
-    { section: "OPS", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, perm: "railHandshake", entitlement: "rail" },
+    { section: "RAIL", label: "Rail Ops Console", desc: "Consignment lifecycle & road↔rail↔port (Enterprise)", to: "/rail", icon: Train, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Timetable Explorer", desc: "Annexure 33a working timetables", to: "/rail/timetable", icon: ScrollText, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Corridor KPIs", desc: "Annexure 43 baselines → targets", to: "/rail/kpis", icon: Gauge, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Slots & Capacity", desc: "Annexure 33b section capacity by route and FY", to: "/rail/slots", icon: Layers, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Tariffs & Charges", desc: "Annexure 40 ancillary services catalogue", to: "/rail/tariffs", icon: CreditCard, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Network Statement", desc: "NS V4 rulebook — chapters, annexure register, framework", to: "/rail/statement", icon: FileText, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Network Register", desc: "Annexure 33 capacity declaration & critical sections", to: "/rail/register", icon: BookOpen, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Investment Plan", desc: "Annexure 17 approved capital investment", to: "/rail/investment", icon: PieChart, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Occurrence & Policy", desc: "Annexure 41 RSR reporting · Annexure 42 collaboration", to: "/rail/occurrence", icon: ShieldAlert, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Cancellations", desc: "Annexure 20a/20b process & reason attribution", to: "/rail/cancellations", icon: RotateCcw, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Access & Disputes", desc: "Annexure 28/29a/29b/35 processes & timelines", to: "/rail/access", icon: Route, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, perm: "railHandshake", entitlement: "rail" },
+    { section: "RAIL", label: "Network Sources", desc: "Provenance, coverage & preserved anomalies", to: "/rail/sources", icon: Database, perm: "rail", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
     
@@ -466,6 +477,7 @@ export default function AppLayout() {
   const grouped = useMemo(() => ({
     CORE: visibleNav.filter(i => i.section === "CORE"),
     OPS: visibleNav.filter(i => i.section === "OPS"),
+    RAIL: visibleNav.filter(i => i.section === "RAIL"),
     COMMUNICATIONS: visibleNav.filter(i => i.section === "COMMUNICATIONS"),
     BILLING: visibleNav.filter(i => i.section === "BILLING"),
     INSIGHTS: visibleNav.filter(i => i.section === "INSIGHTS"),

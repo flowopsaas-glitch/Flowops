@@ -204,7 +204,7 @@ function CarrierRow({ carrier, onChange, busy, setBusy, onRemove }: {
             <div key={r.id} className="flex items-center gap-2 rounded-lg bg-black/20 px-3 py-1.5 text-[11px] text-white/55">
               <span className="font-mono text-white/70">{r.lane || "—"}</span>
               <span className="text-white/35">{r.mode}{r.containerType ? ` · ${r.containerType}` : ""}</span>
-              <span className="ml-auto font-bold text-indigo-200">{r.currency} {r.buyRate.toFixed(2)}</span>
+              <span className="ml-auto font-bold text-indigo-200">{r.currency} {Number(r.buyRate ?? 0).toFixed(2)}</span>
               <button onClick={() => delRate(r.id)} disabled={busy === `del-${r.id}`} className="text-white/25 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
           ))}

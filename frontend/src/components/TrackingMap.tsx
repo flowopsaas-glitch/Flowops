@@ -131,7 +131,9 @@ export const TrackingMap: React.FC<{ companyId: number; countryCode?: string }> 
                   Reg: {driver.vehicleReg}
                 </div>
                 <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-                  {driver.lat.toFixed(5)}, {driver.lng.toFixed(5)}
+                  {driver.lat != null && driver.lng != null
+                    ? `${driver.lat.toFixed(5)}, ${driver.lng.toFixed(5)}`
+                    : '—'}
                 </div>
               </div>
             </Popup>

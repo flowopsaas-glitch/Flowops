@@ -121,9 +121,11 @@ def preappend(payload):
         print('  !! unexpected field counts: STOP and re-paste')
 
     workings = collections.Counter()
+    first_pay = {}
     for _, raw in pay:
         f = raw.split('\t')
         workings[(f[0], f[1])] += 1
+        first_pay.setdefault((f[0], f[1]), raw)
     print('  workings=%d' % len(workings))
     for (dep, w) in sorted(workings, key=lambda k: (k[0], int(k[1]) if k[1].isdigit() else 0)):
         print('    %-14s %-7s %d rows' % (dep, w, workings[(dep, w)]))
@@ -155,20 +157,25 @@ def preappend(payload):
         print('    L%-5d %s  already at %s' % (ln, k, where))
 
     # 5. per-working existence / 6. boundary
+    # (corpus indexed by (origin, train) - behaviour-identical, O(n) instead of O(workings x corpus))
+    by_ot = collections.defaultdict(list)
+    for base, ln, raw in corpus:
+        f = raw.split('\t')
+        if len(f) >= 2:
+            by_ot[(f[0], f[1])].append((base, ln, raw))
     print('[3] per-working rows already in the corpus, and the boundary:')
     for (dep, w) in sorted(workings, key=lambda k: (k[0], int(k[1]) if k[1].isdigit() else 0)):
-        existing = [(base, ln, raw) for base, ln, raw in corpus
-                    if raw.split('\t')[0] == dep and raw.split('\t')[1] == w]
-        first_pay = next(raw for _, raw in pay if raw.split('\t')[0] == dep and raw.split('\t')[1] == w)
+        existing = by_ot.get((dep, w), [])
+        first_row = first_pay[(dep, w)]
         if not existing:
             print('    %s %s: 0 rows corpus-wide  -> NEW working' % (dep, w))
             continue
         base, ln, raw = existing[-1]
         print('    %s %s: %d existing row(s); last = %s L%d' % (dep, w, len(existing), base, ln))
         print('        last corpus row : %s' % compact(raw))
-        print('        first payload row: %s' % compact(first_pay))
+        print('        first payload row: %s' % compact(first_row))
         a = parse_t(raw.split('\t')[6]) or parse_t(raw.split('\t')[5])
-        b = parse_t(first_pay.split('\t')[5]) or parse_t(first_pay.split('\t')[6])
+        b = parse_t(first_row.split('\t')[5]) or parse_t(first_row.split('\t')[6])
         if a is not None and b is not None:
             print('        clock delta (payload arr - corpus dep): %+d s' % (b - a))
 

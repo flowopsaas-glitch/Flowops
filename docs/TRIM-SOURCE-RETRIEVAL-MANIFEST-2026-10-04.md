@@ -114,11 +114,42 @@ for **every** supplied binary. No binary is committed to this repository.
 
 | # | File | SHA-256 | Size | Format | Retrieved | Period |
 | --- | --- | --- | --- | --- | --- | --- |
-| V4-01 | | | | | | FY26/27–27/28 |
-| V4-02 | | | | | | FY26/27–27/28 |
-| V4-07 | | | | | | FY26/27–27/28 |
-| V4-10 | | | | | | FY26/27–27/28 |
+| V4-01 | `TRIM Network Statement 18 September 2026 (1).pdf` | `6e7ad24b993df0a38065720533e16bfdf79f4bbaf68ece81435491a190798faa` | 4,647,584 | PDF (203 p) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–27/28; surveyed `docs/RAIL-NS-V4-STATEMENT-SURVEY-2026-10-10.md` (rule chain + Table 17 tariffs) |
+| V4-02 | `Annexure 15_Rail Access Agreement (1).pdf` | `e525bb447ad891a7a007a98fb4da78dd5c97cfebb15d8cc8f272ba270208a953` | 790,088 | PDF (95 p) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–27/28 |
+| V4-05 | `Annexure_33a_NS_ver_4 (3).zip` (extract TSV MD5 `1cd978f5a0e5c5528886aa0c66047cb6`) + native `Annexure 33a_NS ver.4 (2).xlsx` | zip commit `8d30089`; xlsx `93b4d44929c037a799969a5b2a5efa514af4abbd7e2711ac0e072ece77745dd5` | 3,220,461 + 15,258,573 | ZIP(TSV+XLSX) / XLSX | 2026-10-10 (user upload via GitHub) | FY26/27–27/28 |
+| V4-06 | `Annexure 33 Capacity Statement (2).xlsm` | `2d3f591515a339b57fb17e695796dcbe2cc7522ce39c4c329dcb70f325a3515b` | 166,356 | XLSM (3 sheets) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–30/31 (rows for all 5 FYs) |
+| V4-07 | `Annexure 40 - TRIM Ancillary Services Catalogue 2026_27 (1).pdf` | `f924fc8e6086af61a76525f298da02ef270d41fddc703174934596a2285a55cf` | 246,587 | PDF (6 p) | 2026-10-10 (user upload, commit `0a356d6`) | 2026/27 |
+| V3-30 | `Annexure 36_Emergency Response Plan (Tribunals Process).pdf` | `4dfcf2d2cfa3fcf4e330a9c1cb1e955523108761b0213e30e37189cb256d2c9c` | 1,547,133 | PDF (73 p) | 2026-10-10 (user upload, commit `0a356d6`) | V3 (E-ANX36-01 period caveat) |
+| V4-03 | `Annexure 17 Investment Plan July 2026.pdf` | `ecda99ed79864617bb2f688736bd70547251bb8b9a2f08f24dddcf85a18b9383` | 136,702 | PDF (5 p) | 2026-10-10 (user upload, commit `be90c16`) | 2026/27–2030/31 corporate plan |
+| V4-04 | `Annexure 33_Network Register June 2026 F (1).pdf` | `1e2842cbf88c9382a18c604240a79cee985e85f7966fd90a081cdb12b68c9fa0` | 378,138 | PDF (8 p) | 2026-10-10 (user upload, commit `be90c16`) | 2026/27 timetable (June 2026 v0.3) |
+| V4-08 | `Annexure 41 Occurrence Reporting Procedure.pdf` | `aa0d1acd9b5c195963ba858565b4aed8a3a79a36626013d3af3ce16204416aed` | 630,777 | PDF (12 p) | 2026-10-10 (user upload, commit `be90c16`) | RSR template NOV2021.V3 |
+| V4-09 | `Annexure 42 Transnet Customer Collaboration Policy.pdf` | `68aa7e5f3124314ccf2ba18feb43b14a87c7262b64935c58ed6f66e0470ca9bd` | 244,232 | PDF (14 p) | 2026-10-10 (user upload, commit `be90c16`) | effective 01 Dec 2025 v1.0 |
+| V4-12 | `Annexure 20a 2024.09.30_Cancel_or_Re-Schedule_TOC_Train_Process_v4_.pdf` | `dafafcf2a2af4abcfc8de4075acc3ab884615b6ed97d7f47cb23c21e3d1810bf` | 899,171 | PDF (1 p, flowchart) | 2026-10-10 (user upload, commit `b8d3fbe`) | Process v4, 30 Sep 2024 |
+| V4-13 | `Annexure 20b Cancellation reasons.pdf` | `d5774ad4dc21859a39429fe37324a757f544ca5669873ab861cdca34030ff9ba` | 513,828 | PDF (1 p, xlsx-derived) | 2026-10-10 (user upload, commit `b8d3fbe`) | v1.3, 19 May 2023 |
+| V4-11 | `Release of Final NS V4_18 September 2026_Final (1).pdf` | `de8c506576b156cab7390e68fff0f10711cf7b1c5245071888cdc03affa080e1` | 123,166 | PDF (1 p) | 2026-10-10 (user upload, commit `3117859`) | 18 Sep 2026 announcement; carries Table 16 timelines |
+| V3-14* | `Annexure 28_Daily_Handshake_Process (1).pdf` | `2bd0263126c935ba2450dc352eef381ea2e1bebbb002f16d6468b91d1d41fa76` | 689,820 | PDF (1 p) | 2026-10-10 (user upload, commit `3117859`) | Process v2.5, 16 Aug 2024 |
+| V3-15* | `Annexure 29a Network Access Application Form.pdf` | `9b53984bbc1d28f331685e549ca0c234b47ed22e3d1ba52af35c04874d2ff014` | 165,506 | PDF (5 p) | 2026-10-10 (user upload, commit `3117859`) | form created 21 Jan 2025 |
+| V3-16* | `Annexure 29b - Network Capacity Statement_Final (Ver2) (1).pdf` | `9fdfa56de7693e5fbad57e3051408b153af1b74379bc501703207ce2dbf80d83` | 223,420 | PDF (8 p) | 2026-10-10 (user upload, commit `3117859`) | 2024/25 (E-ANX29B-01 caveat; superseded by V4-04) |
+| V3-29 | `Annexure 35_TRIM Dispute Resolution Process.pdf` | `fdc47f46327bdb19f6336570b8a70675f1bb8ed0abd9ea176749e51fa23b4efb` | 829,851 | PDF (1 p) | 2026-10-10 (user upload, commit `3117859`) | Version 01, 3 Dec 2024 |
+| *(dedupe)* | `Annexure 15_Rail Access Agreement (1).pdf` (root, commit `3117859`) | = `e525bb44…` | — | byte-identical re-upload | 2026-10-10 verified | removed from root; identical to V4-02 |
+| *(dedupe)* | `Annexure 33 Capacity Statement (3).xlsm` + `Annexure 33_Network Register June 2026 F (2).pdf` + `Annexure 33a_NS ver.4 (3).xlsx` (root, commit `b8d3fbe`) | = `2d3f5915…` / `1e2842cb…` / `93b4d449…` | — | byte-identical re-uploads | 2026-10-10 verified | removed from root; identical to V4-06 / V4-04 / V4-05 in `sources/` |
+| V4-10 | `Annexure 43 KPIs (2).xlsx` | `18e137f75057f57b05ce3196c2d4b5b4b8c83e35bc57c590ea3c49d89b65fd15` | 51,984 | **XLSX** (format question resolved) | 2026-10-10 (user upload, commit `e24e70c`) | FY26/27–27/28 |
+| V3-03 | `Annexure 1 2024-25 Revised Transnet Shutdown schedule signoff 23 July 2024_signed.pdf` | `81aa096459b3f47a91866de609f679c6996858b9f94b8cb079883dd020b47247` | 1,743,683 | PDF (6 p) | 2026-10-10 (user upload, commit `cbbb722`) | 2024/25 REVISED, signed 23 Jul 2024 (E-ANX1-01); V4 wants 2026/27 provisional (open). Surveyed `docs/RAIL-ANX1-18-21-22-32-INTAKE-2026-10-10.md` |
+| V3-07 | `Annexure 18 Occurrence Management (1).pdf` | `217daf767a908ecf150e46d5cabdb711054d2446c740c9cb72af38f97a768fe6` | 97,477 | PDF (3 p) | 2026-10-10 (user upload, commit `cbbb722`) | V3-era pre-IM draft (E-ANX18-00/01/02) |
+| V3-13 | `Annexure 21_2024.09.30_Clearinghouse_Process_Narrative_v5 (1).pdf` | `9da1762f0dc4c6a023502cc30aa11c6eba317de44bdcdfe7d2484e23e9b34feb` | 206,694 | PDF (3 p) | 2026-10-10 (user upload, commit `cbbb722`) | v5, 30 Sep 2024 (E-ANX21-01 header prints V4) |
+| V3-14 | `Annexure 22 Loading Profiles.pdf` | `e12eb5c492981058b0f197318a456d09c1482d21dd53cb07176906e7200ea5b4` | 165,644 | PDF (5 p) | 2026-10-10 (user upload, commit `cbbb722`) | RSE/TE/LPR/0010 Rev 6, 23 Mar 2018 (E-ANX22-01). **Watchlist id — distinct from the round-72 `V3-14*` intake-sequence label (Anx 28)** |
+| V3-27 | `Ad_Hoc_TOC_Slot_Requests_Process_v1.5 (1).pdf` → `Annexure 32_Ad_Hoc_TOC_Slot_Requests_Process_v1.5 (1).pdf` | `65cd5142b2d36f6d1b0a5499a173c8fa1825b78774c8a4b1577516ce05744ef9` | 584,903 | PDF (1 p, flowchart) | 2026-10-10 (user upload, commit `cbbb722`) | filename v1.5 vs rev-history v1.0 (E-ANX32-01/02) |
 | *(remaining rows added on receipt)* | | | | | | |
+
+**Storage note (user-directed exception):** these binaries live under `sources/` and are
+tracked on `arena/a620a55a-flowops` — the owner directed the sources into Git deliberately
+(33a zip/xlsx + 43 xlsx earlier; the five round-68 uploads were user-committed at repo root in
+`0a356d6` and `git mv`-tracked into `sources/`). Surveyed in
+`docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md` (43),
+`docs/RAIL-ANNEXURE-33B-CAPACITY-SURVEY-2026-10-10.md` (33b),
+`docs/RAIL-ANNEXURE-40-ANCILLARY-SURVEY-2026-10-10.md` (40),
+`docs/RAIL-NS-V4-ANX15-ANX36-INTAKE-2026-10-10.md` (NS V4 / 15 / 36) and
+`rail-source-check/RECONCILIATION-33A.md` (33a).
 
 ## 5. The 15-step TOC application process — evidence for the guided builder
 

@@ -30,7 +30,7 @@ code .            # then open this folder in VS Code
 Sanity check that the bootstrap worked — from `rail-source-check/`:
 
 ```bash
-python3 append_gate.py --corpus     # expect 23 files / 17,636 rows / 593 workings / 39 depots / 23 flagged
+python3 append_gate.py --corpus     # expect 672 files / 251,678 rows / 13,471 workings / 688 depots / 629 flagged
 ```
 
 ---
@@ -83,7 +83,9 @@ alone. The end state is "100 % production".
 ## 3. WHERE EVERYTHING IS
 
 - Repo: `https://github.com/flowopsaas-glitch/Flowops` (folder `Flowops/` in VS Code).
-- Corpus: `rail-source-check/` — 23 data files, `verify_workings.py` (checker),
+- Corpus: `rail-source-check/` — 672 data files (complete Annexure 33a mirror; per-file
+  census in `EXTRACT-IMPORT-MANIFEST.md`, preserved anomalies in `FLAGGED-WORKINGS.md`),
+  `verify_workings.py` (checker),
   `append_gate.py` (pre-append gates / post-append verify / corpus audit),
   `STATE.md` (the running ledger — **read it first every session**),
   `NEXT-CHAT-PROMPT.md` (rolling handoff), `FIELD-NAMES.md` (authoritative field list + source header).
@@ -109,12 +111,12 @@ Expected audit output (if **any** number differs, stop and report — do not tra
 
 | measure | expected |
 |---|---|
-| files | 23 |
-| rows | 17,636 |
-| workings | 593 |
-| depots | 39 |
-| flagged workings | 23 |
-| `[OK]` workings | 570 |
+| files | 672 |
+| rows | 251,678 |
+| workings | 13,471 |
+| depots | 688 |
+| flagged workings | 629 |
+| `[OK]` workings | 12,842 |
 
 If your Python is invoked as `python` on Windows, use that; the scripts are pure standard library.
 
@@ -141,7 +143,9 @@ If your Python is invoked as `python` on Windows, use that; the scripts are pure
 - Depot name is field 1 (`Origin`); several depot names (BLACKHILL, BLANEY, BOWKERSPARK, BERRYPARK…)
   also occur as *station* names inside other depots' files — gate on field 1, never on a name grep.
 - Corridors in use: CAPE, CENTRAL, CONTAINER, NORTH, NORTHEAST, ORELINE, plus
-  **blank** (currently 42 rows — preserved as received, not an error).
+  **blank** (4,358 rows — preserved as received, not an error). Corpus mix at 251,678
+  rows: NORTH 80,991 · CAPE 65,324 · CONTAINER 35,663 · CENTRAL 35,446 · NORTHEAST 20,937 ·
+  ORELINE 8,959 · blank 4,358.
 
 ## 6. THE WORK CYCLE (per paste)
 
@@ -185,61 +189,155 @@ travel/dwell vs clocks, stated vs computed duration, and duplicate rows. Blank t
 Quirks: `tail -1` on a `.txt` returns a blank line — always count with `awk 'NF' | wc -l`;
 the per-file totals loop must grep `total:` (do not read the last line of output).
 
-## 8. CURRENT STATE — 23 files / 17,636 rows / 593 workings / 39 depots / 570 `[OK]` + 23 flagged
+## 8. CURRENT STATE — 672 files / 251,678 rows / 13,471 workings / 688 depots / 12,842 `[OK]` + 629 flagged
 
-Newest files (round 58, head `97cbefc`):
+Round 67 bulk-imported the **complete** Annexure 33a mirror: **645 new `<origin>-batch.txt`
+files** + 6 majority-file appends (223,685 rows). Per-file rows/workings/flags/MD5 for all 672
+files: **`rail-source-check/EXTRACT-IMPORT-MANIFEST.md`**. Round history in `STATE.md`.
+Landmark files: `bellville-batch.txt` (8,460 rows / 146 workings, `6c4601f43be336b24bb5923392ca2d12`),
+`bijlkor-batch.txt` (2,051 / 68, `b9a101e753c96fd49fd2a8d46412c433`), the six round-66 depot files.
 
-| file | rows | workings | MD5 |
-|---|---|---|---|
-| `blackhill-batch.txt` (NEW depot, round 58 p2) | 89 | 15 | `9665150a06f7a9e52bf15de236a34d83` |
-| `blaney-batch.txt` (NEW depot, round 58 p2) | 70 | 1 | `3827b6002ff002820d0d4b68ffe89dc3` |
-| `buckingham-batch.txt` (NEW depot, round 58 p2) | 24 | 1 | `8c6e89fc66588001fbeb1c8460642133` |
-| `bowkerspark-batch.txt` (NEW depot, round 58 p2) | 10 | 2 | `a6c620d67f4c92bfc267e5eb81747e41` |
-| `bellville-batch.txt` (NEW depot, round 58 p2) | 630 | 27 | `04dbdeb409f62c676731a7eb73aeb23b` |
-| `blinkpan-batch.txt` (NEW depot, round 58) | 601 | 71 | `f50080d6fc70c34f4b97134c3300017f` |
-| `bijlkor-batch.txt` (rounds 54–57) | 1682 | 62 | `410c3b09f3f254fdadb4fb679804da8f` |
+**629 flagged workings — preserved source anomalies, never "fixed".** The full list is
+**`rail-source-check/FLAGGED-WORKINGS.md`** (629 lines). Classes: 30/35/56-second
+stated-vs-computed duration mismatches (e.g. BELLVILLE 1417 `02:40:00` vs `02:40:30` — confirmed
+in the extract **and** the native xlsx), midnight `Depart_Day` non-rolls (BELLVILLE 2221,
+WARRENTON 2207, BEITBRIDGE 6770, BFX-PASSASRS 53547), travel-vs-clock mismatches (BEITBRIDGE
+1118/1120/5736 at `COLLEENBAWN` stated `00:24:00` vs computed `00:38:00`), unparseable stated
+durations (BEITBRIDGE 8 literally `00:60:00`). Notes: `BLINKPAN 80109` keeps `Depart_Day` 0
+across midnight; `BLINKPAN 2154` carries `Frequency` `AYYYYYY`; train numbers repeat across
+origins — always pair (Origin, Train).
 
-Every other file's rows/workings/MD5 and round history is in `STATE.md` ("## Files" section).
+## 9. THE QUEUE — what is left
 
-**The 23 flagged workings — preserved anomalies, never "fixed":**
-ANGLOALPHA 7460/7468/8205 · BEACONSFIELD 8965/28941 · BEAUFORTWEST 97/8924 ·
-BLOEMFONTEIN 2273/2412/4215/5598/6008/18927 · BEESHOEK 7403/7407 · BLOEMHOF 1438/2226 ·
-ARIAMSVLEI 2169 · BUFFALOHARBOU 1052 · WALTLOO 8961 · WELGEDAG 58866 · BLINKPAN 80109 ·
-BELLVILLE 1414 (partial). Notes: `BLINKPAN 80109` keeps `Depart_Day` 0 across midnight (siblings
-roll the flag); `BLINKPAN 2154` carries `Frequency` `AYYYYYY`; several are **partials** awaiting a
-re-paste (see §9).
+> **The data corpus is COMPLETE (round 67):** every Annexure 33a row is captured — 251,678/251,678
+> byte-identical, 672 files / 13,471 workings / 688 depots. The source of record is
+> `uploads/round-65/annexure33a-extract.txt` (zip `8d30089`, MD5 `1cd978f5a0e5c5528886aa0c66047cb6`)
+> with the native workbook `sources/Annexure 33a_NS ver.4 (2).xlsx` as corroboration. Row
+> provenance: "33a extract zip `8d30089`".
 
-## 9. THE QUEUE — what the user will paste next (priority order)
+1. **Nothing owed on the pasted/extract corpus.** BELLVILLE 146/146 · BLOEMFONTEIN 100/100 ·
+   BIJLKOR 68/68 · WARRENTON/BEITBRIDGE/BITTERFONTEIN/BFX-PASSASRS whole · all 688 origins
+   whole. If the user pastes any working again: byte-dedupe first (it will match), report, append
+   nothing.
+2. **If a NEW Annexure 33a version arrives** (ver. 5+): treat as a new source — full cell-by-cell
+   diff vs the corpus (the round-65/66 methodology in `RECONCILIATION-33A.md`), report the
+   divergence map, and ask before swapping (the mandate resolves divergence in the annexure's
+   favour, but version changes are surfaced first).
+3. **UI build — core DONE (round 67):** RAIL sidebar section, `/rail/timetable` promotion,
+   `/rail/kpis` (Annexure 43), `/rail/sources` (provenance), data modules in
+   `frontend/src/data/railKpi*`; `tsc`/`vite build`/749 tests green. **Next UI steps** (need
+   sources first): Slots & Capacity (Annexure 33b), Tariffs (rates), Occurrences (Anx 41),
+   variance "Actual" leg (SPRINT actuals); timetable row browsing via the backend import API
+   once migration `20261007170000` is applied. Status table: the UI plan doc §7.
+4. **Wanted source files** are listed in `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md` §5
+   (33b XLSM + approved tariff rates head the list).
 
-1. **BELLVILLE `1414` remainder + everything after `1414`.** The last row on disk is `1414`
-   `NODE_Seq` 6 `KALBASKRAAL` 11:55:00 → 11:55:30; earlier notes indicate `1414` runs to about
-   step 20. Continue from the first row that follows, and append any further workings that arrive.
-2. **BIJLKOR**: `17207` head (header through `BIJ/S750557` 22:26:00), `8856` tail
-   (`BEAUFORTWEST` day-1 20:25:00 onward), and `9409`, `9443`, `16453`, `17205` (never on disk).
-   *Caution:* the previously held 7-row `17207` tail lives in the old sandbox — if it is not in
-   your copy, ask for head **and** tail. Never append a header-less fragment.
-3. **BLOEMFONTEIN** queue: 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000.
-4. **Partials already on disk awaiting their remainder** — treat with care, append only new rows:
-   BEACONSFIELD 8965 (L1-22), BEAUFORTWEST 97 (L1-16), BLOEMFONTEIN 4215 (L999-1031,
-   partial-start), BLOEMFONTEIN 18927 (L2129-2187), WELGEDAG 58866 (L1-1), BIJLKOR 8856 (prefix).
-5. **Re-transcribe (derived, therefore not trustworthy):** BEACONSFIELD `1438` L1139-1180 was
-   built from twin `1222`, not from source — replace only when the source rows arrive, byte-verified,
-   with the user's approval.
-6. **Whole depots still missing:** WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS.
-7. **Round-8 part 2** (~620 rows) was never captured.
+### 9E. Round 68 closeout (2026-10-10) — five-source intake done
+
+- Five user-uploaded sources verified + surveyed + productised (`/rail/slots`, `/rail/tariffs`);
+  manifest §4 rows complete. See STATE.md "Round 68" and the three survey docs (33b, 40,
+  NS-V4/15/36).
+- **Still missing (unchanged):** approved tariff **rates** (E-TARIFF-01 — catalogue has UOMs
+  only), Annexure 33 Network Register (V3-29), operational actuals (SPRINT extract, V4-04),
+  "List of Yards.xlsx" / "List of Terminals.xlsx" attachments named inside Annexure 40.
+- **Next consolidation candidates:** transcribe the NS V4 PDF text (203 p) into the product rule
+  chain; clause-index Annexure 15; wire Annexure 36 with its V3 period label; Port Allocation
+  Files (V4-03) retrieval.
+
+### 9F. Round 69 closeout (2026-10-10) — Register / Investment / Occurrence / Collab Policy done
+
+- Four sources ingested + productised (`/rail/register`, `/rail/investment`, `/rail/occurrence`);
+  manifest §4 V4-03/04/08/09 complete. PR #448 open (branch → main).
+- **Still missing:** approved tariff rates (E-TARIFF-01), Annexure 33 appended section-level data
+  file (slots + N1/N2 line classification), Full Publication Notice (V4-11), operational actuals
+  (SPRINT, V4-04-sprint extract — note: manifest V4-04 is now the Register; SPRINT actuals remain
+  an open want), "List of Yards.xlsx"/"List of Terminals.xlsx" (named in Annexure 40).
+- **Next consolidation candidates:** transcribe the NS V4 PDF text (203 p) into the product rule
+  chain; clause-index Annexure 15; wire Annexure 36 with its V3 period label; Occurrence page →
+  Daily/Quarterly report builders.
+
+### 9G. Round 70 closeout (2026-10-10) — NS V4 rule chain + access tariffs landed
+
+- NS V4 body consolidated: Table 17 access tariffs (effective 01 Aug 2026) + Tables 18–23 +
+  chapter/annexure maps in `/rail/statement` and the Tariffs page. See
+  `docs/RAIL-NS-V4-STATEMENT-SURVEY-2026-10-10.md` (the money tables are transcribed there).
+- **Still missing:** ancillary service rates (future NS volume), Annexure 33 appended
+  section-level data file, Full Publication Notice (V4-11), V4 annexures not yet delivered (see
+  the annexure register at /rail/statement — 34 of 44 still wanted), operational actuals (SPRINT).
+- **Next candidates:** Anx 15 clause index; wire Anx 36 (V3 label); Daily/Quarterly occurrence
+  report builders; backend migration `20261007170000` for row-level timetable browsing.
+
+### 9H. Round 71 closeout (2026-10-10) — 20a/20b landed; ref-reset recovery documented
+
+- Annexure 20a (process v4) + 20b (82-row reason table) → `/rail/cancellations`. Three re-uploads
+  in `b8d3fbe` verified byte-identical and deduped (manifest dedupe row). Ref-reset recovery
+  method recorded in STATE.md Round 71 (stash + ff-only; never `reset --hard`).
+- **Still missing:** ancillary rates (future NS), Annexure 33 appended section-level data file,
+  Full Publication Notice (V4-11), remaining annexures (see /rail/statement register — now 12 of
+  44 delivered; priority remainder: 1 shut schedule, 28 handshake, 29a application form, 32
+  ad-hoc paths, 35 dispute resolution), SPRINT actuals.
+- **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
+  migration `20261007170000` for row-level timetable browsing.
+
+### 9I. Round 72 closeout (2026-10-10) — 28/29a/29b/35 + Publication Notice landed
+
+- `/rail/access` live (handshake/application/disputes/timelines). Table 16 timelines resolved from
+  the Publication Notice. E-ANX29B-01 (29b is V3-era; 33 supersedes).
+- **V4 announcement publishes only 10 documents** (NS + 15/17/33/33a/33b/40/41/42/43 + notice);
+  all other annexures exist only as **2024/25 V3-era downloads** (ids 40xx) on the older annexure
+  page. Remaining wants from that page: 1 shut schedule (4011), 18 occurrence mgmt (4036), 22
+  loading profiles (4037), 21 clearinghouse (4043), 32 ad-hoc slot application (4028), then the
+  optional set (19a/b/c, 24–27, 30/31/34, 16, 23, 13/14). Plus: ancillary rates (future NS),
+  Annexure 33 appended data file, SPRINT actuals.
+- **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
+  migration `20261007170000`.
+
+### 9J. Round 73 closeout (2026-10-10) — Anx 1/18/21/22/32 landed (the five priority 2024/25 grabs)
+
+- Upload `cbbb722` = the five priority wants from the 2024/25 annexure page (V3-03/07/13/14/27),
+  all NEW (no dedupe). No ref reset (ff-only to `cbbb722`). Period labels E-ANX1-01/02,
+  E-ANX18-00/01/02, E-ANX21-01, E-ANX22-00/01, E-ANX32-01/02 all preserved and flagged.
+- Productised: `/rail/timetable` shutdown panel (Anx 1) · `/rail/occurrence` tabs Roles & costs
+  (18) + Loading profiles (22) · `/rail/cancellations` Clearinghouse section (21) · `/rail/access`
+  Ad hoc slots tab (32). Register **21 of 44** delivered. Sidebar RAIL still 13 items.
+- **Remaining from the 2024/25 page (all optional):** 19a POSMOR `4038`, 19b TWR `4039`, 19c
+  General Appendix `4040`, 24 Interface Agreement `4018`, 25 Self Screening `4019`, 26
+  Environmental `4020`, 27 Risk Guidelines `4022`, 27a `4021`, 27b `4046`, 30 Credit `4026`,
+  31 NDA `4027`, 34 Volume Confirmation `4035`, 16 Faculty of Rail contacts `4017`, 23 Shunting
+  specs `4015`, 13 Pantograph `4012`, 14 Diesel Nozzle `4013`. SKIP: NS V3 `4010`, Addendum `5238`.
+  NEVER re-upload the 10 V4 docs.
+- **Still open regardless:** ancillary/yard/marshalling rate values (NS 5.2.7 "future version"),
+  SPRINT actuals, Annexure 33 appended section-level data file, Anx 1 2026/27 provisional (V4).
+- **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
+  migration `20261007170000`.
+
+### 9K. Round 74 closeout (2026-10-10) — platform error audit done; dashboard crash class fixed
+
+- **Dashboard crash class eliminated** (5 sites): null KPI values (fresh-tenant empty windows),
+  missing driver coords, null collectionRate, null buyRate — all now null-safe; regression test
+  feeds the exact all-null backend payload (`platformSmoke.test.tsx`). If any "dashboard error"
+  recurs, reproduce with that payload first.
+- Full audit record: `docs/PLATFORM-AUDIT-2026-10-10.md` (gates table + defect table + env notes).
+- All gates green: FE 756/756 + tsc/build/lint-clean; BE 2,050/2,050 + lint-clean; migrations 9/9.
+- Hardening backlog (declared): 1,613 `no-explicit-any` warnings; Playwright e2e needs CI
+  browsers. Unresolved user ambiguity: what "i dont see one" referred to + where the "100
+  errors" appeared (page/screenshot) — ask if it resurfaces.
 
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
-1. **`&amp;` cells.** Three cells arrived HTML-escaped and are stored exactly as received:
-   BELLVILLE `75` step 6 `KALBASKRAAL` `ORDER &amp; SHUNT`; BELLVILLE `1211` and `1411` step 3
-   `KRAAIFONTEIN` `R.T.O. &amp; X 1428`. If the source has a plain `&`, re-paste those three cells.
-2. **BELLVILLE file naming.** No `belville*`/`bellville*` file exists in the repository or on any
-   remote branch; the new file therefore uses the source's own spelling `bellville-batch.txt`.
-   If the user has earlier `belville-batch.txt`-style files elsewhere, agree the reconciliation.
-3. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.
+1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.
+   (Everything else is closed: E-AMP-01 → KEEP the extract's `&` (round 67, evidence-based);
+   corpus scope → complete mirror; related origins → included; round-8 part 2 → superseded;
+   BELLVILLE naming → settled on `bellville-batch.txt`.)
 
 ## 11. TRAPS — already-paid-for lessons; do not repeat
 
+- Run the §4 git checks at the **start of every round**, not only at session start: in round 61
+  the sandbox reset the local ref to the branch point **mid-round** (HEAD silently back at
+  `6426c7f`); the post-append verify's "target minus payload == HEAD copy" check caught it. If
+  that check fires, stop and inspect `git log -1` before touching anything (§13 recovery:
+  `git fetch` + `git reset --mixed FETCH_HEAD`, never `--hard`, and no `git checkout --` when
+  uncommitted appends are in the worktree).
 - Sibling alignment: **do not** use `difflib.SequenceMatcher` (it matched 1 of 94 rows when
   `NODE_Seq` restarts); **do not** drop the header row. Use a station-keyed sequential walk,
   header kept, and report counts per differing field. Unequal lengths → the walk, not `zip`.
@@ -283,6 +381,8 @@ re-paste (see §9).
 
 ## 14. FIRST REPLY THE USER EXPECTS
 
-> Checks run: corpus = 23 files / 17,636 rows / 593 workings / 39 depots / 23 flagged;
-> HEAD = 97cbefc (branch …); worktree clean. Rules understood: verbatim only, blank-safe,
-> dedupe-first, append-only, ask on any truncation or ambiguity. Ready — paste the next extract.
+> Checks run: corpus = 672 files / 251,678 rows / 13,471 workings / 688 depots / 629 flagged
+> (complete Annexure 33a mirror); HEAD = <hash> (branch arena/a620a55a-flowops); worktree clean.
+> Rules understood: verbatim only, blank-safe, dedupe-first, append-only, ask on any truncation
+> or ambiguity. The data corpus is complete — remaining work is UI, new annexure versions, and
+> the branch mandate. Ready.
