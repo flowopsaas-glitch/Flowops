@@ -2426,3 +2426,29 @@ items.
 
 **Verification (round 71):** `npm ci` (760 pkgs) · `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 ·
 vitest **749/749 pass**.
+
+## Round 72 — Handshake (28), Application Form (29a), Capacity Statement 29b, Dispute Resolution (35) + the V4 Publication Notice (V4-11) (2026-10-10)
+
+Upload `3117859` (6 files): 5 new + Annexure 15 re-upload (byte-identical `e525bb44…`, deduped).
+Ref-reset recovery repeated (stash + ff-only; refs had reset to `6426c7f`, tree intact).
+
+**Highlights:** Annexure 28 = Daily Handshake Process v2.5 (19 steps, 24→48→72h escalation ladder,
+RLF → Regulator exit, 08:00 report cadence, invoice/guarantee mechanics; E-ANX28-01 typos
+preserved). Annexure 29a = POPIA application form (3 sections + 10 en-route stoppage types).
+Annexure 29b = **V3-era** Network Capacity Statement (Dec 2024, 2024/25 timetable) — predecessor
+of the Annexure 33 Register; **E-ANX29B-01** period caveat applied; not in the V4 annexure
+register. Annexure 35 = dispute resolution v01 (22 steps to the Rail Regulator; decision final
+and binding; slot-application disputes route to a separate unnamed process; E-ANX35-01 quirks).
+**Publication Notice (V4-11)** = the 18 Sep 2026 announcement **with the official Table 16
+timelines** (Applications 18 Sep–31 Dec 2026 · Assessment Jan–Mar 2027 · Notification Apr–Jun
+2027 · Timetable one month before execution) — **E-NSV4-T16 RESOLVED**.
+
+**Productised:** `/rail/access` (tabs: Timelines & notice · Application · Daily handshake ·
+Dispute resolution). Register: 28/29a/29b/35 delivered → 16 of 44 (+notice). Sidebar RAIL now 13
+items.
+
+**Corpus unchanged:** §4 baseline still **672 files / 251,678 rows / 13,471 workings / 688 depots /
+629 flagged (12,842 [OK])**.
+
+**Verification (round 72):** `npm ci` · `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 · vitest
+**749/749 pass**.

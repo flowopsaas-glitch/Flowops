@@ -279,6 +279,19 @@ origins — always pair (Origin, Train).
 - **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
   migration `20261007170000` for row-level timetable browsing.
 
+### 9I. Round 72 closeout (2026-10-10) — 28/29a/29b/35 + Publication Notice landed
+
+- `/rail/access` live (handshake/application/disputes/timelines). Table 16 timelines resolved from
+  the Publication Notice. E-ANX29B-01 (29b is V3-era; 33 supersedes).
+- **V4 announcement publishes only 10 documents** (NS + 15/17/33/33a/33b/40/41/42/43 + notice);
+  all other annexures exist only as **2024/25 V3-era downloads** (ids 40xx) on the older annexure
+  page. Remaining wants from that page: 1 shut schedule (4011), 18 occurrence mgmt (4036), 22
+  loading profiles (4037), 21 clearinghouse (4043), 32 ad-hoc slot application (4028), then the
+  optional set (19a/b/c, 24–27, 30/31/34, 16, 23, 13/14). Plus: ancillary rates (future NS),
+  Annexure 33 appended data file, SPRINT actuals.
+- **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
+  migration `20261007170000`.
+
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
 1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.

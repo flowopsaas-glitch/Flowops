@@ -61,6 +61,7 @@ export const wantedSources = [
   "Ancillary service rates (E-TARIFF-01 ancillary half — NS says future volume) + marshalling rates beyond the indicative Table 18",
   "Full Publication Notice (V4-11)",
   "✅ DELIVERED — Annexure 20a (Cancel/Re-Schedule Process v4) + 20b (Cancellation reasons v1.3) → /rail/cancellations (round 71)",
-  "V3 structural set remainder: 28 (handshake), 29a/32 (slot application), 19b",
+  "✅ DELIVERED — Annexure 28 Handshake v2.5 + 29a application form + 29b capacity statement + 35 dispute resolution + V4 Publication Notice → /rail/access (round 72)",
+  "V3 structural set remainder: 32 (ad-hoc slot application), 19a/19b/19c (POSMOR/TWR)",
   "Operational actuals (SPRINT OTD, realised transit, TSR logs) → variance Actual leg",
 ];

@@ -185,6 +185,11 @@ only unbuilt page from the original plan.
 with the 15-minute notice rule and decision gates, Annexure 20b's 82-row reason→responsibility
 lookup with party filter, penalties cross-link). Sidebar RAIL now 12 items.
 
+**Built round 72:** **Access & disputes** (`/rail/access` — four tabs: official V4 application
+timelines from the Publication Notice (V4-11), Annexure 29a/29b application (29b period-caveated),
+Annexure 28 handshake 19-step process, Annexure 35 dispute ladder to the Regulator). Sidebar
+RAIL now 13 items.
+
 **Planned next (needs sources):** Tariffs rate values (approved ancillary schedule),
 Annexure 33 appended section-level data file (slots + N1/N2 classification), Possession
 elevation screens, Compliance & DG screens, variance Actual leg (SPRINT actuals),

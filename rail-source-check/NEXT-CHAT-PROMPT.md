@@ -286,3 +286,11 @@ notice rule) + Annexure 20b (82 cancellation reasons → responsible parties, ve
 /rail/cancellations. Three duplicate re-uploads deduped (byte-identical, recorded in manifest).
 Mid-session git ref reset recovered per STATE.md Round 71 (stash + ff-only; no reset --hard).
 State of truth: rail-source-check/STATE.md "Round 71".
+
+### ROUND 72 ADDENDUM (2026-10-10)
+
+Round 72 complete: Annexure 28 (Daily Handshake Process v2.5), 29a (application form), 29b (V3-era
+capacity statement, period-caveated), 35 (dispute resolution v01) + the V4 Publication Notice
+(with the official application timelines — Table 16 gap closed) are live at /rail/access. Anx 15
+re-upload deduped. The V4 page publishes only 10 docs; everything else lives as 2024/25 V3-era
+downloads on the older annexure page. State of truth: STATE.md "Round 72".
