@@ -148,3 +148,25 @@ versions will need the same reconciliation treatment).
 3. Planned-vs-target variance (33a × 43 join).
 4. Slots & Capacity when 33b lands; Tariffs when rates land.
 5. Occurrences/Compliance elevation; actuals integration when operational data arrives.
+
+---
+
+## 7. Build status (2026-10-10, round 67/68)
+
+**Built and committed (this round):**
+
+| Item | Status |
+|---|---|
+| **RAIL sidebar section** in `AppLayout.tsx` (own section between OPS and COMMUNICATIONS) | ✅ Rail Ops Console · Timetable Explorer · Corridor KPIs · Daily Handshake · Network Sources |
+| `/rail/timetable` promotion (admin-only → `rail` permission) | ✅ |
+| **Corridor KPIs page** (`/rail/kpis`, `RailKpis.tsx`) | ✅ 10 train-path cards (baseline→target, verbatim Annexure 43), Current/Future framework tabs, E-43-01 banner, planned-vs-target corpus-match panel |
+| **Network Sources page** (`/rail/sources`, `RailSources.tsx`) | ✅ corpus stats, byte-mirror proof, source register (hashes), corridor mix, anomaly classes, wanted-sources list |
+| Data modules | ✅ `src/data/railKpiData.ts` (generated from Annexure 43 + corpus OD matches), `src/data/railSourceData.ts` |
+| CI | ✅ `tsc --noEmit` clean · `vite build` clean · **749/749 frontend tests pass** |
+
+**Planned next (needs sources):** Slots & Capacity (Annexure 33b), Tariffs & Pricing (rates),
+Occurrence/Possession elevation (Annexure 41), Compliance & DG screens, variance Actual leg
+(SPRINT actuals). Timetable Explorer row-level browsing uses the existing backend import API
+(`rail-timetable.service.ts`; migration `20261007170000` validated, not yet applied) — loading
+the full 251,678-row corpus through that path is the natural next power-up once the migration
+lands.

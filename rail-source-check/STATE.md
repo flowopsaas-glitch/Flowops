@@ -2282,3 +2282,16 @@ was O(workings × corpus) and timed out at 223k rows; first-row lookup precomput
 **Still owed:** UI build (the recommended RAIL sidebar/pages — next commit), operational actuals
 (SPRINT) for the variance "Actual" leg, future Annexure 33a versions (same reconciliation
 treatment), branch mandate (round 54). Committed on `arena/a620a55a-flowops`.
+
+### Round 67 addendum — the UI build (same mandate: recommendations executed)
+
+Frontend shipped per `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md` §7: new **RAIL** sidebar
+section in `AppLayout.tsx` (Rail Ops Console · Timetable Explorer · Corridor KPIs · Daily
+Handshake · Network Sources); `/rail/timetable` promoted from admin-only to the `rail`
+permission; new pages `RailKpis.tsx` (Annexure 43 baselines→targets per train path, framework
+tabs, E-43-01 banner, planned-vs-target corpus-match panel — mechanical OD-name matches, no
+invented mappings) and `RailSources.tsx` (corpus stats, byte-mirror proof, source register with
+hashes, corridor mix, preserved-anomaly classes, wanted-sources list); generated data modules
+`frontend/src/data/railKpiData.ts` + `railSourceData.ts`. Verification: `tsc --noEmit` clean,
+`vite build` clean, **749/749 frontend tests pass**. Planned next (needs sources): Slots &
+Capacity (33b), Tariffs (rates), Occurrences (Anx 41), variance Actual leg (SPRINT).

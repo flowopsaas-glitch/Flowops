@@ -223,10 +223,12 @@ origins — always pair (Origin, Train).
    diff vs the corpus (the round-65/66 methodology in `RECONCILIATION-33A.md`), report the
    divergence map, and ask before swapping (the mandate resolves divergence in the annexure's
    favour, but version changes are surfaced first).
-3. **UI build** — the recommended RAIL sidebar/pages (`docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md`):
-   sidebar section, Timetable Explorer, Corridor KPIs (Annexure 43), Network Sources. Next in
-   the product queue after that: Slots & Capacity (needs Annexure 33b), Tariffs (needs rates),
-   variance "Actual" leg (needs operational actuals).
+3. **UI build — core DONE (round 67):** RAIL sidebar section, `/rail/timetable` promotion,
+   `/rail/kpis` (Annexure 43), `/rail/sources` (provenance), data modules in
+   `frontend/src/data/railKpi*`; `tsc`/`vite build`/749 tests green. **Next UI steps** (need
+   sources first): Slots & Capacity (Annexure 33b), Tariffs (rates), Occurrences (Anx 41),
+   variance "Actual" leg (SPRINT actuals); timetable row browsing via the backend import API
+   once migration `20261007170000` is applied. Status table: the UI plan doc §7.
 4. **Wanted source files** are listed in `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md` §5
    (33b XLSM + approved tariff rates head the list).
 
