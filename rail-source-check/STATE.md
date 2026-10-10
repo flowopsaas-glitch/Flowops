@@ -1,5 +1,5 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-09 (round 64 — **`BIJLKOR 17207` COMPLETE, 21 rows appended** (NEW working, all 19 fields, L1683-1703, gates PASS, `[OK]` 02:09:00): today's paste carried BOTH historical gaps at once — the round-56 head (through `BIJ/S750557` 22:26:00) plus the round-57 held 7-row tail (`BIJ/S743607` 22:27:00 → `BIJLKOR` 22:39:00); the queue note's "BEAUFORTWEST day-1 20:25:00" was a condensation slip belonging to **`8856`** (round-56 transcription stopped at that row of `8856` — still owed whole). Mid-round the reconnect reset HEAD to `6426c7f` again; caught by the start-of-round git check, recovered per §13 (`fetch` + `reset --mixed`). **Timetable-file location established:** the 251,678-row Annexure 33a extract is NOT in the repo or on PR #443 (0 comments, no attachment); preserved evidence = `docs/rail-transnet-source-traceability.md` §S6 + the retrieval manifest (V4-05 `transnet.net/getFile.ashx?id=22633`) + a 2469-sample doc + the app's timetable parser/migration. `bijlkor-batch.txt` is now 1,703 rows / 63 workings / 0 flagged, MD5 `200f600983f14ae7a791a115847298f1`. Corpus now: **23 data files / 17,811 rows / 599 workings / 39 depots; 576 [OK] + 23 flagged.** Still owed: **`8856` whole from its header** + `9409`/`9443`/`16453`/`17205`; BELLVILLE after `1431` (`1430`? `1415`/`1416`?); the `&amp;` query; the full Annexure 33a extract for corpus-wide reconciliation; committed on arena/a620a55a-flowops — see Round 64 note and Round 54 for the unresolved branch mandate)
+Updated: 2026-10-10 (round 65 — **the full 33a extract landed** (`sources/Annexure_33a_NS_ver_4 (3).zip` → 25.5 MB TSV, MD5 `1cd978f5a0e5c5528886aa0c66047cb6`, verified 251,678 data rows × 19 fields) and the **whole BIJLKOR queue was taken from it**: `8856` (185 rows — the round-56 withheld working, whole at last, day-roll 0→1→2 to `BELLVILLE`), `9409` (40), `9443` (40), `16453` (52), `17205` (31) — 348 rows appended, gates PASS, all `[OK]`. Fidelity map vs the extract: **17,249 exact / 103 same-key-different-field / 459 curated-only**; the **`&amp;` query is answered — the source has plain `&`** (chat escaping artifact; curated rows untouched, awaiting the user's word). `bijlkor-batch.txt` is now 2,051 rows / 68 workings / 0 flagged, MD5 `b9a101e753c96fd49fd2a8d46412c433`. Corpus now: **23 data files / 18,159 rows / 604 workings / 39 depots; 581 [OK] + 23 flagged.** Still owed: the reconciliation decisions (103+459 rows), the `&amp;` call, BELLVILLE after `1431`, the partials (all completable from the extract now), BLOEMFONTEIN queue, missing depots, branch mandate; committed on arena/a620a55a-flowops — see Round 65 note and Round 54 for the unresolved branch mandate)
 
 ## Files
 - /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
@@ -19,7 +19,7 @@ Updated: 2026-10-09 (round 64 — **`BIJLKOR 17207` COMPLETE, 21 rows appended**
 - /home/user/Flowops/rail-source-check/bronkhorstspruit-batch.txt — 71 rows, round 53, new depot BRONKHORSTSPR (workings 1000, 2702, 4202, 7433, 16465 — 5 workings, all OK); MD5 `54cfbb251e244c7aef454dc15a960025`.
 - /home/user/Flowops/rail-source-check/bothaville-batch.txt — 120 rows, round 54, new depot BOTHAVILLE (5506, 8982, 8986 — 3 workings, all OK); MD5 `f694b22e702962bef2e0e0a7324d840b`.
 - /home/user/Flowops/rail-source-check/blinkpan-batch.txt — 601 rows, rounds 57–58, new depot BLINKPAN (71 workings; 70 OK + 1 flagged: 80109 day-flag anomaly). 80109–89109 are the forty-six coal workings; 89309 was COMPLETED in round 58 (steps 1–6 at L579-585 merged with the round-57 header at L578) and 89509 (L586-593) / 95809 (L594-601) were added. MD5 `f50080d6fc70c34f4b97134c3300017f`.
-- /home/user/Flowops/rail-source-check/bijlkor-batch.txt — 1703 rows, rounds 54–57 + 64, depot BIJLKOR (63 workings, 0 flagged). Grew 609 → 1090 (round 55) → 1550 (round 56) → 1682 (round 57) → 1703 (round 64). 8466 is complete (round 56); **`17207` is complete (round 64 — 21 rows L1683-1703: the round-56 head + the round-57 held tail in one paste)**; `8856` is NOT on disk (round-56 transcription stopped at its `BEAUFORTWEST` day-1 20:25:00 row — the queue note once misattributed that boundary to `17207`) and is owed **whole from its header**. MD5 `200f600983f14ae7a791a115847298f1`.
+- /home/user/Flowops/rail-source-check/bijlkor-batch.txt — 2051 rows, rounds 54–57 + 64–65, depot BIJLKOR (68 workings, 0 flagged). Grew 609 → 1090 (r55) → 1550 (r56) → 1682 (r57) → 1703 (r64, `17207` complete) → 2051 (r65: `8856` 185 rows whole + `9409` 40 + `9443` 40 + `16453` 52 + `17205` 31, all from the 33a extract, all `[OK]`). The round-56/57 gaps are all closed. Note: train numbers are reused across origins in the extract (`8856` also exists as BEACONSFIELD/SNR/ULCO workings) — only BIJLKOR blocks live here. MD5 `b9a101e753c96fd49fd2a8d46412c433`.
 - /home/user/Flowops/rail-source-check/blackhill-batch.txt — 89 rows, round 58 part 2, NEW depot BLACKHILL (15 workings, all `[OK]`: 500, 510, 1000, 1100, 1700, 1710, 2000, 2010, 4952, 8804, 8808, 9082, 9084, 9086, 9088). Corridors NORTH 61 rows / NORTHEAST 28 — `8804` and `8808` run NORTH at both ends with their middle 14 rows (`SKOONGESIG`–`PIENAARSPOORT`) tagged NORTHEAST, preserved as pasted. MD5 `9665150a06f7a9e52bf15de236a34d83`.
 - /home/user/Flowops/rail-source-check/blaney-batch.txt — 70 rows, round 58 part 2, NEW depot BLANEY (one working, `9005`, steps 1–11: BLANEY → BKJ/FJN/ANR sidings → FORTJACKSON → EGERTON → ARNOLDTON → WILSONIA/DAWN/HORSESHOE/HIGHGATE → CAMBRIDGE, 12:50:00 → 14:25:00, 01:35:00, `[OK]`; `VACUUM TRAINS/PICKUP TRAIN`). MD5 `3827b6002ff002820d0d4b68ffe89dc3`.
 - /home/user/Flowops/rail-source-check/buckingham-batch.txt — 24 rows, round 58 part 2, NEW depot BUCKINGHAM (one working, `7224`, steps 1–16: BUCKINGHAM → BKM sidings → VENTERSDORP → MAKOKSKRAAL → GATIEP → BODENSTEIN → TATODI → COLIGNY, 11:30:00 → 13:48:00, 02:18:00, `[OK]`). MD5 `8c6e89fc66588001fbeb1c8460642133`.
@@ -2038,3 +2038,84 @@ same-key-different-field / curated-only counts, redoing the other session's comp
 totals). **Curated rows stay byte-faithful: never silently overwrite a curated row from the
 extract — report conflicts and ask.** If the editor strips trailing tabs (blank-`Distance` cells)
 or the paste arrives in chunks, stitch/verify before any append.
+
+## Round 65 — **the 33a extract arrives** (zip → 25.5 MB TSV, verified 251,678 × 19); the whole BIJLKOR queue lands from it: `8856`, `9409`, `9443`, `16453`, `17205` (348 rows, all `[OK]`)
+
+**Source:** `sources/Annexure_33a_NS_ver_4 (3).zip` (commit `8d30089`, user upload — after the web
+editor refused the ~25 MB direct commit with "File could not be edited"). The zip holds
+`Annexure_33a_NS_ver_4 (3).txt`, 25,491,037 bytes, MD5 `1cd978f5a0e5c5528886aa0c66047cb6`,
+extracted to `uploads/round-65/annexure33a-extract.txt`. **Shape verified against the S6
+record:** 251,679 lines = header + **251,678 data rows**, **every row exactly 19 tab-separated
+fields**, header columns exactly the S6 19 (Origin … Distance). This is the full
+`Annexure33a_NSver.4(1).xlsx` sheet `_00750_Report_Train_Route` text — the corpus's true upstream.
+
+**Fidelity map — curated corpus vs the extract (measured at 17,811 curated rows):**
+- **17,249 rows byte-identical** in the extract;
+- **103 rows same `(Origin, Train, NODE_Seq, station)` but a field differs** — largest groups:
+  `ENROUTE_Departure`/`Destination`/`Throughput Runtime` ×52, `ENROUTE_Arrival` ×45,
+  `StandingReason` ×38, `Standingtime` ×23, `Frequency` ×20 (e.g. curated `NNNANNN` vs file
+  `NNANNNN`, ALGOABAAI — the "schedule frequency" difference the parallel session reported),
+  `Point-to-Point Runtime` ×19;
+- **459 curated rows absent from the extract**.
+- 103 + 459 = **562** = the other session's "562 curated rows do not appear exactly" ✓ (their
+  17,074 exact + our 175 post-comparison rows = our 17,249 ✓).
+- **The `&amp;` query is ANSWERED by the source:** the extract carries plain `&`
+  (`X17007 &  14255/7`, `X 8913 & 18601`, `X 1101 & F 3510 & 3508`, `X 17005 & 18001`, …) —
+  every curated `&amp;` cell is a chat HTML-escaping artifact, not source content. **Curated rows
+  were NOT touched** (append-only; awaiting the user's word on whether to record them as verified
+  artifacts or leave verbatim).
+
+**Rows appended (5 workings, 348 rows, all byte-verbatim from the extract):** `8856` 185 rows
+(header `BIJLKOR` 13:02:00 → `BELLVILLE` 10:45:00, `45:43:00`, Sched 1, `AYAYYAY`,
+`MEDIUM HEAVY/MEDIUM HEAVY`, **day roll 0→1→2** — the round-56 withheld working, now WHOLE; its
+`BEAUFORTWEST` row sits at day-1 20:25:00 — the queue note's "BEAUFORTWEST day-1 20:25:00" was
+this row all along) · `9409` 40 rows (→ `ERMELO` 19:04:00, `08:24:00`) · `9443` 40 rows (→
+`ERMELO` 04:39:00, `06:59:00`, `YYAYYYY`, `MEDIUM HEAVY/IMPORT COKE`) · `16453` 52 rows (→
+`NEWCASTLYSKOR` 20:44:00, `08:33:00`) · `17205` 31 rows (→ `BIJLKOR` 23:14:00, `04:14:00`,
+`VACUUM TRAINS/SHUNT CAR` — the 17207-family yard sweep). All 5 blocks contiguous in the
+extract (L22449-22798), 0 duplicate keys within payloads. NOTE: train numbers are **reused
+across origins** in the extract — `8856` also exists as BEACONSFIELD (130 rows), `SNR/S761427`
+(33) and ULCO (15) workings; only the **BIJLKOR** blocks were taken (queue = BIJLKOR).
+
+**Line ranges:** `bijlkor-batch.txt` **L1704-1888** (`8856`), **L1889-1928** (`9409`),
+**L1929-1968** (`9443`), **L1969-2020** (`16453`), **L2021-2051** (`17205`) — append-only in
+extract order. File 1,703 → **2,051 rows / 68 workings / 0 flagged**.
+
+**Checksums:** combined payload `uploads/round-65/bijlkor-5-workings-combined.txt` MD5
+`7a18aca64f6d249ec0a2d315e86d5a9c`; per-working payloads
+`uploads/round-65/bijlkor-{8856,9409,9443,16453,17205}.txt`; target `bijlkor-batch.txt` after
+append **`b9a101e753c96fd49fd2a8d46412c433`** (was `200f600983f14ae7a791a115847298f1`).
+
+**Gates:** all five pre-append gates PASS (`fields={19: N}` each; 0 byte-identical rows; 0 key
+collisions; each working **NEW** — 0 rows corpus-wide). Post-append: `tail-348` == combined
+payload: True; target minus payload == HEAD copy -> append-only: **PASS**.
+
+**Checker:** **all five `[OK]`** — `8856` stated/computed `45:43:00` overnight ×2 · `9409`
+`08:24:00` · `9443` `06:59:00` overnight ×1 · `16453` `08:33:00` · `17205` `04:14:00`.
+`bijlkor-batch.txt`: **68 workings, 0 with issues**. Corpus: 604 workings, 23 flagged
+(unchanged), **581 `[OK]`**.
+
+**Anomalies preserved verbatim (as they stand in the extract):** `Frequency` `AYAYYAY` (`8856`)
+and `YYAYYYY` (`9443`); terminus `StandingReason` variants `RT` (`8856`/`9409`), **`BO`**
+(`9443`/`16453`), **blank** (`17205`); quarter-minute runtimes `00:11:15` / `00:11:30` /
+`00:13:45` and stands `00:20:30`; reason quirks `X 2025 / 2031 / 8991`, **`X 2025/ 31`**
+(spacing variant), `RM X 81600`, `RT LOCOS`, `WEIGHBRIDGE` (×2), `C` (×3), `XP 9744`, plain
+`X` (×5), `X 8485`, `F 71008` etc.; 5 blank `Distance` cells; `SNR/S761427`-style siding-origin
+rows exist elsewhere in the extract (not in these blocks).
+
+**Aggregate after round 65 (measured): 23 rail data files, 18,159 rows, 604 workings, 39 depots;
+581 `[OK]` + 23 flagged.** Corridors: CAPE 11,765 · CENTRAL 3,045 · CONTAINER 1,903 · NORTH 922 ·
+NORTHEAST 472 · ORELINE 10 · blank 42. (`bijlkor-batch.txt` is all CENTRAL.)
+
+**Outstanding after round 65:** the **reconciliation decision set** — 103 same-key-different-field
+rows + 459 curated-only rows (report-only so far; nothing overwritten) and the `&amp;`
+normalization question; BELLVILLE workings after `1431` (and `1430`/`1415`/`1416` — answerable
+from the extract now!); the on-disk partials BEACONSFIELD `8965`, BEAUFORTWEST `97`, BLOEMFONTEIN
+`4215`, BLOEMFONTEIN `18927`, WELGEDAG `58866`, BLINKPAN `89309` steps (all completable from the
+extract); BEACONSFIELD `1438` derived-row question; the BLOEMFONTEIN queue (`8941` …); missing
+depots (WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS); round-8 part 2; the branch mandate
+(round 54). **Provenance convention going forward:** rows added from the extract are recorded as
+"33a extract (zip `8d30089`, txt MD5 `1cd978f5…`)" and gated identically to pasted rows.
+
+**Committed** on `arena/a620a55a-flowops`. Working extract at
+`/home/user/Flowops/uploads/round-65/annexure33a-extract.txt` (re-extractable from the zip).
