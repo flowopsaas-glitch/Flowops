@@ -420,7 +420,7 @@ export default function Invoices() {
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 fx-lift">
             <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Collection Rate</div>
             <div className="mt-2 text-3xl font-black text-white">
-              {metrics.collectionRate.toFixed(1)}%
+              {(metrics.collectionRate ?? 0).toFixed(1)}%
             </div>
             <div className="mt-2 h-1.5 w-full rounded-full bg-white/10">
               <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(metrics.collectionRate, 100)}%` }} />

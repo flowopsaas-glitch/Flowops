@@ -4,7 +4,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { RailService } from './rail.service';
 import { CreateRailConsignmentDto } from './dto/create-rail-consignment.dto';
 import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';

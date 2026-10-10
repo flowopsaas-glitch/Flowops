@@ -255,9 +255,9 @@ export default function CreditControl() {
           <span className="text-xs font-bold text-white/50 whitespace-nowrap">Collection rate</span>
           <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
             <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all"
-              style={{ width: `${Math.min(metrics.collectionRate, 100)}%` }} />
+              style={{ width: `${Math.min(metrics.collectionRate ?? 0, 100)}%` }} />
           </div>
-          <span className="text-sm font-black text-white">{metrics.collectionRate.toFixed(1)}%</span>
+          <span className="text-sm font-black text-white">{(metrics.collectionRate ?? 0).toFixed(1)}%</span>
         </div>
       )}
 

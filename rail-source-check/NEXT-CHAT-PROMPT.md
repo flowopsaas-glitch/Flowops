@@ -304,3 +304,13 @@ Revised Shutdown Schedule, signed 23 Jul 2024) at /rail/timetable, Annexure 18 (
 at /rail/access. All period-labeled (E-ANX1-01 etc.); V4's 2026/27 provisional shut schedule is
 still open. Register 21 of 44. Corpus unchanged (672 files / 251,678 rows / 629 flagged). State
 of truth: STATE.md "Round 73".
+
+### ROUND 74 ADDENDUM (2026-10-10)
+
+Platform error audit complete (docs/PLATFORM-AUDIT-2026-10-10.md). The tenant-dashboard login
+error was a null-KPI crash class (backend sends value=null for empty windows; frontend called
+.toFixed on it) — 5 crash sites fixed + a smoke/regression suite (platformSmoke.test.tsx) that
+renders the dashboard against exact production envelopes and checks every round-73 deliverable
+is visible. All gates green: FE 756/756, BE 2,050/2,050, lint 0/0, builds 0. Note: rounds 65–74
+sit behind open PR #448 — a deployed platform on main won't show them until merge. State of
+truth: STATE.md "Round 74".

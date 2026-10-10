@@ -94,7 +94,8 @@ function MetricCard(props: {
 }
 
 type Kpi = {
-  value: number;
+  /** Backend sends `null` when a tenant has no data for the window yet (dashboard.service.ts). */
+  value: number | null;
   previous: number | null;
   delta: number | null;
   unit: "percent" | "hours" | "currency";
@@ -112,18 +113,25 @@ type KpiSet = {
 };
 
 function formatKpiValue(kpi: Kpi, currency: string) {
-  if (kpi.unit === "percent") return `${kpi.value.toFixed(1)}%`;
+  // The backend legitimately sends value=null when there is no data yet for the
+  // window (fresh tenant, empty 30-day range). Never call .toFixed on it — that
+  // crash is what white-screened the tenant dashboard behind the ErrorBoundary.
+  if (kpi.value === null || kpi.value === undefined || Number.isNaN(Number(kpi.value))) {
+    return "—";
+  }
+  const value = Number(kpi.value);
+  if (kpi.unit === "percent") return `${value.toFixed(1)}%`;
   if (kpi.unit === "hours") {
-    return kpi.value >= 48 ? `${(kpi.value / 24).toFixed(1)}d` : `${kpi.value.toFixed(1)}h`;
+    return value >= 48 ? `${(value / 24).toFixed(1)}d` : `${value.toFixed(1)}h`;
   }
   try {
     return new Intl.NumberFormat("en-ZA", {
       style: "currency",
       currency,
       maximumFractionDigits: 0,
-    }).format(kpi.value);
+    }).format(value);
   } catch {
-    return `${currency} ${Math.round(kpi.value).toLocaleString()}`;
+    return `${currency} ${Math.round(value).toLocaleString()}`;
   }
 }
 
@@ -426,7 +434,9 @@ export default function Dashboard() {
                         </>
                       ) : (
                         <p className="text-[10px] text-emerald-600 font-bold mt-1">
-                          Coords: {driver.lat.toFixed(4)}, {driver.lng.toFixed(4)}
+                          Coords: {driver.lat != null && driver.lng != null
+                            ? `${driver.lat.toFixed(4)}, ${driver.lng.toFixed(4)}`
+                            : "pending fix"}
                         </p>
                       )}
                     </div>

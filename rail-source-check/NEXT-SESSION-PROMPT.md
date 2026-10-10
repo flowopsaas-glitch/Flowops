@@ -311,6 +311,18 @@ origins — always pair (Origin, Train).
 - **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
   migration `20261007170000`.
 
+### 9K. Round 74 closeout (2026-10-10) — platform error audit done; dashboard crash class fixed
+
+- **Dashboard crash class eliminated** (5 sites): null KPI values (fresh-tenant empty windows),
+  missing driver coords, null collectionRate, null buyRate — all now null-safe; regression test
+  feeds the exact all-null backend payload (`platformSmoke.test.tsx`). If any "dashboard error"
+  recurs, reproduce with that payload first.
+- Full audit record: `docs/PLATFORM-AUDIT-2026-10-10.md` (gates table + defect table + env notes).
+- All gates green: FE 756/756 + tsc/build/lint-clean; BE 2,050/2,050 + lint-clean; migrations 9/9.
+- Hardening backlog (declared): 1,613 `no-explicit-any` warnings; Playwright e2e needs CI
+  browsers. Unresolved user ambiguity: what "i dont see one" referred to + where the "100
+  errors" appeared (page/screenshot) — ask if it resurfaces.
+
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
 1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.

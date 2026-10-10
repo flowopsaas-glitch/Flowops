@@ -2483,3 +2483,30 @@ workings / 688 depots / 629 flagged (12,842 [OK])**.
 
 **Verification (round 73):** `npm ci` (node_modules intact) · `tsc --noEmit` EXIT 0 · `vite
 build` EXIT 0 · vitest **749/749 pass** (see commit).
+
+## Round 74 — Platform error audit: dashboard crash class fixed + smoke suite (2026-10-10)
+
+User asked for a full error audit ("100 errors on platform", tenant dashboard error on login,
+"world class no cracks"). Full record: `docs/PLATFORM-AUDIT-2026-10-10.md`.
+
+**Root cause found (the login→dashboard error):** backend `dashboard.service.ts` sends KPI
+`value: null` for empty 30-day windows (fresh tenant = right after first login) and live drivers
+can lack lat/lng — frontend called `.toFixed()` on nulls → TypeError → ErrorBoundary "Something
+went wrong". **5 crash sites fixed** (Dashboard KPI formatter + live-map coords, CreditControl +
+Invoices collectionRate, TrackingMap coords, CarrierManagement buyRate) + backend unused import.
+
+**New:** `src/pages/platformSmoke.test.tsx` — 7 tests: Dashboard against production
+TransformInterceptor envelopes incl. the all-null fresh-tenant KPI payload (regression), metric
+failure resilience, and visibility of ALL five round-73 deliverables. Zero-console-error
+assertions throughout.
+
+**Verification (round 74):** frontend `tsc` 0 · `vite build` 0 · vitest **756/756** · eslint 0
+errors; backend `nest build` 0 · jest **2,050/2,050** · eslint **0 problems** · migrations 9/9
+well-formed. Envelope sweep clean (0 `.data.data`, 0 raw-array misuse).
+
+**Environment notes (sandbox only, documented §3):** bcrypt needs `--nodedir=/usr/local`;
+`prisma generate` needs `PRISMA_QUERY_ENGINE_LIBRARY` when binaries.prisma.sh is unreachable;
+Playwright browsers unavailable. Not platform defects.
+
+**Visibility note:** rounds 65–74 live on this branch behind PR #448 (open) — a deployed tenant
+platform on `main` shows none of it until merge + deploy.
