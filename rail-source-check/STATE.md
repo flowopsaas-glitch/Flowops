@@ -2295,3 +2295,43 @@ hashes, corridor mix, preserved-anomaly classes, wanted-sources list); generated
 `frontend/src/data/railKpiData.ts` + `railSourceData.ts`. Verification: `tsc --noEmit` clean,
 `vite build` clean, **749/749 frontend tests pass**. Planned next (needs sources): Slots &
 Capacity (33b), Tariffs (rates), Occurrences (Anx 41), variance Actual leg (SPRINT).
+
+## Round 68 — five new source uploads: verify, survey, consolidate, productise (2026-10-10)
+
+Mandate: "ive commited more files please check world class end to end 100 times better".
+User commit `0a356d6` (5 files at repo root) fetched and ff-merged → HEAD `0a356d6`; the 5
+binaries `git mv`-tracked into `sources/` (same storage exception as the 33a sources). SHA-256
+for all 5 recorded in `docs/TRIM-SOURCE-RETRIEVAL-MANIFEST-2026-10-04.md` §4.
+
+**Sources ingested (4 top-wanted + 1):** Network Statement V4 PDF (V4-01, 203 p — the official
+Transnet PDF, closes the web-archive gap) · Annexure 15 Rail Access Agreement (V4-02, 95 p) ·
+Annexure 33 Capacity Statement XLSM (V4-06 — hidden `Capacity_DB`: **1,035 rows = 10 routes ×
+5 FYs (FY26/27–FY30/31)** × sections) · Annexexure 40 Ancillary Services Catalogue (V4-07,
+6 p — 4 tiers / 40 service groups / UOMs, **NO rates anywhere** → E-TARIFF-01 precisely scoped) ·
+Annexure 36 Emergency Response Plan (V3-30, 73 p — period caveat E-ANX36-01).
+
+**Productised (world-class end-to-end):**
+- `frontend/src/data/railCapacityData.ts` — Capacity_DB verbatim + workbook snapshot + formulas.
+- `frontend/src/data/railAncillaryData.ts` — full catalogue verbatim + rates-status.
+- `frontend/src/pages/RailCapacity.tsx` → **`/rail/slots`** Slots & Capacity: FY×route selector,
+  section table (raw + derived-labelled), totals, derived bottleneck, E-33B-01 flag,
+  derived-formula panel, as-delivered snapshot card. Period discipline: every figure FY-labelled.
+- `frontend/src/pages/RailTariffs.tsx` → **`/rail/tariffs`** Tariffs & Charges: tier filter +
+  search, group cards, UOM badges ("TBD in source — preserved"), E-TARIFF-01 banner on every
+  line ("Rate: not in catalogue"), anomaly policy footer.
+- Sidebar RAIL now 7 items (…Corridor KPIs · **Slots & Capacity** · **Tariffs & Charges** ·
+  Daily Handshake · Network Sources); routes wired with the existing RequirePermission +
+  RequireFeature guards.
+- Surveys: `docs/RAIL-ANNEXURE-33B-CAPACITY-SURVEY-2026-10-10.md`,
+  `docs/RAIL-ANNEXURE-40-ANCILLARY-SURVEY-2026-10-10.md`,
+  `docs/RAIL-NS-V4-ANX15-ANX36-INTAKE-2026-10-10.md`.
+
+**New flags:** E-33B-01 (Capacity_DB allocation columns populated for FY26/27 only — preserved,
+never filled) · E-ANX36-01 (Anx 36 is V3 — period label on any use) · E-TARIFF-01 scoped
+(catalogue defines services+UOM only; rates must arrive as a separate approved schedule).
+
+**Corpus unchanged this round** (no 33a-row work): §4 baseline still **672 files / 251,678 rows /
+13,471 workings / 688 depots / 629 flagged (12,842 [OK])**.
+
+**Verification (round 68):** `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 (173 precache) ·
+vitest **749/749 pass**.

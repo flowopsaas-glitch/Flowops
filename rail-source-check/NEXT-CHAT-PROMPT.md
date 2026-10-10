@@ -254,3 +254,11 @@ Do not "fix" any of these. STATE.md documents each one.
 6. Updated gap list.
 
 If anything looks off, stop and tell me rather than working around it.
+
+### ROUND 68 ADDENDUM (2026-10-10)
+
+Round 68 complete: five new sources (NS V4 PDF, Anx 15 RAA, Anx 33b capacity XLSM, Anx 40
+ancillary catalogue, Anx 36 ERP) ingested, hashed, surveyed and productised —
+`/rail/slots` (Annexure 33b capacity) + `/rail/tariffs` (Annexure 40 catalogue) live; manifest
+§4 rows added (V4-01/02/06/07 + V3-30); verification 749/749 green. State of truth for the
+next session: `rail-source-check/STATE.md` "Round 68" section.

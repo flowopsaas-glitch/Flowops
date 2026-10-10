@@ -377,6 +377,8 @@ export default function AppLayout() {
     { section: "RAIL", label: "Rail Ops Console", desc: "Consignment lifecycle & road↔rail↔port (Enterprise)", to: "/rail", icon: Train, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Timetable Explorer", desc: "Annexure 33a working timetables", to: "/rail/timetable", icon: ScrollText, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Corridor KPIs", desc: "Annexure 43 baselines → targets", to: "/rail/kpis", icon: Gauge, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Slots & Capacity", desc: "Annexure 33b section capacity by route and FY", to: "/rail/slots", icon: Layers, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Tariffs & Charges", desc: "Annexure 40 ancillary services catalogue", to: "/rail/tariffs", icon: CreditCard, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, perm: "railHandshake", entitlement: "rail" },
     { section: "RAIL", label: "Network Sources", desc: "Provenance, coverage & preserved anomalies", to: "/rail/sources", icon: Database, perm: "rail", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },

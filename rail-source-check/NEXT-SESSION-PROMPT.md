@@ -232,6 +232,18 @@ origins — always pair (Origin, Train).
 4. **Wanted source files** are listed in `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md` §5
    (33b XLSM + approved tariff rates head the list).
 
+### 9E. Round 68 closeout (2026-10-10) — five-source intake done
+
+- Five user-uploaded sources verified + surveyed + productised (`/rail/slots`, `/rail/tariffs`);
+  manifest §4 rows complete. See STATE.md "Round 68" and the three survey docs (33b, 40,
+  NS-V4/15/36).
+- **Still missing (unchanged):** approved tariff **rates** (E-TARIFF-01 — catalogue has UOMs
+  only), Annexure 33 Network Register (V3-29), operational actuals (SPRINT extract, V4-04),
+  "List of Yards.xlsx" / "List of Terminals.xlsx" attachments named inside Annexure 40.
+- **Next consolidation candidates:** transcribe the NS V4 PDF text (203 p) into the product rule
+  chain; clause-index Annexure 15; wire Annexure 36 with its V3 period label; Port Allocation
+  Files (V4-03) retrieval.
+
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
 1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.

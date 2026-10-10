@@ -114,16 +114,23 @@ for **every** supplied binary. No binary is committed to this repository.
 
 | # | File | SHA-256 | Size | Format | Retrieved | Period |
 | --- | --- | --- | --- | --- | --- | --- |
-| V4-01 | | | | | | FY26/27–27/28 |
-| V4-02 | | | | | | FY26/27–27/28 |
+| V4-01 | `TRIM Network Statement 18 September 2026 (1).pdf` | `6e7ad24b993df0a38065720533e16bfdf79f4bbaf68ece81435491a190798faa` | 4,647,584 | PDF (203 p) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–27/28 |
+| V4-02 | `Annexure 15_Rail Access Agreement (1).pdf` | `e525bb447ad891a7a007a98fb4da78dd5c97cfebb15d8cc8f272ba270208a953` | 790,088 | PDF (95 p) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–27/28 |
 | V4-05 | `Annexure_33a_NS_ver_4 (3).zip` (extract TSV MD5 `1cd978f5a0e5c5528886aa0c66047cb6`) + native `Annexure 33a_NS ver.4 (2).xlsx` | zip commit `8d30089`; xlsx `93b4d44929c037a799969a5b2a5efa514af4abbd7e2711ac0e072ece77745dd5` | 3,220,461 + 15,258,573 | ZIP(TSV+XLSX) / XLSX | 2026-10-10 (user upload via GitHub) | FY26/27–27/28 |
-| V4-07 | | | | | | FY26/27–27/28 |
+| V4-06 | `Annexure 33 Capacity Statement (2).xlsm` | `2d3f591515a339b57fb17e695796dcbe2cc7522ce39c4c329dcb70f325a3515b` | 166,356 | XLSM (3 sheets) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–30/31 (rows for all 5 FYs) |
+| V4-07 | `Annexure 40 - TRIM Ancillary Services Catalogue 2026_27 (1).pdf` | `f924fc8e6086af61a76525f298da02ef270d41fddc703174934596a2285a55cf` | 246,587 | PDF (6 p) | 2026-10-10 (user upload, commit `0a356d6`) | 2026/27 |
+| V3-30 | `Annexure 36_Emergency Response Plan (Tribunals Process).pdf` | `4dfcf2d2cfa3fcf4e330a9c1cb1e955523108761b0213e30e37189cb256d2c9c` | 1,547,133 | PDF (73 p) | 2026-10-10 (user upload, commit `0a356d6`) | V3 (E-ANX36-01 period caveat) |
 | V4-10 | `Annexure 43 KPIs (2).xlsx` | `18e137f75057f57b05ce3196c2d4b5b4b8c83e35bc57c590ea3c49d89b65fd15` | 51,984 | **XLSX** (format question resolved) | 2026-10-10 (user upload, commit `e24e70c`) | FY26/27–27/28 |
 | *(remaining rows added on receipt)* | | | | | | |
 
-**Storage note (user-directed exception):** these three binaries live under `sources/` and are
-tracked on `arena/a620a55a-flowops` — the owner directed the 33a sources into Git deliberately;
-surveyed in `docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md` (43) and
+**Storage note (user-directed exception):** these binaries live under `sources/` and are
+tracked on `arena/a620a55a-flowops` — the owner directed the sources into Git deliberately
+(33a zip/xlsx + 43 xlsx earlier; the five round-68 uploads were user-committed at repo root in
+`0a356d6` and `git mv`-tracked into `sources/`). Surveyed in
+`docs/RAIL-ANNEXURE-43-KPI-SURVEY-2026-10-10.md` (43),
+`docs/RAIL-ANNEXURE-33B-CAPACITY-SURVEY-2026-10-10.md` (33b),
+`docs/RAIL-ANNEXURE-40-ANCILLARY-SURVEY-2026-10-10.md` (40),
+`docs/RAIL-NS-V4-ANX15-ANX36-INTAKE-2026-10-10.md` (NS V4 / 15 / 36) and
 `rail-source-check/RECONCILIATION-33A.md` (33a).
 
 ## 5. The 15-step TOC application process — evidence for the guided builder
