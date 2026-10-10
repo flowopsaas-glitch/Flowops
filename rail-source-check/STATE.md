@@ -2104,8 +2104,14 @@ and `YYAYYYY` (`9443`); terminus `StandingReason` variants `RT` (`8856`/`9409`),
 rows exist elsewhere in the extract (not in these blocks).
 
 **Aggregate after round 65 (measured): 23 rail data files, 18,159 rows, 604 workings, 39 depots;
-581 `[OK]` + 23 flagged.** Corridors: CAPE 11,765 · CENTRAL 3,045 · CONTAINER 1,903 · NORTH 922 ·
-NORTHEAST 472 · ORELINE 10 · blank 42. (`bijlkor-batch.txt` is all CENTRAL.)
+581 `[OK]` + 23 flagged.** Corridors (measured after the append; an earlier draft line guessed
+the split and was corrected in the round-65 follow-up commit — the new workings' rows carry
+**mixed** `ENROUTE_Corridor` values per row, and `bijlkor-batch.txt` is NOT all-CENTRAL — that
+round-64 parenthetical was a slip): **CAPE 11,905 · CENTRAL 2,819 · CONTAINER 1,943 · NORTH 967 ·
+NORTHEAST 472 · ORELINE 10 · blank 43**. Per new working: `8856` CAPE 140 / CENTRAL 44 / blank 1 ·
+`9409` NORTH 22 / CENTRAL 17 / CONTAINER 1 · `9443` NORTH 22 / CENTRAL 17 / CONTAINER 1 ·
+`16453` CONTAINER 38 / CENTRAL 13 / NORTH 1 · `17205` CENTRAL 31. (`bijlkor-batch.txt` overall:
+CENTRAL 883 · CAPE 449 · CONTAINER 558 · NORTH 153 · ORELINE 2 · blank 6.)
 
 **Outstanding after round 65:** the **reconciliation decision set** — 103 same-key-different-field
 rows + 459 curated-only rows (report-only so far; nothing overwritten) and the `&amp;`
