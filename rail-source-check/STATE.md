@@ -2019,3 +2019,22 @@ reconciliation (this round's finding); the branch mandate (round 54).
 
 **Committed** on `arena/a620a55a-flowops`. Staged payload remains at
 `/home/user/Flowops/uploads/round-64/`.
+
+### Round 64 addendum — `sources/annexure33a-full-raw.tsv` (user-directed 33a intake channel)
+
+The user's handoff idea: an **empty tracked file** on `arena/a620a55a-flowops` into which the full
+Annexure 33a extract (the 251,678-row, 19-field TSV of `Annexure33a_NSver.4(1).xlsx` sheet
+`_00750_Report_Train_Route`) is pasted via the GitHub web editor; this branch then works from it.
+This is a **deliberate, user-directed exception** to the "never commit raw source pastes" rule:
+the intake file is intentionally tracked (the rule's purpose — keeping raw pastes out of the
+curated corpus/history — is preserved by keeping it in `sources/`, never in `rail-source-check/`).
+
+**When content lands** (user commits via GitHub): `git fetch` + fast-forward the branch, then:
+(1) verify the extract against the S6 record (251,678 data rows + header, all rows 19 fields);
+(2) pull the owed queue workings from it — BIJLKOR `8856` whole (from its header), `9409`,
+`9443`, `16453`, `17205`, BELLVILLE after `1431`, partials' remainders — appending under the
+usual gates and recording source = "33a extract"; (3) reconcile the corpus (exact-match /
+same-key-different-field / curated-only counts, redoing the other session's comparison at current
+totals). **Curated rows stay byte-faithful: never silently overwrite a curated row from the
+extract — report conflicts and ask.** If the editor strips trailing tabs (blank-`Distance` cells)
+or the paste arrives in chunks, stitch/verify before any append.

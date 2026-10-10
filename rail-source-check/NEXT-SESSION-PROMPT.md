@@ -214,6 +214,13 @@ re-paste (see §9).
 
 ## 9. THE QUEUE — what the user will paste next (priority order)
 
+> **Round-64 intake channel:** the full 251,678-row Annexure 33a extract is expected at
+> `sources/annexure33a-full-raw.tsv` (empty tracked file; the user pastes into it via the GitHub
+> web editor and commits to `arena/a620a55a-flowops`). When it lands: fetch + fast-forward,
+> verify 251,678 data rows + header at 19 fields each, then pull the queue workings from it and
+> run the corpus reconciliation — curated rows stay byte-faithful; report conflicts, never
+> silently overwrite.
+
 1. **BELLVILLE — everything after `1431`.** `1414` completed round 59 (L620-656, `[OK]`);
    `1417` captured round 60 (L657-676 — flagged: stated `02:40:00` vs computed `02:40:30`,
    preserved); `1418` captured round 61 (L677-689, `[OK]`); `1429` captured round 62 (L690-717,
