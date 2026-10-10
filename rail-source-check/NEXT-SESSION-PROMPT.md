@@ -30,7 +30,7 @@ code .            # then open this folder in VS Code
 Sanity check that the bootstrap worked — from `rail-source-check/`:
 
 ```bash
-python3 append_gate.py --corpus     # expect 23 files / 17,790 rows / 598 workings / 39 depots / 23 flagged
+python3 append_gate.py --corpus     # expect 23 files / 17,811 rows / 599 workings / 39 depots / 23 flagged
 ```
 
 ---
@@ -110,11 +110,11 @@ Expected audit output (if **any** number differs, stop and report — do not tra
 | measure | expected |
 |---|---|
 | files | 23 |
-| rows | 17,790 |
-| workings | 598 |
+| rows | 17,811 |
+| workings | 599 |
 | depots | 39 |
 | flagged workings | 23 |
-| `[OK]` workings | 575 |
+| `[OK]` workings | 576 |
 
 If your Python is invoked as `python` on Windows, use that; the scripts are pure standard library.
 
@@ -185,7 +185,7 @@ travel/dwell vs clocks, stated vs computed duration, and duplicate rows. Blank t
 Quirks: `tail -1` on a `.txt` returns a blank line — always count with `awk 'NF' | wc -l`;
 the per-file totals loop must grep `total:` (do not read the last line of output).
 
-## 8. CURRENT STATE — 23 files / 17,790 rows / 598 workings / 39 depots / 575 `[OK]` + 23 flagged
+## 8. CURRENT STATE — 23 files / 17,811 rows / 599 workings / 39 depots / 576 `[OK]` + 23 flagged
 
 Newest files (round 58, head `97cbefc`):
 
@@ -197,7 +197,7 @@ Newest files (round 58, head `97cbefc`):
 | `bowkerspark-batch.txt` (NEW depot, round 58 p2) | 10 | 2 | `a6c620d67f4c92bfc267e5eb81747e41` |
 | `bellville-batch.txt` (rounds 58 p2 – 63) | 784 | 32 | `c465ac3fbf4667112d1d3bc6cad393d6` |
 | `blinkpan-batch.txt` (NEW depot, round 58) | 601 | 71 | `f50080d6fc70c34f4b97134c3300017f` |
-| `bijlkor-batch.txt` (rounds 54–57) | 1682 | 62 | `410c3b09f3f254fdadb4fb679804da8f` |
+| `bijlkor-batch.txt` (rounds 54–57 + 64) | 1703 | 63 | `200f600983f14ae7a791a115847298f1` |
 
 Every other file's rows/workings/MD5 and round history is in `STATE.md` ("## Files" section).
 
@@ -223,12 +223,16 @@ re-paste (see §9).
    `[OK]`, overnight to KLAWER)**. The pastes jumped `1414` → `1417` → `1418` → `1428`/`1429` →
    `1431`: **ask the user whether `1415`/`1416` and `1430` exist in the source.** Continue with
    the workings that follow `1431`.
-2. **BIJLKOR**: `17207` — the **whole working** (header through `BIJ/S750557` 22:26:00 **and**
-   `BEAUFORTWEST` day-1 20:25:00 onward) — `8856` — the **whole working** from its header —
-   and `9409`, `9443`, `16453`, `17205` (never on disk). *Measured 2026-10-09:* none of these
-   six trains has a single row on this branch (0 mentions corpus-wide) — the 7-row `17207` tail
-   was only ever held in the old sandbox and round 56 deliberately withheld `8856`'s 108 rows,
-   so ask for `17207` and `8856` complete, headers included. Never append a header-less fragment.
+2. **BIJLKOR**: `8856` — the **whole working** from its header (round-56's transcription stopped
+   at its `BEAUFORTWEST` day-1 20:25:00 row and its 108+ rows were deliberately withheld; they
+   never landed — **CAUTION: an earlier queue note misattributed that `BEAUFORTWEST` boundary to
+   `17207`; `17207` has no BEAUFORTWEST rows** — `17207` completed round 64 in one paste: the
+   round-56 head through `BIJ/S750557` 22:26:00 plus the round-57 held 7-row tail
+   `BIJ/S743607` 22:27:00 → `BIJLKOR` 22:39:00, L1683-1703, `[OK]`) — and `9409`, `9443`,
+   `16453`, `17205` (never on disk). *Measured 2026-10-09:* none of these five trains has a
+   single row on this branch (0 mentions corpus-wide) — ask for `8856` complete, header included.
+   Never append a header-less fragment. **When a queue note conflicts with a round record in
+   `STATE.md`, the round record wins** (round 64's condensation lesson).
 3. **BLOEMFONTEIN** queue: 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000.
 4. **Partials already on disk awaiting their remainder** — treat with care, append only new rows:
    BEACONSFIELD 8965 (L1-22), BEAUFORTWEST 97 (L1-16), BLOEMFONTEIN 4215 (L999-1031,
@@ -301,6 +305,6 @@ re-paste (see §9).
 
 ## 14. FIRST REPLY THE USER EXPECTS
 
-> Checks run: corpus = 23 files / 17,790 rows / 598 workings / 39 depots / 23 flagged;
+> Checks run: corpus = 23 files / 17,811 rows / 599 workings / 39 depots / 23 flagged;
 > HEAD = 97cbefc (branch …); worktree clean. Rules understood: verbatim only, blank-safe,
 > dedupe-first, append-only, ask on any truncation or ambiguity. Ready — paste the next extract.
