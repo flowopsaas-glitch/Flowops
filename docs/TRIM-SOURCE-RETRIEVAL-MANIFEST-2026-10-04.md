@@ -114,7 +114,7 @@ for **every** supplied binary. No binary is committed to this repository.
 
 | # | File | SHA-256 | Size | Format | Retrieved | Period |
 | --- | --- | --- | --- | --- | --- | --- |
-| V4-01 | `TRIM Network Statement 18 September 2026 (1).pdf` | `6e7ad24b993df0a38065720533e16bfdf79f4bbaf68ece81435491a190798faa` | 4,647,584 | PDF (203 p) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–27/28 |
+| V4-01 | `TRIM Network Statement 18 September 2026 (1).pdf` | `6e7ad24b993df0a38065720533e16bfdf79f4bbaf68ece81435491a190798faa` | 4,647,584 | PDF (203 p) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–27/28; surveyed `docs/RAIL-NS-V4-STATEMENT-SURVEY-2026-10-10.md` (rule chain + Table 17 tariffs) |
 | V4-02 | `Annexure 15_Rail Access Agreement (1).pdf` | `e525bb447ad891a7a007a98fb4da78dd5c97cfebb15d8cc8f272ba270208a953` | 790,088 | PDF (95 p) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–27/28 |
 | V4-05 | `Annexure_33a_NS_ver_4 (3).zip` (extract TSV MD5 `1cd978f5a0e5c5528886aa0c66047cb6`) + native `Annexure 33a_NS ver.4 (2).xlsx` | zip commit `8d30089`; xlsx `93b4d44929c037a799969a5b2a5efa514af4abbd7e2711ac0e072ece77745dd5` | 3,220,461 + 15,258,573 | ZIP(TSV+XLSX) / XLSX | 2026-10-10 (user upload via GitHub) | FY26/27–27/28 |
 | V4-06 | `Annexure 33 Capacity Statement (2).xlsm` | `2d3f591515a339b57fb17e695796dcbe2cc7522ce39c4c329dcb70f325a3515b` | 166,356 | XLSM (3 sheets) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–30/31 (rows for all 5 FYs) |

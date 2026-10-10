@@ -256,6 +256,17 @@ origins — always pair (Origin, Train).
   chain; clause-index Annexure 15; wire Annexure 36 with its V3 period label; Occurrence page →
   Daily/Quarterly report builders.
 
+### 9G. Round 70 closeout (2026-10-10) — NS V4 rule chain + access tariffs landed
+
+- NS V4 body consolidated: Table 17 access tariffs (effective 01 Aug 2026) + Tables 18–23 +
+  chapter/annexure maps in `/rail/statement` and the Tariffs page. See
+  `docs/RAIL-NS-V4-STATEMENT-SURVEY-2026-10-10.md` (the money tables are transcribed there).
+- **Still missing:** ancillary service rates (future NS volume), Annexure 33 appended
+  section-level data file, Full Publication Notice (V4-11), V4 annexures not yet delivered (see
+  the annexure register at /rail/statement — 34 of 44 still wanted), operational actuals (SPRINT).
+- **Next candidates:** Anx 15 clause index; wire Anx 36 (V3 label); Daily/Quarterly occurrence
+  report builders; backend migration `20261007170000` for row-level timetable browsing.
+
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
 1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.

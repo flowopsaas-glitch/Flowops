@@ -173,8 +173,13 @@ versions will need the same reconciliation treatment).
 catalogue — rates still external, E-TARIFF-01).
 
 **Built round 69:** Network Register (Annexure 33), Investment Plan (Annexure 17) and
-Occurrence & Policy (Annexures 41 + 42) — 10 of the 11 rail pages exist; only Interfaces &
-Messaging remains unbuilt.
+Occurrence & Policy (Annexures 41 + 42).
+
+**Built round 70:** **Network statement** (`/rail/statement` — NS V4 chapter browser + annexure
+register with delivered/wanted status + capacity/charging framework) and the **Tariffs page
+gained its money tab** (Table 17 access tariffs verbatim, application fees, invoicing, Tables
+18–22). All planned rail pages now exist (11 sidebar items); Interfaces & Messaging remains the
+only unbuilt page from the original plan.
 
 **Planned next (needs sources):** Tariffs rate values (approved ancillary schedule),
 Annexure 33 appended section-level data file (slots + N1/N2 classification), Possession

@@ -270,3 +270,11 @@ Annexure 41 Occurrence Reporting (V4-08) and Annexure 42 Customer Collaboration 
 ingested and productised — /rail/register, /rail/investment, /rail/occurrence live. New want:
 the Annexure 33 appended section-level data file. PR #448 carries rounds 65–69. State of truth:
 rail-source-check/STATE.md "Round 69" section.
+
+### ROUND 70 ADDENDUM (2026-10-10)
+
+Round 70 complete: the Network Statement V4 body is consolidated — **the approved 2026/27 access
+tariffs (Table 17) are now in the product** (effective 1 Aug 2026), plus application fees,
+invoicing rules, penalties (Tables 18–22) and the KPI pipeline (Table 23). /rail/statement is
+live with the full annexure register (delivered/wanted). E-TARIFF-01 split: access tariffs found,
+ancillary rates future-NS. State of truth: rail-source-check/STATE.md "Round 70".

@@ -379,6 +379,7 @@ export default function AppLayout() {
     { section: "RAIL", label: "Corridor KPIs", desc: "Annexure 43 baselines → targets", to: "/rail/kpis", icon: Gauge, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Slots & Capacity", desc: "Annexure 33b section capacity by route and FY", to: "/rail/slots", icon: Layers, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Tariffs & Charges", desc: "Annexure 40 ancillary services catalogue", to: "/rail/tariffs", icon: CreditCard, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Network Statement", desc: "NS V4 rulebook — chapters, annexure register, framework", to: "/rail/statement", icon: FileText, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Network Register", desc: "Annexure 33 capacity declaration & critical sections", to: "/rail/register", icon: BookOpen, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Investment Plan", desc: "Annexure 17 approved capital investment", to: "/rail/investment", icon: PieChart, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Occurrence & Policy", desc: "Annexure 41 RSR reporting · Annexure 42 collaboration", to: "/rail/occurrence", icon: ShieldAlert, perm: "rail", entitlement: "rail" },

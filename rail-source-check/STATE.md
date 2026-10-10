@@ -2362,3 +2362,37 @@ data modules railRegisterData/railInvestmentData/railOccurrenceData; RailSources
 
 **Verification (round 69):** `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 · vitest **749/749 pass**.
 PR #448 (branch → main) updated by push.
+
+## Round 70 — **Network Statement V4 body consolidated: the rule chain + THE ACCESS TARIFFS** (2026-10-10)
+
+Mandate: "lets continue world class". The last un-consolidated primary V4 asset — the 203-page NS
+body — is now in the product. Text layer 455,453 chars (`uploads/round-67/ns-v4-full-text.txt`).
+
+**HEADLINE: Table 17 (p157) carries the approved 2026/27 rail access tariffs** — two-part
+(train-km Rand + GTK cents), effective **1 August 2026**: OreCor iron ore 680/3.54 · Manganese
+680/5.53 · Coal Exports NorthCor 260/6.03 · Intermodal & Motor Vehicles 30/4.41 · Mineral Exports
+30.75/9.00 · Grain & Tankers 30/6.96 · Other General Traffic 30/9.50 · Metro/Passenger<12 wagons
+50/0.0 · Passenger>12 wagons 60/0.0 · Loose locos 12/0.0. Notes: includes empty wagon workshop
+movements; **excludes traction electricity** (pass-through). **E-TARIFF-01 updated: access
+tariffs FOUND; ancillary rates remain future-NS** (§5.2.7 + indicative Table 18).
+
+**Also captured:** application fees (Table 20: freight R125 000 / passenger R42 000 per Train Path,
+non-refundable, annual escalation) · invoicing rules (26th invoice, 5-day payment, Default
+Interest Rate, guarantee) · marshalling categories (Table 18 indicative) · occurrence cost
+recovery (Table 19) · penalty regime (Tables 21–22: TRIM credit-note mechanism; AS cancellation
+forfeit within 72h; 5.2.11 yard-usage formula + 8 additional-charge events) · Table 23 further
+KPI pipeline (OTD/OTA SPRINT 30-min tolerance, delay attribution, R/track-km train control) —
+**E-NSV4-01 preserved** ("ACCESS SEEKER to be amended") · ch4 declaration: "The published Network
+Register, Annexures 33a, and Annexure 33b are the basis for all timetable calculations and track
+occupancy for the annual timetable" · ch2 six corridor sections · annexure register 1–44 with
+delivered/wanted status.
+
+**Productised:** `/rail/statement` (chapter browser + annexure register + framework) ·
+`/rail/tariffs` new default tab "Access fees & charges" (Table 17 + Tables 18–22 + invoicing) ·
+`railStatementData.ts` · survey `docs/RAIL-NS-V4-STATEMENT-SURVEY-2026-10-10.md`. Sidebar RAIL
+now 11 items — all planned rail pages exist.
+
+**Corpus unchanged:** §4 baseline still **672 files / 251,678 rows / 13,471 workings / 688 depots /
+629 flagged (12,842 [OK])**.
+
+**Verification (round 70):** `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 · vitest **749/749 pass**.
