@@ -120,6 +120,10 @@ for **every** supplied binary. No binary is committed to this repository.
 | V4-06 | `Annexure 33 Capacity Statement (2).xlsm` | `2d3f591515a339b57fb17e695796dcbe2cc7522ce39c4c329dcb70f325a3515b` | 166,356 | XLSM (3 sheets) | 2026-10-10 (user upload, commit `0a356d6`) | FY26/27–30/31 (rows for all 5 FYs) |
 | V4-07 | `Annexure 40 - TRIM Ancillary Services Catalogue 2026_27 (1).pdf` | `f924fc8e6086af61a76525f298da02ef270d41fddc703174934596a2285a55cf` | 246,587 | PDF (6 p) | 2026-10-10 (user upload, commit `0a356d6`) | 2026/27 |
 | V3-30 | `Annexure 36_Emergency Response Plan (Tribunals Process).pdf` | `4dfcf2d2cfa3fcf4e330a9c1cb1e955523108761b0213e30e37189cb256d2c9c` | 1,547,133 | PDF (73 p) | 2026-10-10 (user upload, commit `0a356d6`) | V3 (E-ANX36-01 period caveat) |
+| V4-03 | `Annexure 17 Investment Plan July 2026.pdf` | `ecda99ed79864617bb2f688736bd70547251bb8b9a2f08f24dddcf85a18b9383` | 136,702 | PDF (5 p) | 2026-10-10 (user upload, commit `be90c16`) | 2026/27–2030/31 corporate plan |
+| V4-04 | `Annexure 33_Network Register June 2026 F (1).pdf` | `1e2842cbf88c9382a18c604240a79cee985e85f7966fd90a081cdb12b68c9fa0` | 378,138 | PDF (8 p) | 2026-10-10 (user upload, commit `be90c16`) | 2026/27 timetable (June 2026 v0.3) |
+| V4-08 | `Annexure 41 Occurrence Reporting Procedure.pdf` | `aa0d1acd9b5c195963ba858565b4aed8a3a79a36626013d3af3ce16204416aed` | 630,777 | PDF (12 p) | 2026-10-10 (user upload, commit `be90c16`) | RSR template NOV2021.V3 |
+| V4-09 | `Annexure 42 Transnet Customer Collaboration Policy.pdf` | `68aa7e5f3124314ccf2ba18feb43b14a87c7262b64935c58ed6f66e0470ca9bd` | 244,232 | PDF (14 p) | 2026-10-10 (user upload, commit `be90c16`) | effective 01 Dec 2025 v1.0 |
 | V4-10 | `Annexure 43 KPIs (2).xlsx` | `18e137f75057f57b05ce3196c2d4b5b4b8c83e35bc57c590ea3c49d89b65fd15` | 51,984 | **XLSX** (format question resolved) | 2026-10-10 (user upload, commit `e24e70c`) | FY26/27–27/28 |
 | *(remaining rows added on receipt)* | | | | | | |
 

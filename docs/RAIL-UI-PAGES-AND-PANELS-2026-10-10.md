@@ -157,21 +157,29 @@ versions will need the same reconciliation treatment).
 
 | Item | Status |
 |---|---|
-| **RAIL sidebar section** in `AppLayout.tsx` (own section between OPS and COMMUNICATIONS) | ✅ Rail Ops Console · Timetable Explorer · Corridor KPIs · Slots & Capacity · Tariffs & Charges · Daily Handshake · Network Sources |
+| **RAIL sidebar section** in `AppLayout.tsx` (own section between OPS and COMMUNICATIONS) | ✅ Rail Ops Console · Timetable Explorer · Corridor KPIs · Slots & Capacity · Tariffs & Charges · Network Register · Investment Plan · Occurrence & Policy · Daily Handshake · Network Sources |
 | `/rail/timetable` promotion (admin-only → `rail` permission) | ✅ |
 | **Corridor KPIs page** (`/rail/kpis`, `RailKpis.tsx`) | ✅ 10 train-path cards (baseline→target, verbatim Annexure 43), Current/Future framework tabs, E-43-01 banner, planned-vs-target corpus-match panel |
 | **Network Sources page** (`/rail/sources`, `RailSources.tsx`) | ✅ corpus stats, byte-mirror proof, source register (hashes), corridor mix, anomaly classes, wanted-sources list |
 | **Slots & Capacity page** (`/rail/slots`, `RailCapacity.tsx`) | ✅ FY×route selectors over Capacity_DB (1,035 rows), raw + derived-labelled section table, totals, derived bottleneck, E-33B-01 flag (FY26/27-only allocations), formula panel, as-delivered workbook snapshot card |
 | **Tariffs & Charges page** (`/rail/tariffs`, `RailTariffs.tsx`) | ✅ Annexexure 40 catalogue browser (4 tiers / 40 groups), tier filter + search, UOM badges ("TBD in source — preserved"), E-TARIFF-01 rates-gap banner on every line, anomaly policy footer |
-| Data modules | ✅ `src/data/railKpiData.ts` (generated from Annexure 43 + corpus OD matches), `src/data/railSourceData.ts`, `src/data/railCapacityData.ts` (round 68), `src/data/railAncillaryData.ts` (round 68) |
+| **Network Register page** (`/rail/register`, `RailRegister.tsx`) | ✅ Annexure 33 (June 2026 v0.3): capacity declaration purpose, contents map (appended data file flagged as open want), critical vandalised sections (Leeuhof–Warrenton, Thabazimbi–Rustenburg), route list with E-33REG-01 preserved, TRIM-only scope |
+| **Investment Plan page** (`/rail/investment`, `RailInvestment.tsx`) | ✅ Annexure 17 tables verbatim (R'bn): categories, programmes, corridor COPEX with PSP markers, supplementary BFI funding, 6 expansion initiatives, definitions |
+| **Occurrence & Policy page** (`/rail/occurrence`, `RailOccurrence.tsx`) | ✅ Annexure 41 RSR timelines (15 min / 12 h / daily 11:00 / quarterly) + full category matrix A–O + security 1–9 with TRIM/TOC Y/N flags (E-ANX41-01 "CATEGORY 0" preserved) · Annexure 42 collaboration policy tab |
+| Data modules | ✅ `src/data/railKpiData.ts` (generated from Annexure 43 + corpus OD matches), `src/data/railSourceData.ts`, `src/data/railCapacityData.ts` (round 68), `src/data/railAncillaryData.ts` (round 68), `src/data/railRegisterData.ts`, `src/data/railInvestmentData.ts`, `src/data/railOccurrenceData.ts` (round 69) |
 | CI | ✅ `tsc --noEmit` clean · `vite build` clean · **749/749 frontend tests pass** |
 
 **Built round 68:** Slots & Capacity (Annexure 33b) and Tariffs & Charges (Annexexure 40
 catalogue — rates still external, E-TARIFF-01).
 
+**Built round 69:** Network Register (Annexure 33), Investment Plan (Annexure 17) and
+Occurrence & Policy (Annexures 41 + 42) — 10 of the 11 rail pages exist; only Interfaces &
+Messaging remains unbuilt.
+
 **Planned next (needs sources):** Tariffs rate values (approved ancillary schedule),
-Occurrence/Possession elevation (Annexure 41), Compliance & DG screens, variance Actual leg
-(SPRINT actuals), Interfaces & Messaging page (the only rail page still unbuilt). Timetable Explorer row-level browsing uses the existing backend import API
+Annexure 33 appended section-level data file (slots + N1/N2 classification), Possession
+elevation screens, Compliance & DG screens, variance Actual leg (SPRINT actuals),
+Interfaces & Messaging page (the only rail page still unbuilt). Timetable Explorer row-level browsing uses the existing backend import API
 (`rail-timetable.service.ts`; migration `20261007170000` validated, not yet applied) — loading
 the full 251,678-row corpus through that path is the natural next power-up once the migration
 lands.

@@ -51,11 +51,14 @@ export const flagClasses = [
 ];
 
 export const wantedSources = [
-  "Annexure 33b — Capacity Statement (XLSM) → Slots & Capacity",
-  "Approved tariff / rate schedule FY2026/27 (with rates) → Tariffs money path",
-  "Annexure 40 — Ancillary Services Catalogue (PDF, full)",
-  "Annexure 33 — Network Register (station/siding master)",
-  "Network Statement V4 body + Annexure 41 (occurrences) + Annexure 15 (RAA)",
+  "✅ DELIVERED — Annexure 33b Capacity Statement (XLSM) → /rail/slots (round 68)",
+  "✅ DELIVERED — Annexexure 40 Ancillary Services Catalogue (PDF) → /rail/tariffs (round 68)",
+  "✅ DELIVERED — Network Statement V4 body + Annexure 15 RAA + Annexure 41 + Annexure 42 (rounds 68–69)",
+  "✅ DELIVERED — Annexure 33 Network Register (June 2026 v0.3) → /rail/register (round 69)",
+  "✅ DELIVERED — Annexure 17 Investment Plan → /rail/investment (round 69)",
+  "Annexure 33 appended data file (section-by-section slots + N1/N2 line classification) — named by the register, not yet supplied",
+  "Approved tariff / rate schedule FY2026/27 (with rates) → Tariffs money path (E-TARIFF-01)",
+  "Full Publication Notice (V4-11)",
   "V3 structural set: 20a/20b, 28 (handshake), 29a/32 (slot application), 19b",
   "Operational actuals (SPRINT OTD, realised transit, TSR logs) → variance Actual leg",
 ];

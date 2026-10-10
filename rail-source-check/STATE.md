@@ -2335,3 +2335,30 @@ never filled) · E-ANX36-01 (Anx 36 is V3 — period label on any use) · E-TARI
 
 **Verification (round 68):** `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 (173 precache) ·
 vitest **749/749 pass**.
+
+## Round 69 — four more source uploads: Network Register, Investment Plan, Occurrence, Collaboration Policy (2026-10-10)
+
+User commit `be90c16` (4 PDFs at repo root) ff-merged → `git mv` into `sources/`. Manifest §4 rows
+V4-03 (Anx 17 Investment Plan), V4-04 (Network Register June 2026 v0.3), V4-08 (Anx 41), V4-09 (Anx 42).
+Corrects the round-68 report's "V3-29" label for the Register — V3-29 is Anx 35 Dispute Resolution.
+
+**Findings:** Register = NS V4 annexure (validity tied to the 4th NS; 2026/27 timetable) — capacity
+declaration + Aug-2025 Ministerial allocation history + section 5(2) ERT Act protection + the two
+critical vandalised sections (Leeuhof–Warrenton via Klerksdorp, Thabazimbi–Rustenburg) + TRIM-only
+scope. **E-33REG-01 (preserved):** register route list duplicates Musina and omits Vereeniging/
+Danskraal. Its section-level data file ("downloadable file appended to this Annexure 33", with N1/N2
+classification) is a separate download — OPEN WANT. Anx 17 = R46.343bn 5-year plan (categories,
+programmes, corridor COPEX incl. PSP markers, BFI R10.0bn approved + R26.0bn pursued, 6 expansion
+initiatives). Anx 41 = RSR categories A–O + security 1–9 with TRIM/TOC flags + timelines (15 min /
+12 h / daily 11:00 / quarterly); **E-ANX41-01 (preserved):** source prints "CATEGORY 0" (zero).
+Anx 42 = Customer Collaboration Policy v1.0 effective 01 Dec 2025.
+
+**Productised:** `/rail/register` · `/rail/investment` · `/rail/occurrence` (occurrence + policy tabs);
+data modules railRegisterData/railInvestmentData/railOccurrenceData; RailSources wanted list updated
+(5 delivered flags + new want). Sidebar RAIL now 10 items.
+
+**Corpus unchanged:** §4 baseline still **672 files / 251,678 rows / 13,471 workings / 688 depots /
+629 flagged (12,842 [OK])**.
+
+**Verification (round 69):** `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 · vitest **749/749 pass**.
+PR #448 (branch → main) updated by push.

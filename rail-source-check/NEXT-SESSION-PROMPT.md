@@ -244,6 +244,18 @@ origins — always pair (Origin, Train).
   chain; clause-index Annexure 15; wire Annexure 36 with its V3 period label; Port Allocation
   Files (V4-03) retrieval.
 
+### 9F. Round 69 closeout (2026-10-10) — Register / Investment / Occurrence / Collab Policy done
+
+- Four sources ingested + productised (`/rail/register`, `/rail/investment`, `/rail/occurrence`);
+  manifest §4 V4-03/04/08/09 complete. PR #448 open (branch → main).
+- **Still missing:** approved tariff rates (E-TARIFF-01), Annexure 33 appended section-level data
+  file (slots + N1/N2 line classification), Full Publication Notice (V4-11), operational actuals
+  (SPRINT, V4-04-sprint extract — note: manifest V4-04 is now the Register; SPRINT actuals remain
+  an open want), "List of Yards.xlsx"/"List of Terminals.xlsx" (named in Annexure 40).
+- **Next consolidation candidates:** transcribe the NS V4 PDF text (203 p) into the product rule
+  chain; clause-index Annexure 15; wire Annexure 36 with its V3 period label; Occurrence page →
+  Daily/Quarterly report builders.
+
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
 1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.

@@ -262,3 +262,11 @@ ancillary catalogue, Anx 36 ERP) ingested, hashed, surveyed and productised —
 `/rail/slots` (Annexure 33b capacity) + `/rail/tariffs` (Annexure 40 catalogue) live; manifest
 §4 rows added (V4-01/02/06/07 + V3-30); verification 749/749 green. State of truth for the
 next session: `rail-source-check/STATE.md` "Round 68" section.
+
+### ROUND 69 ADDENDUM (2026-10-10)
+
+Round 69 complete: Annexure 33 Network Register (V4-04), Annexure 17 Investment Plan (V4-03),
+Annexure 41 Occurrence Reporting (V4-08) and Annexure 42 Customer Collaboration Policy (V4-09)
+ingested and productised — /rail/register, /rail/investment, /rail/occurrence live. New want:
+the Annexure 33 appended section-level data file. PR #448 carries rounds 65–69. State of truth:
+rail-source-check/STATE.md "Round 69" section.

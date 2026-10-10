@@ -60,6 +60,9 @@ const RailTimetable = lazy(() => import("./pages/RailTimetable"));
 const RailKpis = lazy(() => import("./pages/RailKpis"));
 const RailCapacity = lazy(() => import("./pages/RailCapacity"));
 const RailTariffs = lazy(() => import("./pages/RailTariffs"));
+const RailRegister = lazy(() => import("./pages/RailRegister"));
+const RailInvestment = lazy(() => import("./pages/RailInvestment"));
+const RailOccurrence = lazy(() => import("./pages/RailOccurrence"));
 const RailSources = lazy(() => import("./pages/RailSources"));
 const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const SadcCorridorsPage = lazy(() => import("./pages/forwarding/SadcCorridors"));
@@ -324,6 +327,9 @@ export default function App() {
               <Route path="/rail/kpis" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailKpis /></RequireFeature></RequirePermission>} />
               <Route path="/rail/slots" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailCapacity /></RequireFeature></RequirePermission>} />
               <Route path="/rail/tariffs" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailTariffs /></RequireFeature></RequirePermission>} />
+              <Route path="/rail/register" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailRegister /></RequireFeature></RequirePermission>} />
+              <Route path="/rail/investment" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailInvestment /></RequireFeature></RequirePermission>} />
+              <Route path="/rail/occurrence" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailOccurrence /></RequireFeature></RequirePermission>} />
               <Route path="/rail/sources" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailSources /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/sadc-corridors" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><SadcCorridorsPage /></RequireFeature></RequirePermission>} />
