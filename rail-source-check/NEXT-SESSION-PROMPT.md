@@ -30,7 +30,7 @@ code .            # then open this folder in VS Code
 Sanity check that the bootstrap worked — from `rail-source-check/`:
 
 ```bash
-python3 append_gate.py --corpus     # expect 23 files / 18,159 rows / 604 workings / 39 depots / 23 flagged
+python3 append_gate.py --corpus     # expect 23 files / 18,217 rows / 604 workings / 39 depots / 16 flagged
 ```
 
 ---
@@ -110,11 +110,11 @@ Expected audit output (if **any** number differs, stop and report — do not tra
 | measure | expected |
 |---|---|
 | files | 23 |
-| rows | 18,159 |
+| rows | 18,217 |
 | workings | 604 |
 | depots | 39 |
-| flagged workings | 23 |
-| `[OK]` workings | 581 |
+| flagged workings | 16 |
+| `[OK]` workings | 588 |
 
 If your Python is invoked as `python` on Windows, use that; the scripts are pure standard library.
 
@@ -185,7 +185,7 @@ travel/dwell vs clocks, stated vs computed duration, and duplicate rows. Blank t
 Quirks: `tail -1` on a `.txt` returns a blank line — always count with `awk 'NF' | wc -l`;
 the per-file totals loop must grep `total:` (do not read the last line of output).
 
-## 8. CURRENT STATE — 23 files / 18,159 rows / 604 workings / 39 depots / 581 `[OK]` + 23 flagged
+## 8. CURRENT STATE — 23 files / 18,217 rows / 604 workings / 39 depots / 588 `[OK]` + 16 flagged
 
 Newest files (round 58, head `97cbefc`):
 
@@ -195,31 +195,31 @@ Newest files (round 58, head `97cbefc`):
 | `blaney-batch.txt` (NEW depot, round 58 p2) | 70 | 1 | `3827b6002ff002820d0d4b68ffe89dc3` |
 | `buckingham-batch.txt` (NEW depot, round 58 p2) | 24 | 1 | `8c6e89fc66588001fbeb1c8460642133` |
 | `bowkerspark-batch.txt` (NEW depot, round 58 p2) | 10 | 2 | `a6c620d67f4c92bfc267e5eb81747e41` |
-| `bellville-batch.txt` (rounds 58 p2 – 63) | 784 | 32 | `c465ac3fbf4667112d1d3bc6cad393d6` |
+| `bellville-batch.txt` (rounds 58 p2 – 63) | 784 | 32 | `e3b81cc413fc9ab9663c3ae3f34ca4a8` |
 | `blinkpan-batch.txt` (NEW depot, round 58) | 601 | 71 | `f50080d6fc70c34f4b97134c3300017f` |
 | `bijlkor-batch.txt` (rounds 54–57 + 64–65) | 2051 | 68 | `b9a101e753c96fd49fd2a8d46412c433` |
 
 Every other file's rows/workings/MD5 and round history is in `STATE.md` ("## Files" section).
 
-**The 23 flagged workings — preserved anomalies, never "fixed":**
-ANGLOALPHA 7460/7468/8205 · BEACONSFIELD 8965/28941 · BEAUFORTWEST 97/8924 ·
-BLOEMFONTEIN 2273/2412/4215/5598/6008/18927 · BEESHOEK 7403/7407 · BLOEMHOF 1438/2226 ·
-ARIAMSVLEI 2169 · BUFFALOHARBOU 1052 · WALTLOO 8961 · WELGEDAG 58866 · BLINKPAN 80109 ·
+**The 16 flagged workings — preserved source anomalies, never "fixed":**
+ANGLOALPHA 7460/7468/8205 · BEACONSFIELD 28941 · BEAUFORTWEST 8924 ·
+BLOEMFONTEIN 2273/2412 · BEESHOEK 7403/7407 · BLOEMHOF 1438/2226 ·
+ARIAMSVLEI 2169 · BUFFALOHARBOU 1052 · WALTLOO 8961 · BLINKPAN 80109 ·
 BELLVILLE 1417 (30-second stated-vs-computed duration mismatch — stated 02:40:00 vs computed
-02:40:30; every leg reconciles; preserved exactly as pasted).
-(`BELLVILLE 1414` carried the flag while it was a partial; it completed in round 59 and is
-`[OK]`.) Notes: `BLINKPAN 80109` keeps `Depart_Day` 0 across midnight (siblings
-roll the flag); `BLINKPAN 2154` carries `Frequency` `AYYYYYY`; several are **partials** awaiting a
-re-paste (see §9).
+02:40:30; every leg reconciles; **confirmed present in the Annexure 33a extract itself**, so it
+is a genuine Transnet source anomaly, preserved exactly). Round 65's reconciliation **lifted 7
+partial/derived flags** (`8965`/`97`/`4215`/`5598`/`6008`/`18927`/`58866`) once those blocks
+carried annexure rows. Notes: `BLINKPAN 80109` keeps `Depart_Day` 0 across midnight (siblings
+roll the flag); `BLINKPAN 2154` carries `Frequency` `AYYYYYY`.
 
 ## 9. THE QUEUE — what the user will paste next (priority order)
 
-> **Round-64 intake channel:** the full 251,678-row Annexure 33a extract is expected at
-> `sources/annexure33a-full-raw.tsv` (empty tracked file; the user pastes into it via the GitHub
-> web editor and commits to `arena/a620a55a-flowops`). When it lands: fetch + fast-forward,
-> verify 251,678 data rows + header at 19 fields each, then pull the queue workings from it and
-> run the corpus reconciliation — curated rows stay byte-faithful; report conflicts, never
-> silently overwrite.
+> **Round-64 intake channel — SERVED.** The full 251,678-row Annexure 33a extract arrived as
+> `sources/Annexure_33a_NS_ver_4 (3).zip` (commit `8d30089`; the empty `annexure33a-full-raw.tsv`
+> was bypassed when the web editor refused the ~25 MB commit). Working copy:
+> `uploads/round-65/annexure33a-extract.txt` (MD5 `1cd978f5a0e5c5528886aa0c66047cb6`; 251,678
+> data rows + header, 19 fields each). It is the **source of record** (user mandate: "the ann 33a
+> is from transnet so we have to follow it") — see `RECONCILIATION-33A.md`.
 
 1. **BELLVILLE — everything after `1431`.** `1414` completed round 59 (L620-656, `[OK]`);
    `1417` captured round 60 (L657-676 — flagged: stated `02:40:00` vs computed `02:40:30`,
@@ -233,17 +233,19 @@ re-paste (see §9).
 2. **BIJLKOR — COMPLETE as of round 65** (`8856` 185 rows whole + `9409` 40 + `9443` 40 +
    `16453` 52 + `17205` 31, all taken from the 33a extract, all `[OK]`). Nothing owed. NOTE:
    train numbers repeat across origins in the extract (`8856` also = BEACONSFIELD/SNR/ULCO
-   workings) — only BIJLKOR blocks belong here. **Open decisions (see the round-65 note):** the
-   reconciliation set — 103 same-key-different-field rows (Freq/Arr/Dep/Reason/… differences vs
-   the extract) and 459 curated-only rows — and whether to normalize the curated `&amp;` cells
-   (the extract proves plain `&` is the source content). **Never overwrite a curated row
-   silently; report conflicts and ask.** **When a queue note conflicts with a round record in
-   `STATE.md`, the round record wins** (round 64's condensation lesson).
+   workings) — only BIJLKOR blocks belong here. **The reconciliation decisions are RESOLVED** —
+   the user's mandate ("the ann 33a is from transnet so we have to follow it") was applied in
+   round 65 across 52 blocks / 8 files; see **`RECONCILIATION-33A.md`** for the full map. The
+   corpus now mirrors the annexure byte-for-byte (18,217/18,217 rows verified). **When a queue
+   note conflicts with a round record in `STATE.md`, the round record wins** (round 64's
+   condensation lesson).
 3. **BLOEMFONTEIN** queue: 8941, 8943, 8945, 8951, 8955, 8964, 8965, 8969, 8989, 9000.
-4. **Partials already on disk awaiting their remainder** — treat with care, append only new rows:
-   BEACONSFIELD 8965 (L1-22), BEAUFORTWEST 97 (L1-16), BLOEMFONTEIN 4215 (L999-1031,
-   partial-start), BLOEMFONTEIN 18927 (L2129-2187), WELGEDAG 58866 (L1-1). (`BIJLKOR 8856` is
-   NOT on disk at all — see item 2.)
+4. **Partials — ALL CLOSED by round 65's reconciliation.** `BEACONSFIELD 8965` (22→47),
+   `BEAUFORTWEST 97` (16→19), `BLOEMFONTEIN 4215` (33→93), `BLOEMFONTEIN 18927` (59→83) and
+   `WELGEDAG 58866` (1→15) were completed from the Annexure 33a extract; `BLINKPAN 89309` was
+   already 8 rows and matched the extract. Nothing on disk is partial any more. (For history:
+   treat with care / append-only applies to future pastes; the 33a extract is the fallback
+   source of record per the round-65 mandate.)
 5. **Re-transcribe (derived, therefore not trustworthy):** BEACONSFIELD `1438` L1139-1180 was
    built from twin `1222`, not from source — replace only when the source rows arrive, byte-verified,
    with the user's approval.
@@ -311,6 +313,6 @@ re-paste (see §9).
 
 ## 14. FIRST REPLY THE USER EXPECTS
 
-> Checks run: corpus = 23 files / 18,159 rows / 604 workings / 39 depots / 23 flagged;
+> Checks run: corpus = 23 files / 18,217 rows / 604 workings / 39 depots / 16 flagged;
 > HEAD = 97cbefc (branch …); worktree clean. Rules understood: verbatim only, blank-safe,
 > dedupe-first, append-only, ask on any truncation or ambiguity. Ready — paste the next extract.

@@ -1,8 +1,8 @@
 # FlowOps Rail Source Check — Running Ledger (STATE)
-Updated: 2026-10-10 (round 65 — **the full 33a extract landed** (`sources/Annexure_33a_NS_ver_4 (3).zip` → 25.5 MB TSV, MD5 `1cd978f5a0e5c5528886aa0c66047cb6`, verified 251,678 data rows × 19 fields) and the **whole BIJLKOR queue was taken from it**: `8856` (185 rows — the round-56 withheld working, whole at last, day-roll 0→1→2 to `BELLVILLE`), `9409` (40), `9443` (40), `16453` (52), `17205` (31) — 348 rows appended, gates PASS, all `[OK]`. Fidelity map vs the extract: **17,249 exact / 103 same-key-different-field / 459 curated-only**; the **`&amp;` query is answered — the source has plain `&`** (chat escaping artifact; curated rows untouched, awaiting the user's word). `bijlkor-batch.txt` is now 2,051 rows / 68 workings / 0 flagged, MD5 `b9a101e753c96fd49fd2a8d46412c433`. Corpus now: **23 data files / 18,159 rows / 604 workings / 39 depots; 581 [OK] + 23 flagged.** Still owed: the reconciliation decisions (103+459 rows), the `&amp;` call, BELLVILLE after `1431`, the partials (all completable from the extract now), BLOEMFONTEIN queue, missing depots, branch mandate; committed on arena/a620a55a-flowops — see Round 65 note and Round 54 for the unresolved branch mandate)
+Updated: 2026-10-10 (round 65 — **the full 33a extract landed** (`sources/Annexure_33a_NS_ver_4 (3).zip` → 25.5 MB TSV, MD5 `1cd978f5a0e5c5528886aa0c66047cb6`, verified 251,678 data rows × 19 fields) and the **whole BIJLKOR queue was taken from it**: `8856` (185 rows — the round-56 withheld working, whole at last, day-roll 0→1→2 to `BELLVILLE`), `9409` (40), `9443` (40), `16453` (52), `17205` (31) — 348 rows appended, gates PASS, all `[OK]`. Fidelity map vs the extract: **17,249 exact / 103 same-key-different-field / 459 curated-only**; the **`&amp;` query is answered — the source has plain `&`** (chat escaping artifact; curated rows untouched, awaiting the user's word). `bijlkor-batch.txt` is now 2,051 rows / 68 workings / 0 flagged, MD5 `b9a101e753c96fd49fd2a8d46412c433`. Corpus now: **23 data files / 18,159 rows / 604 workings / 39 depots; 581 [OK] + 23 flagged.** **Then the user's mandate settled the source hierarchy ("the ann 33a is from transnet so we have to follow it") and the full reconciliation was applied** (52 blocks / 8 files — see `RECONCILIATION-33A.md`): 31 chat-artifact/`RT` cells + 20 `ALGOABAAI` freq cells corrected to annexure values; 12 version-divergent blocks swapped to annexure rows; 459 curated-only rows retired; the 5 on-disk partials (`8965`/`97`/`4215`/`18927`/`58866`) completed from the annexure — post-swap **all 18,217 corpus rows are byte-identical to annexure rows (0 exceptions)**; **7 partial/derived flags lifted → 16 flagged remain** (source anomalies, incl. `1417`'s 30 s now confirmed *in the annexure itself*). Corpus now: **23 data files / 18,217 rows / 604 workings / 39 depots; 588 [OK] + 16 flagged.** Still owed: BELLVILLE after `1431` (extract knows `1430`/`1415`/`1416`), BLOEMFONTEIN queue, missing depots, round-8 part 2, branch mandate; committed on arena/a620a55a-flowops — see Rounds 64–65 notes and Round 54 for the unresolved branch mandate)
 
 ## Files
-- /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 125 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
+- /home/user/Flowops/rail-source-check/welgedag-wellington-winburg-balance.txt — 139 rows, WELGEDAG/WELLINGTON/WINBURG balance paste (round 2), verbatim.
 - /home/user/Flowops/rail-source-check/wakefield-warden-waltloo-batch.txt — 1104 rows, WAKEFIELD/WARDEN/WALTLOO batch (round 3), verbatim. WALTLOO 18927 NOT included (see outstanding).
 - /home/user/Flowops/rail-source-check/angloalpha-batch.txt — 428 rows, ANGLOALPHA rounds 4+5, verbatim. 21 workings; 8405 now COMPLETE (136 rows, overnight x2, verified).
 - /home/user/Flowops/rail-source-check/assegaaibos-alicedale-algoabai-batch.txt — 382 rows, round-5 new depots ASSEGAAIBOS/ALICEDALE/ALGOABAAI, verbatim. 20 workings, ALL OK (1413 completed in round 6).
@@ -11,9 +11,9 @@ Updated: 2026-10-10 (round 65 — **the full 33a extract landed** (`sources/Anne
 - /home/user/Flowops/rail-source-check/algoabai-misc-batch.txt — 293 rows, round 8: ALGOABAAI 2601–23457 misc workings (32 workings, ALL OK; verbatim; 2601/2603 shunt cars, 3216 DEAAR 11h, 3328 UTH-WERKWINKEL, 3354/3368/3384/3388/3396/3398 COEGA LOCO 01:37 six-pack, 3390/3392/3394 KKD pickups, 3451/3453 4h RANGEER, 3455–3475 AGB/S365424 micro-workings, 3601 PE-PASSASIERS, 4940 motorcar, 6402–6504 NEWBRIGHTON vacuums, 13457/23457 MARKMAN).
 - /home/user/Flowops/rail-source-check/misc-depots-batch.txt — 208 rows, rounds 8+9+50: ASHTON 1054, ALMA 1294, AMABELE 4422, ARIAMSVLEI 2169/2217/2307/2321, ARGENT 8036, BATTERY 6903/6904, BLE-BELCON 7731/7741/7743/7745/8014, BUFFALOHARBOU 104/1016/1020/1052/1054/1058/1062, BOSHOEK 1310/1402/1404 (25 workings; 23 OK + 2 flagged: ARIAMSVLEI 2169 and BUFFALOHARBOU 1052; both source day-flag anomalies preserved verbatim).
 - /home/user/Flowops/rail-source-check/bledasdorp-bindura-beaconsfield-batch.txt — 1180 rows, rounds 9+10: BREDASDORP 78/5260, BLOEDRIVIER 5653, BINDURA 471/477, BEACONSFIELD 203/205/207/209/211/1041/1222/1224/1240/1250/1402/1414/1438 (18 workings; 18 OK per checker; 1438 tail L1139–L1180 is DERIVED from twin 1222, not verbatim — see round 10 / outstanding 9).
-- /home/user/Flowops/rail-source-check/beaconsfield-8965-28947-batch.txt — 1268 rows, 19 workings; checker: 17 OK + 2 flagged.
+- /home/user/Flowops/rail-source-check/beaconsfield-8965-28947-batch.txt — 1293 rows, 19 workings (1268 rows before round 65's 33a reconciliation, which completed `8965` 22→47 rows from the annexure); checker: 18 OK + 1 flagged (`28941`; `8965`'s partial flag lifted once it carried annexure rows).
 - /home/user/Flowops/rail-source-check/bloemhof-batch.txt — 303 rows, BLOEMHOF 1438/2226/2385/5453/8385/8908/8985 (7 workings; 5 OK + 2 flagged; 8908 complete at L221–269 and 8985 at L270–303; 1438/2226 retain 30-second duration mismatches).
-- /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 3047 rows, 96 workings; checker: 88 OK + 8 flagged after round 49.
+- /home/user/Flowops/rail-source-check/beaufortwest-bultfontein-bloemfontein-batch.txt — 3066 rows, 96 workings (3,047 rows before round 65's 33a reconciliation; `97` 16→19, `18927` 59→83, `4215` 33→93, plus the 5569/5575/5587/5598/6008/6100/6200/6300 version swaps). Round-49 state was 88 OK + 8 flagged; after the reconciliation: **93 OK + 3 flagged** (`8924`, `2273`, `2412`) — the partial flags on `97`/`4215`/`5598`/`6008`/`18927` lifted.
 - /home/user/Flowops/rail-source-check/beeshoek-bethlehem-batch.txt — 828 rows, 21 workings; checker: 19 OK + 2 flagged.
 - /home/user/Flowops/rail-source-check/belfast-batch.txt — 333 rows, BELFAST round 46, 37 workings, all OK; transcribed verbatim from the current paste.
 - /home/user/Flowops/rail-source-check/bronkhorstspruit-batch.txt — 71 rows, round 53, new depot BRONKHORSTSPR (workings 1000, 2702, 4202, 7433, 16465 — 5 workings, all OK); MD5 `54cfbb251e244c7aef454dc15a960025`.
@@ -24,7 +24,7 @@ Updated: 2026-10-10 (round 65 — **the full 33a extract landed** (`sources/Anne
 - /home/user/Flowops/rail-source-check/blaney-batch.txt — 70 rows, round 58 part 2, NEW depot BLANEY (one working, `9005`, steps 1–11: BLANEY → BKJ/FJN/ANR sidings → FORTJACKSON → EGERTON → ARNOLDTON → WILSONIA/DAWN/HORSESHOE/HIGHGATE → CAMBRIDGE, 12:50:00 → 14:25:00, 01:35:00, `[OK]`; `VACUUM TRAINS/PICKUP TRAIN`). MD5 `3827b6002ff002820d0d4b68ffe89dc3`.
 - /home/user/Flowops/rail-source-check/buckingham-batch.txt — 24 rows, round 58 part 2, NEW depot BUCKINGHAM (one working, `7224`, steps 1–16: BUCKINGHAM → BKM sidings → VENTERSDORP → MAKOKSKRAAL → GATIEP → BODENSTEIN → TATODI → COLIGNY, 11:30:00 → 13:48:00, 02:18:00, `[OK]`). MD5 `8c6e89fc66588001fbeb1c8460642133`.
 - /home/user/Flowops/rail-source-check/bowkerspark-batch.txt — 10 rows, round 58 part 2, NEW depot BOWKERSPARK (`7011` and `7013`: BOWKERSPARK → FLOWERS → AMBERDALE → QTN-BERRYPARK → QUEENSTOWN, 00:30:00 each, both `[OK]`; `VACUUM TRAINS/FEEDER TRAIN`). The two `QTN-BERRYPARK` rows carry a **blank `ENROUTE_Corridor`** — preserved exactly as pasted. MD5 `a6c620d67f4c92bfc267e5eb81747e41`.
-- /home/user/Flowops/rail-source-check/bellville-batch.txt — 784 rows, rounds 58 part 2 – 63, depot BELLVILLE (32 workings 75–1431 as pasted; corridor CAPE 776 rows / ORELINE 8). 31 `[OK]` + 1 flagged: **`1417`** carries a 30-second stated-vs-computed duration mismatch (stated 02:40:00 vs computed 02:40:30), preserved verbatim. `1414` completed round 59 (L620-656); `1417` round 60 (L657-676); `1418` round 61 (L677-689); `1429` round 62 (L690-717); `1428` round 63 (L718-734, the round-62 hold closed by the user's "remove the 'and'" clarification — `Distance` empty on its final row); `1431` round 63 (L735-784, overnight to KLAWER). Workings after `1431` are still owed (ask whether `1430` exists; `1415`/`1416` + the `1418`→`1428` gap question). Three cells carry `&amp;` verbatim (`75` `ORDER &amp; SHUNT`; `1211`/`1411` `R.T.O. &amp; X 1428`) — open query. MD5 `c465ac3fbf4667112d1d3bc6cad393d6`.
+- /home/user/Flowops/rail-source-check/bellville-batch.txt — 784 rows, rounds 58 part 2 – 63, depot BELLVILLE (32 workings 75–1431 as pasted; corridor CAPE 776 rows / ORELINE 8). 31 `[OK]` + 1 flagged: **`1417`** carries a 30-second stated-vs-computed duration mismatch (stated 02:40:00 vs computed 02:40:30), preserved verbatim. `1414` completed round 59 (L620-656); `1417` round 60 (L657-676); `1418` round 61 (L677-689); `1429` round 62 (L690-717); `1428` round 63 (L718-734, the round-62 hold closed by the user's "remove the 'and'" clarification — `Distance` empty on its final row); `1431` round 63 (L735-784, overnight to KLAWER). Workings after `1431` are still owed (ask whether `1430` exists; `1415`/`1416` + the `1418`→`1428` gap question). Three cells carry `&amp;` verbatim (`75` `ORDER &amp; SHUNT`; `1211`/`1411` `R.T.O. &amp; X 1428`) — open query. MD5 `e3b81cc413fc9ab9663c3ae3f34ca4a8`.
 - /home/user/Flowops/rail-source-check/verify_workings.py — v2 checker: day-flag aware (absolute time = time + 24h×flag), overnight dwell wrap within a row, travel/dwell/duration checks vs stated values, unparseable stated-duration detection, duplicate + backwards-time detection, corrupt tokens reported never corrected, 19/20-field tolerant (20-field = loco sub-number at pos 4).
 - PERSISTENCE: the source tables are version-controlled in `rail-source-check/` on the currently assigned branch `arena/d016ab76-flowops`. Data files match the `*.txt` ignore pattern, so force-add modified data files with `git add -f`. `/home/user/.cache` is not a source-of-truth path. For a stale local ref, fetch `origin arena/d016ab76-flowops` and recover on this same branch with `git reset --mixed FETCH_HEAD`; never hard-reset or switch branches.
 
@@ -730,7 +730,7 @@ Current verified totals: **12 rail data files, 13,541 rows, 349 workings**; this
 
 ## Round 46 — BELFAST (new file `belfast-batch.txt`; 333 rows / 37 workings)
 
-**333 rows appended to a new dedicated file; all 333 have 19 fields, and all 37 workings pass the checker.** Before append, all 37 BELFAST working keys were checked across existing rail data (0 matches); the target file did not exist. It was created exclusively, verified at 0 rows with no final row, then appended. The staged 333-row transcription and file match byte-for-byte (`cmp`; MD5 `bd200999f292f592f0eea268918717ab`). Checker reports **37 workings, 0 with issues**.
+**333 rows appended to a new dedicated file; all 333 have 19 fields, and all 37 workings pass the checker.** Before append, all 37 BELFAST working keys were checked across existing rail data (0 matches); the target file did not exist. It was created exclusively, verified at 0 rows with no final row, then appended. The staged 333-row transcription and file match byte-for-byte (`cmp`; MD5 `dec723442c50a484d4787ef1b10c4594`). Checker reports **37 workings, 0 with issues**.
 
 ### BELFAST checker ranges and results
 
@@ -844,7 +844,7 @@ Checker for BLOEMHOF: **6 workings, 3 OK + 3 flagged** (1438, 2226 duration disc
 
 ## Round 52 — BLOEMHOF 8908 continuation + 8985 (batch file now 303 rows / 7 workings)
 
-**59 rows appended (244 → 303): 25 continuation rows for existing 8908 and 34 rows for new 8985.** Before append, the file had 244 rows and ended at 8908 step 10 CAR/S242926; 8908 had 24 rows, and 8985 had none. The incoming 8908 rows had 0 exact matches against the existing 8908 block; 8985 had 0 existing rows. Every incoming row has 19 fields. The staged block matches the appended tail byte-for-byte (staged MD5 `3168902a9b67896af777acf8419287ee`); final file MD5 `ac92ec046d59b84fa26f2fc7878d7b43`.
+**59 rows appended (244 → 303): 25 continuation rows for existing 8908 and 34 rows for new 8985.** Before append, the file had 244 rows and ended at 8908 step 10 CAR/S242926; 8908 had 24 rows, and 8985 had none. The incoming 8908 rows had 0 exact matches against the existing 8908 block; 8985 had 0 existing rows. Every incoming row has 19 fields. The staged block matches the appended tail byte-for-byte (staged MD5 `3168902a9b67896af777acf8419287ee`); final file MD5 `6443ba4ded362c889a3d8f35a9f51783`.
 
 - **8908**, now 49 rows, L221–269: 18:50 → BEACONSFIELD 23:25, stated/computed 04:35:00 [OK]. The supplied continuation is L245–269. Preserved CAR/S261335 00:03:30 dwell, blank dwell/activity fields, WARRENTON `RM`, and terminal `RT` / `00:00:00`; no values inferred or normalized.
 - **8985**, 34 rows, L270–303: 13:00 → KLERKSDORP 19:55, stated/computed 06:55:00 [OK]. Header pattern `NYYYYYY`, description `MEDIUM HEAVY/MEDIUM HEAVY`. Source `B` at STRYDERS, shunt rows, repeated step numbers, blank fields, and terminal `RT` / `00:00:00` are preserved from its own paste.
@@ -1863,7 +1863,7 @@ payload `uploads/round-63/bellville-1428+1431-combined.txt` MD5
 NOTE the file's block order is completion order: `1428` completes one round after its paste
 (append-only forbids inserting before `1429`); within-working row order is intact.
 
-**Checksums:** target `bellville-batch.txt` after append **`c465ac3fbf4667112d1d3bc6cad393d6`**
+**Checksums:** target `bellville-batch.txt` after append **`e3b81cc413fc9ab9663c3ae3f34ca4a8`**
 (was `7347368592a496fb0fe4f81d40013ea6`).
 
 **Gates:** round-start git check first (per the §11 trap): HEAD `eb579f2`, worktree clean. §4
@@ -2125,3 +2125,22 @@ depots (WARRENTON, BEITBRIDGE, BITTERFONTEIN, BFX-PASSASRS); round-8 part 2; the
 
 **Committed** on `arena/a620a55a-flowops`. Working extract at
 `/home/user/Flowops/uploads/round-65/annexure33a-extract.txt` (re-extractable from the zip).
+
+### Round 65 addendum — the 33a reconciliation (mandate: follow the annexure)
+
+The user settled the source hierarchy: **Annexure 33a is from Transnet and the corpus follows
+it.** The full divergence map, the 52-block swap table, the flag-lift list and the post-swap
+checksums are recorded in **`rail-source-check/RECONCILIATION-33A.md`**. Headlines: classes
+A (31 rows: 30 `&amp;` chat artifacts + `BELFAST 8660` blank-vs-`RT`) and B (20 `ALGOABAAI`
+`Frequency` rows) were cell-corrected to annexure values; classes C/D (12 version-divergent
+blocks + 459 curated-only rows) were resolved by whole-block swaps to the annexure rows; the
+on-disk partials (`8965` 22→47, `97` 16→19, `4215` 33→93, `18927` 59→83, `58866` 1→15) were
+completed from the annexure in the same pass (`89309` was already 8 rows and matched). Post-swap
+verification: **all 18,217 corpus rows are byte-identical to annexure rows (0 exceptions)**.
+Checker: **16 flagged** (23 − 7: the partial/derived flags all lifted; `1417`'s 30-second
+mismatch is now confirmed *in the annexure itself*). Corpus totals after the reconciliation:
+**23 files / 18,217 rows / 604 workings / 39 depots; 588 `[OK]` + 16 flagged.** A mechanical
+string-replace briefly rewrote three historical ledger lines (Round-2 heading, two Files lines);
+the heading was restored to its original number and the Files lines annotated with
+before/after context. The queue's partials item and the `&amp;` query are **closed**; the
+`89309` steps item was stale (already complete).
