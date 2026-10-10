@@ -124,6 +124,9 @@ for **every** supplied binary. No binary is committed to this repository.
 | V4-04 | `Annexure 33_Network Register June 2026 F (1).pdf` | `1e2842cbf88c9382a18c604240a79cee985e85f7966fd90a081cdb12b68c9fa0` | 378,138 | PDF (8 p) | 2026-10-10 (user upload, commit `be90c16`) | 2026/27 timetable (June 2026 v0.3) |
 | V4-08 | `Annexure 41 Occurrence Reporting Procedure.pdf` | `aa0d1acd9b5c195963ba858565b4aed8a3a79a36626013d3af3ce16204416aed` | 630,777 | PDF (12 p) | 2026-10-10 (user upload, commit `be90c16`) | RSR template NOV2021.V3 |
 | V4-09 | `Annexure 42 Transnet Customer Collaboration Policy.pdf` | `68aa7e5f3124314ccf2ba18feb43b14a87c7262b64935c58ed6f66e0470ca9bd` | 244,232 | PDF (14 p) | 2026-10-10 (user upload, commit `be90c16`) | effective 01 Dec 2025 v1.0 |
+| V4-12 | `Annexure 20a 2024.09.30_Cancel_or_Re-Schedule_TOC_Train_Process_v4_.pdf` | `dafafcf2a2af4abcfc8de4075acc3ab884615b6ed97d7f47cb23c21e3d1810bf` | 899,171 | PDF (1 p, flowchart) | 2026-10-10 (user upload, commit `b8d3fbe`) | Process v4, 30 Sep 2024 |
+| V4-13 | `Annexure 20b Cancellation reasons.pdf` | `d5774ad4dc21859a39429fe37324a757f544ca5669873ab861cdca34030ff9ba` | 513,828 | PDF (1 p, xlsx-derived) | 2026-10-10 (user upload, commit `b8d3fbe`) | v1.3, 19 May 2023 |
+| *(dedupe)* | `Annexure 33 Capacity Statement (3).xlsm` + `Annexure 33_Network Register June 2026 F (2).pdf` + `Annexure 33a_NS ver.4 (3).xlsx` (root, commit `b8d3fbe`) | = `2d3f5915…` / `1e2842cb…` / `93b4d449…` | — | byte-identical re-uploads | 2026-10-10 verified | removed from root; identical to V4-06 / V4-04 / V4-05 in `sources/` |
 | V4-10 | `Annexure 43 KPIs (2).xlsx` | `18e137f75057f57b05ce3196c2d4b5b4b8c83e35bc57c590ea3c49d89b65fd15` | 51,984 | **XLSX** (format question resolved) | 2026-10-10 (user upload, commit `e24e70c`) | FY26/27–27/28 |
 | *(remaining rows added on receipt)* | | | | | | |
 

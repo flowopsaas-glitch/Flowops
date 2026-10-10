@@ -278,3 +278,11 @@ tariffs (Table 17) are now in the product** (effective 1 Aug 2026), plus applica
 invoicing rules, penalties (Tables 18–22) and the KPI pipeline (Table 23). /rail/statement is
 live with the full annexure register (delivered/wanted). E-TARIFF-01 split: access tariffs found,
 ancillary rates future-NS. State of truth: rail-source-check/STATE.md "Round 70".
+
+### ROUND 71 ADDENDUM (2026-10-10)
+
+Round 71 complete: Annexure 20a (Cancel/Re-Schedule TOC Train Process v4 — 24 steps, 15-minute
+notice rule) + Annexure 20b (82 cancellation reasons → responsible parties, verbatim) are live at
+/rail/cancellations. Three duplicate re-uploads deduped (byte-identical, recorded in manifest).
+Mid-session git ref reset recovered per STATE.md Round 71 (stash + ff-only; no reset --hard).
+State of truth: rail-source-check/STATE.md "Round 71".

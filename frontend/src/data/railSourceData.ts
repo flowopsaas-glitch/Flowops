@@ -60,6 +60,7 @@ export const wantedSources = [
   "✅ DELIVERED — Access tariffs FY2026/27 (NS V4 Table 17, effective 01 Aug 2026) → /rail/tariffs (round 70)",
   "Ancillary service rates (E-TARIFF-01 ancillary half — NS says future volume) + marshalling rates beyond the indicative Table 18",
   "Full Publication Notice (V4-11)",
-  "V3 structural set: 20a/20b, 28 (handshake), 29a/32 (slot application), 19b",
+  "✅ DELIVERED — Annexure 20a (Cancel/Re-Schedule Process v4) + 20b (Cancellation reasons v1.3) → /rail/cancellations (round 71)",
+  "V3 structural set remainder: 28 (handshake), 29a/32 (slot application), 19b",
   "Operational actuals (SPRINT OTD, realised transit, TSR logs) → variance Actual leg",
 ];

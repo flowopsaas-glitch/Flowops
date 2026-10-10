@@ -383,6 +383,7 @@ export default function AppLayout() {
     { section: "RAIL", label: "Network Register", desc: "Annexure 33 capacity declaration & critical sections", to: "/rail/register", icon: BookOpen, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Investment Plan", desc: "Annexure 17 approved capital investment", to: "/rail/investment", icon: PieChart, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Occurrence & Policy", desc: "Annexure 41 RSR reporting · Annexure 42 collaboration", to: "/rail/occurrence", icon: ShieldAlert, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Cancellations", desc: "Annexure 20a/20b process & reason attribution", to: "/rail/cancellations", icon: RotateCcw, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, perm: "railHandshake", entitlement: "rail" },
     { section: "RAIL", label: "Network Sources", desc: "Provenance, coverage & preserved anomalies", to: "/rail/sources", icon: Database, perm: "rail", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },

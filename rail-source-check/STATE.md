@@ -2396,3 +2396,33 @@ now 11 items — all planned rail pages exist.
 629 flagged (12,842 [OK])**.
 
 **Verification (round 70):** `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 · vitest **749/749 pass**.
+
+## Round 71 — Annexure 20a/20b (cancellation process + reasons) + mid-session ref-reset recovery (2026-10-10)
+
+Mandate: "continue world class end to end and ive commited more files".
+
+**Recovery (recorded per S-rules):** the session's git refs had reset to the branch base `6426c7f`
+on reconnect with the working tree fully intact (verified: 672 data files + all sources at full
+size; key files byte-equal to `febda52`). Remote `origin/arena/a620a55a-flowops` held the complete
+history + the new upload `b8d3fbe`. Recovered with `git stash push -u` + `git merge --ff-only` +
+`git stash drop` — **no `git reset --hard`** (standing rule honoured). Also reinstalled `pypdf`
+and `node_modules` (both wiped by the restore).
+
+**Upload `b8d3fbe` (5 files):** 2 new — **Annexure 20a** (Cancel/Re-Plan/Re-Schedule TOC Train
+Process v4, 30 Sep 2024, 1-p swimlane flowchart, `dafafcf2…`) + **Annexure 20b** (Main Train
+Cancellation Reasons allocated to Responsible Parties v1.3, 82 rows, `d5774ad4…`); 3 verified
+**byte-identical re-uploads** (33b (3).xlsm, 33 Register F (2).pdf, 33a (3).xlsx) — deduped: not
+copied into `sources/`, removed from root (content in git history at `b8d3fbe`), recorded in the
+manifest.
+
+**Productised:** `/rail/cancellations` — 24 process steps + decision gates (incl. the **15-minute
+cancellation notice** rule and the >48-hour gate) + searchable 82-row reason→responsible-party
+table (mixed "Could be" attributions preserved verbatim) + TOC Charges & Penalties cross-link to
+the NS V4 Tables 21–22. Annexure register: 20a/20b → delivered (12 of 44). Sidebar RAIL now 12
+items.
+
+**Corpus unchanged:** §4 baseline still **672 files / 251,678 rows / 13,471 workings / 688 depots /
+629 flagged (12,842 [OK])**.
+
+**Verification (round 71):** `npm ci` (760 pkgs) · `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 ·
+vitest **749/749 pass**.

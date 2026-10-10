@@ -181,6 +181,10 @@ gained its money tab** (Table 17 access tariffs verbatim, application fees, invo
 18–22). All planned rail pages now exist (11 sidebar items); Interfaces & Messaging remains the
 only unbuilt page from the original plan.
 
+**Built round 71:** **Cancellations** (`/rail/cancellations` — Annexure 20a process steps 1–24
+with the 15-minute notice rule and decision gates, Annexure 20b's 82-row reason→responsibility
+lookup with party filter, penalties cross-link). Sidebar RAIL now 12 items.
+
 **Planned next (needs sources):** Tariffs rate values (approved ancillary schedule),
 Annexure 33 appended section-level data file (slots + N1/N2 classification), Possession
 elevation screens, Compliance & DG screens, variance Actual leg (SPRINT actuals),

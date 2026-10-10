@@ -267,6 +267,18 @@ origins — always pair (Origin, Train).
 - **Next candidates:** Anx 15 clause index; wire Anx 36 (V3 label); Daily/Quarterly occurrence
   report builders; backend migration `20261007170000` for row-level timetable browsing.
 
+### 9H. Round 71 closeout (2026-10-10) — 20a/20b landed; ref-reset recovery documented
+
+- Annexure 20a (process v4) + 20b (82-row reason table) → `/rail/cancellations`. Three re-uploads
+  in `b8d3fbe` verified byte-identical and deduped (manifest dedupe row). Ref-reset recovery
+  method recorded in STATE.md Round 71 (stash + ff-only; never `reset --hard`).
+- **Still missing:** ancillary rates (future NS), Annexure 33 appended section-level data file,
+  Full Publication Notice (V4-11), remaining annexures (see /rail/statement register — now 12 of
+  44 delivered; priority remainder: 1 shut schedule, 28 handshake, 29a application form, 32
+  ad-hoc paths, 35 dispute resolution), SPRINT actuals.
+- **Next candidates:** Daily/Quarterly occurrence report builders; Anx 15 clause index; backend
+  migration `20261007170000` for row-level timetable browsing.
+
 ## 10. OPEN QUERIES (need the user's explicit answer)
 
 1. **Branch mandate** (§3) — still unresolved; keep recording whatever branch is actually used.
