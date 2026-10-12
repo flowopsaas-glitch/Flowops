@@ -485,7 +485,8 @@ jobs:
   # Pushes:   only on `push` events. PRs and workflow_dispatch from a
   #           fork build the image and run the smoke test but do NOT
   #           publish (the registry login step is skipped for those).
-  # Multi-arch: linux/amd64 + linux/arm64 (Graviton-ready).
+  # Platform: linux/amd64 only. The only consumer (ECS Fargate, x86_64) is amd64;
+  # arm64 under QEMU crashed node with SIGILL (exit 132). See docs/DEPLOYMENT.md.
   # ────────────────────────────────────────────────────────────────────────
   frontend-image:
     name: Frontend Image (build & push)
@@ -500,11 +501,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU (for arm64 emulation)
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -561,9 +557,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       # Step 1: single-arch (amd64) build, loaded into the local Docker so
-      # we can `docker run` it for the smoke test. Multi-arch + load-into-
-      # docker are mutually exclusive in buildx, so we do the smoke test
-      # on amd64 only and multi-arch the push.
+      # we can `docker run` it for the smoke test. The published image is
+      # the same linux/amd64 build (see the header above).
       - name: Build (amd64, for smoke test)
         uses: docker/build-push-action@v5
         with:
@@ -720,16 +715,16 @@ jobs:
           echo "A CRITICAL frontend image vulnerability was found. Review the annotations, summary, or trivy-frontend-critical artifact."
           exit 1
 
-      # Step 2: multi-arch build & push. Reuses the BuildKit cache from
-      # step 1, so the amd64 layers don't rebuild — only arm64 is added.
-      - name: Build & push (multi-arch)
+      # Step 2: build & push. Reuses the BuildKit cache from step 1, so the
+      # amd64 layers don't rebuild. Publishes linux/amd64 only (see header).
+      - name: Build & push (linux/amd64)
         if: github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
           target: production
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -952,11 +947,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -1160,14 +1150,14 @@ jobs:
           echo "A CRITICAL backend image vulnerability was found. Review the annotations, summary, or trivy-backend-critical artifact."
           exit 1
 
-      - name: Build & push (multi-arch)
+      - name: Build & push (linux/amd64)
         if: github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
           target: production
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

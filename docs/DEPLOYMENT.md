@@ -21,7 +21,7 @@
 | Backend container | ❌ Backend repo location not yet shared. Compose service slot is ready; just needs `BACKEND_IMAGE=ghcr.io/.../flowops-backend:tag` once the backend repo starts pushing. |
 | Observability stack | ⚠️ `docker-compose.otel.yml` runs Jaeger + Prometheus + OTel collector. Dev-only (CORS, env labels). Production target undecided — see "Decisions still open". |
 | Windows deploy scripts | 🪦 Marked deprecated in `deploy/DEPRECATED.md`. Will be deleted after AWS migration sign-off. |
-| CI image build/push | ✅ Done in PR #11. `frontend-image` job builds amd64 (smoke-test), then multi-arch (amd64 + arm64) push to `ghcr.io/<owner>/<repo>-frontend`. Smoke test asserts `/healthz`, the index page, and every hardened response header. Tag scheme: `latest` on default-branch push, semver tags on `v*` push, `sha-<short>` on every push. |
+| CI image build/push | ✅ Done in PR #11. `frontend-image` job builds amd64 (smoke-test), then pushes the linux/amd64 image to `ghcr.io/<owner>/<repo>-frontend`. arm64 is not published: the only consumers are x86_64 (ECS Fargate, the S3/CloudFront frontend), and arm64 under QEMU crashed node with SIGILL (exit 132). Smoke test asserts `/healthz`, the index page, and every hardened response header. Tag scheme: `latest` on default-branch push, semver tags on `v*` push, `sha-<short>` on every push. |
 | Secrets in CI workflow | ✅ `JWT_SECRET` now reads from `${{ secrets.JWT_SECRET }}` (PR #11). The previous hardcoded `test-jwt-secret-for-ci` is gone. If the secret is unset on a forked PR, the backend tests fail loudly rather than silently using a known-leaked value. |
 | Secrets in `deploy/`'s `flowops-go-live.ps1` | 🔴 Copies `backend/.env.production` raw into the release dir. Until that script is deleted, the host running it must be trusted. |
 | Frontend `dist/` in git history | ⚠️ Older commits track build artefacts. `.gitignore` already excludes them. New commits will not. |
@@ -92,7 +92,7 @@ Why this shape:
 
 - [x] Picked registry: **GHCR** (`ghcr.io/<owner>/<repo>-frontend`). Authenticates via the workflow's `GITHUB_TOKEN`; no extra IAM. Easy to mirror to ECR later if you'd rather pull from AWS-native — one `docker/login-action` step + a second tag in the metadata-action.
 - [x] CI job on push: builds the production image and pushes to GHCR with a versioned tag set (`sha-<short>`, branch name, `latest` on default branch, full semver on `v*` tags).
-- [x] CI job builds amd64 first with `load: true`, runs the container, hits `/healthz`, asserts `Strict-Transport-Security` / `Content-Security-Policy` / `X-Frame-Options` / `X-Content-Type-Options` / `Referrer-Policy` are present on `/`, then does the multi-arch (amd64 + arm64) push if the smoke test passed.
+- [x] CI job builds amd64 first with `load: true`, runs the container, hits `/healthz`, asserts `Strict-Transport-Security` / `Content-Security-Policy` / `X-Frame-Options` / `X-Content-Type-Options` / `Referrer-Policy` are present on `/`, then pushes the linux/amd64 image if the smoke test passed. arm64 is deliberately not published (see the CI image row above).
 - [x] `JWT_SECRET` moved to `${{ secrets.JWT_SECRET }}` (was hardcoded `test-jwt-secret-for-ci`).
 
 Optional repo secrets the new workflow reads (all empty-default; nothing fails if unset):
