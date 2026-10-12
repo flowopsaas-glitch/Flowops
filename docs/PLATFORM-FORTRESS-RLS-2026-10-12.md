@@ -8,7 +8,8 @@ This round puts the answer in the DATABASE itself.
 
 ## 1. Postgres Row-Level Security — all 111 tenant tables
 
-**Migration `20261012150000_rls_tenant_isolation`** (13th), generated mechanically
+**Migration `20261012210000_rls_tenant_isolation`** (15th — applied last, after every
+table carrying a `companyId` exists), generated mechanically
 by `backend/scripts/generate-rls-migration.py` (regenerate, never hand-edit):
 
 - Every model with a `companyId` column (111 tables: rail, telemetry, billing,

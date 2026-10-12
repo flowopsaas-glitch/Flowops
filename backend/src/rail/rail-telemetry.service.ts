@@ -193,7 +193,7 @@ export class RailTelemetryService {
 
   private async ingestPoints(companyId: string, groups: Array<{ device: { id: string; companyId: string; deviceCode: string; speedLimitKph: number | null; batteryThresholdPct: number | null; lastSeenAt: Date | null }; points: TelemetryPointDto[] }>): Promise<IngestResult> {
     // Tenant context is established for the whole ingest transaction: the RLS
-    // policies (migration 20261012150000_rls_tenant_isolation) make the DATABASE
+    // policies (migration 20261012210000_rls_tenant_isolation) make the DATABASE
     // refuse any row outside this companyId — defence in depth beneath the
     // device-token lookup. Everything (points, last-known-position, alerts,
     // outbox) stays one transaction.

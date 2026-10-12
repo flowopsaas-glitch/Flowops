@@ -24,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "prisma" / "schema.prisma"
-OUT = ROOT / "prisma" / "migrations" / "20261012150000_rls_tenant_isolation" / "migration.sql"
+OUT = ROOT / "prisma" / "migrations" / "20261012210000_rls_tenant_isolation" / "migration.sql"
 
 POLICY = """-- {table}
 ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY;

@@ -21,7 +21,7 @@ export class PrismaService
   /**
    * Run `fn` inside a transaction with the tenant context established:
    * `SET LOCAL 'app.company_id'`. Every table with a companyId carries an RLS
-   * policy bound to that setting (migration `20261012150000_rls_tenant_isolation`),
+   * policy bound to that setting (migration `20261012210000_rls_tenant_isolation`),
    * so within this scope the DATABASE refuses cross-tenant rows — defence in
    * depth beneath the app-level filters.
    *

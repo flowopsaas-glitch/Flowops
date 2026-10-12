@@ -24,7 +24,7 @@ to, with executable semantics (pinned by a TS truth-table in the coverage spec):
 ALTER DATABASE flowops SET app.rls_strict = 'on';   -- tighten
 ALTER DATABASE flowops SET app.rls_strict = 'off';  -- roll back instantly
 ```
-Migration header documents the whole truth table (`20261012150000_rls_tenant_isolation`,
+Migration header documents the whole truth table (`20261012210000_rls_tenant_isolation`,
 regenerated in place — it had never been applied outside this local branch).
 
 ## 2. Tenant-context rollout — the whole rail layer
