@@ -45,6 +45,27 @@ jobs:
           fi
 
   # ────────────────────────────────────────────────────────────────────────
+  # CI tooling guards.
+  #
+  # The GHCR publish preflight decides whether the image jobs may publish, and
+  # a wrong answer costs in both directions: a false "denied" blocks the first
+  # publish of a package that does not exist yet (which is exactly how main sat
+  # red from 2026-09-27 to 2026-10-12), while a false "ok" burns a multi-arch
+  # build before failing. scripts/ghcr-publish-preflight.test.sh pins that
+  # decision against a mock registry — no network, no credentials, ~1s.
+  # ────────────────────────────────────────────────────────────────────────
+  ci-tooling:
+    name: CI Tooling Guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GHCR publish preflight logic (mock registry)
+        run: |
+          chmod +x scripts/ghcr-publish-preflight.sh scripts/ghcr-publish-preflight.test.sh
+          ./scripts/ghcr-publish-preflight.test.sh
+
+  # ────────────────────────────────────────────────────────────────────────
   # Compose config guard.
   #
   # The VPS / production overlays remove host port bindings so that the only
@@ -502,35 +523,23 @@ jobs:
           # back to GITHUB_TOKEN when the secret is absent.
           password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
 
-      # GHCR publish preflight — surface registry-authorisation problems
-      # BEFORE the long multi-arch build. The 2026-09-27 main failures were
-      # GHCR authorisation ("denied: permission_denied: read_package") at
-      # push time — NOT QEMU/arm64 — and only surfaced at the end of the job.
-      #   200/404 -> package readable, or absent (first push creates it): OK
-      #   401/403 -> token cannot publish: fail fast with the remediation
+      # GHCR publish preflight — fail fast when the credential genuinely cannot
+      # publish, WITHOUT blocking the first publish of a package that does not
+      # exist yet. The probe and its reasoning live in the script:
+      #   scripts/ghcr-publish-preflight.sh   (behaviour)
+      #   scripts/ghcr-publish-preflight.test.sh  (pinned by CI Tooling Guards)
+      # The previous inline probe did a raw-Bearer manifest GET, which GHCR
+      # answers 403 both for "no permission" and for "not created yet" — so it
+      # failed every first publish, and because it runs before the push it
+      # deadlocked the publish that would have created the package.
       - name: GHCR publish preflight
         if: github.event_name == 'push'
         env:
           REG_TOKEN: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+          PACKAGE_SUFFIX: frontend
         run: |
-          pkg="${GITHUB_REPOSITORY,,}-frontend"
-          code=$(curl -s -o /tmp/ghcr_probe.json -w '%{http_code}' \
-            -H "Authorization: Bearer $REG_TOKEN" \
-            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-            "https://ghcr.io/v2/$pkg/manifests/main" || true)
-          code="${code:-000}"
-          echo "GHCR preflight: GET ghcr.io/v2/$pkg/manifests/main -> HTTP $code"
-          case "$code" in
-            200|404)
-              echo "Preflight OK ($code): package readable or absent (first push creates it)." ;;
-            401|403)
-              echo "::error title=GHCR publish preflight::ghcr.io/$pkg denied (HTTP $code) — this job's token cannot publish. Fix ONE of: (1) repo Settings > Actions > General > Workflow permissions > 'Read and write permissions'; (2) if the package already exists, its Package settings > 'Manage Actions access' > grant THIS repository Write; (3) add secret CR_PAT (fine-grained PAT with Packages: write) — login falls back to it."
-              cat /tmp/ghcr_probe.json 2>/dev/null || true
-              exit 1 ;;
-            *)
-              echo "Preflight inconclusive (HTTP $code) — continuing; the push step will re-check authorisation."
-              cat /tmp/ghcr_probe.json 2>/dev/null || true ;;
-          esac
+          chmod +x scripts/ghcr-publish-preflight.sh
+          ./scripts/ghcr-publish-preflight.sh
 
       - name: Compute image tags & labels
         id: meta
@@ -962,35 +971,17 @@ jobs:
           # back to GITHUB_TOKEN when the secret is absent.
           password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
 
-      # GHCR publish preflight — surface registry-authorisation problems
-      # BEFORE the long multi-arch build. The 2026-09-27 main failures were
-      # GHCR authorisation ("denied: permission_denied: read_package") at
-      # push time — NOT QEMU/arm64 — and only surfaced at the end of the job.
-      #   200/404 -> package readable, or absent (first push creates it): OK
-      #   401/403 -> token cannot publish: fail fast with the remediation
+      # GHCR publish preflight — same script as the frontend image job; see the
+      # comment there and scripts/ghcr-publish-preflight.sh for why the probe
+      # asks for a push-scoped token instead of a raw-Bearer manifest GET.
       - name: GHCR publish preflight
         if: github.event_name == 'push'
         env:
           REG_TOKEN: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+          PACKAGE_SUFFIX: backend
         run: |
-          pkg="${GITHUB_REPOSITORY,,}-backend"
-          code=$(curl -s -o /tmp/ghcr_probe.json -w '%{http_code}' \
-            -H "Authorization: Bearer $REG_TOKEN" \
-            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-            "https://ghcr.io/v2/$pkg/manifests/main" || true)
-          code="${code:-000}"
-          echo "GHCR preflight: GET ghcr.io/v2/$pkg/manifests/main -> HTTP $code"
-          case "$code" in
-            200|404)
-              echo "Preflight OK ($code): package readable or absent (first push creates it)." ;;
-            401|403)
-              echo "::error title=GHCR publish preflight::ghcr.io/$pkg denied (HTTP $code) — this job's token cannot publish. Fix ONE of: (1) repo Settings > Actions > General > Workflow permissions > 'Read and write permissions'; (2) if the package already exists, its Package settings > 'Manage Actions access' > grant THIS repository Write; (3) add secret CR_PAT (fine-grained PAT with Packages: write) — login falls back to it."
-              cat /tmp/ghcr_probe.json 2>/dev/null || true
-              exit 1 ;;
-            *)
-              echo "Preflight inconclusive (HTTP $code) — continuing; the push step will re-check authorisation."
-              cat /tmp/ghcr_probe.json 2>/dev/null || true ;;
-          esac
+          chmod +x scripts/ghcr-publish-preflight.sh
+          ./scripts/ghcr-publish-preflight.sh
 
       - name: Compute image tags
         id: meta
