@@ -234,6 +234,9 @@ model Company {
   planUpgradeRequests PlanUpgradeRequest[]
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
+  outboxEvents       OutboxEvent[]
+  railTrainManifests RailTrainManifest[]
+  railDevices        RailDevice[]
   codTransactions    CodTransaction[]
   clients            Client[]
   returns            Return[]
@@ -549,6 +552,44 @@ model NotificationPreference {
 
 // ─── Drivers ──────────────────────────────────────────────────────────────
 
+// ─── Driver duties — one shift, one mode, one vehicle ─────────────────────────
+//
+// Starting a duty declares "I am driving X right now": the portal reshapes to
+// that mode (job kinds, checklists, POD requirements) and the server scopes the
+// work queue by it. Starting a new duty auto-ends the previous one.
+
+enum DriverMode {
+  BICYCLE   // last-mile / campus — short radius, photo POD
+  BAKKIE    // light pickup deliveries & collections
+  TRUCK     // heavy — loads, weighbridge, DG checklist
+  LINEHAUL  // inter-depot trunk runs — seals & handoffs
+  TRAIN     // rail driver — consist + possession awareness
+}
+
+enum DriverDutyStatus {
+  ACTIVE
+  COMPLETED
+}
+
+model DriverDuty {
+  id         String            @id @default(cuid())
+  companyId  String
+  driverId   String
+  driver     Driver            @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  mode        DriverMode
+  status      DriverDutyStatus @default(ACTIVE)
+  vehicleReg  String?
+  note        String?          @db.Text
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([companyId, startedAt])
+  @@index([driverId, status])
+  @@map("driver_duties")
+}
+
 model Driver {
   id          String       @id @default(cuid())
   name        String
@@ -558,6 +599,9 @@ model Driver {
   vehicleReg  String?
   status      DriverStatus @default(OFFLINE)
   isActive    Boolean      @default(true)
+
+  // Proof of delivery captured/verified against this driver's runs.
+  electronicPods ElectronicPod[]
 
   // ── Customer delivery rating ──────────────────────────────────────────
   customerRating      Int?
@@ -572,6 +616,14 @@ model Driver {
 
   // Driver portal auth (phone + hashed 4-digit PIN)
   driverPin String?
+
+  // ── Driver modes (the profession they are driving THIS shift) ────────────
+  // A driver can be a bakkie courier this morning and a linehaul driver tonight.
+  // allowedModes is the admin's permission; the duty record says which mode a
+  // shift actually ran in. TRAIN = rail driver (consist/possession board).
+  defaultMode  DriverMode?
+  allowedModes DriverMode[]
+  duties       DriverDuty[]
 
   // ── Single active session + login audit (driver portal) ───────────────
   // Mirrors the User model: one device per driver. driver-login mints a new
@@ -1080,6 +1132,9 @@ model Waybill {
   id             String        @id @default(cuid())
   trackingNumber String
   status         WaybillStatus @default(PENDING)
+
+  // Proof of delivery for this waybill (0..n attempts; the active one gates billing).
+  electronicPods ElectronicPod[]
 
   // Parties
   senderName       String
@@ -1866,6 +1921,39 @@ enum WebhookDeliveryStatus {
   PENDING
   DELIVERED
   FAILED
+  RETRYING
+  EXHAUSTED
+}
+
+// ─── Transactional Outbox (Phase 1 of the event-driven rail architecture) ───
+//
+// Domain changes write an OutboxEvent row in the SAME transaction as the change
+// itself, so an event is never lost to a crash between "commit" and "dispatch".
+// A cron worker drains PENDING rows into WebhooksService.dispatch() (which owns
+// per-endpoint HMAC signing, delivery records and exponential back-off). If the
+// process dies mid-drain, the row is still here and will be retried.
+model OutboxEvent {
+  id            String         @id @default(cuid())
+  companyId     String
+  event         String         // e.g. "rail.slot.allocated" — see EVENT_CATALOG
+  payload       String         // JSON-serialised event body (data only)
+  status        OutboxStatus   @default(PENDING)
+  attempts      Int            @default(0)
+  nextAttemptAt DateTime       @default(now())
+  processedAt   DateTime?
+  lastError     String?        @db.Text
+  createdAt     DateTime       @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([companyId, createdAt])
+  @@map("outbox_events")
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSED
   RETRYING
   EXHAUSTED
 }
@@ -3748,7 +3836,9 @@ model ElectronicPod {
   company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   waybillId   String
+  waybill     Waybill  @relation(fields: [waybillId], references: [id], onDelete: Cascade)
   driverId    String?
+  driver      Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
   status      EpodStatus @default(PENDING)
 
   // Proof data
@@ -3765,6 +3855,12 @@ model ElectronicPod {
   verifiedBy     String?
   verifiedAt     DateTime?
   disputeReason  String?
+
+  // Dispute resolution (the money gate): CLEARED -> VERIFIED (billing flows);
+  // UPHELD -> stays DISPUTED (billing held — settle with the client or credit).
+  disputeResolution String?   // 'CLEARED' | 'UPHELD'
+  disputeResolvedBy String?
+  disputeResolvedAt DateTime?
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -4003,6 +4099,224 @@ model Wagon {
 
   @@index([consignmentId])
   @@map("wagons")
+}
+
+// ─── Digital Train Manifest (the departure document) ───────────────────────────
+//
+// The manifest is the legal record of which wagons moved on which train service.
+// A DRAFT manifest is editable; ISSUING it is a formal attestation (signatory
+// role), after which the document is IMMUTABLE — exactly like an approved Process
+// Book version. An issued manifest can only be corrected by AMENDING it into a new
+// revision (revision+1) which supersedes the old one; history is never rewritten.
+
+enum RailTrainManifestStatus {
+  DRAFT
+  ISSUED
+  DEPARTED
+  ARRIVED
+  CLOSED
+  SUPERSEDED
+  CANCELLED
+}
+
+model RailTrainManifest {
+  id              String                  @id @default(cuid())
+  companyId       String
+  company         Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manifestNumber  String                  // TM-2026-00001 (unique per tenant per revision)
+  revision        Int                     @default(1)
+  supersedesId    String?
+  status          RailTrainManifestStatus @default(DRAFT)
+
+  // What moved, where, and under whose authority (snapshots at creation)
+  consignmentId       String
+  consignmentNumber   String
+  slotApplicationId   String?
+  trainServiceRef     String?
+  corridor            String?
+  originSiding        String?
+  destinationSiding   String?
+  railOperator        String?
+  locoReference       String?
+  plannedDeparture    DateTime?
+  plannedArrival      DateTime?
+
+  notes String? @db.Text
+
+  // Lifecycle evidence — who attested what, when (server-verified identities)
+  issuedAt        DateTime?
+  issuedBy        String?   @db.Text
+  departedAt      DateTime?
+  departedBy      String?   @db.Text
+  arrivedAt       DateTime?
+  arrivedBy       String?   @db.Text
+  closedAt        DateTime?
+  closedBy        String?   @db.Text
+  cancelledAt     DateTime?
+  cancelledReason String?   @db.Text
+  supersededAt    DateTime?
+  supersededById  String?
+
+  wagons RailTrainManifestWagon[]
+
+  createdById    String?
+  createdByEmail String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([companyId, manifestNumber, revision])
+  @@index([companyId, status])
+  @@index([consignmentId])
+  @@map("rail_train_manifests")
+}
+
+// Frozen copy of the consist as it stood at issue time — a manifest never
+// changes when the live wagon register later does.
+model RailTrainManifestWagon {
+  id         String     @id @default(cuid())
+  manifestId String
+  manifest   RailTrainManifest @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+
+  position     Int
+  wagonNumber  String
+  type         WagonType          @default(CONTAINER_CAR)
+  tareTonnes   Float?
+  loadedTonnes Float?
+  commodity    String?
+  sealNumbers  String?
+  axles        Int?
+  gauge        RailGauge?
+  vehicleProfile RailVehicleProfile?
+
+  // Dangerous goods carried by THIS wagon (empty fields inherit the consignment's)
+  isDangerousGoods    Boolean @default(false)
+  unNumber            String?
+  imdgClass           String?
+  placardRef          String?
+  emergencyContact24h String?
+  msdsDocumentUrl     String?
+
+  note String?
+
+  @@index([manifestId])
+  @@map("rail_train_manifest_wagons")
+}
+
+// ─── Telemetry foundations (Phase 3) ───────────────────────────────────────────
+//
+// Device registry + time-series positions + rule-based health alerts. Ingestion
+// authenticates per device (hashed ingest token) so wagon trackers can POST over
+// plain HTTPS without a user account — the same contract an MQTT bridge will use
+// when hardware partners arrive. Alerts are raised on ingest by the pure rules
+// module and deduplicated while open.
+
+enum RailDeviceKind {
+  WAGON_TRACKER
+  LOCO_TELEMATICS
+  WAYBILL_SCANNER
+  PORT_SCANNER
+}
+
+enum RailDeviceStatus {
+  ACTIVE
+  INACTIVE
+  FAULTY
+}
+
+enum RailTelemetryAlertKind {
+  SPEED_EXCEEDED
+  BATTERY_LOW
+  DEVICE_SILENT
+  TEMPERATURE
+}
+
+enum RailAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model RailDevice {
+  id          String          @id @default(cuid())
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deviceCode  String          // WT-000123 — the external id the hardware sends
+  kind        RailDeviceKind  @default(WAGON_TRACKER)
+  status      RailDeviceStatus @default(ACTIVE)
+  label       String?
+  wagonNumber String?
+  locoReference String?
+  simRef      String?
+  speedLimitKph     Float?    // null = platform default
+  batteryThresholdPct Float?  // null = platform default
+  notes       String?         @db.Text
+
+  // Device credential: only the SHA-256 hash is stored; the plaintext is shown
+  // exactly once at creation / rotation (like a password reset token).
+  tokenHash   String   @unique
+  tokenPrefix String
+
+  lastSeenAt    DateTime?
+  lastLat       Float?
+  lastLng       Float?
+  lastSpeedKph  Float?
+  lastBatteryPct Float?
+
+  points RailTelemetryPoint[]
+  alerts RailTelemetryAlert[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, deviceCode])
+  @@index([companyId, status])
+  @@map("rail_devices")
+}
+
+model RailTelemetryPoint {
+  id         String     @id @default(cuid())
+  companyId  String
+  deviceId   String
+  device     RailDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  recordedAt DateTime  // when the hardware measured it
+  receivedAt DateTime  @default(now())
+
+  lat          Float
+  lng          Float
+  speedKph     Float?
+  headingDeg   Float?
+  odometerKm   Float?
+  batteryPct   Float?
+  temperatureC Float?
+  doorOpen     Boolean?
+  raw          Json?
+
+  @@index([deviceId, recordedAt])
+  @@index([companyId, recordedAt])
+  @@map("rail_telemetry_points")
+}
+
+model RailTelemetryAlert {
+  id        String                @id @default(cuid())
+  companyId String
+  deviceId  String
+  device    RailDevice            @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  kind      RailTelemetryAlertKind
+  status    RailAlertStatus       @default(OPEN)
+
+  message   String                @db.Text
+  value     Float?
+  threshold Float?
+
+  raisedAt        DateTime @default(now())
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?
+  resolvedAt      DateTime?
+
+  @@index([companyId, status])
+  @@index([deviceId, raisedAt])
+  @@map("rail_telemetry_alerts")
 }
 
 // Road <-> Rail <-> Port handoffs — "the gap nobody owns".

@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { DriverPortalService } from './driver-portal.service';
 import { AuthService } from '../auth/auth.service';
+import type { DriverMode } from '@prisma/client';
 
 /** Real client IP behind Cloudflare -> nginx -> Docker (see auth.controller). */
 function clientIp(req: any): string | undefined {
@@ -67,6 +68,56 @@ export class DriverPortalController {
       vehicleType: d.vehicleType, vehicleReg: d.vehicleReg,
       status: d.status, companyId: d.companyId,
     };
+  }
+
+  // ── Modes & duties (one shift, one mode, one vehicle) ─────────────────────
+
+  /** GET /driver-portal/modes — the five crafts + this driver's allowances + active duty. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('modes')
+  getModes(@Req() req: any) {
+    return this.svc.getModes(req.driver.id);
+  }
+
+  /** GET /driver-portal/duty/active */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('duty/active')
+  getActiveDuty(@Req() req: any) {
+    return this.svc.getActiveDuty(req.driver.id);
+  }
+
+  /** POST /driver-portal/duty/start — start (or switch to) a mode for this shift. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('duty/start')
+  startDuty(@Req() req: any, @Body() body: { mode: DriverMode; vehicleReg?: string; note?: string }) {
+    return this.svc.startDuty(req.driver.id, req.driver.companyId, body ?? ({} as any));
+  }
+
+  /** POST /driver-portal/duty/end — stand down. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('duty/end')
+  endDuty(@Req() req: any, @Body() body: { note?: string }) {
+    return this.svc.endDuty(req.driver.id, req.driver.companyId, body?.note);
+  }
+
+  /** GET /driver-portal/work — the work queue scoped to the active duty's mode. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('work')
+  getWork(@Req() req: any) {
+    return this.svc.getWorkForDuty(req.driver.id);
+  }
+
+  /** GET /driver-portal/train-board — consist + possession awareness for TRAIN duty. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('train-board')
+  getTrainBoard(@Req() req: any) {
+    return this.svc.getTrainBoard(req.driver.companyId);
   }
 
   /** GET /driver-portal/deliveries — this driver's jobs (collections + deliveries). */

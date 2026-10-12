@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   getWmsDashboard, getWmsKpis, getWmsAiInsights, getInventory,
-  getInventorySummary, getReplenishment, getMovements,
+  getInventorySummary, getReplenishment, getMovements, adjustStock, transferStock,
 } from "../api/warehouseApi";
 
 type Tab = 'dashboard' | 'inventory' | 'movements' | 'kpis' | 'replenish' | 'ai';
@@ -90,7 +90,7 @@ export default function WarehouseManagement() {
       ) : (
         <>
           {tab === 'dashboard' && <DashboardView data={data} />}
-          {tab === 'inventory' && <InventoryView data={data} />}
+          {tab === 'inventory' && <InventoryView data={data} onChanged={() => loadTab('inventory')} />}
           {tab === 'movements' && <MovementsView data={data} />}
           {tab === 'kpis' && <KpisView data={data} />}
           {tab === 'replenish' && <ReplenishView data={data} />}
@@ -146,12 +146,58 @@ function DashboardView({ data }: { data: any }) {
 }
 
 
-function InventoryView({ data }: { data: any }) {
+function InventoryView({ data, onChanged }: { data: any; onChanged?: () => void }) {
   const items = Array.isArray(data) ? data : data?.data ?? [];
+  const [action, setAction] = useState<{ type: 'adjust' | 'transfer'; item: any } | null>(null);
+  const [qty, setQty] = useState('');
+  const [toBin, setToBin] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const openAction = (type: 'adjust' | 'transfer', item: any) => {
+    setAction({ type, item });
+    setQty(''); setToBin(''); setReason(''); setFormError(null);
+  };
+
+  // Escape-to-dismiss: the design-system ratchet counts modals without it.
+  useEffect(() => {
+    if (!action) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAction(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [action]);
+
+  const submit = async () => {
+    if (!action) return;
+    const quantity = Number(qty);
+    if (!Number.isFinite(quantity) || quantity === 0) { setFormError('Enter a non-zero quantity.'); return; }
+    if (action.type === 'adjust' && reason.trim().length < 3) { setFormError('A reason is required for adjustments.'); return; }
+    if (action.type === 'transfer' && quantity < 0) { setFormError('Transfer quantity must be positive.'); return; }
+    if (action.type === 'transfer' && !toBin.trim()) { setFormError('Enter the destination bin.'); return; }
+    const item = action.item;
+    const binId = item.binId ?? item.bin?.id;
+    setBusy(true); setFormError(null);
+    try {
+      if (action.type === 'adjust') {
+        await adjustStock({ binId, sku: item.sku, quantity, reason: reason.trim() });
+      } else {
+        await transferStock({ sku: item.sku, quantity, fromBinId: binId, toBinId: toBin.trim(), reason: reason.trim() || undefined });
+      }
+      setAction(null);
+      onChanged?.();
+    } catch (e: any) {
+      setFormError(e?.message || 'Action failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
       <div className="p-4 border-b border-white/10">
         <h3 className="font-bold text-sm">Inventory ({items.length} items)</h3>
+        <p className="text-xs text-white/40 mt-1">Adjust stock with a reason, or transfer between bins — every action writes a movement record.</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -163,6 +209,7 @@ function InventoryView({ data }: { data: any }) {
               <th className="text-right p-3">On Hand</th>
               <th className="text-right p-3">Available</th>
               <th className="text-center p-3">Status</th>
+              <th className="text-center p-3">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -180,14 +227,97 @@ function InventoryView({ data }: { data: any }) {
                     'bg-amber-500/10 text-amber-400'
                   }`}>{item.status}</span>
                 </td>
+                <td className="p-3 text-center whitespace-nowrap">
+                  <button
+                    onClick={() => openAction('adjust', item)}
+                    className="px-2 py-1 mr-1 rounded-lg text-[11px] font-semibold bg-amber-600/20 text-amber-300 hover:bg-amber-600/30"
+                  >
+                    Adjust
+                  </button>
+                  <button
+                    onClick={() => openAction('transfer', item)}
+                    className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-sky-600/20 text-sky-300 hover:bg-sky-600/30"
+                  >
+                    Transfer
+                  </button>
+                </td>
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={6} className="p-8 text-center text-white/30">No inventory items yet</td></tr>
+              <tr><td colSpan={7} className="p-8 text-center text-white/30">No inventory items yet</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {action && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setAction(null)}>
+          <div
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0b0f14] p-6"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label={action.type === 'adjust' ? 'Adjust stock' : 'Transfer stock'}
+          >
+            <h3 className="text-lg font-black text-white mb-1">
+              {action.type === 'adjust' ? 'Adjust stock' : 'Transfer stock'}
+            </h3>
+            <p className="text-xs text-white/50 mb-4">
+              {action.item.sku} · bin {action.item.bin?.code ?? action.item.binId ?? '—'} · on hand {action.item.quantityOnHand}
+            </p>
+
+            <label className="block text-xs text-white/50 mb-1">
+              {action.type === 'adjust' ? 'Adjustment (e.g. +5 or -3)' : 'Quantity to move'}
+            </label>
+            <input
+              type="number"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white mb-3"
+              placeholder={action.type === 'adjust' ? '+5' : '10'}
+            />
+
+            {action.type === 'transfer' && (
+              <>
+                <label className="block text-xs text-white/50 mb-1">Destination bin</label>
+                <input
+                  value={toBin}
+                  onChange={(e) => setToBin(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white mb-3"
+                  placeholder="BIN-2-04"
+                />
+              </>
+            )}
+
+            <label className="block text-xs text-white/50 mb-1">
+              Reason{action.type === 'adjust' ? ' (required — recorded on the movement)' : ' (optional)'}
+            </label>
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white mb-3"
+              placeholder={action.type === 'adjust' ? 'Cycle count correction' : 'Rebalance to pick face'}
+            />
+
+            {formError && <div className="mb-3 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-300">{formError}</div>}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => void submit()}
+                disabled={busy}
+                className="flex-1 rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-500 disabled:opacity-50"
+              >
+                {busy ? 'Working…' : action.type === 'adjust' ? 'Apply adjustment' : 'Move stock'}
+              </button>
+              <button
+                onClick={() => setAction(null)}
+                className="rounded-xl border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/[0.04]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

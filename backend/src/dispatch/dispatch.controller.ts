@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AutoDispatchService, DispatchMode } from './auto-dispatch.service';
 import { LiveTrackingLinkService } from './live-tracking-link.service';
+import { FleetDutyService } from './fleet-duty.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Public } from '../common/decorators/public.decorator';
@@ -13,7 +14,32 @@ export class DispatchController {
   constructor(
     private readonly autoDispatch: AutoDispatchService,
     private readonly liveTracking: LiveTrackingLinkService,
+    private readonly fleetDuty: FleetDutyService,
   ) {}
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FLEET DUTY BOARD
+  // ══════════════════════════════════════════════════════════════════════════
+
+  @Get('fleet-duty')
+  @ApiOperation({ summary: 'Fleet Duty Board: who is on duty, in which craft, on which vehicle, how long, carrying what' })
+  getFleetDuty(@CurrentUser() u: AuthenticatedUser) {
+    return this.fleetDuty.getBoard(u.companyId);
+  }
+
+  @Post('fleet-duty/:dutyId/force-end')
+  @ApiOperation({ summary: 'Force-end a stuck duty (phone died mid-shift) — attributed and audited' })
+  forceEndDuty(
+    @CurrentUser() u: AuthenticatedUser,
+    @Param('dutyId') dutyId: string,
+    @Body() body: { note?: string },
+  ) {
+    return this.fleetDuty.forceEndDuty(u.companyId, FleetDutyService.assertDutyId(dutyId), {
+      userId: (u as any).id ?? (u as any).userId,
+      name: (u as any).name ?? (u as any).email,
+      role: (u as any).role,
+    }, body?.note);
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // AUTO-DISPATCH

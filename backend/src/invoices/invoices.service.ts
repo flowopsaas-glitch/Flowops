@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { Money } from '../common/money.util';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { classifyRow, epodState, holdReason, isBillableProof } from '../billing/proof-payment.rules';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';
 import { PaystackService } from '../paystack/paystack.service';
@@ -407,6 +408,19 @@ export class InvoicesService {
         status: 'DELIVERED',
         totalAmount: { gt: 0 },
         invoiceItems: { none: {} },   // Waybill ← InvoiceItem back-relation
+        // PROOF GATES PAYMENT: a waybill whose ePOD is disputed (unresolved or
+        // upheld) is not billable — it is an argument. It leaves this list until
+        // the dispute is CLEARED, or stays out and shows on the hold queue.
+        NOT: {
+          electronicPods: {
+            some: {
+              OR: [
+                { status: 'DISPUTED', disputeResolution: null },
+                { status: 'DISPUTED', disputeResolution: 'UPHELD' },
+              ],
+            },
+          },
+        },
       },
       select: {
         id: true,
@@ -428,23 +442,237 @@ export class InvoicesService {
    * "are we billing everything we delivered?" check the batch desk needs.
    * Tenant-scoped, read-only.
    */
+  /**
+   * Query a prisma model defensively: lean fakes (and odd partials) without the
+   * model simply contribute no rows instead of exploding the board.
+   */
+  private async safeFind(model: string, args: any): Promise<any[]> {
+    try {
+      const delegate = (this.prisma as any)[model];
+      if (!delegate?.findMany) return [];
+      return await delegate.findMany(args);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * The settle-these-first queue across every lifecycle. Each row is a hold with
+   * a reason and the next action. Road: disputed ePODs. Rail: weighbridge holds
+   * on tariff calculations. Nothing enters invoices until the hold clears.
+   */
+  async getBillingHolds(companyId: string) {
+    const holds: Array<{
+      mode: 'ROAD' | 'RAIL';
+      ref: string;
+      epodId?: string;
+      counterparty: string | null;
+      amount: number | null;
+      reason: string;
+      nextAction: string;
+      since: string | null;
+    }> = [];
+
+    // ROAD — disputed ePODs that still hold the money.
+    const disputedPods = await this.prisma.electronicPod.findMany({
+      where: {
+        companyId,
+        status: 'DISPUTED',
+        OR: [{ disputeResolution: null }, { disputeResolution: 'UPHELD' }],
+      },
+      include: {
+        waybill: {
+          select: {
+            trackingNumber: true, totalAmount: true, senderName: true, recipientName: true, createdAt: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: 50,
+    });
+    for (const pod of disputedPods) {
+      const upheld = pod.disputeResolution === 'UPHELD';
+      holds.push({
+        mode: 'ROAD',
+        ref: pod.waybill?.trackingNumber ?? 'unknown',
+        epodId: pod.id,
+        counterparty: pod.waybill?.senderName ?? pod.waybill?.recipientName ?? null,
+        amount: pod.waybill?.totalAmount ?? null,
+        reason: pod.disputeReason ?? 'Proof of delivery disputed',
+        nextAction: upheld
+          ? 'Dispute upheld — settle with the client or issue a credit, then close the POD'
+          : 'Investigate and resolve the dispute (cleared → billing flows; upheld → settle or credit)',
+        since: (pod.disputeResolvedAt ?? pod.updatedAt ?? pod.createdAt)?.toISOString() ?? null,
+      });
+    }
+
+    // RAIL — weighbridge holds on tariff calculations (the same principle, already built).
+    const railHolds = await this.safeFind('railTariffCalculation', {
+      where: { companyId, holdTriggered: true },
+      include: {
+        request: { select: { customerName: true, origin: true, destination: true } },
+      },
+      orderBy: { calculatedAt: 'asc' },
+      take: 50,
+    });
+    for (const calc of railHolds as any[]) {
+      holds.push({
+        mode: 'RAIL',
+        ref: calc.calculationNumber ?? calc.id,
+        counterparty: calc.request?.customerName ?? null,
+        amount: (calc.totalCharge as any)?.toNumber?.() ?? calc.totalCharge ?? null,
+        reason: 'Weighbridge status is hold — weights unsettled',
+        nextAction: 'Settle the weighbridge weights, then release the invoice draft',
+        since: calc.calculatedAt?.toISOString?.() ?? null,
+      });
+    }
+
+    return { holds, count: holds.length };
+  }
+
+  /**
+   * Cross-lifecycle Proof & Payments board — one page that answers, for every
+   * mode, the only question finance asks: is the proof in good standing, and has
+   * the money followed?
+   */
+  async getProofBoard(companyId: string) {
+    const rows: Array<{
+      mode: 'ROAD' | 'RAIL' | 'SEA';
+      ref: string;
+      counterparty: string | null;
+      proof: string;
+      money: string;
+      held: boolean;
+      holdReason: string | null;
+      amount: number | null;
+    }> = [];
+
+    // ROAD — delivered waybills + their POD state.
+    const waybills = await this.prisma.waybill.findMany({
+      where: { companyId, status: 'DELIVERED', totalAmount: { gt: 0 } },
+      include: { electronicPods: { orderBy: { capturedAt: 'desc' }, take: 1 } },
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+    });
+    for (const wb of waybills) {
+      const pod = wb.electronicPods?.[0];
+      const state = epodState(pod ? { status: pod.status, disputeResolution: (pod as any).disputeResolution } : null);
+      const held = !isBillableProof(state);
+      const billed = (wb as any).invoiceItems?.length
+        ? true
+        : await this.safeFind('invoiceItem', { where: { waybillId: wb.id }, take: 1 }).then((r) => r.length > 0);
+      const cls = classifyRow({ billed, proofHeld: held, holdReason: holdReason(state) });
+      rows.push({
+        mode: 'ROAD',
+        ref: wb.trackingNumber,
+        counterparty: wb.senderName ?? wb.recipientName ?? null,
+        proof: state,
+        money: cls.money,
+        held: cls.held,
+        holdReason: cls.holdReason,
+        amount: wb.totalAmount,
+      });
+    }
+
+    // RAIL — tariff calculations: proof = weighbridge/manifest, money = draft/hold.
+    const railCalcs = await this.safeFind('railTariffCalculation', {
+      where: { companyId },
+      include: { request: { select: { customerName: true } } },
+      orderBy: { calculatedAt: 'desc' },
+      take: 15,
+    });
+    for (const calc of railCalcs as any[]) {
+      const cls = classifyRow({
+        billed: !!calc.invoiceDraftId,
+        proofHeld: !!calc.holdTriggered,
+        holdReason: calc.holdTriggered ? 'Weighbridge status is hold — weights unsettled' : null,
+      });
+      rows.push({
+        mode: 'RAIL',
+        ref: calc.calculationNumber ?? calc.id,
+        counterparty: calc.request?.customerName ?? null,
+        proof: calc.holdTriggered ? 'HELD' : 'VERIFIED',
+        money: cls.money,
+        held: cls.held,
+        holdReason: cls.holdReason,
+        amount: (calc.totalCharge as any)?.toNumber?.() ?? calc.totalCharge ?? null,
+      });
+    }
+
+    // SEA — shipment files: proof = file progress (DELIVERED = proof done), money = charges → draft.
+    const files = await this.safeFind('shipmentFile', {
+      where: { companyId, fileStatus: { in: ['DELIVERED', 'DEPARTED', 'ARRIVED', 'CUSTOMS_CLEARED'] } },
+      include: { charges: { select: { amount: true, chargeType: true } } },
+      orderBy: { updatedAt: 'desc' },
+      take: 15,
+    });
+    for (const file of files as any[]) {
+      const sellTotal = (file.charges ?? [])
+        .filter((c: any) => c.chargeType === 'SELL')
+        .reduce((sum: number, c: any) => sum + Number((c.amount as any)?.toNumber?.() ?? c.amount ?? 0), 0);
+      const cls = classifyRow({ billed: !!file.invoiceId, proofHeld: false });
+      rows.push({
+        mode: 'SEA',
+        ref: file.fileNumber ?? file.id,
+        counterparty: file.customerName ?? file.consigneeName ?? null,
+        proof: file.fileStatus === 'DELIVERED' ? 'VERIFIED' : 'CAPTURED',
+        money: cls.money,
+        held: false,
+        holdReason: null,
+        amount: sellTotal || null,
+      });
+    }
+
+    return { rows, count: rows.length };
+  }
+
   async getBillingCoverage(companyId: string) {
     const now = Date.now();
     const DAY = 86_400_000;
     const billableWhere = { companyId, status: 'DELIVERED' as const, totalAmount: { gt: 0 } };
+    // A disputed proof is an argument, not missing revenue — excluded here and
+    // surfaced separately as `heldForDispute`.
+    const notHeldPod = {
+      NOT: {
+        electronicPods: {
+          some: {
+            OR: [
+              { status: 'DISPUTED', disputeResolution: null },
+              { status: 'DISPUTED', disputeResolution: 'UPHELD' },
+            ],
+          },
+        },
+      },
+    } as any;
 
-    const [billedCount, unbilledAgg, unbilledList] = await Promise.all([
+    const [billedCount, unbilledAgg, unbilledList, heldAgg] = await Promise.all([
       this.prisma.waybill.count({ where: { ...billableWhere, invoiceItems: { some: {} } } }),
       this.prisma.waybill.aggregate({
-        where: { ...billableWhere, invoiceItems: { none: {} } },
+        where: { ...billableWhere, ...notHeldPod, invoiceItems: { none: {} } },
         _count: { _all: true },
         _sum: { totalAmount: true },
       }),
       this.prisma.waybill.findMany({
-        where: { ...billableWhere, invoiceItems: { none: {} } },
+        where: { ...billableWhere, ...notHeldPod, invoiceItems: { none: {} } },
         select: { id: true, trackingNumber: true, recipientName: true, totalAmount: true, updatedAt: true },
         orderBy: { updatedAt: 'asc' }, // oldest unbilled first
         take: 500,
+      }),
+      this.prisma.waybill.aggregate({
+        where: {
+          ...billableWhere,
+          invoiceItems: { none: {} },
+          electronicPods: {
+            some: {
+              OR: [
+                { status: 'DISPUTED', disputeResolution: null },
+                { status: 'DISPUTED', disputeResolution: 'UPHELD' },
+              ],
+            },
+          },
+        },
+        _count: { _all: true },
+        _sum: { totalAmount: true },
       }),
     ]);
 
@@ -476,8 +704,12 @@ export class InvoicesService {
       coverageRatePct,
       aging, // computed over the oldest unbilled (capped at 500)
       watch,
+      heldForDispute: {
+        count: heldAgg._count._all,
+        value: Math.round(heldAgg._sum.totalAmount ?? 0),
+      },
       note:
-        'Coverage is delivered, billable (priced) waybills already on an invoice vs still unbilled. Unbilled value is revenue delivered but not yet invoiced. Aging is from the delivery/last-update date.',
+        'Coverage is delivered, billable (priced) waybills already on an invoice vs still unbilled. Unbilled value is revenue delivered but not yet invoiced. Waybills with a disputed POD are counted under heldForDispute (proof gates payment) — not as missing revenue. Aging is from the delivery/last-update date.',
     };
   }
 

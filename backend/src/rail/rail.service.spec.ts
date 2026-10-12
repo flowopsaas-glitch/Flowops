@@ -159,6 +159,7 @@ function makeDb() {
     },
   };
   prisma.$transaction = jest.fn((callback: (tx: any) => Promise<any>) => callback(prisma));
+  (prisma as any).withTenant = jest.fn((_companyId: string, callback: (tx: any) => Promise<any>) => callback(prisma));
 
   const seedConsignment = (over: Row = {}) => {
     const row = {
@@ -239,10 +240,11 @@ describe('rail entitlement gate', () => {
     expect(billing.hasFeature).toHaveBeenCalledTimes(calls.length);
     expect(billing.hasFeature).toHaveBeenCalledWith('A', 'rail');
     for (const [name, table] of Object.entries(prisma)) {
-      if (name === '$transaction') continue;
+      if (name === '$transaction' || name === 'withTenant') continue;
       for (const fn of Object.values(table)) expect(fn).not.toHaveBeenCalled();
     }
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect((prisma as any).withTenant).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
 

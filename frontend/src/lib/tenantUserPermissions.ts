@@ -9,6 +9,7 @@ export type TenantNavPermissionKey =
   | "returns"
   | "podDeliveries"
   | "driverDispatch"
+  | "fleetDuty"
   | "whatsapp"
   | "email"
   | "clientQueries"
@@ -16,6 +17,7 @@ export type TenantNavPermissionKey =
   | "billingBatches"
   | "invoiceDrafts"
   | "invoices"
+  | "proofPayments"
   | "accounting"
   | "creditControl"
   | "quotes"
@@ -40,6 +42,8 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   returns: "Returns (RMA)",
   podDeliveries: "POD / Deliveries",
   driverDispatch: "Driver Dispatch",
+  fleetDuty: "Fleet Duty Board",
+
   whatsapp: "WhatsApp",
   email: "Email",
   clientQueries: "Client Queries",
@@ -47,6 +51,8 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   billingBatches: "Billing Batches",
   invoiceDrafts: "Invoice Drafts",
   invoices: "Invoices",
+  proofPayments: "Invoices",
+
   accounting: "Accounting",
   creditControl: "Credit Control",
   quotes: "Quotes",
@@ -101,6 +107,8 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     returns: true,
     podDeliveries: true,
     driverDispatch: true,
+    fleetDuty: true,
+
     whatsapp: true,
     email: true,
     clientQueries: true,
@@ -108,6 +116,8 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     billingBatches: true,
     invoiceDrafts: true,
     invoices: true,
+    proofPayments: true,
+
     accounting: true,
     creditControl: true,
     quotes: true,
@@ -145,6 +155,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: true,
       podDeliveries: true,
       driverDispatch: true,
+      fleetDuty: true,
+
       whatsapp: true,
       email: true,
       clientQueries: true,
@@ -152,6 +164,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: true,
       invoiceDrafts: true,
       invoices: true,
+      proofPayments: true,
+
       accounting: true,
       creditControl: true,
       quotes: true,
@@ -180,6 +194,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: true,
       podDeliveries: true,
       driverDispatch: false,
+      fleetDuty: false,
+
       whatsapp: true,
       email: false,
       clientQueries: false,
@@ -187,6 +203,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      proofPayments: false,
+
       accounting: false,
       creditControl: false,
       quotes: false,
@@ -213,6 +231,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: false,
       podDeliveries: true,
       driverDispatch: false,
+      fleetDuty: false,
+
       whatsapp: true,
       email: false,
       clientQueries: false,
@@ -220,6 +240,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      proofPayments: false,
+
       accounting: false,
       creditControl: false,
       quotes: false,
@@ -252,6 +274,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: true,
       podDeliveries: true,
       driverDispatch: true,
+      fleetDuty: true,
+
       whatsapp: true,
       email: true,
       clientQueries: true,
@@ -259,6 +283,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       billingBatches: false,
       invoiceDrafts: false,
       invoices: false,
+      proofPayments: false,
+
       accounting: false,
       creditControl: false,
       quotes: true,
@@ -283,6 +309,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     returns: false,
     podDeliveries: true,
     driverDispatch: false,
+    fleetDuty: false,
+
     whatsapp: false,
     email: false,
     clientQueries: false,
@@ -290,6 +318,8 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     billingBatches: false,
     invoiceDrafts: false,
     invoices: false,
+    proofPayments: false,
+
     accounting: false,
     creditControl: false,
     quotes: false,
@@ -317,6 +347,8 @@ function buildViewerPermissions(): TenantNavPermissions {
     returns: false,
     podDeliveries: false,
     driverDispatch: false,
+    fleetDuty: false,
+
     whatsapp: false,
     email: false,
     clientQueries: false,
@@ -324,6 +356,7 @@ function buildViewerPermissions(): TenantNavPermissions {
     billingBatches: true,  // Billing Batches + COD Reconciliation
     invoiceDrafts: true,
     invoices: true,        // Finance Home + Invoices
+    proofPayments: true,              // Proof & Payments (money board)
     accounting: true,      // credit/debit notes, statements, age analysis
     creditControl: true,
     quotes: true,

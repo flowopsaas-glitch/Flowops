@@ -36,6 +36,8 @@ const RateCards = lazy(() => import("./pages/RateCards"));
 const BillingBatches = lazy(() => import("./pages/BillingBatches"));
 const FinanceDashboard = lazy(() => import("./pages/FinanceDashboard"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
+const ProofPayments = lazy(() => import("./pages/ProofPayments"));
+const FleetDutyBoard = lazy(() => import("./pages/FleetDutyBoard"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 // Surfaces the tenant's shareable customer booking-portal + public tracking links.
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
@@ -109,6 +111,7 @@ const WaybillCapture = lazy(() => import("./pages/WaybillCapture"));
 const BatchScan      = lazy(() => import("./pages/BatchScan"));
 const BulkImport     = lazy(() => import("./pages/BulkImport"));
 const DriverManifest = lazy(() => import("./pages/driver/DriverManifest"));
+const DriverDutyHome = lazy(() => import("./pages/driver/DriverDutyHome"));
 const TenantUsersRolesPage = lazy(() => import("./pages/admin/TenantUsersRolesPage"));
 const TenantAdminHome = lazy(() => import("./pages/admin/TenantAdminHome"));
 const ManifestsPage = lazy(() => import("./pages/ManifestsPage"));
@@ -251,6 +254,7 @@ export default function App() {
             }
           />
           <Route path="/driver/manifest/:id" element={<DriverManifest />} />
+          <Route path="/driver/duty" element={<DriverDutyHome />} />
 
           <Route element={<OwnerRoute />}>
             <Route element={<OwnerLayout />}>
@@ -320,6 +324,8 @@ export default function App() {
               <Route path="/communications/client-queries" element={<RequirePermission perm="clientQueries"><ClientQueries /></RequirePermission>} />
               <Route path="/rate-cards" element={<RequirePermission perm="rateCards"><RateCards /></RequirePermission>} />
               <Route path="/billing-batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
+              <Route path="/proof-payments" element={<RequirePermission perm="invoices"><ProofPayments /></RequirePermission>} />
+              <Route path="/fleet-duty" element={<RequirePermission perm="driverDispatch"><FleetDutyBoard /></RequirePermission>} />
               <Route path="/billing/batches" element={<RequirePermission perm="billingBatches"><BillingBatches /></RequirePermission>} />
               <Route path="/billing/plans"   element={<RequirePermission perm="invoices"><BillingPlans /></RequirePermission>} />
               <Route path="/billing/callback" element={<BillingCallback />} />

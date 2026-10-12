@@ -118,7 +118,7 @@ export class RailService {
       }
     }
     const consignmentNumber = await this.nextConsignmentNumber(companyId);
-    const consignment = await this.prisma.$transaction(async (tx) => {
+    const consignment = await this.prisma.withTenant(companyId, async (tx) => {
       const created = await tx.railConsignment.create({
         data: {
           companyId,
@@ -340,7 +340,7 @@ export class RailService {
     if (nextStatus === 'DEPARTED' && !c.actualDeparture) patch.actualDeparture = new Date();
     if (nextStatus === 'ARRIVED' && !c.actualArrival) patch.actualArrival = new Date();
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
       await tx.railConsignmentEvent.create({
         data: {
           consignmentId: id,

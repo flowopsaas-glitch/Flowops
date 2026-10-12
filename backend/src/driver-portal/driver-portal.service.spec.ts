@@ -26,6 +26,7 @@ describe("DriverPortalService", () => {
   let epod: any;
   let compliance: any;
   let audit: any;
+  let outbox: any;
 
   beforeEach(() => {
     prisma = {
@@ -98,6 +99,7 @@ describe("DriverPortalService", () => {
       filterDispatchable: jest.fn((rows: any[]) => rows.map((snapshot) => ({ snapshot, compliance: {} }))),
       assertDispatchable: jest.fn(),
     };
+    outbox = { enqueue: jest.fn() };
     service = new DriverPortalService(
       prisma,
       notifications,
@@ -106,6 +108,7 @@ describe("DriverPortalService", () => {
       epod,
       compliance,
       audit,
+      outbox,
     );
   });
 

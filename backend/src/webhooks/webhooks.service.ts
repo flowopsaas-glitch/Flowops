@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { CronMutex } from '../common/utils/cron-mutex';
+import { isKnownEvent } from './event-catalog';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -21,11 +22,14 @@ export class WebhooksService {
 
   async create(companyId: string, dto: { url: string; events?: string[] }) {
     const secret = `whsec_${crypto.randomBytes(24).toString('hex')}`;
+    // Keep only events from the published catalog; fall back to the pre-existing
+    // default when nothing valid is supplied.
+    const events = (dto.events ?? []).filter((e) => isKnownEvent(e));
     const endpoint = await this.prisma.webhookEndpoint.create({
       data: {
         companyId,
         url: dto.url,
-        events: dto.events?.length ? dto.events : ['waybill.status_changed'],
+        events: events.length ? events : ['waybill.status_changed'],
         secret,
       },
     });

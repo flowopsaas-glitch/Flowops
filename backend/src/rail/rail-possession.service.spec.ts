@@ -24,10 +24,15 @@ function make(opts: { entitled?: boolean } = {}) {
   const consignments = new FakeTable('con');
   const corridors = new FakeTable('cor');
   const aiEvents = new FakeTable('ai');
-  const prisma = { railPossessionWindow: windows, railConsignment: consignments, railCorridorNode: corridors, aiEvent: aiEvents };
+  const prisma = {
+    $transaction: async (fn: any) => fn(prisma),
+    withTenant: async (_companyId: string, fn: any, _opts?: any) => fn(prisma),
+    railPossessionWindow: windows, railConsignment: consignments, railCorridorNode: corridors, aiEvent: aiEvents,
+  };
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
   const audit = { record: jest.fn().mockResolvedValue('audit-1') };
-  const svc = new RailPossessionService(prisma as any, billing as any, audit as any);
+  const outbox = { enqueue: jest.fn().mockResolvedValue('ob1') };
+  const svc = new RailPossessionService(prisma as any, billing as any, audit as any, outbox as any);
 
   const seedWindow = (over: Record<string, any> = {}) =>
     windows.seed({

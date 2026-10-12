@@ -33,6 +33,10 @@ function makeDependencies() {
       railScheduleImport: { create: jest.fn().mockResolvedValue(createdImport) },
       railScheduleRow: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
     })),
+    withTenant: jest.fn(async (_companyId: string, callback: (tx: any) => Promise<unknown>) => callback({
+      railScheduleImport: { create: jest.fn().mockResolvedValue(createdImport) },
+      railScheduleRow: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    })),
   } as unknown as PrismaService;
   const billing = { hasFeature: jest.fn().mockResolvedValue(true) } as unknown as BillingService;
   const audit = { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
@@ -46,7 +50,7 @@ describe('RailTimetableService', () => {
     const file = { originalname: 'rail.tsv', buffer: Buffer.from(makeRow(), 'utf8') };
 
     await expect(service.importFile('tenant-1', 'user-1', file)).resolves.toEqual(createdImport);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.withTenant).toHaveBeenCalledTimes(1);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       action: 'rail.timetable.imported',
       actorType: 'tenant',
@@ -64,7 +68,7 @@ describe('RailTimetableService', () => {
       originalname: 'rail.tsv',
       buffer: Buffer.from(makeRow(), 'utf8'),
     })).rejects.toThrow(ConflictException);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.withTenant).not.toHaveBeenCalled();
     expect(prisma.railScheduleImport.findFirst).toHaveBeenCalledWith({
       where: { scopeKey: 'tenant-1', sourceHash: expect.any(String) },
       select: { id: true },
@@ -105,7 +109,7 @@ describe('RailTimetableService', () => {
       buffer: Buffer.from('one\ttwo'),
     })).rejects.toThrow(BadRequestException);
     expect(prisma.railScheduleImport.findFirst).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.withTenant).not.toHaveBeenCalled();
   });
 
   it('does not expose a timetable import owned by another tenant', async () => {

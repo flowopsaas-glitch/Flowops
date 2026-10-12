@@ -33,6 +33,9 @@ import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../contexts/AuthContext";
 import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
 import SlotCompliancePanel from "./rail/SlotCompliancePanel";
+import SlotOptimizerPanel from "./rail/SlotOptimizerPanel";
+import TrainManifestPanel from "./rail/TrainManifestPanel";
+import LiveTrackingPanel from "./rail/LiveTrackingPanel";
 import ChangesPossessionsPanel from "./rail/ChangesPossessionsPanel";
 import ChangeRequestModal from "./rail/ChangeRequestModal";
 import DangerousGoodsSection, { DgBadge, WagonDgPill } from "./rail/DangerousGoods";
@@ -297,7 +300,7 @@ export default function RailOperations() {
   // VIEWER sees Rail read-only: no "Advance" control (the API refuses it anyway).
   const canWrite = getRailAccessLevel(user?.role, userPermissionOverrides(user)) === "FULL";
   const canSign = canSignRailHandshake(user?.role);
-  const [tab, setTab] = useState<"consignments" | "slots" | "changes" | "tariffs">("consignments");
+  const [tab, setTab] = useState<"consignments" | "slots" | "optimizer" | "manifests" | "tracking" | "changes" | "tariffs">("consignments");
   const [overview, setOverview] = useState<RailOverview | null>(null);
   const [rows, setRows] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -405,7 +408,7 @@ export default function RailOperations() {
 
       {/* Tabs */}
       <div className="mb-5 flex gap-2 border-b border-white/10" role="tablist" aria-label="Rail operations sections">
-        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["changes", "Changes & Possessions"], ["tariffs", "Tariffs & Weighbridge"]] as const).map(([key, label]) => (
+        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["optimizer", "Schedule Optimizer"], ["manifests", "Train Manifests"], ["tracking", "Live Tracking"], ["changes", "Changes & Possessions"], ["tariffs", "Tariffs & Weighbridge"]] as const).map(([key, label]) => (
           <button
             key={key}
             role="tab"
@@ -419,6 +422,9 @@ export default function RailOperations() {
       </div>
 
       {tab === "slots" && <SlotCompliancePanel canWrite={canWrite} canSign={canSign} />}
+      {tab === "optimizer" && <SlotOptimizerPanel canWrite={canWrite} />}
+      {tab === "manifests" && <TrainManifestPanel canWrite={canWrite} canSign={canSign} />}
+      {tab === "tracking" && <LiveTrackingPanel canWrite={canWrite} />}
       {tab === "changes" && <ChangesPossessionsPanel canWrite={canWrite} canSign={canSign} />}
       {tab === "tariffs" && <TariffPanel canWrite={canWrite} />}
 

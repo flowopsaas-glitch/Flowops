@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
-import { WebhooksService } from '../webhooks/webhooks.service';
+import { OutboxService } from '../webhooks/outbox.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
@@ -13,7 +13,7 @@ export class NotificationsService {
     private prisma: PrismaService,
     private email: EmailService,
     private config: ConfigService,
-    private webhooks: WebhooksService,
+    private outbox: OutboxService,
     private whatsapp: WhatsAppService,
   ) {}
 
@@ -163,8 +163,9 @@ export class NotificationsService {
     // Build a WhatsApp click-to-chat URL when we have the recipient's phone.
     const waLink = this.buildWaLink(waybill.recipientPhone, recipientFirst, waybill.trackingNumber, copy.line, trackUrl);
 
-    // 0) Webhook event for tenant integrations.
-    void this.webhooks.dispatch(waybill.companyId, 'waybill.status_changed', {
+    // 0) Webhook event for tenant integrations — via the transactional outbox
+    // so the event survives a crash between here and delivery.
+    void this.outbox.enqueue(this.prisma, waybill.companyId, 'waybill.status_changed', {
       trackingNumber: waybill.trackingNumber,
       status: waybill.status,
       trackUrl,
@@ -709,8 +710,8 @@ export class NotificationsService {
         ? ` A refund of R${ret.refundAmount.toFixed(2)} is being processed.`
         : '';
 
-    // Webhook event for tenant integrations.
-    void this.webhooks.dispatch(ret.companyId, 'return.status_changed', {
+    // Webhook event for tenant integrations — via the transactional outbox.
+    void this.outbox.enqueue(this.prisma, ret.companyId, 'return.status_changed', {
       rmaNumber: ret.rmaNumber,
       trackingNumber: ret.trackingNumber,
       status: ret.status,

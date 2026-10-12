@@ -12,7 +12,12 @@ import { DriverSafetyService } from '../driver-safety/driver-safety.service';
 import { EpodService } from '../epod/epod.service';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { AuditService } from '../audit/audit.service';
+import { OutboxService } from '../webhooks/outbox.service';
 import { legalPredecessorStatuses } from '../waybills/waybill-status.machine';
+import {
+  DRIVE_MODE_CONFIG, DRIVER_MODES, canEndDuty, checkStartDuty, dutyMinutes, jobKindsForMode, JobKind,
+} from './driver-mode.rules';
+import type { DriverMode } from '@prisma/client';
 
 @Injectable()
 export class DriverPortalService {
@@ -26,6 +31,7 @@ export class DriverPortalService {
     private epod: EpodService,
     private compliance: DriverComplianceService,
     private audit: AuditService,
+    private outbox: OutboxService,
   ) {}
 
   /**
@@ -569,6 +575,168 @@ export class DriverPortalService {
     }
 
     return { ...(updated as any), epodId: epod.id, podStatus: epod.status };
+  }
+
+  // ── Driver modes & duties (one shift, one mode, one vehicle) ──────────────
+
+  /** GET /driver-portal/modes — the five crafts, what this driver may drive, and the active duty. */
+  async getModes(driverId: string) {
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { allowedModes: true, defaultMode: true, vehicleReg: true, vehicleType: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+    const activeDuty = await this.prisma.driverDuty.findFirst({
+      where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' },
+    });
+    const allowed = driver.allowedModes.length ? driver.allowedModes : [...DRIVER_MODES];
+    return {
+      activeDuty,
+      defaultMode: driver.defaultMode,
+      vehicleReg: driver.vehicleReg,
+      modes: DRIVER_MODES.map((m) => ({
+        mode: m,
+        ...DRIVE_MODE_CONFIG[m],
+        allowed: allowed.includes(m),
+      })),
+    };
+  }
+
+  /** GET /driver-portal/duty/active */
+  getActiveDuty(driverId: string) {
+    return this.prisma.driverDuty.findFirst({
+      where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' },
+    });
+  }
+
+  /**
+   * POST /driver-portal/duty/start — declare the craft for this shift.
+   * Switching modes is the normal flow: the previous duty is auto-ended and
+   * everything it implied (job scoping, checklist) changes with it.
+   */
+  async startDuty(driverId: string, companyId: string, dto: { mode: DriverMode; vehicleReg?: string; note?: string }) {
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId }, select: { allowedModes: true, vehicleReg: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+
+    const check = checkStartDuty({
+      mode: dto.mode,
+      vehicleReg: dto.vehicleReg?.trim() || driver.vehicleReg,
+      allowedModes: driver.allowedModes,
+    });
+    if (!check.ok) throw new BadRequestException(check.blockers.join(' '));
+
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const previous = await tx.driverDuty.findFirst({ where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
+      let previousEnded: { id: string; mode: DriverMode; endedAt: Date } | null = null;
+      if (previous) {
+        const endedAt = new Date();
+        await tx.driverDuty.update({ where: { id: previous.id }, data: { status: 'COMPLETED', endedAt } });
+        previousEnded = { id: previous.id, mode: previous.mode, endedAt };
+        await this.outbox.enqueue(tx, companyId, 'driver.duty.completed', {
+          dutyId: previous.id, driverId, mode: previous.mode, autoEnded: true,
+          durationMinutes: dutyMinutes(previous, endedAt),
+        });
+      }
+      const duty = await tx.driverDuty.create({
+        data: {
+          companyId, driverId, mode: dto.mode,
+          vehicleReg: dto.vehicleReg?.trim() || driver.vehicleReg || null,
+          note: dto.note ?? null,
+        },
+      });
+      await tx.driver.update({ where: { id: driverId }, data: { status: 'AVAILABLE' } });
+      await this.outbox.enqueue(tx, companyId, 'driver.duty.started', {
+        dutyId: duty.id, driverId, mode: duty.mode, vehicleReg: duty.vehicleReg,
+        previousDutyId: previousEnded?.id ?? null,
+      });
+      return { duty, previousEnded, config: DRIVE_MODE_CONFIG[duty.mode] };
+    });
+  }
+
+  /** POST /driver-portal/duty/end — stand down from the shift. */
+  async endDuty(driverId: string, companyId: string, note?: string) {
+    const active = await this.prisma.driverDuty.findFirst({ where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
+    if (!canEndDuty(active)) throw new BadRequestException('No active duty to end.');
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const endedAt = new Date();
+      const duty = await tx.driverDuty.update({
+        where: { id: active!.id }, data: { status: 'COMPLETED', endedAt, note: note ?? active!.note },
+      });
+      await tx.driver.update({ where: { id: driverId }, data: { status: 'OFFLINE' } });
+      await this.outbox.enqueue(tx, companyId, 'driver.duty.completed', {
+        dutyId: duty.id, driverId, mode: duty.mode, autoEnded: false,
+        durationMinutes: dutyMinutes(duty, endedAt),
+      });
+      return { duty, durationMinutes: dutyMinutes(duty, endedAt) };
+    });
+  }
+
+  /**
+   * GET /driver-portal/work — the work queue SCOPED to the active duty's mode
+   * (server-side: the UI cannot ask for another craft's work). With no active
+   * duty the full queue is returned for backward compatibility, and `mode` is
+   * null so the UI can prompt for a shift start.
+   */
+  async getWorkForDuty(driverId: string) {
+    const [jobs, duty] = await Promise.all([
+      this.getDriverJobs(driverId),
+      this.prisma.driverDuty.findFirst({ where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } }),
+    ]);
+    if (!duty) return { duty: null, mode: null, config: null, jobs };
+    const kinds = jobKindsForMode(duty.mode);
+    const kindOf = (t: string): JobKind => (t === 'collection' ? 'collection' : t === 'linehaul' ? 'linehaul' : 'parcel');
+    return {
+      duty,
+      mode: duty.mode,
+      config: DRIVE_MODE_CONFIG[duty.mode],
+      jobs: jobs.filter((j: any) => kinds.includes(kindOf(j.type))),
+    };
+  }
+
+  /**
+   * GET /driver-portal/train-board — the TRAIN driver's duty board: what they
+   * are hauling (train manifests) and what is happening to the track
+   * (possession windows). Tenant-scoped through withTenant — a train driver
+   * sees their operator's railway and no one else's.
+   */
+  async getTrainBoard(companyId: string) {
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const now = new Date();
+      const horizon = new Date(now.getTime() + 24 * 3_600_000);
+      const [manifests, possessions] = await Promise.all([
+        tx.railTrainManifest.findMany({
+          where: {
+            companyId,
+            status: { in: ['DRAFT', 'ISSUED', 'DEPARTED'] },
+            OR: [{ plannedDeparture: null }, { plannedDeparture: { lte: horizon } }],
+          },
+          orderBy: [{ plannedDeparture: 'asc' }, { createdAt: 'desc' }],
+          take: 10,
+          include: { wagons: { select: { id: true } } },
+        }),
+        tx.railPossessionWindow.findMany({
+          where: { companyId, endsAt: { gte: now }, startsAt: { lte: horizon } },
+          orderBy: { startsAt: 'asc' },
+          take: 10,
+        }),
+      ]);
+      return {
+        manifests: manifests.map((m) => ({
+          id: m.id, manifestNumber: m.manifestNumber, revision: m.revision, status: m.status,
+          route: [m.originSiding, m.destinationSiding].filter(Boolean).join(' → '),
+          corridor: m.corridor, railOperator: m.railOperator, locoReference: m.locoReference,
+          plannedDeparture: m.plannedDeparture, plannedArrival: m.plannedArrival,
+          wagons: m.wagons.length,
+        })),
+        possessions: possessions.map((p) => ({
+          id: p.id, title: p.title, kind: p.kind, status: p.status,
+          location: p.location, corridorCode: p.corridorCode,
+          startsAt: p.startsAt, endsAt: p.endsAt,
+        })),
+      };
+    });
   }
 
   async getMessages(driverId: string, limit = 50, skip = 0) {
