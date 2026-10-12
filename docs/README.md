@@ -2,7 +2,8 @@ FlowOps lets you define, automate, and run fully or semi-agentic workflows using
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
-<!-- 2026-10-12 CI re-validation commit: test GHCR publish after permissions flip -->
+
+Trigger CI
 
 # Why FlowOps? 
 🔹 Write workflows in simple javascript scripts – Infinite flexibility, no restrictive UI.
