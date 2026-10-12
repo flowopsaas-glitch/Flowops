@@ -6,6 +6,8 @@ import { Prisma, RailSlotApplicationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
+import { OutboxService } from '../webhooks/outbox.service';
+import type { FlowOpsEvent } from '../webhooks/event-catalog';
 import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, railSystemAuditEntry, recordRailAudit,
 } from './rail-audit';
@@ -57,6 +59,7 @@ export class RailSlotService {
     private readonly prisma: PrismaService,
     private readonly billing: BillingService,
     private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
   ) {}
 
   // ── plumbing ───────────────────────────────────────────────────────────────
@@ -324,18 +327,26 @@ export class RailSlotService {
     for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
       const applicationNumber = await this.nextApplicationNumber(companyId);
       try {
-        created = await this.prisma.railSlotApplication.create({
-          data: {
-            companyId, applicationNumber, status: 'DRAFT', corridorCode: dto.corridorCode,
-            originName: dto.originName ?? null, destinationName: dto.destinationName ?? null,
-            originYardCode: dto.originYardCode ?? null, destinationYardCode: dto.destinationYardCode ?? null,
-            railOperator: dto.railOperator ?? null, imReference: dto.imReference ?? null, tractionType: dto.tractionType ?? null,
-            commodity: dto.commodity ?? null, isDangerousGoods: dto.isDangerousGoods ?? false,
-            trainsPerWeek: dto.trainsPerWeek ?? null, wagonsPerTrain: dto.wagonsPerTrain ?? null, annualTonnes: dto.annualTonnes ?? null,
-            gauge: dto.gauge ?? null, axleLoadTonnes: dto.axleLoadTonnes ?? null, vehicleProfile: dto.vehicleProfile ?? null,
-            trainLengthM: dto.trainLengthM ?? null, requestedFrom, requestedUntil,
-            createdById: actor.id, createdByEmail: actor.email,
-          },
+        created = await this.prisma.withTenant(companyId, async (tx) => {
+          const row = await tx.railSlotApplication.create({
+            data: {
+              companyId, applicationNumber, status: 'DRAFT', corridorCode: dto.corridorCode,
+              originName: dto.originName ?? null, destinationName: dto.destinationName ?? null,
+              originYardCode: dto.originYardCode ?? null, destinationYardCode: dto.destinationYardCode ?? null,
+              railOperator: dto.railOperator ?? null, imReference: dto.imReference ?? null, tractionType: dto.tractionType ?? null,
+              commodity: dto.commodity ?? null, isDangerousGoods: dto.isDangerousGoods ?? false,
+              trainsPerWeek: dto.trainsPerWeek ?? null, wagonsPerTrain: dto.wagonsPerTrain ?? null, annualTonnes: dto.annualTonnes ?? null,
+              gauge: dto.gauge ?? null, axleLoadTonnes: dto.axleLoadTonnes ?? null, vehicleProfile: dto.vehicleProfile ?? null,
+              trainLengthM: dto.trainLengthM ?? null, requestedFrom, requestedUntil,
+              createdById: actor.id, createdByEmail: actor.email,
+            },
+          });
+          await this.outbox.enqueue(tx, companyId, 'rail.slot.created', {
+            applicationId: row.id, applicationNumber, corridorCode: dto.corridorCode,
+            requestedFrom: requestedFrom.toISOString(), requestedUntil: requestedUntil.toISOString(),
+            isDangerousGoods: dto.isDangerousGoods ?? false,
+          });
+          return row;
         });
       } catch (err: any) {
         // Two simultaneous creates can compute the same number; the unique index rejects the second — retry with a fresh count.
@@ -408,12 +419,20 @@ export class RailSlotService {
     if (r.blockers.length) {
       throw new BadRequestException(`Cannot submit ${app.applicationNumber}: ${r.blockers.join(' ')}`);
     }
-    const updated = await this.prisma.railSlotApplication.update({
-      where: { id },
-      data: {
-        status: 'SUBMITTED', submittedAt: now, envelopeCheckStatus: r.envelope.status,
-        envelopeCheck: r.envelope as unknown as Prisma.InputJsonValue, complianceSnapshot: r.compliance as unknown as Prisma.InputJsonValue,
-      },
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const u = await tx.railSlotApplication.update({
+        where: { id },
+        data: {
+          status: 'SUBMITTED', submittedAt: now, envelopeCheckStatus: r.envelope.status,
+          envelopeCheck: r.envelope as unknown as Prisma.InputJsonValue, complianceSnapshot: r.compliance as unknown as Prisma.InputJsonValue,
+        },
+      });
+      await this.outbox.enqueue(tx, companyId, 'rail.slot.submitted', {
+        applicationId: id, applicationNumber: app.applicationNumber, corridorCode: app.corridorCode,
+        envelopeStatus: r.envelope.status, isDangerousGoods: app.isDangerousGoods,
+        requestedFrom: app.requestedFrom.toISOString(), requestedUntil: app.requestedUntil.toISOString(),
+      });
+      return u;
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.SLOT_SUBMITTED, { type: RAIL_AUDIT_TARGET.SLOT_APPLICATION, id, name: app.applicationNumber },
       { envelopeStatus: r.envelope.status, complianceSatisfied: r.compliance.satisfied, selfScreeningFlags: r.selfScreening.flagged });
@@ -425,12 +444,25 @@ export class RailSlotService {
     patch: Prisma.RailSlotApplicationUpdateInput, metadata: (app: { applicationNumber: string; status: RailSlotApplicationStatus }) => Record<string, unknown> = () => ({}),
     guard?: (app: Awaited<ReturnType<RailSlotService['getOrThrow']>>) => void,
     now: Date = new Date(),
+    event?: FlowOpsEvent,
   ) {
     await this.assertEntitled(companyId);
     const app = await this.getOrThrow(companyId, id);
     if (!canTransition(app.status, to)) throw new BadRequestException(`An application cannot move from ${app.status} to ${to}.`);
     guard?.(app);
-    const updated = await this.prisma.railSlotApplication.update({ where: { id }, data: { ...patch, status: to } });
+    // The status change and its outbox event commit atomically: a webhook
+    // subscriber can never observe an event for a change that rolled back (or
+    // miss one because the process died after commit).
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const u = await tx.railSlotApplication.update({ where: { id }, data: { ...patch, status: to } });
+      if (event) {
+        await this.outbox.enqueue(tx, companyId, event, {
+          applicationId: id, applicationNumber: app.applicationNumber,
+          corridorCode: app.corridorCode, from: app.status, to,
+        });
+      }
+      return u;
+    });
     await this.record(companyId, actor, action, { type: RAIL_AUDIT_TARGET.SLOT_APPLICATION, id, name: app.applicationNumber }, { from: app.status, to, ...metadata(app) });
     return this.withClock(updated, now);
   }
@@ -442,11 +474,13 @@ export class RailSlotService {
   /** UNDER_ASSESSMENT → CAPACITY_CONFLICT, or CAPACITY_CONFLICT → UNDER_ASSESSMENT when resolved. */
   flagCapacityConflict(companyId: string, id: string, dto: ConflictDto, actor: RailActor) {
     return this.transition(companyId, id, 'CAPACITY_CONFLICT', actor, RAIL_AUDIT_ACTION.SLOT_CAPACITY_CONFLICT,
-      { conflictFlaggedAt: new Date(), conflictNote: dto.note.trim() }, () => ({ note: dto.note.trim().slice(0, 500) }));
+      { conflictFlaggedAt: new Date(), conflictNote: dto.note.trim() }, () => ({ note: dto.note.trim().slice(0, 500) }),
+      undefined, undefined, 'rail.slot.capacity_conflict');
   }
 
   resolveCapacityConflict(companyId: string, id: string, actor: RailActor) {
-    return this.transition(companyId, id, 'UNDER_ASSESSMENT', actor, RAIL_AUDIT_ACTION.SLOT_CONFLICT_RESOLVED, { conflictNote: null });
+    return this.transition(companyId, id, 'UNDER_ASSESSMENT', actor, RAIL_AUDIT_ACTION.SLOT_CONFLICT_RESOLVED, { conflictNote: null },
+      undefined, undefined, undefined, 'rail.slot.conflict_resolved');
   }
 
   /**
@@ -468,16 +502,19 @@ export class RailSlotService {
       () => ({ allocatedAt: allocatedAt.toISOString(), mobilizeBy: mobilizeBy.toISOString(), validFrom: validFrom.toISOString(), validUntil: validUntil.toISOString() }),
       undefined,
       now,
+      'rail.slot.allocated',
     );
   }
 
   reject(companyId: string, id: string, dto: RejectApplicationDto, actor: RailActor) {
     return this.transition(companyId, id, 'REJECTED', actor, RAIL_AUDIT_ACTION.SLOT_REJECTED,
-      { rejectedAt: new Date(), rejectionReason: dto.reason.trim() }, () => ({ reason: dto.reason.trim().slice(0, 500) }));
+      { rejectedAt: new Date(), rejectionReason: dto.reason.trim() }, () => ({ reason: dto.reason.trim().slice(0, 500) }),
+      undefined, undefined, 'rail.slot.rejected');
   }
 
   expire(companyId: string, id: string, actor: RailActor) {
-    return this.transition(companyId, id, 'EXPIRED', actor, RAIL_AUDIT_ACTION.SLOT_EXPIRED, { expiredAt: new Date() }, (a) => ({ reason: 'manual', was: a.status }));
+    return this.transition(companyId, id, 'EXPIRED', actor, RAIL_AUDIT_ACTION.SLOT_EXPIRED, { expiredAt: new Date() }, (a) => ({ reason: 'manual', was: a.status }),
+      undefined, undefined, 'rail.slot.expired');
   }
 
   /**
@@ -495,9 +532,16 @@ export class RailSlotService {
     const operatedAt = this.toDate(dto.operatedAt, 'operatedAt') ?? now;
     if (operatedAt.getTime() > now.getTime() + 86_400_000) throw new BadRequestException('operatedAt cannot be in the future.');
     if (dto.consignmentId) await this.consignmentSubjects(companyId, dto.consignmentId); // tenant ownership
-    const updated = await this.prisma.railSlotApplication.update({
-      where: { id },
-      data: { firstOperatedAt: operatedAt, ...(dto.consignmentId ? { consignmentId: dto.consignmentId } : {}) },
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const u = await tx.railSlotApplication.update({
+        where: { id },
+        data: { firstOperatedAt: operatedAt, ...(dto.consignmentId ? { consignmentId: dto.consignmentId } : {}) },
+      });
+      await this.outbox.enqueue(tx, companyId, 'rail.slot.operated', {
+        applicationId: id, applicationNumber: app.applicationNumber, corridorCode: app.corridorCode,
+        operatedAt: operatedAt.toISOString(), consignmentId: dto.consignmentId ?? null,
+      });
+      return u;
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.SLOT_OPERATED, { type: RAIL_AUDIT_TARGET.SLOT_APPLICATION, id, name: app.applicationNumber },
       { operatedAt: operatedAt.toISOString(), mobilizeBy: app.mobilizeBy?.toISOString() ?? null, afterForfeitureFlag: !!app.forfeitureFlaggedAt, consignmentId: dto.consignmentId ?? null });

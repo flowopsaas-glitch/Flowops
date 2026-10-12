@@ -19,6 +19,12 @@ import { RailWeighbridgeService } from './rail-weighbridge.service';
 import { RailHandoffService } from './rail-handoff.service';
 import { RailTimetableService } from './rail-timetable.service';
 import { RailTimetableOwnerController } from './rail-timetable-owner.controller';
+import { RailOptimizerController } from './rail-optimizer.controller';
+import { RailOptimizerService } from './rail-optimizer.service';
+import { RailTrainManifestController } from './rail-manifest.controller';
+import { RailTrainManifestService } from './rail-manifest.service';
+import { RailTelemetryController } from './rail-telemetry.controller';
+import { RailTelemetryService } from './rail-telemetry.service';
 
 /**
  * Rail / Intermodal Operations.
@@ -46,17 +52,17 @@ import { RailTimetableOwnerController } from './rail-timetable-owner.controller'
   controllers: [
     RailController, RailHandshakeController, RailSlotController,
     RailChangeController, RailPossessionController, RailOccurrenceController, RailTariffController, RailWeighbridgeController,
-    RailTimetableOwnerController,
+    RailTimetableOwnerController, RailOptimizerController, RailTrainManifestController, RailTelemetryController,
   ],
   providers: [
     RailService, RailHandshakeService, RailSlotService,
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
-    RailHandoffService, RailTimetableService,
+    RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService,
   ],
   exports: [
     RailService, RailHandshakeService, RailSlotService,
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
-    RailHandoffService, RailTimetableService,
+    RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService,
   ],
 })
 export class RailModule {}

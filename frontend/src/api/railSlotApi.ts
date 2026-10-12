@@ -163,3 +163,54 @@ export const SLOT_STATUS_LABEL: Record<SlotApplicationStatus, string> = {
   DRAFT: "Draft", SUBMITTED: "Submitted", UNDER_ASSESSMENT: "Under assessment", CAPACITY_CONFLICT: "Capacity conflict",
   ALLOCATED: "Allocated", REJECTED: "Rejected", EXPIRED: "Expired",
 };
+
+// ── Schedule optimizer (Phase 2: decision support — proposes, humans apply) ──
+export type OptimizerDecision = "ALLOCATE" | "DEFER" | "REJECT";
+
+export interface OptimizerProposal {
+  applicationId: string;
+  applicationNumber: string;
+  corridorCode: string;
+  decision: OptimizerDecision;
+  score: number;
+  weeklyDemand: number | null;
+  reasons: string[];
+  warnings: string[];
+}
+
+export interface CorridorUtilization {
+  corridorCode: string;
+  capacityPerWeek: number | null;
+  allocatedPerWeek: number;
+  proposedPerWeek: number;
+  deferredPerWeek: number;
+  remainingPerWeek: number | null;
+}
+
+export interface OptimizerResult {
+  proposals: OptimizerProposal[];
+  utilization: CorridorUtilization[];
+  generatedAt: string;
+  notes: string[];
+}
+
+export const runOptimizer = async (capacity: { corridorCode: string; trainsPerWeek: number }[]): Promise<OptimizerResult> =>
+  unwrap(await api.post("/rail/optimizer/run", { capacity }));
+
+export interface OptimizerApplyItem {
+  applicationId: string;
+  action: "ALLOCATE" | "REJECT";
+  validFrom?: string;
+  validUntil?: string;
+  imReference?: string;
+  reason?: string;
+}
+
+export const applyOptimizer = async (decisions: OptimizerApplyItem[]): Promise<{
+  applied: number; failed: number;
+  results: Array<{ applicationId: string; applicationNumber?: string; ok: boolean; action: string; error?: string }>;
+}> => unwrap(await api.post("/rail/optimizer/apply", { decisions }));
+
+export const OPTIMIZER_DECISION_LABEL: Record<OptimizerDecision, string> = {
+  ALLOCATE: "Allocate", DEFER: "Defer", REJECT: "Reject",
+};

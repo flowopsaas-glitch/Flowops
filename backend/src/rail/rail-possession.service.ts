@@ -4,6 +4,7 @@ import { Prisma, RailPossessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
+import { OutboxService } from '../webhooks/outbox.service';
 import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, railSystemAuditEntry, recordRailAudit,
 } from './rail-audit';
@@ -25,6 +26,7 @@ export class RailPossessionService {
     private readonly prisma: PrismaService,
     private readonly billing: BillingService,
     private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
   ) {}
 
   private async assertEntitled(companyId: string): Promise<void> {
@@ -85,12 +87,19 @@ export class RailPossessionService {
     if (endsAt.getTime() <= startsAt.getTime()) throw new BadRequestException('A possession window must end after it starts.');
     if (endsAt.getTime() < now.getTime() && dto.kind !== 'AD_HOC_EMERGENCY') throw new BadRequestException('A planned possession window cannot lie wholly in the past.');
 
-    const row = await this.prisma.railPossessionWindow.create({
-      data: {
-        companyId, corridorCode: dto.corridorCode, kind: dto.kind, status: 'PLANNED', title: dto.title.trim(), location: dto.location ?? null,
-        description: dto.description ?? null, imReference: dto.imReference ?? null, startsAt, endsAt,
-        noticeGivenAt: dto.noticeGivenAt ? new Date(dto.noticeGivenAt) : null, createdById: actor.id, createdByEmail: actor.email,
-      },
+    const row = await this.prisma.withTenant(companyId, async (tx) => {
+      const created = await tx.railPossessionWindow.create({
+        data: {
+          companyId, corridorCode: dto.corridorCode, kind: dto.kind, status: 'PLANNED', title: dto.title.trim(), location: dto.location ?? null,
+          description: dto.description ?? null, imReference: dto.imReference ?? null, startsAt, endsAt,
+          noticeGivenAt: dto.noticeGivenAt ? new Date(dto.noticeGivenAt) : null, createdById: actor.id, createdByEmail: actor.email,
+        },
+      });
+      await this.outbox.enqueue(tx, companyId, 'rail.possession.created', {
+        windowId: created.id, title: created.title, corridorCode: created.corridorCode,
+        kind: created.kind, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(),
+      });
+      return created;
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.POSSESSION_CREATED, { type: RAIL_AUDIT_TARGET.POSSESSION, id: row.id, name: row.title },
       { corridorCode: row.corridorCode, kind: row.kind, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() });
@@ -119,7 +128,13 @@ export class RailPossessionService {
     const w = await this.prisma.railPossessionWindow.findFirst({ where: { id, companyId } });
     if (!w) throw new NotFoundException('Possession window not found');
     if (!from.includes(w.status)) throw new BadRequestException(`A ${w.status} possession window cannot become ${to}.`);
-    const updated = await this.prisma.railPossessionWindow.update({ where: { id }, data: { status: to } });
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const u = await tx.railPossessionWindow.update({ where: { id }, data: { status: to } });
+      await this.outbox.enqueue(tx, companyId, 'rail.possession.status_changed', {
+        windowId: id, title: w.title, corridorCode: w.corridorCode, from: w.status, to,
+      });
+      return u;
+    });
     await this.record(companyId, actor, action, { type: RAIL_AUDIT_TARGET.POSSESSION, id, name: w.title }, { from: w.status, to });
     return this.view(updated);
   }

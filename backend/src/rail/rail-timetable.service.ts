@@ -70,7 +70,7 @@ export class RailTimetableService {
 
     let scheduleImport;
     try {
-      scheduleImport = await this.prisma.$transaction(async (tx) => {
+      scheduleImport = await this.prisma.withTenant(companyId, async (tx) => {
         const created = await tx.railScheduleImport.create({
           data: {
             companyId,

@@ -44,6 +44,15 @@ export class EpodController {
     return this.svc.verify(id, u.companyId, dto);
   }
 
+  @Post(':id/resolve-dispute')
+  resolveDispute(
+    @Param('id') id: string,
+    @Body() body: { resolution: 'CLEARED' | 'UPHELD'; resolvedBy: string; note?: string },
+    @CurrentUser() u: any,
+  ) {
+    return this.svc.resolveDispute(id, u.companyId, body);
+  }
+
   @Post(':id/dispute')
   dispute(@Param('id') id: string, @CurrentUser() u: any, @Body() dto: DisputeEpodDto) {
     return this.svc.dispute(id, u.companyId, dto);

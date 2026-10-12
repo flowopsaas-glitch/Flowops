@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { OutboxService } from '../webhooks/outbox.service';
 import { CaptureEpodDto, VerifyEpodDto, DisputeEpodDto } from './dto/epod.dto';
 import {
   getTransitionMode,
@@ -66,6 +67,7 @@ export class EpodService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async capture(companyId: string, dto: CaptureEpodDto, actor: EpodActor = {}) {
@@ -218,6 +220,12 @@ export class EpodService {
         },
       });
 
+      // 1b. The lifecycle event — integrators learn about the proof with the proof.
+      await this.outbox.enqueue(tx, companyId, 'epod.captured', {
+        epodId: epod.id, waybillId: dto.waybillId,
+        driverId: attributedDriverId ?? null, capturedAt: deliveredAt.toISOString(),
+      });
+
       // 2. The waybill's POD mirror fields (kept for the existing UI/reports).
       const updated = await tx.waybill.update({
         where: { id: dto.waybillId },
@@ -289,9 +297,17 @@ export class EpodService {
     const epod = await this.findOne(id, companyId);
     // CAS so two verifiers cannot both "win" and so a DISPUTED POD cannot be
     // quietly flipped back to VERIFIED.
-    const updated = await this.prisma.electronicPod.updateMany({
-      where: { id, companyId, status: 'CAPTURED' },
-      data: { status: 'VERIFIED', verifiedBy: dto.verifiedBy, verifiedAt: new Date() },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.electronicPod.updateMany({
+        where: { id, companyId, status: 'CAPTURED' },
+        data: { status: 'VERIFIED', verifiedBy: dto.verifiedBy, verifiedAt: new Date() },
+      });
+      if (u.count > 0) {
+        await this.outbox.enqueue(tx, companyId, 'epod.verified', {
+          epodId: id, waybillId: epod.waybillId, verifiedBy: dto.verifiedBy,
+        });
+      }
+      return u;
     });
     if (updated.count === 0) {
       throw new ConflictException(`Only captured ePODs can be verified (current status: ${epod.status})`);
@@ -302,12 +318,65 @@ export class EpodService {
   async dispute(id: string, companyId: string, dto: DisputeEpodDto) {
     if (!dto?.reason?.trim()) throw new BadRequestException('A dispute reason is required');
     const epod = await this.findOne(id, companyId);
-    const updated = await this.prisma.electronicPod.updateMany({
-      where: { id, companyId, status: { not: 'DISPUTED' } },
-      data: { status: 'DISPUTED', disputeReason: dto.reason },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.electronicPod.updateMany({
+        where: { id, companyId, status: { not: 'DISPUTED' } },
+        data: { status: 'DISPUTED', disputeReason: dto.reason },
+      });
+      if (u.count > 0) {
+        await this.outbox.enqueue(tx, companyId, 'epod.disputed', {
+          epodId: id, waybillId: epod.waybillId, reason: dto.reason.slice(0, 500),
+        });
+      }
+      return u;
     });
     if (updated.count === 0) {
       throw new ConflictException(`ePOD is already disputed (current status: ${epod.status})`);
+    }
+    return this.findOne(id, companyId);
+  }
+
+  /**
+   * Resolve a disputed ePOD — the money gate:
+   *  - CLEARED: the dispute was wrong; the POD becomes VERIFIED and billing flows.
+   *  - UPHELD:  the POD stays DISPUTED and the waybill stays on billing hold
+   *             until it is settled with the client or credited.
+   */
+  async resolveDispute(id: string, companyId: string, dto: { resolution: 'CLEARED' | 'UPHELD'; resolvedBy: string; note?: string }) {
+    const epod = await this.findOne(id, companyId);
+    if (epod.status !== 'DISPUTED') {
+      throw new ConflictException(`Only a disputed ePOD can be resolved (current status: ${epod.status})`);
+    }
+    if (!['CLEARED', 'UPHELD'].includes(dto.resolution)) {
+      throw new BadRequestException("resolution must be 'CLEARED' or 'UPHELD'");
+    }
+    const resolvedBy = (dto.resolvedBy ?? '').trim().slice(0, 160) || 'unspecified';
+    const resolvedAt = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.electronicPod.updateMany({
+        where: { id, companyId, status: 'DISPUTED', disputeResolvedAt: null },
+        data: {
+          disputeResolution: dto.resolution,
+          disputeResolvedBy: resolvedBy,
+          disputeResolvedAt: resolvedAt,
+          // CLEARED restores the proof to VERIFIED (billing flows); UPHELD keeps
+          // the DISPUTED status on purpose — the hold stands.
+          ...(dto.resolution === 'CLEARED'
+            ? { status: 'VERIFIED', verifiedBy: resolvedBy, verifiedAt: resolvedAt }
+            : {}),
+        },
+      });
+      if (u.count > 0) {
+        await this.outbox.enqueue(tx, companyId, 'epod.dispute_resolved', {
+          epodId: id, waybillId: epod.waybillId, resolution: dto.resolution,
+          resolvedBy, note: dto.note ?? null,
+        });
+      }
+      return u;
+    });
+    if (updated.count === 0) {
+      throw new ConflictException('This dispute was already resolved by someone else.');
     }
     return this.findOne(id, companyId);
   }

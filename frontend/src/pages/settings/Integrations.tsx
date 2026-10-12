@@ -25,7 +25,40 @@ type WebhookDelivery = {
   endpoint: { id: string; url: string };
 };
 
-const EVENT_OPTIONS = ["waybill.status_changed"];
+/** Keep in sync with backend/src/webhooks/event-catalog.ts. */
+const EVENT_GROUPS: { label: string; events: string[] }[] = [
+  { label: "Waybills & returns", events: ["waybill.status_changed", "return.status_changed"] },
+  {
+    label: "Rail — slot applications",
+    events: [
+      "rail.slot.created", "rail.slot.submitted", "rail.slot.allocated", "rail.slot.rejected",
+      "rail.slot.expired", "rail.slot.operated", "rail.slot.capacity_conflict", "rail.slot.conflict_resolved",
+    ],
+  },
+  {
+    label: "Rail — daily handshake",
+    events: [
+      "rail.handshake.report_created", "rail.handshake.report_issued", "rail.handshake.signed_off",
+      "rail.handshake.deviation_logged", "rail.handshake.deviation_reviewed",
+    ],
+  },
+  { label: "Rail — possessions", events: ["rail.possession.created", "rail.possession.status_changed"] },
+  {
+    label: "Rail — train manifests",
+    events: [
+      "rail.manifest.created", "rail.manifest.issued", "rail.manifest.amended",
+      "rail.manifest.departed", "rail.manifest.arrived", "rail.manifest.closed", "rail.manifest.cancelled",
+    ],
+  },
+  {
+    label: "Rail — telemetry",
+    events: [
+      "rail.telemetry.device_registered", "rail.telemetry.device_status_changed",
+      "rail.telemetry.alert_raised", "rail.telemetry.alert_updated",
+    ],
+  },
+];
+const EVENT_OPTIONS = EVENT_GROUPS.flatMap((g) => g.events);
 
 function unwrapList(raw: any): any[] {
   const d = raw?.data ?? raw;
@@ -51,6 +84,7 @@ export default function Integrations() {
   const [keyName, setKeyName]     = useState("");
   const [newKey, setNewKey]       = useState<string | null>(null);
   const [hookUrl, setHookUrl]     = useState("");
+  const [selectedEvents, setSelectedEvents] = useState<string[]>(() => EVENT_GROUPS.flatMap((g) => g.events));
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const [copied, setCopied]       = useState<string | null>(null);
   const [busy, setBusy]           = useState(false);
@@ -99,9 +133,10 @@ export default function Integrations() {
 
   const createHook = async () => {
     if (!hookUrl.trim()) return;
+    const events = selectedEvents.length ? selectedEvents : EVENT_OPTIONS;
     setBusy(true);
     try {
-      const r: any = await api.post("/integrations/webhooks", { url: hookUrl.trim(), events: EVENT_OPTIONS });
+      const r: any = await api.post("/integrations/webhooks", { url: hookUrl.trim(), events });
       const payload = r?.data ?? r;
       setNewSecret(payload.secret);
       setHookUrl("");
@@ -213,6 +248,36 @@ export default function Integrations() {
               className="inline-flex items-center gap-2 rounded-xl bg-sky-500 text-slate-950 px-4 py-2.5 text-sm font-black disabled:opacity-50">
               <Plus size={16} /> Add
             </button>
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-white/40 font-black">Events to deliver</div>
+            {EVENT_GROUPS.map((g) => (
+              <div key={g.label}>
+                <div className="text-xs font-semibold text-white/60 mb-1.5">{g.label}</div>
+                <div className="flex flex-wrap gap-2">
+                  {g.events.map((ev) => {
+                    const on = selectedEvents.includes(ev);
+                    return (
+                      <button
+                        key={ev}
+                        type="button"
+                        onClick={() => setSelectedEvents((prev) => (on ? prev.filter((e) => e !== ev) : [...prev, ev]))}
+                        className={`rounded-lg border px-2.5 py-1 text-[11px] font-mono transition ${
+                          on ? "border-sky-400/40 bg-sky-500/15 text-sky-200" : "border-white/10 bg-white/[0.02] text-white/40 hover:text-white/70"
+                        }`}
+                        aria-pressed={on}
+                      >
+                        {ev}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <div className="text-[11px] text-white/40">
+              {selectedEvents.length} of {EVENT_OPTIONS.length} selected — deliveries are HMAC-signed (X-FlowOps-Signature) and retried with exponential back-off.
+            </div>
           </div>
 
           {newSecret && (

@@ -40,12 +40,15 @@ function make(opts: { entitled?: boolean } = {}) {
     }),
   };
   const prisma = {
+    $transaction: async (fn: any) => fn(prisma),
+    withTenant: async (_companyId: string, fn: any, _opts?: any) => fn(prisma),
     railSlotApplication: apps, railOperatorComplianceDoc: docs, railCorridorNode: corridors, railYardSpec: yards,
     railConsignment: consignmentDelegate, aiEvent: aiEvents,
   };
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  const svc = new RailSlotService(prisma as any, billing as any, audit as any);
+  const outbox = { enqueue: jest.fn().mockResolvedValue('ob1') };
+  const svc = new RailSlotService(prisma as any, billing as any, audit as any, outbox as any);
 
   const seedApp = (over: Record<string, any> = {}) =>
     apps.seed({

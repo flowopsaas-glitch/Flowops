@@ -94,6 +94,25 @@ export class InvoicesController {
     return this.svc.getBillingCoverage(u.companyId);
   }
 
+  /**
+   * GET /api/v1/invoices/billing-holds — the settle-these-first queue.
+   * Road disputed ePODs + rail weighbridge holds: every reason money is stuck
+   * and the next action to clear it.
+   */
+  @Get('invoices/billing-holds')
+  getBillingHolds(@CurrentUser() u: any) {
+    return this.svc.getBillingHolds(u.companyId);
+  }
+
+  /**
+   * GET /api/v1/invoices/proof-board — cross-lifecycle Proof & Payments board
+   * (road / rail / sea): is the proof in good standing, and has the money followed?
+   */
+  @Get('invoices/proof-board')
+  getProofBoard(@CurrentUser() u: any) {
+    return this.svc.getProofBoard(u.companyId);
+  }
+
   @Get('invoices/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);

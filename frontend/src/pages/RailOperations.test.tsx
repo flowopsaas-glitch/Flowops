@@ -41,6 +41,15 @@ vi.mock('../api/railChangeApi', () => ({
 vi.mock('./rail/SlotCompliancePanel', () => ({
   default: ({ canWrite, canSign }: { canWrite: boolean; canSign: boolean }) => <div data-testid="slots-panel">{`write=${canWrite} sign=${canSign}`}</div>,
 }));
+vi.mock('./rail/SlotOptimizerPanel', () => ({
+  default: ({ canWrite }: { canWrite: boolean }) => <div data-testid="optimizer-panel">{`write=${canWrite}`}</div>,
+}));
+vi.mock('./rail/TrainManifestPanel', () => ({
+  default: ({ canWrite, canSign }: { canWrite: boolean; canSign: boolean }) => <div data-testid="manifests-panel">{`write=${canWrite} sign=${canSign}`}</div>,
+}));
+vi.mock('./rail/LiveTrackingPanel', () => ({
+  default: ({ canWrite }: { canWrite: boolean }) => <div data-testid="tracking-panel">{`write=${canWrite}`}</div>,
+}));
 vi.mock('./rail/ChangesPossessionsPanel', () => ({
   default: ({ canWrite, canSign }: { canWrite: boolean; canSign: boolean }) => <div data-testid="changes-panel">{`write=${canWrite} sign=${canSign}`}</div>,
 }));
@@ -86,12 +95,15 @@ beforeEach(() => {
 });
 
 describe('RailOperations — tabs', () => {
-  it('has a tab bar of four tabs and starts on Consignments', async () => {
+  it('has a tab bar of seven tabs and starts on Consignments', async () => {
     await open('MANAGER');
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Changes & Possessions', 'Tariffs & Weighbridge']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Schedule Optimizer', 'Train Manifests', 'Live Tracking', 'Changes & Possessions', 'Tariffs & Weighbridge']);
     expect(screen.getByRole('tab', { name: 'Consignments' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }).getAttribute('aria-selected')).toBe('false');
     expect(screen.queryByTestId('slots-panel')).toBeNull();
+    expect(screen.queryByTestId('optimizer-panel')).toBeNull();
+    expect(screen.queryByTestId('manifests-panel')).toBeNull();
+    expect(screen.queryByTestId('tracking-panel')).toBeNull();
     expect(screen.queryByTestId('changes-panel')).toBeNull();
     expect(screen.queryByTestId('tariffs-panel')).toBeNull();
     expect(await screen.findByText(/Corridor Breakdown|Search consignment|SADC Rail Corridors/)).toBeTruthy();
@@ -102,9 +114,18 @@ describe('RailOperations — tabs', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
     expect(screen.getByTestId('slots-panel')).toBeTruthy();
     expect(screen.queryByPlaceholderText(/Search consignment/)).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Schedule Optimizer' }));
+    expect(screen.getByTestId('optimizer-panel')).toBeTruthy();
+    expect(screen.queryByTestId('slots-panel')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Train Manifests' }));
+    expect(screen.getByTestId('manifests-panel')).toBeTruthy();
+    expect(screen.queryByTestId('optimizer-panel')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+    expect(screen.getByTestId('tracking-panel')).toBeTruthy();
+    expect(screen.queryByTestId('manifests-panel')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Changes & Possessions' }));
     expect(screen.getByTestId('changes-panel')).toBeTruthy();
-    expect(screen.queryByTestId('slots-panel')).toBeNull();
+    expect(screen.queryByTestId('tracking-panel')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Tariffs & Weighbridge' }));
     expect(screen.getByTestId('tariffs-panel')).toBeTruthy();
     expect(screen.queryByTestId('changes-panel')).toBeNull();

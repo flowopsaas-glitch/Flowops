@@ -18,10 +18,11 @@ import { EpodService } from './epod.service';
 type Row = Record<string, any>;
 
 function makeHarness(overrides: Row = {}) {
-  const db: { podDelivered: boolean; pods: Row[]; shipmentStatus: string } = {
+  const db: { podDelivered: boolean; pods: Row[]; shipmentStatus: string; podResolved?: boolean } = {
     podDelivered: false,
     pods: [],
     shipmentStatus: 'IN_TRANSIT',
+    podResolved: false,
   };
 
   const waybill: Row = {
@@ -50,6 +51,12 @@ function makeHarness(overrides: Row = {}) {
         db.pods.push(row);
         return row;
       }),
+      updateMany: jest.fn(async ({ data }: any) => {
+        if (db.podResolved || (data && data.disputeResolution && db.pods[0]?.status !== 'DISPUTED')) return { count: 0 };
+        if (data && data.disputeResolution) db.podResolved = true;
+        if (db.pods[0]) db.pods[0] = { ...db.pods[0], ...data };
+        return { count: 1 };
+      }),
     },
     shipment: {
       updateMany: jest.fn(async ({ data }: any) => {
@@ -77,8 +84,9 @@ function makeHarness(overrides: Row = {}) {
   };
 
   const audit = { record: jest.fn(async () => 'audit-1') };
-  const svc = new EpodService(prisma as any, audit as any);
-  return { svc, prisma, tx, db, waybill, audit };
+  const outbox = { enqueue: jest.fn(async () => 'outbox-1') };
+  const svc = new EpodService(prisma as any, audit as any, outbox as any);
+  return { svc, prisma, tx, db, waybill, audit, outbox };
 }
 
 const DTO = { waybillId: 'wb-1', signatureUrl: 'https://cdn/sig.png', recipientName: 'T. Mokoena' };
@@ -223,10 +231,10 @@ describe('EpodService.capture — atomicity and duplicates', () => {
 
 describe('EpodService.verify / dispute', () => {
   it('only verifies a CAPTURED pod, via a compare-and-set', async () => {
-    const { svc, prisma, db } = makeHarness();
+    const { svc, prisma, tx, db } = makeHarness();
     db.pods.push({ id: 'epod-1', waybillId: 'wb-1', companyId: 'co-1', status: 'CAPTURED' });
     const updateMany = jest.fn(async () => ({ count: 1 }));
-    (prisma as any).electronicPod.updateMany = updateMany;
+    (tx as any).electronicPod.updateMany = updateMany; // CAS now runs inside the tx
     (prisma as any).electronicPod.findFirst = jest.fn(async () => db.pods[0]);
 
     const result = await svc.verify('epod-1', 'co-1', { verifiedBy: 'ops@co.za' });
@@ -237,9 +245,9 @@ describe('EpodService.verify / dispute', () => {
   });
 
   it('refuses to verify a pod that is not captured', async () => {
-    const { svc, prisma, db } = makeHarness();
+    const { svc, prisma, tx, db } = makeHarness();
     db.pods.push({ id: 'epod-1', waybillId: 'wb-1', companyId: 'co-1', status: 'DISPUTED' });
-    (prisma as any).electronicPod.updateMany = jest.fn(async () => ({ count: 0 }));
+    (tx as any).electronicPod.updateMany = jest.fn(async () => ({ count: 0 }));
     (prisma as any).electronicPod.findFirst = jest.fn(async () => db.pods[0]);
     await expect(svc.verify('epod-1', 'co-1', {})).rejects.toThrow(ConflictException);
   });
@@ -257,5 +265,46 @@ describe('EpodService.getStats', () => {
     const { svc } = makeHarness();
     const stats = await svc.getStats('co-1');
     expect(stats).toMatchObject({ total: 0, verificationRate: null });
+  });
+});
+
+describe('EpodService.resolveDispute — the money gate', () => {
+  it('CLEARED restores the POD to VERIFIED and billing may flow', async () => {
+    const { svc, db, outbox } = makeHarness();
+    db.pods = [{ id: 'epod-1', status: 'DISPUTED', waybillId: 'wb-1' }];
+    const res = await svc.resolveDispute('epod-1', 'co-1', {
+      resolution: 'CLEARED', resolvedBy: 'ops@client.co.za', note: 'wrong POD attached',
+    });
+    expect(res.status).toBe('VERIFIED');
+    expect(outbox.enqueue).toHaveBeenCalledWith(expect.anything(), 'co-1', 'epod.dispute_resolved', expect.objectContaining({ resolution: 'CLEARED' }));
+  });
+
+  it('UPHELD keeps the POD DISPUTED — the hold stands', async () => {
+    const { svc, db } = makeHarness();
+    db.pods = [{ id: 'epod-1', status: 'DISPUTED', waybillId: 'wb-1' }];
+    const res = await svc.resolveDispute('epod-1', 'co-1', {
+      resolution: 'UPHELD', resolvedBy: 'ops@client.co.za', note: 'goods damaged',
+    });
+    expect(res.status).toBe('DISPUTED');
+    expect(res.disputeResolution).toBe('UPHELD');
+  });
+
+  it('refuses to resolve something that is not disputed', async () => {
+    const { svc, db } = makeHarness();
+    db.pods = [{ id: 'epod-1', status: 'VERIFIED', waybillId: 'wb-1' }];
+    await expect(
+      svc.resolveDispute('epod-1', 'co-1', { resolution: 'CLEARED', resolvedBy: 'ops@client.co.za' }),
+    ).rejects.toThrow('Only a disputed ePOD can be resolved');
+  });
+
+  it('refuses a second resolution of the same dispute (CAS)', async () => {
+    const { svc, db } = makeHarness();
+    db.pods = [{ id: 'epod-1', status: 'DISPUTED', waybillId: 'wb-1' }];
+    // UPHELD keeps status DISPUTED — a second attempt passes the status guard
+    // and must die on the CAS (`disputeResolvedAt: null`).
+    await svc.resolveDispute('epod-1', 'co-1', { resolution: 'UPHELD', resolvedBy: 'a' });
+    await expect(
+      svc.resolveDispute('epod-1', 'co-1', { resolution: 'CLEARED', resolvedBy: 'b' }),
+    ).rejects.toThrow('already resolved');
   });
 });

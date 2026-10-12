@@ -57,6 +57,8 @@ function makeDb() {
   });
 
   const prisma = {
+    $transaction: async (fn: any) => fn(prisma),
+    withTenant: async (_companyId: string, fn: any, _opts?: any) => fn(prisma),
     railHandshakeReport: {
       count: jest.fn(async ({ where }: any) => db.reports.filter((r) => matches(r, where)).length),
       create: jest.fn(async ({ data, include }: any) => {
@@ -144,8 +146,9 @@ function makeService(opts: { entitled?: boolean } = {}) {
   const { db, prisma, seedReport, seedDeviation } = makeDb();
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  const svc = new RailHandshakeService(prisma as any, billing as any, audit as any);
-  return { svc, db, prisma, billing, audit, seedReport, seedDeviation };
+  const outbox = { enqueue: jest.fn().mockResolvedValue('ob1') };
+  const svc = new RailHandshakeService(prisma as any, billing as any, audit as any, outbox as any);
+  return { svc, db, prisma, billing, audit, outbox, seedReport, seedDeviation };
 }
 
 /** The `AuditService.record` calls, as plain entries. */
