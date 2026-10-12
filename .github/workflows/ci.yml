@@ -66,61 +66,6 @@ jobs:
           ./scripts/ghcr-publish-preflight.test.sh
 
   # ────────────────────────────────────────────────────────────────────────
-  # arm64 image build probe — PR-visible, credential-free.
-  #
-  # The multi-arch publish step is gated to `push`, so a pull request could
-  # never exercise the linux/arm64 build (the exit-132 SIGILL from QEMU
-  # emulation was invisible for two weeks because main was the only test
-  # bench). This job builds the arm64 target of each image on every PR and
-  # push: no registry login, no push, no cache reuse (--no-cache), and every
-  # failing log line is re-emitted as ::error:: so it is readable through the
-  # check-run annotations API even when job logs are unreachable.
-  # ────────────────────────────────────────────────────────────────────────
-  arm64-probe:
-    name: Image Build Probe (arm64)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build backend arm64 (no cache, no push)
-        run: |
-          set +e
-          docker buildx build --no-cache --progress=plain --platform linux/arm64 \
-            --target production -t flowops/arm64-probe-backend:latest backend \
-            2>&1 | tee /tmp/arm64-probe-backend.log
-          rc=${PIPESTATUS[0]}
-          if [ "$rc" -ne 0 ]; then
-            echo "::error title=arm64 backend build failed (exit $rc)::see the annotations below"
-            tail -n 40 /tmp/arm64-probe-backend.log | while IFS= read -r l; do echo "::error::${l}"; done
-          fi
-          exit "$rc"
-
-      - name: Build frontend arm64 (no cache, no push)
-        if: always()
-        run: |
-          set +e
-          docker buildx build --no-cache --progress=plain --platform linux/arm64 \
-            --target production -t flowops/arm64-probe-frontend:latest frontend \
-            2>&1 | tee /tmp/arm64-probe-frontend.log
-          rc=${PIPESTATUS[0]}
-          if [ "$rc" -ne 0 ]; then
-            echo "::error title=arm64 frontend build failed (exit $rc)::see the annotations below"
-            tail -n 40 /tmp/arm64-probe-frontend.log | while IFS= read -r l; do echo "::error::${l}"; done
-          fi
-          exit "$rc"
-
-  # ────────────────────────────────────────────────────────────────────────
   # Compose config guard.
   #
   # The VPS / production overlays remove host port bindings so that the only
@@ -540,7 +485,8 @@ jobs:
   # Pushes:   only on `push` events. PRs and workflow_dispatch from a
   #           fork build the image and run the smoke test but do NOT
   #           publish (the registry login step is skipped for those).
-  # Multi-arch: linux/amd64 + linux/arm64 (Graviton-ready).
+  # Platform: linux/amd64 only. The only consumer (ECS Fargate, x86_64) is amd64;
+  # arm64 under QEMU crashed node with SIGILL (exit 132). See docs/DEPLOYMENT.md.
   # ────────────────────────────────────────────────────────────────────────
   frontend-image:
     name: Frontend Image (build & push)
@@ -555,11 +501,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU (for arm64 emulation)
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -616,9 +557,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       # Step 1: single-arch (amd64) build, loaded into the local Docker so
-      # we can `docker run` it for the smoke test. Multi-arch + load-into-
-      # docker are mutually exclusive in buildx, so we do the smoke test
-      # on amd64 only and multi-arch the push.
+      # we can `docker run` it for the smoke test. The published image is
+      # the same linux/amd64 build (see the header above).
       - name: Build (amd64, for smoke test)
         uses: docker/build-push-action@v5
         with:
@@ -775,16 +715,16 @@ jobs:
           echo "A CRITICAL frontend image vulnerability was found. Review the annotations, summary, or trivy-frontend-critical artifact."
           exit 1
 
-      # Step 2: multi-arch build & push. Reuses the BuildKit cache from
-      # step 1, so the amd64 layers don't rebuild — only arm64 is added.
-      - name: Build & push (multi-arch)
+      # Step 2: build & push. Reuses the BuildKit cache from step 1, so the
+      # amd64 layers don't rebuild. Publishes linux/amd64 only (see header).
+      - name: Build & push (linux/amd64)
         if: github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
           target: production
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -1007,11 +947,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -1215,14 +1150,14 @@ jobs:
           echo "A CRITICAL backend image vulnerability was found. Review the annotations, summary, or trivy-backend-critical artifact."
           exit 1
 
-      - name: Build & push (multi-arch)
+      - name: Build & push (linux/amd64)
         if: github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
           target: production
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
