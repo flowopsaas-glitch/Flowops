@@ -1,117 +1,92 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { basename, extname } from 'path';
 import { Express } from 'express';
 
-/**
- * World-class file upload validation utility.
- * Validates file type, size, and content (magic bytes) to prevent:
- * - Malicious file uploads (executables, scripts)
- * - Oversized uploads exhausting disk/memory
- * - MIME type spoofing attacks
- */
+export interface FileValidationOptions {
+  /** Maximum file size in bytes. Multer must enforce the same limit before buffering. */
+  maxSize?: number;
+  /** Content category to validate against. */
+  category?: 'image' | 'document' | 'csv' | 'any';
+}
 
-// Allowed file types with their magic bytes for content verification
-const ALLOWED_TYPES: Record<string, { mimes: string[]; magic?: Buffer[] }> = {
-  image: {
-    mimes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic'],
-    magic: [
-      Buffer.from([0xFF, 0xD8, 0xFF]),           // JPEG
-      Buffer.from([0x89, 0x50, 0x4E, 0x47]),     // PNG
-      Buffer.from([0x47, 0x49, 0x46]),            // GIF
-      Buffer.from([0x52, 0x49, 0x46, 0x46]),     // WebP (RIFF)
-    ],
-  },
-  document: {
-    mimes: ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff'],
-    magic: [
-      Buffer.from([0x25, 0x50, 0x44, 0x46]),     // PDF (%PDF)
-      Buffer.from([0xFF, 0xD8, 0xFF]),           // JPEG
-      Buffer.from([0x89, 0x50, 0x4E, 0x47]),     // PNG
-      Buffer.from([0x49, 0x49, 0x2A, 0x00]),     // TIFF (little-endian)
-      Buffer.from([0x4D, 0x4D, 0x00, 0x2A]),     // TIFF (big-endian)
-    ],
-  },
+type SignatureCheck = (buffer: Buffer) => boolean;
+
+const IMAGE_SIGNATURES: Record<string, SignatureCheck> = {
+  'image/jpeg': (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/png': (b) => b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  'image/gif': (b) => b.length >= 6 && (b.subarray(0, 6).toString('ascii') === 'GIF87a' || b.subarray(0, 6).toString('ascii') === 'GIF89a'),
+  'image/webp': (b) => b.length >= 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP',
 };
 
-// Dangerous file extensions that should NEVER be allowed
-const BLOCKED_EXTENSIONS = [
-  '.exe', '.bat', '.cmd', '.com', '.msi', '.scr', '.pif', '.vbs',
-  '.js', '.jsx', '.ts', '.tsx', '.sh', '.bash', '.ps1', '.psm1',
-  '.php', '.asp', '.aspx', '.jsp', '.py', '.rb', '.pl',
-  '.dll', '.so', '.dylib', '.bin', '.elf',
-  '.html', '.htm', '.svg', '.xml', '.xhtml',
-];
+const DOCUMENT_SIGNATURES: Record<string, SignatureCheck> = {
+  'application/pdf': (b) => b.length >= 5 && b.toString('ascii', 0, 5) === '%PDF-',
+  'image/jpeg': IMAGE_SIGNATURES['image/jpeg'],
+  'image/png': IMAGE_SIGNATURES['image/png'],
+  'image/tiff': (b) => b.length >= 4 && (
+    b.subarray(0, 4).equals(Buffer.from([0x49, 0x49, 0x2a, 0x00])) ||
+    b.subarray(0, 4).equals(Buffer.from([0x4d, 0x4d, 0x00, 0x2a]))
+  ),
+};
 
-export interface FileValidationOptions {
-  /** Maximum file size in bytes (default: 10MB) */
-  maxSize?: number;
-  /** Allowed categories: 'image' | 'document' | 'any' */
-  category?: 'image' | 'document' | 'any';
-}
+const CSV_MIMES = new Set([
+  'text/csv',
+  'application/csv',
+  'application/vnd.ms-excel',
+  'text/plain',
+  'application/octet-stream',
+]);
 
 @Injectable()
 export class FileUploadValidator {
-  /**
-   * Validates an uploaded file for security.
-   * Throws BadRequestException if validation fails.
-   */
-  validate(
-    file: Express.Multer.File,
-    options: FileValidationOptions = {},
-  ): void {
+  static validate(file: Express.Multer.File, options: FileValidationOptions = {}): void {
     const { maxSize = 10 * 1024 * 1024, category = 'document' } = options;
-
-    if (!file) {
-      throw new BadRequestException('No file provided');
+    if (!file || !Buffer.isBuffer(file.buffer)) {
+      throw new BadRequestException('No valid file was uploaded');
     }
 
-    // 1. Size check
-    if (file.size > maxSize) {
-      throw new BadRequestException(
-        `File too large. Maximum size: ${Math.round(maxSize / 1024 / 1024)}MB`,
-      );
+    const actualSize = file.buffer.length;
+    if (actualSize === 0 || actualSize !== file.size) {
+      throw new BadRequestException('Uploaded file is empty or malformed');
+    }
+    if (actualSize > maxSize) {
+      throw new BadRequestException(`File too large. Maximum size: ${Math.floor(maxSize / 1024 / 1024)}MB`);
     }
 
-    // 2. Extension blocklist
-    const ext = this.getExtension(file.originalname);
-    if (BLOCKED_EXTENSIONS.includes(ext.toLowerCase())) {
-      throw new BadRequestException(
-        `File type '${ext}' is not allowed for security reasons`,
-      );
-    }
-
-    // 3. MIME type validation
-    if (category !== 'any') {
-      const allowed = ALLOWED_TYPES[category];
-      if (allowed && !allowed.mimes.includes(file.mimetype)) {
-        throw new BadRequestException(
-          `File type '${file.mimetype}' is not allowed. Accepted: ${allowed.mimes.join(', ')}`,
-        );
-      }
-    }
-
-    // 4. Magic bytes verification (content-based — can't be spoofed)
-    if (category !== 'any' && file.buffer && file.buffer.length >= 4) {
-      const allowed = ALLOWED_TYPES[category];
-      if (allowed?.magic) {
-        const matchesMagic = allowed.magic.some(magic =>
-          file.buffer.slice(0, magic.length).equals(magic),
-        );
-        if (!matchesMagic) {
-          throw new BadRequestException(
-            'File content does not match its declared type. Upload rejected for security.',
-          );
-        }
-      }
-    }
-
-    // 5. Filename sanitisation check (prevent path traversal)
-    if (file.originalname.includes('..') || file.originalname.includes('/') || file.originalname.includes('\\')) {
+    const originalname = String(file.originalname ?? '');
+    if (!originalname || basename(originalname) !== originalname || originalname.includes('..')) {
       throw new BadRequestException('Invalid filename');
     }
+
+    const extension = extname(originalname).toLowerCase();
+    const mimetype = String(file.mimetype ?? '').toLowerCase().split(';', 1)[0].trim();
+
+    if (category === 'any') return;
+
+    if (category === 'csv') {
+      if (extension !== '.csv' || !CSV_MIMES.has(mimetype) || file.buffer.includes(0)) {
+        throw new BadRequestException('Upload must be a valid text CSV file');
+      }
+      return;
+    }
+
+    FileUploadValidator.validateBuffer(file.buffer, mimetype, category);
   }
 
-  private getExtension(filename: string): string {
-    const dot = filename.lastIndexOf('.');
-    return dot >= 0 ? filename.slice(dot).toLowerCase() : '';
+  static validateBuffer(
+    buffer: Buffer,
+    rawMimeType: string,
+    category: 'image' | 'document',
+  ): void {
+    const mimetype = String(rawMimeType ?? '').toLowerCase().split(';', 1)[0].trim();
+    const signatures = category === 'image' ? IMAGE_SIGNATURES : DOCUMENT_SIGNATURES;
+    const signatureCheck = signatures[mimetype];
+    if (!signatureCheck) {
+      throw new BadRequestException(
+        `File type '${mimetype || 'unknown'}' is not allowed for this upload`,
+      );
+    }
+    if (!signatureCheck(buffer)) {
+      throw new BadRequestException('File content does not match its declared type');
+    }
   }
 }

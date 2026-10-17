@@ -2,10 +2,16 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
+import { FleetMaintenanceService } from '../fleet-maintenance/fleet-maintenance.service';
+import { LogServiceDto } from '../fleet-maintenance/dto/log-service.dto';
 
 @Injectable()
 export class DriversService {
-  constructor(private prisma: PrismaService, private billing: BillingService) {}
+  constructor(
+    private prisma: PrismaService,
+    private billing: BillingService,
+    private readonly fleetMaintenance: FleetMaintenanceService,
+  ) {}
 
   /**
    * Whitelist + normalise a driver payload from the UI into valid Prisma data.
@@ -95,20 +101,9 @@ export class DriversService {
     });
   }
 
-  async logService(driverId: string, companyId: string, dto: {
-    serviceType: string; notes?: string; kmAtService?: number; cost?: number; servicedAt?: string;
-  }) {
+  async logService(driverId: string, companyId: string, dto: LogServiceDto) {
     await this.findOne(driverId, companyId);
-    return this.prisma.vehicleService.create({
-      data: {
-        driverId,
-        serviceType: dto.serviceType,
-        notes: dto.notes,
-        kmAtService: dto.kmAtService,
-        cost: dto.cost,
-        servicedAt: dto.servicedAt ? new Date(dto.servicedAt) : new Date(),
-      },
-    });
+    return this.fleetMaintenance.logService(companyId, { ...dto, driverId });
   }
 
   async updateOdometer(driverId: string, companyId: string, dto: {

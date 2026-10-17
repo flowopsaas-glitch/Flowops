@@ -10,6 +10,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomBytes } from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
@@ -592,63 +593,91 @@ export class AuthService {
   // ── Password reset ────────────────────────────────────────────────────
 
   async forgotPassword(email: string) {
-    // Always return 200 — never reveal whether the email exists (user enumeration)
+    // Always return the same response — never reveal whether an account exists.
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    if (!normalizedEmail || normalizedEmail.length > 254) {
+      return { message: 'If an account exists for that email, a password reset link has been sent.' };
+    }
+
     const user = await this.prisma.user.findFirst({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
     if (user) {
-      const token = uuid();
-      const expiry = new Date();
-      expiry.setHours(expiry.getHours() + 1); // 1 hour
+      const token = randomBytes(32).toString('base64url');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const expiry = new Date(Date.now() + 60 * 60 * 1000);
 
       await this.prisma.user.update({
         where: { id: user.id },
-        data: { resetToken: token, resetTokenExpiry: expiry },
+        data: { resetToken: tokenHash, resetTokenExpiry: expiry },
       });
 
-      await this.email.sendPasswordResetEmail(user.email, token, user.name);
+      let delivered = false;
+      try {
+        delivered = await this.email.sendPasswordResetEmail(user.email, token, user.name);
+      } catch (error: any) {
+        this.logger.error(`Password reset email delivery failed: ${error?.message ?? 'unknown error'}`);
+      }
+      if (!delivered) {
+        // Do not leave an active but undelivered reset credential behind.
+        await this.prisma.user.updateMany({
+          where: { id: user.id, resetToken: tokenHash },
+          data: { resetToken: null, resetTokenExpiry: null },
+        }).catch(() => undefined);
+      }
     }
 
     return {
-      message:
-        'If an account exists for that email, a password reset link has been sent.',
+      message: 'If an account exists for that email, a password reset link has been sent.',
     };
   }
 
   async resetPassword(token: string, newPassword: string) {
+    if (typeof token !== 'string' || !token.trim() || token.length > 256) {
+      throw new BadRequestException('Reset link is invalid or has expired. Request a new password reset.');
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128) {
+      throw new BadRequestException('Password must be between 8 and 128 characters.');
+    }
+
+    const presentedToken = token.trim();
+    const tokenHash = createHash('sha256').update(presentedToken).digest('hex');
+    // Accept a still-live pre-deployment UUID once, then clear it; all newly
+    // issued tokens are stored as SHA-256 digests rather than bearer secrets.
+    const acceptedTokenValues = [tokenHash, presentedToken];
     const user = await this.prisma.user.findFirst({
       where: {
-        resetToken: token,
+        resetToken: { in: acceptedTokenValues },
         resetTokenExpiry: { gt: new Date() },
       },
     });
 
     if (!user) {
-      throw new BadRequestException(
-        'Reset link is invalid or has expired. Request a new password reset.',
-      );
-    }
-
-    if (newPassword.length < 8) {
-      throw new BadRequestException('Password must be at least 8 characters.');
+      throw new BadRequestException('Reset link is invalid or has expired. Request a new password reset.');
     }
 
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash,
-        resetToken: null,
-        resetTokenExpiry: null,
-        // Kill every existing session — force a fresh login everywhere.
-        activeSessionId: uuid(),
-      } as any,
+    await this.prisma.$transaction(async (tx) => {
+      const consumedAt = new Date();
+      const consumed = await tx.user.updateMany({
+        where: {
+          id: user.id,
+          resetToken: { in: acceptedTokenValues },
+          resetTokenExpiry: { gt: consumedAt },
+        },
+        data: {
+          passwordHash,
+          resetToken: null,
+          resetTokenExpiry: null,
+          activeSessionId: uuid(),
+        },
+      });
+      if (consumed.count !== 1) {
+        throw new BadRequestException('Reset link is invalid or has expired. Request a new password reset.');
+      }
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
     });
-
-    // Revoke all existing refresh tokens for security
-    await this.prisma.refreshToken.deleteMany({ where: { userId: user.id } });
 
     this.logger.log(`Password reset for user ${user.email}`);
     return { message: 'Password reset successfully. You can now sign in.' };

@@ -67,7 +67,12 @@ function makeHarness() {
       }),
     },
     codTransaction: {
+      findFirst: jest.fn(async ({ where }: any) => db.ledger.find((row) =>
+        row.walletId === where.walletId && row.type === where.type && row.idempotencyKey === where.idempotencyKey,
+      ) ?? null),
       create: jest.fn(async ({ data }: any) => {
+        const duplicate = db.ledger.find((row) => row.walletId === data.walletId && row.idempotencyKey === data.idempotencyKey);
+        if (duplicate) throw Object.assign(new Error('unique constraint'), { code: 'P2002' });
         const row = { id: `ct-${db.ledger.length + 1}`, ...data };
         db.ledger.push(row);
         return row;
@@ -79,7 +84,13 @@ function makeHarness() {
     waybill: { findFirst: jest.fn(async () => waybill) },
     invoiceItem: { findFirst: jest.fn(async () => ({ id: 'ii-1', invoice: { id: 'inv-1', status: 'SENT' } })) },
     driver: { findFirst: jest.fn(async () => ({ id: 'drv-1' })) },
-    codTransaction: { findMany: jest.fn(async () => db.ledger.filter((l) => l.type === 'COLLECTION')) },
+    driverWallet: { findUnique: jest.fn(async () => db.wallet) },
+    codTransaction: {
+      findFirst: jest.fn(async ({ where }: any) => db.ledger.find((row) =>
+        row.walletId === where.walletId && row.type === where.type && row.idempotencyKey === where.idempotencyKey,
+      ) ?? null),
+      findMany: jest.fn(async () => db.ledger.filter((l) => l.type === 'COLLECTION')),
+    },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
 
@@ -213,13 +224,13 @@ describe('CodSettlementService.settleDriver', () => {
   it('refuses a driver from another tenant', async () => {
     const { svc, prisma } = makeHarness();
     (prisma.driver.findFirst as jest.Mock).mockResolvedValue(null);
-    await expect(svc.settleDriver('drv-x', 100, 'co-1')).rejects.toThrow(NotFoundException);
+    await expect(svc.settleDriver('drv-x', 100, 'co-1', '00000000-0000-4000-8000-000000000001')).rejects.toThrow(NotFoundException);
   });
 
   it('refuses a settlement larger than the cash the driver holds', async () => {
     const { svc, db } = makeHarness();
     db.wallet = { id: 'wal-1', driverId: 'drv-1', balance: 50, totalCollected: 50, totalSettled: 0 };
-    await expect(svc.settleDriver('drv-1', 100, 'co-1')).rejects.toThrow(BadRequestException);
+    await expect(svc.settleDriver('drv-1', 100, 'co-1', '00000000-0000-4000-8000-000000000001')).rejects.toThrow(BadRequestException);
     // The balance is untouched by the failed attempt.
     expect(db.wallet.balance).toBe(50);
   });
@@ -228,19 +239,43 @@ describe('CodSettlementService.settleDriver', () => {
     const { svc, db } = makeHarness();
     db.wallet = { id: 'wal-1', driverId: 'drv-1', balance: 300, totalCollected: 300, totalSettled: 0 };
 
-    const result = await svc.settleDriver('drv-1', 300, 'co-1', 'Banked at HQ');
+    const result = await svc.settleDriver('drv-1', 300, 'co-1', '00000000-0000-4000-8000-000000000001', 'Banked at HQ');
 
     expect(result).toMatchObject({ settled: 300, newBalance: 0 });
     expect(db.ledger[0]).toMatchObject({ type: 'SETTLEMENT', amount: 300, balance: 0 });
   });
 
-  it('two concurrent settlements cannot both spend the same cash', async () => {
+  it('returns the original settlement on an idempotent retry with a surplus balance', async () => {
+    const { svc, db } = makeHarness();
+    db.wallet = { id: 'wal-1', driverId: 'drv-1', balance: 600, totalCollected: 600, totalSettled: 0 };
+    const key = '00000000-0000-4000-8000-000000000003';
+
+    const first = await svc.settleDriver('drv-1', 300, 'co-1', key, 'Banked at HQ');
+    const replay = await svc.settleDriver('drv-1', 300, 'co-1', key, 'Banked at HQ');
+
+    expect(replay).toMatchObject({ ...first, replayed: true });
+    expect(db.wallet!.balance).toBe(300);
+    expect(db.ledger.filter((row) => row.type === 'SETTLEMENT')).toHaveLength(1);
+  });
+
+  it('rejects reusing a settlement key with a different request', async () => {
+    const { svc, db } = makeHarness();
+    db.wallet = { id: 'wal-1', driverId: 'drv-1', balance: 600, totalCollected: 600, totalSettled: 0 };
+    const key = '00000000-0000-4000-8000-000000000004';
+    await svc.settleDriver('drv-1', 300, 'co-1', key, 'Banked at HQ');
+
+    await expect(svc.settleDriver('drv-1', 200, 'co-1', key, 'Different amount')).rejects.toThrow(ConflictException);
+    expect(db.wallet!.balance).toBe(300);
+    expect(db.ledger.filter((row) => row.type === 'SETTLEMENT')).toHaveLength(1);
+  });
+
+  it('two concurrent settlements with different keys cannot both spend the same cash', async () => {
     const { svc, db } = makeHarness();
     db.wallet = { id: 'wal-1', driverId: 'drv-1', balance: 300, totalCollected: 300, totalSettled: 0 };
 
     const results = await Promise.allSettled([
-      svc.settleDriver('drv-1', 300, 'co-1'),
-      svc.settleDriver('drv-1', 300, 'co-1'),
+      svc.settleDriver('drv-1', 300, 'co-1', '00000000-0000-4000-8000-000000000001'),
+      svc.settleDriver('drv-1', 300, 'co-1', '00000000-0000-4000-8000-000000000002'),
     ]);
 
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);

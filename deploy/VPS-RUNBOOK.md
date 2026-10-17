@@ -96,6 +96,8 @@ cp .env.production.example .env
 #             OWNER_SEED_EMAIL, OWNER_SEED_PASSWORD,
 #             CORS_ORIGINS + APP_URL + API_PUBLIC_URL (your domain),
 #             GROQ_API_KEY (unlocks all AI features)
+#   Optional: OTP_HMAC_SECRET=$(openssl rand -hex 32) for an independent OTP hash key;
+#             if omitted/blank, the API derives a domain-separated key from JWT_SECRET.
 #   For a NON-flowop.work domain also set VITE_CANONICAL_HOSTS=<your-domain>
 #             and VITE_INTEGRITY_BEACON_URL=https://<your-domain>/api/v1
 #   MUST keep: VITE_API_URL=/api/v1   (NOT /api — see §6)
@@ -118,9 +120,19 @@ cd ~/FlowOps
 ./deploy/vps-deploy.sh
 ```
 
-That script: `git pull` → `docker compose build` → `up -d` → `prisma db push`
-→ health check. Idempotent. **Always rebuilds the frontend image**, so SPA
-changes actually ship (a baked-in stale `dist` was a recurring dev gotcha).
+That script performs the Compose/tunnel/host-port preflights, pulls the source,
+builds images, starts the stack, waits for PostgreSQL, runs `prisma migrate
+deploy`, applies the plan-limit preflight, and checks health. **Always rebuilds
+the frontend image**, so SPA changes actually ship (a baked-in stale `dist` was
+a recurring dev gotcha).
+
+The script's migration invocation is not a replacement for an approved
+production release procedure. Before applying a migration to an existing
+database, take and verify a backup, rehearse against a clone, and follow the
+release-specific migration checklist. A legacy database built with `db push`
+or with missing/unknown `_prisma_migrations` history requires the reviewed
+baseline-adoption procedure first; `migrate deploy` is not that procedure. In
+particular, do not treat `db push` as an upgrade or adoption mechanism.
 
 ---
 
@@ -134,7 +146,9 @@ $C logs -f api              # tail backend logs
 $C logs -f frontend         # tail nginx logs
 $C restart api              # restart just the backend
 $C exec api sh              # shell into the backend container
-$C exec -T api npx prisma db push     # re-sync schema after a pull
+$C exec -T api ./node_modules/.bin/prisma migrate status  # inspect registered migration state
+# Apply migrations only in an approved release after verified backup/rehearsal:
+$C exec -T api ./node_modules/.bin/prisma migrate deploy
 $C exec -T api node prisma/seed-demo-company.js   # re-run a seed
 
 # Backup / restore the database (named volume postgres-data)
@@ -175,7 +189,7 @@ If the driver app shows CORS errors, that missing origin is the cause.
 | **Site 502s (or vps-deploy.sh refuses to start) after the port-reset change** | Tunnel ingress still targets `http://127.0.0.1:8080` / `http://localhost:8080`, and nothing listens there any more | Point ingress at `http://frontend:80` / `http://driver-portal:80`, then `docker compose ... restart cloudflared` |
 | **Intermittent 502s — some requests fine, some fail instantly (incident 2026-09-28)** | Two cloudflared agents on one tunnel: a host-level `cloudflared.service` running beside the compose agent. Cloudflare splits traffic between them; the host one cannot reach any origin and 502s its share | `sudo systemctl stop cloudflared && sudo systemctl disable cloudflared`, keep only the compose container. Verify: `for i in $(seq 1 20); do curl -sS -o /dev/null -w "%{http_code} " https://app.flowop.work/; done` → expect 200 × 20. Prevention: `vps-deploy.sh` check 0e refuses to deploy in this state |
 | **`curl http://<VPS_IP>:8080` still returns 200 after the fix** | Overlay ran on Compose < 2.24.4, so `!reset` was ignored and the base binding survived | `docker compose version` → upgrade the plugin; re-run `./scripts/check-compose-ports.sh -f docker-compose.yml -f deploy/docker-compose.vps.yml` |
-| **`prisma` errors about missing table/column** | Schema not pushed after a pull | `docker compose ... exec -T api npx prisma db push` |
+| **`prisma` errors about a missing table/column** | The image and database migration state are out of sync | Check `prisma migrate status` and logs; do not run `db push`. Follow the approved, backed-up release migration procedure for this database. |
 | **R2 uploads return `NotImplemented 501` from apt rclone 1.60.1** | Ubuntu-packaged rclone 1.60 uploads objects but mis-handles post-upload checks against current R2 | Use `/usr/local/bin/rclone` v1.66+ (installed by `item2-r2-runner.sh`); the cron job hard-codes that binary |
 | **Intermittent 502s / tunnel split-brain** | A host `cloudflared.service` is running alongside the Compose cloudflared sidecar against the same tunnel ID, creating two connectors | Stop/disable/mask the host service; only the Compose `cloudflared` service should own the tunnel (`deploy/vps-deploy.sh` now refuses to deploy if a host service is active) |
 

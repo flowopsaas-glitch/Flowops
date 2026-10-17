@@ -7,9 +7,6 @@ export type SsoConfig = {
   issuer?: string | null;
   clientId?: string | null;
   clientSecretSet?: boolean;
-  authUrl?: string | null;
-  tokenUrl?: string | null;
-  userInfoUrl?: string | null;
   scopes?: string | null;
   allowedDomain?: string | null;
   autoProvision?: boolean;
@@ -23,9 +20,6 @@ export type SsoConfigInput = {
   issuer?: string;
   clientId?: string;
   clientSecret?: string;
-  authUrl?: string;
-  tokenUrl?: string;
-  userInfoUrl?: string;
   scopes?: string;
   allowedDomain?: string;
   autoProvision?: boolean;
@@ -45,4 +39,12 @@ export async function saveSsoConfig(dto: SsoConfigInput): Promise<SsoConfig> {
 /** Public: check whether an email's domain has SSO configured. */
 export async function lookupSso(email: string): Promise<{ sso: boolean; startUrl?: string }> {
   return unwrap(await api.get(`/sso/lookup?email=${encodeURIComponent(email)}`));
+}
+
+export async function exchangeSsoCode(code: string): Promise<{
+  access_token: string;
+  refresh_token: string;
+  user: unknown;
+}> {
+  return unwrap(await api.post('/sso/exchange', { code }));
 }

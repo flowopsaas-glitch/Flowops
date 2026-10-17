@@ -8,6 +8,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 
+jest.mock('bcrypt', () => ({ hash: jest.fn().mockResolvedValue('test-password-hash') }));
+
 /**
  * Security-focused tests for UsersService. These lock in the fixes for:
  *  - cross-tenant user mutation (update/remove must be scoped by companyId)

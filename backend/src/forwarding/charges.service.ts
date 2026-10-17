@@ -71,15 +71,25 @@ export class ChargesService {
     const total = charges.filter((c) => c.currency === primary).reduce((s, c) => s + c.sell, 0);
 
     const invoiceNumber = `${file.fileNumber}-INV`;
-    return this.prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        clientName: charges.find((c) => c.invoiceTo)?.invoiceTo || file.consigneeName || 'Consignee',
-        subtotal: +total.toFixed(2),
-        total: +total.toFixed(2),
-        notes: `Generated from forwarding file ${file.fileNumber} (${primary}).`,
-        companyId,
-      },
+    return this.prisma.$transaction(async (tx: any) => {
+      // Share the invoice-sequence lock with ordinary and monthly invoice
+      // creation. The file-derived number remains stable, and the lookup makes
+      // retries idempotent after a successful first request.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(641902, hashtext(${companyId}))`;
+      const existing = await tx.invoice.findFirst({ where: { companyId, invoiceNumber } });
+      if (existing) return existing;
+
+      return tx.invoice.create({
+        data: {
+          invoiceNumber,
+          clientName: charges.find((c) => c.invoiceTo)?.invoiceTo || file.consigneeName || 'Consignee',
+          subtotal: +total.toFixed(2),
+          tax: 0,
+          total: +total.toFixed(2),
+          notes: `Generated from forwarding file ${file.fileNumber} (${primary}).`,
+          companyId,
+        },
+      });
     });
   }
 }

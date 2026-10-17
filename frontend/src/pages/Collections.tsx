@@ -237,10 +237,8 @@ export default function Collections() {
   async function handleAssignDriver(collectionId: string, nextDriverId: string) {
     setSaving(true);
     try {
-      await api.patch(`/collections/${collectionId}`, {
-        driverId: nextDriverId,
-        status: "IN_PROGRESS",
-      });
+      await api.post(`/collections/${collectionId}/assign-driver`, { driverId: nextDriverId });
+      await api.patch(`/collections/${collectionId}`, { status: "IN_PROGRESS" });
       setSuccess("Dispatch confirmed.");
       setSuggestion(null);
       loadAll("refresh");

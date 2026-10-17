@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Cron } from '@nestjs/schedule';
 import { Money } from '../common/money.util';
@@ -397,42 +397,47 @@ export class InvoicesService {
 </html>`;
   }
 
-  async getUnbilledWaybills(companyId: string) {    /**
-     * Returns DELIVERED waybills that have a totalAmount AND do not yet appear
-     * on any invoice item.  The GenerateModal uses this list so dispatchers
-     * never accidentally double-bill a delivery.
-     */
-    return this.prisma.waybill.findMany({
-      where: {
-        companyId,
-        status: 'DELIVERED',
-        totalAmount: { gt: 0 },
-        invoiceItems: { none: {} },   // Waybill ← InvoiceItem back-relation
-        // PROOF GATES PAYMENT: a waybill whose ePOD is disputed (unresolved or
-        // upheld) is not billable — it is an argument. It leaves this list until
-        // the dispute is CLEARED, or stays out and shows on the hold queue.
-        NOT: {
-          electronicPods: {
-            some: {
-              OR: [
-                { status: 'DISPUTED', disputeResolution: null },
-                { status: 'DISPUTED', disputeResolution: 'UPHELD' },
-              ],
-            },
+  private unbilledWaybillWhere(companyId: string) {
+    return {
+      companyId,
+      status: 'DELIVERED',
+      totalAmount: { gt: 0 },
+      invoiceItem: { is: null },
+      NOT: {
+        electronicPods: {
+          some: {
+            OR: [
+              { status: 'DISPUTED', disputeResolution: null },
+              { status: 'DISPUTED', disputeResolution: 'UPHELD' },
+            ],
           },
         },
       },
-      select: {
-        id: true,
-        trackingNumber: true,
-        recipientName: true,
-        recipientAddress: true,
-        totalAmount: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
+    } as any;
+  }
+
+  private readonly unbilledWaybillSelect = {
+    id: true,
+    trackingNumber: true,
+    recipientName: true,
+    recipientAddress: true,
+    totalAmount: true,
+    createdAt: true,
+  } as const;
+
+  private async getUnbilledWaybillPage(companyId: string, db: any, cursor?: string) {
+    return db.waybill.findMany({
+      where: this.unbilledWaybillWhere(companyId),
+      select: this.unbilledWaybillSelect,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 500,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
+  }
+
+  /** UI preview is intentionally separate from the fully paged billing worker. */
+  async getUnbilledWaybills(companyId: string) {
+    return this.getUnbilledWaybillPage(companyId, this.prisma);
   }
 
   /**
@@ -558,7 +563,7 @@ export class InvoicesService {
       const pod = wb.electronicPods?.[0];
       const state = epodState(pod ? { status: pod.status, disputeResolution: (pod as any).disputeResolution } : null);
       const held = !isBillableProof(state);
-      const billed = (wb as any).invoiceItems?.length
+      const billed = (wb as any).invoiceItem
         ? true
         : await this.safeFind('invoiceItem', { where: { waybillId: wb.id }, take: 1 }).then((r) => r.length > 0);
       const cls = classifyRow({ billed, proofHeld: held, holdReason: holdReason(state) });
@@ -646,14 +651,14 @@ export class InvoicesService {
     } as any;
 
     const [billedCount, unbilledAgg, unbilledList, heldAgg] = await Promise.all([
-      this.prisma.waybill.count({ where: { ...billableWhere, invoiceItems: { some: {} } } }),
+      this.prisma.waybill.count({ where: { ...billableWhere, invoiceItem: { isNot: null } } }),
       this.prisma.waybill.aggregate({
-        where: { ...billableWhere, ...notHeldPod, invoiceItems: { none: {} } },
+        where: { ...billableWhere, ...notHeldPod, invoiceItem: { is: null } },
         _count: { _all: true },
         _sum: { totalAmount: true },
       }),
       this.prisma.waybill.findMany({
-        where: { ...billableWhere, ...notHeldPod, invoiceItems: { none: {} } },
+        where: { ...billableWhere, ...notHeldPod, invoiceItem: { is: null } },
         select: { id: true, trackingNumber: true, recipientName: true, totalAmount: true, updatedAt: true },
         orderBy: { updatedAt: 'asc' }, // oldest unbilled first
         take: 500,
@@ -661,7 +666,7 @@ export class InvoicesService {
       this.prisma.waybill.aggregate({
         where: {
           ...billableWhere,
-          invoiceItems: { none: {} },
+          invoiceItem: { is: null },
           electronicPods: {
             some: {
               OR: [
@@ -723,68 +728,118 @@ export class InvoicesService {
    * emits `auto-invoice-completed` to refresh finance dashboards live and logs
    * a staff notification.
    *
-   * Idempotent: getUnbilledWaybills filters out waybills already on an invoice,
-   * so re-running is safe. Returns the created invoice, or null if there was
-   * nothing to bill.
+   * Idempotent under a tenant-scoped transaction lock and a unique waybill-line
+   * constraint. Candidates are cursor-paged in 500-row chunks; the database
+   * transaction has a 180-second hard limit and rolls back as a whole on error.
    */
+  private async lockInvoiceSequence(tx: any, companyId: string) {
+    // A transaction-scoped advisory lock serializes every invoice-number
+    // allocation and monthly bill run for this tenant across API replicas.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(641902, hashtext(${companyId}))`;
+  }
+
+  private async nextInvoiceNumber(tx: any, companyId: string): Promise<string> {
+    const year = new Date().getFullYear();
+    const rows = await tx.$queryRaw<Array<{ lastNumber: number | bigint }>>`
+      SELECT COALESCE(MAX(
+        CASE
+          WHEN split_part("invoiceNumber", '-', 3) ~ '^[0-9]+$'
+          THEN split_part("invoiceNumber", '-', 3)::bigint
+          ELSE NULL
+        END
+      ), 0)::bigint AS "lastNumber"
+      FROM "invoices"
+      WHERE "companyId" = ${companyId}
+        AND "invoiceNumber" LIKE ${`INV-${year}-%`}
+    `;
+    const lastNumber = Number(rows?.[0]?.lastNumber ?? 0);
+    if (!Number.isSafeInteger(lastNumber) || lastNumber < 0 || lastNumber >= Number.MAX_SAFE_INTEGER) {
+      throw new InternalServerErrorException('Invoice number sequence is invalid');
+    }
+    return `INV-${year}-${String(lastNumber + 1).padStart(4, '0')}`;
+  }
+
   async generateMonthlyInvoiceForCompany(company: {
     id: string;
     name: string;
     tradingName?: string | null;
   }) {
-    const waybills = await this.getUnbilledWaybills(company.id);
-    if (!waybills.length) return null;
+    const generated = await this.prisma.$transaction(async (tx: any) => {
+      await this.lockInvoiceSequence(tx, company.id);
+      let page = await this.getUnbilledWaybillPage(company.id, tx);
+      if (!page.length) return null;
 
-    const subtotal = Money.sum(waybills.map((w) => w.totalAmount ?? 0));
-    const tax      = Money.percent(subtotal, 15); // SA VAT 15%
-    const total    = Money.add(subtotal, tax);
+      const invoiceNumber = await this.nextInvoiceNumber(tx, company.id);
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 30);
+      const invoice = await tx.invoice.create({
+        data: {
+          companyId: company.id,
+          invoiceNumber,
+          clientName: company.tradingName ?? company.name,
+          subtotal: 0,
+          tax: 0,
+          total: 0,
+          status: 'SENT',
+          sentAt: new Date(),
+          dueDate,
+          notes: 'Auto-generated monthly statement — preparing delivery lines',
+        },
+      });
 
-    const count         = await this.prisma.invoice.count({ where: { companyId: company.id } });
-    const year          = new Date().getFullYear();
-    const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
-    const dueDate       = new Date();
-    dueDate.setDate(dueDate.getDate() + 30);
+      let deliveryCount = 0;
+      let subtotal = 0;
+      let cursor: string | undefined;
+      const persistPage = async (rows: any[]) => {
+        await tx.invoiceItem.createMany({
+          data: rows.map((w) => ({
+            description: `Delivery ${w.trackingNumber} — ${w.recipientName ?? ''}`.trimEnd(),
+            quantity: 1,
+            unitPrice: w.totalAmount,
+            total: w.totalAmount,
+            invoiceId: invoice.id,
+            waybillId: w.id,
+          })),
+        });
+        subtotal = Money.add(subtotal, Money.sum(rows.map((w) => w.totalAmount)));
+        deliveryCount += rows.length;
+        cursor = rows[rows.length - 1].id;
+      };
 
-    const items = waybills.map((w) => ({
-      description: `Delivery ${w.trackingNumber} — ${w.recipientName ?? ''}`.trimEnd(),
-      quantity:    1,
-      unitPrice:   w.totalAmount ?? 0,
-      total:       w.totalAmount ?? 0,
-      waybillId:   w.id,
-    }));
+      while (page.length) {
+        await persistPage(page);
+        if (page.length < 500) break;
+        page = await this.getUnbilledWaybillPage(company.id, tx, cursor);
+      }
 
-    const invoice = await this.prisma.invoice.create({
-      data: {
-        companyId:     company.id,
-        invoiceNumber,
-        clientName:    company.tradingName ?? company.name,
-        subtotal,
-        tax,
-        total,
-        status:        'SENT',
-        sentAt:        new Date(),
-        dueDate,
-        notes:         `Auto-generated monthly statement — ${waybills.length} deliveries`,
-        items:         { create: items },
-      },
-      include: { items: true },
-    });
+      const tax = Money.percent(subtotal, 15); // SA VAT 15%
+      const total = Money.add(subtotal, tax);
+      const updatedInvoice = await tx.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          subtotal,
+          tax,
+          total,
+          notes: `Auto-generated monthly statement — ${deliveryCount} deliveries`,
+        },
+      });
+      return { invoice: updatedInvoice, deliveryCount, total, dueDate };
+    }, { maxWait: 10_000, timeout: 180_000 });
+    if (!generated) return null;
 
-    // ── Close the loop ───────────────────────────────────────────────────
-    // Live-refresh the Finance dashboards (frontend listens on
-    // `auto-invoice-completed`) and drop a staff notification in the bell.
+    const { invoice, deliveryCount, total, dueDate } = generated;
     this.safeEmit(() => this.gateway.emitAutoInvoiceCompleted(company.id, {
       id: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
       total: invoice.total,
-      deliveryCount: waybills.length,
+      deliveryCount,
     }));
     try {
       await this.prisma.notification.create({
         data: {
           companyId: company.id,
-          title: `Monthly statement generated · ${invoiceNumber}`,
-          body: `${waybills.length} deliveries bundled — total R${total.toFixed(2)}, due ${dueDate.toLocaleDateString('en-ZA')}.`,
+          title: `Monthly statement generated · ${invoice.invoiceNumber}`,
+          body: `${deliveryCount} deliveries bundled — total R${total.toFixed(2)}, due ${dueDate.toLocaleDateString('en-ZA')}.`,
           type: 'INVOICE_GENERATED',
         },
       });
@@ -792,7 +847,7 @@ export class InvoicesService {
       this.logger.warn(`Auto-invoice notification failed: ${err?.message ?? err}`);
     }
 
-    return invoice;
+    return { ...invoice, deliveryCount };
   }
 
   /**
@@ -841,46 +896,142 @@ export class InvoicesService {
       skipped:   invoice ? 0 : 1,
       invoice:   invoice ?? null,
       message:   invoice
-        ? `Statement ${invoice.invoiceNumber} created with ${invoice.items?.length ?? 0} deliveries.`
+        ? `Statement ${invoice.invoiceNumber} created with ${invoice.deliveryCount} deliveries.`
         : 'No unbilled deliveries — nothing to invoice right now.',
     };
   }
 
   async create(companyId: string, dto: any) {
-    const count = await this.prisma.invoice.count({ where: { companyId } });
-    const year = new Date().getFullYear();
-    const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
-    const { items, subtotal: _s, tax: _t, total: _tot, ...rest } = dto;
+    const input = dto && typeof dto === 'object' && !Array.isArray(dto) ? dto : {};
+    const { items, taxRate: rawVatRate } = input;
+    const clientName = typeof input.clientName === 'string' ? input.clientName.trim() : '';
+    if (!clientName) throw new BadRequestException('Client name is required');
 
-    // SERVER-AUTHORITATIVE TOTALS. Previously subtotal/tax/total were spread
-    // straight from the client body — a caller could POST any total (e.g. a
-    // R10,000 invoice with total: 0). We now compute them from the line items
-    // and a validated VAT rate, ignoring any client-supplied totals.
-    const line = (items ?? []).map((it: any) => {
-      const quantity = Math.max(0, Number(it.quantity) || 0);
-      const unitPrice = Math.max(0, Number(it.unitPrice) || 0);
-      const lineTotal = Money.multiply(unitPrice, quantity); // exact to the cent
-      return { ...it, quantity, unitPrice, total: lineTotal };
+    let clientEmail: string | undefined;
+    if (input.clientEmail != null) {
+      if (typeof input.clientEmail !== 'string') throw new BadRequestException('Client email must be a string');
+      clientEmail = input.clientEmail.trim() || undefined;
+    }
+
+    let notes: string | undefined;
+    if (input.notes != null) {
+      if (typeof input.notes !== 'string') throw new BadRequestException('Invoice notes must be a string');
+      notes = input.notes;
+    }
+
+    let dueDate: Date | undefined;
+    if (input.dueDate !== undefined && input.dueDate !== null && input.dueDate !== '') {
+      if (typeof input.dueDate !== 'string' && !(input.dueDate instanceof Date)) {
+        throw new BadRequestException('Invoice due date must be a valid date');
+      }
+      dueDate = new Date(input.dueDate);
+      if (!Number.isFinite(dueDate.getTime())) {
+        throw new BadRequestException('Invoice due date must be a valid date');
+      }
+    }
+
+    // SERVER-AUTHORITATIVE TOTALS. Build the database write from an explicit
+    // allowlist: never spread caller fields such as status, paidAt, publicToken,
+    // timestamps, invoiceNumber, tenant IDs, or client-supplied totals.
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('An invoice must contain at least one line item');
+    }
+    const line = items.map((it: any) => {
+      const description = typeof it?.description === 'string' ? it.description.trim() : '';
+      const quantity = Number(it?.quantity ?? 1);
+      const unitPrice = Number(it?.unitPrice ?? 0);
+      if (!description || !Number.isInteger(quantity) || quantity <= 0 || quantity > 1_000_000) {
+        throw new BadRequestException('Invoice items require a description and a positive integer quantity');
+      }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new BadRequestException('Invoice item unitPrice must be a non-negative number');
+      }
+      let waybillId: string | undefined;
+      if (it?.waybillId != null && it.waybillId !== '') {
+        if (typeof it.waybillId !== 'string') {
+          throw new BadRequestException('Invoice item waybillId must be a string');
+        }
+        waybillId = it.waybillId.trim() || undefined;
+      }
+      return {
+        description,
+        quantity,
+        unitPrice,
+        total: Money.multiply(unitPrice, quantity),
+        ...(waybillId ? { waybillId } : {}),
+      };
     });
+    const waybillIds = line.map((item: any) => item.waybillId).filter(Boolean);
+    if (new Set(waybillIds).size !== waybillIds.length) {
+      throw new BadRequestException('A waybill can only appear once on an invoice');
+    }
+
     const subtotal = Money.sum(line.map((it: any) => it.total));
-    const vatRate = Number.isFinite(Number(dto.taxRate)) ? Number(dto.taxRate) : 15; // SA default 15%
+    const vatRate = rawVatRate === undefined ? 15 : Number(rawVatRate);
+    if (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100) {
+      throw new BadRequestException('VAT rate must be between 0 and 100 percent');
+    }
     const tax = Money.percent(subtotal, vatRate);
     const total = Money.add(subtotal, tax);
 
-    return this.prisma.invoice.create({
-      data: {
-        ...rest, invoiceNumber, companyId,
-        subtotal, tax, total,
-        items: line.length ? { create: line } : undefined,
-      },
-      include: { items: true },
+    return this.prisma.$transaction(async (tx: any) => {
+      await this.lockInvoiceSequence(tx, companyId);
+      if (waybillIds.length) {
+        const eligible = await tx.waybill.findMany({
+          where: { companyId, id: { in: waybillIds }, invoiceItem: { is: null } },
+          select: { id: true },
+        });
+        if (eligible.length !== waybillIds.length) {
+          throw new BadRequestException('Every linked waybill must be unbilled and belong to this company');
+        }
+      }
+
+      const invoiceNumber = await this.nextInvoiceNumber(tx, companyId);
+      return tx.invoice.create({
+        data: {
+          clientName,
+          ...(clientEmail ? { clientEmail } : {}),
+          ...(dueDate ? { dueDate } : {}),
+          ...(notes !== undefined ? { notes } : {}),
+          invoiceNumber,
+          companyId,
+          subtotal,
+          tax,
+          total,
+          items: { create: line },
+        },
+        include: { items: true },
+      });
     });
   }
 
   async update(id: string, companyId: string, dto: any) {
-    await this.findOne(id, companyId);
-    const { items, ...rest } = dto;
-    return this.prisma.invoice.update({ where: { id }, data: rest });
+    const invoice = await this.findOne(id, companyId);
+    const input = dto && typeof dto === 'object' && !Array.isArray(dto) ? dto : {};
+
+    // The current PATCH caller only marks a draft as sent. Payment, totals,
+    // identity, share tokens, and timestamps have dedicated server-side flows
+    // and must never be writable through a generic Prisma data spread.
+    if (input.status !== 'SENT') {
+      throw new BadRequestException('Invoices may only be marked SENT here; use the payment approval flow to record payment');
+    }
+    if (invoice.status === 'SENT') return invoice;
+    if (invoice.status !== 'DRAFT') {
+      throw new BadRequestException(`A ${invoice.status} invoice cannot be marked SENT`);
+    }
+
+    const result = await this.prisma.invoice.updateMany({
+      where: { id, companyId, status: 'DRAFT' },
+      data: { status: 'SENT', sentAt: new Date() },
+    });
+    if (result.count === 1) return this.findOne(id, companyId);
+
+    // Another request changed the invoice after the initial read. Treat an
+    // already-sent invoice as idempotent; never overwrite a concurrent payment
+    // or cancellation.
+    const current = await this.findOne(id, companyId);
+    if (current.status === 'SENT') return current;
+    throw new BadRequestException(`A ${current.status} invoice cannot be marked SENT`);
   }
 
   // Initiate Paystack payment for an invoice (returns redirect URL)

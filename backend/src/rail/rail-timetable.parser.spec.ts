@@ -1,5 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseRailSchedule } from './rail-timetable.parser';
+import {
+  MAX_RAIL_SCHEDULE_FIELD_BYTES,
+  MAX_RAIL_SCHEDULE_PHYSICAL_LINES,
+  parseRailSchedule,
+  parseRailScheduleBatches,
+} from './rail-timetable.parser';
 
 const makeRow = (overrides: Record<number, string> = {}) => {
   const cells = Array.from({ length: 19 }, () => '');
@@ -76,6 +81,24 @@ describe('parseRailSchedule', () => {
   it('rejects rows with the wrong column count and reports their source line', () => {
     expect(() => parseRailSchedule(Buffer.from(`${HEADER}\nBELLVILLE\t1417\n`)))
       .toThrow(new BadRequestException('Invalid timetable row 2: expected 19 tab-separated columns, received 2'));
+  });
+
+  it('yields bounded row batches while preserving source row numbers', () => {
+    const rows = [makeRow({ 2: '1' }), makeRow({ 2: '2' }), makeRow({ 2: '3' })];
+    const batches = [...parseRailScheduleBatches(Buffer.from(rows.join('\n'), 'utf8'), 2)];
+    expect(batches.map((batch) => batch.length)).toEqual([2, 1]);
+    expect(batches.flat().map((row) => row.sourceRow)).toEqual([1, 2, 3]);
+  });
+
+  it('rejects any timetable field larger than 64 KiB', () => {
+    const oversizedField = 'x'.repeat(MAX_RAIL_SCHEDULE_FIELD_BYTES + 1);
+    expect(() => parseRailSchedule(Buffer.from(makeRow({ 0: oversizedField }), 'utf8')))
+      .toThrow(`column 1 exceeds the ${MAX_RAIL_SCHEDULE_FIELD_BYTES}-byte field limit`);
+  });
+
+  it('rejects newline-heavy files before iterating an unbounded number of physical lines', () => {
+    expect(() => parseRailSchedule(Buffer.from('\n'.repeat(MAX_RAIL_SCHEDULE_PHYSICAL_LINES + 1), 'utf8')))
+      .toThrow(`cannot exceed ${MAX_RAIL_SCHEDULE_PHYSICAL_LINES} physical lines`);
   });
 
   it('rejects empty files', () => {

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { RedisModule } from './redis/redis.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -96,6 +97,9 @@ import { DispatchModule } from './dispatch/dispatch.module';
   imports: [
     // Config loaded globally — all modules can inject ConfigService
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+
+    // Shared Redis connection for distributed one-time and idempotency state.
+    RedisModule,
 
     // Cron scheduling
     ScheduleModule.forRoot(),

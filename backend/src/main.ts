@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { initSentry } from './common/sentry';
+import { multipartAggregateLimitMiddleware } from './common/middleware/multipart-aggregate-limit.middleware';
 
 async function bootstrap() {
   // Initialise error tracking before anything else so early failures are caught.
@@ -78,6 +79,9 @@ async function bootstrap() {
   });
 
   // ── Middleware ────────────────────────────────────────────────────────
+  // Cap raw multipart bytes before Multer can buffer file parts. This remains
+  // effective for chunked requests that omit Content-Length.
+  app.use(multipartAggregateLimitMiddleware);
   app.use(compression());
   app.use(cookieParser());
 

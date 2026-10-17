@@ -1,8 +1,13 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService, EmailAttachmentInput } from '../email/email.service';
 import { StorageService } from '../storage/storage.service';
+import {
+  EMAIL_ATTACHMENT_MAX_BYTES,
+  EMAIL_ATTACHMENT_MAX_FILES,
+  validateEmailAttachment,
+} from './attachment-policy';
 import {
   AttachmentScannerService,
   ScanResult,
@@ -217,6 +222,19 @@ export class EmailHubService {
     return this.toApi(updated);
   }
 
+  private validateFileBounds(files: UploadedFile[], outbound: boolean): void {
+    if (!Array.isArray(files) || files.length > EMAIL_ATTACHMENT_MAX_FILES) {
+      throw new BadRequestException(`A maximum of ${EMAIL_ATTACHMENT_MAX_FILES} attachments is allowed`);
+    }
+    for (const file of files) {
+      if (!file || !Buffer.isBuffer(file.buffer) || file.buffer.length === 0 || file.buffer.length !== file.size ||
+          file.size > EMAIL_ATTACHMENT_MAX_BYTES) {
+        throw new BadRequestException('Each attachment must be valid and 5 MiB or smaller');
+      }
+      if (outbound) validateEmailAttachment(file);
+    }
+  }
+
   // ── Send an email WITH attachments ─────────────────────────────────────
 
   /**
@@ -225,6 +243,7 @@ export class EmailHubService {
    * the outbound email is stored in the hub.
    */
   async send(companyId: string, dto: SendEmailHubDto, files: UploadedFile[] = []) {
+    this.validateFileBounds(files, true);
     const fromEmail = this.config.get<string>('SENDGRID_FROM_EMAIL', 'noreply@flowops.local');
 
     const item = await this.prisma.emailHubItem.create({
@@ -296,6 +315,7 @@ export class EmailHubService {
     },
     files: UploadedFile[] = [],
   ) {
+    this.validateFileBounds(files, false);
     const item = await this.prisma.emailHubItem.create({
       data: {
         companyId,

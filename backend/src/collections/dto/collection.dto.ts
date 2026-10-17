@@ -1,22 +1,20 @@
-import { IsString, IsOptional, IsNumber, IsArray } from 'class-validator';
+import { CollectionStatus } from '@prisma/client';
+import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateCollectionDto {
   @IsString() clientName: string;
   @IsOptional() @IsString() clientPhone?: string;
   @IsOptional() @IsString() clientEmail?: string;
   @IsString() pickupAddress: string;
-  @IsOptional() @IsString() deliveryAddress?: string;
   @IsOptional() @IsString() notes?: string;
-  @IsOptional() @IsNumber() pieces?: number;
-  @IsOptional() @IsString() scheduledDate?: string;
-  @IsOptional() @IsString() driverId?: string;
-  @IsOptional() @IsArray() @IsString({ each: true }) waybillIds?: string[];
+  @IsOptional() @IsDateString() scheduledDate?: string;
+  @IsOptional() @IsDateString() scheduledAt?: string;
 }
 
 export class UpdateCollectionDto {
-  @IsOptional() @IsString() status?: string;
-  @IsOptional() @IsString() driverId?: string;
+  @IsOptional() @IsEnum(CollectionStatus) status?: CollectionStatus;
   @IsOptional() @IsString() notes?: string;
-  @IsOptional() @IsString() scheduledDate?: string;
-  @IsOptional() @IsNumber() pieces?: number;
+  @IsOptional() @IsString() pickupAddress?: string;
+  @IsOptional() @IsDateString() scheduledDate?: string;
+  @IsOptional() @IsDateString() scheduledAt?: string;
 }

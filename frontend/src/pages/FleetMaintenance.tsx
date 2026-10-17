@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock,
   Loader2, Plus, RefreshCw, Truck, Wrench, Brain, DollarSign, Shield,
@@ -57,6 +57,7 @@ export default function FleetMaintenance() {
   // Log service form
   const [logForm, setLogForm] = useState({ serviceType: SERVICE_TYPES[0], notes: "", kmAtService: "", cost: "", servicedAt: "" });
   const [saving, setSaving] = useState(false);
+  const pendingServiceLog = useRef<{ fingerprint: string; key: string } | null>(null);
 
   // Odometer form
   const [odoForm, setOdoForm] = useState({ currentKm: "", nextServiceKm: "", nextServiceDate: "" });
@@ -103,14 +104,37 @@ export default function FleetMaintenance() {
     if (!selected || !logForm.serviceType) return;
     setSaving(true);
     try {
-      await api.post(`/fleet-maintenance/log`, {
+      const body = {
         driverId: selected.id,
         serviceType: logForm.serviceType,
         notes: logForm.notes || undefined,
         kmAtService: logForm.kmAtService ? parseInt(logForm.kmAtService) : undefined,
         cost: logForm.cost ? parseFloat(logForm.cost) : undefined,
         servicedAt: logForm.servicedAt || undefined,
-      });
+      };
+      const fingerprint = JSON.stringify(body);
+      const storageKey = `flowops.fleet.service.pending.${selected.id}`;
+      let attempt = pendingServiceLog.current;
+      if (!attempt || attempt.fingerprint !== fingerprint) {
+        try {
+          const persisted = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+          if (persisted?.fingerprint === fingerprint && typeof persisted?.key === "string") {
+            attempt = persisted;
+          }
+        } catch { /* session storage may be unavailable */ }
+        if (!attempt || attempt.fingerprint !== fingerprint) {
+          attempt = { fingerprint, key: crypto.randomUUID() };
+        }
+        pendingServiceLog.current = attempt;
+        try { sessionStorage.setItem(storageKey, JSON.stringify(attempt)); } catch { /* retain in-memory retry key */ }
+      }
+
+      await api.post(`/fleet-maintenance/log`, { ...body, idempotencyKey: attempt.key });
+      try {
+        const persisted = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+        if (persisted?.key === attempt.key) sessionStorage.removeItem(storageKey);
+      } catch { /* ignore storage cleanup failure */ }
+      pendingServiceLog.current = null;
       setLogForm({ serviceType: SERVICE_TYPES[0], notes: "", kmAtService: "", cost: "", servicedAt: "" });
       setShowLogForm(false);
       await loadHistory(selected.id);

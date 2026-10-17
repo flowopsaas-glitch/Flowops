@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Body, Param, Query, Patch, UseGuards } f
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { FleetMaintenanceService } from './fleet-maintenance.service';
+import { LogServiceDto } from './dto/log-service.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -28,7 +29,7 @@ export class FleetMaintenanceController {
 
   @Post('log')
   @ApiOperation({ summary: 'Log a service event (oil change, tyres, annual service, etc.)' })
-  logService(@CurrentUser() u: any, @Body() dto: any) {
+  logService(@CurrentUser() u: any, @Body() dto: LogServiceDto) {
     return this.svc.logService(u.companyId, dto);
   }
 

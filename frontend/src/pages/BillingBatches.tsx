@@ -14,6 +14,7 @@ import {
   Clock,
 } from "lucide-react";
 import { api } from "../api/client";
+import { buildInvoiceCreatePayload } from "../lib/invoiceCreatePayload";
 import { TiltCard } from "../components/premium/TiltCard";
 import { formatMoney } from "../lib/currency";
 
@@ -102,13 +103,15 @@ function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     if (selected.size === 0) { setError("Select at least one waybill."); return; }
     setSaving(true); setError("");
     try {
-      await api.post("/invoices", {
-        clientName, subtotal, tax, total,
+      await api.post("/invoices", buildInvoiceCreatePayload({
+        clientName,
         items: selectedWbs.map((w) => ({
+          waybillId: w.id,
           description: `Delivery ${w.trackingNumber} to ${w.recipientName}`,
-          quantity: 1, unitPrice: w.totalAmount, total: w.totalAmount,
+          quantity: 1,
+          unitPrice: w.totalAmount,
         })),
-      });
+      }));
       onSaved(); onClose();
     } catch (err: any) {
       setError(err?.message || "Failed to generate invoice.");

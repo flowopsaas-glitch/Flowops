@@ -119,8 +119,12 @@ services:
       # A shared secret means a leaked access token also compromises refresh tokens.
       # Generate with: openssl rand -hex 32
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env (must differ from JWT_SECRET)}
+      # Optional independent OTP hash key; a domain-separated key is derived from JWT_SECRET if blank.
+      OTP_HMAC_SECRET: ${OTP_HMAC_SECRET:-}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      # 32-byte base64/hex key used only for AES-256-GCM encryption of OIDC client secrets.
+      SSO_SECRET_ENCRYPTION_KEY: ${SSO_SECRET_ENCRYPTION_KEY:-}
 
       # ── Owner seed account ────────────────────────────────────────────
       OWNER_SEED_EMAIL: ${OWNER_SEED_EMAIL:-owner@flowops.local}

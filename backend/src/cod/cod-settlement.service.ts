@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Money } from '../common/money.util';
+import { createHash } from 'crypto';
 
 /**
  * COD SETTLEMENT — one atomic, idempotent write path.
@@ -217,11 +218,42 @@ export class CodSettlementService {
    * Settle cash from a driver back to the company. Tenant-scoped, atomic, and
    * guarded so concurrent settlements cannot overdraw the wallet.
    */
-  async settleDriver(driverId: string, amount: number, companyId: string, note?: string) {
+  private async settlementReplay(db: any, walletId: string, idempotencyKey: string, fingerprint: string) {
+    const existing = await db.codTransaction.findFirst({
+      where: { walletId, type: 'SETTLEMENT', idempotencyKey },
+      select: { id: true, amount: true, balance: true, requestFingerprint: true },
+    });
+    if (!existing) return null;
+    if (!existing.requestFingerprint || existing.requestFingerprint !== fingerprint) {
+      throw new ConflictException('Idempotency key was already used for a different settlement request');
+    }
+    return {
+      settled: existing.amount,
+      newBalance: existing.balance,
+      ledgerTransactionId: existing.id,
+      replayed: true,
+    };
+  }
+
+  async settleDriver(
+    driverId: string,
+    amount: number,
+    companyId: string,
+    idempotencyKey: string,
+    note?: string,
+  ) {
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Settlement amount must be a positive number');
     }
     const rounded = Money.round(amount);
+    if (rounded <= 0) throw new BadRequestException('Settlement amount must be at least 0.01');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(idempotencyKey ?? ''))) {
+      throw new BadRequestException('A UUID idempotencyKey is required for every settlement');
+    }
+    const normalizedNote = String(note ?? 'Manual settlement').trim().slice(0, 500) || 'Manual settlement';
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify({ driverId, companyId, amount: rounded, note: normalizedNote }))
+      .digest('hex');
 
     const driver = await this.prisma.driver.findFirst({
       where: { id: driverId, companyId },
@@ -229,42 +261,63 @@ export class CodSettlementService {
     });
     if (!driver) throw new NotFoundException('Driver not found');
 
-    return this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.driverWallet.findUnique({ where: { driverId } });
-      if (!wallet) throw new NotFoundException('Driver wallet not found');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const wallet = await tx.driverWallet.findUnique({ where: { driverId } });
+        if (!wallet) throw new NotFoundException('Driver wallet not found');
 
-      // Atomic, guarded decrement: the WHERE (balance >= amount) is re-evaluated
-      // under the row lock, so two concurrent settlements cannot both pass a
-      // check that was true before either wrote.
-      const dec = await tx.driverWallet.updateMany({
-        where: { driverId, balance: { gte: rounded } },
-        data: {
-          balance: { decrement: rounded },
-          totalSettled: { increment: rounded },
-          lastSettledAt: new Date(),
-        },
+        const replay = await this.settlementReplay(tx, wallet.id, idempotencyKey, fingerprint);
+        if (replay) return replay;
+
+        // The guarded decrement and unique ledger key are in the same database
+        // transaction. Concurrent replays either observe the original row or
+        // lose the unique insert and roll back their balance change.
+        const dec = await tx.driverWallet.updateMany({
+          where: { driverId, balance: { gte: rounded } },
+          data: {
+            balance: { decrement: rounded },
+            totalSettled: { increment: rounded },
+            lastSettledAt: new Date(),
+          },
+        });
+        if (dec.count === 0) {
+          throw new BadRequestException(
+            `Settlement amount (${rounded}) exceeds current balance (${wallet.balance}).`,
+          );
+        }
+
+        const updated = await tx.driverWallet.findUniqueOrThrow({ where: { driverId } });
+        const ledger = await tx.codTransaction.create({
+          data: {
+            walletId: wallet.id,
+            companyId,
+            type: 'SETTLEMENT',
+            amount: rounded,
+            balance: updated.balance,
+            note: normalizedNote,
+            idempotencyKey,
+            requestFingerprint: fingerprint,
+          },
+        });
+
+        return {
+          settled: rounded,
+          newBalance: updated.balance,
+          ledgerTransactionId: ledger.id,
+          replayed: false,
+        };
       });
-      if (dec.count === 0) {
-        throw new BadRequestException(
-          `Settlement amount (${rounded}) exceeds current balance (${wallet.balance}).`,
-        );
+    } catch (error) {
+      // A competing request with the same key may have committed while this
+      // transaction was waiting on the wallet row or unique index. Return that
+      // original result after the failed transaction has rolled back.
+      const wallet = await this.prisma.driverWallet.findUnique({ where: { driverId } });
+      if (wallet) {
+        const replay = await this.settlementReplay(this.prisma, wallet.id, idempotencyKey, fingerprint);
+        if (replay) return replay;
       }
-
-      const updated = await tx.driverWallet.findUniqueOrThrow({ where: { driverId } });
-
-      await tx.codTransaction.create({
-        data: {
-          walletId: wallet.id,
-          companyId,
-          type: 'SETTLEMENT',
-          amount: rounded,
-          balance: updated.balance,
-          note: note || 'Manual settlement',
-        },
-      });
-
-      return { settled: rounded, newBalance: updated.balance };
-    });
+      throw error;
+    }
   }
 
   /**

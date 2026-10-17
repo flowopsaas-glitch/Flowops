@@ -4,6 +4,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
 import { Public } from '../common/decorators/public.decorator';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { RailTimetableService } from './rail-timetable.service';
@@ -19,7 +20,9 @@ export class RailTimetableOwnerController {
   @Post('schedules/import')
   @ApiOperation({ summary: 'Publish a shared Transnet Annexure 33a timetable to rail tenants' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @UseInterceptors(uploadConcurrency, FileInterceptor('file', {
+    limits: { fileSize: 25 * 1024 * 1024, files: 1, fields: 5, fieldSize: 64 * 1024, parts: 6 },
+  }))
   importSharedTimetable(
     @CurrentUser() owner: { id: string },
     @UploadedFile() file: Express.Multer.File,

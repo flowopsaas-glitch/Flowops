@@ -17,7 +17,14 @@ import { legalPredecessorStatuses } from '../waybills/waybill-status.machine';
 import {
   DRIVE_MODE_CONFIG, DRIVER_MODES, canEndDuty, checkStartDuty, dutyMinutes, jobKindsForMode, JobKind,
 } from './driver-mode.rules';
-import type { DriverMode } from '@prisma/client';
+import { CollectionStatus, type DriverMode } from '@prisma/client';
+import { randomBytes } from 'crypto';
+
+const CONFIRMABLE_COLLECTION_STATUSES: CollectionStatus[] = [
+  CollectionStatus.PENDING,
+  CollectionStatus.ASSIGNED,
+  CollectionStatus.IN_PROGRESS,
+];
 
 @Injectable()
 export class DriverPortalService {
@@ -392,23 +399,27 @@ export class DriverPortalService {
     // 2. Idempotency: a replayed offline confirmation must not create a second
     //    waybill. The provenance link (sourceCollectionId) makes the answer
     //    exact — no guessing a waybill by client name.
-    if (collection.status === 'COLLECTED') {
+    if (collection.status === CollectionStatus.COLLECTED) {
       const existing = await this.prisma.waybill.findFirst({
         where: { companyId, sourceCollectionId: collectionId },
         select: { id: true, trackingNumber: true, status: true },
       });
+      if (!existing) {
+        throw new ConflictException('Collection is marked collected but has no linked waybill; contact support');
+      }
       return {
         success: true,
         alreadyConfirmed: true,
-        collection: { id: collectionId, status: 'COLLECTED' },
-        waybill: existing
-          ? { id: existing.id, trackingNumber: existing.trackingNumber, status: existing.status }
-          : null,
+        collection: { id: collectionId, status: CollectionStatus.COLLECTED },
+        waybill: { id: existing.id, trackingNumber: existing.trackingNumber, status: existing.status },
         message: 'Collection was already confirmed.',
       };
     }
+    if (!CONFIRMABLE_COLLECTION_STATUSES.includes(collection.status)) {
+      throw new BadRequestException(`A ${collection.status.toLowerCase()} collection cannot be confirmed`);
+    }
 
-    const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
+    const trackingNumber = `FO${randomBytes(6).toString('hex').toUpperCase()}`;
     const pickedUpAt = new Date();
 
     // 3. ONE transaction: claim the collection (compare-and-set on status), then
@@ -417,19 +428,25 @@ export class DriverPortalService {
     //    waybill with no custody record) can no longer exist.
     const created = await this.prisma.$transaction(async (tx) => {
       const claim = await tx.collection.updateMany({
-        where: { id: collectionId, driverId, companyId, status: { not: 'COLLECTED' } },
+        where: { id: collectionId, driverId, companyId, status: { in: CONFIRMABLE_COLLECTION_STATUSES } },
         data: {
-          status: 'COLLECTED',
+          status: CollectionStatus.COLLECTED,
           pickedUpAt,
           notes: body.notes ? `${collection.notes ?? ''}\nDriver: ${body.notes}`.trim() : collection.notes,
         },
       });
       if (claim.count === 0) {
-        // Another tap (or a concurrent replay) already confirmed it.
-        const existing = await tx.waybill.findFirst({
-          where: { companyId, sourceCollectionId: collectionId },
-          select: { id: true, trackingNumber: true, status: true },
-        });
+        // Another tap (or concurrent office/driver confirmation) may have won.
+        const [latest, existing] = await Promise.all([
+          tx.collection.findFirst({ where: { id: collectionId, companyId }, select: { status: true } }),
+          tx.waybill.findFirst({
+            where: { companyId, sourceCollectionId: collectionId },
+            select: { id: true, trackingNumber: true, status: true },
+          }),
+        ]);
+        if (latest?.status !== CollectionStatus.COLLECTED || !existing) {
+          throw new ConflictException('Collection changed; refresh and try again');
+        }
         return { alreadyConfirmed: true as const, waybill: existing };
       }
 

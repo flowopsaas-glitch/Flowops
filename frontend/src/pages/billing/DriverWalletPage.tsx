@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock,
@@ -39,6 +39,7 @@ export default function DriverWalletPage() {
   const [settleNote, setSettleNote] = useState("");
   const [error, setError] = useState("");
   const [showAll, setShowAll] = useState(false);
+  const pendingSettlement = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!driverId) return;
@@ -58,7 +59,34 @@ export default function DriverWalletPage() {
     if (wallet && amount > wallet.balance) { setError(`Amount exceeds balance (${money(wallet.balance)}).`); return; }
     setSettling(true);
     try {
-      await api.post(`/cod/settle/${driverId}`, { amount, note: settleNote || undefined });
+      const normalizedNote = settleNote.trim();
+      const fingerprint = JSON.stringify({ driverId, amount, note: normalizedNote });
+      const storageKey = `flowops.cod.settlement.pending.${driverId}`;
+      let attempt = pendingSettlement.current;
+      if (!attempt || attempt.fingerprint !== fingerprint) {
+        try {
+          const persisted = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+          if (persisted?.fingerprint === fingerprint && typeof persisted?.key === "string") {
+            attempt = persisted;
+          }
+        } catch { /* session storage may be unavailable */ }
+        if (!attempt || attempt.fingerprint !== fingerprint) {
+          attempt = { fingerprint, key: crypto.randomUUID() };
+        }
+        pendingSettlement.current = attempt;
+        try { sessionStorage.setItem(storageKey, JSON.stringify(attempt)); } catch { /* in-memory retry remains available */ }
+      }
+
+      await api.post(`/cod/settle/${driverId}`, {
+        amount,
+        note: normalizedNote || undefined,
+        idempotencyKey: attempt.key,
+      });
+      try {
+        const persisted = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+        if (persisted?.key === attempt.key) sessionStorage.removeItem(storageKey);
+      } catch { /* ignore storage cleanup failure */ }
+      pendingSettlement.current = null;
       setSettleAmount(""); setSettleNote("");
       await load();
     } catch (err: any) {

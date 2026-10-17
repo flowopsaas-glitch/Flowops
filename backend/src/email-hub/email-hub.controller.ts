@@ -15,9 +15,9 @@ import { EmailHubService, UploadedFile } from './email-hub.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
+import { EMAIL_ATTACHMENT_MAX_BYTES, EMAIL_ATTACHMENT_MAX_FILES } from './attachment-policy';
 
-const MAX_FILES = 10;
-const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB
 
 @UseGuards(FeatureGuard)
 @RequireFeature('emailHub')
@@ -49,7 +49,10 @@ export class EmailHubController {
   /** Compose & send an email with optional attachments (multipart/form-data). */
   @Post('send')
   @UseInterceptors(
-    FilesInterceptor('attachments', MAX_FILES, { limits: { fileSize: MAX_FILE_BYTES } }),
+    uploadConcurrency,
+    FilesInterceptor('attachments', EMAIL_ATTACHMENT_MAX_FILES, {
+      limits: { fileSize: EMAIL_ATTACHMENT_MAX_BYTES, files: EMAIL_ATTACHMENT_MAX_FILES, fields: 10, fieldSize: 64 * 1024, parts: EMAIL_ATTACHMENT_MAX_FILES + 10 },
+    }),
   )
   send(
     @CurrentUser() user: { companyId: string },
@@ -62,7 +65,10 @@ export class EmailHubController {
   /** Ingest an incoming email/document — every attachment is threat-scanned. */
   @Post('ingest')
   @UseInterceptors(
-    FilesInterceptor('attachments', MAX_FILES, { limits: { fileSize: MAX_FILE_BYTES } }),
+    uploadConcurrency,
+    FilesInterceptor('attachments', EMAIL_ATTACHMENT_MAX_FILES, {
+      limits: { fileSize: EMAIL_ATTACHMENT_MAX_BYTES, files: EMAIL_ATTACHMENT_MAX_FILES, fields: 10, fieldSize: 64 * 1024, parts: EMAIL_ATTACHMENT_MAX_FILES + 10 },
+    }),
   )
   ingest(
     @CurrentUser() user: { companyId: string },

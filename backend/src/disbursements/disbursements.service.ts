@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -9,6 +9,19 @@ import { PrismaService } from '../prisma/prisma.service';
 @Injectable()
 export class DisbursementsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async validateInvoice(companyId: string, invoiceId: unknown): Promise<string | null> {
+    if (invoiceId == null || invoiceId === '') return null;
+    if (typeof invoiceId !== 'string' || invoiceId.length > 128) {
+      throw new BadRequestException('invoiceId must identify an invoice in this company');
+    }
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id: invoiceId, companyId },
+      select: { id: true },
+    });
+    if (!invoice) throw new BadRequestException('Invoice does not exist for this company');
+    return invoice.id;
+  }
 
   list(companyId: string, query?: { status?: string; q?: string }) {
     const where: any = { companyId };
@@ -56,15 +69,25 @@ export class DisbursementsService {
     const { id: _i, companyId: _c, ...data } = dto ?? {};
     if (data.amount !== undefined) data.amount = Number(data.amount);
     if (data.paidAt) data.paidAt = new Date(data.paidAt);
+    if (data.invoiceId !== undefined) {
+      data.invoiceId = await this.validateInvoice(companyId, data.invoiceId);
+    }
     return this.prisma.disbursement.update({ where: { id }, data });
   }
 
   /** Mark a disbursement recovered (client reimbursed us). */
   async markRecovered(companyId: string, id: string, invoiceId?: string) {
     await this.get(companyId, id);
+    const validatedInvoiceId = invoiceId === undefined
+      ? undefined
+      : await this.validateInvoice(companyId, invoiceId);
     return this.prisma.disbursement.update({
       where: { id },
-      data: { status: 'RECOVERED', recoveredAt: new Date(), invoiceId: invoiceId ?? undefined },
+      data: {
+        status: 'RECOVERED',
+        recoveredAt: new Date(),
+        invoiceId: validatedInvoiceId,
+      },
     });
   }
 
