@@ -2,9 +2,18 @@ import { Controller, Get, Post, Patch, Body, Param, Query, HttpCode, HttpStatus,
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+
+const INVOICE_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH, UserRole.AGENT, UserRole.USER, UserRole.VIEWER,
+];
+const INVOICE_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER];
 
 @ApiTags('Invoices')
 @ApiBearerAuth()
+@Roles(...INVOICE_READ_ROLES)
 @Controller()
 export class InvoicesController {
   constructor(private readonly svc: InvoicesService) {}
@@ -25,6 +34,7 @@ export class InvoicesController {
   }
 
   @Post('invoices/auto-generate')
+  @Roles(...INVOICE_WRITE_ROLES)
   @HttpCode(HttpStatus.OK)
   triggerAutoInvoice(@CurrentUser() u: any) {
     // Tenant-scoped: generates a statement only for the caller's company.
@@ -32,6 +42,7 @@ export class InvoicesController {
   }
 
   @Post('invoices')
+  @Roles(...INVOICE_WRITE_ROLES)
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);
   }
@@ -62,6 +73,7 @@ export class InvoicesController {
    * Sends a payment reminder email to the client for an overdue invoice.
    */
   @Post('invoices/:id/send-reminder')
+  @Roles(...INVOICE_WRITE_ROLES)
   @HttpCode(HttpStatus.OK)
   sendReminder(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.sendPaymentReminder(id, u.companyId);
@@ -146,11 +158,13 @@ export class InvoicesController {
   }
 
   @Patch('invoices/:id')
+  @Roles(...INVOICE_WRITE_ROLES)
   update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
     return this.svc.update(id, u.companyId, body);
   }
 
   @Post('invoices/:id/pay')
+  @Roles(...INVOICE_WRITE_ROLES)
   initiatePay(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.initiatePay(id, u.companyId);
   }
@@ -166,6 +180,7 @@ export class InvoicesController {
    *   { "note": "EFT received 12 Jun", "paidBy": "John Smith", "amount": 14999 }
    */
   @Post('invoices/:id/mark-paid')
+  @Roles(...INVOICE_WRITE_ROLES)
   @HttpCode(HttpStatus.OK)
   markPaid(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
     return this.svc.markPaid(id, u.companyId, {
@@ -202,6 +217,7 @@ export class InvoicesController {
   }
 
   @Post('invoice-drafts/:id/finalize')
+  @Roles(...INVOICE_WRITE_ROLES)
   finalizeDraft(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.finalizeDraft(id, u.companyId);
   }

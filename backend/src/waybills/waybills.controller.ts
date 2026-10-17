@@ -9,6 +9,7 @@ import { UserRole } from '@prisma/client';
 import { WaybillsService } from './waybills.service';
 import { LabelService } from './label.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -122,7 +123,9 @@ export class WaybillsController {
   @Post('waybills/bulk-import')
   @HttpCode(HttpStatus.CREATED)
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(uploadConcurrency, FileInterceptor('file', {
+    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 5, fieldSize: 64 * 1024, parts: 6 },
+  }))
   bulkImport(
     @CurrentUser() u: any,
     @UploadedFile() file: Express.Multer.File,
@@ -192,7 +195,9 @@ export class WaybillsController {
   }
 
   @Post('waybills/:id/deliver')
-  @UseInterceptors(FileInterceptor('photo'))
+  @UseInterceptors(uploadConcurrency, FileInterceptor('photo', {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 3, fieldSize: 1_400_000, parts: 4 },
+  }))
   @ApiConsumes('multipart/form-data')
   deliver(
     @Param('id') id: string,
@@ -236,7 +241,9 @@ export class WaybillsController {
   }
 
   @Post('waybills/inbox/upload')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  @UseInterceptors(uploadConcurrency, FileInterceptor('file', {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2, fieldSize: 64 * 1024, parts: 3 },
+  }))
   @ApiConsumes('multipart/form-data')
   uploadInbox(@CurrentUser() u: any, @UploadedFile() file: Express.Multer.File) {
     return this.svc.uploadInbox(u.companyId, file);

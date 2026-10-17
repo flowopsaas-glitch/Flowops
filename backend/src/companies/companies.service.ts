@@ -1,8 +1,10 @@
-import { Injectable, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { FileUploadValidator } from '../common/guards/file-upload.guard';
 import { BillingService } from '../billing/billing.service';
 import { pickAllowed } from '../common/pick-allowed.util';
+import { extname } from 'path';
 import { v4 as uuid } from 'uuid';
 
 /**
@@ -72,9 +74,25 @@ export class CompaniesService {
   }
 
   async uploadLogo(companyId: string, file: Express.Multer.File) {
-    const ext = file.originalname.split('.').pop() ?? 'jpg';
-    const key = `logos/${companyId}/${uuid()}.${ext}`;
-    await this.storage.upload(key, file.buffer, file.mimetype);
+    FileUploadValidator.validate(file, { category: 'image', maxSize: 2 * 1024 * 1024 });
+    const safeMime = file.mimetype.toLowerCase().split(';', 1)[0].trim();
+    const extensionByMime: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+    };
+    const allowedExtensions: Record<string, string[]> = {
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/gif': ['.gif'],
+      'image/webp': ['.webp'],
+    };
+    if (!allowedExtensions[safeMime]?.includes(extname(file.originalname).toLowerCase())) {
+      throw new BadRequestException('Logo extension must match its declared image type');
+    }
+    const key = `logos/${companyId}/${uuid()}.${extensionByMime[safeMime]}`;
+    await this.storage.upload(key, file.buffer, safeMime);
     const logoUrl = this.storage.publicFileUrl(key);
     await this.prisma.company.update({ where: { id: companyId }, data: { logoUrl } });
     return { logoUrl };

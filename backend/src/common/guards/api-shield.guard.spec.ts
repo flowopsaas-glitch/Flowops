@@ -244,4 +244,38 @@ describe('ApiShieldGuard', () => {
       expect(call).toThrow(HttpException);
     });
   });
+
+  describe('multipart aggregate header ceilings', () => {
+    const routes = [
+      ['/api/v1/waybills/bulk-import', 6],
+      ['/api/v1/waybills/example/deliver', 15],
+      ['/api/v1/waybills/inbox/upload', 11],
+      ['/api/v1/companies/company-1/logo', 3],
+      ['/api/v1/email-hub/send', 26],
+      ['/api/v1/email-hub/ingest', 26],
+    ] as const;
+
+    it.each(routes)('%s allows its declared aggregate ceiling and rejects the next byte', (path, maxMiB) => {
+      const contentType = 'multipart/form-data; boundary=upload';
+      expect(run({ method: 'POST', path, headers: {
+        'content-type': contentType,
+        'content-length': String(maxMiB * 1024 * 1024),
+      } })()).toBe(true);
+      expect(run({ method: 'POST', path, headers: {
+        'content-type': contentType,
+        'content-length': String(maxMiB * 1024 * 1024 + 1),
+      } })).toThrow(HttpException);
+    });
+
+    it('leaves missing Content-Length enforcement to the route Multer byte/part limits', () => {
+      expect(run({
+        method: 'POST',
+        path: '/api/v1/waybills/example/deliver',
+        headers: {
+          'content-length': undefined as any,
+          'content-type': 'multipart/form-data; boundary=upload',
+        },
+      })()).toBe(true);
+    });
+  });
 });

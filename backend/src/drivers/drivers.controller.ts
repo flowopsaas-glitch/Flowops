@@ -1,9 +1,12 @@
 import { CreateDriverDto, UpdateDriverDto, UpdateDriverLocationDto } from './dto/create-driver.dto';
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { DriversService } from './drivers.service';
 import { LeaderboardService } from './leaderboard.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { LogServiceDto } from '../fleet-maintenance/dto/log-service.dto';
 
 @ApiTags('Drivers')
 @ApiBearerAuth()
@@ -71,10 +74,11 @@ export class DriversController {
   }
 
   @Post(':id/service-log')
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   logService(
     @Param('id') id: string,
     @CurrentUser() u: any,
-    @Body() body: { serviceType: string; notes?: string; kmAtService?: number; cost?: number; servicedAt?: string },
+    @Body() body: LogServiceDto,
   ) {
     return this.svc.logService(id, u.companyId, body);
   }

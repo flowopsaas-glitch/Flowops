@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
 
@@ -180,7 +181,7 @@ export class AuthController {
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using token from email' })
-  resetPassword(@Body() body: { token: string; password: string }) {
-    return this.authService.resetPassword(body.token, body.password);
+  resetPassword(@Body() body: ResetPasswordDto) {
+    return this.authService.resetPassword(body?.token, body?.password);
   }
 }

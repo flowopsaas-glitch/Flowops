@@ -13,6 +13,7 @@ import { EventsGateway } from '../gateway/events.gateway';
 import { assertFleetDispatchAllowed } from '../fleet-maintenance/fleet-compliance';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { AuditService } from '../audit/audit.service';
+import { FileUploadValidator } from '../common/guards/file-upload.guard';
 
 @Injectable()
 export class WaybillsService {
@@ -454,27 +455,65 @@ export class WaybillsService {
     file?: Express.Multer.File,
   ) {
     await this.findOne(id, companyId); // existence/tenancy check (throws 404)
+    if (!dto || typeof dto.recipient !== 'string' || !dto.recipient.trim() || dto.recipient.length > 200) {
+      throw new BadRequestException('A recipient name of 1–200 characters is required');
+    }
+    if (file) FileUploadValidator.validate(file, { category: 'image', maxSize: 10 * 1024 * 1024 });
 
     // scannedCodes arrives as a JSON string from multipart form-data.
     let scannedCodes: string[] = [];
-    if (dto.scannedCodes) {
-      if (Array.isArray(dto.scannedCodes)) scannedCodes = dto.scannedCodes;
-      else { try { scannedCodes = JSON.parse(dto.scannedCodes); } catch { scannedCodes = []; } }
+    if (dto.scannedCodes !== undefined && dto.scannedCodes !== null && dto.scannedCodes !== '') {
+      if (Array.isArray(dto.scannedCodes)) {
+        scannedCodes = dto.scannedCodes;
+      } else if (typeof dto.scannedCodes === 'string' && dto.scannedCodes.length <= 64 * 1024) {
+        try {
+          const parsed = JSON.parse(dto.scannedCodes);
+          if (!Array.isArray(parsed)) throw new Error('expected an array');
+          scannedCodes = parsed;
+        } catch {
+          throw new BadRequestException('scannedCodes must be a JSON array of strings');
+        }
+      } else {
+        throw new BadRequestException('scannedCodes exceeds the 64 KiB field limit');
+      }
+      if (scannedCodes.length > 1000 || scannedCodes.some((code) => typeof code !== 'string' || code.length > 256)) {
+        throw new BadRequestException('scannedCodes may contain up to 1,000 strings of 256 characters');
+      }
     }
 
     let podSignatureUrl: string | undefined;
     let podImageUrl: string | undefined;
 
+    if (dto.signatureBase64 !== undefined && dto.signatureBase64 !== null && typeof dto.signatureBase64 !== 'string') {
+      throw new BadRequestException('Signature must be a PNG base64 string');
+    }
     if (dto.signatureBase64) {
+      const signature = dto.signatureBase64;
+      if (signature.length > 1_400_000 || (signature.startsWith('data:') && !signature.startsWith('data:image/png;base64,'))) {
+        throw new BadRequestException('Signature must be a PNG image under 1 MiB');
+      }
+      const encoded = signature.replace(/^data:image\/png;base64,/, '');
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+        throw new BadRequestException('Signature data is invalid');
+      }
+      const buf = Buffer.from(encoded, 'base64');
+      if (buf.length > 1024 * 1024) throw new BadRequestException('Signature must be under 1 MiB');
+      FileUploadValidator.validateBuffer(buf, 'image/png', 'image');
       const key = `pod/signatures/${companyId}/${id}.png`;
-      const buf = Buffer.from(dto.signatureBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
       await this.storage.upload(key, buf, 'image/png');
       podSignatureUrl = this.storage.publicFileUrl(key);
     }
 
     if (file) {
-      const key = `pod/photos/${companyId}/${id}-${uuid()}.${file.originalname.split('.').pop()}`;
-      await this.storage.upload(key, file.buffer, file.mimetype);
+      const extensionByMime: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+      };
+      const safeMime = file.mimetype.toLowerCase().split(';', 1)[0].trim();
+      const key = `pod/photos/${companyId}/${id}-${uuid()}.${extensionByMime[safeMime]}`;
+      await this.storage.upload(key, file.buffer, safeMime);
       podImageUrl = this.storage.publicFileUrl(key);
     }
 
@@ -660,10 +699,17 @@ export class WaybillsService {
   }
 
   async uploadInbox(companyId: string, file: Express.Multer.File) {
-    const ext = file.originalname.split('.').pop() ?? 'pdf';
-    const key = `waybills/inbox/${companyId}/${uuid()}.${ext}`;
+    FileUploadValidator.validate(file, { category: 'document', maxSize: 10 * 1024 * 1024 });
+    const safeMime = file.mimetype.toLowerCase().split(';', 1)[0].trim();
+    const extensionByMime: Record<string, string> = {
+      'application/pdf': 'pdf',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/tiff': 'tiff',
+    };
+    const key = `waybills/inbox/${companyId}/${uuid()}.${extensionByMime[safeMime]}`;
 
-    await this.storage.upload(key, file.buffer, file.mimetype);
+    await this.storage.upload(key, file.buffer, safeMime);
     const fileUrl = this.storage.publicFileUrl(key);
 
     // Create inbox item in EXTRACTING state
@@ -821,12 +867,16 @@ Set confidence 0.0-1.0 based on how clearly you could read the document. Use nul
    * codAmount, totalAmount
    */
   async bulkImportCsv(companyId: string, file: Express.Multer.File) {
-    if (!file || !file.buffer) {
-      throw new BadRequestException('No CSV file uploaded');
-    }
+    FileUploadValidator.validate(file, { category: 'csv', maxSize: 5 * 1024 * 1024 });
 
     const content = file.buffer.toString('utf-8');
     const lines = content.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length > 20_001) {
+      throw new BadRequestException('CSV exceeds the 20,000-row import limit');
+    }
+    if (lines.some((line) => line.length > 64 * 1024)) {
+      throw new BadRequestException('CSV contains a row that exceeds the 64 KiB limit');
+    }
     if (lines.length < 2) {
       throw new BadRequestException('CSV must have a header row and at least one data row');
     }

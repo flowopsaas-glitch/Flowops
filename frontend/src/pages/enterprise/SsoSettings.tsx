@@ -32,9 +32,6 @@ export default function SsoSettings() {
           enabled: c.enabled,
           issuer: c.issuer ?? "",
           clientId: c.clientId ?? "",
-          authUrl: c.authUrl ?? "",
-          tokenUrl: c.tokenUrl ?? "",
-          userInfoUrl: c.userInfoUrl ?? "",
           scopes: c.scopes ?? "openid email profile",
           allowedDomain: c.allowedDomain ?? "",
           autoProvision: c.autoProvision ?? true,
@@ -117,7 +114,7 @@ export default function SsoSettings() {
                   Enterprise · OIDC SSO
                 </div>
                 <h1 className="mt-2 text-2xl font-black text-white">Single Sign-On</h1>
-                <p className="text-sm text-white/50">Okta · Azure AD · Google Workspace · Auth0</p>
+                <p className="text-sm text-white/50">Okta · Azure AD · Google Workspace · Auth0 · endpoints discovered from issuer metadata</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -164,6 +161,11 @@ export default function SsoSettings() {
             </label>
           </div>
 
+          <p className="text-xs text-white/45">
+            Provider endpoints are loaded from OIDC discovery and must resolve over HTTPS to public hosts.
+            Client secrets are encrypted at rest; after the operator configures the server encryption key,
+            re-enter any secret saved before this upgrade.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className={LABEL}>Issuer URL</label>
@@ -179,21 +181,6 @@ export default function SsoSettings() {
               <label className={LABEL}>Client Secret {cfg?.clientSecretSet && <span className="text-emerald-400/70">(set)</span>}</label>
               <input className={FIELD} type="password" placeholder={cfg?.clientSecretSet ? "•••••••• (leave blank to keep)" : "Paste secret"}
                 value={form.clientSecret ?? ""} onChange={(e) => set("clientSecret", e.target.value)} />
-            </div>
-            <div>
-              <label className={LABEL}>Authorization endpoint</label>
-              <input className={FIELD} placeholder="https://idp/authorize" value={form.authUrl ?? ""}
-                onChange={(e) => set("authUrl", e.target.value)} />
-            </div>
-            <div>
-              <label className={LABEL}>Token endpoint</label>
-              <input className={FIELD} placeholder="https://idp/token" value={form.tokenUrl ?? ""}
-                onChange={(e) => set("tokenUrl", e.target.value)} />
-            </div>
-            <div>
-              <label className={LABEL}>Userinfo endpoint</label>
-              <input className={FIELD} placeholder="https://idp/userinfo" value={form.userInfoUrl ?? ""}
-                onChange={(e) => set("userInfoUrl", e.target.value)} />
             </div>
             <div>
               <label className={LABEL}>Scopes</label>

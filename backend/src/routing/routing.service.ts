@@ -117,22 +117,24 @@ export class RoutingService {
 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10000);
-      const res = await fetch(url, { signal: ctrl.signal });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data: any = await res.json();
-        if (data?.code === 'Ok' && data.distances && data.durations) {
-          // Convert meters → km, seconds → minutes
-          const distances = data.distances.map((row: number[]) =>
-            row.map((d: number) => Math.round((d / 1000) * 100) / 100),
-          );
-          const durations = data.durations.map((row: number[]) =>
-            row.map((d: number) => Math.round(d / 60 * 10) / 10),
-          );
-          this.logger.debug(`OSRM matrix ${points.length}×${points.length} fetched`);
-          return { distances, durations, engine: 'osrm' };
+      try {
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (res.ok) {
+          const data: any = await res.json();
+          if (data?.code === 'Ok' && data.distances && data.durations) {
+            // Convert meters → km, seconds → minutes
+            const distances = data.distances.map((row: number[]) =>
+              row.map((d: number) => Math.round((d / 1000) * 100) / 100),
+            );
+            const durations = data.durations.map((row: number[]) =>
+              row.map((d: number) => Math.round(d / 60 * 10) / 10),
+            );
+            this.logger.debug(`OSRM matrix ${points.length}×${points.length} fetched`);
+            return { distances, durations, engine: 'osrm' };
+          }
         }
+      } finally {
+        clearTimeout(timer);
       }
     } catch (err: any) {
       this.logger.warn(`OSRM table failed (${err.message}), using haversine fallback`);

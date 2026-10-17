@@ -10,6 +10,7 @@ import { UpdateRailConsignmentDto } from './dto/update-rail-consignment.dto';
 import { CreateWagonDto } from './dto/wagon.dto';
 import { CreateIntermodalLegDto, AdvanceStatusDto, ApproveHandoffReadinessDto } from './dto/intermodal-leg.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -256,7 +257,9 @@ export class RailController {
   @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Import an Annexure 33a tab-separated rail timetable' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @UseInterceptors(uploadConcurrency, FileInterceptor('file', {
+    limits: { fileSize: 25 * 1024 * 1024, files: 1, fields: 5, fieldSize: 64 * 1024, parts: 6 },
+  }))
   importTimetable(
     @CurrentUser() u: AuthenticatedUser,
     @UploadedFile() file: Express.Multer.File,

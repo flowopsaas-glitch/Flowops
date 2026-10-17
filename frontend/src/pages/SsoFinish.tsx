@@ -1,33 +1,45 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { setToken, setLoginMode, setRefreshToken } from "../api/client";
+import { exchangeSsoCode } from "../api/ssoApi";
 
-/**
- * Landing page for the SSO redirect: /sso/finish?access_token=...&refresh_token=...
- * Stores the tenant access + refresh tokens and hands off to the dashboard.
- * AuthContext then hydrates the user via /auth/me, and the API client performs
- * silent token refresh using the stored refresh token (rotated server-side).
- */
+/** Redeems the short-lived, browser-bound OIDC code without putting FlowOps bearer tokens in a URL. */
 export default function SsoFinish() {
   const [error, setError] = useState<string | null>(null);
+  // React StrictMode replays effects in development. Cache the initial code and
+  // the redemption promise so the one-time code is exchanged exactly once.
+  const codeRef = useRef<string | null>(null);
+  if (codeRef.current === null) {
+    codeRef.current = new URL(window.location.href).searchParams.get("code");
+  }
+  const redemptionRef = useRef<ReturnType<typeof exchangeSsoCode> | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const access = params.get("access_token");
-    const refresh = params.get("refresh_token");
-    if (!access) {
+    let active = true;
+    const current = new URL(window.location.href);
+    const code = codeRef.current;
+    // Remove even the single-use code from browser history before making requests.
+    window.history.replaceState(null, "", `${current.pathname}${current.hash}`);
+    if (!code) {
       setError("Single sign-on did not return a session. Please try again.");
-      return;
+      return () => { active = false; };
     }
-    try {
-      setToken(access);
-      if (refresh) setRefreshToken(refresh);
+
+    redemptionRef.current ??= exchangeSsoCode(code);
+    void redemptionRef.current.then((session) => {
+      if (!session?.access_token || !session?.refresh_token) {
+        throw new Error("Single sign-on did not return a complete session.");
+      }
+      if (!active) return;
+      setToken(session.access_token);
+      setRefreshToken(session.refresh_token);
       setLoginMode("tenant");
-      // Full-page nav so AuthContext re-initialises with the new token.
       window.location.replace("/dashboard");
-    } catch {
-      setError("Could not establish your session. Please try again.");
-    }
+    }).catch((e: any) => {
+      if (active) setError(e?.message || "Could not establish your session. Please try again.");
+    });
+
+    return () => { active = false; };
   }, []);
 
   return (

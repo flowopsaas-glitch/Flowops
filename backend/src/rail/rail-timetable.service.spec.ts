@@ -20,6 +20,13 @@ function makeDependencies() {
     rowCount: 1,
     importedBy: 'user-1',
   };
+  const tx = {
+    railScheduleImport: {
+      create: jest.fn().mockResolvedValue({ ...createdImport, rowCount: 0 }),
+      update: jest.fn().mockResolvedValue(createdImport),
+    },
+    railScheduleRow: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+  };
   const prisma = {
     railScheduleImport: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -29,27 +36,23 @@ function makeDependencies() {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
     },
-    $transaction: jest.fn(async (callback: (tx: any) => Promise<unknown>) => callback({
-      railScheduleImport: { create: jest.fn().mockResolvedValue(createdImport) },
-      railScheduleRow: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
-    })),
-    withTenant: jest.fn(async (_companyId: string, callback: (tx: any) => Promise<unknown>) => callback({
-      railScheduleImport: { create: jest.fn().mockResolvedValue(createdImport) },
-      railScheduleRow: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
-    })),
+    $transaction: jest.fn(async (callback: (client: any) => Promise<unknown>) => callback(tx)),
+    withTenant: jest.fn(async (_companyId: string, callback: (client: any) => Promise<unknown>) => callback(tx)),
   } as unknown as PrismaService;
   const billing = { hasFeature: jest.fn().mockResolvedValue(true) } as unknown as BillingService;
   const audit = { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
-  return { prisma, billing, audit, createdImport };
+  return { prisma, billing, audit, createdImport, tx };
 }
 
 describe('RailTimetableService', () => {
   it('imports the parsed rows atomically and audits the tenant actor', async () => {
-    const { prisma, billing, audit, createdImport } = makeDependencies();
+    const { prisma, billing, audit, createdImport, tx } = makeDependencies();
     const service = new RailTimetableService(prisma, billing, audit);
-    const file = { originalname: 'rail.tsv', buffer: Buffer.from(makeRow(), 'utf8') };
+    const file = { originalname: 'rail.tsv', mimetype: 'text/tab-separated-values', buffer: Buffer.from(makeRow(), 'utf8') };
 
     await expect(service.importFile('tenant-1', 'user-1', file)).resolves.toEqual(createdImport);
+    expect(tx.railScheduleRow.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.railScheduleImport.update).toHaveBeenCalledWith({ where: { id: 'import-1' }, data: { rowCount: 1 } });
     expect(prisma.withTenant).toHaveBeenCalledTimes(1);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       action: 'rail.timetable.imported',
@@ -66,6 +69,7 @@ describe('RailTimetableService', () => {
 
     await expect(service.importFile('tenant-1', 'user-1', {
       originalname: 'rail.tsv',
+      mimetype: 'text/tab-separated-values',
       buffer: Buffer.from(makeRow(), 'utf8'),
     })).rejects.toThrow(ConflictException);
     expect(prisma.withTenant).not.toHaveBeenCalled();
@@ -85,6 +89,7 @@ describe('RailTimetableService', () => {
 
     await service.importSharedFile('owner-1', {
       originalname: 'network.tsv',
+      mimetype: 'text/tab-separated-values',
       buffer: Buffer.from(makeRow(), 'utf8'),
     });
 
@@ -100,13 +105,30 @@ describe('RailTimetableService', () => {
     }));
   });
 
-  it('rejects malformed source before creating an import', async () => {
+  it('rejects malformed source atomically before any schedule rows are written', async () => {
+    const { prisma, billing, audit, tx } = makeDependencies();
+    const service = new RailTimetableService(prisma, billing, audit);
+
+    await expect(service.importFile('tenant-1', 'user-1', {
+      originalname: 'rail.tsv',
+      mimetype: 'text/tab-separated-values',
+      buffer: Buffer.from('one\ttwo'),
+    })).rejects.toThrow(BadRequestException);
+    expect(prisma.withTenant).toHaveBeenCalledTimes(1);
+    expect(tx.railScheduleImport.create).toHaveBeenCalledTimes(1);
+    expect(tx.railScheduleRow.createMany).not.toHaveBeenCalled();
+    expect(tx.railScheduleImport.update).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-text MIME type before parsing or importing the file', async () => {
     const { prisma, billing, audit } = makeDependencies();
     const service = new RailTimetableService(prisma, billing, audit);
 
     await expect(service.importFile('tenant-1', 'user-1', {
       originalname: 'rail.tsv',
-      buffer: Buffer.from('one\ttwo'),
+      mimetype: 'application/pdf',
+      buffer: Buffer.from(makeRow(), 'utf8'),
     })).rejects.toThrow(BadRequestException);
     expect(prisma.railScheduleImport.findFirst).not.toHaveBeenCalled();
     expect(prisma.withTenant).not.toHaveBeenCalled();
@@ -122,6 +144,21 @@ describe('RailTimetableService', () => {
       select: { id: true, companyId: true },
     });
     expect(prisma.railScheduleRow.findMany).not.toHaveBeenCalled();
+  });
+
+  it('lets tenants read only rows owned by the requested tenant import', async () => {
+    const { prisma, billing, audit } = makeDependencies();
+    (prisma.railScheduleImport.findFirst as jest.Mock).mockResolvedValue({
+      id: 'tenant-import',
+      companyId: 'tenant-2',
+    });
+    const service = new RailTimetableService(prisma, billing, audit);
+
+    await service.listRows('tenant-2', 'tenant-import', { train: '1417' });
+
+    expect(prisma.railScheduleRow.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { importId: 'tenant-import', companyId: 'tenant-2', train: '1417' },
+    }));
   });
 
   it('lets entitled tenants read shared rows while querying only the shared dataset', async () => {

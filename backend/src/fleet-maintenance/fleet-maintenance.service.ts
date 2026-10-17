@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { LogServiceDto } from './dto/log-service.dto';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -54,50 +56,98 @@ export class FleetMaintenanceService {
   // CRUD — Service Records
   // ══════════════════════════════════════════════════════════════════════════
 
-  async logService(companyId: string, dto: {
-    driverId: string; serviceType: string; kmAtService?: number;
-    cost?: number; currency?: string; notes?: string; servicedAt?: string;
-    providerName?: string; invoiceRef?: string; partsReplaced?: string;
-    warrantyExpiry?: string;
-  }) {
-    // Verify driver belongs to company
+  private serviceRequestFingerprint(dto: LogServiceDto): string {
+    const normalized = {
+      driverId: dto.driverId,
+      serviceType: String(dto.serviceType).trim(),
+      kmAtService: dto.kmAtService ?? null,
+      cost: dto.cost ?? null,
+      currency: String(dto.currency ?? 'ZAR').trim().toUpperCase(),
+      notes: dto.notes ?? null,
+      servicedAt: dto.servicedAt ? new Date(dto.servicedAt).toISOString() : null,
+      providerName: dto.providerName ?? null,
+      invoiceRef: dto.invoiceRef ?? null,
+      partsReplaced: dto.partsReplaced ?? null,
+      warrantyExpiry: dto.warrantyExpiry ? new Date(dto.warrantyExpiry).toISOString() : null,
+    };
+    return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+  }
+
+  async logService(companyId: string, dto: LogServiceDto) {
+    if (!dto || typeof dto.driverId !== 'string' || !dto.driverId.trim()) {
+      throw new BadRequestException('A driver is required for a service record');
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(dto.idempotencyKey ?? ''))) {
+      throw new BadRequestException('A UUID v4 idempotencyKey is required for every service record');
+    }
+    if (typeof dto.serviceType !== 'string' || !dto.serviceType.trim() || dto.serviceType.length > 120) {
+      throw new BadRequestException('A valid service type is required');
+    }
+
     const driver = await this.prisma.driver.findFirst({
       where: { id: dto.driverId, companyId },
     });
     if (!driver) throw new NotFoundException('Driver not found');
 
-    // Update driver odometer if provided
-    if (dto.kmAtService && (!driver.currentKm || dto.kmAtService > driver.currentKm)) {
-      await this.prisma.driver.update({
-        where: { id: dto.driverId },
-        data: { currentKm: dto.kmAtService },
+    const fingerprint = this.serviceRequestFingerprint(dto);
+    const uniqueWhere = { driverId_idempotencyKey: { driverId: dto.driverId, idempotencyKey: dto.idempotencyKey } };
+    const returnExisting = (existing: any) => {
+      if (!existing) return null;
+      if (existing.requestFingerprint !== fingerprint) {
+        throw new ConflictException('Idempotency key was already used for a different service record');
+      }
+      return existing;
+    };
+
+    try {
+      return await this.prisma.$transaction(async (tx: any) => {
+        const existing = returnExisting(await tx.vehicleService.findUnique({ where: uniqueWhere }));
+        if (existing) return existing;
+
+        const service = await tx.vehicleService.create({
+          data: {
+            driverId: dto.driverId,
+            idempotencyKey: dto.idempotencyKey,
+            requestFingerprint: fingerprint,
+            serviceType: String(dto.serviceType).trim(),
+            kmAtService: dto.kmAtService,
+            cost: dto.cost,
+            currency: String(dto.currency ?? 'ZAR').trim().toUpperCase(),
+            notes: dto.notes,
+            servicedAt: dto.servicedAt ? new Date(dto.servicedAt) : new Date(),
+            providerName: dto.providerName,
+            invoiceRef: dto.invoiceRef,
+            partsReplaced: dto.partsReplaced,
+            warrantyExpiry: dto.warrantyExpiry ? new Date(dto.warrantyExpiry) : undefined,
+          },
+        });
+
+        if (dto.kmAtService !== undefined && dto.kmAtService > 0) {
+          await tx.driver.updateMany({
+            where: {
+              id: dto.driverId,
+              companyId,
+              OR: [{ currentKm: null }, { currentKm: { lt: dto.kmAtService } }],
+            },
+            data: { currentKm: dto.kmAtService },
+          });
+        }
+
+        // Prediction uses database-only history and writes. Keep it in this
+        // transaction so the service row, odometer, and next-service fields
+        // commit together; retries cannot leave partial maintenance state.
+        await this.predictNextService(dto.driverId, dto.serviceType, service.id, tx);
+        await this.updateDriverNextService(dto.driverId, tx);
+        return tx.vehicleService.findUnique({ where: { id: service.id } });
       });
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        const existing = await this.prisma.vehicleService.findUnique({ where: uniqueWhere });
+        const replay = returnExisting(existing);
+        if (replay) return replay;
+      }
+      throw error;
     }
-
-    // Create service record
-    const service = await this.prisma.vehicleService.create({
-      data: {
-        driverId: dto.driverId,
-        serviceType: dto.serviceType,
-        kmAtService: dto.kmAtService,
-        cost: dto.cost,
-        currency: dto.currency || 'ZAR',
-        notes: dto.notes,
-        servicedAt: dto.servicedAt ? new Date(dto.servicedAt) : new Date(),
-        providerName: dto.providerName,
-        invoiceRef: dto.invoiceRef,
-        partsReplaced: dto.partsReplaced,
-        warrantyExpiry: dto.warrantyExpiry ? new Date(dto.warrantyExpiry) : undefined,
-      },
-    });
-
-    // Run AI prediction for this driver after logging service
-    await this.predictNextService(dto.driverId, dto.serviceType, service.id);
-
-    // Update driver's next service fields
-    await this.updateDriverNextService(dto.driverId);
-
-    return service;
   }
 
   async getServiceHistory(companyId: string, driverId?: string) {
@@ -321,10 +371,10 @@ export class FleetMaintenanceService {
   }
 
   /** AI-powered single service prediction after logging a new service */
-  private async predictNextService(driverId: string, serviceType: string, serviceId: string) {
-    const history = await this.prisma.vehicleService.findMany({
+  private async predictNextService(driverId: string, serviceType: string, serviceId: string, db: any = this.prisma) {
+    const history = await db.vehicleService.findMany({
       where: { driverId, serviceType },
-      orderBy: { servicedAt: 'desc' },
+      orderBy: [{ servicedAt: 'desc' }, { createdAt: 'desc' }],
       take: 10,
     });
 
@@ -353,7 +403,7 @@ export class FleetMaintenanceService {
     const nextDate = new Date(latest.servicedAt.getTime() + avgDayInterval * 86_400_000);
     const confidence = Math.min(0.6 + history.length * 0.05, 0.98);
 
-    await this.prisma.vehicleService.update({
+    await db.vehicleService.update({
       where: { id: serviceId },
       data: {
         aiPredictedNextKm: nextKm,
@@ -366,8 +416,8 @@ export class FleetMaintenanceService {
   }
 
   /** Update driver's nextServiceKm/nextServiceDate from latest predictions */
-  private async updateDriverNextService(driverId: string) {
-    const latestPredictions = await this.prisma.vehicleService.findMany({
+  private async updateDriverNextService(driverId: string, db: any = this.prisma) {
+    const latestPredictions = await db.vehicleService.findMany({
       where: { driverId, aiPredictedNextDate: { not: null } },
       orderBy: { aiPredictedNextDate: 'asc' },
       take: 1,
@@ -375,7 +425,7 @@ export class FleetMaintenanceService {
 
     if (latestPredictions.length > 0) {
       const p = latestPredictions[0];
-      await this.prisma.driver.update({
+      await db.driver.update({
         where: { id: driverId },
         data: {
           nextServiceKm: p.aiPredictedNextKm,

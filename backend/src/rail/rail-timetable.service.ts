@@ -6,9 +6,7 @@ import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { BillingService } from '../billing/billing.service';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  parseRailSchedule,
-} from './rail-timetable.parser';
+import { parseRailScheduleBatches } from './rail-timetable.parser';
 
 const INSERT_BATCH_SIZE = 1_000;
 
@@ -31,7 +29,7 @@ export class RailTimetableService {
   async importFile(
     companyId: string,
     actorId: string,
-    file: { originalname: string; buffer: Buffer },
+    file: { originalname: string; mimetype: string; buffer: Buffer },
   ) {
     await this.assertEntitled(companyId);
     return this.persistImport(companyId, companyId, actorId, 'tenant', file);
@@ -39,7 +37,7 @@ export class RailTimetableService {
 
   async importSharedFile(
     actorId: string,
-    file: { originalname: string; buffer: Buffer },
+    file: { originalname: string; mimetype: string; buffer: Buffer },
   ) {
     return this.persistImport(null, 'shared-transnet', actorId, 'owner', file);
   }
@@ -49,18 +47,24 @@ export class RailTimetableService {
     scopeKey: string,
     actorId: string,
     actorType: 'tenant' | 'owner',
-    file: { originalname: string; buffer: Buffer },
+    file: { originalname: string; mimetype: string; buffer: Buffer },
   ) {
-    if (!file?.buffer?.length) throw new BadRequestException('No timetable file provided');
+    if (!file || !Buffer.isBuffer(file.buffer) || file.buffer.length === 0) {
+      throw new BadRequestException('No valid timetable file provided');
+    }
     if (file.buffer.length > 25 * 1024 * 1024) {
       throw new BadRequestException('Timetable file cannot exceed 25 MB');
     }
-    const sourceName = file.originalname.split(/[\\/]/).pop()?.slice(0, 255);
+    const originalName = typeof file.originalname === 'string' ? file.originalname : '';
+    const sourceName = originalName.split(/[\\/]/).pop()?.slice(0, 255);
     if (!sourceName || !/\.(txt|tsv)$/i.test(sourceName)) {
       throw new BadRequestException('Upload a .txt or .tsv tab-separated timetable file');
     }
+    const mimeType = String(file.mimetype ?? '').toLowerCase().split(';', 1)[0].trim();
+    if (!['text/plain', 'text/tab-separated-values', 'text/tsv', 'application/vnd.ms-excel', 'application/octet-stream'].includes(mimeType)) {
+      throw new BadRequestException('Timetable uploads must be plain text or tab-separated values');
+    }
 
-    const rows = parseRailSchedule(file.buffer);
     const sourceHash = createHash('sha256').update(file.buffer).digest('hex');
     const existing = await this.prisma.railScheduleImport.findFirst({
       where: { scopeKey, sourceHash },
@@ -77,12 +81,13 @@ export class RailTimetableService {
             scopeKey,
             sourceName,
             sourceHash,
-            rowCount: rows.length,
+            rowCount: 0,
             importedBy: actorId,
           },
         });
-        for (let offset = 0; offset < rows.length; offset += INSERT_BATCH_SIZE) {
-          const batch = rows.slice(offset, offset + INSERT_BATCH_SIZE);
+        let rowCount = 0;
+        for (const batch of parseRailScheduleBatches(file.buffer, INSERT_BATCH_SIZE)) {
+          rowCount += batch.length;
           await tx.railScheduleRow.createMany({
             data: batch.map((row) => ({
               ...row,
@@ -91,7 +96,8 @@ export class RailTimetableService {
             })),
           });
         }
-        return created;
+        await tx.railScheduleImport.update({ where: { id: created.id }, data: { rowCount } });
+        return { ...created, rowCount };
       }, { maxWait: 10_000, timeout: 180_000 });
     } catch (error) {
       if (
@@ -110,7 +116,7 @@ export class RailTimetableService {
       targetType: 'rail_schedule_import',
       targetId: scheduleImport.id,
       targetName: sourceName,
-      metadata: { companyId, scopeKey, rowCount: rows.length, sourceHash },
+      metadata: { companyId, scopeKey, rowCount: scheduleImport.rowCount, sourceHash },
     });
     return scheduleImport;
   }
@@ -168,12 +174,10 @@ export class RailTimetableService {
     }
     const where: Prisma.RailScheduleRowWhereInput = {
       importId,
+      // Tenant uploads are visible only to their owner; shared imports are
+      // visible to every entitled tenant and retain companyId = null.
       companyId: scheduleImport.companyId,
     };
-    if (!companyId) {
-      throw new ForbiddenException('A tenant company is required to access timetable rows');
-    }
-    where.companyId = null;
     if (filters.origin) where.origin = { equals: filters.origin, mode: 'insensitive' };
     if (filters.train) where.train = filters.train;
     if (filters.corridor) where.corridor = { equals: filters.corridor, mode: 'insensitive' };

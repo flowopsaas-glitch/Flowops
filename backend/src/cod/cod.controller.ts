@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CodService } from './cod.service';
+import { SettleDriverDto } from './dto/settle-driver.dto';
 import { CodGuardianService } from './cod-guardian.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -59,10 +60,10 @@ export class CodController {
   @RequireFeature('codReconciliation')
   settle(
     @Param('driverId') driverId: string,
-    @Body() body: { amount: number; note?: string },
+    @Body() body: SettleDriverDto,
     @CurrentUser() u: AuthenticatedUser,
   ) {
-    return this.svc.settleDriver(driverId, body.amount, u.companyId, body.note);
+    return this.svc.settleDriver(driverId, body.amount, u.companyId, body.idempotencyKey, body.note);
   }
 
   /**

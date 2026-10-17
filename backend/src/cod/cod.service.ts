@@ -110,8 +110,8 @@ export class CodService {
   // ── Settle driver (driver remits cash to company) ─────────────────────────
 
   /** Delegates to the single atomic settlement path (tenant + balance guarded). */
-  async settleDriver(driverId: string, amount: number, companyId: string, note?: string) {
-    return this.settlements.settleDriver(driverId, amount, companyId, note);
+  async settleDriver(driverId: string, amount: number, companyId: string, idempotencyKey: string, note?: string) {
+    return this.settlements.settleDriver(driverId, amount, companyId, idempotencyKey, note);
   }
 
   // ── List all driver wallets ────────────────────────────────────────────────

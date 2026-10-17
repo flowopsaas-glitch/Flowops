@@ -1115,13 +1115,15 @@ model Disbursement {
   status      DisbursementStatus @default(OUTSTANDING)
   paidAt      DateTime           @default(now())
   recoveredAt DateTime?
-  invoiceId   String? // optional link to the recovery invoice
+  invoiceId   String? // optional link to the same-company recovery invoice
+  invoice     Invoice? @relation(fields: [invoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([companyId, status])
   @@index([fileId])
+  @@index([invoiceId])
   @@map("disbursements")
 }
 
@@ -1193,9 +1195,9 @@ model Waybill {
 
   // Provenance: the Collection row this waybill was created from. Set exactly
   // once, inside the same transaction that marks the collection COLLECTED, so a
-  // replayed offline confirmation finds its waybill instead of creating a second
-  // one (and so the pickup can always be traced back to its collection).
-  sourceCollectionId       String?
+  // replayed offline confirmation finds its waybill instead of creating a second.
+  sourceCollectionId       String? @unique
+  sourceCollection         Collection? @relation(fields: [sourceCollectionId], references: [id], onDelete: SetNull)
 
   // Delivery attempts (3x retry before return-to-sender)
   attemptCount    Int       @default(0)   // Number of delivery attempts made
@@ -1222,7 +1224,7 @@ model Waybill {
 
   shipments        Shipment[]
   manifestWaybills ManifestWaybill[]
-  invoiceItems     InvoiceItem[]
+  invoiceItem      InvoiceItem?
   inboxItem        WaybillInboxItem?
   codTransactions  CodTransaction[]
   returns          Return[]
@@ -1230,7 +1232,6 @@ model Waybill {
 
   @@unique([trackingNumber, companyId])
   @@index([companyId, status])
-  @@index([sourceCollectionId])
   @@index([companyId, createdAt])
   @@index([companyId, updatedAt])
   @@index([railConsignmentId])
@@ -1285,6 +1286,9 @@ model Collection {
 
   driverId String?
   driver   Driver? @relation(fields: [driverId], references: [id])
+
+  // A collected source can create at most one waybill.
+  waybill Waybill?
 
   agentId String?
   agent   User?   @relation("AssignedAgent", fields: [agentId], references: [id])
@@ -1408,8 +1412,10 @@ model Invoice {
   creditNotes CreditNote[]
   debitNotes  DebitNote[]
   commissions Commission[]
+  disbursements Disbursement[]
 
   @@unique([invoiceNumber, companyId])
+  @@unique([id, companyId])
   @@index([publicToken])
   @@map("invoices")
 }
@@ -1424,7 +1430,8 @@ model InvoiceItem {
   invoiceId String
   invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
-  waybillId String?
+  // A waybill may appear on at most one invoice. Credit/debit notes handle later adjustments.
+  waybillId String? @unique
   waybill   Waybill? @relation(fields: [waybillId], references: [id])
 
   @@map("invoice_items")
@@ -1877,6 +1884,8 @@ model CodTransaction {
   amount    Float
   balance   Float              // running balance after this entry
   note      String?
+  idempotencyKey String?
+  requestFingerprint String?
 
   createdAt DateTime @default(now())
 
@@ -1884,6 +1893,7 @@ model CodTransaction {
   waybill Waybill?    @relation(fields: [waybillId], references: [id])
   company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@unique([walletId, idempotencyKey])
   @@index([walletId, createdAt])
   @@map("cod_transactions")
 }
@@ -1964,6 +1974,9 @@ enum OutboxStatus {
 model VehicleService {
   id          String   @id @default(cuid())
   driverId    String
+  // Required by the service API; scoped per driver and unique for retry safety.
+  idempotencyKey String
+  requestFingerprint String?
   serviceType String   // e.g. "Oil Change", "Tyre Rotation", "Annual Service"
   notes       String?
   kmAtService Int?
@@ -1987,6 +2000,7 @@ model VehicleService {
 
   driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
+  @@unique([driverId, idempotencyKey])
   @@index([driverId, servicedAt])
   @@map("vehicle_services")
 }
@@ -2458,13 +2472,16 @@ model SsoConnection {
   provider String  @default("oidc") // oidc (covers Okta / Azure AD / Google / Auth0)
   enabled  Boolean @default(false)
 
-  // OIDC endpoints + credentials
+  // OIDC issuer + credentials. clientSecret stores an AES-256-GCM envelope
+  // (enc:v1:...) encrypted with SSO_SECRET_ENCRYPTION_KEY.
   issuer       String?
   clientId     String?
-  clientSecret String? // NOTE: stored as-is; encrypt at rest before GA
-  authUrl      String? // authorization endpoint
-  tokenUrl     String? // token endpoint
-  userInfoUrl  String? // userinfo endpoint (preferred for claims)
+  clientSecret String?
+  // Legacy custom endpoint columns are retained for additive compatibility;
+  // runtime configuration ignores them and uses validated OIDC discovery only.
+  authUrl      String?
+  tokenUrl     String?
+  userInfoUrl  String?
   scopes       String  @default("openid email profile")
 
   // JIT provisioning controls

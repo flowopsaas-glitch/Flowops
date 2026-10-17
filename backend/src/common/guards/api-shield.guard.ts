@@ -1,5 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, HttpException, Logger } from '@nestjs/common';
 import { Request } from 'express';
+import { multipartUploadByteLimit } from '../security/multipart-upload-limits';
 
 /**
  * API SHIELD — World-Class Platform Protection
@@ -108,16 +109,25 @@ export class ApiShieldGuard implements CanActivate {
     }
 
     // 2. Check request body size (prevent DoS via large payloads)
-    const contentLength = parseInt(request.headers['content-length'] || '0', 10);
-    const isTimetableUpload =
-      method === 'POST' &&
-      (path.endsWith('/rail/schedules/import') || path.endsWith('/owner/rail/schedules/import')) &&
-      (request.headers['content-type'] || '').includes('multipart/form-data');
-    const maxBodySize = isTimetableUpload ? 26 * 1024 * 1024 : 10 * 1024 * 1024;
-    if (contentLength > maxBodySize) {
-      this.recordViolation(ip, 'oversized_payload');
-      throw new HttpException('Request body too large.', 413);
+    const rawContentLength = request.headers['content-length'];
+    const isMultipart = (request.headers['content-type'] || '').toLowerCase().includes('multipart/form-data');
+    const maxBodySize = isMultipart
+      ? multipartUploadByteLimit(method, path) ?? 10 * 1024 * 1024
+      : 10 * 1024 * 1024;
+
+    if (rawContentLength !== undefined) {
+      if (!/^\d+$/.test(rawContentLength)) {
+        this.recordViolation(ip, 'invalid_content_length');
+        throw new HttpException('Invalid Content-Length header.', 400);
+      }
+      const contentLength = Number(rawContentLength);
+      if (!Number.isSafeInteger(contentLength) || contentLength > maxBodySize) {
+        this.recordViolation(ip, 'oversized_payload');
+        throw new HttpException('Request body too large.', 413);
+      }
     }
+    // The raw multipart middleware independently counts chunked bytes before
+    // Multer; Multer still applies per-file, field, file-count and part limits.
 
     // 3. Validate headers (bot detection) — LOG ONLY, never a violation:
     // curl/wget/axios User-Agents are shared by our own monitoring and by

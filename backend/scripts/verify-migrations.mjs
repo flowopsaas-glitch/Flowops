@@ -102,7 +102,7 @@ export function checkMigrations({ migrationsDir, schemaPath }) {
 
   if (migrations.length > 1) {
     warnings.push(
-      `${migrations.length} migrations present; only the initial migration has been reviewed.`,
+      `${migrations.length} migration(s) present; this check validates file/provider shape only and does not attest migration review, data compatibility, or deployment safety.`,
     );
   }
 

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { RedisModule } from '../redis/redis.module';
 import { SsoController } from './sso.controller';
 import { SsoService } from './sso.service';
 
@@ -11,7 +12,7 @@ import { SsoService } from './sso.service';
  * BillingService is @Global (entitlement gate).
  */
 @Module({
-  imports: [ConfigModule, PrismaModule, AuthModule],
+  imports: [ConfigModule, PrismaModule, AuthModule, RedisModule],
   controllers: [SsoController],
   providers: [SsoService],
 })

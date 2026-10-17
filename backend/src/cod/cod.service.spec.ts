@@ -63,7 +63,10 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
         updateMany:       jest.fn().mockResolvedValue({ count: 1 }),
         update:           jest.fn().mockResolvedValue(makeWallet(0)),
       },
-      codTransaction: { create: jest.fn().mockResolvedValue({ id: 'ct1' }) },
+      codTransaction: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'ct1' }),
+      },
       waybill: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     })),
     ...overrides,
@@ -155,16 +158,16 @@ describe('CodService', () => {
   describe('settleDriver', () => {
     it('throws NotFoundException when the driver is not in the caller company', async () => {
       (prisma.driver.findFirst as jest.Mock).mockResolvedValue(null); // tenant check fails
-      await expect(svc.settleDriver('drv1', 100, 'co1')).rejects.toThrow(NotFoundException);
+      await expect(svc.settleDriver('drv1', 100, 'co1', '00000000-0000-4000-8000-000000000001')).rejects.toThrow(NotFoundException);
     });
 
     it('throws NotFoundException when wallet does not exist', async () => {
       // Driver in-company, but no wallet inside the transaction.
       (prisma.$transaction as jest.Mock).mockImplementationOnce(async (fn: any) => fn({
         driverWallet: { findUnique: jest.fn().mockResolvedValue(null) },
-        codTransaction: { create: jest.fn() },
+        codTransaction: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
       }));
-      await expect(svc.settleDriver('drv1', 100, 'co1')).rejects.toThrow(NotFoundException);
+      await expect(svc.settleDriver('drv1', 100, 'co1', '00000000-0000-4000-8000-000000000001')).rejects.toThrow(NotFoundException);
     });
 
     it('throws BadRequestException when amount exceeds balance (guarded decrement returns 0)', async () => {
@@ -174,13 +177,13 @@ describe('CodService', () => {
           updateMany: jest.fn().mockResolvedValue({ count: 0 }), // insufficient balance
           findUniqueOrThrow: jest.fn(),
         },
-        codTransaction: { create: jest.fn() },
+        codTransaction: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
       }));
-      await expect(svc.settleDriver('drv1', 100, 'co1')).rejects.toThrow(BadRequestException);
+      await expect(svc.settleDriver('drv1', 100, 'co1', '00000000-0000-4000-8000-000000000001')).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException on non-positive amount', async () => {
-      await expect(svc.settleDriver('drv1', 0, 'co1')).rejects.toThrow(BadRequestException);
+      await expect(svc.settleDriver('drv1', 0, 'co1', '00000000-0000-4000-8000-000000000001')).rejects.toThrow(BadRequestException);
     });
 
     it('returns settled amount and new balance', async () => {
@@ -190,10 +193,10 @@ describe('CodService', () => {
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
           findUniqueOrThrow: jest.fn().mockResolvedValue(makeWallet(0)),
         },
-        codTransaction: { create: jest.fn() },
+        codTransaction: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'ct-settlement-1' }) },
       }));
-      const result = await svc.settleDriver('drv1', 100, 'co1');
-      expect(result).toMatchObject({ settled: 100, newBalance: 0 });
+      const result = await svc.settleDriver('drv1', 100, 'co1', '00000000-0000-4000-8000-000000000001');
+      expect(result).toMatchObject({ settled: 100, newBalance: 0, ledgerTransactionId: 'ct-settlement-1', replayed: false });
     });
   });
 

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { api, getToken } from "../api/client";
 import { exportCsv, csvFilename } from "../lib/exportCsv";
+import { buildInvoiceCreatePayload } from "../lib/invoiceCreatePayload";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -115,12 +116,13 @@ function CreateInvoiceModal({
     setSaving(true);
     setError("");
     try {
-      await api.post("/invoices", {
-        clientName, clientEmail: clientEmail || undefined,
-        dueDate: dueDate || undefined, notes: notes || undefined,
-        subtotal, tax, total,
-        items: items.map((it) => ({ ...it })),
-      });
+      await api.post("/invoices", buildInvoiceCreatePayload({
+        clientName,
+        clientEmail,
+        dueDate,
+        notes,
+        items,
+      }));
       onSaved();
       onClose();
     } catch (err: any) {

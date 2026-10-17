@@ -488,6 +488,11 @@ describe('Generate Invoice Draft', () => {
 
       const created: any[] = [];
       const invoicesPrisma = {
+        $transaction: jest.fn(async (callback: (tx: any) => unknown) => callback({
+          $queryRaw: jest.fn(async () => [{ lastNumber: 0 }]),
+          invoice: { count: jest.fn().mockResolvedValue(0), create: jest.fn(async ({ data }: any) => { created.push(data); return { id: 'inv-1', ...data }; }) },
+          waybill: { findMany: jest.fn().mockResolvedValue([]) },
+        })),
         invoiceDraft: h.drafts,
         invoice: { count: jest.fn().mockResolvedValue(0), create: jest.fn(async ({ data }: any) => { created.push(data); return { id: 'inv-1', ...data }; }) },
       };

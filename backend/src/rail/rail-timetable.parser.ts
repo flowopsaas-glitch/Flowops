@@ -2,6 +2,9 @@ import { BadRequestException } from '@nestjs/common';
 
 export const RAIL_SCHEDULE_COLUMN_COUNT = 19;
 export const MAX_RAIL_SCHEDULE_ROWS = 300_000;
+export const MAX_RAIL_SCHEDULE_FIELD_BYTES = 64 * 1024;
+export const MAX_RAIL_SCHEDULE_ROW_BYTES = MAX_RAIL_SCHEDULE_FIELD_BYTES * RAIL_SCHEDULE_COLUMN_COUNT + (RAIL_SCHEDULE_COLUMN_COUNT - 1);
+export const MAX_RAIL_SCHEDULE_PHYSICAL_LINES = MAX_RAIL_SCHEDULE_ROWS + 10_000;
 
 export interface ParsedRailScheduleRow {
   sourceRow: number;
@@ -68,73 +71,133 @@ function optionalDecimal(value: string): number | null {
 const HEADER_START = ['origin', 'train', 'node_seq'];
 
 /**
- * Parse Annexure 33a tab-separated rows. Raw source lines are retained so
- * unusual values, blanks, and schedule-day offsets remain auditable.
+ * Iterate validated Annexure 33a rows without materializing an object for every
+ * line. The source text is bounded by the upload cap; row objects remain in the
+ * caller's small database-write batches only.
  */
-export function parseRailSchedule(buffer: Buffer): ParsedRailScheduleRow[] {
+export function* iterateRailScheduleRows(buffer: Buffer): Generator<ParsedRailScheduleRow> {
   const text = decodeText(buffer);
-  const lines = text.split(/\r?\n/);
-  const rows: ParsedRailScheduleRow[] = [];
-  const firstNonEmptyLine = lines.findIndex((line) => line.trim().length > 0);
+  let lineStart = 0;
+  let lineIndex = 0;
+  let firstNonEmptyLine: number | null = null;
   let dataRow = 0;
 
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const rawLine = lines[lineIndex];
-    if (!rawLine.trim()) continue;
-    const columns = rawLine.split('\t');
-
-    if (
-      lineIndex === firstNonEmptyLine &&
-      columns.length === RAIL_SCHEDULE_COLUMN_COUNT &&
-      HEADER_START.every((header, index) => columns[index].trim().toLowerCase().replace(/\s+/g, '_') === header)
-    ) {
-      continue;
-    }
-
-    if (columns.length !== RAIL_SCHEDULE_COLUMN_COUNT) {
+  // Walk the decoded text in place rather than split()'ing up to 25 MiB into
+  // millions of strings for newline-heavy input. The source file itself is
+  // already bounded by the upload route; parser overhead stays proportional to
+  // the current row and yielded database batch, not the number of blank lines.
+  while (true) {
+    if (lineIndex >= MAX_RAIL_SCHEDULE_PHYSICAL_LINES) {
       throw new BadRequestException(
-        `Invalid timetable row ${lineIndex + 1}: expected ${RAIL_SCHEDULE_COLUMN_COUNT} tab-separated columns, received ${columns.length}`,
+        `Timetable import cannot exceed ${MAX_RAIL_SCHEDULE_PHYSICAL_LINES} physical lines`,
       );
     }
 
-    const values = columns.map((column) => column.trim());
-    if (!values[0] || !values[1] || !values[4]) {
+    const newlineIndex = text.indexOf('\n', lineStart);
+    const hasNewline = newlineIndex !== -1;
+    const lineEnd = hasNewline ? newlineIndex : text.length;
+    const stripCarriageReturn = hasNewline && lineEnd > lineStart && text.charCodeAt(lineEnd - 1) === 13;
+    const rawLine = text.slice(lineStart, lineEnd - (stripCarriageReturn ? 1 : 0));
+
+    if (Buffer.byteLength(rawLine, 'utf8') > MAX_RAIL_SCHEDULE_ROW_BYTES) {
       throw new BadRequestException(
-        `Invalid timetable row ${lineIndex + 1}: origin, train, and station are required`,
+        `Timetable row ${lineIndex + 1} exceeds the ${MAX_RAIL_SCHEDULE_ROW_BYTES}-byte row limit`,
       );
     }
-    dataRow += 1;
-    if (dataRow > MAX_RAIL_SCHEDULE_ROWS) {
-      throw new BadRequestException(`Timetable import cannot exceed ${MAX_RAIL_SCHEDULE_ROWS} rows`);
+
+    if (rawLine.trim()) {
+      if (firstNonEmptyLine === null) firstNonEmptyLine = lineIndex;
+      const columns = rawLine.split('\t');
+
+      if (
+        lineIndex === firstNonEmptyLine &&
+        columns.length === RAIL_SCHEDULE_COLUMN_COUNT &&
+        HEADER_START.every((header, index) => columns[index].trim().toLowerCase().replace(/\s+/g, '_') === header)
+      ) {
+        // A header is structural, not a data field; it is included in the
+        // general row-byte ceiling above but not the per-column schema check.
+      } else {
+        if (columns.length !== RAIL_SCHEDULE_COLUMN_COUNT) {
+          throw new BadRequestException(
+            `Invalid timetable row ${lineIndex + 1}: expected ${RAIL_SCHEDULE_COLUMN_COUNT} tab-separated columns, received ${columns.length}`,
+          );
+        }
+
+        for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
+          if (Buffer.byteLength(columns[columnIndex], 'utf8') > MAX_RAIL_SCHEDULE_FIELD_BYTES) {
+            throw new BadRequestException(
+              `Invalid timetable row ${lineIndex + 1}: column ${columnIndex + 1} exceeds the ${MAX_RAIL_SCHEDULE_FIELD_BYTES}-byte field limit`,
+            );
+          }
+        }
+
+        const values = columns.map((column) => column.trim());
+        if (!values[0] || !values[1] || !values[4]) {
+          throw new BadRequestException(
+            `Invalid timetable row ${lineIndex + 1}: origin, train, and station are required`,
+          );
+        }
+        dataRow += 1;
+        if (dataRow > MAX_RAIL_SCHEDULE_ROWS) {
+          throw new BadRequestException(`Timetable import cannot exceed ${MAX_RAIL_SCHEDULE_ROWS} rows`);
+        }
+
+        yield {
+          sourceRow: dataRow,
+          origin: values[0],
+          train: values[1],
+          nodeSequence: optionalInteger(values[2]),
+          corridor: optionalText(values[3]),
+          station: values[4],
+          arrivalTime: optionalText(values[5]),
+          departureTime: optionalText(values[6]),
+          pointToPointRuntime: optionalText(values[7]),
+          standingTime: optionalText(values[8]),
+          standingReason: optionalText(values[9]),
+          destination: optionalText(values[10]),
+          originDepartureTime: optionalText(values[11]),
+          destinationArrivalTime: optionalText(values[12]),
+          scheduleCode: optionalText(values[13]),
+          frequency: optionalText(values[14]),
+          trainType: optionalText(values[15]),
+          throughputRuntime: optionalText(values[16]),
+          departDay: optionalInteger(values[17]),
+          distanceKm: optionalDecimal(values[18]),
+          rawLine,
+        };
+      }
     }
 
-    rows.push({
-      sourceRow: dataRow,
-      origin: values[0],
-      train: values[1],
-      nodeSequence: optionalInteger(values[2]),
-      corridor: optionalText(values[3]),
-      station: values[4],
-      arrivalTime: optionalText(values[5]),
-      departureTime: optionalText(values[6]),
-      pointToPointRuntime: optionalText(values[7]),
-      standingTime: optionalText(values[8]),
-      standingReason: optionalText(values[9]),
-      destination: optionalText(values[10]),
-      originDepartureTime: optionalText(values[11]),
-      destinationArrivalTime: optionalText(values[12]),
-      scheduleCode: optionalText(values[13]),
-      frequency: optionalText(values[14]),
-      trainType: optionalText(values[15]),
-      throughputRuntime: optionalText(values[16]),
-      departDay: optionalInteger(values[17]),
-      distanceKm: optionalDecimal(values[18]),
-      rawLine,
-    });
+    if (!hasNewline) break;
+    lineStart = newlineIndex + 1;
+    lineIndex += 1;
+    if (lineStart === text.length) break; // a terminal newline does not add an extra physical row
   }
 
-  if (rows.length === 0) {
+  if (dataRow === 0) {
     throw new BadRequestException('Timetable file contains no schedule rows');
   }
-  return rows;
+}
+
+export function* parseRailScheduleBatches(
+  buffer: Buffer,
+  batchSize: number,
+): Generator<ParsedRailScheduleRow[]> {
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
+    throw new BadRequestException('Timetable batch size must be a positive integer');
+  }
+  let batch: ParsedRailScheduleRow[] = [];
+  for (const row of iterateRailScheduleRows(buffer)) {
+    batch.push(row);
+    if (batch.length === batchSize) {
+      yield batch;
+      batch = [];
+    }
+  }
+  if (batch.length) yield batch;
+}
+
+/** Backward-compatible convenience API for small callers and parser tests. */
+export function parseRailSchedule(buffer: Buffer): ParsedRailScheduleRow[] {
+  return Array.from(iterateRailScheduleRows(buffer));
 }

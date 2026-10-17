@@ -1,9 +1,30 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { CollectionStatus } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../push/push.service';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
+
+const CONFIRMABLE_COLLECTION_STATUSES: CollectionStatus[] = [
+  CollectionStatus.PENDING,
+  CollectionStatus.ASSIGNED,
+  CollectionStatus.IN_PROGRESS,
+];
+const ASSIGNABLE_COLLECTION_STATUSES: CollectionStatus[] = [
+  CollectionStatus.PENDING,
+  CollectionStatus.ASSIGNED,
+];
+
+const COLLECTION_TRANSITIONS: Record<CollectionStatus, CollectionStatus[]> = {
+  PENDING: [CollectionStatus.ASSIGNED, CollectionStatus.CANCELLED, CollectionStatus.FAILED],
+  ASSIGNED: [CollectionStatus.PENDING, CollectionStatus.IN_PROGRESS, CollectionStatus.CANCELLED, CollectionStatus.FAILED],
+  IN_PROGRESS: [CollectionStatus.CANCELLED, CollectionStatus.FAILED],
+  COLLECTED: [],
+  FAILED: [],
+  CANCELLED: [],
+};
 
 @Injectable()
 export class CollectionsService {
@@ -129,7 +150,25 @@ export class CollectionsService {
   }
 
   async create(companyId: string, dto: any) {
-    const data: any = { ...dto, companyId };
+    const scheduledValue = dto?.scheduledAt ?? dto?.scheduledDate;
+    const scheduledAt = scheduledValue ? new Date(scheduledValue) : null;
+    if (scheduledValue && Number.isNaN(scheduledAt!.getTime())) {
+      throw new BadRequestException('scheduledAt must be a valid date');
+    }
+    const data: any = {
+      companyId,
+      clientName: String(dto?.clientName ?? '').trim(),
+      clientPhone: String(dto?.clientPhone ?? '').trim(),
+      clientEmail: dto?.clientEmail ? String(dto.clientEmail).trim().toLowerCase() : null,
+      pickupAddress: String(dto?.pickupAddress ?? '').trim(),
+      notes: dto?.notes ? String(dto.notes) : null,
+      scheduledAt,
+      status: CollectionStatus.PENDING,
+      driverId: null,
+    };
+    if (!data.clientName || !data.pickupAddress) {
+      throw new BadRequestException('Client name and pickup address are required');
+    }
 
     // ── Smart Address Resolution ────────────────────────────────────────────
     // Uses the world-class smartResolve engine: AddressBook fuzzy matching first,
@@ -177,8 +216,45 @@ export class CollectionsService {
   }
 
   async update(id: string, companyId: string, dto: any) {
-    await this.findOne(id, companyId);
-    const data: any = { ...dto };
+    const current = await this.findOne(id, companyId);
+    if (dto?.driverId !== undefined) {
+      throw new BadRequestException('Use the assign-driver or release-driver action to change collection custody');
+    }
+
+    const data: any = {};
+    if (dto?.notes !== undefined) data.notes = dto.notes == null ? null : String(dto.notes);
+    if (dto?.pickupAddress !== undefined) {
+      data.pickupAddress = String(dto.pickupAddress).trim();
+      if (!data.pickupAddress) throw new BadRequestException('Pickup address cannot be empty');
+    }
+    const scheduledValue = dto?.scheduledAt !== undefined ? dto.scheduledAt : dto?.scheduledDate;
+    if (scheduledValue !== undefined) {
+      data.scheduledAt = scheduledValue ? new Date(scheduledValue) : null;
+      if (scheduledValue && Number.isNaN(data.scheduledAt.getTime())) {
+        throw new BadRequestException('scheduledAt must be a valid date');
+      }
+    }
+    if (dto?.status !== undefined) {
+      const next = dto.status as CollectionStatus;
+      if (!Object.values(CollectionStatus).includes(next)) {
+        throw new BadRequestException('Invalid collection status');
+      }
+      if (next !== current.status && !COLLECTION_TRANSITIONS[current.status].includes(next)) {
+        throw new BadRequestException(`Collection cannot transition from ${current.status} to ${next}`);
+      }
+      if (next === CollectionStatus.ASSIGNED && !current.driverId) {
+        throw new BadRequestException('Assign a driver before changing the collection to ASSIGNED');
+      }
+      if (next === CollectionStatus.IN_PROGRESS && !current.driverId) {
+        throw new BadRequestException('Assign a driver before starting the collection');
+      }
+      data.status = next;
+      if (next === CollectionStatus.CANCELLED || next === CollectionStatus.FAILED || next === CollectionStatus.PENDING) {
+        data.driverId = null;
+      }
+    }
+    if (Object.keys(data).length === 0) return current;
+
     // Re-geocode when the pickup address changes (and caller didn't pass coords).
     if (data.pickupAddress && data.pickupLat == null && data.pickupLng == null) {
       const company = await this.prisma.company.findUnique({
@@ -191,11 +267,25 @@ export class CollectionsService {
         data.pickupLng = point.lng;
       }
     }
-    return this.prisma.collection.update({ where: { id }, data });
+
+    const updateWhere: any = { id, companyId, status: current.status };
+    if (
+      current.status === CollectionStatus.ASSIGNED &&
+      data.driverId === null
+    ) {
+      // A stale cancel/release must not clear a driver assigned by a concurrent edit.
+      updateWhere.driverId = current.driverId;
+    }
+    const updated = await this.prisma.collection.updateMany({
+      where: updateWhere,
+      data,
+    });
+    if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
+    return this.findOne(id, companyId);
   }
 
   async cancel(id: string, companyId: string) {
-    return this.update(id, companyId, { status: 'CANCELLED' });
+    return this.update(id, companyId, { status: CollectionStatus.CANCELLED });
   }
 
   /**
@@ -204,17 +294,25 @@ export class CollectionsService {
    * must belong to the same company.
    */
   async assignDriver(id: string, companyId: string, driverId: string) {
-    await this.findOne(id, companyId);
+    const collection = await this.findOne(id, companyId);
+    if (!ASSIGNABLE_COLLECTION_STATUSES.includes(collection.status)) {
+      throw new BadRequestException(`A ${collection.status.toLowerCase()} collection cannot be assigned`);
+    }
     const driver = await this.prisma.driver.findFirst({ where: { id: driverId, companyId } });
     if (!driver) throw new NotFoundException('Driver not found');
-    const updated = await this.prisma.collection.update({
-      where: { id },
-      data: { driverId, status: 'ASSIGNED' },
-      include: { driver: true },
+    const updated = await this.prisma.collection.updateMany({
+      where: {
+        id,
+        companyId,
+        driverId: collection.driverId,
+        status: { in: ASSIGNABLE_COLLECTION_STATUSES },
+      },
+      data: { driverId, status: CollectionStatus.ASSIGNED },
     });
+    if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
     // Wake the driver's phone: "new job". Best-effort, never blocks the assign.
     void this.push.notifyDriver(driverId);
-    return updated;
+    return this.findOne(id, companyId);
   }
 
   /**
@@ -224,13 +322,15 @@ export class CollectionsService {
    */
   async releaseDriver(id: string, companyId: string) {
     const collection = await this.findOne(id, companyId);
-    const data: any = { driverId: null };
-    if (collection.status === 'ASSIGNED') data.status = 'PENDING';
-    return this.prisma.collection.update({
-      where: { id },
-      data,
-      include: { driver: true },
+    if (collection.status !== CollectionStatus.ASSIGNED) {
+      throw new BadRequestException('Only assigned collections can be released');
+    }
+    const updated = await this.prisma.collection.updateMany({
+      where: { id, companyId, driverId: collection.driverId, status: CollectionStatus.ASSIGNED },
+      data: { driverId: null, status: CollectionStatus.PENDING },
     });
+    if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
+    return this.findOne(id, companyId);
   }
 
   /**
@@ -306,23 +406,28 @@ export class CollectionsService {
     body: { parcelCount?: number; deliveryAddress?: string; recipientName?: string; recipientPhone?: string; notes?: string },
   ) {
     const collection = await this.findOne(id, companyId);
-    if (collection.status === 'COLLECTED') {
-      // Replayed/duplicate confirmation: return the waybill that was created for
-      // this collection (exact link, not a name guess) instead of creating a second.
+    if (collection.status === CollectionStatus.COLLECTED) {
+      // Replayed/duplicate confirmation: return the waybill linked to this collection.
       const existing = await this.prisma.waybill.findFirst({
         where: { companyId, sourceCollectionId: id },
         select: { id: true, trackingNumber: true, status: true },
       });
+      if (!existing) {
+        throw new ConflictException('Collection is marked collected but has no linked waybill; contact support');
+      }
       return {
         success: false,
         alreadyCollected: true,
-        collection: { id, status: 'COLLECTED' },
+        collection: { id, status: CollectionStatus.COLLECTED },
         waybill: existing,
         message: 'Already collected',
       };
     }
+    if (!CONFIRMABLE_COLLECTION_STATUSES.includes(collection.status)) {
+      throw new BadRequestException(`A ${collection.status.toLowerCase()} collection cannot be confirmed as collected`);
+    }
 
-    const trackingNumber = `FO${Date.now().toString().slice(-8)}`;
+    const trackingNumber = `FO${randomBytes(6).toString('hex').toUpperCase()}`;
 
     // ONE transaction: claim the collection (compare-and-set), create the
     // waybill (with its provenance link) and record custody. Either all of it
@@ -330,14 +435,25 @@ export class CollectionsService {
     // without its waybill.
     const created = await this.prisma.$transaction(async (tx) => {
       const claim = await tx.collection.updateMany({
-        where: { id, companyId, status: { not: 'COLLECTED' } },
-        data: { status: 'COLLECTED', pickedUpAt: new Date() },
+        where: {
+          id,
+          companyId,
+          driverId: collection.driverId,
+          status: { in: CONFIRMABLE_COLLECTION_STATUSES },
+        },
+        data: { status: CollectionStatus.COLLECTED, pickedUpAt: new Date() },
       });
       if (claim.count === 0) {
-        const existing = await tx.waybill.findFirst({
-          where: { companyId, sourceCollectionId: id },
-          select: { id: true, trackingNumber: true, status: true },
-        });
+        const [latest, existing] = await Promise.all([
+          tx.collection.findFirst({ where: { id, companyId }, select: { status: true } }),
+          tx.waybill.findFirst({
+            where: { companyId, sourceCollectionId: id },
+            select: { id: true, trackingNumber: true, status: true },
+          }),
+        ]);
+        if (latest?.status !== CollectionStatus.COLLECTED || !existing) {
+          throw new ConflictException('Collection changed; refresh and try again');
+        }
         return { alreadyCollected: true as const, waybill: existing };
       }
 
