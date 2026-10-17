@@ -56,6 +56,21 @@ test('accepts a well-formed migrations directory', () => {
   f.cleanup();
 });
 
+test('warns that migration inventory validation is not migration-review or deployment approval', () => {
+  const f = fixture({
+    migrations: {
+      '20240101120000_init': 'CREATE TABLE "Widget" ("id" TEXT);',
+      '20240201120000_more': 'ALTER TABLE "Widget" ADD COLUMN "name" TEXT;',
+    },
+  });
+  const result = checkMigrations(f);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.warnings, [
+    '2 migration(s) present; this check validates file/provider shape only and does not attest migration review, data compatibility, or deployment safety.',
+  ]);
+  f.cleanup();
+});
+
 test('fails when the directory is missing or empty — deploy would silently no-op', () => {
   const missing = checkMigrations({
     migrationsDir: path.join(tmpdir(), 'flowops-does-not-exist'),
