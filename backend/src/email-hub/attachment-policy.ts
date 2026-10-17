@@ -25,6 +25,14 @@ const MIME_BY_EXTENSION: Record<string, string[]> = {
   '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
 };
 
+function containsControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 function hasSignature(file: UploadedFile, extension: string, mimeType: string): boolean {
   const bytes = file.buffer;
   if (mimeType === 'application/pdf') return bytes.length >= 5 && bytes.toString('ascii', 0, 5) === '%PDF-';
@@ -65,7 +73,7 @@ export function validateEmailAttachment(file: UploadedFile): void {
   const filename = String(file.originalname ?? '');
   if (
     !filename || filename.length > 255 || filename.includes('/') || filename.includes('\\') ||
-    /[\u0000-\u001f\u007f]/.test(filename) || filename === '.' || filename === '..'
+    containsControlCharacter(filename) || filename === '.' || filename === '..'
   ) {
     throw new BadRequestException('Attachment filename is invalid');
   }

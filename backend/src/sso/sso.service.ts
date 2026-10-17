@@ -411,15 +411,16 @@ export class SsoService implements OnModuleDestroy {
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
     let total = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    let result = await reader.read();
+    while (!result.done) {
+      const { value } = result;
       total += value.byteLength;
       if (total > MAX_IDP_RESPONSE_BYTES) {
         await reader.cancel();
         throw new Error('OIDC response exceeds the size limit');
       }
       chunks.push(value);
+      result = await reader.read();
     }
     const bytes = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
     return new UndiciResponse(bytes, {

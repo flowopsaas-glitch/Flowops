@@ -15,7 +15,7 @@ describe('outbound email attachment policy', () => {
     expect(() => validateEmailAttachment(supportedPdf)).not.toThrow();
   });
 
-  it('rejects executables, mismatched MIME/signatures, and control-character filenames', () => {
+  it('rejects executables, mismatched MIME/signatures, and CRLF header-injection filenames', () => {
     expect(() => validateEmailAttachment({
       ...supportedPdf,
       originalname: 'invoice.exe',
@@ -30,6 +30,16 @@ describe('outbound email attachment policy', () => {
       originalname: 'invoice\r\nBcc:attacker@example.net.pdf',
     })).toThrow(BadRequestException);
   });
+
+  it.each(['\u0000', '\u001f', '\u007f'])(
+    'rejects a filename containing control character %p',
+    (controlCharacter) => {
+      expect(() => validateEmailAttachment({
+        ...supportedPdf,
+        originalname: `invoice${controlCharacter}.pdf`,
+      })).toThrow(BadRequestException);
+    },
+  );
 
   it('enforces exact byte size and the 5 MiB per-file bound', () => {
     expect(() => validateEmailAttachment({ ...supportedPdf, size: pdf.length + 1 })).toThrow(BadRequestException);
