@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   annexureRegister,
   capacityFrameworkNotes,
@@ -34,13 +36,15 @@ export default function RailStatement() {
         </p>
       </div>
 
+      <ReferenceNotice />
+
       <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
         <b>The money is in the statement.</b> Chapter 5.2 carries the approved 2026/27 access
         tariffs (Table 17, effective 1 August 2026), the application fees (R125 000 freight /
         R42 000 passenger per Train Path) and the penalty regime — all live on{" "}
-        <a className="font-semibold underline" href="/rail/tariffs">
+        <Link className="font-semibold underline" to="/rail/tariffs">
           Tariffs &amp; charges
-        </a>
+        </Link>
         . Source: <code className="rounded bg-white px-1">{statementSource.file}</code> · sha256{" "}
         {statementSource.sha256.slice(0, 16)}… · {statementSource.author}.
       </div>
@@ -54,6 +58,9 @@ export default function RailStatement() {
               return (
                 <div key={c.n} className="rounded-xl border border-slate-200 bg-white">
                   <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    aria-controls={`rail-statement-chapter-${c.n}`}
                     onClick={() => setOpen(isOpen ? "" : c.n)}
                     className="flex w-full items-center justify-between px-4 py-3 text-left"
                   >
@@ -62,7 +69,7 @@ export default function RailStatement() {
                     </span>
                     <span className="text-[11px] text-slate-400">p{c.pages}</span>
                   </button>
-                  {isOpen && (
+                  <div id={`rail-statement-chapter-${c.n}`} hidden={!isOpen}>
                     <ul className="border-t border-slate-100 px-4 py-2 text-xs text-slate-600">
                       {c.sections.map((s) => (
                         <li key={s} className="py-0.5">
@@ -70,7 +77,7 @@ export default function RailStatement() {
                         </li>
                       ))}
                     </ul>
-                  )}
+                  </div>
                 </div>
               );
             })}

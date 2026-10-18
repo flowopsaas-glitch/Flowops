@@ -141,8 +141,14 @@ describe('platform smoke — tenant dashboard', () => {
     expect(screen.getByText(/R\s*1[\s\u00a0\u202f]*843/)).toBeInTheDocument();
     expect(screen.getByText('26.4h')).toBeInTheDocument(); // 26.4h < 48 -> hours form
 
-    // shell rendered with live metrics decoded
+    // shell rendered with live metrics decoded and truthful socket state
     expect(screen.getByTestId('cmd-header')).toBeInTheDocument();
+    expect(screen.getByText(/Telemetry socket disconnected/i)).toBeInTheDocument();
+    expect(screen.getByText(/REST snapshot synced/i)).toBeInTheDocument();
+    const explanationButton = screen.getByRole('button', { name: 'Show Pending Collection explanation' });
+    expect(explanationButton).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(explanationButton);
+    expect(screen.getByRole('button', { name: 'Return to Pending Collection metric' })).toBeInTheDocument();
 
     expect(platformErrors()).toEqual([]);
   });
@@ -162,6 +168,41 @@ describe('platform smoke — tenant dashboard', () => {
     });
     // Page did not crash; error boundary not triggered
     expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+  });
+
+  it('shows unavailable metrics honestly and retries failed dashboard sources', async () => {
+    let shouldFail = true;
+    h.apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('/dashboard/metrics')) {
+        if (shouldFail) throw new Error('Network Error');
+        return envelope({ collections: 12, activeDrivers: 3, transit: 5, stock: 8, risks: 1, drivers: [] });
+      }
+      if (url.includes('/dashboard/kpis')) {
+        if (shouldFail) throw new Error('Network Error');
+        return envelope(KPI_PAYLOAD);
+      }
+      if (url.includes('/dashboard/live-etas')) return envelope([]);
+      return envelope({});
+    });
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('No metrics snapshot is available');
+    });
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Retry dashboard data' })).toBeInTheDocument();
+
+    shouldFail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry dashboard data' }));
+    await waitFor(() => {
+      expect(screen.getByText('12')).toBeInTheDocument();
+      expect(screen.getByText('94.2%')).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
   });
 
   it('renders null-valued KPIs (fresh tenant with no data) without crashing', async () => {

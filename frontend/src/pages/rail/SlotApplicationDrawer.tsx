@@ -11,6 +11,7 @@ import {
   availableActions, envelopeLabel, envelopeTone, formatDate, hasMobilisationClock, mobilisationTone, slotStatusTone,
 } from "../../lib/railSlot";
 import { useToast } from "../../components/ToastProvider";
+import { useDismissOnEscape } from "../../components/patterns";
 import { EnvelopeResultCard } from "./EnvelopeChecker";
 import { Banner, Field, Modal, Pill, btnDanger, btnNeutral, btnPrimary, btnWarn, inputCls } from "./railUi";
 
@@ -47,6 +48,7 @@ export default function SlotApplicationDrawer({ id, canWrite, canSign, corridors
   const [allocDate, setAllocDate] = useState("");
   const [imRef, setImRef] = useState("");
   const [linkId, setLinkId] = useState("");
+  useDismissOnEscape(!modal, onClose);
 
   const load = useCallback(async () => {
     const a = await getSlotApplication(id);
@@ -98,7 +100,7 @@ export default function SlotApplicationDrawer({ id, canWrite, canSign, corridors
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
-      <div className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`Slot application ${app.applicationNumber}`}>
+      <div className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Slot application ${app.applicationNumber}`}>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -108,7 +110,7 @@ export default function SlotApplicationDrawer({ id, canWrite, canSign, corridors
             </div>
             <p className="mt-1 text-sm text-slate-400">{corridor?.name ?? app.corridorCode} corridor{app.commodity ? ` · ${app.commodity}` : ""}</p>
           </div>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"><X className="h-5 w-5" /></button>
         </div>
 
         {app.forfeitureFlaggedAt && !app.firstOperatedAt && (

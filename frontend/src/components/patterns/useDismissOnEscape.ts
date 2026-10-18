@@ -18,23 +18,41 @@ import { useEffect } from 'react';
  * focus sits inside the overlay, which is the common case: an overlay that has
  * not moved focus cannot hear keydown from its own subtree.
  */
+let nextOverlayId = 0;
+const activeOverlays = new Map<number, number>();
+
 export function useDismissOnEscape(
   /** Pass `false` while dismissal would discard work, e.g. mid-save. */
   enabled: boolean,
   onDismiss: () => void,
+  /** Nested dialogs should pass a higher priority than their parent drawer. */
+  priority = 0,
 ): void {
   useEffect(() => {
     if (!enabled) return;
+    const id = ++nextOverlayId;
+    activeOverlays.set(id, priority);
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
-      event.stopPropagation();
+      const top = [...activeOverlays.entries()].reduce<[number, number] | null>(
+        (current, candidate) => !current || candidate[1] > current[1] || (candidate[1] === current[1] && candidate[0] > current[0])
+          ? candidate
+          : current,
+        null,
+      );
+      if (top?.[0] !== id) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       onDismiss();
     }
 
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [enabled, onDismiss]);
+    return () => {
+      activeOverlays.delete(id);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [enabled, onDismiss, priority]);
 }
 
 export default useDismissOnEscape;

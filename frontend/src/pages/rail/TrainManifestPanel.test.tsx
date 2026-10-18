@@ -89,6 +89,13 @@ afterEach(() => {
 });
 
 describe('TrainManifestPanel', () => {
+  it('shows an API failure instead of saying there are no manifests', async () => {
+    h.listTrainManifests.mockRejectedValueOnce(new Error('manifest API unavailable'));
+    render(<TrainManifestPanel canWrite canSign />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not load train manifests: manifest API unavailable/);
+    expect(screen.queryByText(/No train manifests yet/i)).toBeNull();
+  });
+
   it('shows the empty state with the snapshot explanation', async () => {
     h.listTrainManifests.mockResolvedValue([]);
     render(<TrainManifestPanel canWrite canSign />);

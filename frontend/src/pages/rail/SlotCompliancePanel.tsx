@@ -29,23 +29,39 @@ export default function SlotCompliancePanel({ canWrite, canSign }: { canWrite: b
   const [corridors, setCorridors] = useState<Corridor[]>([]);
   const [consignments, setConsignments] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<Record<"overview" | "compliance" | "applications" | "corridors", string | null>>({
+    overview: null, compliance: null, applications: null, corridors: null,
+  });
+  const [consignmentsError, setConsignmentsError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [docModal, setDocModal] = useState<RailComplianceDocType | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const [o, c, a, cor, cons] = await Promise.all([
-        getSlotOverview(), getCompliance(), listSlotApplications(), getCorridors(), listConsignments().catch(() => [] as RailConsignment[]),
-      ]);
-      setOverview(o); setCompliance(c); setApps(a); setCorridors(cor); setConsignments(cons);
-    } catch (e) {
-      showToast(`Could not load slot applications: ${(e as Error)?.message ?? e}`, "error");
-    } finally {
-      setLoading(false);
+    const [overviewResult, complianceResult, applicationsResult, corridorsResult, consignmentsResult] = await Promise.allSettled([
+      getSlotOverview(), getCompliance(), listSlotApplications(), getCorridors(), listConsignments(),
+    ]);
+    const message = (reason: unknown) => String((reason as Error)?.message ?? reason);
+    const errors = { overview: null, compliance: null, applications: null, corridors: null } as Record<"overview" | "compliance" | "applications" | "corridors", string | null>;
+    if (overviewResult.status === "fulfilled") setOverview(overviewResult.value);
+    else { errors.overview = message(overviewResult.reason); setOverview(null); }
+    if (complianceResult.status === "fulfilled") setCompliance(complianceResult.value);
+    else { errors.compliance = message(complianceResult.reason); setCompliance(null); }
+    if (applicationsResult.status === "fulfilled") setApps(applicationsResult.value);
+    else { errors.applications = message(applicationsResult.reason); setApps([]); }
+    if (corridorsResult.status === "fulfilled") setCorridors(corridorsResult.value);
+    else { errors.corridors = message(corridorsResult.reason); setCorridors([]); }
+    if (consignmentsResult.status === "fulfilled") {
+      setConsignments(consignmentsResult.value);
+      setConsignmentsError(null);
+    } else {
+      setConsignmentsError(message(consignmentsResult.reason));
+      setConsignments([]);
     }
-  }, [showToast]);
+    setLoadErrors(errors);
+    setLoading(false);
+  }, []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -70,6 +86,21 @@ export default function SlotCompliancePanel({ canWrite, canSign }: { canWrite: b
   const att = overview?.applications.needingAttention.length ?? 0;
   return (
     <div data-testid="slot-compliance-panel">
+      {loadErrors.overview && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Slot overview metrics unavailable: {loadErrors.overview}
+        </div>
+      )}
+      {loadErrors.corridors && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Corridor reference data unavailable: {loadErrors.corridors}
+        </div>
+      )}
+      {consignmentsError && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Consignment data for envelope checking unavailable: {consignmentsError}
+        </div>
+      )}
       {rsr && (
         <Banner tone={rsrTone(rsr.level)} title={`RSR Safety Permit — ${rsr.level.replace("_", " ")}${rsr.validUntil ? ` · valid until ${formatDate(rsr.validUntil)} (${describeDaysLeft(rsr.daysRemaining)})` : ""}`}>
           {rsr.message}{rsrBlocksSubmission(rsr.level) ? " Submitting a slot application is blocked." : ""}
@@ -83,8 +114,8 @@ export default function SlotCompliancePanel({ canWrite, canSign }: { canWrite: b
 
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {([
-          ["Applications", overview?.applications.total ?? 0], ["Allocated", overview?.applications.byStatus.ALLOCATED ?? 0],
-          ["Clocks needing attention", att], ["Awaiting assessment", (overview?.applications.byStatus.SUBMITTED ?? 0) + (overview?.applications.byStatus.UNDER_ASSESSMENT ?? 0)],
+          ["Applications", overview?.applications.total ?? "—"], ["Allocated", overview?.applications.byStatus.ALLOCATED ?? "—"],
+          ["Clocks needing attention", overview ? att : "—"], ["Awaiting assessment", overview ? (overview.applications.byStatus.SUBMITTED ?? 0) + (overview.applications.byStatus.UNDER_ASSESSMENT ?? 0) : "—"],
         ] as const).map(([label, value]) => (
           <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
             <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">{label}</div>
@@ -96,8 +127,13 @@ export default function SlotCompliancePanel({ canWrite, canSign }: { canWrite: b
       {/* ── Compliance register ───────────────────────────────────────────── */}
       <Section title="Operator compliance documents" right={<button className={btnNeutral} onClick={() => void load()}><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</button>}>
         <p className="mb-3 text-xs text-slate-400">An expired, revoked or unverified document is a <b>hard block</b>: slot applications cannot be submitted and first operation cannot be recorded until a valid one is on file.</p>
-        <div className="overflow-hidden rounded-xl border border-white/10">
-          <table className="w-full text-sm">
+        {loadErrors.compliance ? (
+          <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-200">
+            Compliance documents unavailable: {loadErrors.compliance}. Document presence cannot be verified.
+          </div>
+        ) : (
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table aria-label="Operator compliance documents" className="min-w-[720px] w-full text-sm">
             <thead className="bg-white/[0.03] text-left text-[11px] uppercase tracking-wider text-slate-400">
               <tr><th className="px-3 py-2">Document</th><th className="px-3 py-2">Needed for</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Valid until</th><th className="px-3 py-2 text-right">Actions</th></tr>
             </thead>
@@ -128,22 +164,34 @@ export default function SlotCompliancePanel({ canWrite, canSign }: { canWrite: b
             </tbody>
           </table>
         </div>
+        )}
       </Section>
 
       {/* ── Applications ──────────────────────────────────────────────────── */}
-      <Section title="Slot applications" right={canWrite ? <button className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /> New application</button> : undefined}>
-        {apps.length === 0 ? (
+      <Section title="Slot applications" right={canWrite ? <button type="button" className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /> New application</button> : undefined}>
+        {loadErrors.applications ? (
+          <div role="alert" className="py-8 text-center text-sm text-rose-300">Application records unavailable: {loadErrors.applications}</div>
+        ) : apps.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-500">No slot applications yet.</div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-white/10">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table aria-label="Slot applications" className="min-w-[800px] w-full text-sm">
               <thead className="bg-white/[0.03] text-left text-[11px] uppercase tracking-wider text-slate-400">
                 <tr><th className="px-3 py-2">Application</th><th className="px-3 py-2">Corridor</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Requested window</th><th className="px-3 py-2">Mobilisation (60 days)</th><th className="px-3 py-2">Envelope</th></tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {apps.map((a) => (
-                  <tr key={a.id} className="cursor-pointer hover:bg-white/[0.03]" onClick={() => setOpenId(a.id)}>
-                    <td className="px-3 py-2.5 font-mono font-semibold text-emerald-400">{a.applicationNumber}</td>
+                  <tr key={a.id} className="hover:bg-white/[0.03]">
+                    <td className="px-3 py-2.5 font-mono font-semibold text-emerald-400">
+                      <button
+                        type="button"
+                        onClick={() => setOpenId(a.id)}
+                        aria-label={`Open slot application ${a.applicationNumber}`}
+                        className="rounded text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
+                      >
+                        {a.applicationNumber}
+                      </button>
+                    </td>
                     <td className="px-3 py-2.5 text-slate-300">{corridorName(a.corridorCode)}</td>
                     <td className="px-3 py-2.5"><Pill tone={slotStatusTone(a.status)}>{SLOT_STATUS_LABEL[a.status]}</Pill></td>
                     <td className="px-3 py-2.5 text-xs text-slate-400">{formatDate(a.requestedFrom)} → {formatDate(a.requestedUntil)}</td>

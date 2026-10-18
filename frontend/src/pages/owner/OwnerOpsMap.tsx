@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { CircleMarker, MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CircleMarker, MapContainer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Activity, AlertTriangle, Building2, RefreshCw } from "lucide-react";
 import { api } from "../../api/client";
+import OpenStreetMapLayer from "../../components/maps/OpenStreetMapLayer";
+import { getMapCoordinates } from "../../lib/mapCoordinates";
 
 type Courier = {
   id: string;
   status: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   tenant: string | null;
   tenantId: string | null;
   driver: string | null;
@@ -20,8 +22,8 @@ type Courier = {
 };
 type Exception = {
   id: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   status: string;
   tenant: string | null;
   trackingNumber: string;
@@ -32,6 +34,22 @@ type LiveOps = {
   couriers: Courier[];
   exceptions: Exception[];
 };
+
+function unwrapLiveOps(raw: any): LiveOps | null {
+  const body = raw?.data ?? raw;
+  if (
+    !body ||
+    typeof body !== "object" ||
+    typeof body.generatedAt !== "string" ||
+    !body.summary ||
+    !Number.isFinite(body.summary.activeCouriers) ||
+    !Number.isFinite(body.summary.exceptions) ||
+    !Number.isFinite(body.summary.tenantsActive) ||
+    !Array.isArray(body.couriers) ||
+    !Array.isArray(body.exceptions)
+  ) return null;
+  return body as LiveOps;
+}
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "#64748b",
@@ -76,26 +94,31 @@ export default function OwnerOpsMap() {
   const [data, setData] = useState<LiveOps | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [tenantFilter, setTenantFilter] = useState("all");
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res: any = await api.get("/owner/ops/live");
-      setData((res?.data ?? res) as LiveOps);
+      const raw = await api.get("/owner/ops/live");
+      const response = unwrapLiveOps(raw);
+      if (!response) throw new Error("The live operations service returned an unexpected response.");
+      setData(response);
+      setLastLoadedAt(new Date());
     } catch (err: any) {
-      setError(err?.message || "Failed to load live operations.");
+      const message = err?.response?.data?.message ?? err?.message ?? "Failed to load live operations.";
+      setError(Array.isArray(message) ? message.join(", ") : String(message));
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(() => void load(), 30_000);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
 
   // Unique tenant names for filter
   const tenants = useMemo(() => {
@@ -107,15 +130,32 @@ export default function OwnerOpsMap() {
     return Array.from(names) as string[];
   }, [data]);
 
-  const couriers = useMemo(() => {
-    const base = (data?.couriers ?? []).filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lng));
-    return tenantFilter === "all" ? base : base.filter((c) => c.tenant === tenantFilter);
-  }, [data, tenantFilter]);
-
-  const exceptions = useMemo(() => {
-    const base = (data?.exceptions ?? []).filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.lng));
-    return tenantFilter === "all" ? base : base.filter((e) => e.tenant === tenantFilter);
-  }, [data, tenantFilter]);
+  const visibleCouriers = useMemo(
+    () => (data?.couriers ?? []).filter((courier) => tenantFilter === "all" || courier.tenant === tenantFilter),
+    [data, tenantFilter],
+  );
+  const visibleExceptions = useMemo(
+    () => (data?.exceptions ?? []).filter((exception) => tenantFilter === "all" || exception.tenant === tenantFilter),
+    [data, tenantFilter],
+  );
+  const mappableCouriers = useMemo(
+    () => visibleCouriers.flatMap((courier) => {
+      const coordinates = getMapCoordinates(courier.lat, courier.lng);
+      return coordinates ? [{ courier, coordinates }] : [];
+    }),
+    [visibleCouriers],
+  );
+  const mappableExceptions = useMemo(
+    () => visibleExceptions.flatMap((exception) => {
+      const coordinates = getMapCoordinates(exception.lat, exception.lng);
+      return coordinates ? [{ exception, coordinates }] : [];
+    }),
+    [visibleExceptions],
+  );
+  const unlocatedCourierCount = visibleCouriers.length - mappableCouriers.length;
+  const unlocatedExceptionCount = visibleExceptions.length - mappableExceptions.length;
+  const liveTenantCount = new Set(visibleCouriers.map((courier) => courier.tenantId).filter(Boolean)).size;
+  const hasSnapshot = data !== null;
 
   return (
     <div className="space-y-6">
@@ -128,43 +168,63 @@ export default function OwnerOpsMap() {
             </div>
             <h1 className="mt-4 text-3xl font-black tracking-tight text-white">Platform Ops Map</h1>
             <p className="mt-2 max-w-3xl text-slate-300">
-              Every active courier and delivery exception across all tenants. Auto-refreshes every 30s.
+              Couriers with reported GPS and geocoded delivery exceptions across tenants. Auto-refreshes every 30s.
+            </p>
+            <p className="mt-1 text-xs text-white/35" role="status">
+              {loading
+                ? hasSnapshot ? "Refreshing snapshot…" : "Loading live operations…"
+                : lastLoadedAt
+                  ? `Last successful snapshot ${lastLoadedAt.toLocaleTimeString("en-ZA")}`
+                  : "Live operations snapshot not yet loaded"}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {tenants.length > 0 ? (
               <select value={tenantFilter} onChange={(e) => setTenantFilter(e.target.value)}
-                className="rounded-2xl border border-white/10 bg-[#071224] px-4 py-2.5 text-sm text-white outline-none focus:border-blue-400">
+                aria-label="Filter live operations by tenant"
+                className="rounded-2xl border border-white/10 bg-[#071224] px-4 py-2.5 text-sm text-white outline-none focus:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-400">
                 <option value="all">All tenants</option>
                 {tenants.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             ) : null}
-            <button onClick={load} className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-200">
-              <RefreshCw className="h-4 w-4" /> Refresh
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading}
+              aria-label="Refresh live operations"
+              className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </button>
           </div>
         </div>
-        {error ? <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div> : null}
+        {error && (
+          <div role="alert" className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <strong>{hasSnapshot ? "Refresh failed." : "Live operations unavailable."}</strong>{" "}
+            {hasSnapshot
+              ? `Showing the last successful snapshot${lastLoadedAt ? ` from ${lastLoadedAt.toLocaleTimeString("en-ZA")}` : ""}. `
+              : "No zero-count or empty state can be confirmed. "}
+            {error}
+          </div>
+        )}
       </div>
 
       {/* Summary strip */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Stat icon={<Activity className="h-5 w-5" />} label="Active Couriers" value={String(couriers.length)} />
-        <Stat icon={<Building2 className="h-5 w-5" />} label="Tenants Live" value={String(data?.summary.tenantsActive ?? 0)} />
-        <Stat icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" value={String(exceptions.length)} tone="text-rose-300" />
+        <Stat icon={<Activity className="h-5 w-5" />} label="Active Couriers" value={hasSnapshot ? String(visibleCouriers.length) : "—"} />
+        <Stat icon={<Building2 className="h-5 w-5" />} label="Tenants Live" value={hasSnapshot ? String(liveTenantCount) : "—"} />
+        <Stat icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" value={hasSnapshot ? String(visibleExceptions.length) : "—"} tone="text-rose-300" />
       </div>
 
       {/* Map + Exception sidebar */}
       <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         {/* Map */}
         <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.05] shadow-xl">
-          <div className="h-[520px] w-full">
-            <MapContainer center={ZA_CENTER} zoom={6} style={{ height: "100%", width: "100%" }} scrollWheelZoom attributionControl={false}>
-              <TileLayer
-                url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              {exceptions.map((e) => (
-                <CircleMarker key={`x-${e.id}`} center={[e.lat, e.lng]} radius={10}
+          <div className="relative h-[520px] w-full">
+            <MapContainer center={ZA_CENTER} zoom={6} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
+              <OpenStreetMapLayer />
+              {mappableExceptions.map(({ exception: e, coordinates }) => (
+                <CircleMarker key={`x-${e.id}`} center={[coordinates.lat, coordinates.lng]} radius={10}
                   pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.35, weight: 1 }}>
                   <Popup>
                     <div style={{ fontWeight: 700 }}>{e.trackingNumber}</div>
@@ -173,8 +233,8 @@ export default function OwnerOpsMap() {
                   </Popup>
                 </CircleMarker>
               ))}
-              {couriers.map((c) => (
-                <Marker key={`c-${c.id}`} position={[c.lat, c.lng]} icon={courierPin(STATUS_COLOR[c.status] ?? "#06b6d4")}>
+              {mappableCouriers.map(({ courier: c, coordinates }) => (
+                <Marker key={`c-${c.id}`} position={[coordinates.lat, coordinates.lng]} icon={courierPin(STATUS_COLOR[c.status] ?? "#06b6d4")}>
                   <Popup>
                     <div style={{ fontWeight: 700 }}>{c.driver || "Courier"}{c.vehicleReg ? ` · ${c.vehicleReg}` : ""}</div>
                     <div>{c.tenant}</div>
@@ -184,6 +244,18 @@ export default function OwnerOpsMap() {
                 </Marker>
               ))}
             </MapContainer>
+            <div role="status" className="absolute left-4 top-4 z-[1000] max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/10 bg-slate-950/90 px-4 py-3 text-xs text-white/80 shadow-xl">
+              {hasSnapshot
+                ? `${mappableCouriers.length} courier${mappableCouriers.length === 1 ? "" : "s"} and ${mappableExceptions.length} exception${mappableExceptions.length === 1 ? "" : "s"} plotted.`
+                : loading
+                  ? "Loading map positions…"
+                  : "Map positions unavailable."}
+              {(unlocatedCourierCount + unlocatedExceptionCount) > 0 && (
+                <span className="mt-1 block text-amber-200">
+                  {unlocatedCourierCount + unlocatedExceptionCount} record{unlocatedCourierCount + unlocatedExceptionCount === 1 ? "" : "s"} retained in the source counts or exception list but not plotted because coordinates are invalid.
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -192,31 +264,42 @@ export default function OwnerOpsMap() {
           <div className="flex items-center justify-between mb-4">
             <div className="text-base font-black text-white">Exceptions</div>
             <span className="rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-bold text-rose-200">
-              {exceptions.length}
+              {hasSnapshot ? visibleExceptions.length : "—"}
             </span>
           </div>
-          {exceptions.length === 0 ? (
+          {loading && !hasSnapshot ? (
+            <div role="status" className="flex-1 grid place-items-center text-sm text-slate-400 text-center py-8">
+              Loading exception data…
+            </div>
+          ) : !hasSnapshot && error ? (
+            <div role="status" className="flex-1 grid place-items-center text-sm text-amber-200 text-center py-8">
+              Exception data unavailable; retry to confirm the current list.
+            </div>
+          ) : visibleExceptions.length === 0 ? (
             <div className="flex-1 grid place-items-center text-sm text-slate-400 text-center py-8">
-              No delivery exceptions{tenantFilter !== "all" ? " for this tenant" : ""}.
+              No delivery exceptions{tenantFilter !== "all" ? " for this tenant" : " in this snapshot"}.
             </div>
           ) : (
             <div className="space-y-2 overflow-y-auto flex-1 max-h-[440px] pr-1">
-              {exceptions.map((e) => (
-                <div key={e.id} className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-mono text-xs font-bold text-white truncate">{e.trackingNumber}</div>
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${
-                      e.status === "FAILED_DELIVERY" ? "border-rose-400/20 bg-rose-500/10 text-rose-200" : "border-amber-400/20 bg-amber-500/10 text-amber-200"
-                    }`}>
-                      {STATUS_LABEL[e.status] ?? e.status}
-                    </span>
+              {visibleExceptions.map((e) => {
+                const location = getMapCoordinates(e.lat, e.lng);
+                return (
+                  <div key={e.id} className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-mono text-xs font-bold text-white truncate">{e.trackingNumber}</div>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${
+                        e.status === "FAILED_DELIVERY" ? "border-rose-400/20 bg-rose-500/10 text-rose-200" : "border-amber-400/20 bg-amber-500/10 text-amber-200"
+                      }`}>
+                        {STATUS_LABEL[e.status] ?? e.status}
+                      </span>
+                    </div>
+                    {e.tenant ? <div className="mt-1 text-[11px] text-slate-400">{e.tenant}</div> : null}
+                    <div className="mt-0.5 text-[10px] text-white/30">
+                      {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "Location unavailable — not plotted"}
+                    </div>
                   </div>
-                  {e.tenant ? <div className="mt-1 text-[11px] text-slate-400">{e.tenant}</div> : null}
-                  <div className="mt-0.5 text-[10px] text-white/30">
-                    {Number.isFinite(e.lat) ? `${e.lat.toFixed(4)}, ${e.lng.toFixed(4)}` : "No coords"}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -235,9 +318,9 @@ export default function OwnerOpsMap() {
         </span>
       </div>
 
-      {!loading && couriers.length === 0 && exceptions.length === 0 ? (
+      {hasSnapshot && !loading && !error && visibleCouriers.length === 0 && visibleExceptions.length === 0 ? (
         <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-slate-400">
-          No live telemetry yet. Couriers appear here once shipments report GPS positions and addresses are geocoded.
+          This snapshot contains no active courier positions or delivery exceptions{tenantFilter !== "all" ? " for the selected tenant" : ""}.
         </div>
       ) : null}
     </div>

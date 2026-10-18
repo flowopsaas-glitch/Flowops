@@ -1,4 +1,5 @@
 import React from "react";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   registerAnnexure33aNote,
   registerContents,
@@ -28,6 +29,8 @@ export default function RailRegister() {
           {registerSource.validity}
         </p>
       </div>
+
+      <ReferenceNotice />
 
       <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
         <b>Note (as delivered):</b> {registerSource.note}

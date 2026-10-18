@@ -96,13 +96,15 @@ describe('LiveTrackingPanel', () => {
     expect(screen.getByText(/X-Device-Token/)).toBeTruthy();
   });
 
-  it('lists devices with health signals and opens the trail on click', async () => {
+  it('lists devices with health signals and exposes a keyboard-operable position selector', async () => {
     render(<LiveTrackingPanel canWrite />);
     await waitFor(() => expect(screen.getByText('WT-000123')).toBeTruthy());
     expect(screen.getByText('Ore rake 14')).toBeTruthy();
     expect(screen.getAllByText('silent').length).toBeGreaterThan(0); // the silent device wears the badge
     expect(screen.getByText('WT-000456')).toBeTruthy();
-    fireEvent.click(screen.getByText('WT-000123'));
+    const selectDevice = screen.getByRole('button', { name: 'Show positions for WT-000123' });
+    expect(selectDevice).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(selectDevice);
     await waitFor(() => expect(h.getDevicePoints).toHaveBeenCalledWith('d1', { limit: 200 }));
     await waitFor(() => expect(h.getDeviceSummary).toHaveBeenCalledWith('d1', 24));
     await waitFor(() => expect(screen.getByTestId('rail-telemetry-map')).toBeTruthy());
@@ -120,6 +122,51 @@ describe('LiveTrackingPanel', () => {
     ));
     await waitFor(() => expect(screen.getByText(/shown once/i)).toBeTruthy());
     expect(screen.getByText('super-secret-token')).toBeTruthy();
+  });
+
+  it('reports clipboard success only after writeText succeeds and keeps the token available on failure', async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockRejectedValue(new Error('permission denied'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    try {
+      render(<LiveTrackingPanel canWrite />);
+      fireEvent.click(await screen.findByRole('button', { name: /register device/i }));
+      fireEvent.change(screen.getByLabelText(/device code/i), { target: { value: 'wt-000999' } });
+      fireEvent.click(screen.getByRole('button', { name: /^register$/i }));
+      expect(await screen.findByText('super-secret-token')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /copy/i }));
+      await waitFor(() => expect(h.showToast).toHaveBeenCalledWith(
+        expect.stringMatching(/Could not copy token.*permission denied.*manually/i), 'error',
+      ));
+      expect(writeText).toHaveBeenCalledWith('super-secret-token');
+      expect(h.showToast).not.toHaveBeenCalledWith('Copied.', 'success');
+      expect(screen.getByText('super-secret-token')).toBeTruthy();
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
+  it('does not describe a failed selected-device position request as an empty position set', async () => {
+    h.listRailDevices.mockResolvedValue([SILENT_DEVICE]);
+    h.listTelemetryAlerts.mockResolvedValue([]);
+    h.getDevicePoints.mockRejectedValueOnce(new Error('position endpoint unavailable'));
+    render(<LiveTrackingPanel canWrite />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show positions for WT-000456' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not load selected device positions.*position endpoint unavailable/);
+    expect(screen.getByText(/selected device's position state could not be verified/i)).toBeTruthy();
+    expect(screen.queryByText(/No positions yet/i)).toBeNull();
+  });
+
+  it('does not describe unavailable devices or alerts as empty data', async () => {
+    h.listRailDevices.mockRejectedValueOnce(new Error('device API unavailable'));
+    h.listTelemetryAlerts.mockRejectedValueOnce(new Error('alert API unavailable'));
+    render(<LiveTrackingPanel canWrite />);
+    expect(await screen.findByText(/Position state cannot be verified/i)).toBeTruthy();
+    expect(screen.getByText(/Device registry unavailable: device API unavailable/i)).toBeTruthy();
+    expect(screen.getByText(/Could not refresh health alerts: alert API unavailable/i)).toBeTruthy();
+    expect(screen.queryByText('No devices registered yet.')).toBeNull();
+    expect(screen.queryByText(/No open alerts/i)).toBeNull();
   });
 
   it('acknowledges and resolves alerts', async () => {

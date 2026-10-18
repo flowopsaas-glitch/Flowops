@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   capacityDb,
   capacityFYNote,
@@ -80,6 +81,8 @@ export default function RailCapacity() {
           </p>
         </div>
       </div>
+
+      <ReferenceNotice />
 
       <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
         <b>Period discipline.</b> {capacityFYNote[fy]} — every figure on this page is labelled{" "}

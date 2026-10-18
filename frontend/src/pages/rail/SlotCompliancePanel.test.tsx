@@ -57,6 +57,7 @@ vi.mock('../../api/railSlotApi', async (importOriginal) => ({
 }));
 
 import SlotCompliancePanel from './SlotCompliancePanel';
+import { getCompliance, listSlotApplications } from '../../api/railSlotApi';
 
 const doc = (over: Record<string, unknown> = {}) => ({
   id: 'd1', docType: 'RSR_PERMIT', status: 'VALID', effectiveStatus: 'VALID', daysRemaining: 211, validFrom: '2026-01-01T00:00:00Z', validUntil: '2027-05-01T00:00:00Z', referenceNumber: 'RSR-1', ...over,
@@ -118,6 +119,18 @@ describe('reference data honesty', () => {
 });
 
 describe('documents register', () => {
+  it('treats absent status buckets as zero rather than rendering NaN', async () => {
+    await mount();
+    expect(screen.getByText('Awaiting assessment').parentElement?.textContent).toMatch(/Awaiting assessment0$/);
+  });
+
+  it('does not interpret a failed compliance request as eight missing documents', async () => {
+    vi.mocked(getCompliance).mockRejectedValueOnce(new Error('compliance API unavailable'));
+    await mount();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Compliance documents unavailable: compliance API unavailable/);
+    expect(screen.queryByText('NOT ON FILE')).toBeNull();
+  });
+
   it('lists all eight document types, marking absent ones NOT ON FILE', async () => {
     await mount();
     for (const label of ['RSR Safety Permit', 'Insurance', 'Rolling-stock certification', 'Train-crew certification', 'Dangerous-goods authorisation', 'Interface agreement', 'Access contract (RAA)', 'Security deposit / guarantee']) {
@@ -159,6 +172,13 @@ describe('documents register', () => {
 });
 
 describe('slot applications and the 60-day mobilisation countdown badge', () => {
+  it('surfaces a failed applications request instead of saying there are no applications', async () => {
+    vi.mocked(listSlotApplications).mockRejectedValueOnce(new Error('application API unavailable'));
+    await mount();
+    expect(screen.getByText(/Application records unavailable: application API unavailable/)).toBeTruthy();
+    expect(screen.queryByText('No slot applications yet.')).toBeNull();
+  });
+
   it('shows the server-computed countdown, amber when due soon, red when flagged', async () => {
     h.state.apps = [
       h.app({ id: 'a1', applicationNumber: 'SA-ON', status: 'ALLOCATED', mobilisation: h.mob('ON_TRACK', '47 day(s) to mobilise', 47, '2026-11-18T00:00:00Z') }),

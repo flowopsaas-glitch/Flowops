@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
+import { useDismissOnEscape } from "../../components/patterns";
 import { TONE_CLASS, type Tone } from "../../lib/railSlot";
 
 export const inputCls =
@@ -42,17 +43,19 @@ export function Banner({ tone, title, children }: { tone: Tone; title: string; c
 }
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  useDismissOnEscape(true, onClose, 1);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
         className={`max-h-[90vh] w-full ${wide ? "max-w-2xl" : "max-w-lg"} overflow-y-auto rounded-2xl border border-white/10 bg-[#0b0f14] p-6`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={title}
       >
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-black text-white">{title}</h3>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60">
             <X className="h-5 w-5" />
           </button>
         </div>

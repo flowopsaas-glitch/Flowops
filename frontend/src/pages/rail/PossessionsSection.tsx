@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, RefreshCw } from "lucide-react";
 import {
   cancelPossession, completePossession, createPossession, getPossessionConflicts, listPossessions,
   type ConflictScan, type PossessionKind, type PossessionWindow,
@@ -18,18 +18,41 @@ export default function PossessionsSection({ canWrite }: { canWrite: boolean }) 
   const [scan, setScan] = useState<ConflictScan | null>(null);
   const [corridors, setCorridors] = useState<Corridor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [windowsError, setWindowsError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [corridorsError, setCorridorsError] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [showNew, setShowNew] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const [w, s, c] = await Promise.all([listPossessions(), getPossessionConflicts().catch(() => null), getCorridors().catch(() => [] as Corridor[])]);
-      setRows(w); setScan(s); setCorridors(c);
-    } catch (e) {
-      showToast(`Could not load possession windows: ${(e as Error)?.message ?? e}`, "error");
-    } finally { setLoading(false); }
-  }, [showToast]);
+    const [windowsResult, scanResult, corridorsResult] = await Promise.allSettled([
+      listPossessions(), getPossessionConflicts(), getCorridors(),
+    ]);
+    const message = (reason: unknown) => String((reason as Error)?.message ?? reason);
+    if (windowsResult.status === "fulfilled") {
+      setRows(windowsResult.value);
+      setWindowsError(null);
+    } else {
+      setRows([]);
+      setWindowsError(message(windowsResult.reason));
+    }
+    if (scanResult.status === "fulfilled") {
+      setScan(scanResult.value);
+      setScanError(null);
+    } else {
+      setScan(null);
+      setScanError(message(scanResult.reason));
+    }
+    if (corridorsResult.status === "fulfilled") {
+      setCorridors(corridorsResult.value);
+      setCorridorsError(null);
+    } else {
+      setCorridors([]);
+      setCorridorsError(message(corridorsResult.reason));
+    }
+    setLoading(false);
+  }, []);
   useEffect(() => { void load(); }, [load]);
 
   const corridorName = (code: string) => corridors.find((c) => c.code === code)?.name ?? code;
@@ -47,17 +70,42 @@ export default function PossessionsSection({ canWrite }: { canWrite: boolean }) 
   return (
     <Section
       title="Possession windows"
-      right={canWrite && <button type="button" className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /> Record possession window</button>}
+      right={
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={btnNeutral} onClick={() => void load()} disabled={loading} aria-label="Refresh possession data">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </button>
+          {canWrite && <button type="button" className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /> Record possession window</button>}
+        </div>
+      }
     >
-      <PossessionConflictBanner scan={scan} />
+      {windowsError && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Possession-window records unavailable: {windowsError}. An empty list is not implied.
+        </div>
+      )}
+      {scanError ? (
+        <div role="alert" className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
+          Possession conflict scan unavailable: {scanError}. No all-clear status is implied.
+        </div>
+      ) : !loading && scan === null ? (
+        <div role="note" className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
+          Possession conflict scan unavailable. No all-clear status is implied.
+        </div>
+      ) : <PossessionConflictBanner scan={scan} />}
+      {corridorsError && (
+        <div role="alert" className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
+          Corridor reference data unavailable: {corridorsError}. Corridor labels and new-window choices may be incomplete.
+        </div>
+      )}
       <div data-testid="possession-windows" className="mt-4 overflow-x-auto rounded-xl border border-white/10">
         <table className="w-full text-left text-xs">
           <thead className="bg-white/[0.03] text-[10px] uppercase tracking-widest text-slate-400">
             <tr><th className="px-3 py-2">Window</th><th className="px-3 py-2">Corridor</th><th className="px-3 py-2">Kind</th><th className="px-3 py-2">From → until</th><th className="px-3 py-2">Status</th><th className="px-3 py-2" /></tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {loading && <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No possession windows recorded.</td></tr>}
+            {loading && <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500"><div role="status"><Loader2 className="mx-auto h-5 w-5 animate-spin" />Loading possession windows…</div></td></tr>}
+            {!loading && !windowsError && rows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No possession windows recorded.</td></tr>}
             {!loading && rows.map((w) => (
               <tr key={w.id} className="align-top">
                 <td className="px-3 py-2 text-slate-200"><span className="font-semibold">{w.title}</span>{w.location && <div className="text-[10px] text-slate-500">{w.location}</div>}{w.imReference && <div className="text-[10px] text-slate-500">IM ref {w.imReference}</div>}</td>

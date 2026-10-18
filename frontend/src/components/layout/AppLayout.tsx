@@ -69,6 +69,7 @@ function SidebarSection(props: {
     <div className="mb-4">
       {!collapsed && (
         <button
+          type="button"
           onClick={props.onToggle}
           aria-expanded={open}
           aria-label={`${open ? "Collapse" : "Expand"} ${props.title} section`}
@@ -87,6 +88,7 @@ function SidebarSection(props: {
               <NavLink
                 key={item.to}
                 to={item.to}
+                end={item.to === "/rail"}
                 onClick={props.onNavigate}
                 title={collapsed ? (item.locked ? `${item.label} — ${item.tier} plan` : item.label) : undefined}
                 aria-label={item.locked ? `${item.label} (locked — ${item.tier} plan)` : item.label}
@@ -168,6 +170,16 @@ function SidebarContent(props: {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem("flowops.sidebar.sections") || "{}"); } catch { return {}; }
   });
+  useEffect(() => {
+    if (props.currentPath !== "/rail" && !props.currentPath.startsWith("/rail/")) return;
+    setOpenSections((prev) => {
+      if (prev.RAIL !== false) return prev;
+      const next = { ...prev, RAIL: true };
+      try { localStorage.setItem("flowops.sidebar.sections", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, [props.currentPath]);
+
   const toggleSection = (s: string) =>
     setOpenSections((prev) => {
       const next = { ...prev, [s]: prev[s] === false ? true : false };

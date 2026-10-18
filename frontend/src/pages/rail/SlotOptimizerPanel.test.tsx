@@ -44,6 +44,46 @@ afterEach(() => {
 });
 
 describe('SlotOptimizerPanel', () => {
+  it('does not report no pending applications when the API fails', async () => {
+    h.listSlotApplications.mockRejectedValueOnce(new Error('application API unavailable'));
+    render(<SlotOptimizerPanel canWrite />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Schedule optimizer data unavailable: application API unavailable/);
+    expect(screen.queryByText(/no pending applications/i)).toBeNull();
+  });
+
+  it('clears previous proposals before refresh and does not expose them after a failed reload', async () => {
+    h.runOptimizer.mockResolvedValue({
+      generatedAt: '2026-10-10T12:00:00Z',
+      notes: [],
+      proposals: [{
+        applicationId: 'a1', applicationNumber: 'SA-2026-00001', corridorCode: 'COR-ORE',
+        decision: 'ALLOCATE', score: 150, weeklyDemand: 3, reasons: ['Fits declared capacity.'], warnings: [],
+      }],
+      utilization: [],
+    });
+    render(<SlotOptimizerPanel canWrite />);
+    await waitFor(() => expect(screen.getByLabelText(/weekly capacity for ore/i)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText(/weekly capacity for ore/i), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /run optimizer/i }));
+    expect(await screen.findByText('SA-2026-00001')).toBeTruthy();
+
+    h.listSlotApplications.mockRejectedValueOnce(new Error('application refresh unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Schedule optimizer data unavailable: application refresh unavailable/);
+    expect(screen.queryByText('SA-2026-00001')).toBeNull();
+    expect(screen.queryByRole('button', { name: /apply .* selected decision/i })).toBeNull();
+  });
+
+  it('surfaces an optimizer request failure in the page', async () => {
+    h.runOptimizer.mockRejectedValueOnce(new Error('optimizer service unavailable'));
+    render(<SlotOptimizerPanel canWrite />);
+    await waitFor(() => expect(screen.getByLabelText(/weekly capacity for ore/i)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText(/weekly capacity for ore/i), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /run optimizer/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Optimizer run failed: optimizer service unavailable/);
+    expect(screen.queryByRole('heading', { name: 'Proposals' })).toBeNull();
+  });
+
   it('shows the empty state when nothing is pending', async () => {
     h.listSlotApplications.mockResolvedValue([]);
     render(<SlotOptimizerPanel canWrite />);

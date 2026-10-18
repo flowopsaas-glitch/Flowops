@@ -1,4 +1,5 @@
 import React from "react";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   corridorCopex,
   corridorCopexNote,
@@ -76,6 +77,8 @@ export default function RailInvestment() {
           {investmentSource.unit}.
         </p>
       </div>
+
+      <ReferenceNotice />
 
       <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
         <b>Total approved capital investment (2026/27 – 2030/31): R 46.343 billion</b> — R 32.724bn

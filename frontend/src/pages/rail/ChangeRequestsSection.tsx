@@ -23,6 +23,7 @@ export default function ChangeRequestsSection({ canWrite, canSign }: { canWrite:
   const { showToast } = useToast();
   const [rows, setRows] = useState<ChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [propose, setPropose] = useState<ChangeRequest | null>(null);
@@ -30,7 +31,17 @@ export default function ChangeRequestsSection({ canWrite, canSign }: { canWrite:
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setRows(await listChanges()); } catch (e) { showToast(`Could not load change requests: ${(e as Error)?.message ?? e}`, "error"); } finally { setLoading(false); }
+    setLoadError(null);
+    try {
+      setRows(await listChanges());
+    } catch (e) {
+      const message = String((e as Error)?.message ?? e);
+      setRows([]);
+      setLoadError(message);
+      showToast(`Could not load change requests: ${message}`, "error");
+    } finally {
+      setLoading(false);
+    }
   }, [showToast]);
   useEffect(() => { void load(); }, [load]);
 
@@ -57,8 +68,14 @@ export default function ChangeRequestsSection({ canWrite, canSign }: { canWrite:
       title="Cancellations & reschedules (Annexure 20a · 20b)"
       right={canWrite && <button type="button" className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /> New cancel / reschedule</button>}
     >
+      {loadError && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Change-request records unavailable: {loadError}.{" "}
+          <button type="button" onClick={() => void load()} className="underline underline-offset-2">Retry</button>
+        </div>
+      )}
       <div data-testid="change-requests" className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="w-full text-left text-xs">
+        <table aria-label="Rail cancellation and reschedule requests" className="min-w-[1000px] w-full text-left text-xs">
           <thead className="bg-white/[0.03] text-[10px] uppercase tracking-widest text-slate-400">
             <tr>
               <th className="px-3 py-2">Request</th><th className="px-3 py-2">Train</th><th className="px-3 py-2">Reason (20b)</th><th className="px-3 py-2">Responsible</th>
@@ -66,8 +83,8 @@ export default function ChangeRequestsSection({ canWrite, canSign }: { canWrite:
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {loading && <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-500"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-500">No cancellations or reschedules logged.</td></tr>}
+            {loading && <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-500"><div role="status"><Loader2 className="mx-auto h-5 w-5 animate-spin" />Loading change requests…</div></td></tr>}
+            {!loading && !loadError && rows.length === 0 && <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-500">No cancellations or reschedules logged.</td></tr>}
             {!loading && rows.map((r) => {
               const actions = availableChangeActions(r, { canWrite, canSign });
               return (

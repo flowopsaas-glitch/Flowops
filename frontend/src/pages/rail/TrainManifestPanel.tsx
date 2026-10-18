@@ -27,6 +27,8 @@ export default function TrainManifestPanel({ canWrite, canSign }: { canWrite: bo
   const { showToast } = useToast();
   const [manifests, setManifests] = useState<TrainManifest[]>([]);
   const [consignments, setConsignments] = useState<RailConsignment[]>([]);
+  const [manifestsError, setManifestsError] = useState<string | null>(null);
+  const [consignmentsError, setConsignmentsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<TrainManifest | null>(null);
   const [showNew, setShowNew] = useState(false);
@@ -77,19 +79,26 @@ export default function TrainManifestPanel({ canWrite, canSign }: { canWrite: bo
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const [m, c] = await Promise.all([
-        listTrainManifests(),
-        listConsignments().catch(() => [] as RailConsignment[]),
-      ]);
-      setManifests(m);
-      setConsignments(c);
-    } catch (e) {
-      showToast(`Could not load train manifests: ${(e as Error)?.message ?? e}`, "error");
-    } finally {
-      setLoading(false);
+    const [manifestsResult, consignmentsResult] = await Promise.allSettled([
+      listTrainManifests(),
+      listConsignments(),
+    ]);
+    if (manifestsResult.status === "fulfilled") {
+      setManifests(manifestsResult.value);
+      setManifestsError(null);
+    } else {
+      setManifests([]);
+      setManifestsError(String((manifestsResult.reason as Error)?.message ?? manifestsResult.reason));
     }
-  }, [showToast]);
+    if (consignmentsResult.status === "fulfilled") {
+      setConsignments(consignmentsResult.value);
+      setConsignmentsError(null);
+    } else {
+      setConsignments([]);
+      setConsignmentsError(String((consignmentsResult.reason as Error)?.message ?? consignmentsResult.reason));
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -142,10 +151,17 @@ export default function TrainManifestPanel({ canWrite, canSign }: { canWrite: bo
           <button className={btnNeutral} onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Refresh</button>
         </div>
       }>
-        {manifests.length === 0 ? (
-          <div className="py-6 text-sm text-slate-400">
-            No train manifests yet. Create one from a consignment to snapshot its consist into a departure document.
+        {manifestsError && (
+          <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+            Could not load train manifests: {manifestsError}. Use Refresh to retry.
           </div>
+        )}
+        {manifests.length === 0 ? (
+          manifestsError ? null : (
+            <div className="py-6 text-sm text-slate-400">
+              No train manifests yet. Create one from a consignment to snapshot its consist into a departure document.
+            </div>
+          )
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -161,8 +177,17 @@ export default function TrainManifestPanel({ canWrite, canSign }: { canWrite: bo
               </thead>
               <tbody>
                 {manifests.map((m) => (
-                  <tr key={m.id} className="cursor-pointer border-b border-white/5 hover:bg-white/[0.03]" onClick={() => void openManifest(m.id)}>
-                    <td className="py-2 pr-4 font-mono text-white">{m.manifestNumber}{m.revision > 1 ? ` · rev ${m.revision}` : ""}</td>
+                  <tr key={m.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+                    <td className="py-2 pr-4 font-mono text-white">
+                      <button
+                        type="button"
+                        onClick={() => void openManifest(m.id)}
+                        aria-label={`Open train manifest ${m.manifestNumber}${m.revision > 1 ? ` revision ${m.revision}` : ""}`}
+                        className="rounded text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
+                      >
+                        {m.manifestNumber}{m.revision > 1 ? ` · rev ${m.revision}` : ""}
+                      </button>
+                    </td>
                     <td className="py-2 pr-4"><Pill tone={STATUS_TONE[m.status]}>{MANIFEST_STATUS_LABEL[m.status]}</Pill></td>
                     <td className="py-2 pr-4 text-slate-300">{m.consignmentNumber}</td>
                     <td className="py-2 pr-4 text-slate-400">{[m.originSiding, m.destinationSiding].filter(Boolean).join(" → ") || m.corridor || "—"}</td>
@@ -181,6 +206,14 @@ export default function TrainManifestPanel({ canWrite, canSign }: { canWrite: bo
           <p className="mb-3 text-xs text-slate-400">
             The manifest snapshots the consignment&apos;s wagons as they stand now. You can edit the draft before issuing.
           </p>
+          {consignmentsError && (
+            <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+              Could not load consignments: {consignmentsError}. Close this dialog and use Refresh to retry.
+            </div>
+          )}
+          {!consignmentsError && consignments.length === 0 && (
+            <p role="status" className="mb-3 text-xs text-slate-400">No consignments are currently available to create a manifest from.</p>
+          )}
           <Field label="Consignment">
             <select className={inputCls} value={pickConsignment} onChange={(e) => setPickConsignment(e.target.value)} aria-label="Consignment">
               <option value="">Select a consignment…</option>

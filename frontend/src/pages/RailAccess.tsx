@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   accessSources,
   adHocSlots,
@@ -51,7 +52,9 @@ export default function RailAccess() {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <ReferenceNotice />
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Access and disputes reference sections">
         {(
           [
             ["timelines", "Timelines & notice (V4-11)"],
@@ -63,6 +66,8 @@ export default function RailAccess() {
         ).map(([k, label]) => (
           <button
             key={k}
+            type="button"
+            aria-pressed={tab === k}
             onClick={() => setTab(k)}
             className={`rounded-full px-4 py-1.5 text-xs font-medium ${
               tab === k ? "bg-teal-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"

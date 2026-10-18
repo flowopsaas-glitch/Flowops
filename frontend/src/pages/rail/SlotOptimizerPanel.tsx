@@ -31,6 +31,8 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
   const [corridorNames, setCorridorNames] = useState<Map<string, string>>(new Map());
   const [capacity, setCapacity] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<OptimizerResult | null>(null);
@@ -38,12 +40,20 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
+    setRunError(null);
+    setResult(null);
+    setSelected(new Set());
     try {
       const [a, cor] = await Promise.all([listSlotApplications(), getCorridors()]);
       setApps(a);
       setCorridorNames(new Map(cor.map((c) => [c.code, c.name])));
     } catch (e) {
-      showToast(`Could not load slot applications: ${(e as Error)?.message ?? e}`, "error");
+      const message = String((e as Error)?.message ?? e);
+      setApps([]);
+      setCorridorNames(new Map());
+      setLoadError(message);
+      showToast(`Could not load schedule optimizer data: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -68,12 +78,16 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
       return;
     }
     setRunning(true);
+    setRunError(null);
+    setResult(null);
     try {
       const r = await runOptimizer(entries);
       setResult(r);
       setSelected(new Set(r.proposals.filter((p) => p.decision !== "DEFER").map((p) => p.applicationId)));
     } catch (e) {
-      showToast(`Optimizer run failed: ${(e as Error)?.message ?? e}`, "error");
+      const message = String((e as Error)?.message ?? e);
+      setRunError(message);
+      showToast(`Optimizer run failed: ${message}`, "error");
     } finally {
       setRunning(false);
     }
@@ -115,12 +129,24 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
   return (
     <div className="space-y-5">
       <Section title="Schedule optimizer">
+        {loadError && (
+          <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+            Schedule optimizer data unavailable: {loadError}. No conclusion about pending applications can be drawn.
+          </div>
+        )}
+        {runError && (
+          <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+            Optimizer run failed: {runError}
+          </div>
+        )}
         <div className="space-y-3">
           <p className="text-xs text-slate-400">
             Deterministic decision support — it proposes, you decide. Capacity is declared by you (Annexure 33b); the optimizer never invents it.
           </p>
           <p className="text-sm text-slate-300">
-            {pending.length === 0
+            {loadError
+              ? "Pending-application status could not be verified."
+              : pending.length === 0
               ? "No pending applications (submitted / under assessment / capacity conflict) — nothing to optimise."
               : `${pending.length} pending application(s) across ${corridorsInPlay.length} corridor(s). Enter the declared trains-per-week each corridor can carry:`}
           </p>
@@ -142,7 +168,7 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
             ))}
           </div>
           <div className="flex gap-2">
-            <button className={btnPrimary} onClick={() => void run()} disabled={running || corridorsInPlay.length === 0}>
+            <button className={btnPrimary} onClick={() => void run()} disabled={running || Boolean(loadError) || corridorsInPlay.length === 0}>
               {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               {running ? "Running…" : "Run optimizer"}
             </button>
