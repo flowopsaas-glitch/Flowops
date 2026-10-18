@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   cancellationDecisions,
   cancellationExit,
@@ -56,6 +58,8 @@ export default function RailCancellation() {
         </p>
       </div>
 
+      <ReferenceNotice />
+
       <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
         <b>The 15-minute rule (step 1, verbatim substance).</b> The cancellation notice must be
         issued <b>within 15 minutes</b> of the event&apos;s occurrence or as soon as it is discovered
@@ -63,9 +67,9 @@ export default function RailCancellation() {
         resource constraints. Authorised TOC personnel must contact the IM Customer Liaison Officer
         directly and the request must also be submitted via <b>TOL</b> (systems:{" "}
         {cancellationSystems}). Process exit: <b>TOC Charges and Penalties Process</b> — see{" "}
-        <a className="font-semibold underline" href="/rail/tariffs">
+        <Link className="font-semibold underline" to="/rail/tariffs">
           Tariffs &amp; charges
-        </a>{" "}
+        </Link>{" "}
         (Tables 21–22, §5.2.11).
       </div>
 
@@ -135,10 +139,12 @@ export default function RailCancellation() {
           Annexure 20b — cancellation reasons → responsible party ({cancellationReasons.length} rows,
           verbatim)
         </h2>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="Filter cancellation reasons by responsible party">
           {parties.map((p) => (
             <button
               key={p}
+              type="button"
+              aria-pressed={party === p}
               onClick={() => setParty(p)}
               className={`rounded-full px-3 py-1.5 text-xs font-medium ${
                 party === p ? "bg-teal-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -148,6 +154,7 @@ export default function RailCancellation() {
             </button>
           ))}
           <input
+            aria-label="Search cancellation reasons"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search reasons…"
@@ -164,6 +171,13 @@ export default function RailCancellation() {
               </tr>
             </thead>
             <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="px-3 py-5 text-center text-slate-500">
+                    <span role="status">No cancellation reasons match the selected party and search.</span>
+                  </td>
+                </tr>
+              )}
               {filtered.map((r) => (
                 <tr key={r.reason} className="border-b border-slate-100 last:border-0">
                   <td className="px-3 py-1.5 font-medium text-slate-800">{r.reason}</td>

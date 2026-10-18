@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   ArrowLeft,
   BookOpen,
@@ -38,6 +39,8 @@ export default function RailSources() {
         </Link>
       </div>
 
+      <ReferenceNotice />
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
           ["Files", fmt(corpusStats.files)],
@@ -73,7 +76,8 @@ export default function RailSources() {
         <h3 className="flex items-center gap-2 text-base font-semibold">
           <BookOpen className="h-4 w-4 text-emerald-600" /> Source register
         </h3>
-        <table className="mt-3 w-full text-sm">
+        <div className="mt-3 overflow-x-auto">
+        <table aria-label="Rail source register" className="min-w-[760px] w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
               <th className="py-1.5 pr-3">Document</th>
@@ -95,6 +99,7 @@ export default function RailSources() {
             ))}
           </tbody>
         </table>
+        </div>
       </section>
 
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -124,8 +129,8 @@ export default function RailSources() {
             {fmt(corpusStats.flaggedWorkings)} flagged workings
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Never repaired. Full per-working detail:{" "}
-            <span className="font-mono">rail-source-check/FLAGGED-WORKINGS.md</span>.
+            Never repaired. Full per-working detail is recorded in the repository file{" "}
+            <span className="font-mono">rail-source-check/FLAGGED-WORKINGS.md</span>; it is not served as a download by this app.
           </p>
           <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
             {flagClasses.map((f) => (

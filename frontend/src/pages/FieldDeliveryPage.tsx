@@ -5,10 +5,12 @@ import {
   ExternalLink, MapPin, MessageCircle, Package, RefreshCw,
   Smartphone, Truck, Users, Wifi, WifiOff, Zap,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { api } from "../api/client";
+import OpenStreetMapLayer from "../components/maps/OpenStreetMapLayer";
+import { getMapCoordinates } from "../lib/mapCoordinates";
 import { useAuth } from "../contexts/AuthContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -34,15 +36,17 @@ type FieldDriver = {
 // VITE_DRIVER_APP_URL can override this if a standalone PWA is deployed.
 const DRIVER_APP_URL = import.meta.env.VITE_DRIVER_APP_URL ?? "/driver/portal";
 
-function unwrapList(r: any): any[] {
+function unwrapList(r: any): any[] | null {
   const d = r?.data ?? r;
   if (Array.isArray(d)) return d;
-  return Array.isArray(d?.data) ? d.data : [];
+  return Array.isArray(d?.data) ? d.data : null;
 }
 
 function relTime(ts?: string | null): string {
   if (!ts) return "never";
-  const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60_000);
+  const timestamp = Date.parse(ts);
+  if (!Number.isFinite(timestamp)) return "unknown";
+  const m = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
   if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
@@ -84,9 +88,9 @@ function DriverCard({ driver, onWhatsApp }: { driver: FieldDriver; onWhatsApp: (
     : driver.status === "ON_ROUTE"  ? "text-cyan-300"
     :                                  "text-white/30";
 
-  const isStale = driver.lastSeen
-    ? Date.now() - new Date(driver.lastSeen).getTime() > 30 * 60_000
-    : true;
+  const location = getMapCoordinates(driver.lastLat, driver.lastLng);
+  const lastSeenTime = driver.lastSeen ? Date.parse(driver.lastSeen) : Number.NaN;
+  const isStale = !Number.isFinite(lastSeenTime) || Date.now() - lastSeenTime > 30 * 60_000;
 
   return (
     <div className={`rounded-[26px] border p-5 flex flex-col gap-4 ${statusColor}`}>
@@ -156,10 +160,11 @@ function DriverCard({ driver, onWhatsApp }: { driver: FieldDriver; onWhatsApp: (
             <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
           </button>
         )}
-        {driver.lastLat && driver.lastLng && (
+        {location && (
           <button
+            type="button"
             onClick={() =>
-              window.open(`https://www.google.com/maps?q=${driver.lastLat},${driver.lastLng}`, "_blank")
+              window.open(`https://www.google.com/maps?q=${location.lat},${location.lng}`, "_blank")
             }
             className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 py-2 text-xs font-bold text-white/50 hover:bg-white/10 hover:text-white transition"
           >
@@ -179,7 +184,8 @@ export default function FieldDeliveryPage() {
   const [drivers, setDrivers] = useState<FieldDriver[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "AVAILABLE" | "ON_ROUTE" | "OFFLINE">("ALL");
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
@@ -188,10 +194,13 @@ export default function FieldDeliveryPage() {
     try {
       const res: any = await api.get("/drivers/field-ops");
       const list = unwrapList(res);
+      if (!list) throw new Error("The driver service returned an unexpected response.");
       setDrivers(list);
       setLastRefresh(new Date());
-    } catch {
-      // graceful — show stale data
+      setLoadError(null);
+    } catch (err: any) {
+      const message = err?.response?.data?.message ?? err?.message ?? "Unable to load field operations.";
+      setLoadError(Array.isArray(message) ? message.join(", ") : String(message));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -231,10 +240,15 @@ export default function FieldDeliveryPage() {
     ),
   }), [drivers]);
 
+  const hasLoadedData = lastRefresh !== null;
   const mappableDrivers = useMemo(() =>
-    drivers.filter(d => d.lastLat && d.lastLng),
+    drivers.filter(d => getMapCoordinates(d.lastLat, d.lastLng) !== null),
     [drivers]
   );
+  const unlocatedDriverCount = drivers.length - mappableDrivers.length;
+  const onRouteWithoutCoordinates = drivers.filter(
+    (driver) => driver.status === "ON_ROUTE" && getMapCoordinates(driver.lastLat, driver.lastLng) === null,
+  ).length;
 
   const mapCenter = mappableDrivers.length > 0
     ? ([mappableDrivers[0].lastLat!, mappableDrivers[0].lastLng!] as [number, number])
@@ -271,7 +285,9 @@ export default function FieldDeliveryPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[11px] text-white/30">Updated {relTime(lastRefresh.toISOString())}</span>
+              <span className="text-[11px] text-white/30">
+                {lastRefresh ? `Updated ${relTime(lastRefresh.toISOString())}` : loading ? "Loading driver data…" : "Not yet loaded"}
+              </span>
               <button
                 onClick={() => void load("refresh")}
                 disabled={refreshing}
@@ -293,15 +309,35 @@ export default function FieldDeliveryPage() {
           </div>
         </div>
 
+        {loadError && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/8 px-5 py-4 text-sm text-amber-200">
+            <span>
+              <strong>{hasLoadedData ? "Refresh failed." : "Driver data unavailable."}</strong>{" "}
+              {hasLoadedData
+                ? `Showing the last successful snapshot from ${relTime(lastRefresh.toISOString())}. `
+                : "No driver totals or empty state can be confirmed. "}
+              {loadError}
+            </span>
+            <button
+              type="button"
+              onClick={() => void load("refresh")}
+              disabled={refreshing}
+              className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 disabled:opacity-50"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* ── KPI strip ── */}
         <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {[
-            { label: "Total Drivers", value: stats.total,     icon: Users,        color: "text-white",         bg: "border-white/10"            },
-            { label: "Available",     value: stats.available, icon: CheckCircle2, color: "text-emerald-300",   bg: "border-emerald-500/20"      },
-            { label: "On Route",      value: stats.onRoute,   icon: Truck,        color: "text-cyan-300",      bg: "border-cyan-500/20"         },
-            { label: "Offline",       value: stats.offline,   icon: WifiOff,      color: "text-white/30",      bg: "border-white/8"             },
-            { label: "Active Jobs",   value: stats.activeJobs,icon: Activity,     color: "text-amber-300",     bg: "border-amber-500/20"        },
-            { label: "Done Today",    value: stats.jobsToday, icon: Zap,          color: "text-violet-300",    bg: "border-violet-500/20"       },
+            { label: "Total Drivers", value: hasLoadedData ? stats.total : "—",     icon: Users,        color: "text-white",         bg: "border-white/10"            },
+            { label: "Available",     value: hasLoadedData ? stats.available : "—", icon: CheckCircle2, color: "text-emerald-300",   bg: "border-emerald-500/20"      },
+            { label: "On Route",      value: hasLoadedData ? stats.onRoute : "—",   icon: Truck,        color: "text-cyan-300",      bg: "border-cyan-500/20"         },
+            { label: "Offline",       value: hasLoadedData ? stats.offline : "—",   icon: WifiOff,      color: "text-white/30",      bg: "border-white/8"             },
+            { label: "Active Jobs",   value: hasLoadedData ? stats.activeJobs : "—",icon: Activity,     color: "text-amber-300",     bg: "border-amber-500/20"        },
+            { label: "Done Today",    value: hasLoadedData ? stats.jobsToday : "—", icon: Zap,          color: "text-violet-300",    bg: "border-violet-500/20"       },
           ].map(({ label, value, icon: Icon, color, bg }) => (
             <div key={label} className={`rounded-[22px] border ${bg} p-4 flex flex-col gap-1.5`}>
               <div className="flex items-center justify-between">
@@ -344,20 +380,21 @@ export default function FieldDeliveryPage() {
             <div className="flex items-center justify-between bg-black/40 px-5 py-3 border-b border-white/10">
               <div className="flex items-center gap-2 text-xs font-bold text-white/70">
                 <div className={`h-2 w-2 rounded-full ${mappableDrivers.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
-                {mappableDrivers.length > 0 ? `${mappableDrivers.length} drivers on map` : "No GPS data yet"}
+                {mappableDrivers.length > 0
+                  ? `${mappableDrivers.length} drivers on map`
+                  : loadError && !hasLoadedData
+                    ? "GPS data unavailable"
+                    : "No GPS data yet"}
               </div>
-              {drivers.filter(d => !d.lastLat).length > 0 && (
-                <span className="text-[10px] text-white/30">
-                  {drivers.filter(d => !d.lastLat).length} drivers have no GPS position
+              {unlocatedDriverCount > 0 && (
+                <span className="text-[10px] text-amber-200/80">
+                  {unlocatedDriverCount} driver{unlocatedDriverCount === 1 ? " has" : "s have"} no valid GPS position
                 </span>
               )}
             </div>
             <div style={{ height: 480 }}>
-              <MapContainer center={mapCenter} zoom={7} style={{ width: "100%", height: "100%" }} attributionControl={false}>
-                <TileLayer
-                  url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://carto.com">CartoDB</a>'
-                />
+              <MapContainer center={mapCenter} zoom={7} style={{ width: "100%", height: "100%" }} >
+                <OpenStreetMapLayer />
                 {mappableDrivers.map((d, i) => (
                   <Marker
                     key={d.id}
@@ -383,7 +420,14 @@ export default function FieldDeliveryPage() {
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 rounded-[28px] border border-dashed border-white/10 text-center">
                 <Truck className="h-10 w-10 text-white/10 mb-3" />
-                <p className="text-sm text-white/25">No drivers {statusFilter !== "ALL" ? `with status ${statusFilter}` : "found"}</p>
+                <p className="text-sm text-white/50">
+                  {loadError && !hasLoadedData
+                    ? "Driver data unavailable"
+                    : statusFilter !== "ALL"
+                      ? `No drivers with status ${statusFilter}`
+                      : "No drivers found"}
+                </p>
+                {loadError && !hasLoadedData && <p className="mt-1 text-xs text-white/30">Retry to confirm the fleet state.</p>}
               </div>
             ) : (
               filtered.map(d => (
@@ -394,11 +438,11 @@ export default function FieldDeliveryPage() {
         </div>
 
         {/* ── No GPS alert ── */}
-        {drivers.filter(d => d.status === "ON_ROUTE" && !d.lastLat).length > 0 && (
+        {onRouteWithoutCoordinates > 0 && (
           <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/6 flex items-center gap-3 px-5 py-4 text-sm text-amber-300">
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
             <span>
-              {drivers.filter(d => d.status === "ON_ROUTE" && !d.lastLat).length} driver(s) are ON_ROUTE but have no GPS position — they may need to update their app.
+              {onRouteWithoutCoordinates} driver{onRouteWithoutCoordinates === 1 ? " is" : "s are"} ON_ROUTE without valid GPS coordinates — their position cannot be shown.
             </span>
             <button
               onClick={() => window.open(DRIVER_APP_URL, "_blank")}

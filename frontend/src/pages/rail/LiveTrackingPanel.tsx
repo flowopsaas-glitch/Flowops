@@ -19,6 +19,7 @@ import RailTelemetryMap from "./RailTelemetryMap";
  */
 
 const POLL_MS = 15_000;
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 const STATUS_TONE: Record<RailDevice["status"], Tone> = { ACTIVE: "ok", INACTIVE: "muted", FAULTY: "danger" };
 const ALERT_TONE: Record<RailAlertKind, Tone> = {
@@ -39,6 +40,9 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
   const [devices, setDevices] = useState<RailDevice[]>([]);
   const [alerts, setAlerts] = useState<TelemetryAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [trail, setTrail] = useState<TelemetryPoint[]>([]);
   const [summary, setSummary] = useState<TelemetrySummary | null>(null);
@@ -50,19 +54,24 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
   const [newWagon, setNewWagon] = useState("");
 
   const load = useCallback(async () => {
-    try {
-      const [d, a] = await Promise.all([
-        listRailDevices(),
-        listTelemetryAlerts().catch(() => [] as TelemetryAlert[]),
-      ]);
-      setDevices(d);
-      setAlerts(a);
-    } catch (e) {
-      showToast(`Could not load telemetry: ${(e as Error)?.message ?? e}`, "error");
-    } finally {
-      setLoading(false);
+    const [devicesResult, alertsResult] = await Promise.allSettled([
+      listRailDevices(),
+      listTelemetryAlerts(),
+    ]);
+    if (devicesResult.status === "fulfilled") {
+      setDevices(devicesResult.value);
+      setDevicesError(null);
+    } else {
+      setDevicesError(errorMessage(devicesResult.reason));
     }
-  }, [showToast]);
+    if (alertsResult.status === "fulfilled") {
+      setAlerts(alertsResult.value);
+      setAlertsError(null);
+    } else {
+      setAlertsError(errorMessage(alertsResult.reason));
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -71,19 +80,29 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
   }, [load]);
 
   useEffect(() => {
-    if (!selected) { setTrail([]); setSummary(null); return; }
+    if (!selected) {
+      setTrail([]);
+      setSummary(null);
+      setDetailError(null);
+      return;
+    }
     let alive = true;
+    setDetailError(null);
     const fetchDetail = async () => {
-      try {
-        const [pts, sum] = await Promise.all([
-          getDevicePoints(selected, { limit: 200 }),
-          getDeviceSummary(selected, 24),
-        ]);
-        if (!alive) return;
-        setTrail(pts.slice().reverse()); // oldest → newest for the polyline
-        setSummary(sum);
-      } catch {
-        /* the next poll retries */
+      const [pointsResult, summaryResult] = await Promise.allSettled([
+        getDevicePoints(selected, { limit: 200 }),
+        getDeviceSummary(selected, 24),
+      ]);
+      if (!alive) return;
+      if (pointsResult.status === "fulfilled" && summaryResult.status === "fulfilled") {
+        setTrail(pointsResult.value.slice().reverse()); // oldest → newest for the polyline
+        setSummary(summaryResult.value);
+        setDetailError(null);
+      } else {
+        setTrail([]);
+        setSummary(null);
+        const reason = pointsResult.status === "rejected" ? pointsResult.reason : summaryResult.status === "rejected" ? summaryResult.reason : "Unknown error";
+        setDetailError(errorMessage(reason));
       }
     };
     void fetchDetail();
@@ -140,6 +159,17 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
     }
   };
 
+  const copyToken = async () => {
+    if (!tokenOnce) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser.");
+      await navigator.clipboard.writeText(tokenOnce.token);
+      showToast("Token copied to clipboard.", "success");
+    } catch (error: unknown) {
+      showToast(`Could not copy token: ${errorMessage(error)} Select and copy it manually.`, "error");
+    }
+  };
+
   const mapDevices = devices
     .filter((d) => d.lastLat != null && d.lastLng != null)
     .map((d) => ({ id: d.id, deviceCode: d.deviceCode, label: d.label, lat: d.lastLat!, lng: d.lastLng!, silent: d.silent }));
@@ -158,7 +188,7 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
           </Banner>
           <div className="mt-3 flex items-center gap-2">
             <code className="flex-1 break-all rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-emerald-300">{tokenOnce.token}</code>
-            <button className={btnNeutral} onClick={() => { void navigator.clipboard?.writeText(tokenOnce.token); showToast("Copied.", "success"); }}>
+            <button type="button" className={btnNeutral} onClick={() => void copyToken()}>
               <Copy className="h-4 w-4" /> Copy
             </button>
           </div>
@@ -168,14 +198,28 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
       <Section title="Live tracking" right={
         <div className="flex gap-2">
           {canWrite && (
-            <button className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-4 w-4" /> Register device</button>
+            <button type="button" className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-4 w-4" /> Register device</button>
           )}
-          <button className={btnNeutral} onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Refresh</button>
+          <button type="button" className={btnNeutral} onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Refresh</button>
         </div>
       }>
+        {devicesError && (
+          <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+            Could not refresh the device registry: {devicesError}. Any previously loaded device information may be stale.
+          </div>
+        )}
+        {detailError && selected && (
+          <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+            Could not load selected device positions and movement summary: {detailError}.
+          </div>
+        )}
         {mapDevices.length === 0 && trail.length === 0 ? (
           <div className="py-6 text-sm text-slate-400">
-            No positions yet. Register a device, then post points to <code className="text-emerald-300">POST /rail/telemetry/ingest</code> with its <code>X-Device-Token</code> — or use the bulk ingest from an integration.
+            {devicesError
+              ? "Position state cannot be verified because the device registry could not be loaded."
+              : detailError && selected
+                ? "The selected device's position state could not be verified; this is not an empty-position result."
+                : <>No positions yet. Register a device, then post points to <code className="text-emerald-300">POST /rail/telemetry/ingest</code> with its <code>X-Device-Token</code> — or use the bulk ingest from an integration.</>}
           </div>
         ) : (
           <RailTelemetryMap
@@ -204,11 +248,13 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
       </Section>
 
       <Section title={`Devices (${devices.length})`}>
-        {devices.length === 0 ? (
+        {devices.length === 0 && devicesError ? (
+          <div role="alert" className="py-4 text-sm text-rose-300">Device registry unavailable: {devicesError}</div>
+        ) : devices.length === 0 ? (
           <div className="py-4 text-sm text-slate-400">No devices registered yet.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table aria-label="Registered telemetry devices" className="min-w-[760px] w-full text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-slate-400">
                   <th className="py-2 pr-4">Device</th>
@@ -226,12 +272,19 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
                 {devices.map((d) => (
                   <tr
                     key={d.id}
-                    className={`cursor-pointer border-b border-white/5 hover:bg-white/[0.03] ${selected === d.id ? "bg-white/[0.05]" : ""}`}
-                    onClick={() => setSelected(selected === d.id ? null : d.id)}
+                    className={`border-b border-white/5 hover:bg-white/[0.03] ${selected === d.id ? "bg-white/[0.05]" : ""}`}
                   >
                     <td className="py-2 pr-4">
-                      <div className="font-mono text-white">{d.deviceCode}</div>
-                      {d.label && <div className="text-xs text-slate-400">{d.label}</div>}
+                      <button
+                        type="button"
+                        aria-pressed={selected === d.id}
+                        aria-label={`${selected === d.id ? "Hide" : "Show"} positions for ${d.deviceCode}`}
+                        onClick={() => setSelected(selected === d.id ? null : d.id)}
+                        className="rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
+                      >
+                        <span className="block font-mono text-white">{d.deviceCode}</span>
+                        {d.label && <span className="block text-xs text-slate-400">{d.label}</span>}
+                      </button>
                     </td>
                     <td className="py-2 pr-4 text-slate-300">{DEVICE_KIND_LABEL[d.kind]}</td>
                     <td className="py-2 pr-4 text-slate-300">{d.wagonNumber || d.locoReference || "—"}</td>
@@ -250,6 +303,7 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
                     {canWrite && (
                       <td className="py-2">
                         <button
+                          type="button"
                           className="inline-flex items-center gap-1 text-xs text-slate-300 hover:text-white"
                           disabled={busy === `rotate-${d.id}`}
                           onClick={(e) => { e.stopPropagation(); void rotate(d.id); }}
@@ -267,9 +321,14 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
       </Section>
 
       <Section title={`Health alerts (${alerts.length})`}>
-        {alerts.length === 0 ? (
+        {alertsError && (
+          <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+            Could not refresh health alerts: {alertsError}. Any previously loaded alerts may be stale.
+          </div>
+        )}
+        {alerts.length === 0 && !alertsError ? (
           <div className="py-4 text-sm text-slate-400">No open alerts. Speed, battery and silence thresholds are checked on every ingest.</div>
-        ) : (
+        ) : alerts.length === 0 ? null : (
           <div className="space-y-2">
             {alerts.map((a) => (
               <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 px-3 py-2">
@@ -282,10 +341,10 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
                   </div>
                 </div>
                 {canWrite && a.status === "OPEN" && (
-                  <button className={btnNeutral} disabled={busy === `ack-${a.id}`} onClick={() => void actOnAlert(a.id, "ack")}>Acknowledge</button>
+                  <button type="button" className={btnNeutral} disabled={busy === `ack-${a.id}`} onClick={() => void actOnAlert(a.id, "ack")}>Acknowledge</button>
                 )}
                 {canWrite && a.status !== "RESOLVED" && (
-                  <button className={btnPrimary} disabled={busy === `resolve-${a.id}`} onClick={() => void actOnAlert(a.id, "resolve")}>Resolve</button>
+                  <button type="button" className={btnPrimary} disabled={busy === `resolve-${a.id}`} onClick={() => void actOnAlert(a.id, "resolve")}>Resolve</button>
                 )}
               </div>
             ))}

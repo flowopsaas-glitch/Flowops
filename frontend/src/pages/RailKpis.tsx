@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -82,7 +83,8 @@ function CorridorCard({ c }: { c: CorridorKpis }) {
         </span>
       </div>
 
-      <table className="mt-4 w-full">
+      <div className="mt-4 overflow-x-auto">
+      <table className="min-w-[560px] w-full">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
             <th className="px-3 py-1.5">KPI</th>
@@ -97,6 +99,7 @@ function CorridorCard({ c }: { c: CorridorKpis }) {
           )}
         </tbody>
       </table>
+      </div>
 
       <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-950">
         <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-300">
@@ -127,7 +130,8 @@ function CorridorCard({ c }: { c: CorridorKpis }) {
 
 function FrameworkTable({ rows }: { rows: string[][] }) {
   return (
-    <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+    <table className="min-w-[720px] w-full text-sm">
       <thead>
         <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
           <th className="px-3 py-1.5">Category</th>
@@ -151,6 +155,7 @@ function FrameworkTable({ rows }: { rows: string[][] }) {
           ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -176,6 +181,8 @@ export default function RailKpis() {
         </Link>
       </div>
 
+      <ReferenceNotice />
+
       <div className="mb-5 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <div>
@@ -198,6 +205,8 @@ export default function RailKpis() {
         ).map(([key, label, Icon]) => (
           <button
             key={key}
+            type="button"
+            aria-pressed={tab === key}
             onClick={() => setTab(key)}
             className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 font-medium transition ${
               tab === key

@@ -30,6 +30,7 @@ import {
 } from "../api/railApi";
 import { getPossessionConflicts, type ConflictScan } from "../api/railChangeApi";
 import { useToast } from "../components/ToastProvider";
+import { useDismissOnEscape } from "../components/patterns";
 import { useAuth } from "../contexts/AuthContext";
 import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
 import SlotCompliancePanel from "./rail/SlotCompliancePanel";
@@ -43,8 +44,9 @@ import PossessionConflictBanner from "./rail/PossessionConflictBanner";
 import TariffPanel from "./rail/TariffPanel";
 import WeighbridgeSection from "./rail/WeighbridgeSection";
 import { isOnHold } from "../lib/railTariff";
-import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
+import { MapContainer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import OpenStreetMapLayer from "../components/maps/OpenStreetMapLayer";
 
 // ── SADC rail corridor geography (static reference, NOT live train GPS) ────────
 // Approximate lat/lng of the key sidings, yards, interchanges and ports on the
@@ -143,6 +145,8 @@ const LIFECYCLE: RailStatus[] = [
   "OFFLOADED",
   "COMPLETED",
 ];
+
+const FILTER_STATUSES: RailStatus[] = [...LIFECYCLE, "CANCELLED"];
 
 const STATUS_LABEL: Record<RailStatus, string> = {
   PLANNED: "Planned",
@@ -245,9 +249,8 @@ function RailCorridorMap({ activeCorridor }: { activeCorridor?: string | null })
             zoom={5}
             style={{ height: "100%", width: "100%" }}
             scrollWheelZoom
-            attributionControl={false}
           >
-            <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <OpenStreetMapLayer />
 
             {CORRIDORS.map((c) => {
               const on = !anyHighlight || highlighted.has(c.name);
@@ -304,6 +307,8 @@ export default function RailOperations() {
   const [overview, setOverview] = useState<RailOverview | null>(null);
   const [rows, setRows] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selected, setSelected] = useState<RailConsignment | null>(null);
@@ -311,20 +316,35 @@ export default function RailOperations() {
   const [showChange, setShowChange] = useState(false);
   // Possession-window clashes with booked consignments. Advisory and server-computed; null = not available (never "all clear").
   const [conflicts, setConflicts] = useState<ConflictScan | null>(null);
+  const closeDrawer = useCallback(() => setSelected(null), []);
+  useDismissOnEscape(Boolean(selected), closeDrawer);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
+    setOverviewError(null);
     try {
-      const [ov, list, scan] = await Promise.all([
+      const [overviewResult, consignmentsResult, conflictsResult] = await Promise.allSettled([
         getRailOverview(),
         listConsignments({ q: q || undefined, status: statusFilter || undefined }),
-        getPossessionConflicts().catch(() => null),
+        getPossessionConflicts(),
       ]);
-      setOverview(ov);
-      setRows(list);
-      setConflicts(scan);
+
+      if (overviewResult.status === "fulfilled") {
+        setOverview(overviewResult.value);
+      } else {
+        setOverview(null);
+        setOverviewError(String(overviewResult.reason?.message ?? overviewResult.reason));
+      }
+      setConflicts(conflictsResult.status === "fulfilled" ? conflictsResult.value : null);
+
+      if (consignmentsResult.status === "rejected") throw consignmentsResult.reason;
+      setRows(consignmentsResult.value);
     } catch (e: any) {
-      showToast(`Could not load rail data: ${String(e?.message ?? e)}`, "error");
+      const message = String(e?.message ?? e);
+      setRows([]);
+      setLoadError(message);
+      showToast(`Could not load rail data: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -407,12 +427,12 @@ export default function RailOperations() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-5 flex gap-2 border-b border-white/10" role="tablist" aria-label="Rail operations sections">
+      <div className="mb-5 flex flex-wrap gap-2 border-b border-white/10" role="group" aria-label="Rail operations sections">
         {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["optimizer", "Schedule Optimizer"], ["manifests", "Train Manifests"], ["tracking", "Live Tracking"], ["changes", "Changes & Possessions"], ["tariffs", "Tariffs & Weighbridge"]] as const).map(([key, label]) => (
           <button
             key={key}
-            role="tab"
-            aria-selected={tab === key}
+            type="button"
+            aria-pressed={tab === key}
             onClick={() => setTab(key)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${tab === key ? "border-emerald-400 text-emerald-300" : "border-transparent text-slate-400 hover:text-white"}`}
           >
@@ -431,6 +451,16 @@ export default function RailOperations() {
       {tab === "consignments" && (<>
       {/* Possession windows that overlap booked consignments (server-detected, advisory) */}
       <PossessionConflictBanner scan={conflicts} onOpenPossessions={() => setTab("changes")} />
+      {!loading && conflicts === null && (
+        <div role="note" className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
+          Possession conflict check unavailable. No all-clear status is implied; retry with Refresh.
+        </div>
+      )}
+      {overviewError && (
+        <div role="alert" className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Rail overview metrics unavailable: {overviewError}
+        </div>
+      )}
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
@@ -482,6 +512,7 @@ export default function RailOperations() {
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input
+            aria-label="Search rail consignments"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search consignment, client, commodity, operator…"
@@ -489,12 +520,13 @@ export default function RailOperations() {
           />
         </div>
         <select
+          aria-label="Filter rail consignments by status"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500/50"
         >
           <option value="">All statuses</option>
-          {LIFECYCLE.map((s) => (
+          {FILTER_STATUSES.map((s) => (
             <option key={s} value={s}>{STATUS_LABEL[s]}</option>
           ))}
         </select>
@@ -520,16 +552,31 @@ export default function RailOperations() {
                 <Loader2 className="mx-auto h-6 w-6 animate-spin" />
               </td></tr>
             )}
-            {!loading && rows.length === 0 && (
+            {!loading && loadError && (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-rose-300">
+                  <div role="alert">
+                    Could not load rail consignments: {loadError}{" "}
+                    <button type="button" onClick={() => void load()} className="ml-1 underline underline-offset-2">Retry</button>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && !loadError && rows.length === 0 && (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No rail consignments yet.</td></tr>
             )}
             {!loading && rows.map((r) => (
-              <tr
-                key={r.id}
-                onClick={() => openConsignment(r.id)}
-                className="cursor-pointer hover:bg-white/[0.03]"
-              >
-                <td className="px-4 py-3 font-mono font-semibold text-emerald-400">{r.consignmentNumber}</td>
+              <tr key={r.id} className="hover:bg-white/[0.03]">
+                <td className="px-4 py-3 font-mono font-semibold text-emerald-400">
+                  <button
+                    type="button"
+                    onClick={() => void openConsignment(r.id)}
+                    aria-label={`Open consignment ${r.consignmentNumber}`}
+                    className="rounded text-left text-emerald-400 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
+                  >
+                    {r.consignmentNumber}
+                  </button>
+                </td>
                 <td className="px-4 py-3 text-slate-200">{r.commodity}</td>
                 <td className="px-4 py-3 text-slate-400">{r.corridor ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-200">{fmtT(r.tonnage)}</td>
@@ -553,16 +600,20 @@ export default function RailOperations() {
 
       {/* Detail drawer */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}>
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={closeDrawer}>
           <div
             className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6"
-            onClick={(e) => e.stopPropagation()} role="dialog">
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Consignment ${selected.consignmentNumber}`}
+          >
             <div className="mb-5 flex items-start justify-between">
               <div>
                 <div className="font-mono text-lg font-black text-emerald-400">{selected.consignmentNumber}</div>
                 <div className="text-sm text-slate-400">{selected.commodity} · {selected.corridor ?? "—"}</div>
               </div>
-              <button onClick={() => setSelected(null)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10">
+              <button type="button" onClick={closeDrawer} aria-label="Close consignment details" className="rounded-lg p-2 text-slate-400 hover:bg-white/10">
                 <X className="h-5 w-5" />
               </button>
             </div>

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   collabPolicyPoints,
   collabPolicySource,
@@ -147,7 +148,9 @@ export default function RailOccurrence() {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <ReferenceNotice />
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Occurrence and policy reference sections">
         {(
           [
             ["occurrence", "Occurrence reporting (Annexure 41)"],
@@ -158,6 +161,8 @@ export default function RailOccurrence() {
         ).map(([k, label]) => (
           <button
             key={k}
+            type="button"
+            aria-pressed={tab === k}
             onClick={() => setTab(k)}
             className={`rounded-full px-4 py-1.5 text-xs font-medium ${
               tab === k ? "bg-teal-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -179,10 +184,12 @@ export default function RailOccurrence() {
             {occurrenceSource.template}.
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter occurrence categories by group">
             {groups.map((g) => (
               <button
                 key={g}
+                type="button"
+                aria-pressed={group === g}
                 onClick={() => setGroup(g)}
                 className={`rounded-full px-3 py-1.5 text-xs font-medium ${
                   group === g ? "bg-teal-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -192,6 +199,7 @@ export default function RailOccurrence() {
               </button>
             ))}
             <input
+              aria-label="Search occurrence items"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search occurrence items…"
@@ -205,6 +213,11 @@ export default function RailOccurrence() {
               <CategoryCard key={c.group + c.id} c={c} />
             ))}
           </div>
+          {filtered.length === 0 && (
+            <p role="status" className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+              No occurrence categories match the selected group and search.
+            </p>
+          )}
 
           <p className="text-[11px] text-slate-500">
             Source: <code className="rounded bg-slate-100 px-1">{occurrenceSource.file}</code> · sha256{" "}

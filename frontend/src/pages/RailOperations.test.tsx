@@ -12,6 +12,9 @@ const h = vi.hoisted(() => {
   });
   return {
     showToast,
+    getRailOverview: vi.fn(),
+    listConsignments: vi.fn(),
+    getConsignmentApi: vi.fn(),
     auth: { user: { role: 'MANAGER', email: 'm@x.co' } as Record<string, unknown> },
     consignment,
     state: {
@@ -30,9 +33,10 @@ vi.mock('leaflet/dist/leaflet.css', () => ({}));
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => h.auth }));
 vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: h.showToast }) }));
 vi.mock('../api/railApi', () => ({
-  getRailOverview: vi.fn().mockResolvedValue({ generatedAt: '', metrics: { activeConsignments: 0, inTransit: 0, atInterchange: 0, wagonsInTransit: 0, totalWagons: 0, tonnageMoved: 0, tonnagePlanned: 0, onTimePct: null, avgTransitHours: null, avgInterchangeDwellHours: null, atRisk: 0 }, byCorridor: [] }),
-  listConsignments: vi.fn(async () => h.state.rows),
-  getConsignment: vi.fn(async () => h.state.full), advanceConsignment: vi.fn(), updateConsignment: vi.fn(),
+  getRailOverview: h.getRailOverview,
+  listConsignments: h.listConsignments,
+  getConsignment: h.getConsignmentApi,
+  advanceConsignment: vi.fn(), updateConsignment: vi.fn(),
 }));
 vi.mock('../api/railChangeApi', () => ({
   getPossessionConflicts: vi.fn(async () => { if (h.state.scan === 'fail') throw new Error('not entitled'); return h.state.scan; }),
@@ -73,13 +77,13 @@ vi.mock('./rail/ChangeRequestModal', () => ({
   ),
 }));
 
-import { getConsignment } from '../api/railApi';
+import { getConsignment, getRailOverview, listConsignments } from '../api/railApi';
 import RailOperations from './RailOperations';
 
 const open = async (role: string) => {
   h.auth.user = { role, email: 'u@x.co' };
   render(<MemoryRouter><RailOperations /></MemoryRouter>);
-  const tabs = await screen.findByRole('tablist', { name: /Rail operations sections/ });
+  const tabs = await screen.findByRole('group', { name: /Rail operations sections/ });
   // let the first load finish, so no state update lands after the test's assertions
   const table = await screen.findByRole('table');
   await waitFor(() => expect(table.querySelector('.animate-spin')).toBeNull());
@@ -88,6 +92,9 @@ const open = async (role: string) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.getRailOverview.mockResolvedValue({ generatedAt: '', metrics: { activeConsignments: 0, inTransit: 0, atInterchange: 0, wagonsInTransit: 0, totalWagons: 0, tonnageMoved: 0, tonnagePlanned: 0, onTimePct: null, avgTransitHours: null, avgInterchangeDwellHours: null, atRisk: 0 }, byCorridor: [] });
+  h.listConsignments.mockImplementation(async () => h.state.rows);
+  h.getConsignmentApi.mockImplementation(async () => h.state.full);
   h.state.rows = [];
   h.state.full = h.consignment();
   h.state.scan = null;
@@ -95,11 +102,31 @@ beforeEach(() => {
 });
 
 describe('RailOperations — tabs', () => {
-  it('has a tab bar of seven tabs and starts on Consignments', async () => {
+  it('shows a consignment API failure instead of a false empty list and retries', async () => {
+    vi.mocked(listConsignments).mockRejectedValueOnce(new Error('consignment API unavailable'));
     await open('MANAGER');
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Schedule Optimizer', 'Train Manifests', 'Live Tracking', 'Changes & Possessions', 'Tariffs & Weighbridge']);
-    expect(screen.getByRole('tab', { name: 'Consignments' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }).getAttribute('aria-selected')).toBe('false');
+    expect(screen.getByRole('alert')).toHaveTextContent(/Could not load rail consignments: consignment API unavailable/);
+    expect(screen.queryByText('No rail consignments yet.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByText('No rail consignments yet.')).toBeTruthy());
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps overview and conflict-scan failures distinct from the loaded consignment list', async () => {
+    vi.mocked(getRailOverview).mockRejectedValueOnce(new Error('overview API unavailable'));
+    h.state.scan = 'fail';
+    await open('MANAGER');
+    expect(screen.getByRole('alert')).toHaveTextContent(/Rail overview metrics unavailable: overview API unavailable/);
+    expect(screen.getByRole('note')).toHaveTextContent(/Possession conflict check unavailable.*No all-clear status is implied/);
+    expect(screen.queryByText('No rail consignments yet.')).toBeTruthy();
+  });
+
+  it('has a labelled section control group with seven buttons and starts on Consignments', async () => {
+    const tabs = await open('MANAGER');
+    expect(within(tabs).getAllByRole('button').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Schedule Optimizer', 'Train Manifests', 'Live Tracking', 'Changes & Possessions', 'Tariffs & Weighbridge']);
+    expect(screen.getByRole('button', { name: 'Consignments' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Slot Applications & Compliance' }).getAttribute('aria-pressed')).toBe('false');
+    expect(within(screen.getByRole('combobox', { name: 'Filter rail consignments by status' })).getByRole('option', { name: 'Cancelled' })).toBeTruthy();
     expect(screen.queryByTestId('slots-panel')).toBeNull();
     expect(screen.queryByTestId('optimizer-panel')).toBeNull();
     expect(screen.queryByTestId('manifests-panel')).toBeNull();
@@ -111,25 +138,25 @@ describe('RailOperations — tabs', () => {
 
   it('switching tabs shows the panel and hides the consignment view', async () => {
     await open('MANAGER');
-    fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Slot Applications & Compliance' }));
     expect(screen.getByTestId('slots-panel')).toBeTruthy();
     expect(screen.queryByPlaceholderText(/Search consignment/)).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Schedule Optimizer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule Optimizer' }));
     expect(screen.getByTestId('optimizer-panel')).toBeTruthy();
     expect(screen.queryByTestId('slots-panel')).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Train Manifests' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Train Manifests' }));
     expect(screen.getByTestId('manifests-panel')).toBeTruthy();
     expect(screen.queryByTestId('optimizer-panel')).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Live Tracking' }));
     expect(screen.getByTestId('tracking-panel')).toBeTruthy();
     expect(screen.queryByTestId('manifests-panel')).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Changes & Possessions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Changes & Possessions' }));
     expect(screen.getByTestId('changes-panel')).toBeTruthy();
     expect(screen.queryByTestId('tracking-panel')).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Tariffs & Weighbridge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tariffs & Weighbridge' }));
     expect(screen.getByTestId('tariffs-panel')).toBeTruthy();
     expect(screen.queryByTestId('changes-panel')).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Consignments' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Consignments' }));
     expect(screen.queryByTestId('slots-panel')).toBeNull();
     expect(screen.queryByTestId('changes-panel')).toBeNull();
     expect(screen.queryByTestId('tariffs-panel')).toBeNull();
@@ -142,12 +169,12 @@ describe('RailOperations — tabs', () => {
     ['VIEWER', 'write=false sign=false'],
   ])('passes the right capabilities for %s to every panel', async (role, expected) => {
     await open(role);
-    fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Slot Applications & Compliance' }));
     expect(screen.getByTestId('slots-panel').textContent).toBe(expected);
-    fireEvent.click(screen.getByRole('tab', { name: 'Changes & Possessions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Changes & Possessions' }));
     expect(screen.getByTestId('changes-panel').textContent).toBe(expected);
     // the tariff panel needs only the write capability (no formal act in it is signatory-only)
-    fireEvent.click(screen.getByRole('tab', { name: 'Tariffs & Weighbridge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tariffs & Weighbridge' }));
     expect(screen.getByTestId('tariffs-panel').textContent).toBe(expected.split(' ')[0]);
   });
 });
@@ -187,7 +214,7 @@ describe('RailOperations — possession-conflict banner', () => {
     h.state.scan = clash;
     await open('MANAGER');
     await screen.findByTestId('possession-banner');
-    fireEvent.click(screen.getByRole('tab', { name: 'Slot Applications & Compliance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Slot Applications & Compliance' }));
     expect(screen.queryByTestId('possession-banner')).toBeNull();
   });
 });
@@ -212,8 +239,8 @@ describe('RailOperations — consignment drawer', () => {
   const openDrawer = async (role = 'MANAGER') => {
     h.state.rows = [h.consignment({ dg: { required: true, ready: false, problems: 1 } })];
     await open(role);
-    // scoped to the table: a possession banner above it may also name the consignment
-    fireEvent.click(await within(await screen.findByRole('table')).findByText('RAIL-2026-00007'));
+    // The visible action is a native button, so it is keyboard-operable and has an explicit purpose.
+    fireEvent.click(await within(await screen.findByRole('table')).findByRole('button', { name: 'Open consignment RAIL-2026-00007' }));
     await screen.findByTestId('dg-section');
   };
 

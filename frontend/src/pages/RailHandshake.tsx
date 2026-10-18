@@ -455,7 +455,7 @@ function ReportDrawer({
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
       <div
         className="h-full w-full max-w-3xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6"
-        onClick={(e) => e.stopPropagation()} role="dialog">
+        onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Handshake report ${report.reportNumber}`}>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -472,7 +472,7 @@ function ReportDrawer({
               </p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">
+          <button type="button" onClick={onClose} aria-label="Close dialog" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -640,7 +640,6 @@ function LogDeviationModal({
   busy, onClose, onLog }: {
   busy: boolean; onClose: () => void; onLog: (dto: Partial<HandshakeDeviation>) => void;
 }) {
-  useDismissOnEscape(Boolean(onClose), onClose);
   const [trainSlotRef, setTrainSlotRef] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
   const [category, setCategory] = useState<DeviationCategory>("DELAY");
@@ -718,12 +717,13 @@ function LogDeviationModal({
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useDismissOnEscape(true, onClose, 1);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()} role="dialog">
+      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-black text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">
+          <button type="button" onClick={onClose} aria-label="Close dialog" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60">
             <X className="h-5 w-5" />
           </button>
         </div>

@@ -23,13 +23,24 @@ export default function OccurrencesSection({ canWrite, canSign }: { canWrite: bo
   const { showToast } = useToast();
   const [rows, setRows] = useState<OccurrenceReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [noteFor, setNoteFor] = useState<{ occurrence: OccurrenceReport; action: NoteAction } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setRows(await listOccurrences()); } catch (e) { showToast(`Could not load occurrence reports: ${(e as Error)?.message ?? e}`, "error"); } finally { setLoading(false); }
+    setLoadError(null);
+    try {
+      setRows(await listOccurrences());
+    } catch (e) {
+      const message = String((e as Error)?.message ?? e);
+      setRows([]);
+      setLoadError(message);
+      showToast(`Could not load occurrence reports: ${message}`, "error");
+    } finally {
+      setLoading(false);
+    }
   }, [showToast]);
   useEffect(() => { void load(); }, [load]);
 
@@ -46,19 +57,25 @@ export default function OccurrencesSection({ canWrite, canSign }: { canWrite: bo
       title="Occurrence reports (derailment · collision · theft · SPAD · hazmat)"
       right={canWrite && <button type="button" className={btnPrimary} onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /> Report an occurrence</button>}
     >
+      {loadError && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Occurrence records unavailable: {loadError}.{" "}
+          <button type="button" onClick={() => void load()} className="underline underline-offset-2">Retry</button>
+        </div>
+      )}
       {overdue > 0 && (
         <p role="status" data-testid="occurrence-overdue" className="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">
           {overdue} occurrence{overdue === 1 ? "" : "s"} past the 48-hour preliminary-report deadline.
         </p>
       )}
       <div data-testid="occurrence-reports" className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="w-full text-left text-xs">
+        <table aria-label="Rail occurrence reports" className="min-w-[920px] w-full text-left text-xs">
           <thead className="bg-white/[0.03] text-[10px] uppercase tracking-widest text-slate-400">
             <tr><th className="px-3 py-2">Occurrence</th><th className="px-3 py-2">What happened</th><th className="px-3 py-2">Level</th><th className="px-3 py-2">Notified</th><th className="px-3 py-2">Preliminary report</th><th className="px-3 py-2">Status</th><th className="px-3 py-2" /></tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {loading && <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">No occurrences reported.</td></tr>}
+            {loading && <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500"><div role="status"><Loader2 className="mx-auto h-5 w-5 animate-spin" />Loading occurrence reports…</div></td></tr>}
+            {!loading && !loadError && rows.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">No occurrences reported.</td></tr>}
             {!loading && rows.map((o) => {
               const clock = preliminaryClock(o);
               return (

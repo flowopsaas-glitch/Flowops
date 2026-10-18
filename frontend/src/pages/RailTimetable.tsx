@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Loader2, RefreshCw, Search, Train, Upload } from "lucide-react";
 import {
@@ -27,6 +27,11 @@ export default function RailTimetable() {
   const { showToast } = useToast();
   const [imports, setImports] = useState<RailTimetableImport[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [importsError, setImportsError] = useState<string | null>(null);
+  const [rowsError, setRowsError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const rowsRequestId = useRef(0);
   const [rows, setRows] = useState<RailTimetableRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -36,6 +41,8 @@ export default function RailTimetable() {
   const [uploading, setUploading] = useState(false);
 
   const loadImports = useCallback(async (preferId?: string) => {
+    setLoadingImports(true);
+    setImportsError(null);
     try {
       const result = await listRailTimetableImports();
       setImports(result);
@@ -44,30 +51,47 @@ export default function RailTimetable() {
         return result.some((item) => item.id === desired) ? desired : result[0]?.id ?? "";
       });
     } catch (error: unknown) {
-      showToast(`Could not load timetable imports: ${errorMessage(error)}`, "error");
+      const message = errorMessage(error);
+      setImports([]);
+      setSelectedId("");
+      setImportsError(message);
+      showToast(`Could not load timetable imports: ${message}`, "error");
     } finally {
       setLoadingImports(false);
     }
   }, [showToast]);
 
   const loadRows = useCallback(async () => {
+    const requestId = ++rowsRequestId.current;
     if (!selectedId) {
       setRows([]);
       setTotal(0);
+      setRowsError(null);
+      setLoadingRows(false);
       return;
     }
+    setLoadingRows(true);
+    setRowsError(null);
+    setRows([]);
+    setTotal(0);
     try {
       const result = await listRailTimetableRows(selectedId, {
         q: query.trim() || undefined,
         page,
         limit: PAGE_SIZE,
       });
+      if (requestId !== rowsRequestId.current) return;
       setRows(result.data);
       setTotal(result.total);
     } catch (error: unknown) {
-      showToast(`Could not load timetable rows: ${errorMessage(error)}`, "error");
+      if (requestId !== rowsRequestId.current) return;
+      const message = errorMessage(error);
+      setRows([]);
+      setTotal(0);
+      setRowsError(message);
+      showToast(`Could not load timetable rows: ${message}`, "error");
     } finally {
-      setLoadingRows(false);
+      if (requestId === rowsRequestId.current) setLoadingRows(false);
     }
   }, [page, query, selectedId, showToast]);
 
@@ -84,6 +108,7 @@ export default function RailTimetable() {
     event.target.value = "";
     if (!file) return;
     setUploading(true);
+    setUploadError(null);
     setLoadingRows(true);
     setLoadingImports(true);
     try {
@@ -93,8 +118,11 @@ export default function RailTimetable() {
       await loadImports(created.id);
       showToast(`Imported ${created.rowCount.toLocaleString()} timetable rows`, "success");
     } catch (error: unknown) {
+      const message = errorMessage(error);
       setLoadingRows(false);
-      showToast(`Could not import timetable: ${errorMessage(error)}`, "error");
+      setLoadingImports(false);
+      setUploadError(message);
+      showToast(`Could not import timetable: ${message}`, "error");
     } finally {
       setUploading(false);
     }
@@ -120,18 +148,34 @@ export default function RailTimetable() {
             </div>
           </div>
         </div>
-        <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400 ${uploading ? "pointer-events-none opacity-60" : ""}`}>
-          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {uploading ? "Importing…" : "Import timetable"}
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            aria-describedby="timetable-file-types"
+            disabled={uploading}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {uploading ? "Importing…" : "Import timetable"}
+          </button>
+          <span id="timetable-file-types" className="text-[11px] text-slate-500">Tab-separated .txt or .tsv only</span>
           <input
+            ref={fileInputRef}
             type="file"
-            accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values"
+            accept=".txt,.tsv,text/plain,text/tab-separated-values,text/tsv"
             className="hidden"
             disabled={uploading}
             onChange={upload}
+            aria-label="Choose a tab-separated timetable file"
           />
-        </label>
+        </div>
       </div>
+      {uploadError && (
+        <div role="alert" className="mb-4 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-200">
+          Could not import timetable: {uploadError}
+        </div>
+      )}
 
       <details className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
         <summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-emerald-300">
@@ -191,14 +235,27 @@ export default function RailTimetable() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300">Imports</h2>
             <button
-              onClick={() => { setLoadingImports(true); void loadImports(); }}
-              className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white"
+              type="button"
+              disabled={loadingImports}
+              onClick={() => void loadImports()}
+              className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Refresh timetable imports"
             >
               <RefreshCw className={`h-4 w-4 ${loadingImports ? "animate-spin" : ""}`} />
             </button>
           </div>
-          {imports.length === 0 && !loadingImports && (
+          {importsError && (
+            <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+              Could not load timetable imports: {importsError}{" "}
+              <button type="button" onClick={() => void loadImports()} className="underline underline-offset-2">Retry</button>
+            </div>
+          )}
+          {imports.length === 0 && loadingImports && (
+            <p role="status" className="rounded-xl border border-white/5 p-4 text-sm text-slate-400">
+              Loading timetable imports…
+            </p>
+          )}
+          {imports.length === 0 && !loadingImports && !importsError && (
             <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-500">
               No timetable imports yet. Upload a tab-separated .txt or .tsv file.
             </p>
@@ -207,8 +264,10 @@ export default function RailTimetable() {
             {imports.map((item) => (
               <button
                 key={item.id}
+                type="button"
+                aria-pressed={selectedId === item.id}
                 onClick={() => { setSelectedId(item.id); setPage(1); setLoadingRows(true); }}
-                className={`w-full rounded-xl border p-3 text-left transition ${
+                className={`w-full rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 ${
                   selectedId === item.id
                     ? "border-emerald-500/40 bg-emerald-500/10"
                     : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
@@ -239,6 +298,7 @@ export default function RailTimetable() {
             <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
               <Search className="h-4 w-4 text-slate-500" />
               <input
+                aria-label="Search timetable rows"
                 value={query}
                 onChange={(event) => { setQuery(event.target.value); setPage(1); setLoadingRows(true); }}
                 placeholder="Search origin, train, station…"
@@ -248,7 +308,7 @@ export default function RailTimetable() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1800px] w-full text-left text-xs">
+            <table aria-label="Timetable schedule rows" className="min-w-[1800px] w-full text-left text-xs">
               <thead className="bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-400">
                 <tr>
                   {["#", "Origin", "Train", "Node", "Corridor", "Station / siding", "Arrival", "Departure",
@@ -283,7 +343,17 @@ export default function RailTimetable() {
                     <td className="px-3 py-2">{cell(row.distanceKm)}</td>
                   </tr>
                 ))}
-                {!loadingRows && rows.length === 0 && (
+                {!loadingRows && rowsError && (
+                  <tr>
+                    <td colSpan={20} className="px-4 py-8 text-center text-rose-300">
+                      <div role="alert">
+                        Could not load timetable rows: {rowsError}{" "}
+                        <button type="button" onClick={() => void loadRows()} className="ml-1 underline underline-offset-2">Retry</button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!loadingRows && !rowsError && rows.length === 0 && (
                   <tr>
                     <td colSpan={20} className="px-4 py-12 text-center text-slate-500">
                       {selectedId ? "No schedule rows match this search." : "Import a timetable to browse train workings."}
@@ -292,7 +362,7 @@ export default function RailTimetable() {
                 )}
                 {loadingRows && (
                   <tr><td colSpan={20} className="px-4 py-12 text-center text-slate-400">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading timetable…
+                    <span role="status"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading timetable…</span>
                   </td></tr>
                 )}
               </tbody>
@@ -302,11 +372,13 @@ export default function RailTimetable() {
             <span>Page {page} of {pages}</span>
             <div className="flex gap-2">
               <button
+                type="button"
                 disabled={page <= 1 || loadingRows}
                 onClick={() => { setPage((current) => current - 1); setLoadingRows(true); }}
                 className="rounded-lg border border-white/10 px-3 py-1.5 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
               >Previous</button>
               <button
+                type="button"
                 disabled={page >= pages || loadingRows}
                 onClick={() => { setPage((current) => current + 1); setLoadingRows(true); }}
                 className="rounded-lg border border-white/10 px-3 py-1.5 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"

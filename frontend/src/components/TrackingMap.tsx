@@ -1,18 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { io, Socket } from 'socket.io-client';
 import { FLOWOPS_WS_ORIGIN } from '../lib/env';
 import { getMapCenter } from '../lib/currency';
+import OpenStreetMapLayer from "./maps/OpenStreetMapLayer";
 
-// ── Dark-themed tile configuration ──────────────────────────────────────────
-// CartoDB Dark Matter — matches FlowOps dark UI perfectly.
-// Free, no API key required, excellent global coverage.
-const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTRIBUTION = '&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>';
-
-// Default center — resolved dynamically per tenant country
+// Default center — resolved dynamically per tenant country.
 const DEFAULT_CENTER: [number, number] = [-26.2041, 28.0473]; // Fallback: Johannesburg
 
 interface DriverTelemetry {
@@ -117,7 +112,7 @@ export const TrackingMap: React.FC<{ companyId: number; countryCode?: string }> 
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
       >
-        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+        <OpenStreetMapLayer />
         <FitBounds markers={markerPositions} />
 
         {Array.from(drivers.entries()).map(([id, driver]) => (

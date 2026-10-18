@@ -1,9 +1,9 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
-  Activity, AlertTriangle, ArrowUpRight, Brain, 
-  FileText, Package, Truck, Users, Search, 
-  RotateCcw, Navigation, Zap, Target, X, LocateFixed, Database, Shield,
+  Activity, AlertTriangle, Brain,
+  FileText, Package, Truck, Users,
+  RotateCcw, Zap, Target, X, LocateFixed,
   TrendingUp, TrendingDown, Minus, Clock, CheckCircle2, Wallet
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -15,13 +15,15 @@ import { PerformanceTrends } from "../components/premium/PerformanceTrends";
 import { getEntitlements } from "../api/billingApi";
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../api/client';
+import { getMapCoordinates } from "../lib/mapCoordinates";
 
 // Component Imports
 import AiClawChat from "../components/AiClawChat";
 
 // Leaflet Imports
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
+import OpenStreetMapLayer from "../components/maps/OpenStreetMapLayer";
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -41,9 +43,11 @@ function MapController({ center }: { center: [number, number] }) {
   const map = useMap();
   return (
     <div className="absolute bottom-12 right-12 z-[1000]">
-      <button 
+      <button
+        type="button"
+        aria-label="Reset map view to South Africa"
         onClick={() => map.flyTo(center, 6, { duration: 1.5 })}
-        className="bg-emerald-500 text-black p-5 rounded-full shadow-[0_0_40px_rgba(16,185,129,0.5)] hover:bg-white transition-all border-4 border-black/20"
+        className="bg-emerald-500 text-black p-5 rounded-full shadow-[0_0_40px_rgba(16,185,129,0.5)] hover:bg-white transition-all border-4 border-black/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-200"
       >
         <LocateFixed size={28} />
       </button>
@@ -60,7 +64,7 @@ function MetricCard(props: {
   const Icon = props.icon;
 
   return (
-    <div className={`group h-[190px] w-full [perspective:1000px] cursor-pointer ${props.className ?? ""}`} onClick={() => setIsFlipped(!isFlipped)}>
+    <div className={`group h-[190px] w-full [perspective:1000px] ${props.className ?? ""}`}>
       <div className={`relative h-full w-full rounded-[24px] transition-all duration-700 [transform-style:preserve-3d] ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
         <div className={`absolute inset-0 h-full w-full rounded-[24px] p-6 [backface-visibility:hidden] border border-white/10 shadow-xl ${props.gradient}`}>
           <div className="flex items-start justify-between">
@@ -68,22 +72,41 @@ function MetricCard(props: {
               <div className="text-[9px] font-black uppercase tracking-[0.2em] text-white/60">{props.title}</div>
               <div className="text-4xl font-black tracking-tighter text-white drop-shadow-lg">{props.value}</div>
             </div>
-            <div className="rounded-xl bg-white/20 backdrop-blur-md p-3 text-white shadow-inner"><Icon size={20} /></div>
+            <button
+              type="button"
+              aria-label={isFlipped ? `Hide ${props.title} explanation` : `Show ${props.title} explanation`}
+              aria-expanded={isFlipped}
+              onClick={() => setIsFlipped((flipped) => !flipped)}
+              title="Show metric explanation"
+              className="rounded-xl bg-white/20 backdrop-blur-md p-3 text-white shadow-inner focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <Icon size={20} />
+            </button>
           </div>
           <div className="mt-auto pt-6 flex items-center justify-between font-black uppercase italic text-[9px] text-white/70 tracking-widest">
-            <button onClick={(e) => { e.stopPropagation(); props.onAiClick?.(); }} className="flex items-center gap-1.5 hover:text-white transition-colors">
+            <button type="button" aria-label={`Open AI intelligence for ${props.title}`} onClick={props.onAiClick} className="flex items-center gap-1.5 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white hover:text-white transition-colors">
               <RotateCcw size={10} className="animate-spin-slow" /> AI Intelligence
             </button>
-            <button onClick={(e) => { e.stopPropagation(); navigate(props.to); }} className="bg-black/20 hover:bg-white hover:text-black px-3 py-1 rounded-full not-italic border border-white/10 transition-all text-[8px] font-black uppercase">
+            <button type="button" aria-label={`View details for ${props.title}`} onClick={() => navigate(props.to)} className="bg-black/20 hover:bg-white hover:text-black px-3 py-1 rounded-full not-italic border border-white/10 transition-all text-[8px] font-black uppercase focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
               View Details
             </button>
           </div>
         </div>
         <div className="absolute inset-0 h-full w-full rounded-[24px] border border-sky-500/30 bg-[#0c1a35] p-6 [backface-visibility:hidden] [transform:rotateY(180deg)] shadow-2xl">
           <div className="flex flex-col h-full">
-            <div className="flex items-center gap-2 mb-3">
-               <Brain size={12} className="text-sky-400" />
-               <div className="text-[9px] font-black uppercase tracking-[0.2em] text-sky-400 italic">Logic Layer</div>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <Brain size={12} className="text-sky-400" />
+                <div className="text-[9px] font-black uppercase tracking-[0.2em] text-sky-400 italic">Logic Layer</div>
+              </div>
+              <button
+                type="button"
+                aria-label={`Return to ${props.title} metric`}
+                onClick={() => setIsFlipped(false)}
+                className="rounded px-2 py-1 text-[9px] font-bold text-sky-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-200"
+              >
+                Back
+              </button>
             </div>
             <p className="text-[11px] font-bold text-slate-200 leading-tight">{props.subtitle}</p>
           </div>
@@ -150,8 +173,10 @@ function KpiCard(props: { title: string; kpi: Kpi; icon: any; currency: string; 
 
   return (
     <button
+      type="button"
+      aria-label={`Open ${props.title} details`}
       onClick={() => navigate(props.to)}
-      className="group h-full w-full text-left rounded-[20px] border border-white/10 bg-slate-900/60 p-5 transition-all hover:border-sky-400/40 hover:bg-slate-900/90"
+      className="group h-full w-full text-left rounded-[20px] border border-white/10 bg-slate-900/60 p-5 transition-all hover:border-sky-400/40 hover:bg-slate-900/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
     >
       <div className="flex items-center justify-between">
         <div className="rounded-xl border border-white/10 bg-white/[0.04] p-2 text-sky-300">
@@ -189,9 +214,18 @@ export default function Dashboard() {
   const { user, booting } = useAuth();
   const [activeDrivers, setActiveDrivers] = useState<any[]>([]);
   const [liveMetrics, setLiveMetrics] = useState({
-    collections: "0", activeDrivers: "0", transit: "0", stock: "0", risks: "0"
+    collections: "—", activeDrivers: "—", transit: "—", stock: "—", risks: "—"
   });
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [metricsUpdatedAt, setMetricsUpdatedAt] = useState<Date | null>(null);
+  const [unlocatedDriverCount, setUnlocatedDriverCount] = useState(0);
   const [kpis, setKpis] = useState<KpiSet | null>(null);
+  const [kpisLoading, setKpisLoading] = useState(true);
+  const [kpisError, setKpisError] = useState<string | null>(null);
+  const [etaError, setEtaError] = useState<string | null>(null);
+  const [etaUpdatedAt, setEtaUpdatedAt] = useState<Date | null>(null);
+  const [syncTick, setSyncTick] = useState(0);
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [forwardingEntitled, setForwardingEntitled] = useState(false);
 
@@ -233,7 +267,7 @@ export default function Dashboard() {
           ? "Operations View"
           : "Workspace View";
 
-  const { socket } = useSocket(user?.companyId || 1);
+  const { socket, isConnected } = useSocket(user?.companyId || 1);
   const mapCenterPoint: [number, number] = useMemo(() => [-28.4793, 24.6727], []); // Global center coordinates for South Africa
 
   // 1. Initial REST Synchronization Layer Pass
@@ -241,45 +275,102 @@ export default function Dashboard() {
     if (booting || !user) return;
 
     const fetchMetrics = async () => {
+      setMetricsLoading(true);
+      setMetricsError(null);
       try {
         const res = await api.get<any, any>(`/dashboard/metrics`);
-        // The backend wraps every response via a global TransformInterceptor as
-        // { data, statusCode, message }. Unwrap defensively so the metric cards
-        // and live map read the real payload rather than the envelope.
-        const data = res && typeof res === "object" && "data" in res ? (res as any).data : res;
+        const data = res && typeof res === "object" && "data" in res ? res.data : res;
+        const metricKeys = ["collections", "activeDrivers", "transit", "stock", "risks"] as const;
+        const isCount = (value: unknown) =>
+          (typeof value === "number" || (typeof value === "string" && value.trim() !== "")) &&
+          Number.isInteger(Number(value)) && Number(value) >= 0;
+        if (
+          !data ||
+          typeof data !== "object" ||
+          metricKeys.some((key) => !isCount(data[key])) ||
+          !Array.isArray(data.drivers)
+        ) {
+          throw new Error("The metrics service returned an incomplete response.");
+        }
         setLiveMetrics({
-          collections: String(data?.collections || 0),
-          activeDrivers: String(data?.activeDrivers || 0),
-          transit: String(data?.transit || 0),
-          stock: String(data?.stock || 0),
-          risks: String(data?.risks || 0)
+          collections: String(data.collections),
+          activeDrivers: String(data.activeDrivers),
+          transit: String(data.transit),
+          stock: String(data.stock),
+          risks: String(data.risks),
         });
-        if (Array.isArray(data?.drivers)) setActiveDrivers(data.drivers);
-      } catch (err) {
+        const locatedDrivers = data.drivers.flatMap((driver: any) => {
+          const coordinates = getMapCoordinates(driver?.lat, driver?.lng);
+          return coordinates && driver?.id != null ? [{ ...driver, ...coordinates }] : [];
+        });
+        setUnlocatedDriverCount(data.drivers.length - locatedDrivers.length);
+        setActiveDrivers(locatedDrivers);
+        setMetricsUpdatedAt(new Date());
+      } catch (err: any) {
+        setMetricsError("Operational metrics could not be refreshed.");
         console.error("Dashboard metrics synchronization dropped:", err);
+      } finally {
+        setMetricsLoading(false);
       }
     };
 
     const fetchEtas = async () => {
+      setEtaError(null);
       try {
         const res = await api.get<any, any>(`/dashboard/live-etas`);
-        const data: any[] = Array.isArray(res) ? res
-          : Array.isArray((res as any)?.data) ? (res as any).data : [];
+        const data: any = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : null;
+        if (!data) throw new Error("The ETA service returned an unexpected response.");
         const map: typeof etaMap = {};
-        for (const e of data) map[e.driverId] = e;
+        let excludedCount = 0;
+        for (const eta of data) {
+          const etaMinutes = Number(eta?.etaMinutes);
+          const distanceKm = Number(eta?.distanceKm);
+          if (
+            eta?.driverId != null &&
+            eta?.etaMinutes != null &&
+            eta?.distanceKm != null &&
+            Number.isFinite(etaMinutes) && etaMinutes >= 0 &&
+            Number.isFinite(distanceKm) && distanceKm >= 0
+          ) {
+            map[eta.driverId] = { ...eta, etaMinutes, distanceKm };
+          } else {
+            excludedCount += 1;
+          }
+        }
         setEtaMap(map);
-      } catch {
-        // ETAs are best-effort — don't log noise if backend returns nothing
+        setEtaUpdatedAt(new Date());
+        if (excludedCount > 0) setEtaError("Some live ETA records were unusable and excluded.");
+      } catch (err: any) {
+        setEtaError("Live ETAs could not be refreshed.");
+        console.error("Dashboard live ETA synchronization dropped:", err);
       }
     };
 
     const fetchKpis = async () => {
+      setKpisLoading(true);
+      setKpisError(null);
       try {
         const res = await api.get<any, any>(`/dashboard/kpis`);
-        const data = res && typeof res === "object" && "data" in res ? (res as any).data : res;
-        if (data && data.onTimeDeliveryRate) setKpis(data as KpiSet);
-      } catch (err) {
+        const data = res && typeof res === "object" && "data" in res ? res.data : res;
+        const kpiKeys = [
+          "onTimeDeliveryRate", "deliverySuccessRate", "avgDeliveryHours",
+          "revenuePerWaybill", "exceptionRate", "outstandingRevenue",
+        ];
+        const isValidKpi = (kpi: any) =>
+          kpi && typeof kpi === "object" && !Array.isArray(kpi) &&
+          (kpi.value === null || Number.isFinite(kpi.value)) &&
+          (kpi.delta === null || Number.isFinite(kpi.delta)) &&
+          ["percent", "hours", "currency"].includes(kpi.unit) &&
+          ["up", "down"].includes(kpi.goodDirection);
+        if (!data || typeof data !== "object" || kpiKeys.some((key) => !isValidKpi(data[key]))) {
+          throw new Error("The KPI service returned an incomplete response.");
+        }
+        setKpis(data as KpiSet);
+      } catch (err: any) {
+        setKpisError("Performance KPIs could not be refreshed.");
         console.error("Dashboard KPI synchronization dropped:", err);
+      } finally {
+        setKpisLoading(false);
       }
     };
 
@@ -290,7 +381,7 @@ export default function Dashboard() {
     // Refresh metrics + ETAs every 30 seconds (KPIs only need daily precision)
     const interval = setInterval(() => { fetchMetrics(); fetchEtas(); }, 30_000);
     return () => clearInterval(interval);
-  }, [user, booting]);
+  }, [user, booting, syncTick]);
 
   // 2. Real-time WebSockets Over-the-Air Update Listener Loop
   useEffect(() => {
@@ -299,12 +390,14 @@ export default function Dashboard() {
     socket.emit('joinCompanyDashboard', { companyId: user?.companyId || 1 });
 
     socket.on('telemetryStreamUpdate', (data: any) => {
+      const coordinates = getMapCoordinates(data?.lat, data?.lng);
+      if (!coordinates || data?.driverId == null) return;
       setActiveDrivers((prevDrivers) => {
         const driverExists = prevDrivers.some(d => d.id === data.driverId);
         if (driverExists) {
-          return prevDrivers.map(d => d.id === data.driverId ? { ...d, lat: data.lat, lng: data.lng } : d);
+          return prevDrivers.map(d => d.id === data.driverId ? { ...d, ...coordinates } : d);
         } else {
-          return [...prevDrivers, { id: data.driverId, name: data.name, vehicleReg: data.vehicleReg, lat: data.lat, lng: data.lng }];
+          return [...prevDrivers, { id: data.driverId, name: data.name, vehicleReg: data.vehicleReg, ...coordinates }];
         }
       });
     });
@@ -346,6 +439,19 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#020617] text-slate-100 p-8 space-y-8 font-sans">
       <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`${persona} · ${company?.name || "FlowOps Demo"}`} />
 
+      {(metricsError || kpisError || etaError) && (
+        <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-amber-400/30 bg-amber-950/30 px-5 py-4 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            {metricsError && <p>Operational metrics did not refresh. {metricsUpdatedAt ? `Showing the last successful snapshot from ${metricsUpdatedAt.toLocaleTimeString()}.` : "No metrics snapshot is available; values are shown as unavailable."}</p>}
+            {kpisError && <p>{kpis ? "Performance KPIs did not refresh; the last successful values remain visible." : "Performance KPIs are unavailable."}</p>}
+            {etaError && <p>{etaError} {etaUpdatedAt ? `Last valid ETA data: ${etaUpdatedAt.toLocaleTimeString()}.` : "No ETA snapshot is available."}</p>}
+          </div>
+          <button type="button" onClick={() => setSyncTick((tick) => tick + 1)} className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-2 font-bold hover:bg-amber-200/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">
+            Retry dashboard data
+          </button>
+        </div>
+      )}
+
       {/* Freight Control Tower — import/export hero for forwarding-entitled tenants */}
       {forwardingEntitled && <ForwardingControlTower />}
 
@@ -378,11 +484,15 @@ export default function Dashboard() {
               </TiltCard>
             ))}
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        ) : kpisLoading ? (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6" aria-label="Loading performance KPIs">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-[132px] animate-pulse rounded-[20px] border border-white/5 bg-slate-900/40" />
             ))}
+          </div>
+        ) : (
+          <div role="status" className="rounded-2xl border border-white/10 bg-slate-900/40 p-5 text-sm text-slate-300">
+            {kpisError ? "Performance KPIs are unavailable until the data service responds." : "Performance KPIs have not been loaded yet."}
           </div>
         )}
       </div>
@@ -394,12 +504,18 @@ export default function Dashboard() {
       {/* Leaflet Real-time Transit Grid Block Container — operations personas only */}
       {canSeeMap && (
       <div className="relative bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-[32px] p-6 h-[600px] overflow-hidden shadow-2xl">
-        <div className="absolute top-6 left-6 z-[1000] bg-black/70 border border-white/10 px-4 py-2 rounded-full text-xs font-black tracking-widest uppercase text-emerald-400 animate-pulse">
-          📡 Live Telemetry Feed Connected
+        <div role="status" aria-live="polite" className={`absolute top-6 left-6 z-[1000] rounded-2xl border px-4 py-2 text-xs font-black uppercase tracking-widest ${isConnected && !metricsError ? "border-emerald-400/30 bg-black/70 text-emerald-300" : "border-amber-400/30 bg-black/80 text-amber-200"}`}>
+          <p>{isConnected ? "Telemetry socket connected" : "Telemetry socket disconnected"}</p>
+          <p className="mt-1 text-[10px] font-semibold normal-case tracking-normal">
+            {metricsError
+              ? metricsUpdatedAt ? `REST snapshot stale · last success ${metricsUpdatedAt.toLocaleTimeString()}` : "No REST position snapshot loaded"
+              : metricsUpdatedAt ? `REST snapshot ${metricsLoading ? "refreshing" : "synced"} · ${metricsUpdatedAt.toLocaleTimeString()}` : "Waiting for initial REST snapshot"}
+          </p>
+          {unlocatedDriverCount > 0 && <p className="mt-1 text-[10px] font-semibold normal-case tracking-normal">{unlocatedDriverCount} returned driver record{unlocatedDriverCount === 1 ? "" : "s"} excluded from map: invalid coordinates.</p>}
         </div>
         
-        <MapContainer center={mapCenterPoint} zoom={5} style={{ height: "100%", width: "100%", borderRadius: "24px" }} zoomControl={false} attributionControl={false}>
-          <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapContainer center={mapCenterPoint} zoom={5} style={{ height: "100%", width: "100%", borderRadius: "24px" }} zoomControl={false}>
+          <OpenStreetMapLayer />
           <MarkerClusterGroup>
             {activeDrivers.map((driver) => {
               const eta = etaMap[driver.id];

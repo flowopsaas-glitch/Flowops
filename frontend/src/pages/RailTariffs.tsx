@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   ancillaryCatalogue,
   ancillaryCounts,
@@ -98,7 +100,9 @@ export default function RailTariffs() {
         </p>
       </div>
 
-      <div className="flex gap-2">
+      <ReferenceNotice />
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Tariff reference sections">
         {(
           [
             ["access", "Access fees & charges (NS V4 Table 17–22)"],
@@ -107,6 +111,8 @@ export default function RailTariffs() {
         ).map(([k, label]) => (
           <button
             key={k}
+            type="button"
+            aria-pressed={tab === k}
             onClick={() => setTab(k)}
             className={`rounded-full px-4 py-1.5 text-xs font-medium ${
               tab === k ? "bg-teal-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -233,9 +239,9 @@ export default function RailTariffs() {
             <p className="mt-1 text-[11px] text-slate-500">{penaltyRegime.forceMajeure}</p>
             <p className="mt-2 text-[11px] text-slate-500">
               {furtherKpis.label} and the KPI pipeline live on{" "}
-              <a className="underline" href="/rail/kpis">
+              <Link className="underline" to="/rail/kpis">
                 Corridor KPIs
-              </a>
+              </Link>
               .
             </p>
           </div>
@@ -268,6 +274,8 @@ export default function RailTariffs() {
             {tiers.map((t) => (
               <button
                 key={t}
+                type="button"
+                aria-pressed={tierFilter === t}
                 onClick={() => setTierFilter(t)}
                 className={`rounded-full px-3 py-1.5 text-xs font-medium ${
                   tierFilter === t
@@ -279,6 +287,7 @@ export default function RailTariffs() {
               </button>
             ))}
             <input
+              aria-label="Search ancillary services"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search services, descriptions, units…"

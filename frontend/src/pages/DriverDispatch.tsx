@@ -1,24 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  RefreshCw, Sparkles, Truck, MapPin, Clock, Package,
+  RefreshCw, Truck, MapPin, Clock, Package,
   PackagePlus, AlertTriangle, LayoutList, Map as MapIcon, ExternalLink,
-  CheckSquare, Square, MessageCircle, Users, TrendingUp, CheckCircle2,
-  XCircle, Zap, ChevronRight,
+  CheckSquare, Square, MessageCircle, Users, CheckCircle2,
+  XCircle, Zap,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-
-// ── Standardised dark tile source (CartoDB Dark Matter) ──
-const DARK_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const DARK_TILE_ATTR = '&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>';
 
 import { api } from '../api/client';
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { useToast } from "../components/ToastProvider";
 import { useSocket } from "../hooks/useSocket";
 import { useAuth } from "../contexts/AuthContext";
+import { getMapCoordinates, hasMapCoordinates } from "../lib/mapCoordinates";
+import OpenStreetMapLayer from "../components/maps/OpenStreetMapLayer";
 
 // --- CUSTOM MAP ICONS ---
 const jobIcon = new L.Icon({
@@ -46,10 +45,67 @@ function StatCard({ label, value, hint }: { label: string; value: number | strin
   );
 }
 
-function ChangeView({ center }: { center: [number, number] }) {
+function addressArea(address?: string | null) {
+  const value = address?.split(",").pop()?.trim();
+  return value ? value.toUpperCase() : "Area not provided";
+}
+
+const DEFAULT_MAP_CENTER: [number, number] = [-26.2041, 28.0473];
+
+function FitDispatchPoints({
+  positions,
+  selected,
+}: {
+  positions: [number, number][];
+  selected: [number, number] | null;
+}) {
   const map = useMap();
-  map.setView(center);
+  useEffect(() => {
+    if (selected) {
+      map.setView(selected, 12);
+    } else if (positions.length === 1) {
+      map.setView(positions[0], 12);
+    } else if (positions.length > 1) {
+      map.fitBounds(positions, { padding: [36, 36], maxZoom: 12 });
+    } else {
+      map.setView(DEFAULT_MAP_CENTER, 6);
+    }
+  }, [map, positions, selected]);
   return null;
+}
+
+function AvailableDriverChooser({
+  drivers,
+  assigning,
+  onAssign,
+}: {
+  drivers: Array<{ id: string; name: string; status: string }>;
+  assigning: boolean;
+  onAssign: (driverId: string) => void;
+}) {
+  const available = drivers.filter((driver) => driver.status === "AVAILABLE");
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/45">Assign manually</p>
+      {available.length === 0 ? (
+        <p role="status" className="text-xs text-white/55">No drivers are currently reported as available.</p>
+      ) : (
+        <div className="max-h-44 space-y-2 overflow-y-auto">
+          {available.map((driver) => (
+            <button
+              key={driver.id}
+              type="button"
+              onClick={() => onAssign(driver.id)}
+              disabled={assigning}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm font-bold text-white hover:border-sky-400/40 hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-50"
+            >
+              Assign {driver.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function DriverDispatch() {
@@ -63,13 +119,12 @@ export default function DriverDispatch() {
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [offlineReason, setOfflineReason] = useState<'backend'|'session'>('backend');
+  const [sourceErrors, setSourceErrors] = useState<string[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set()); // batch selection
   const [assigning, setAssigning] = useState(false);
   const [todayStats, setTodayStats] = useState({ assigned: 0, completed: 0, failed: 0, pending: 0 });
-
-  const branchCenter: [number, number] = [-26.2041, 28.0473];
 
   // Unwrap both the TransformInterceptor envelope AND optional pagination wrapper.
   // Backend returns: { data: X, statusCode, message } (TransformInterceptor)
@@ -87,15 +142,32 @@ export default function DriverDispatch() {
     try {
       setLoading(true);
       setOffline(false);
+      setSourceErrors([]);
       const [wbRes, collRes, driversTableRes, shipmentsRes] = await Promise.allSettled([
         api.get('/waybills'), api.get('/collections'), api.get('/drivers'), api.get('/shipments')
       ]);
 
-      const allFailed = [wbRes, collRes, driversTableRes, shipmentsRes].every(r => r.status === 'rejected');
+      const sourceResults = [
+        { name: 'Waybills', result: wbRes },
+        { name: 'Collections', result: collRes },
+        { name: 'Drivers', result: driversTableRes },
+        { name: 'Shipments', result: shipmentsRes },
+      ];
+      const unavailableSources = sourceResults
+        .filter(({ result }) => result.status === 'rejected')
+        .map(({ name }) => name);
+      setSourceErrors(unavailableSources);
+
+      const allFailed = unavailableSources.length === sourceResults.length;
       if (allFailed) {
         const firstErr: any = [wbRes, collRes, driversTableRes, shipmentsRes].find(r => r.status === 'rejected');
         const status = (firstErr as any)?.reason?.status;
         setOfflineReason(status === 401 || status === 403 ? 'session' : 'backend');
+        setJobs([]);
+        setDrivers([]);
+        setSelectedJobId(null);
+        setCheckedIds(new Set());
+        setTodayStats({ assigned: 0, completed: 0, failed: 0, pending: 0 });
         setOffline(true);
         setLoading(false);
         return;
@@ -129,46 +201,61 @@ export default function DriverDispatch() {
       // Filter by status instead: PENDING and COLLECTED = unassigned to driver
       const deliveries = waybillsData
         .filter((w: any) => ['PENDING', 'COLLECTED'].includes(w.status))
-        .map((w: any) => ({
-          id: `DEL-${w.id}`,
-          reference: w.trackingNumber || `WB-${w.id}`,
-          customer: w.recipientName || "Standard Delivery",
-          area: (w.recipientAddress || "GENERAL ZONE").split(',').pop()?.trim().toUpperCase() ?? "GENERAL ZONE",
-          type: 'DELIVERY' as const,
-          lat: w.recipientLat ?? -26.15,
-          lng: w.recipientLng ?? 28.00,
-          raw: w,
-        }));
+        .map((w: any) => {
+          const location = getMapCoordinates(w.recipientLat, w.recipientLng);
+          return {
+            id: `DEL-${w.id}`,
+            reference: w.trackingNumber || `WB-${w.id}`,
+            customer: w.recipientName || "Standard Delivery",
+            area: addressArea(w.recipientAddress),
+            type: 'DELIVERY' as const,
+            lat: location?.lat ?? null,
+            lng: location?.lng ?? null,
+            raw: w,
+          };
+        });
 
       const collections = collectionsData
         .filter((c: any) => !c.driverId && c.status === 'PENDING')
-        .map((c: any) => ({
-          id: `COL-${c.id}`,
-          reference: c.clientName || `COL-${c.id}`,
-          customer: c.clientName || "Pickup Request",
-          area: (c.pickupAddress || "GENERAL ZONE").split(',').pop()?.trim().toUpperCase() ?? "GENERAL ZONE",
-          type: 'COLLECTION' as const,
-          lat: c.pickupLat ?? -26.25,
-          lng: c.pickupLng ?? 28.10,
-          raw: c,
-        }));
+        .map((c: any) => {
+          const location = getMapCoordinates(c.pickupLat, c.pickupLng);
+          return {
+            id: `COL-${c.id}`,
+            reference: c.clientName || `COL-${c.id}`,
+            customer: c.clientName || "Pickup Request",
+            area: addressArea(c.pickupAddress),
+            type: 'COLLECTION' as const,
+            lat: location?.lat ?? null,
+            lng: location?.lng ?? null,
+            raw: c,
+          };
+        });
 
-      const fleet = rawDriversTable.map((d: any) => ({
-        id: String(d.id),
-        name: d.name || "Driver",
-        status: (d.status || "AVAILABLE").toUpperCase(),
-        vehicle: d.vehicleReg || "Van",
-        phone: d.phone || "",
-        zone: "GENERAL ZONE",
-        lat: d.lastLat ?? -26.20,
-        lng: d.lastLng ?? 28.05,
-        jobsActive: jobsByDriver[String(d.id)] ?? 0,
-      }));
+      const fleet = rawDriversTable.map((d: any) => {
+        const location = getMapCoordinates(d.lastLat, d.lastLng);
+        return {
+          id: String(d.id),
+          name: d.name || "Driver",
+          status: d.status ? String(d.status).toUpperCase() : "UNKNOWN",
+          vehicle: d.vehicleReg || "Vehicle not specified",
+          phone: d.phone || "",
+          lat: location?.lat ?? null,
+          lng: location?.lng ?? null,
+          jobsActive: jobsByDriver[String(d.id)] ?? 0,
+        };
+      });
 
       setJobs([...deliveries, ...collections]);
       setDrivers(fleet);
       if (deliveries.length > 0 && !selectedJobId) setSelectedJobId(deliveries[0].id);
     } catch {
+      setOfflineReason('backend');
+      setSourceErrors(['Dispatch data']);
+      setJobs([]);
+      setDrivers([]);
+      setSelectedJobId(null);
+      setCheckedIds(new Set());
+      setTodayStats({ assigned: 0, completed: 0, failed: 0, pending: 0 });
       setOffline(true);
     } finally {
       setLoading(false);
@@ -189,16 +276,21 @@ export default function DriverDispatch() {
   }), [jobs, drivers]);
 
   const selectedJob = useMemo(() => jobs.find(j => j.id === selectedJobId) || null, [jobs, selectedJobId]);
-
-  const recommendedDrivers = useMemo(() => {
-    if (!selectedJob) return [];
-    return drivers.map(d => {
-        let score = 50;
-        if (d.zone.toUpperCase() === selectedJob.area.toUpperCase()) score += 40;
-        if (d.status === "AVAILABLE") score += 10;
-        return { driver: d, score };
-    }).sort((a, b) => b.score - a.score);
-  }, [drivers, selectedJob]);
+  const locatedJobs = useMemo(() => jobs.filter((job: any) => hasMapCoordinates(job)), [jobs]);
+  const locatedDrivers = useMemo(() => drivers.filter((driver: any) => hasMapCoordinates(driver)), [drivers]);
+  const mapPositions = useMemo<[number, number][]>(
+    () => [...locatedJobs, ...locatedDrivers].map((item: any) => [item.lat, item.lng]),
+    [locatedJobs, locatedDrivers],
+  );
+  const selectedMapPosition = useMemo<[number, number] | null>(
+    () => selectedJob && hasMapCoordinates(selectedJob) ? [selectedJob.lat, selectedJob.lng] : null,
+    [selectedJob],
+  );
+  const unlocatedJobCount = jobs.length - locatedJobs.length;
+  const unlocatedDriverCount = drivers.length - locatedDrivers.length;
+  const jobDataUnavailable = sourceErrors.some((source) => ["Waybills", "Collections", "Dispatch data"].includes(source));
+  const driverDataUnavailable = sourceErrors.some((source) => ["Drivers", "Dispatch data"].includes(source));
+  const waybillStatsUnavailable = loading || offline || sourceErrors.includes("Waybills") || sourceErrors.includes("Dispatch data");
 
   const toggleCheck = useCallback((id: string) => {
     setCheckedIds(prev => {
@@ -274,30 +366,6 @@ export default function DriverDispatch() {
     }
   }, []);
 
-  // Haversine distance (km) between two lat/lng pairs
-  const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  };
-
-  // Estimate ETA for a job → nearest available driver at 40 km/h average
-  const etaForJob = useMemo(() => {
-    if (!selectedJob || drivers.length === 0) return null;
-    const nearest = [...drivers].sort((a, b) => {
-      if (a.status !== 'AVAILABLE') return 1;
-      if (b.status !== 'AVAILABLE') return -1;
-      return haversineKm(a.lat, a.lng, selectedJob.lat, selectedJob.lng)
-           - haversineKm(b.lat, b.lng, selectedJob.lat, selectedJob.lng);
-    })[0];
-    if (!nearest || nearest.status !== 'AVAILABLE') return null;
-    const km = haversineKm(nearest.lat, nearest.lng, selectedJob.lat, selectedJob.lng);
-    const mins = Math.round(km / 40 * 60);
-    return mins < 60 ? `~${mins} min` : `~${Math.floor(mins/60)}h ${mins%60}m`;
-  }, [selectedJob, drivers]);
-
   // Notify customer with stops-ahead ETA via POST /waybills/:id/notify-eta
   const notifyEta = useCallback(async (job: any, stopsAhead: number) => {
     if (job.type !== 'DELIVERY') return;
@@ -320,21 +388,31 @@ export default function DriverDispatch() {
         >
           <div className="flex items-center gap-4">
              <div className="bg-black/40 p-1.5 rounded-[22px] border border-white/10 flex gap-1">
-                <button onClick={() => setViewMode('LIST')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all ${viewMode === 'LIST' ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
+                <button type="button" aria-pressed={viewMode === 'LIST'} onClick={() => setViewMode('LIST')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${viewMode === 'LIST' ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
                    <LayoutList size={16} /> LIST
                 </button>
-                <button onClick={() => setViewMode('MAP')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all ${viewMode === 'MAP' ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
+                <button type="button" aria-pressed={viewMode === 'MAP'} onClick={() => setViewMode('MAP')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${viewMode === 'MAP' ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
                    <MapIcon size={16} /> MAP
                 </button>
              </div>
-             
-             <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/10 rounded-[20px] text-[10px] font-black text-white/70 hover:text-white transition-all uppercase tracking-widest">
+             <button
+               type="button"
+               onClick={() => setRefreshTick((value) => value + 1)}
+               disabled={loading}
+               aria-label="Refresh dispatch data"
+               className="flex items-center gap-2 rounded-[20px] border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/70 transition-all hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:cursor-wait disabled:opacity-50"
+             >
+               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+               Refresh
+             </button>
+
+             <button type="button" onClick={() => navigate('/dashboard')} className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/10 rounded-[20px] text-[10px] font-black text-white/70 hover:text-white transition-all uppercase tracking-widest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
                Global Map <ExternalLink size={14} className="text-sky-400" />
              </button>
 
              <div className="grid grid-cols-2 gap-3 min-w-[300px]">
-                <StatCard label="In Queue" value={stats.total} hint="Pending items" />
-                <StatCard label="Fleet Ready" value={stats.ready} hint="Active drivers" />
+                <StatCard label="In Queue" value={loading || offline || jobDataUnavailable ? "—" : stats.total} hint="Pending items" />
+                <StatCard label="Fleet Ready" value={loading || offline || driverDataUnavailable ? "—" : stats.ready} hint="Active drivers" />
              </div>
           </div>
         </CommandCenterHeader>
@@ -342,10 +420,10 @@ export default function DriverDispatch() {
         {/* ── Today's progress strip ── */}
         <div className="grid gap-4 sm:grid-cols-4">
           {[
-            { label: "Pending",   value: todayStats.pending,   icon: Clock,        color: "text-amber-300",  bg: "border-amber-500/20 bg-amber-500/6"    },
-            { label: "In Transit",value: todayStats.assigned,  icon: Truck,        color: "text-cyan-300",   bg: "border-cyan-500/20 bg-cyan-500/6"      },
-            { label: "Delivered", value: todayStats.completed, icon: CheckCircle2, color: "text-emerald-300",bg: "border-emerald-500/20 bg-emerald-500/6" },
-            { label: "Failed",    value: todayStats.failed,    icon: XCircle,      color: "text-rose-300",   bg: "border-rose-500/20 bg-rose-500/6"      },
+            { label: "Pending",   value: waybillStatsUnavailable ? "—" : todayStats.pending,   icon: Clock,        color: "text-amber-300",  bg: "border-amber-500/20 bg-amber-500/6"    },
+            { label: "In Transit",value: waybillStatsUnavailable ? "—" : todayStats.assigned,  icon: Truck,        color: "text-cyan-300",   bg: "border-cyan-500/20 bg-cyan-500/6"      },
+            { label: "Delivered", value: waybillStatsUnavailable ? "—" : todayStats.completed, icon: CheckCircle2, color: "text-emerald-300",bg: "border-emerald-500/20 bg-emerald-500/6" },
+            { label: "Failed",    value: waybillStatsUnavailable ? "—" : todayStats.failed,    icon: XCircle,      color: "text-rose-300",   bg: "border-rose-500/20 bg-rose-500/6"      },
           ].map(({ label, value, icon: Icon, color, bg }) => (
             <div key={label} className={`rounded-[22px] border ${bg} flex items-center gap-4 px-5 py-4`}>
               <Icon className={`h-5 w-5 ${color} flex-shrink-0`} />
@@ -366,6 +444,11 @@ export default function DriverDispatch() {
               : <span><strong>Backend offline</strong> — start the backend server to load dispatch data.</span>
             }
             <button onClick={() => { setOffline(false); setRefreshTick(v => v + 1); }} className="ml-auto rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-1.5 text-xs font-bold hover:bg-rose-500/20 transition">Retry</button>
+          </div>
+        )}
+        {!offline && sourceErrors.length > 0 && (
+          <div role="alert" className="rounded-2xl border border-amber-500/25 bg-amber-500/8 px-5 py-4 text-sm text-amber-200">
+            Some dispatch data could not be loaded: <strong>{sourceErrors.join(", ")}</strong>. Counts and empty states may be incomplete; refresh to retry.
           </div>
         )}
 
@@ -393,8 +476,16 @@ export default function DriverDispatch() {
               {jobs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-48 text-center">
                   <Package className="h-8 w-8 text-white/15 mb-3" />
-                  <p className="text-sm text-white/30">No unassigned jobs</p>
-                  <p className="text-xs text-white/20 mt-1">Pending waybills and collections appear here</p>
+                  <p role={loading ? "status" : undefined} className="text-sm text-white/50">
+                    {loading ? "Loading dispatch jobs…" : jobDataUnavailable ? "Job queue unavailable" : "No unassigned jobs"}
+                  </p>
+                  <p className="text-xs text-white/35 mt-1">
+                    {loading
+                      ? "Checking pending waybills and collections"
+                      : jobDataUnavailable
+                        ? "One or more job sources failed, so an empty queue cannot be confirmed."
+                        : "Pending waybills and collections appear here"}
+                  </p>
                 </div>
               ) : (
                 jobs.map(job => (
@@ -418,6 +509,9 @@ export default function DriverDispatch() {
                         <div className="mt-1 text-[11px] text-sky-300/70 font-bold flex items-center gap-1">
                           <MapPin className="h-3 w-3" />{job.area}
                         </div>
+                        {!hasMapCoordinates(job) && (
+                          <p role="note" className="mt-1 text-[10px] font-semibold text-amber-200">Location unavailable — not shown on map</p>
+                        )}
                         {/* Notify customer button */}
                         {job.type === 'DELIVERY' && job.raw?.recipientPhone && (
                           <div className="mt-2 flex gap-2">
@@ -442,7 +536,7 @@ export default function DriverDispatch() {
 
             {/* COLUMN 2: AI */}
             <div className={`${softCard} p-6`}>
-              <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2"><Sparkles className="h-5 w-5 text-sky-400" /> AI Optimization</h2>
+              <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2"><Users className="h-5 w-5 text-sky-400" /> Job details & assignment</h2>
               {checkedIds.size > 1 ? (
                 <div className="rounded-[22px] border border-sky-500/30 bg-sky-500/8 p-5">
                   <div className="flex items-center gap-2 mb-3">
@@ -462,36 +556,11 @@ export default function DriverDispatch() {
                     <p className="text-xs text-sky-400 font-bold">{selectedJob.area}</p>
                     <p className="text-xs text-white/40 mt-1">{selectedJob.customer}</p>
                   </div>
-                  {recommendedDrivers.length > 0 && (
-                    <div className="p-6 bg-sky-500/10 border border-sky-500/30 rounded-[24px]">
-                      <div className="font-bold text-white text-xl text-center">{recommendedDrivers[0].driver.name}</div>
-                      <div className="flex items-center justify-center gap-2 mt-1">
-                        <div className="w-full bg-white/10 rounded-full h-1.5 mt-2">
-                          <div className="bg-sky-400 h-1.5 rounded-full" style={{width: `${recommendedDrivers[0].score}%`}} />
-                        </div>
-                        <span className="text-xs text-sky-300 font-black shrink-0">{recommendedDrivers[0].score}%</span>
-                      </div>
-                      <button onClick={() => handleAssignment(recommendedDrivers[0].driver.id)} disabled={assigning}
-                        className="mt-6 w-full rounded-xl bg-sky-500 py-4 text-sm font-black text-white transition hover:bg-sky-400 shadow-lg active:scale-95 flex items-center justify-center gap-2">
-                        {assigning ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />} AUTO-ASSIGN
-                      </button>
-                    </div>
-                  )}
-                  {recommendedDrivers.slice(1, 3).length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35 mb-2">Alternates</p>
-                      {recommendedDrivers.slice(1, 3).map(({ driver, score }) => (
-                        <button key={driver.id} onClick={() => handleAssignment(driver.id)}
-                          className="w-full flex items-center justify-between rounded-xl border border-white/8 bg-black/20 px-4 py-2.5 mb-2 hover:border-white/20 hover:bg-white/5 transition">
-                          <span className="text-sm font-bold text-white">{driver.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-white/40">{score}%</span>
-                            <ChevronRight className="h-3.5 w-3.5 text-white/20" />
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <AvailableDriverChooser
+                    drivers={drivers}
+                    assigning={assigning}
+                    onAssign={(driverId) => void handleAssignment(driverId)}
+                  />
                 </div>
               ) : <div className="text-center py-20 text-white/20 italic">Select job to start analysis</div>}
             </div>
@@ -503,8 +572,16 @@ export default function DriverDispatch() {
               {drivers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-48 text-center">
                   <Truck className="h-8 w-8 text-white/15 mb-3" />
-                  <p className="text-sm text-white/30">No drivers registered</p>
-                  <p className="text-xs text-white/20 mt-1">Add drivers to start dispatching</p>
+                  <p role={loading ? "status" : undefined} className="text-sm text-white/50">
+                    {loading ? "Loading drivers…" : driverDataUnavailable ? "Driver list unavailable" : "No drivers registered"}
+                  </p>
+                  <p className="text-xs text-white/35 mt-1">
+                    {loading
+                      ? "Checking driver availability"
+                      : driverDataUnavailable
+                        ? "The driver source failed, so an empty fleet cannot be confirmed."
+                        : "Add drivers to start dispatching"}
+                  </p>
                 </div>
               ) : (
                 drivers.map((driver) => (
@@ -513,6 +590,7 @@ export default function DriverDispatch() {
                       <div className="flex-1 min-w-0">
                         <div className="font-black text-white text-base">{driver.name}</div>
                         <div className="text-[10px] text-white/40 uppercase font-bold mt-0.5">{driver.vehicle}</div>
+                        {!hasMapCoordinates(driver) && <p role="note" className="mt-1 text-[10px] font-semibold text-amber-200">Location unavailable — not shown on map</p>}
                       </div>
                       <div className="flex items-center gap-2">
                         <div className={`px-2 py-0.5 rounded text-[10px] font-black ${driver.status === 'AVAILABLE' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>{driver.status}</div>
@@ -521,13 +599,14 @@ export default function DriverDispatch() {
                             {driver.jobsActive} active
                           </div>
                         )}
-                        <button onClick={() => contactDriver(driver)} title="WhatsApp driver"
-                          className="p-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition">
+                        <button type="button" onClick={() => contactDriver(driver)} title={driver.phone ? "WhatsApp driver" : "No driver phone number on file"} aria-label={`WhatsApp ${driver.name}`} disabled={!driver.phone}
+                          className="p-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 disabled:cursor-not-allowed disabled:opacity-40">
                           <MessageCircle className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
                     <button
+                      type="button"
                       disabled={assigning || driver.status !== 'AVAILABLE'}
                       onClick={() => checkedIds.size > 0 ? handleBatchAssign(driver.id) : handleAssignment(driver.id)}
                       className="mt-4 w-full py-2.5 bg-white/5 rounded-xl text-white text-[10px] font-black tracking-widest hover:bg-sky-500 transition-all uppercase disabled:opacity-40">
@@ -542,36 +621,52 @@ export default function DriverDispatch() {
         ) : (
           /* 🚀 MAP VIEW MODE */
           <div className="w-full h-[75vh] rounded-[32px] overflow-hidden border border-white/10 shadow-2xl relative animate-in fade-in zoom-in-95 duration-300">
-            <MapContainer center={branchCenter} zoom={12} style={{ height: '100%', width: '100%', background: '#0b1a2b' }} zoomControl={false} attributionControl={false}>
-              <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <ChangeView center={selectedJob ? [selectedJob.lat, selectedJob.lng] : branchCenter} />
-              
-              {jobs.map(job => (
-                <Marker key={job.id} position={[job.lat, job.lng]} icon={jobIcon} eventHandlers={{ click: () => setSelectedJobId(job.id) }}>
-                  <Popup>
-                    <div className="font-bold">{job.reference}</div>
-                    <div className="text-xs">{job.customer}</div>
-                  </Popup>
-                </Marker>
-              ))}
+            <MapContainer center={DEFAULT_MAP_CENTER} zoom={6} style={{ height: '100%', width: '100%', background: '#0b1a2b' }}>
+              <OpenStreetMapLayer />
+              <FitDispatchPoints positions={mapPositions} selected={selectedMapPosition} />
 
-              {drivers.map(driver => (
-                <Marker key={driver.id} position={[driver.lat, driver.lng]} icon={driverIcon}>
-                  <Popup>
-                    <div className="font-bold">{driver.name}</div>
-                    <div className="text-xs">Status: {driver.status}</div>
-                  </Popup>
-                </Marker>
-              ))}
+              <MarkerClusterGroup>
+                {locatedJobs.map((job) => (
+                  <Marker key={`job-${job.id}`} position={[job.lat, job.lng]} icon={jobIcon} eventHandlers={{ click: () => setSelectedJobId(job.id) }}>
+                    <Popup>
+                      <div className="font-bold">{job.reference}</div>
+                      <div className="text-xs">{job.customer}</div>
+                    </Popup>
+                  </Marker>
+                ))}
+
+                {locatedDrivers.map((driver) => (
+                  <Marker key={`driver-${driver.id}`} position={[driver.lat, driver.lng]} icon={driverIcon}>
+                    <Popup>
+                      <div className="font-bold">{driver.name}</div>
+                      <div className="text-xs">Status: {driver.status}</div>
+                    </Popup>
+                  </Marker>
+                ))}
+              </MarkerClusterGroup>
             </MapContainer>
 
+            <div role="status" className="absolute left-5 top-5 z-[1000] max-w-[min(26rem,calc(100%-2.5rem))] rounded-xl border border-white/10 bg-slate-950/90 px-4 py-3 text-xs text-white/80 shadow-xl">
+              {locatedJobs.length + locatedDrivers.length === 0
+                ? "No job or driver coordinates are available to plot. Use List view to review dispatch records."
+                : `${locatedJobs.length} located job${locatedJobs.length === 1 ? "" : "s"} · ${locatedDrivers.length} located driver${locatedDrivers.length === 1 ? "" : "s"}.`}
+              {(unlocatedJobCount + unlocatedDriverCount) > 0 && (
+                <span className="mt-1 block text-amber-200">
+                  {unlocatedJobCount + unlocatedDriverCount} record{unlocatedJobCount + unlocatedDriverCount === 1 ? "" : "s"} not plotted because coordinates are missing or invalid; they remain in List view.
+                </span>
+              )}
+            </div>
+
             <div className="absolute bottom-8 right-8 z-[1000] w-80">
-               {selectedJob && recommendedDrivers.length > 0 && (
-                 <div className="bg-slate-900/95 backdrop-blur-xl border border-sky-500/30 p-6 rounded-[24px] shadow-2xl animate-in slide-in-from-right-4">
-                    <p className="text-[10px] font-black text-sky-400 uppercase mb-2">Map Recommendation</p>
-                    <p className="text-white font-black text-lg mb-1">{recommendedDrivers[0].driver.name}</p>
-                    <p className="text-xs text-sky-200/60 mb-4 italic">Proximity fit for {selectedJob.reference}</p>
-                    <button onClick={() => handleAssignment(recommendedDrivers[0].driver.id)} className="w-full py-3 bg-sky-500 text-white font-black rounded-xl text-xs uppercase shadow-lg shadow-sky-500/20 transition-all active:scale-95">DISPATCH NOW</button>
+               {selectedJob && (
+                 <div className="max-h-[70vh] overflow-y-auto rounded-[24px] border border-white/10 bg-slate-900/95 p-4 shadow-2xl backdrop-blur-xl">
+                    <p className="mb-2 text-sm font-black text-white">{selectedJob.reference}</p>
+                    <p className="mb-3 text-xs text-white/55">Choose an available driver. Assignment is confirmed by the server.</p>
+                    <AvailableDriverChooser
+                      drivers={drivers}
+                      assigning={assigning}
+                      onAssign={(driverId) => void handleAssignment(driverId)}
+                    />
                  </div>
                )}
             </div>

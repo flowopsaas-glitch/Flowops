@@ -34,6 +34,7 @@ export default function TariffPanel({ canWrite }: { canWrite: boolean }) {
   const [consignments, setConsignments] = useState<RailConsignment[]>([]);
   const [calcs, setCalcs] = useState<SavedCalculation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState<TariffFormState>(emptyTariffForm());
   const [attempted, setAttempted] = useState(false);
   const [preview, setPreview] = useState<{ key: string; data: TariffPreview } | null>(null);
@@ -45,11 +46,23 @@ export default function TariffPanel({ canWrite }: { canWrite: boolean }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [s, a, c, k] = await Promise.all([getTariffStatus(), getAncillaryServices(), listConsignments().catch(() => [] as RailConsignment[]), listCalculations()]);
-      setStatus(s); setAncillary(a); setConsignments(c); setCalcs(k);
+      const [s, a, c, k] = await Promise.all([
+        getTariffStatus(), getAncillaryServices(), listConsignments(), listCalculations(),
+      ]);
+      setStatus(s);
+      setAncillary(a);
+      setConsignments(c);
+      setCalcs(k);
     } catch (e) {
-      showToast(`Could not load tariffs: ${(e as Error)?.message ?? e}`, "error");
+      const message = String((e as Error)?.message ?? e);
+      setStatus(null);
+      setAncillary([]);
+      setConsignments([]);
+      setCalcs([]);
+      setLoadError(message);
+      showToast(`Could not load tariff data: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -126,6 +139,12 @@ export default function TariffPanel({ canWrite }: { canWrite: boolean }) {
 
   return (
     <div data-testid="tariff-panel">
+      {loadError && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-200">
+          Tariff data unavailable: {loadError}. No rates, catalogue entries, consignments, or saved calculations can be verified.{" "}
+          <button type="button" onClick={() => void load()} className="underline underline-offset-2">Retry</button>
+        </div>
+      )}
       {status && (
         <Banner tone={sum && sum.withVerifiedRate > 0 ? "warn" : "danger"} title={sum && sum.withVerifiedRate === 0 ? "No corridor has a VERIFIED c/GTK rate loaded — nothing can be priced yet" : `${sum?.withVerifiedRate} of ${sum?.corridors} corridors have a VERIFIED loaded rate`}>
           {status.message}
@@ -265,7 +284,7 @@ export default function TariffPanel({ canWrite }: { canWrite: boolean }) {
 
       {/* ── saved calculations ─────────────────────────────────────────── */}
       <Section title="Saved calculations">
-        {calcs.length === 0 ? (
+        {calcs.length === 0 && loadError ? null : calcs.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-500">No calculations saved yet.</div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-white/10">

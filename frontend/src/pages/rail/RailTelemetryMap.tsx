@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
+import { MapContainer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getMapCenter } from "../../lib/currency";
+import OpenStreetMapLayer from "../../components/maps/OpenStreetMapLayer";
 
 /**
  * Rail telemetry map — device positions and the selected device's trail.
@@ -61,10 +62,7 @@ export default function RailTelemetryMap({ devices, trail = [], trailLabel }: Pr
         style={{ height: 320, width: "100%" }}
         scrollWheelZoom={false}
       >
-        <TileLayer
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; OpenStreetMap contributors'
-        />
+        <OpenStreetMapLayer />
         {devices.map((d) => (
           <Marker key={d.id} position={[d.lat, d.lng]} icon={deviceIcon(d.silent)}>
             <Popup>{d.deviceCode}{d.label ? ` — ${d.label}` : ""}</Popup>
