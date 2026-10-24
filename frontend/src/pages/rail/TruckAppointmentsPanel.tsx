@@ -107,9 +107,9 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
         loading timestamps only.
       </p>
 
-      {loadError && <Banner tone="danger">Truck appointments unavailable: {loadError}. No conclusion about gate bookings can be drawn.</Banner>}
+      {loadError && <Banner tone="danger" title="Truck appointments unavailable">{loadError}. No conclusion about gate bookings can be drawn.</Banner>}
       {conflicts && (
-        <Banner tone="warn">
+        <Banner tone="warn" title="Overlapping window booked">
           Overlap on the last booking — also booked in that window: {conflicts.join(", ")}. Reschedule or proceed under terminal governance.
         </Banner>
       )}
