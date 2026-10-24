@@ -299,9 +299,23 @@ jobs:
           retention-days: 7
 
       - name: Unit tests
-        # The github-actions reporter turns each failing test into a check
-        # annotation, so failures are visible without downloading job logs.
-        run: npm test -- --reporters=default --reporters=github-actions
+        # TEMP-DEBUG: publish jest output to a scratch branch (revert after).
+        shell: bash
+        run: |
+          set +e
+          npm test 2>&1 | tee jest-out.txt
+          status=${PIPESTATUS[0]}
+          tail -c 60000 jest-out.txt > jest-tail.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --detach
+          git checkout -B ci/jest-debug
+          mkdir -p debug
+          cp jest-tail.txt debug/jest-tail.txt
+          git add -f debug/jest-tail.txt
+          git commit -m "debug: backend jest output"
+          git push --force origin ci/jest-debug
+          exit $status
 
       - name: Advisory RBAC + tenant-scope reports (non-blocking)
         # These scanners cannot see runtime control flow, so they inform review
