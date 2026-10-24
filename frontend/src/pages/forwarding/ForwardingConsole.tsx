@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatMoney } from "../../lib/currency";
 import { useNavigate } from "react-router-dom";
 import {
   Ship, Plane, Truck, Plus, Loader2, Crown, Search, AlertTriangle,
@@ -13,6 +14,7 @@ import { getEntitlements } from "../../api/billingApi";
 import { useToast } from "../../components/ToastProvider";
 import { TiltCard } from "../../components/premium/TiltCard";
 import SarsEdiSetup from "./SarsEdiSetup";
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 const MODE_ICON: Record<string, any> = { OCEAN: Ship, AIR: Plane, ROAD: Truck };
 
@@ -318,7 +320,7 @@ export default function ForwardingConsole() {
 }
 
 function fmtMoney(n: number) {
-  return `R ${Math.round(n).toLocaleString("en-ZA")}`;
+  return formatMoney(Math.round(n), tenantCurrency());
 }
 
 function Kpi({ label, value, tone, icon: Icon, sub }: { label: string; value: number | string; tone: string; icon?: any; sub?: string }) {

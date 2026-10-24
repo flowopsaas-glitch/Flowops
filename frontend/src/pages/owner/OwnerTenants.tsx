@@ -163,7 +163,7 @@ export default function OwnerTenants() {
       `This cannot be undone.\n\nType the tenant name to confirm:`,
     );
     if (typed == null) return;
-    if (typed.trim() !== name) { window.alert("Name did not match — deletion cancelled."); return; }
+    if (typed.trim() !== name) { setError("Name did not match — deletion cancelled."); return; }
     doAction(`delete-${id}`, async () => {
       await api.delete(`/owner/tenants/${id}`);
     }, `${name} deleted.`);

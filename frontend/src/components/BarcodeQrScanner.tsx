@@ -41,7 +41,7 @@ export default function BarcodeQrScanner({ onDetected, onScan, className }: Prop
     return () => {
       try {
         readerRef.current?.reset();
-      } catch {}
+      } catch { /* scanner already stopped — nothing to recover */ }
       readerRef.current = null;
     };
   }, [hints]);
@@ -80,7 +80,7 @@ export default function BarcodeQrScanner({ onDetected, onScan, className }: Prop
   function stopCamera() {
     try {
       readerRef.current?.reset();
-    } catch {}
+    } catch { /* scanner already stopped — nothing to recover */ }
     setRunning(false);
   }
 

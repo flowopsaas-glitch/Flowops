@@ -399,7 +399,7 @@ export default function SuperAdminDashboard() {
             className="inline-flex items-center gap-1.5 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-300 hover:bg-violet-500/20">
             <Zap className="h-3.5 w-3.5" /> Run Trial &amp; Subscription Check
           </button>
-          <button onClick={async () => { try { await api.post("/owner/mrr-snapshot", {}); void load(); } catch { alert("MRR snapshot failed"); } }}
+          <button onClick={async () => { try { await api.post("/owner/mrr-snapshot", {}); void load(); } catch { setError("MRR snapshot failed — please try again."); } }}
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10">
             <TrendingUp className="h-3.5 w-3.5" /> Capture MRR
           </button>

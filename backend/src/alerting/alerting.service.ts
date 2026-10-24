@@ -726,7 +726,9 @@ export class AlertingService {
         subject: `⚠️ ${totalStale} incomplete collection${totalStale > 1 ? 's' : ''} need attention — ${company.name}`,
         text: `Hi ${adminName}, you have ${totalStale} stale collections. Open FlowOps to take action.`,
         html: emailHtml,
-      }).catch(() => {});
+      }).catch((e) => {
+        this.logger.warn(`stale-collections admin email failed: ${(e as Error)?.message}`);
+      });
 
       reminded++;
     }

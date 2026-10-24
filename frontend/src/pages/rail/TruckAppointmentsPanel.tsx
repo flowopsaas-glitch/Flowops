@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Loader2, RefreshCw, Truck } from "lucide-react";
 import {
-  bookTruckAppointment, getTruckAppointmentSummary, listTruckAppointments, transitionTruckAppointment,
+  bookTruckAppointment, createTruckShareLink, getTruckAppointmentSummary, listTruckAppointments,
+  replanTruckDay, revokeTruckShareLink, transitionTruckAppointment,
   type TruckAppointment, type TruckAppointmentSummary,
 } from "../../api/railTruckAppointmentsApi";
 import { useToast } from "../../components/ToastProvider";
@@ -48,6 +49,9 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
   const [form, setForm] = useState(emptyForm);
   const [booking, setBooking] = useState(false);
   const [conflicts, setConflicts] = useState<string[] | null>(null);
+  const [replan, setReplan] = useState({ terminalName: "", date: "", shiftMinutes: "120", reason: "" });
+  const [replanning, setReplanning] = useState(false);
+  const [editing, setEditing] = useState<{ id: string; start: string; end: string; force: boolean; reason: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setLoadError(null);
@@ -99,12 +103,63 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
     }
   };
 
+  const share = async (r: TruckAppointment) => {
+    try {
+      const link = await createTruckShareLink(r.id);
+      const url = `${window.location.origin}${link.path}`;
+      try { await navigator.clipboard.writeText(url); showToast("Share link copied — send it to the haulier/terminal. They see only this booking.", "success"); }
+      catch { showToast(`Share link: ${url}`, "info"); }
+      await load();
+    } catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
+  };
+
+  const unshare = async (r: TruckAppointment) => {
+    try { await revokeTruckShareLink(r.id); showToast("Share link revoked.", "success"); await load(); }
+    catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
+  };
+
+  const applyReschedule = async () => {
+    if (!editing) return;
+    if (!editing.start || !editing.end) { showToast("New window start and end are required.", "error"); return; }
+    if (editing.force && !editing.reason.trim()) { showToast("A forced change inside the cut-off needs a recorded reason.", "error"); return; }
+    try {
+      const res: any = await transitionTruckAppointment(editing.id, "reschedule", {
+        windowStart: new Date(editing.start).toISOString(),
+        windowEnd: new Date(editing.end).toISOString(),
+        ...(editing.force ? { force: true, note: editing.reason.trim() } : {}),
+      });
+      showToast(res?.forced ? "Window changed (forced inside cut-off, reason recorded)." : "Window rescheduled.", "success");
+      setEditing(null);
+      await load();
+    } catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
+  };
+
+  const applyReplan = async () => {
+    const shift = Number.parseInt(replan.shiftMinutes, 10);
+    if (!replan.terminalName.trim() || !replan.date || !Number.isFinite(shift) || shift === 0 || replan.reason.trim().length < 3) {
+      showToast("Terminal, date, a non-zero shift and a reason are required to replan a day.", "error"); return;
+    }
+    setReplanning(true);
+    try {
+      const res = await replanTruckDay({ terminalName: replan.terminalName.trim(), date: replan.date, shiftMinutes: shift, reason: replan.reason.trim() });
+      showToast(res.shifted === 0
+        ? "No BOOKED appointments matched that terminal and day — nothing was moved."
+        : `Replanned: ${res.shifted} window(s) shifted${res.withConflicts ? `, ${res.withConflicts} now overlap another booking — review the board` : ""}.`, res.shifted === 0 ? "info" : "success");
+      await load();
+    } catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
+    finally { setReplanning(false); }
+  };
+
   return (
     <Section title="Truck appointments (terminal gate)">
       <p className="mb-3 text-xs text-slate-400">
         Booked gate windows replace arrive-and-queue. Overlapping windows are flagged for the terminal
         operator to govern — never auto-rejected. Wait times are measured from recorded arrival and
         loading timestamps only.
+        {summary?.changeCutoffHours != null && (
+          <> Window changes inside {summary.changeCutoffHours}h of the window start must be forced with a
+          recorded reason. Bookings can be shared with the haulier/terminal as a read-only link.</>
+        )}
       </p>
 
       {loadError && <Banner tone="danger" title="Truck appointments unavailable">{loadError}. No conclusion about gate bookings can be drawn.</Banner>}
@@ -160,6 +215,28 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
         </div>
       )}
 
+      {canWrite && (
+        <div className="mb-4 grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Replan a day">
+          <label className="text-[11px] text-slate-400">Replan: terminal
+            <input aria-label="Replan terminal" className={`${inputCls} mt-1 w-full`} value={replan.terminalName} onChange={(e) => setReplan({ ...replan, terminalName: e.target.value })} placeholder="Central Terminal" />
+          </label>
+          <label className="text-[11px] text-slate-400">Day
+            <input aria-label="Replan date" type="date" className={`${inputCls} mt-1 w-full`} value={replan.date} onChange={(e) => setReplan({ ...replan, date: e.target.value })} />
+          </label>
+          <label className="text-[11px] text-slate-400">Shift (minutes, + late / − early)
+            <input aria-label="Shift minutes" type="number" className={`${inputCls} mt-1 w-full`} value={replan.shiftMinutes} onChange={(e) => setReplan({ ...replan, shiftMinutes: e.target.value })} />
+          </label>
+          <label className="text-[11px] text-slate-400">Reason (recorded on every moved booking)
+            <input aria-label="Replan reason" className={`${inputCls} mt-1 w-full`} value={replan.reason} onChange={(e) => setReplan({ ...replan, reason: e.target.value })} placeholder="Train ETA slipped 2h" />
+          </label>
+          <div className="flex items-end">
+            <button type="button" onClick={() => void applyReplan()} disabled={replanning} className={`${btnNeutral} inline-flex items-center gap-2`}>
+              {replanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />} Shift day's bookings
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-3 flex justify-end">
         <button type="button" onClick={() => void load()} className={`${btnNeutral} inline-flex items-center gap-2`}>
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -204,6 +281,12 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
                         {(NEXT[r.status] ?? []).map((n) => (
                           <button key={n.action} type="button" onClick={() => void act(r.id, n.action)} className={btnNeutral}>{n.label}</button>
                         ))}
+                        {r.status === "BOOKED" && (
+                          <button type="button" onClick={() => setEditing({ id: r.id, start: r.windowStart.slice(0, 16), end: r.windowEnd.slice(0, 16), force: false, reason: "" })} className={btnNeutral}>Reschedule</button>
+                        )}
+                        {r.shareToken
+                          ? <button type="button" onClick={() => void unshare(r)} className={btnNeutral}>Revoke link</button>
+                          : <button type="button" onClick={() => void share(r)} className={btnNeutral}>Share link</button>}
                       </div>
                     )}
                   </td>
@@ -211,6 +294,27 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {editing && canWrite && (
+        <div className="mt-4 grid gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Reschedule appointment">
+          <label className="text-[11px] text-slate-400">New window start
+            <input aria-label="New window start" type="datetime-local" className={`${inputCls} mt-1 w-full`} value={editing.start} onChange={(e) => setEditing({ ...editing, start: e.target.value })} />
+          </label>
+          <label className="text-[11px] text-slate-400">New window end
+            <input aria-label="New window end" type="datetime-local" className={`${inputCls} mt-1 w-full`} value={editing.end} onChange={(e) => setEditing({ ...editing, end: e.target.value })} />
+          </label>
+          <label className="flex items-end gap-2 text-[11px] text-slate-300">
+            <input aria-label="Force change inside cut-off" type="checkbox" checked={editing.force} onChange={(e) => setEditing({ ...editing, force: e.target.checked })} />
+            Force inside cut-off
+          </label>
+          <label className="text-[11px] text-slate-400">Reason (required when forced)
+            <input aria-label="Forced change reason" className={`${inputCls} mt-1 w-full`} value={editing.reason} onChange={(e) => setEditing({ ...editing, reason: e.target.value })} placeholder="Recorded on the booking" />
+          </label>
+          <div className="flex items-end gap-2">
+            <button type="button" onClick={() => void applyReschedule()} className={btnPrimary}>Apply new window</button>
+            <button type="button" onClick={() => setEditing(null)} className={btnNeutral}>Discard</button>
+          </div>
         </div>
       )}
     </Section>

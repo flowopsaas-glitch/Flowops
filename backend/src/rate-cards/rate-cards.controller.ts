@@ -2,9 +2,11 @@ import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/commo
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RateCardsService } from './rate-cards.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Rate Cards')
 @ApiBearerAuth()
+@RequireFeature('rateCards')
 @Controller('rate-cards')
 export class RateCardsController {
   constructor(private readonly svc: RateCardsService) {}

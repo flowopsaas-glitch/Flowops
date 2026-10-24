@@ -134,6 +134,7 @@ const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 const StatusPage = lazy(() => import('./pages/Status'));
 const TrackingPage = lazy(() => import('./pages/TrackingPage'));
+const GateAppointmentPage = lazy(() => import('./pages/GateAppointmentPage'));
 const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
 const CompanySetupPage = lazy(() => import('./pages/CompanySetup'));
 const OnboardingWizard = lazy(() => import("./pages/OnboardingWizard"));
@@ -220,6 +221,7 @@ export default function App() {
           <Route path="/status" element={<StatusPage />} />
           <Route path="/track" element={<TrackingPage />} />
           <Route path="/track/:trackingNumber" element={<TrackingPage />} />
+          <Route path="/gate/:token" element={<GateAppointmentPage />} />
           <Route path="/portal/:companyId" element={<CustomerPortal />} />
           <Route path="/rate/:token" element={<RatingPage />} />
           <Route path="/sso/finish" element={<SsoFinish />} />

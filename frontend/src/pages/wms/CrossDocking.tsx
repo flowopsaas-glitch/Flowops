@@ -20,7 +20,7 @@ export default function CrossDocking() {
       const data = r?.data ?? r;
       setWarehouses(Array.isArray(data) ? data : []);
       if (data?.[0]?.id) setWarehouseId(data[0].id);
-    }).catch(() => {});
+    }).catch((e) => console.error('warehouse list failed to load', e));
   }, []);
 
   const addLine = () => setLines([...lines, { sku: "", quantity: 1, destinationClient: "", destinationAddress: "" }]);

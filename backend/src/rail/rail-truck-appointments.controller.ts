@@ -1,7 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RailTruckAppointmentsService } from './rail-truck-appointments.service';
-import { BookTruckAppointmentDto, TruckAppointmentTransitionDto } from './dto/rail-truck-appointment.dto';
+import {
+  BookTruckAppointmentDto,
+  ShiftTruckAppointmentsDto,
+  TruckAppointmentTransitionDto,
+} from './dto/rail-truck-appointment.dto';
+import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -33,6 +38,17 @@ export class RailTruckAppointmentsController {
     @Query('to') to?: string,
   ) {
     return this.appointments.list(u.companyId, { status, terminalName, from, to });
+  }
+
+  /**
+   * Read-only counterparty view (haulier / terminal) behind an unguessable
+   * share token. No login: the token is the credential, revocable any time.
+   */
+  @Public()
+  @Get('public/:token')
+  @ApiOperation({ summary: 'Shared read-only truck appointment (token-gated, no login)' })
+  shared(@Param('token') token: string) {
+    return this.appointments.getShared(token);
   }
 
   @Get('summary')
@@ -83,5 +99,26 @@ export class RailTruckAppointmentsController {
   @ApiOperation({ summary: 'Move a BOOKED appointment to a new window; response lists overlaps' })
   reschedule(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: TruckAppointmentTransitionDto) {
     return this.appointments.reschedule(u.companyId, id, dto);
+  }
+
+  @Post(':id/share')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Create (or rotate) the counterparty share link for an appointment' })
+  share(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.appointments.createShareLink(user.companyId, id);
+  }
+
+  @Delete(':id/share')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Revoke the counterparty share link for an appointment' })
+  revokeShare(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.appointments.revokeShareLink(user.companyId, id);
+  }
+
+  @Post('replan-day')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Shift every BOOKED window at a terminal on a day (late-train replan)' })
+  replanDay(@Body() dto: ShiftTruckAppointmentsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.appointments.shiftDay(user.companyId, dto, user);
   }
 }

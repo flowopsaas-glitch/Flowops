@@ -130,7 +130,7 @@ describe('the ui barrel', () => {
 
   /**
    * sidebar.tsx is excluded on purpose - it is 23kB of navigation that collides
-   * with components/Sidebar and components/SidebarNavigation. If it is ever
+   * with components/Sidebar. If it is ever
    * re-exported, it should only be after that collision is settled, and this
    * comment should be replaced with the resolution.
    */

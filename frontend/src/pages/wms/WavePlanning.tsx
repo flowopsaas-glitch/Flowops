@@ -16,7 +16,7 @@ export default function WavePlanning() {
       const data = r?.data ?? r;
       setWarehouses(Array.isArray(data) ? data : []);
       if (data?.[0]?.id) setWarehouseId(data[0].id);
-    }).catch(() => {});
+    }).catch((e) => console.error('warehouse list failed to load', e));
   }, []);
 
   const submit = async () => {

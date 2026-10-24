@@ -195,6 +195,9 @@ model Company {
   // e.g. give a Professional tenant `freightForwarding` without a full upgrade.
   // Merged on top of the plan's feature flags by BillingService.
   featureOverrides Json?
+  // Hours before a truck window starts inside which window changes need a
+  // forced change with a recorded reason (terminal gate governance).
+  terminalGateCutoffHours Int @default(2)
   // Custom monthly price (ZAR) the owner negotiated for this tenant. When set,
   // it overrides the plan list price for MRR + billing display. Null = use plan.
   priceOverrideZar Float?
@@ -6090,6 +6093,11 @@ model TerminalTruckAppointment {
   status        TruckAppointmentStatus @default(BOOKED)
   bookedBy      String?
   note          String?                @db.Text
+
+  // Unguessable token for the read-only counterparty (haulier/terminal)
+  // shared view. Null = not shared. Revoking sets it back to null.
+  shareToken        String?   @unique
+  shareTokenIssuedAt DateTime?
 
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt

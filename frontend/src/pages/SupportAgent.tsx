@@ -54,8 +54,8 @@ export default function SupportAgent() {
         const ok = !!ent?.features?.aiSupportAgent;
         setEntitled(ok);
         if (ok) {
-          getSupportSuggestions().then(setSuggestions).catch(() => {});
-          listSupportTickets().then(setTickets).catch(() => {});
+          getSupportSuggestions().then(setSuggestions).catch((e) => console.error('support suggestions failed', e));
+          listSupportTickets().then(setTickets).catch((e) => console.error('support tickets failed', e));
         }
       } catch {
         setEntitled(false);

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { formatMoney } from "../../lib/currency";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api } from "../../api/client";
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 type VerifyResult = {
   success: boolean;
@@ -134,7 +136,7 @@ export default function BillingCallback() {
               <div className="flex justify-between">
                 <span className="text-white/50">Amount</span>
                 <span className="font-bold text-white">
-                  R {result.amount?.toLocaleString()} / month
+                  {formatMoney(result.amount ?? 0, tenantCurrency())} / month
                 </span>
               </div>
               <div className="flex justify-between">

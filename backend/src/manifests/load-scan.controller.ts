@@ -2,9 +2,11 @@ import { Controller, Get, Post, Param, Body } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Route Load & Scan')
 @ApiBearerAuth()
+@RequireFeature('manifests')
 @Controller('manifests')
 export class LoadScanController {
   constructor(private readonly prisma: PrismaService) {}

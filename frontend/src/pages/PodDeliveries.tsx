@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { formatMoney } from "../lib/currency";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ClipboardCheck,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from '../api/client';
 import { TiltCard } from "../components/premium/TiltCard";
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 import DeliveryAction from './Deliveries/DeliveryAction'; // 🚀 Importing our signature logic
 
 type DeliveryQuality = {
@@ -353,7 +355,7 @@ function AssistList({ title, items }: { title: string; items: string[] }) {
 // ── Delivery quality scorecard (CSAT + success + COD) ───────────────────────
 
 function qMoney(v: number) {
-  return `R ${Math.round(v).toLocaleString("en-ZA")}`;
+  return formatMoney(Math.round(v), tenantCurrency());
 }
 
 function DeliveryQualityPanel({ q }: { q: DeliveryQuality }) {

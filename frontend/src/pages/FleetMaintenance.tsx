@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatMoney } from "../lib/currency";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock,
   Loader2, Plus, RefreshCw, Truck, Wrench, Brain, DollarSign, Shield,
   Activity, Gauge,
 } from "lucide-react";
 import { api } from "../api/client";
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 function unwrap(r: any): any { return r?.data ?? r; }
 
@@ -411,7 +413,7 @@ export default function FleetMaintenance() {
                         </div>
                         {s.cost != null && (
                           <span className="text-sm font-bold text-white/60">
-                            ZAR {s.cost.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                            {formatMoney(s.cost, tenantCurrency())}
                           </span>
                         )}
                       </div>

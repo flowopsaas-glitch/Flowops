@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { formatMoney } from "../lib/currency";
 import { useSearchParams } from "react-router-dom";
 import { Bot, CheckCircle2, Receipt, ShieldAlert, Sparkles, TrendingUp } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 import api from "../api/client";
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 type RateCard = {
   id: string;
@@ -39,7 +41,7 @@ function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 function money(value: number) {
-  return `R ${Number(value || 0).toFixed(2)}`;
+  return formatMoney(Number(value || 0), tenantCurrency());
 }
 
 export default function RateCardsPage() {

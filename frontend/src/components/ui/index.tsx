@@ -43,6 +43,6 @@ export * from './use-toast';
 
 // Deliberately NOT re-exported: ./sidebar.
 // It is a 23 kB navigation-specific module that shares names with
-// components/Sidebar.tsx and components/SidebarNavigation.tsx. Import it from
+// components/Sidebar.tsx. Import it from
 // '@/components/ui/sidebar' so the collision stays visible at the call site
 // instead of being flattened away here.

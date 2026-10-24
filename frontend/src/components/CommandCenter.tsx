@@ -14,17 +14,17 @@ function setPage(pageKey: string) {
   try {
     base44.page = pageKey;
     return;
-  } catch {}
+  } catch { /* storage/hash unavailable (private mode) — navigation still works in-memory */ }
 
   // Fallback: store and reload (still works if something else reads it)
   try {
     localStorage.setItem("base44.page", pageKey);
-  } catch {}
+  } catch { /* storage/hash unavailable (private mode) — navigation still works in-memory */ }
 
   // As a last resort, try hash navigation
   try {
     window.location.hash = `#${pageKey}`;
-  } catch {}
+  } catch { /* storage/hash unavailable (private mode) — navigation still works in-memory */ }
 }
 
 function scoreMatch(query: string, text: string) {

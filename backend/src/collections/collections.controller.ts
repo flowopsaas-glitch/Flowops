@@ -5,6 +5,7 @@ import { CollectionsService } from './collections.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 const COLLECTION_READ_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
@@ -17,6 +18,7 @@ const COLLECTION_DISPATCH_ROLES = [
 @ApiTags('Collections')
 @ApiBearerAuth()
 @Roles(...COLLECTION_READ_ROLES)
+@RequireFeature('collections')
 @Controller()
 export class CollectionsController {
   constructor(private readonly svc: CollectionsService) {}

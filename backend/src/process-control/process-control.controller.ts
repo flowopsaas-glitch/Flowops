@@ -5,6 +5,7 @@ import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { ProcessControlService } from './process-control.service';
+import { RequireFeature } from '../billing/require-feature.decorator';
 import {
   CompleteStepDto,
   CreateProcessDefinitionDto,
@@ -38,6 +39,7 @@ const PROCESS_RESOLUTION_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRo
 
 @ApiTags('Process Control')
 @ApiBearerAuth()
+@RequireFeature('warehouseManagement')
 @Controller('process-control')
 export class ProcessControlController {
   constructor(private readonly processControl: ProcessControlService) {}

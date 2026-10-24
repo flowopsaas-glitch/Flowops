@@ -46,7 +46,7 @@ export default function UsersRoles() {
       const res: any = await api.get('/drivers');
       const list = Array.isArray(res) ? res : (res?.data ?? []);
       setDrivers(list.map((d:any) => ({ id: String(d.id), name: d.name||'Driver', phone: d.phone, vehicleReg: d.vehicleReg, hasPinSet: !!d.driverPin })));
-    } catch {}
+    } catch (e) { console.error('driver list failed to load', e); }
   };
 
   const handleSetPin = async (id: string) => {

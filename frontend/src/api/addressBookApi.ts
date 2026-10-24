@@ -37,4 +37,3 @@ export const searchAddresses = (query: string, type?: string) =>
   });
 
 export const createAddress = (data: any) => api.post('/address-book', data);
-export const markUsed = (id: string) => api.patch(`/address-book/${id}/used`, {}).catch(() => {});

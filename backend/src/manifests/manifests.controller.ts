@@ -2,9 +2,11 @@ import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ManifestsService } from './manifests.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Manifests')
 @ApiBearerAuth()
+@RequireFeature('manifests')
 @Controller()
 export class ManifestsController {
   constructor(private readonly svc: ManifestsService) {}

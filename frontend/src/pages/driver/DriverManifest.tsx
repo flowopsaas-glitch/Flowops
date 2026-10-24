@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { formatMoney } from "../../lib/currency";
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
@@ -9,6 +10,7 @@ import BarcodeScanner from '../../components/BarcodeScanner';
 import { queuePod, registerPodAutoSync } from '../../lib/offlinePod';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import '../../i18n';
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 export default function DriverManifest() {
   const { id } = useParams();
@@ -201,7 +203,7 @@ export default function DriverManifest() {
           <div>
             <div className="text-xs font-black uppercase tracking-widest text-amber-300">Cash on Delivery</div>
             <div className="text-xl font-black text-white mt-0.5">
-              R {Number(job.codAmount).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+              {formatMoney(Number(job.codAmount) || 0, tenantCurrency())}
             </div>
             <div className="text-[10px] text-amber-200/50">Collect from recipient before handover</div>
           </div>

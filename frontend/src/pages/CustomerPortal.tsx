@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { formatMoney } from "../lib/currency";
 import { useParams } from "react-router-dom";
 import {
   Package, Search, FileText, Truck, MapPin, Send,
   Loader2, CheckCircle2, AlertTriangle, Phone, Mail,
 } from "lucide-react";
 import { FLOWOPS_API_URL } from "../lib/env";
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 type Branding = {
   name: string;
@@ -373,7 +375,7 @@ function InvoicesTab({ companyId, accent }: { companyId: string; accent: string 
               </div>
               <div className="flex items-center justify-between text-xs text-white/40">
                 <span className="text-white font-bold text-base">
-                  R {inv.total.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                  {formatMoney(inv.total, tenantCurrency())}
                 </span>
                 <div className="flex flex-col items-end gap-0.5">
                   <span>Due: {new Date(inv.dueDate).toLocaleDateString("en-ZA")}</span>

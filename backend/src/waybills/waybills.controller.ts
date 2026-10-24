@@ -12,9 +12,11 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Waybills')
 @ApiBearerAuth()
+@RequireFeature('waybills')
 @Controller()
 export class WaybillsController {
   constructor(

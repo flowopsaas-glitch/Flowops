@@ -354,7 +354,7 @@ export default function AppLayout() {
           navigate('/onboarding', { replace: true });
         }
       })
-      .catch(() => {});
+      .catch((e) => console.error('layout badge counts failed to load', e));
     return () => { alive = false; };
   }, [isAuthenticated, location.pathname, navigate]);
 

@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatMoney } from "../lib/currency";
 import {
   BadgeDollarSign, Building2, Edit2, Mail, Package, Phone, Plus, RefreshCw,
   Search, ShieldCheck, Trash2, User, X, AlertCircle, MessageCircle,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import api from "../api/client";
 import { TiltCard } from "../components/premium/TiltCard";
+const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -540,7 +542,7 @@ export default function ClientsPage() {
 // ── Portfolio intelligence panel ────────────────────────────────────────────
 
 function clientMoney(v: number) {
-  return `R ${Math.round(v).toLocaleString("en-ZA")}`;
+  return formatMoney(Math.round(v), tenantCurrency());
 }
 
 const MIX_META: { key: "COD" | "PREPAID" | "CONTRACT" | "CASH"; label: string; cls: string }[] = [
