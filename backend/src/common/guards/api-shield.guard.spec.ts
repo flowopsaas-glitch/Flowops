@@ -245,6 +245,15 @@ describe('ApiShieldGuard', () => {
     });
   });
 
+  describe('tracked-IP memory bound', () => {
+    it('never tracks more than the cap, however many source IPs attack', () => {
+      for (let i = 0; i < 10_050; i++) {
+        (guard as any).recordViolation(`198.51.100.${i % 250}.${Math.floor(i / 250)}`, 'xss_attempt');
+      }
+      expect(guard.trackedIpCount()).toBeLessThanOrEqual(10_000);
+    });
+  });
+
   describe('multipart aggregate header ceilings', () => {
     const routes = [
       ['/api/v1/waybills/bulk-import', 6],
