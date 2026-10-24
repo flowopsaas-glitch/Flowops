@@ -4,6 +4,7 @@ import { UserRole } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { ANY_AUTHENTICATED_KEY } from '../decorators/any-authenticated.decorator';
 import { OWNER_ONLY_KEY } from '../decorators/owner-only.decorator';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
