@@ -215,45 +215,44 @@ export default function SuperAdminDashboard() {
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [runningChecks, setRunningChecks] = useState(false);
 
-  async function load() {
-    setLoading(true);
-    setError("");
+  const load = () => (async () => {
     try {
-      const res: any = await api.get("/owner/analytics");
+      const res = await api.get("/owner/analytics");
       setA((res?.data ?? res) as Analytics);
+      setError("");
 
       try {
-        const alertsRes: any = await api.get("/owner/alerts");
+        const alertsRes = await api.get("/owner/alerts");
         const items = alertsRes?.data ?? alertsRes;
         setAlerts(Array.isArray(items) ? items.slice(0, 8) : []);
       } catch { setAlerts([]); }
 
       try {
-        const mrrRes: any = await api.get("/owner/mrr-movement");
+        const mrrRes = await api.get("/owner/mrr-movement");
         setMrr((mrrRes?.data ?? mrrRes) as MrrMovement);
       } catch { setMrr(null); }
 
       try {
-        const apRes: any = await api.get("/owner/approval-requests");
+        const apRes = await api.get("/owner/approval-requests");
         const items = apRes?.data ?? apRes;
         const arr = Array.isArray(items) ? items : Array.isArray(items?.data) ? items.data : [];
         setApprovals(arr.filter((r: ApprovalRequest) => r.status === "PENDING"));
       } catch { setApprovals([]); }
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to load platform analytics.");
     } finally {
       setLoading(false);
     }
-  }
+  })();
 
   async function runChecks() {
     setRunningChecks(true);
     try {
       await api.post("/owner/alerts/run", {});
-      const alertsRes: any = await api.get("/owner/alerts");
+      const alertsRes = await api.get("/owner/alerts");
       const items = alertsRes?.data ?? alertsRes;
       setAlerts(Array.isArray(items) ? items.slice(0, 8) : []);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to run alert checks.");
     } finally {
       setRunningChecks(false);
@@ -276,14 +275,14 @@ export default function SuperAdminDashboard() {
 
   async function viewAsTenant(tenantId: string, tenantName: string) {
     try {
-      const res: any = await api.post(`/owner/impersonate/${tenantId}`, {});
+      const res = await api.post(`/owner/impersonate/${tenantId}`, {});
       const payload = res?.data ?? res;
       const token = payload?.access_token;
       if (!token) throw new Error("No impersonation token returned");
       startImpersonation(token, tenantName);
       // Full navigation so the whole app re-initialises as the tenant.
-      window.location.href = "/dashboard";
-    } catch (err: any) {
+      window.location.assign("/dashboard");
+    } catch (err) {
       setError(err?.message || "Could not start impersonation for this tenant.");
     }
   }
@@ -302,19 +301,18 @@ export default function SuperAdminDashboard() {
     return Math.round(((previous + expansion - contraction - churn) / previous) * 100);
   }, [mrr]);
 
-  async function approveRequest(id: string, company: string) {
+  async function approveRequest(id: string, _company: string) {
     try {
       await api.post(`/owner/approval-requests/${id}/approve`, {});
       setApprovals((prev) => prev.filter((r) => r.id !== id));
-      setError("");
-    } catch (err: any) { setError(err?.message || "Failed to approve."); }
+    } catch (err) { setError(err?.message || "Failed to approve."); }
   }
 
-  async function rejectRequest(id: string, company: string) {
+  async function rejectRequest(id: string, _company: string) {
     try {
       await api.post(`/owner/approval-requests/${id}/reject`, { reason: "Rejected by owner" });
       setApprovals((prev) => prev.filter((r) => r.id !== id));
-    } catch (err: any) { setError(err?.message || "Failed to reject."); }
+    } catch (err) { setError(err?.message || "Failed to reject."); }
   }
 
   return (
@@ -557,7 +555,7 @@ export default function SuperAdminDashboard() {
                       <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
                       <Tooltip
                         contentStyle={{ background: "#0b1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff" }}
-                        formatter={(v: any) => money(Number(v), mrr.currency)}
+                        formatter={(v: unknown) => money(Number(v), mrr.currency)}
                       />
                       <Line type="monotone" dataKey="mrr" name="MRR" stroke="#22d3ee" strokeWidth={2} dot={false} />
                     </LineChart>

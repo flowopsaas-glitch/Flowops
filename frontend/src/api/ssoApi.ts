@@ -26,7 +26,7 @@ export type SsoConfigInput = {
   defaultRole?: string;
 };
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export async function getSsoConfig(): Promise<SsoConfig> {
   return unwrap(await api.get("/sso/config"));

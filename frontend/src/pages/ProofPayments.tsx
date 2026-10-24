@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
 import { api } from "../api/client";
@@ -51,22 +52,22 @@ export default function ProofPayments() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    const [h, b] = (await Promise.all([
+      api.get("/invoices/billing-holds"),
+      api.get("/invoices/proof-board"),
+    ])) as unknown as [{ holds?: Hold[] }, { rows?: BoardRow[] }];
+    setHolds(h?.holds ?? []);
+    setRows(b?.rows ?? []);
     setError(null);
-    try {
-      const [h, b]: any[] = await Promise.all([
-        api.get("/invoices/billing-holds"),
-        api.get("/invoices/proof-board"),
-      ]);
-      setHolds(h?.holds ?? []);
-      setRows(b?.rows ?? []);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+  })().catch((e: unknown) => {
+    setError(errorMessageOf(e) || "Failed to load");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => {
     void load();
@@ -81,8 +82,8 @@ export default function ProofPayments() {
         resolvedBy: "billing-desk",
       });
       await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Resolution failed");
+    } catch (e) {
+      setError(errorMessageOf(e) || "Resolution failed");
     } finally {
       setBusyId(null);
     }

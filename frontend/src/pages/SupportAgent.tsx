@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { useDismissOnEscape } from "../components/patterns/useDismissOnEscape";
 import { useNavigate } from "react-router-dom";
 import {
   LifeBuoy, Send, Loader2, Bot, Crown, Ticket, Check, AlertTriangle,
   BookOpen, Sparkles, X, ChevronRight, Activity,
 } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { cn } from "../lib/utils";
 import { getEntitlements } from "../api/billingApi";
 import {
@@ -38,6 +39,8 @@ export default function SupportAgent() {
 
   const [q, setQ] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
+  // Monotonic ids for chat entries — unique without an impure clock call.
+  const entryIdRef = useRef(0);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -82,14 +85,14 @@ export default function SupportAgent() {
     const text = question.trim();
     if (!text || busy) return;
     setQ("");
-    const id = Date.now();
+    const id = (entryIdRef.current += 1);
     const history = buildHistory();
     setEntries((e) => [...e, { id, question: text, pending: true }]);
     setBusy(true);
     try {
       const answer = await askSupport(text, history);
       setEntries((e) => e.map((x) => (x.id === id ? { ...x, answer, pending: false } : x)));
-    } catch (err: any) {
+    } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "Something went wrong";
       setEntries((e) => e.map((x) => (x.id === id ? { ...x, error: msg, pending: false } : x)));
       showToast(msg, "error");
@@ -115,7 +118,7 @@ export default function SupportAgent() {
       setEscalateFor(null);
       setShowTickets(true);
       showToast("Support ticket raised — our team will follow up.", "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.response?.data?.message || e?.message || "Could not raise ticket", "error");
     }
   }
@@ -320,14 +323,15 @@ function EscalateModal({
   onClose: () => void;
   onSubmit: (subject: string, message: string, priority: "low" | "normal" | "high") => void;
 }) {
+  useDismissOnEscape(true, onClose);
   const [subject, setSubject] = useState(defaultSubject.slice(0, 160));
   const [message, setMessage] = useState(defaultMessage);
   const [priority, setPriority] = useState<"low" | "normal" | "high">("normal");
   const [saving, setSaving] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className={glassCard("w-full max-w-lg p-5")} role="dialog">
         <div className="flex items-center gap-2">
           <Ticket className="h-5 w-5 text-cyan-300" />
           <h2 className="text-lg font-black">Raise a support ticket</h2>
@@ -335,13 +339,13 @@ function EscalateModal({
         </div>
         <p className="mt-1 text-xs text-white/40">Our team picks this up with the full conversation attached.</p>
 
-        <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-white/40">Subject</label>
-        <input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-cyan-400/40" />
+        <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-white/40" htmlFor="field-subject-2">Subject</label>
+        <input id="field-subject-2" value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-cyan-400/40" />
 
-        <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-white/40">Details</label>
-        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={5} className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-cyan-400/40 resize-y" />
+        <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-white/40" htmlFor="field-details-1">Details</label>
+        <textarea id="field-details-1" value={message} onChange={(e) => setMessage(e.target.value)} rows={5} className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-cyan-400/40 resize-y" />
 
-        <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-white/40">Priority</label>
+        <span className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-white/40">Priority</span>
         <div className="mt-1 flex gap-2">
           {(["low", "normal", "high"] as const).map((p) => (
             <button key={p} onClick={() => setPriority(p)} className={cn(

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import SignaturePad from '../../components/Delivery/SignaturePad';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../components/toast-context';
 import { api } from '../../api/client';
 
 // 🚀 FIX: Defining the "Interface" removes the 3 red errors in your editor
@@ -12,7 +12,7 @@ interface DeliveryActionProps {
 
 const DeliveryAction: React.FC<DeliveryActionProps> = ({ waybillId, waybillNumber, onSuccess }) => {
   const [recipient, setRecipient] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const { showToast } = useToast();
 
   const handleDelivery = async (signatureBase64: string) => {
@@ -24,11 +24,11 @@ const DeliveryAction: React.FC<DeliveryActionProps> = ({ waybillId, waybillNumbe
     setLoading(true);
     try {
       // 📡 Using the ID from props for the API call
-      await api.post<any, any>(`/waybills/${waybillId}/deliver`, {
+      await api.post(`/waybills/${waybillId}/deliver`, {
         recipient,
         signatureBase64
       });
-      
+
       showToast(`Success! Waybill ${waybillNumber} marked as Delivered.`, "success");
       onSuccess();
     } catch (err) {
@@ -47,10 +47,10 @@ const DeliveryAction: React.FC<DeliveryActionProps> = ({ waybillId, waybillNumbe
          <p className="text-xs text-blue-600 uppercase font-bold tracking-wider">Tracking Number</p>
          <p className="text-lg font-mono font-black text-blue-900">{waybillNumber}</p>
       </div>
-      
+
       <div className="space-y-1">
-        <label className="block text-sm font-bold text-gray-700">Received By</label>
-        <input
+        <label className="block text-sm font-bold text-gray-700" htmlFor="field-received-by-1">Received By</label>
+        <input id="field-received-by-1"
           type="text"
           value={recipient}
           onChange={(e) => setRecipient(e.target.value)}

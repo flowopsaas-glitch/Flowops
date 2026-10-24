@@ -4,7 +4,7 @@ import {
   applyOptimizer, getCorridors, listSlotApplications, runOptimizer,
   OPTIMIZER_DECISION_LABEL, type CorridorUtilization, type OptimizerProposal, type OptimizerResult, type SlotApplication,
 } from "../../api/railSlotApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import type { Tone } from "../../lib/railSlot";
 import { Banner, Pill, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
 
@@ -38,26 +38,25 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
   const [result, setResult] = useState<OptimizerResult | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    setRunError(null);
-    setResult(null);
-    setSelected(new Set());
+  const load = useCallback(() => (async () => {
     try {
       const [a, cor] = await Promise.all([listSlotApplications(), getCorridors()]);
       setApps(a);
+      setResult(null);
+      setSelected(new Set());
       setCorridorNames(new Map(cor.map((c) => [c.code, c.name])));
     } catch (e) {
       const message = String((e as Error)?.message ?? e);
       setApps([]);
+      setResult(null);
+      setSelected(new Set());
       setCorridorNames(new Map());
       setLoadError(message);
       showToast(`Could not load schedule optimizer data: ${message}`, "error");
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  })(), [showToast]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -78,7 +77,6 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
       return;
     }
     setRunning(true);
-    setRunError(null);
     setResult(null);
     try {
       const r = await runOptimizer(entries);

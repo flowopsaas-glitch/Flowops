@@ -1,4 +1,6 @@
-import React, { createContext, useState, ReactNode } from 'react';
+import React, { useState, ReactNode } from 'react';
+
+import { NotificationContext } from './notification-context';
 
 export type UserRole = 'admin' | 'operations' | 'driver';
 export type SlaLevel = 'OVERDUE' | 'WARNING' | 'BREACHED' | 'ESCALATED';
@@ -11,26 +13,6 @@ export type Notification = {
   driverId?: string;
   read: boolean;
 };
-
-interface NotificationContextProps {
-  history: Notification[];
-  addNotification: (n: Notification) => void;
-  markAsRead: (id: string) => void;
-  clearAll: () => void;
-  getVisibleNotifications: (
-    role: UserRole,
-    companyId: string,
-    driverId?: string
-  ) => Notification[];
-}
-
-export const NotificationContext = createContext<NotificationContextProps>({
-  history: [],
-  addNotification: () => {},
-  markAsRead: () => {},
-  clearAll: () => {},
-  getVisibleNotifications: () => [],
-});
 
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const [history, setHistory] = useState<Notification[]>([]);

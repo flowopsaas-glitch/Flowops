@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link2, Copy, Check, ExternalLink, Package, MapPin, QrCode, Share2, Loader2 } from "lucide-react";
+import { Link2, Copy, Check, ExternalLink, Package, MapPin, QrCode, Share2, Loader2,
+  type LucideIcon,
+} from "lucide-react";
 import { api } from "../../api/client";
 import { FLOWOPS_HTTP_ORIGIN } from "../../lib/env";
 
@@ -14,9 +16,7 @@ import { FLOWOPS_HTTP_ORIGIN } from "../../lib/env";
 
 type Company = { id: string; name?: string | null };
 
-function unwrap(r: any): any {
-  return r?.data ?? r;
-}
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
 
 // Free, dependency-free QR via a public image endpoint.
 const qrSrc = (data: string, size = 180) =>
@@ -29,7 +29,7 @@ function LinkCard({
   url,
   accent,
 }: {
-  icon: any;
+  icon: LucideIcon;
   title: string;
   desc: string;
   url: string;
@@ -119,9 +119,9 @@ export default function ClientPortalLinks() {
   useEffect(() => {
     void (async () => {
       try {
-        const c = unwrap(await api.get("/companies/my-company"));
+        const c = unwrap<Company>(await api.get("/companies/my-company"));
         setCompany(c);
-      } catch (e: any) {
+      } catch (e) {
         setError(e?.response?.data?.message ?? e?.message ?? "Could not load your company details.");
       } finally {
         setLoading(false);

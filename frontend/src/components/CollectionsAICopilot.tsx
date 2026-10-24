@@ -7,7 +7,7 @@ type Collection = { id: number; name: string; status?: string; createdAt?: strin
 type CopilotAction =
   | { type: "SET_COMPANY"; payload: { companyId: number } }
   | { type: "APPLY_FILTERS"; payload: { status?: string; search?: string } }
-  | { type: "REFRESH_COLLECTIONS"; payload?: {} }
+  | { type: "REFRESH_COLLECTIONS"; payload?: Record<string, never> }
   | { type: "NAVIGATE"; payload: { to: string } };
 
 type CopilotResponse = {
@@ -66,7 +66,7 @@ export default function CollectionsAICopilot(props: {
       );
 
       setResp(res.data);
-    } catch (e: any) {
+    } catch (e) {
       const msg = e?.response?.data?.message || e?.message || "Copilot request failed";
       setError(String(msg));
       setResp(null);

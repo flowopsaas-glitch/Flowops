@@ -1,6 +1,6 @@
 import { api } from "./client";
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export type CarrierType = "OCEAN_LINE" | "AIRLINE" | "ROAD_CARRIER" | "COURIER" | "CUSTOMS_BROKER" | "OTHER";
 

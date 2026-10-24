@@ -8,7 +8,7 @@ import { getCorridors, type Corridor } from "../../api/railSlotApi";
 import {
   POSSESSION_KIND_LABEL, POSSESSION_STATUS_LABEL, formatDateTime, localInputToIso, possessionActions, possessionStatusTone,
 } from "../../lib/railChange";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import PossessionConflictBanner from "./PossessionConflictBanner";
 import { Field, Modal, Pill, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
 
@@ -24,8 +24,7 @@ export default function PossessionsSection({ canWrite }: { canWrite: boolean }) 
   const [busy, setBusy] = useState("");
   const [showNew, setShowNew] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     const [windowsResult, scanResult, corridorsResult] = await Promise.allSettled([
       listPossessions(), getPossessionConflicts(), getCorridors(),
     ]);
@@ -52,7 +51,7 @@ export default function PossessionsSection({ canWrite }: { canWrite: boolean }) 
       setCorridorsError(message(corridorsResult.reason));
     }
     setLoading(false);
-  }, []);
+  })(), []);
   useEffect(() => { void load(); }, [load]);
 
   const corridorName = (code: string) => corridors.find((c) => c.code === code)?.name ?? code;

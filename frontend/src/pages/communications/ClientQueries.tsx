@@ -21,10 +21,41 @@ import api from "../../api/client";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function unwrapList(r: any): any[] {
-  const d = r?.data ?? r;
-  return Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
+function unwrapList<T>(r: unknown): T[] {
+  const d = (r as { data?: unknown } | null)?.data ?? r;
+  if (Array.isArray(d)) return d as T[];
+  const inner = (d as { data?: unknown } | null)?.data;
+  return Array.isArray(inner) ? (inner as T[]) : [];
 }
+
+type WaThread = {
+  id: string | number;
+  clientName?: string;
+  phone?: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  createdAt?: string;
+  unreadCount?: number;
+};
+type EmailItem = {
+  id: string | number;
+  subject?: string;
+  fromEmail?: string;
+  from?: string;
+  fromName?: string;
+  body?: string;
+  preview?: string;
+  resolved?: boolean;
+  isRead?: boolean;
+  createdAt: string;
+  resolvedAt?: string;
+};
+type AiEvent = {
+  id: string | number;
+  severity?: string;
+  createdAt?: string;
+  [key: string]: unknown;
+};
 
 function timeAgo(ts: string): string {
   const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60_000);
@@ -122,25 +153,24 @@ type HubItem = {
 export default function ClientQueries() {
   const navigate = useNavigate();
   const [items, setItems] = useState<HubItem[]>([]);
-  const [waThreads, setWaThreads] = useState<any[]>([]);
-  const [aiEvents, setAiEvents] = useState<any[]>([]);
+  const [waThreads, setWaThreads] = useState<WaThread[]>([]);
+  const [aiEvents, setAiEvents] = useState<AiEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [emailRaw, waRaw, aiRaw] = await Promise.allSettled([
         api.get("/email-hub"),
         api.get("/whatsapp/threads"),
         api.get("/ai-events"),
       ]);
-      const emails: any[] = emailRaw.status === "fulfilled" ? unwrapList(emailRaw.value) : [];
-      const threads: any[] = waRaw.status === "fulfilled" ? unwrapList(waRaw.value) : [];
-      const events: any[] = aiRaw.status === "fulfilled" ? unwrapList(aiRaw.value) : [];
+      const emails = emailRaw.status === "fulfilled" ? unwrapList<EmailItem>(emailRaw.value) : [];
+      const threads: WaThread[] = waRaw.status === "fulfilled" ? unwrapList<WaThread>(waRaw.value) : [];
+      const events: AiEvent[] = aiRaw.status === "fulfilled" ? unwrapList<AiEvent>(aiRaw.value) : [];
 
       const emailItems: HubItem[] = emails.map((e) => ({
-        id: e.id,
+        id: String(e.id),
         subject: e.subject ?? "(no subject)",
         fromEmail: e.fromEmail ?? e.from,
         fromName: e.fromName ?? e.from,
@@ -153,7 +183,7 @@ export default function ClientQueries() {
       }));
 
       const waItems: HubItem[] = threads.map((t) => ({
-        id: t.id,
+        id: String(t.id),
         subject: t.lastMessage ?? "WhatsApp conversation",
         fromName: t.clientName ?? t.phone,
         phone: t.phone,
@@ -186,7 +216,7 @@ export default function ClientQueries() {
     (i) => i.resolvedAt && new Date(i.resolvedAt) >= today
   ).length;
   const urgentAi     = aiEvents.filter((e) => e.severity === "critical" && !e.resolved).length;
-  const waUnread     = waThreads.reduce((s: number, t: any) => s + (t.unreadCount ?? 0), 0);
+  const waUnread     = waThreads.reduce((s: number, t) => s + (t.unreadCount ?? 0), 0);
 
   const queueCards = [
     {

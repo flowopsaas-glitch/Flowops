@@ -2,13 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney } from "../lib/currency";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock,
-  Loader2, Plus, RefreshCw, Truck, Wrench, Brain, DollarSign, Shield,
-  Activity, Gauge,
+  Loader2, Plus, RefreshCw, Truck, Wrench, Brain,
 } from "lucide-react";
 import { api } from "../api/client";
-const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
-function unwrap(r: any): any { return r?.data ?? r; }
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
+
+type AiAdvice = {
+  error?: boolean;
+  source?: string;
+  healthScore?: number;
+  breakdownRisk?: string;
+  costForecast3Months?: number;
+  urgentItems?: { priority?: string; item: string; estimatedCost?: number }[];
+  africanConditionsAdvice?: string;
+  overallRecommendation?: string;
+};
 
 // Lightweight local types to satisfy the TypeScript compiler in this UI file.
 // Prefer importing shared types from the canonical types package if available,
@@ -53,7 +63,7 @@ export default function FleetMaintenance() {
   const [histLoading, setHistLoading] = useState(false);
   const [showLogForm, setShowLogForm] = useState(false);
   const [showOdoForm, setShowOdoForm] = useState(false);
-  const [aiAdvice, setAiAdvice] = useState<any>(null);
+  const [aiAdvice, setAiAdvice] = useState<AiAdvice | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
   // Log service form
@@ -65,10 +75,9 @@ export default function FleetMaintenance() {
   const [odoForm, setOdoForm] = useState({ currentKm: "", nextServiceKm: "", nextServiceDate: "" });
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const raw: any = await api.get("/fleet-maintenance/health");
-      const data = unwrap(raw);
+      const raw = await api.get("/fleet-maintenance/health");
+      const data = unwrap<{ vehicles?: FleetDriver[] }>(raw);
       setDrivers(data?.vehicles || []);
     } finally { setLoading(false); }
   }, []);
@@ -78,13 +87,13 @@ export default function FleetMaintenance() {
   const loadHistory = useCallback(async (driverId: string) => {
     setHistLoading(true);
     try {
-      const raw: any = await api.get(`/fleet-maintenance/history?driverId=${driverId}`);
-      const data = unwrap(raw);
+      const raw = await api.get(`/fleet-maintenance/history?driverId=${driverId}`);
+      const data = unwrap<ServiceLog[]>(raw);
       setHistory(Array.isArray(data) ? data : []);
     } finally { setHistLoading(false); }
   }, []);
 
-  const selectDriver = (d: any) => {
+  const selectDriver = (d: FleetDriver) => {
     setSelected(d);
     setShowLogForm(false);
     setShowOdoForm(false);
@@ -96,8 +105,8 @@ export default function FleetMaintenance() {
   const loadAiAdvice = async (driverId: string) => {
     setAiLoading(true);
     try {
-      const raw: any = await api.get(`/fleet-maintenance/ai-advice/${driverId}`);
-      setAiAdvice(unwrap(raw));
+      const raw = await api.get(`/fleet-maintenance/ai-advice/${driverId}`);
+      setAiAdvice(unwrap<AiAdvice>(raw));
     } catch { setAiAdvice({ error: true, overallRecommendation: "AI advice unavailable — check GROQ_API_KEY" }); }
     finally { setAiLoading(false); }
   };
@@ -156,7 +165,7 @@ export default function FleetMaintenance() {
     } finally { setSaving(false); }
   };
 
-  const alerts = useMemo(() => drivers.filter((d: any) => d.status === "OVERDUE" || d.status === "CRITICAL").length, [drivers]);
+  const alerts = useMemo(() => drivers.filter((d) => d.status === "OVERDUE" || d.status === "CRITICAL").length, [drivers]);
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.06),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 overflow-y-auto">
@@ -197,12 +206,12 @@ export default function FleetMaintenance() {
                 <Truck className="mx-auto h-10 w-10 text-white/10 mb-3" />
                 <div className="text-white/30 font-bold">No drivers in fleet yet.</div>
               </div>
-            ) : drivers.map((d: any) => (
+            ) : drivers.map((d) => (
               <button
                 key={d.driverId}
                 onClick={() => selectDriver(d)}
                 className={`w-full rounded-[24px] border p-5 text-left transition-all ${
-                  (selected as any)?.driverId === d.driverId
+                  selected?.driverId === d.driverId
                     ? "border-amber-400/30 bg-amber-500/8"
                     : d.status === "OVERDUE" || d.status === "CRITICAL"
                     ? "border-amber-400/20 bg-amber-500/5 hover:bg-amber-500/10"
@@ -266,8 +275,8 @@ export default function FleetMaintenance() {
                     <Truck className="h-5 w-5 text-amber-400" />
                   </div>
                   <div>
-                    <div className="font-black text-white">{(selected as any).driverName || (selected as any).name}</div>
-                    <div className="text-xs text-white/40">{(selected as any).vehicleReg ?? (selected as any).vehicleType}</div>
+                    <div className="font-black text-white">{selected.driverName || selected.name}</div>
+                    <div className="text-xs text-white/40">{selected.vehicleReg ?? selected.vehicleType}</div>
                   </div>
                 </div>
                 {selected.vehicleNotes && (
@@ -302,7 +311,7 @@ export default function FleetMaintenance() {
                     <div key={key}>
                       <label className="text-[10px] text-white/40 block mb-1">{label}</label>
                       <input type={type} placeholder={placeholder}
-                        value={(odoForm as any)[key]}
+                        value={odoForm[key as keyof typeof odoForm]}
                         onChange={(e) => setOdoForm((p) => ({ ...p, [key]: e.target.value }))}
                         className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none focus:border-amber-400" />
                     </div>
@@ -319,8 +328,8 @@ export default function FleetMaintenance() {
                 <div className="rounded-[20px] border border-white/10 bg-white/[0.05] p-4 space-y-3">
                   <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white/50">Log Service Record</div>
                   <div>
-                    <label className="text-[10px] text-white/40 block mb-1">Service type *</label>
-                    <select value={logForm.serviceType} onChange={(e) => setLogForm((p) => ({ ...p, serviceType: e.target.value }))}
+                    <label className="text-[10px] text-white/40 block mb-1" htmlFor="field-service-type-1">Service type *</label>
+                    <select id="field-service-type-1" value={logForm.serviceType} onChange={(e) => setLogForm((p) => ({ ...p, serviceType: e.target.value }))}
                       className="w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-amber-400">
                       {SERVICE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
@@ -334,7 +343,7 @@ export default function FleetMaintenance() {
                     <div key={key}>
                       <label className="text-[10px] text-white/40 block mb-1">{label}</label>
                       <input type={type} placeholder={placeholder}
-                        value={(logForm as any)[key]}
+                        value={logForm[key as keyof typeof logForm]}
                         onChange={(e) => setLogForm((p) => ({ ...p, [key]: e.target.value }))}
                         className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none focus:border-amber-400" />
                     </div>
@@ -371,7 +380,7 @@ export default function FleetMaintenance() {
                   {aiAdvice.urgentItems?.length > 0 && (
                     <div>
                       <div className="text-[10px] font-bold text-white/50 mb-1">Urgent Items:</div>
-                      {aiAdvice.urgentItems.map((item: any, i: number) => (
+                      {aiAdvice.urgentItems.map((item, i) => (
                         <div key={i} className="flex items-center gap-2 text-xs py-1">
                           <span className={`w-2 h-2 rounded-full ${item.priority === "CRITICAL" ? "bg-rose-400" : item.priority === "HIGH" ? "bg-amber-400" : "bg-white/30"}`} />
                           <span className="text-white/75">{item.item}</span>

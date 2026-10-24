@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import {useCallback,  useEffect, useMemo, useState } from "react";
 import {
   Landmark, Plus, Loader2, Search, CheckCircle2, Trash2, Wallet, Clock, AlertTriangle, TrendingUp,
   Users, Receipt, Target, Layers,
+  type LucideIcon,
 } from "lucide-react";
 import * as api from "../api/disbursementApi";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { TiltCard } from "../components/premium/TiltCard";
 
 const input = "rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder-white/25";
@@ -21,6 +23,10 @@ const STATUS_CFG: Record<api.DisbursementStatus, { label: string; cls: string }>
 export default function Disbursements() {
   const { showToast } = useToast();
   const [rows, setRows] = useState<api.Disbursement[]>([]);
+  // "Now" is captured once on mount via the sanctioned lazy initializer
+  // (Date.now() must not be called during render). The ages computed from it
+  // below are day-granular, so mount-time precision is honest.
+  const [now] = useState(() => Date.now());
   const [metrics, setMetrics] = useState<api.DisbursementMetrics | null>(null);
   const [cockpit, setCockpit] = useState<api.RecoveryCockpit | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,22 +36,23 @@ export default function Disbursements() {
   const [busy, setBusy] = useState<string | null>(null);
   const [form, setForm] = useState({ clientName: "", authority: "SARS", category: "DUTY", amount: "", reference: "", description: "" });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [r, m] = await Promise.all([
-        api.listDisbursements(statusFilter ? { status: statusFilter } : undefined),
-        api.disbursementMetrics().catch(() => null),
-      ]);
-      setRows(r);
-      setMetrics(m);
-      // Cockpit is global (not status-filtered); refresh alongside so it stays live.
-      api.recoveryCockpit().then(setCockpit).catch(() => setCockpit(null));
-    } catch (e: any) {
-      showToast(e?.message ?? "Could not load disbursements", "error");
-    } finally { setLoading(false); }
-  };
-  useEffect(() => { void load();   }, [statusFilter]);
+  const load = useCallback(() => (async () => {
+    const [r, m] = await Promise.all([
+      api.listDisbursements(statusFilter ? { status: statusFilter } : undefined),
+      api.disbursementMetrics().catch(() => null),
+    ]);
+    setRows(r);
+    setMetrics(m);
+    // Cockpit is global (not status-filtered); refresh alongside so it stays live.
+    api.recoveryCockpit().then(setCockpit).catch(() => setCockpit(null));
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e) || "Could not load disbursements", "error");
+
+  }).finally(() => {
+ setLoading(false);
+  }), [statusFilter, showToast]);
+  useEffect(() => { void load(); }, [load]);
 
   const visible = useMemo(() => {
     if (!q.trim()) return rows;
@@ -57,19 +64,19 @@ export default function Disbursements() {
     if (!form.amount || Number(form.amount) <= 0) { showToast("Enter an amount", "error"); return; }
     setBusy("create");
     try {
-      await api.createDisbursement({ ...form, amount: Number(form.amount) } as any);
+      await api.createDisbursement({ ...form, amount: Number(form.amount) } as Partial<import("../api/disbursementApi").Disbursement>);
       setForm({ clientName: "", authority: "SARS", category: "DUTY", amount: "", reference: "", description: "" });
       setShowNew(false);
       await load();
       showToast("Disbursement recorded", "success");
-    } catch (e: any) { showToast(e?.message ?? "Could not record", "error"); }
+    } catch (e) { showToast(errorMessageOf(e) || "Could not record", "error"); }
     finally { setBusy(null); }
   };
 
-  const act = async (id: string, fn: () => Promise<any>, ok: string) => {
+  const act = async (id: string, fn: () => Promise<unknown>, ok: string) => {
     setBusy(id);
     try { await fn(); await load(); showToast(ok, "success"); }
-    catch (e: any) { showToast(e?.message ?? "Action failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Action failed", "error"); }
     finally { setBusy(null); }
   };
 
@@ -180,7 +187,7 @@ export default function Disbursements() {
           <div className="space-y-2">
             {visible.map((d) => {
               const cfg = STATUS_CFG[d.status];
-              const ageDays = Math.floor((Date.now() - new Date(d.paidAt).getTime()) / 86_400_000);
+              const ageDays = Math.floor((now - new Date(d.paidAt).getTime()) / 86_400_000);
               const aging = (d.status === "OUTSTANDING" || d.status === "INVOICED") && ageDays > 60;
               return (
                 <div key={d.id} className="rounded-2xl border border-white/8 bg-white/[0.04] p-4 fx-lift flex items-center gap-4">
@@ -316,7 +323,7 @@ function RecoveryCockpit({ data, onFilterOutstanding }: { data: api.RecoveryCock
   );
 }
 
-function Kpi({ icon: Icon, label, value, sub, tone = "text-white" }: { icon: any; label: string; value: string; sub?: string; tone?: string }) {
+function Kpi({ icon: Icon, label, value, sub, tone = "text-white" }: { icon: LucideIcon; label: string; value: string; sub?: string; tone?: string }) {
   return (
     <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 fx-lift">
       <Icon className={`h-4 w-4 ${tone} opacity-80`} />

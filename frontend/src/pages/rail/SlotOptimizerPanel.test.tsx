@@ -24,7 +24,7 @@ vi.mock('../../api/railSlotApi', () => ({
   applyOptimizer: h.applyOptimizer,
   OPTIMIZER_DECISION_LABEL: { ALLOCATE: 'Allocate', DEFER: 'Defer', REJECT: 'Reject' },
 }));
-vi.mock('../../components/ToastProvider', () => ({
+vi.mock('../../components/toast-context', () => ({
   useToast: () => ({ showToast: h.showToast }),
 }));
 

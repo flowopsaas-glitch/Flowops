@@ -28,6 +28,6 @@ export type Entitlements = {
 };
 
 export async function getEntitlements(): Promise<Entitlements> {
-  const r: any = await api.get("/billing/entitlements");
+  const r = await api.get("/billing/entitlements");
   return r?.data ?? r;
 }

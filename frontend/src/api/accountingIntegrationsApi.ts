@@ -32,8 +32,8 @@ export type Reconciliation = {
   generatedAt: string;
 };
 
-const unwrap = <T>(r: any): T => (r?.data ?? r) as T;
-const arr = <T>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
+const arr = <T>(r: unknown): T[] => (Array.isArray(r) ? r : ((r as { data?: T[] } | null)?.data ?? [])) as T[];
 
 export const listIntegrations = async () => arr<IntegrationStatus>(await api.get("/accounting/integrations"));
 export const reconcileBooks = async () => unwrap<Reconciliation>(await api.get("/accounting/integrations/reconcile"));
@@ -44,7 +44,23 @@ export const disconnectIntegration = async (id: string) =>
   unwrap(await api.post(`/accounting/integrations/${id}/disconnect`, {}));
 export const syncInvoice = async (invoiceId: string) =>
   unwrap(await api.post(`/accounting/integrations/sync/invoice/${invoiceId}`, {}));
-export const listSyncLogs = async () => arr<any>(await api.get("/accounting/integrations/logs"));
+export type AccountingSyncLog = {
+  id: string;
+  connectionId: string;
+  docType: "INVOICE" | "CREDIT_NOTE" | string;
+  documentId: string;
+  documentNumber: string | null;
+  externalId: string | null;
+  status: "PENDING" | "SYNCED" | "FAILED" | string;
+  amount: number | null;
+  direction: string;
+  error: string | null;
+  companyId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const listSyncLogs = async () => arr<AccountingSyncLog>(await api.get("/accounting/integrations/logs"));
 
 export async function downloadPastelImport() {
   const token = getToken();

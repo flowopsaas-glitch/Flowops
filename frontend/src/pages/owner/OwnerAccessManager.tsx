@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import {useCallback,  useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Eye,
@@ -24,9 +25,7 @@ type UserRow = {
   createdAt: string;
 };
 
-function unwrap(res: any) {
-  return res?.data ?? res;
-}
+function unwrap<T>(res: unknown): T { return ((res as { data?: T } | null)?.data ?? res) as T; }
 
 // ── Sub-panel: user list for selected tenant ────────────────────────────
 function TenantUserPanel(props: { tenant: TenantRow; onImpersonate: () => void }) {
@@ -41,20 +40,20 @@ function TenantUserPanel(props: { tenant: TenantRow; onImpersonate: () => void }
   const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
 
-  async function loadUsers() {
-    setLoading(true);
-    try {
-      const res: any = await api.get(`/owner/tenants/${tenant.id}/users`);
-      const d = unwrap(res);
-      setUsers(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load users.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loadUsers = useCallback(() => (async () => {
+    const res = await api.get(`/owner/tenants/${tenant.id}/users`);
+    const d = unwrap<UserRow[] | { data?: UserRow[] }>(res);
+    setUsers(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []);
 
-  useEffect(() => { void loadUsers(); }, [tenant.id]);
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || "Failed to load users.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [tenant.id]);
+
+  useEffect(() => { void loadUsers(); }, [loadUsers]);
 
   async function createUser() {
     if (!newUser.email || !newUser.password) { setError("Email and password are required."); return; }
@@ -66,7 +65,7 @@ function TenantUserPanel(props: { tenant: TenantRow; onImpersonate: () => void }
       setShowCreate(false);
       setSuccess("Admin user created.");
       await loadUsers();
-    } catch (err: any) { setError(err?.message || "Failed to create user."); }
+    } catch (err) { setError(errorMessageOf(err) || "Failed to create user."); }
     finally { setBusy(""); }
   }
 
@@ -79,7 +78,7 @@ function TenantUserPanel(props: { tenant: TenantRow; onImpersonate: () => void }
       setResetTarget(null);
       setNewPassword("");
       setSuccess(`Password reset for ${resetTarget.email}.`);
-    } catch (err: any) { setError(err?.message || "Failed to reset password."); }
+    } catch (err) { setError(errorMessageOf(err) || "Failed to reset password."); }
     finally { setBusy(""); }
   }
 
@@ -125,7 +124,7 @@ function TenantUserPanel(props: { tenant: TenantRow; onImpersonate: () => void }
                 <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">{label}</label>
                 <input
                   type={key === "password" ? "password" : "text"}
-                  value={(newUser as any)[key]}
+                  value={newUser[key as keyof typeof newUser]}
                   onChange={(e) => setNewUser((u) => ({ ...u, [key]: e.target.value }))}
                   placeholder={ph}
                   className="mt-1 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
@@ -216,33 +215,31 @@ export default function OwnerAccessManager() {
   const [selected, setSelected] = useState<TenantRow | null>(null);
   const [error, setError] = useState("");
 
-  async function loadTenants() {
-    setLoading(true);
-    setError("");
+  const loadTenants = useCallback(() => (async () => {
     try {
-      const res: any = await api.get("/owner/tenants");
-      const d = unwrap(res);
-      const rows = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+      const res = await api.get("/owner/tenants");
+      const d = unwrap<TenantRow[] | { data?: TenantRow[] }>(res);
+      const rows: TenantRow[] = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
       setTenants(rows);
-      if (!selected && rows.length > 0) setSelected(rows[0]);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load tenants.");
+      if (rows.length > 0) setSelected((current) => current ?? rows[0]);
+    } catch (err) {
+      setError(errorMessageOf(err) || "Failed to load tenants.");
     } finally {
       setLoading(false);
     }
-  }
+  })(), []);
 
-  useEffect(() => { void loadTenants(); }, []);
+  useEffect(() => { void loadTenants(); }, [loadTenants]);
 
   async function viewAs(tenant: TenantRow) {
     try {
-      const res: any = await api.post(`/owner/impersonate/${tenant.id}`, {});
-      const token = unwrap(res)?.access_token;
+      const res = await api.post(`/owner/impersonate/${tenant.id}`, {});
+      const token = unwrap<{ access_token?: string }>(res)?.access_token;
       if (!token) throw new Error("No impersonation token");
       startImpersonation(token, tenant.name);
       window.location.href = "/dashboard";
-    } catch (err: any) {
-      setError(err?.message || "Impersonation failed.");
+    } catch (err) {
+      setError(errorMessageOf(err) || "Impersonation failed.");
     }
   }
 

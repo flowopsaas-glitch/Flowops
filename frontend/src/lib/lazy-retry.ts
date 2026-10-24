@@ -10,7 +10,7 @@ import { lazy, ComponentType } from 'react';
  * Usage:
  *   const Dashboard = lazyRetry(() => import("./pages/Dashboard"));
  */
-export function lazyRetry<T extends ComponentType<any>>(
+export function lazyRetry<T extends ComponentType<never>>(
   importFn: () => Promise<{ default: T }>,
 ) {
   return lazy(async () => {
@@ -20,12 +20,12 @@ export function lazyRetry<T extends ComponentType<any>>(
       const component = await importFn();
       sessionStorage.removeItem('chunk-retry');
       return component;
-    } catch (error: any) {
+    } catch (error) {
       if (!hasRefreshed && error?.name === 'ChunkLoadError') {
         sessionStorage.setItem('chunk-retry', 'true');
         window.location.reload();
         // Return a dummy to satisfy TypeScript while reload happens
-        return { default: (() => null) as any };
+        return { default: (() => null) as unknown as T };
       }
       throw error;
     }

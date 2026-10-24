@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calculator, Copy, Check, Loader2, Plus, Package } from "lucide-react";
 import { api } from "../../api/client";
@@ -37,9 +38,7 @@ const PLAN_OPTIONS = [
   { id: "enterprise", name: "Enterprise (R100,000)" },
 ];
 
-function unwrap(r: any): any {
-  return r?.data ?? r;
-}
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
 const zar = (n: number) => new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(n);
 
 export default function OwnerQuoteMachine() {
@@ -50,15 +49,15 @@ export default function OwnerQuoteMachine() {
   const [companyName, setCompanyName] = useState("");
   const [interval, setInterval] = useState<"month" | "year">("month");
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const r: any = await api.get("/owner/addon-catalog");
-        const list = unwrap(r);
+        const r = await api.get("/owner/addon-catalog");
+        const list = unwrap<AddonCatalogItem[]>(r);
         setCatalog(Array.isArray(list) ? list : []);
       } catch { /* non-fatal */ }
     })();
@@ -73,24 +72,23 @@ export default function OwnerQuoteMachine() {
     });
   };
 
-  const calculate = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const r: any = await api.post("/owner/quote", {
-        plan,
-        addons: Array.from(selected),
-        customPriceZar: customPrice.trim() === "" ? null : Number(customPrice),
-        companyName: companyName.trim() || null,
-        billingInterval: interval,
-      });
-      setQuote(unwrap(r));
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Could not build the quote.");
-    } finally {
-      setLoading(false);
-    }
-  }, [plan, selected, customPrice, companyName, interval]);
+  const calculate = useCallback(() => (async () => {
+    const r = await api.post("/owner/quote", {
+      plan,
+      addons: Array.from(selected),
+      customPriceZar: customPrice.trim() === "" ? null : Number(customPrice),
+      companyName: companyName.trim() || null,
+      billingInterval: interval,
+    });
+    setQuote(unwrap<Quote>(r));
+
+  })().catch((e: unknown) => {
+    setError(errorMessageOf(e) || "Could not build the quote.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [plan, selected, customPrice, companyName, interval]);
 
   // Auto-calculate whenever inputs change.
   useEffect(() => { void calculate(); }, [calculate]);
@@ -149,8 +147,8 @@ export default function OwnerQuoteMachine() {
         {/* ── Builder ── */}
         <div className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-6">
           <div>
-            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">Prospect / company (optional)</label>
-            <input
+            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2" htmlFor="field-prospect-company-optional-4">Prospect / company (optional)</label>
+            <input id="field-prospect-company-optional-4"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               placeholder="e.g. Mishoma Holdings"
@@ -159,8 +157,8 @@ export default function OwnerQuoteMachine() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">Base plan</label>
-            <select
+            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2" htmlFor="field-base-plan-3">Base plan</label>
+            <select id="field-base-plan-3"
               value={plan}
               onChange={(e) => setPlan(e.target.value)}
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500/50"
@@ -170,7 +168,7 @@ export default function OwnerQuoteMachine() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">Add-ons</label>
+            <span className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">Add-ons</span>
             <div className="space-y-2">
               {catalog.map((a) => {
                 const bundled = plan.startsWith("professional") ? a.includedIn.professional : plan === "enterprise" ? a.includedIn.enterprise : a.includedIn.starter;
@@ -198,8 +196,8 @@ export default function OwnerQuoteMachine() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">Custom price (optional)</label>
-              <input
+              <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2" htmlFor="field-custom-price-optional-2">Custom price (optional)</label>
+              <input id="field-custom-price-optional-2"
                 type="number"
                 value={customPrice}
                 onChange={(e) => setCustomPrice(e.target.value)}
@@ -208,8 +206,8 @@ export default function OwnerQuoteMachine() {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">Billing</label>
-              <select
+              <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2" htmlFor="field-billing-1">Billing</label>
+              <select id="field-billing-1"
                 value={interval}
                 onChange={(e) => setInterval(e.target.value as "month" | "year")}
                 className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500/50"

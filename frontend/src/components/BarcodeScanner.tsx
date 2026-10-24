@@ -22,9 +22,12 @@ type Props = {
 };
 
 // The BarcodeDetector API isn't in TS's lib yet — declare a minimal shape.
+interface BarcodeDetectorLike {
+  detect(source: HTMLVideoElement): Promise<{ rawValue?: string }[]>;
+}
 declare global {
   interface Window {
-    BarcodeDetector?: any;
+    BarcodeDetector?: new (options?: { formats?: string[] }) => BarcodeDetectorLike;
   }
 }
 
@@ -32,11 +35,13 @@ export default function BarcodeScanner({ onScan, onClose, alreadyScanned = [], t
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
-  const detectorRef = useRef<any>(null);
+  const detectorRef = useRef<BarcodeDetectorLike | null>(null);
   const lastCodeRef = useRef<string>("");
   const lastAtRef = useRef<number>(0);
 
-  const [supported, setSupported] = useState<boolean>(false);
+  const [supported, setSupported] = useState<boolean>(
+    () => typeof window !== "undefined" && "BarcodeDetector" in window,
+  );
   const [manual, setManual] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [lastHit, setLastHit] = useState<string | null>(null);
@@ -66,9 +71,7 @@ export default function BarcodeScanner({ onScan, onClose, alreadyScanned = [], t
   );
 
   useEffect(() => {
-    const hasApi = typeof window !== "undefined" && "BarcodeDetector" in window;
-    setSupported(Boolean(hasApi));
-    if (!hasApi) return;
+    if (!supported) return;
 
     let cancelled = false;
 
@@ -96,7 +99,7 @@ export default function BarcodeScanner({ onScan, onClose, alreadyScanned = [], t
           rafRef.current = requestAnimationFrame(tick);
         };
         rafRef.current = requestAnimationFrame(tick);
-      } catch (e: any) {
+      } catch (e) {
         setError(
           e?.name === "NotAllowedError"
             ? "Camera permission denied — enter the barcode manually below."
@@ -107,7 +110,7 @@ export default function BarcodeScanner({ onScan, onClose, alreadyScanned = [], t
     })();
 
     return () => { cancelled = true; stop(); };
-  }, [handleHit, stop]);
+  }, [handleHit, stop, supported]);
 
   const submitManual = () => {
     if (!manual.trim()) return;
@@ -149,11 +152,11 @@ export default function BarcodeScanner({ onScan, onClose, alreadyScanned = [], t
 
       {/* Manual entry — always available as a fallback so nothing blocks a delivery */}
       <div className="mt-5">
-        <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-white/45 mb-2">
+        <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-white/45 mb-2" htmlFor="field-manual-entry-1">
           <Keyboard size={14} /> Manual entry
         </label>
         <div className="flex gap-2">
-          <input
+          <input id="field-manual-entry-1"
             value={manual}
             onChange={(e) => setManual(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submitManual()}

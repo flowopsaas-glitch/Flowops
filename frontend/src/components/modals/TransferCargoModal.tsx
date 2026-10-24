@@ -1,22 +1,30 @@
 import React, { useEffect, useState } from 'react';
 import { api, getApiBaseUrl } from '../../api/client';
-import { X, ArrowRightLeft, Loader2, AlertCircle } from 'lucide-react';
-import { useToast } from '../ToastProvider';
+import { X, ArrowRightLeft, Loader2 } from 'lucide-react';
+import { useToast } from '../toast-context';
+import { errorMessageOf } from '../patterns/errorMessage';
+
+type TransferWaybill = {
+  id: string | number;
+  currentBranchId?: string | number;
+  currentBranch?: { name?: string } | null;
+};
+type BranchOption = { id: string | number; name: string };
 
 interface TransferCargoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedWaybills: any[]; 
+  selectedWaybills: TransferWaybill[];
   onSuccess: () => void;
 }
 
-export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  selectedWaybills, 
-  onSuccess 
+export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({
+  isOpen,
+  onClose,
+  selectedWaybills,
+  onSuccess
 }) => {
-  const [branches, setBranches] = useState([]);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
   const [destinationId, setDestinationId] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -26,8 +34,8 @@ export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      api.get<any, any>(`/branches/snapshot`)
-        .then(res => setBranches(res))
+      api.get(`/branches/snapshot`)
+        .then(res => setBranches(((res as unknown as { data?: BranchOption[] })?.data ?? (res as unknown as BranchOption[]))))
         .catch(err => console.error("Failed to fetch branches", err));
     }
   }, [isOpen]);
@@ -36,24 +44,24 @@ export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({
 
   const handleTransfer = async () => {
     if (!destinationId) return;
-    
+
     setLoading(true);
     try {
       const waybillIds = selectedWaybills.map(w => w.id);
-      
-      const response = await api.post<any, any>('/branches/linehaul', {
+
+      const response = (await api.post('/branches/linehaul', {
         waybillIds,
         destinationBranchId: destinationId
-      });
+      })) as unknown as { id: string | number };
 
       const manifestId = response.id;
       window.open(`${getApiBaseUrl()}/branches/manifest/${manifestId}/pdf`, '_blank');
 
       onSuccess();
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Transfer error:", err);
-      const msg = err?.response?.data?.message || err?.message || "Failed to generate manifest.";
+      const msg = errorMessageOf(err) || "Failed to generate manifest.";
       showToast(Array.isArray(msg) ? msg.join(", ") : String(msg), "error");
     } finally {
       setLoading(false);
@@ -77,29 +85,29 @@ export const TransferCargoModal: React.FC<TransferCargoModalProps> = ({
 
         <div className="p-8">
           <div className="mb-6 bg-blue-500/5 border border-blue-500/10 p-4 rounded-2xl">
-            <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 block">Origin Hub</label>
+            <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 block">Origin Hub</span>
             <div className="text-lg font-bold text-white">{sourceHubName}</div>
             <div className="text-[10px] text-blue-300/50 font-mono mt-1">Cargo Count: {selectedWaybills.length} Items</div>
           </div>
 
           <div className="mb-8">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Destination Branch</label>
-            <select 
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block" htmlFor="field-destination-branch-1">Destination Branch</label>
+            <select id="field-destination-branch-1"
               className="w-full bg-slate-800 border border-white/10 p-4 rounded-xl text-white font-bold focus:border-blue-500 outline-none appearance-none"
               value={destinationId}
               onChange={(e) => setDestinationId(e.target.value)}
             >
               <option value="">Select Target...</option>
               {branches
-                .filter((b: any) => b.id !== sourceHubId) // 🚀 This line no longer crashes!
-                .map((b: any) => (
+                .filter((b) => b.id !== sourceHubId) // 🚀 This line no longer crashes!
+                .map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))
               }
             </select>
           </div>
 
-          <button 
+          <button
             onClick={handleTransfer}
             disabled={loading || !destinationId}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 p-5 rounded-2xl text-white font-black transition-all flex items-center justify-center gap-3"

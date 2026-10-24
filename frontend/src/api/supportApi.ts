@@ -34,12 +34,12 @@ export type SupportTicket = {
 };
 
 export async function askSupport(message: string, history?: ChatTurn[]): Promise<SupportAnswer> {
-  const r: any = await api.post("/support/query", { message, history });
+  const r = await api.post("/support/query", { message, history });
   return r?.data ?? r;
 }
 
 export async function getSupportSuggestions(): Promise<string[]> {
-  const r: any = await api.get("/support/suggestions");
+  const r = await api.get("/support/suggestions");
   return r?.data ?? r;
 }
 
@@ -48,15 +48,15 @@ export async function createSupportTicket(payload: {
   message: string;
   priority?: "low" | "normal" | "high";
   category?: string;
-  transcript?: any;
+  transcript?: unknown;
   aiSummary?: string;
 }): Promise<SupportTicket> {
-  const r: any = await api.post("/support/tickets", payload);
+  const r = await api.post("/support/tickets", payload);
   return r?.data ?? r;
 }
 
 export async function listSupportTickets(): Promise<SupportTicket[]> {
-  const r: any = await api.get("/support/tickets");
+  const r = await api.get("/support/tickets");
   return Array.isArray(r?.data) ? r.data : Array.isArray(r) ? r : [];
 }
 
@@ -64,6 +64,6 @@ export async function updateSupportTicket(
   id: string,
   payload: { status?: string; resolution?: string },
 ): Promise<SupportTicket> {
-  const r: any = await api.patch(`/support/tickets/${id}`, payload);
+  const r = await api.patch(`/support/tickets/${id}`, payload);
   return r?.data ?? r;
 }

@@ -1,7 +1,7 @@
 import { api } from "./client";
 import type { DgSummary } from "./railChangeApi";
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export type RailStatus =
   | "PLANNED" | "WAGONS_ALLOCATED" | "LOADING" | "DEPARTED" | "IN_TRANSIT"
@@ -195,7 +195,7 @@ export const listRailTimetableRows = async (
   const qs = new URLSearchParams(
     Object.entries(f).filter(([, value]) => value !== undefined && value !== "") as [string, string][],
   ).toString();
-  const result = unwrap(await api.get(
+  const result = unwrap<{ data: RailTimetableRow[]; total: number; page: number; limit: number }>(await api.get(
     `/rail/schedules/imports/${encodeURIComponent(importId)}/rows${qs ? `?${qs}` : ""}`,
   ));
   if (

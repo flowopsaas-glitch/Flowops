@@ -10,7 +10,7 @@ import {
   groupAncillary, invoiceDraftNote, lineAmountText, priceStatusTone, tariffFormErrors, tariffFormKey, tariffStatusTone, unpricedLineCount, zar,
   type TariffFormState,
 } from "../../lib/railTariff";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { Banner, Field, Modal, Pill, Section, btnNeutral, btnPrimary, btnWarn, inputCls } from "./railUi";
 
 /** What a result view needs; both a fresh calculation and a saved one can supply it. */
@@ -44,29 +44,29 @@ export default function TariffPanel({ canWrite }: { canWrite: boolean }) {
   const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
   const [clientFor, setClientFor] = useState<SavedCalculation | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    const [s, a, c, k] = await Promise.all([
+      getTariffStatus(), getAncillaryServices(), listConsignments(), listCalculations(),
+    ]);
+    setStatus(s);
+    setAncillary(a);
+    setConsignments(c);
+    setCalcs(k);
     setLoadError(null);
-    try {
-      const [s, a, c, k] = await Promise.all([
-        getTariffStatus(), getAncillaryServices(), listConsignments(), listCalculations(),
-      ]);
-      setStatus(s);
-      setAncillary(a);
-      setConsignments(c);
-      setCalcs(k);
-    } catch (e) {
-      const message = String((e as Error)?.message ?? e);
-      setStatus(null);
-      setAncillary([]);
-      setConsignments([]);
-      setCalcs([]);
-      setLoadError(message);
-      showToast(`Could not load tariff data: ${message}`, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+
+  })().catch((e) => {
+    const message = String((e as Error)?.message ?? e);
+    setStatus(null);
+    setAncillary([]);
+    setConsignments([]);
+    setCalcs([]);
+    setLoadError(message);
+    showToast(`Could not load tariff data: ${message}`, "error");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
 
   useEffect(() => { void load(); }, [load]);
 

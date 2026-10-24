@@ -45,10 +45,10 @@ export function Banner({ tone, title, children }: { tone: Tone; title: string; c
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useDismissOnEscape(true, onClose, 1);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
       <div
         className={`max-h-[90vh] w-full ${wide ? "max-w-2xl" : "max-w-lg"} overflow-y-auto rounded-2xl border border-white/10 bg-[#0b0f14] p-6`}
-        onClick={(e) => e.stopPropagation()}
+
         role="dialog"
         aria-modal="true"
         aria-label={title}

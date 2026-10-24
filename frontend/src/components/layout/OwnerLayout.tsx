@@ -14,9 +14,9 @@ function AlertBadge() {
   const [count, setCount] = useState<number | null>(null);
 
   useEffect(() => {
-    api.get("/owner/alerts").then((res: any) => {
+    api.get("/owner/alerts").then((res) => {
       const items = (res?.data ?? res);
-      setCount(Array.isArray(items) ? items.filter((a: any) => !a.resolved).length : 0);
+      setCount(Array.isArray(items) ? items.filter((a: { resolved?: boolean }) => !a.resolved).length : 0);
     }).catch(() => setCount(null));
   }, []);
 
@@ -33,10 +33,10 @@ function ApprovalBadge() {
   const [count, setCount] = useState<number | null>(null);
 
   useEffect(() => {
-    api.get("/owner/approval-requests").then((res: any) => {
+    api.get("/owner/approval-requests").then((res) => {
       const items = res?.data ?? res;
       const arr = Array.isArray(items) ? items : Array.isArray(items?.data) ? items.data : [];
-      setCount(arr.filter((r: any) => r.status === "PENDING").length);
+      setCount(arr.filter((r: { status?: string }) => r.status === "PENDING").length);
     }).catch(() => setCount(null));
   }, []);
 

@@ -28,8 +28,8 @@ import {
   type NotificationChannel,
   type NotificationPreferences,
 } from "../../api/notificationPreferencesApi";
-import { useToast } from "../../components/ToastProvider";
-import { useAuth } from "../../contexts/AuthContext";
+import { useToast } from "../../components/toast-context";
+import { useAuth } from "../../contexts/auth-context";
 
 const CHANNEL_META: Record<
   NotificationChannel,
@@ -141,27 +141,26 @@ export default function NotificationPreferences() {
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  const load = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await getMyNotificationPreferences();
-      setPrefs(data);
-      setOriginal(data);
-    } catch (e) {
-      const message =
-        e instanceof Error ? e.message : "Failed to load preferences";
-      setError(message);
-      // Keep the defaults so the form is usable even when the backend errors.
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const load = () => (async () => {
+    const data = await getMyNotificationPreferences();
+    setPrefs(data);
+    setOriginal(data);
+
+  })().catch((e) => {
+    const message =
+      e instanceof Error ? e.message : "Failed to load preferences";
+    setError(message);
+    // Keep the defaults so the form is usable even when the backend errors.
+
+  }).finally(() => {
+    setIsLoading(false);
+
+  });
 
   useEffect(() => {
     void load();
     // load() is stable in this component; intentional empty deps for once-on-mount.
-     
+
   }, []);
 
   const isDirty = useMemo(

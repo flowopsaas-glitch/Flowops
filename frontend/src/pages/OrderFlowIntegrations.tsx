@@ -1,7 +1,8 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
 import { Plug, Plus, Power, PowerOff, Trash2, RefreshCw, Loader2, ArrowRightLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { listIntegrations, createIntegration, activateIntegration, deactivateIntegration, deleteIntegration, type OrderFlowIntegration, type CreateIntegrationPayload, type IntegrationType } from '../api/orderFlowApi';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 export default function OrderFlowIntegrations() {
   const { showToast } = useToast();
@@ -10,16 +11,16 @@ export default function OrderFlowIntegrations() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', type: 'SHOPIFY' as IntegrationType, autoDispatch: false });
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      setIntegrations(await listIntegrations());
-    } catch (e: any) {
-      showToast(e.message || 'Failed to load integrations', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  const load = useCallback(() => (async () => {
+    setIntegrations(await listIntegrations());
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e) || 'Failed to load integrations', 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -32,22 +33,22 @@ export default function OrderFlowIntegrations() {
       setShowCreate(false);
       setForm({ name: '', type: 'SHOPIFY', autoDispatch: false });
       load();
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleActivate = async (id: string) => {
     try { await activateIntegration(id); showToast('Integration activated', 'success'); load(); }
-    catch (e: any) { showToast(e.message, 'error'); }
+    catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleDeactivate = async (id: string) => {
     try { await deactivateIntegration(id); showToast('Integration deactivated', 'success'); load(); }
-    catch (e: any) { showToast(e.message, 'error'); }
+    catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleDelete = async (id: string) => {
     try { await deleteIntegration(id); showToast('Integration deleted', 'success'); load(); }
-    catch (e: any) { showToast(e.message, 'error'); }
+    catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const statusBadge = (s: string) => {

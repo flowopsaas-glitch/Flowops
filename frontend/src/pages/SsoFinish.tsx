@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { setToken, setLoginMode, setRefreshToken } from "../api/client";
@@ -35,8 +36,8 @@ export default function SsoFinish() {
       setRefreshToken(session.refresh_token);
       setLoginMode("tenant");
       window.location.replace("/dashboard");
-    }).catch((e: any) => {
-      if (active) setError(e?.message || "Could not establish your session. Please try again.");
+    }).catch((e: unknown) => {
+      if (active) setError(errorMessageOf(e) || "Could not establish your session. Please try again.");
     });
 
     return () => { active = false; };

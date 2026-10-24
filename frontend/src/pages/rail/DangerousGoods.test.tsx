@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
 }));
 
 const toast = vi.fn();
-vi.mock('../../components/ToastProvider', () => ({ useToast: () => ({ showToast: toast }) }));
+vi.mock('../../components/toast-context', () => ({ useToast: () => ({ showToast: toast }) }));
 vi.mock('../../api/railChangeApi', () => ({
   getDangerousGoods: vi.fn(async () => { if (h.readinessError) throw new Error('nope'); return h.readiness; }),
 }));

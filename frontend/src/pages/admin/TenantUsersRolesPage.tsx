@@ -161,7 +161,7 @@ function getUser() {
   }
 }
 
-function text(v: any, fallback = "") {
+function text(v: unknown, fallback = "") {
   return String(v ?? fallback ?? "").trim();
 }
 
@@ -174,7 +174,7 @@ async function readJson(response: Response) {
   }
 }
 
-function normalizePermissions(input: any, role?: string): Record<string, boolean> {
+function normalizePermissions(input: unknown, role?: string): Record<string, boolean> {
   // Delegate to the single source of truth so role defaults + per-user overrides
   // resolve exactly the same way the sidebar and route guards resolve them.
   return normalizeTenantNavPermissions(input, role) as unknown as Record<string, boolean>;
@@ -243,30 +243,27 @@ export default function TenantUsersRolesPage() {
     return data;
   }
 
-  async function loadCompanies() {
+  const loadCompanies = () => (async () => {
     try {
       const data = await api("/owner/tenants");
       // listTenants returns { data: companies[], total, page, limit }
       const inner = data?.data ?? data;
       const rows = Array.isArray(inner) ? inner : Array.isArray(data?.companies) ? data.companies : [];
-      const mapped = rows.map((item: any) => ({
+      const mapped = rows.map((item: Record<string, unknown>) => ({
         id: Number(item?.id || 0),
         name: text(item?.name || item?.companyName || `Company ${item?.id}`),
       }));
       setCompanies(mapped);
-      if (mapped.length && !mapped.find((c: any) => c.id === selectedCompanyId)) {
-        setSelectedCompanyId(Number(mapped[0].id));
-      }
-    } catch (err: any) {
+    } catch (err) {
       console.warn("loadCompanies failed", err?.message);
     }
-  }
+  })();
 
-  async function loadUsers(companyId?: number) {
+  const loadUsers = (companyId?: number) => (async () => {
     setBusy(true);
     setStatus("");
     try {
-      let data: any;
+      let data: Awaited<ReturnType<typeof api>>;
 
       if (isOwner) {
         const safeCompanyId = Number(companyId || selectedCompanyId || 1);
@@ -281,7 +278,7 @@ export default function TenantUsersRolesPage() {
         ? data.users
         : [];
 
-      const mapped = rows.map((item: any) => ({
+      const mapped = rows.map((item: Record<string, unknown>) => ({
         id: Number(item?.id || 0),
         fullName: text(item?.fullName || item?.name || item?.firstName || "Unnamed User"),
         email: text(item?.email),
@@ -290,7 +287,7 @@ export default function TenantUsersRolesPage() {
         companyId: Number(item?.companyId || companyId || selectedCompanyId || 1),
         companyName: text(item?.companyName || selectedCompany?.name || ""),
         mustChangePassword: Boolean(item?.mustChangePassword ?? false),
-        permissions: normalizePermissions(item?.permissions || {}, item?.role),
+        permissions: normalizePermissions(item?.permissions || {}, text(item?.role) || undefined),
       }));
 
       setUsers(mapped);
@@ -299,37 +296,47 @@ export default function TenantUsersRolesPage() {
       } else {
         setSelectedUserId(0);
       }
-    } catch (err: any) {
+    } catch (err) {
       setUsers([]);
       setStatus(err?.message || "Failed to load users");
     } finally {
       setBusy(false);
     }
+  })();
+
+  // Once the company list arrives, a selection that is not in it (the
+  // initial placeholder) resolves to the first company during render.
+  if (companies.length > 0 && !companies.some((c) => Number(c.id) === Number(selectedCompanyId))) {
+    setSelectedCompanyId(Number(companies[0].id));
   }
 
   useEffect(() => {
     if (isOwner) {
-      loadCompanies().then(() => loadUsers(selectedCompanyId));
+      void loadCompanies();
     } else {
-      loadUsers();
+      void loadUsers();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (isOwner && selectedCompanyId) {
-      loadUsers(selectedCompanyId);
+      void loadUsers(selectedCompanyId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompanyId]);
 
-  useEffect(() => {
-    if (selectedUser) {
-      setPermissionDraft(normalizePermissions(selectedUser.permissions || {}, selectedUser.role));
-    } else {
-      setPermissionDraft(normalizePermissions({}, role));
-    }
-  }, [selectedUser, role]);
+  // Keep the permission draft in step with the selected user / role by
+  // adjusting it during render when its source changes, not in an effect.
+  const [permissionDraftSource, setPermissionDraftSource] = useState<{ user: typeof selectedUser; role: string }>({ user: undefined, role });
+  if (permissionDraftSource.user !== selectedUser || permissionDraftSource.role !== role) {
+    setPermissionDraftSource({ user: selectedUser, role });
+    setPermissionDraft(
+      selectedUser
+        ? normalizePermissions(selectedUser.permissions || {}, selectedUser.role)
+        : normalizePermissions({}, role),
+    );
+  }
 
   async function handleCreateUser() {
     setBusy(true);
@@ -366,7 +373,7 @@ export default function TenantUsersRolesPage() {
       setRole("COMPANY_ADMIN");
       setPermissionDraft(normalizePermissions({}, "COMPANY_ADMIN"));
       await loadUsers(selectedCompanyId);
-    } catch (err: any) {
+    } catch (err) {
       setStatus(err?.message || "Failed to create user");
     } finally {
       setBusy(false);
@@ -399,7 +406,7 @@ export default function TenantUsersRolesPage() {
       setStatus("Password reset completed.");
       setResetPassword("");
       await loadUsers(selectedCompanyId);
-    } catch (err: any) {
+    } catch (err) {
       setStatus(err?.message || "Failed to reset password");
     } finally {
       setBusy(false);
@@ -420,7 +427,7 @@ export default function TenantUsersRolesPage() {
 
       setStatus("User status updated.");
       await loadUsers(selectedCompanyId);
-    } catch (err: any) {
+    } catch (err) {
       setStatus(err?.message || "Failed to toggle user");
     } finally {
       setBusy(false);
@@ -439,7 +446,7 @@ export default function TenantUsersRolesPage() {
 
       setStatus("Tenant user deleted.");
       await loadUsers(selectedCompanyId);
-    } catch (err: any) {
+    } catch (err) {
       setStatus(err?.message || "Failed to delete user");
     } finally {
       setBusy(false);
@@ -463,7 +470,7 @@ export default function TenantUsersRolesPage() {
 
       setStatus("Permissions saved successfully.");
       await loadUsers(selectedCompanyId);
-    } catch (err: any) {
+    } catch (err) {
       setStatus(err?.message || "Failed to save permissions");
     } finally {
       setBusy(false);
@@ -542,8 +549,8 @@ export default function TenantUsersRolesPage() {
 
             {isOwner && (
               <>
-                <label style={labelStyle}>Target Company</label>
-                <select
+                <label style={labelStyle} htmlFor="field-target-company-7">Target Company</label>
+                <select id="field-target-company-7"
                   style={inputStyle}
                   value={selectedCompanyId}
                   onChange={(e) => setSelectedCompanyId(Number(e.target.value))}
@@ -557,17 +564,17 @@ export default function TenantUsersRolesPage() {
               </>
             )}
 
-            <label style={labelStyle}>Full Name</label>
-            <input style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Operations Manager" />
+            <label style={labelStyle} htmlFor="field-full-name-6">Full Name</label>
+            <input id="field-full-name-6" style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Operations Manager" />
 
-            <label style={labelStyle}>Email</label>
-            <input style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="manager@company.com" />
+            <label style={labelStyle} htmlFor="field-email-5">Email</label>
+            <input id="field-email-5" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="manager@company.com" />
 
-            <label style={labelStyle}>Temporary Password</label>
-            <input style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+            <label style={labelStyle} htmlFor="field-temporary-password-4">Temporary Password</label>
+            <input id="field-temporary-password-4" style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
 
-            <label style={labelStyle}>Role</label>
-            <select
+            <label style={labelStyle} htmlFor="field-role-3">Role</label>
+            <select id="field-role-3"
               style={inputStyle}
               value={role}
               onChange={(e) => applyRolePreset(e.target.value)}
@@ -588,8 +595,8 @@ export default function TenantUsersRolesPage() {
           <div style={card}>
             <h2 style={{ marginTop: 0, marginBottom: 14 }}>Reset Password + Access</h2>
 
-            <label style={labelStyle}>Select User</label>
-            <select
+            <label style={labelStyle} htmlFor="field-select-user-2">Select User</label>
+            <select id="field-select-user-2"
               style={inputStyle}
               value={selectedUserId}
               onChange={(e) => setSelectedUserId(Number(e.target.value))}
@@ -627,8 +634,8 @@ export default function TenantUsersRolesPage() {
               ) : null}
             </div>
 
-            <label style={labelStyle}>New Password</label>
-            <input
+            <label style={labelStyle} htmlFor="field-new-password-1">New Password</label>
+            <input id="field-new-password-1"
               style={inputStyle}
               type="password"
               value={resetPassword}
@@ -684,7 +691,7 @@ export default function TenantUsersRolesPage() {
                 users.map((user) => (
                   <div
                     key={user.id}
-                    onClick={() => setSelectedUserId(Number(user.id))}
+                    onClick={() => setSelectedUserId(Number(user.id))} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => setSelectedUserId(Number(user.id)))(); } }} role="button" tabIndex={0}
                     style={{
                       border: selectedUserId === user.id
                         ? "1px solid rgba(125,175,255,0.44)"

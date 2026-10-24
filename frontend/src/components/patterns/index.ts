@@ -17,7 +17,8 @@ export type { AsyncStateProps } from './AsyncState';
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
-export { ErrorState, errorMessageOf } from './ErrorState';
+export { ErrorState } from './ErrorState';
+export { errorMessageOf } from './errorMessage';
 
 export { useDismissOnEscape } from './useDismissOnEscape';
 export type { ErrorStateProps } from './ErrorState';
@@ -28,10 +29,13 @@ export type { PageHeaderProps } from './PageHeader';
 export { StatCard } from './StatCard';
 export type { StatCardProps } from './StatCard';
 
-export { StatusBadge, statusToneFor } from './StatusBadge';
-export type { StatusBadgeProps, StatusTone } from './StatusBadge';
+export { StatusBadge } from './StatusBadge';
+export { statusToneFor } from './statusTone';
+export type { StatusTone } from './statusTone';
+export type { StatusBadgeProps } from './StatusBadge';
 
-export { Pagination, pageWindow } from './Pagination';
+export { Pagination } from './Pagination';
+export { pageWindow } from './pageWindow';
 export type { PaginationProps } from './Pagination';
 
 export { DataTable } from './DataTable';

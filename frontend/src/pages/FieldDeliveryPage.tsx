@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Activity, AlertTriangle, ArrowRight, CheckCircle2, Clock,
+  Activity, AlertTriangle, ArrowRight, CheckCircle2,
   ExternalLink, MapPin, MessageCircle, Package, RefreshCw,
   Smartphone, Truck, Users, Wifi, WifiOff, Zap,
 } from "lucide-react";
@@ -11,7 +11,6 @@ import "leaflet/dist/leaflet.css";
 import { api } from "../api/client";
 import OpenStreetMapLayer from "../components/maps/OpenStreetMapLayer";
 import { getMapCoordinates } from "../lib/mapCoordinates";
-import { useAuth } from "../contexts/AuthContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -36,10 +35,11 @@ type FieldDriver = {
 // VITE_DRIVER_APP_URL can override this if a standalone PWA is deployed.
 const DRIVER_APP_URL = import.meta.env.VITE_DRIVER_APP_URL ?? "/driver/portal";
 
-function unwrapList(r: any): any[] | null {
-  const d = r?.data ?? r;
-  if (Array.isArray(d)) return d;
-  return Array.isArray(d?.data) ? d.data : null;
+function unwrapList<T>(r: unknown): T[] | null {
+  const d = (r as { data?: unknown } | null)?.data ?? r;
+  if (Array.isArray(d)) return d as T[];
+  const inner = (d as { data?: unknown } | null)?.data;
+  return Array.isArray(inner) ? (inner as T[]) : null;
 }
 
 function relTime(ts?: string | null): string {
@@ -77,7 +77,7 @@ function makePin(color: string, label: string) {
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-function DriverCard({ driver, onWhatsApp }: { driver: FieldDriver; onWhatsApp: (d: FieldDriver) => void }) {
+function DriverCard({ driver, now, onWhatsApp }: { driver: FieldDriver; now: number; onWhatsApp: (d: FieldDriver) => void }) {
   const totalJobs = driver.activeCollections.length + driver.activeShipments.length;
   const statusColor =
     driver.status === "AVAILABLE" ? "border-emerald-500/30 bg-emerald-500/6"
@@ -90,7 +90,7 @@ function DriverCard({ driver, onWhatsApp }: { driver: FieldDriver; onWhatsApp: (
 
   const location = getMapCoordinates(driver.lastLat, driver.lastLng);
   const lastSeenTime = driver.lastSeen ? Date.parse(driver.lastSeen) : Number.NaN;
-  const isStale = !Number.isFinite(lastSeenTime) || Date.now() - lastSeenTime > 30 * 60_000;
+  const isStale = !Number.isFinite(lastSeenTime) || now - lastSeenTime > 30 * 60_000;
 
   return (
     <div className={`rounded-[26px] border p-5 flex flex-col gap-4 ${statusColor}`}>
@@ -180,7 +180,6 @@ function DriverCard({ driver, onWhatsApp }: { driver: FieldDriver; onWhatsApp: (
 
 export default function FieldDeliveryPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [drivers, setDrivers] = useState<FieldDriver[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -188,31 +187,34 @@ export default function FieldDeliveryPage() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "AVAILABLE" | "ON_ROUTE" | "OFFLINE">("ALL");
 
-  const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
-    if (mode === "refresh") setRefreshing(true);
-    else setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
-      const res: any = await api.get("/drivers/field-ops");
-      const list = unwrapList(res);
+      const res = await api.get("/drivers/field-ops");
+      const list = unwrapList<FieldDriver>(res);
       if (!list) throw new Error("The driver service returned an unexpected response.");
       setDrivers(list);
       setLastRefresh(new Date());
       setLoadError(null);
-    } catch (err: any) {
+    } catch (err) {
       const message = err?.response?.data?.message ?? err?.message ?? "Unable to load field operations.";
       setLoadError(Array.isArray(message) ? message.join(", ") : String(message));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  })(), []);
 
-  useEffect(() => { void load("initial"); }, [load]);
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    return load();
+  }, [load]);
+
+  useEffect(() => { void load(); }, [load]);
   // Auto-refresh every 30s
   useEffect(() => {
-    const t = setInterval(() => void load("refresh"), 30_000);
+    const t = setInterval(() => void refresh(), 30_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [refresh]);
 
   const whatsApp = useCallback((d: FieldDriver) => {
     const phone = (d.phone ?? "").replace(/\D/g, "");
@@ -240,6 +242,11 @@ export default function FieldDeliveryPage() {
     ),
   }), [drivers]);
 
+  const [mountNow] = useState(() => Date.now());
+  // Freshness badges are computed against the moment the displayed data was
+  // fetched (lastRefresh), so a badge can never claim fresher knowledge than
+  // the snapshot on screen; before the first load, mount time is the basis.
+  const now = lastRefresh ? lastRefresh.getTime() : mountNow;
   const hasLoadedData = lastRefresh !== null;
   const mappableDrivers = useMemo(() =>
     drivers.filter(d => getMapCoordinates(d.lastLat, d.lastLng) !== null),
@@ -289,7 +296,7 @@ export default function FieldDeliveryPage() {
                 {lastRefresh ? `Updated ${relTime(lastRefresh.toISOString())}` : loading ? "Loading driver data…" : "Not yet loaded"}
               </span>
               <button
-                onClick={() => void load("refresh")}
+                onClick={() => void refresh()}
                 disabled={refreshing}
                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/60 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
               >
@@ -320,7 +327,7 @@ export default function FieldDeliveryPage() {
             </span>
             <button
               type="button"
-              onClick={() => void load("refresh")}
+              onClick={() => void refresh()}
               disabled={refreshing}
               className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 disabled:opacity-50"
             >
@@ -431,7 +438,7 @@ export default function FieldDeliveryPage() {
               </div>
             ) : (
               filtered.map(d => (
-                <DriverCard key={d.id} driver={d} onWhatsApp={whatsApp} />
+                <DriverCard key={d.id} driver={d} now={now} onWhatsApp={whatsApp} />
               ))
             )}
           </div>

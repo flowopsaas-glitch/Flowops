@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, Plus, Printer, RefreshCw } from "lucide-react";
 import {
   amendTrainManifest, arriveTrainManifest, cancelTrainManifest, closeTrainManifest, createTrainManifest,
@@ -6,7 +6,7 @@ import {
   updateTrainManifest, type TrainManifest,
 } from "../../api/railManifestApi";
 import { listConsignments, type RailConsignment } from "../../api/railApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { Banner, Field, Modal, Pill, Section, btnDanger, btnNeutral, btnPrimary, inputCls } from "./railUi";
 import type { Tone } from "../../lib/railSlot";
 
@@ -77,8 +77,7 @@ export default function TrainManifestPanel({ canWrite, canSign }: { canWrite: bo
     }, "Draft saved.");
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     const [manifestsResult, consignmentsResult] = await Promise.allSettled([
       listTrainManifests(),
       listConsignments(),
@@ -98,7 +97,7 @@ export default function TrainManifestPanel({ canWrite, canSign }: { canWrite: bo
       setConsignmentsError(String((consignmentsResult.reason as Error)?.message ?? consignmentsResult.reason));
     }
     setLoading(false);
-  }, []);
+  })(), []);
 
   useEffect(() => { void load(); }, [load]);
 

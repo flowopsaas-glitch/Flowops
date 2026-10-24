@@ -10,7 +10,7 @@ import type { RailConsignment } from "../../api/railApi";
 import {
   availableActions, envelopeLabel, envelopeTone, formatDate, hasMobilisationClock, mobilisationTone, slotStatusTone,
 } from "../../lib/railSlot";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { useDismissOnEscape } from "../../components/patterns";
 import { EnvelopeResultCard } from "./EnvelopeChecker";
 import { Banner, Field, Modal, Pill, btnDanger, btnNeutral, btnPrimary, btnWarn, inputCls } from "./railUi";
@@ -50,7 +50,7 @@ export default function SlotApplicationDrawer({ id, canWrite, canSign, corridors
   const [linkId, setLinkId] = useState("");
   useDismissOnEscape(!modal, onClose);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => (async () => {
     const a = await getSlotApplication(id);
     setApp(a);
     const saved: Record<string, { answer?: "YES" | "NO"; remarks: string }> = {};
@@ -58,7 +58,7 @@ export default function SlotApplicationDrawer({ id, canWrite, canSign, corridors
     setAnswers(saved);
     setAccessType((a.selfScreeningAccessType as "Network A" | "Network B" | null) ?? "");
     setReadiness(a.status === "DRAFT" ? await getSlotReadiness(id).catch(() => null) : null);
-  }, [id]);
+  })(), [id]);
 
   useEffect(() => {
     void load().catch((e) => showToast((e as Error)?.message || "Could not open the application", "error"));
@@ -81,7 +81,7 @@ export default function SlotApplicationDrawer({ id, canWrite, canSign, corridors
 
   if (!app) {
     return (
-      <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
+      <div className="fixed inset-0 z-50 flex justify-end bg-black/60"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
         <div className="grid h-full w-full max-w-2xl place-items-center border-l border-white/10 bg-[#0b0f14]"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
       </div>
     );
@@ -99,8 +99,8 @@ export default function SlotApplicationDrawer({ id, canWrite, canSign, corridors
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
-      <div className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Slot application ${app.applicationNumber}`}>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/60"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6" role="dialog" aria-modal="true" aria-label={`Slot application ${app.applicationNumber}`}>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">

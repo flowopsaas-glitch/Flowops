@@ -1,6 +1,6 @@
 import { api } from "./client";
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 // ── Enums (mirror backend Prisma enums) ──────────────────────────────────────
 export type HandshakeReportStatus =

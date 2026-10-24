@@ -39,10 +39,10 @@ export default function CompanySetup() {
 
         <div className="bg-slate-900/80 border border-white/10 rounded-2xl p-6 space-y-4">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Company Name</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400" htmlFor="field-company-name-3">Company Name</label>
             <div className="relative flex items-center">
               <Building2 className="absolute left-3 text-slate-500" size={16} />
-              <input
+              <input id="field-company-name-3"
                 className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
                 placeholder="Acme Logistics"
                 value={companyName}
@@ -52,10 +52,10 @@ export default function CompanySetup() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Business Email</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400" htmlFor="field-business-email-2">Business Email</label>
             <div className="relative flex items-center">
               <Mail className="absolute left-3 text-slate-500" size={16} />
-              <input
+              <input id="field-business-email-2"
                 type="email"
                 className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
                 placeholder="admin@acme.co.za"
@@ -66,10 +66,10 @@ export default function CompanySetup() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">WhatsApp Number</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400" htmlFor="field-whatsapp-number-1">WhatsApp Number</label>
             <div className="relative flex items-center">
               <Phone className="absolute left-3 text-slate-500" size={16} />
-              <input
+              <input id="field-whatsapp-number-1"
                 className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
                 placeholder="+27 82 123 4567"
                 value={whatsapp}

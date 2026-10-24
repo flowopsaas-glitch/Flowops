@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 const h = vi.hoisted(() => ({ get: vi.fn() }));
 
 vi.mock("../api/client", () => ({ api: { get: h.get } }));
-vi.mock("../contexts/AuthContext", () => ({ useAuth: () => ({ user: { id: "ops-1", companyId: "tenant-1" } }) }));
+vi.mock("../contexts/auth-context", () => ({ useAuth: () => ({ user: { id: "ops-1", companyId: "tenant-1" } }) }));
 vi.mock("react-leaflet", () => ({
   MapContainer: ({ children }: { children?: ReactNode }) => <div data-testid="field-map">{children}</div>,
   TileLayer: () => null,

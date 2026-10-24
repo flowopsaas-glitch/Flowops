@@ -1,4 +1,6 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDismissOnEscape } from "../../components/patterns/useDismissOnEscape";
 import {
   Target, Plus, Trash2, Loader2, TrendingUp, RefreshCw, X, ChevronDown, ChevronRight, Save,
 } from "lucide-react";
@@ -37,7 +39,7 @@ type OkrResponse = {
   summary: { count: number; overallProgress: number };
 };
 
-function unwrap(r: any): any { return r?.data ?? r; }
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
 
 const STATUS_STYLE: Record<Status, string> = {
   ON_TRACK: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
@@ -79,21 +81,22 @@ export default function OwnerOkrs() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showNewObj, setShowNewObj] = useState(false);
+  useDismissOnEscape(showNewObj && !busy, () => setShowNewObj(false));
   const [newObj, setNewObj] = useState({ title: "", quarter: currentQuarter(), owner: "" });
   const [krDraft, setKrDraft] = useState<Record<string, { title: string; unit: Unit; targetValue: string; startValue: string }>>({});
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r: any = await api.get(`/owner/okrs${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ""}`);
-      setData(unwrap(r));
-      setError(null);
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Could not load OKRs.");
-    } finally {
-      setLoading(false);
-    }
-  }, [quarter]);
+  const load = useCallback(() => (async () => {
+    const r = await api.get(`/owner/okrs${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ""}`);
+    setData(unwrap<OkrResponse>(r));
+    setError(null);
+
+  })().catch((e: unknown) => {
+    setError(errorMessageOf(e) || "Could not load OKRs.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [quarter]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -112,8 +115,8 @@ export default function OwnerOkrs() {
       setNewObj({ title: "", quarter: newObj.quarter, owner: "" });
       setShowNewObj(false);
       await load();
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Could not create objective.");
+    } catch (e) {
+      setError(errorMessageOf(e) || "Could not create objective.");
     } finally { setBusy(false); }
   };
 
@@ -121,14 +124,14 @@ export default function OwnerOkrs() {
     if (!window.confirm("Delete this objective and its key results?")) return;
     setBusy(true);
     try { await api.delete(`/owner/okrs/${id}`); await load(); }
-    catch (e: any) { setError(e?.response?.data?.message ?? e?.message ?? "Could not delete."); }
+    catch (e) { setError(errorMessageOf(e) || "Could not delete."); }
     finally { setBusy(false); }
   };
 
   const setObjStatus = async (id: string, status: Status) => {
     setBusy(true);
     try { await api.patch(`/owner/okrs/${id}`, { status }); await load(); }
-    catch (e: any) { setError(e?.response?.data?.message ?? e?.message); }
+    catch (e) { setError(errorMessageOf(e) || e?.message); }
     finally { setBusy(false); }
   };
 
@@ -145,26 +148,28 @@ export default function OwnerOkrs() {
       });
       setKrDraft((p) => ({ ...p, [objId]: { title: "", unit: "NUMBER", targetValue: "", startValue: "" } }));
       await load();
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Could not add key result.");
+    } catch (e) {
+      setError(errorMessageOf(e) || "Could not add key result.");
     } finally { setBusy(false); }
   };
 
   const updateKrValue = async (krId: string, currentValue: number) => {
     setBusy(true);
     try { await api.patch(`/owner/okrs/key-results/${krId}`, { currentValue }); await load(); }
-    catch (e: any) { setError(e?.response?.data?.message ?? e?.message); }
+    catch (e) { setError(errorMessageOf(e) || e?.message); }
     finally { setBusy(false); }
   };
 
   const deleteKr = async (krId: string) => {
     setBusy(true);
     try { await api.delete(`/owner/okrs/key-results/${krId}`); await load(); }
-    catch (e: any) { setError(e?.response?.data?.message ?? e?.message); }
+    catch (e) { setError(errorMessageOf(e) || e?.message); }
     finally { setBusy(false); }
   };
 
-  const objectives = data?.objectives ?? [];
+  // Stable identity (memoised on the OKR snapshot) so the status-count memo
+  // keyed on objectives does not recompute on every render.
+  const objectives = useMemo(() => data?.objectives ?? [], [data]);
   const overall = data?.summary.overallProgress ?? 0;
 
   const draftFor = (id: string) => krDraft[id] ?? { title: "", unit: "NUMBER" as Unit, targetValue: "", startValue: "" };
@@ -343,11 +348,11 @@ export default function OwnerOkrs() {
 
       {/* New objective modal */}
       {showNewObj && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => !busy && setShowNewObj(false)}>
-          <div className="w-full max-w-md rounded-2xl border border-white/12 bg-[#0b1226] p-6" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => !busy && setShowNewObj(false)} />
+          <div className="w-full max-w-md rounded-2xl border border-white/12 bg-[#0b1226] p-6" role="dialog">
             <h3 className="text-lg font-black text-white mb-4">New objective</h3>
-            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-1">Objective</label>
-            <input
+            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-1" htmlFor="field-objective-3">Objective</label>
+            <input id="field-objective-3"
               value={newObj.title}
               onChange={(e) => setNewObj((p) => ({ ...p, title: e.target.value }))}
               placeholder="e.g. Land FlowOps' first rail customer"
@@ -355,12 +360,12 @@ export default function OwnerOkrs() {
             />
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-1">Quarter</label>
-                <input value={newObj.quarter} onChange={(e) => setNewObj((p) => ({ ...p, quarter: e.target.value }))} placeholder="2026-Q4" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-violet-500/50" />
+                <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-1" htmlFor="field-quarter-2">Quarter</label>
+                <input id="field-quarter-2" value={newObj.quarter} onChange={(e) => setNewObj((p) => ({ ...p, quarter: e.target.value }))} placeholder="2026-Q4" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-violet-500/50" />
               </div>
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-1">Owner (optional)</label>
-                <input value={newObj.owner} onChange={(e) => setNewObj((p) => ({ ...p, owner: e.target.value }))} placeholder="Kader" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-violet-500/50" />
+                <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-1" htmlFor="field-owner-optional-1">Owner (optional)</label>
+                <input id="field-owner-optional-1" value={newObj.owner} onChange={(e) => setNewObj((p) => ({ ...p, owner: e.target.value }))} placeholder="Kader" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-violet-500/50" />
               </div>
             </div>
             <div className="flex gap-3">

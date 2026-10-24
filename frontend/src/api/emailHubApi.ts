@@ -81,12 +81,12 @@ export type EmailHubStats = {
  * So `raw` at runtime is { data: <payload>, ... }, and raw?.data ?? raw extracts
  * the real payload whether or not the envelope is present.
  */
-function unwrap<T>(raw: any): T {
-  return (raw?.data ?? raw) as T;
+function unwrap<T>(raw: unknown): T {
+  return ((raw as { data?: T } | null)?.data ?? raw) as T;
 }
 
-function unwrapArray<T>(raw: any): T[] {
-  const data = raw?.data ?? raw;
+function unwrapArray<T>(raw: unknown): T[] {
+  const data = (raw as { data?: unknown } | null)?.data ?? raw;
   return (Array.isArray(data) ? data : []) as T[];
 }
 
@@ -96,24 +96,24 @@ export async function getEmailHubItems(params?: {
   status?: EmailHubStatus | "";
   priority?: EmailHubPriority | "";
 }): Promise<EmailHubItem[]> {
-  const raw: any = await api.get("/email-hub", { params });
+  const raw = await api.get("/email-hub", { params });
   return unwrapArray<EmailHubItem>(raw);
 }
 
 export async function getEmailHubStats(): Promise<EmailHubStats> {
-  const raw: any = await api.get("/email-hub/stats");
+  const raw = await api.get("/email-hub/stats");
   return unwrap<EmailHubStats>(raw);
 }
 
 export async function getEmailHubItem(id: string): Promise<EmailHubItem> {
-  const raw: any = await api.get(`/email-hub/${id}`);
+  const raw = await api.get(`/email-hub/${id}`);
   return unwrap<EmailHubItem>(raw);
 }
 
 export async function createEmailHubItem(
   payload: Partial<EmailHubItem>
 ): Promise<EmailHubItem> {
-  const raw: any = await api.post("/email-hub", payload);
+  const raw = await api.post("/email-hub", payload);
   return unwrap<EmailHubItem>(raw);
 }
 
@@ -121,7 +121,7 @@ export async function updateEmailHubItem(
   id: string,
   payload: Partial<EmailHubItem>
 ): Promise<EmailHubItem> {
-  const raw: any = await api.patch(`/email-hub/${id}`, payload);
+  const raw = await api.patch(`/email-hub/${id}`, payload);
   return unwrap<EmailHubItem>(raw);
 }
 
@@ -150,13 +150,13 @@ export async function sendEmailHub(
   if (form.priority) fd.append("priority", form.priority);
   for (const file of files) fd.append("attachments", file);
 
-  const raw: any = await api.post("/email-hub/send", fd, {
+  const raw = await api.post("/email-hub/send", fd, {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return unwrap<EmailHubItem>(raw);
 }
 
 export async function seedEmailHubDemo(): Promise<{ created: number }> {
-  const raw: any = await api.post("/email-hub/seed-demo");
+  const raw = await api.post("/email-hub/seed-demo");
   return unwrap<{ created: number }>(raw);
 }

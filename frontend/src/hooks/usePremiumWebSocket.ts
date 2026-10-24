@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { FLOWOPS_WS_ORIGIN } from '../lib/env';
 
@@ -9,7 +9,7 @@ import { FLOWOPS_WS_ORIGIN } from '../lib/env';
 
 export interface PremiumBroadcastEvent {
   type: 'risk' | 'shipment' | 'dispatch' | 'location' | 'geofence' | 'search' | 'billing' | 'inbox' | 'inbox-status';
-  data: any;
+  data: unknown;
   timestamp: Date;
 }
 
@@ -32,14 +32,25 @@ export function usePremiumWebSocket({
   enabled = true,
 }: UsePremiumWebSocketProps) {
   const socketRef = useRef<Socket | null>(null);
+  // State mirror of the live socket: consumers receive it as a normal reactive
+  // value instead of reading socketRef.current during render.
+  const [socket, setSocket] = useState<Socket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+
   // Refs to avoid unnecessary effect re-runs when callback logic changes
   const onEventRef = useRef(onEvent);
   const onInboxRef = useRef(onWaybillInboxChanged);
 
-  onEventRef.current = onEvent;
-  onInboxRef.current = onWaybillInboxChanged;
+  // Keep the latest callbacks in refs (updated after render commits, never
+  // during render) so event handlers never act on a stale closure.
+  useEffect(() => {
+    onEventRef.current = onEvent;
+    onInboxRef.current = onWaybillInboxChanged;
+  });
+
+  // Self-reference for the reconnect retry: connect cannot name itself inside
+  // its own initializer, so the retry calls through this ref instead.
+  const connectRef = useRef<() => void>(() => undefined);
 
   const connect = useCallback(() => {
     if (!enabled) return;
@@ -55,6 +66,7 @@ export function usePremiumWebSocket({
       const url = `${base}/broadcast`;
 
       socketRef.current = io(url, {
+
       transports: ['polling', 'websocket'],
         reconnection: true,
         reconnectionDelay: 1000,
@@ -63,7 +75,7 @@ export function usePremiumWebSocket({
         // Polling & Upgrade optimization
         upgrade: true,
         /* 🛡️ FIX: upgradeTimeout is deprecated/misnamed in newer versions, use requestTimeout */
-        requestTimeout: 10000, 
+        requestTimeout: 10000,
         rememberUpgrade: true,
         // Better connection detection
         forceNew: false,
@@ -74,6 +86,8 @@ export function usePremiumWebSocket({
       });
 
       // --- Room Management ---
+      setSocket(socketRef.current);
+
       socketRef.current.on('connect', () => {
         if (companyId) {
           socketRef.current?.emit('joinCompanyRoom', { companyId });
@@ -100,7 +114,7 @@ export function usePremiumWebSocket({
       });
 
       // --- Event Forwarding Logic ---
-      const forward = (type: PremiumBroadcastEvent['type']) => (data: any) => {
+      const forward = (type: PremiumBroadcastEvent['type']) => (data: unknown) => {
         onEventRef.current?.({
           type,
           data,
@@ -118,7 +132,7 @@ export function usePremiumWebSocket({
       socketRef.current.on('auto-invoice-completed', forward('billing'));
 
       // Inbox Specific Listeners
-      socketRef.current.on('waybill-inbox-changed', (data: any) => {
+      socketRef.current.on('waybill-inbox-changed', (data: unknown) => {
         onEventRef.current?.({
           type: 'inbox',
           data,
@@ -127,7 +141,7 @@ export function usePremiumWebSocket({
         onInboxRef.current?.();
       });
 
-      socketRef.current.on('inbox-item-status-changed', (data: any) => {
+      socketRef.current.on('inbox-item-status-changed', (data: unknown) => {
         onEventRef.current?.({
           type: 'inbox-status',
           data,
@@ -137,15 +151,20 @@ export function usePremiumWebSocket({
 
     } catch (err) {
       console.error('Socket initialization failed:', err);
-      reconnectTimeoutRef.current = setTimeout(connect, 3000);
+      reconnectTimeoutRef.current = setTimeout(() => connectRef.current(), 3000);
     }
   }, [companyId, driverId, collectionId, enabled]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
       socketRef.current.removeAllListeners();
       socketRef.current.disconnect();
       socketRef.current = null;
+      setSocket(null);
     }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -153,7 +172,7 @@ export function usePremiumWebSocket({
     }
   }, []);
 
-  const emit = useCallback((event: string, data: any) => {
+  const emit = useCallback((event: string, data: unknown) => {
     if (socketRef.current?.connected) {
       socketRef.current.emit(event, data);
     } else {
@@ -167,7 +186,7 @@ export function usePremiumWebSocket({
 
   const getTransport = useCallback((): string => {
     // Accessing the internal engine transport name
-    return (socketRef.current?.io as any)?.engine?.transport?.name ?? 'disconnected';
+    return (socketRef.current?.io as unknown as { engine?: { transport?: { name?: string } } })?.engine?.transport?.name ?? 'disconnected';
   }, []);
 
   useEffect(() => {
@@ -183,6 +202,6 @@ export function usePremiumWebSocket({
     emit,
     isConnected,
     getTransport,
-    socket: socketRef.current,
+    socket,
   };
 }

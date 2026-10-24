@@ -225,46 +225,18 @@ describe('the pattern barrel', () => {
 });
 
 /**
- * The divs that carry `onClick={(e) => e.stopPropagation()}` - the inner panel
- * of a click-to-dismiss overlay, whose handler exists purely so a click inside
- * the dialog does not bubble up to the backdrop behind it and close it.
+ * A click-to-dismiss modal is identified by its dismiss layer: a real
+ * <button aria-label="Close dialog"> sitting behind the panel. Dismissal
+ * therefore exists as a named, keyboard-reachable control instead of a
+ * click handler on a plain div, and the panel no longer needs an
+ * onClick stopPropagation guard to survive clicks inside it.
  */
-function modalPanels(source: string): string[] {
-  const panels: string[] = [];
-  const openTag = /<div\b/g;
-  let match: RegExpExecArray | null;
-  while ((match = openTag.exec(source)) !== null) {
-    const end = tagEnd(source, match.index);
-    if (end === -1) break;
-    const tag = source.slice(match.index, end + 1);
-    openTag.lastIndex = end;
-    if (/stopPropagation/.test(tag)) panels.push(tag);
-  }
-  return panels;
+function modalFiles(source: string): boolean {
+  return source.includes('aria-label="Close dialog"');
 }
 
-/**
- * The real requirement behind the backdrop exclusion above.
- *
- * A backdrop that dismisses on click is only safe when the dialog can also be
- * closed without a mouse: Escape, and a reachable Close control. Declaring
- * role="dialog" aria-modal="true" is what tells assistive technology to confine
- * itself to the dialog and expose those dismissal paths. Without it, a screen
- * reader user is left on the page behind the overlay, reading content they
- * cannot reach and clicking nothing.
- *
- * This is the check that makes the backdrop exemption honest.
- */
 describe('modal dialogs', () => {
-  /**
-   * A modal panel is a DIV that swallows backdrop clicks, not merely a file
-   * that mentions both strings. Matching on the file matched Dashboard.tsx,
-   * whose only stopPropagation calls are on two ordinary buttons inside a
-   * flip-card - it has no modal at all.
-   */
-  const MODALS = SOURCE_PAGES.filter(([, src]) =>
-    modalPanels(src).length > 0,
-  );
+  const MODALS = SOURCE_PAGES.filter(([, src]) => modalFiles(src));
 
   it('finds the modal panels it is guarding', () => {
     expect(MODALS.length).toBeGreaterThan(0);
@@ -276,21 +248,17 @@ describe('modal dialogs', () => {
   });
 
   /**
-   * Tracked debt, not a passing grade.
+   * Every modal must be dismissible from the keyboard alone.
    *
-   * aria-modal="true" promises assistive technology that the dialog owns the
-   * keyboard until it is dismissed. None of these can keep that promise yet:
-   * a survey of every modal found ZERO Escape handlers, so a keyboard user
-   * cannot get out of any of them except by finding the Close button.
-   *
-   * Declaring aria-modal without Escape would be worse than omitting it - it
-   * would advertise a dismissal path that does not exist. So this asserts the
-   * gap instead of papering over it, and fails if the number grows. Wiring
-   * useDismissOnEscape into each modal is what closes it; the hook is in
-   * patterns/ and is tested.
+   * A backdrop that dismisses on click is only honest when the same
+   * dismissal is reachable without a mouse: the backdrop is a real
+   * button, and Escape must close the dialog too. This used to assert a
+   * tracked gap (13 modals had no Escape path); useDismissOnEscape is
+   * now wired into every modal, so the assertion is exact: the list of
+   * modals without an Escape path must be empty, and must stay empty.
    */
-  it('does not widen the gap between modals and Escape-to-dismiss', () => {
-    const withoutEscape = MODALS.filter(([, src]) => !/Escape/.test(src)).map(([k]) => k);
-    expect(withoutEscape.length).toBeLessThanOrEqual(13);
+  it('wires Escape-to-dismiss on every modal', () => {
+    const withoutEscape = MODALS.filter(([, src]) => !/useDismissOnEscape|Escape/.test(src)).map(([k]) => k);
+    expect(withoutEscape).toEqual([]);
   });
 });

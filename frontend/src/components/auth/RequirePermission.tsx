@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo } from "react";
 import { Navigate, Outlet } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
+import { useAuth } from "../../contexts/auth-context";
 import {
   normalizeTenantNavPermissions,
   type TenantNavPermissionKey,
@@ -45,7 +45,7 @@ export default function RequirePermission({
   const perms = useMemo(
     () =>
       normalizeTenantNavPermissions(
-        (user as any)?.permissions ?? (user as any)?.navPermissions,
+        user?.permissions ?? user?.navPermissions,
         user?.role,
       ),
     [user],
@@ -55,8 +55,8 @@ export default function RequirePermission({
     const role = String(user?.role || "").toUpperCase();
     return (
       TENANT_ADMIN_ROLES.includes(role) ||
-      Boolean((user as any)?.isSuperAdmin) ||
-      Boolean((user as any)?.isUltimateOwner)
+      Boolean(user?.isSuperAdmin) ||
+      Boolean(user?.isUltimateOwner)
     );
   }, [user]);
 

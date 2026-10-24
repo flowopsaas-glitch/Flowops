@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 import {
   Building2, Palette, Bell, Users, CreditCard, Plug, Shield,
   ChevronRight, RefreshCw, CheckCircle2, AlertTriangle, Clock,
@@ -34,9 +35,7 @@ type Company = {
   bankAccountType?: string | null;
 };
 
-function unwrap(raw: any): any {
-  return raw?.data ?? raw;
-}
+function unwrap<T>(raw: unknown): T { return ((raw as { data?: T } | null)?.data ?? raw) as T; }
 
 const PLAN_BADGE: Record<string, string> = {
   starter:      'bg-slate-500/20 text-slate-300 border-slate-500/30',
@@ -71,21 +70,21 @@ export default function Settings() {
   const [saving,  setSaving]      = useState(false);
   const [draft,   setDraft]       = useState<Partial<Company>>({});
 
-  async function loadCompany() {
-    setLoading(true);
-    try {
-      const raw: any = await api.get('/companies/my-company');
-      const data = unwrap(raw);
-      setCompany(data);
-      setDraft(data ?? {});
-    } catch (err: any) {
-      showToast(err?.message || 'Failed to load company settings', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loadCompany = useCallback(() => (async () => {
+    const raw = await api.get('/companies/my-company');
+    const data = unwrap<Company>(raw);
+    setCompany(data);
+    setDraft(data ?? {});
 
-  useEffect(() => { void loadCompany(); }, []);
+  })().catch((err: unknown) => {
+    showToast(errorMessageOf(err) || 'Failed to load company settings', 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
+
+  useEffect(() => { void loadCompany(); }, [loadCompany]);
 
   async function handleSave() {
     setSaving(true);
@@ -108,13 +107,13 @@ export default function Settings() {
         bankAccountType:  draft.bankAccountType,
         brandName:        draft.brandName,
       };
-      const raw: any = await api.patch('/companies/my-company', payload);
-      const updated = unwrap(raw);
+      const raw = await api.patch('/companies/my-company', payload);
+      const updated = unwrap<Company>(raw);
       setCompany(updated ?? { ...company, ...payload });
       setEditing(false);
       showToast('Settings saved successfully', 'success');
-    } catch (err: any) {
-      showToast(err?.message || 'Failed to save settings', 'error');
+    } catch (err) {
+      showToast(errorMessageOf(err) || 'Failed to save settings', 'error');
     } finally {
       setSaving(false);
     }

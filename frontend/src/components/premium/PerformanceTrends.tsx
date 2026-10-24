@@ -16,8 +16,8 @@ type Trends = {
 
 const RANGES = [7, 30, 90] as const;
 
-function unwrap(res: any) {
-  return res && typeof res === "object" && "data" in res ? res.data : res;
+function unwrap<T>(res: unknown): T {
+  return (res && typeof res === "object" && "data" in res ? (res as { data: T }).data : res) as T;
 }
 
 function fmtMoney(currency: string, n: number) {
@@ -56,9 +56,11 @@ export function PerformanceTrends({ currency }: { currency: string }) {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    api.get<any, any>(`/dashboard/trends?days=${days}`)
-      .then((res) => { if (alive) setData(unwrap(res) as Trends); })
+    // `loading` starts true (useState) and is cleared in .finally below, so no
+    // synchronous setState is needed inside the effect; on `days` changes the
+    // previous trend stays visible until the new one lands.
+    api.get(`/dashboard/trends?days=${days}`)
+      .then((res) => { if (alive) setData(unwrap<Trends>(res)); })
       .catch(() => { if (alive) setData(null); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -155,7 +157,7 @@ export function PerformanceTrends({ currency }: { currency: string }) {
                   <Tooltip
                     contentStyle={{ background: "#0b1530", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
                     labelFormatter={(l) => fmtDay(String(l))}
-                    formatter={(v: any) => [fmtMoney(currency, Number(v)), "Revenue"]}
+                    formatter={(v: unknown) => [fmtMoney(currency, Number(v)), "Revenue"]}
                   />
                   <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#a78bfa" strokeWidth={2} fill="url(#gRevenue)" />
                 </AreaChart>

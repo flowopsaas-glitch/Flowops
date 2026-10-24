@@ -55,8 +55,8 @@ export type AiAssist = {
   creditRisks: AiCreditRisk[];
 };
 
-const unwrap = <T>(r: any): T => (r?.data ?? r) as T;
-const arr = <T>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
+const arr = <T>(r: unknown): T[] => (Array.isArray(r) ? r : ((r as { data?: T[] } | null)?.data ?? [])) as T[];
 
 type NotePayload = {
   clientName: string; clientEmail?: string; invoiceId?: string; reason?: string;

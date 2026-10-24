@@ -16,7 +16,7 @@ vi.mock("../../api/railChangeApi", () => ({
   createPossession: vi.fn(),
 }));
 vi.mock("../../api/railSlotApi", () => ({ getCorridors: h.getCorridors }));
-vi.mock("../../components/ToastProvider", () => ({ useToast: () => ({ showToast: h.showToast }) }));
+vi.mock("../../components/toast-context", () => ({ useToast: () => ({ showToast: h.showToast }) }));
 
 import PossessionsSection from "./PossessionsSection";
 

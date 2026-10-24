@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  BadgeCheck, ChevronDown, ChevronUp, Gauge, Loader2, Package,
-  RefreshCw, Sparkles, Truck, Zap,
+  BadgeCheck, ChevronDown, ChevronUp, Gauge, Loader2, Package, Sparkles, Truck, Zap,
 } from "lucide-react";
 import { api } from "../../api/client";
 
@@ -56,7 +55,7 @@ export default function RateShopping() {
   const [showConfig, setShowConfig] = useState(false);
 
   useEffect(() => {
-    api.get("/rate-shopping/carriers").then((raw: any) => {
+    api.get("/rate-shopping/carriers").then((raw) => {
       const list: string[] = Array.isArray(raw?.data ?? raw) ? (raw?.data ?? raw) : [];
       setCarriers(list);
       const defaults: Record<string, CarrierConfig> = {};
@@ -73,7 +72,7 @@ export default function RateShopping() {
     setLoading(true);
     setError("");
     try {
-      const raw: any = await api.post("/rate-shopping/compare", {
+      const raw = await api.post("/rate-shopping/compare", {
         fromAddress: from.trim(),
         toAddress:   to.trim(),
         weightKg:    parseFloat(weight),
@@ -81,7 +80,7 @@ export default function RateShopping() {
         carrierConfigs: configs,
       });
       setResult(raw?.data ?? raw);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to fetch rates.");
     } finally {
       setLoading(false);
@@ -133,8 +132,8 @@ export default function RateShopping() {
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-[10px] text-white/40 whitespace-nowrap">Markup %</label>
-                    <input
+                    <label className="text-[10px] text-white/40 whitespace-nowrap" htmlFor="field-markup-5">Markup %</label>
+                    <input id="field-markup-5"
                       type="number" min="0" max="100" step="0.5"
                       value={cfg.markupPct}
                       onChange={(e) => setConfigs((p) => ({ ...p, [c]: { ...cfg, markupPct: parseFloat(e.target.value) || 0 } }))}
@@ -152,26 +151,26 @@ export default function RateShopping() {
       <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="sm:col-span-2">
-            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">From Address *</label>
-            <input
+            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50" htmlFor="field-from-address-4">From Address *</label>
+            <input id="field-from-address-4"
               value={from} onChange={(e) => setFrom(e.target.value)}
               placeholder="22 Rissik St, Johannesburg"
               className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-sky-400"
             />
           </div>
           <div className="sm:col-span-2">
-            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">To Address *</label>
-            <input
+            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50" htmlFor="field-to-address-3">To Address *</label>
+            <input id="field-to-address-3"
               value={to} onChange={(e) => setTo(e.target.value)}
               placeholder="45 Long St, Cape Town"
               className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-sky-400"
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">Weight (kg) *</label>
+            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50" htmlFor="field-weight-kg-2">Weight (kg) *</label>
             <div className="relative mt-1.5">
               <Package className="absolute left-3 top-2.5 h-4 w-4 text-white/30" />
-              <input
+              <input id="field-weight-kg-2"
                 value={weight} onChange={(e) => setWeight(e.target.value)}
                 type="number" min="0.1" step="0.1" placeholder="2.5"
                 className="w-full rounded-xl border border-white/10 bg-[#071224] pl-9 pr-3 py-2.5 text-sm text-white outline-none focus:border-sky-400"
@@ -179,8 +178,8 @@ export default function RateShopping() {
             </div>
           </div>
           <div>
-            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">Parcels</label>
-            <input
+            <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50" htmlFor="field-parcels-1">Parcels</label>
+            <input id="field-parcels-1"
               value={parcels} onChange={(e) => setParcels(e.target.value)}
               type="number" min="1" step="1"
               className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-sky-400"

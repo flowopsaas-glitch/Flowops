@@ -1,11 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { EmptyState } from './EmptyState';
-import { ErrorState, errorMessageOf } from './ErrorState';
+import { ErrorState } from './ErrorState';
+import { errorMessageOf } from './errorMessage';
 import { AsyncState } from './AsyncState';
 import { StatCard } from './StatCard';
-import { StatusBadge, statusToneFor } from './StatusBadge';
-import { Pagination, pageWindow } from './Pagination';
+import { StatusBadge } from './StatusBadge';
+import { statusToneFor } from './statusTone';
+import { Pagination } from './Pagination';
+import { pageWindow } from './pageWindow';
 import { DataTable } from './DataTable';
 import { ConfirmDialog } from './ConfirmDialog';
 

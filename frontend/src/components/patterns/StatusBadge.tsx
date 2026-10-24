@@ -1,4 +1,5 @@
 import * as React from 'react';
+import type { StatusTone } from './statusTone';
 import { cn } from '../../lib/utils';
 
 /**
@@ -11,13 +12,6 @@ import { cn } from '../../lib/utils';
  * Colour is never the only signal: every variant is paired with a dot AND the
  * label text, so the state survives greyscale and colour-blind viewing.
  */
-export type StatusTone =
-  | 'neutral'
-  | 'info'
-  | 'success'
-  | 'warning'
-  | 'danger'
-  | 'critical';
 
 const TONE_CLASS: Record<StatusTone, string> = {
   neutral: 'bg-white/10 text-slate-300 ring-white/15',
@@ -68,13 +62,5 @@ export function StatusBadge({
   );
 }
 
-/**
- * Maps a status string to a tone using the caller's lookup, falling back to
- * `neutral` rather than throwing — an unrecognised status should still render
- * its text, not blank the cell out.
- */
-export function statusToneFor(map: Record<string, StatusTone>, status: string): StatusTone {
-  return map[status] ?? map[status?.toLowerCase?.()] ?? 'neutral';
-}
 
 StatusBadge.displayName = 'StatusBadge';

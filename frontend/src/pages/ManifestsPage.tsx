@@ -48,6 +48,19 @@ type Branch = { id: string; name: string };
 
 // ── Create Manifest Modal ──────────────────────────────────────────────────
 
+
+type ManifestWaybillRow = {
+  id: string | number;
+  waybill?: { trackingNumber?: string; recipientName?: string; status?: string } | null;
+};
+type ManifestDetail = { waybills?: ManifestWaybillRow[] };
+
+declare global {
+  interface Window {
+    _manifestDetailCache?: Record<string, ManifestDetail>;
+  }
+}
+
 function CreateModal({
   drivers,
   branches,
@@ -71,12 +84,12 @@ function CreateModal({
   useEffect(() => {
     (async () => {
       try {
-        const res: any = await api.get("/waybills");
+        const res = await api.get("/waybills");
         // Waybills endpoint returns paginated: {data:{data:[],total,page,limit}}
         const raw = res?.data ?? res;
-        const data: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+        const data: Waybill[] = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
         // Only show pending / collected waybills not yet dispatched
-        setWaybills(data.filter((w: any) => ["PENDING", "COLLECTED"].includes(w.status)));
+        setWaybills(data.filter((w) => ["PENDING", "COLLECTED"].includes(w.status)));
       } finally {
         setWbLoading(false);
       }
@@ -111,7 +124,7 @@ function CreateModal({
       });
       onSaved();
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to create manifest.");
     } finally {
       setSaving(false);
@@ -137,8 +150,8 @@ function CreateModal({
           {/* Driver + Branch */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Assign Driver (optional)</label>
-              <select value={driverId} onChange={(e) => setDriverId(e.target.value)}
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-assign-driver-optional-2">Assign Driver (optional)</label>
+              <select id="field-assign-driver-optional-2" value={driverId} onChange={(e) => setDriverId(e.target.value)}
                 className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400">
                 <option value="">— Unassigned —</option>
                 {drivers.map((d) => (
@@ -147,8 +160,8 @@ function CreateModal({
               </select>
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Branch (optional)</label>
-              <select value={branchId} onChange={(e) => setBranchId(e.target.value)}
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-branch-optional-1">Branch (optional)</label>
+              <select id="field-branch-optional-1" value={branchId} onChange={(e) => setBranchId(e.target.value)}
                 className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400">
                 <option value="">— No branch —</option>
                 {branches.map((b) => (
@@ -219,19 +232,18 @@ function ManifestRow({ m, onDispatch, dispatching }: {
   dispatching: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState<any | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState<ManifestDetail | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const expand = async () => {
     if (!open && !detail) {
-      setLoading(true);
       try {
-        const res: any = await api.get(`/manifests/${m.id}`);
+        const res = await api.get(`/manifests/${m.id}`);
         const d = res?.data ?? res;
         setDetail(d);
         // Cache for the print button
-        (window as any)._manifestDetailCache = (window as any)._manifestDetailCache ?? {};
-        (window as any)._manifestDetailCache[m.id] = d;
+        window._manifestDetailCache = window._manifestDetailCache ?? {};
+        window._manifestDetailCache[m.id] = d;
       } finally {
         setLoading(false);
       }
@@ -275,8 +287,8 @@ function ManifestRow({ m, onDispatch, dispatching }: {
             {/* Print load sheet */}
             <button
               onClick={() => {
-                const d = (window as any)._manifestDetailCache?.[m.id];
-                const wbList = d?.waybills?.map((mw: any) =>
+                const d = window._manifestDetailCache?.[m.id];
+                const wbList = d?.waybills?.map((mw) =>
                   `  - ${mw.waybill?.trackingNumber ?? "?"} | ${mw.waybill?.recipientName ?? "?"} | ${mw.waybill?.status ?? "?"}`
                 ).join("\n") || "  (expand to load waybills first)";
                 const win = window.open("", "_blank");
@@ -330,7 +342,7 @@ ${wbList}
                     </tr>
                   </thead>
                   <tbody>
-                    {detail.waybills.map((mw: any) => (
+                    {detail.waybills.map((mw) => (
                       <tr key={mw.id} className="border-b border-white/5">
                         <td className="px-4 py-2 font-mono font-bold text-white text-xs">{mw.waybill?.trackingNumber ?? "—"}</td>
                         <td className="px-4 py-2 text-slate-300 text-xs">{mw.waybill?.recipientName ?? "—"}</td>
@@ -364,8 +376,7 @@ export default function ManifestsPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "dispatched">("all");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
       const [mRes, dRes, bRes] = await Promise.allSettled([
         api.get("/manifests"),
@@ -373,21 +384,21 @@ export default function ManifestsPage() {
         api.get("/branches"),
       ]);
       if (mRes.status === "fulfilled") {
-        const d: any = mRes.value;
+        const d = mRes.value as unknown as { data?: Manifest[] } | Manifest[];
         setManifests(Array.isArray(d) ? d : (d?.data ?? []));
       }
       if (dRes.status === "fulfilled") {
-        const d: any = dRes.value;
+        const d = dRes.value as unknown as { data?: Driver[] } | Driver[];
         setDrivers(Array.isArray(d) ? d : (d?.data ?? []));
       }
       if (bRes.status === "fulfilled") {
-        const d: any = bRes.value;
+        const d = bRes.value as unknown as { data?: Branch[] } | Branch[];
         setBranches(Array.isArray(d) ? d : (d?.data ?? []));
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  })(), []);
 
   useEffect(() => { void load(); }, [load]);
 

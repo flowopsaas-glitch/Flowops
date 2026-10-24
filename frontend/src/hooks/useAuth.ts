@@ -17,8 +17,12 @@ export function useAuth() {
   const [token, setToken] = useState<string | null>(() => getAccessToken());
 
   useEffect(() => {
-    // Re-read on mount in case the token landed after the initial render.
-    setToken(getAccessToken());
+    // Follow token changes made by other tabs/windows; same-tab updates flow
+    // through this hook's own login/logout. (The initial value already comes
+    // from the lazy initializer above.)
+    const onStorage = () => setToken(getAccessToken());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const login = (newToken: string) => {

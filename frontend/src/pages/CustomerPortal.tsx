@@ -6,7 +6,7 @@ import {
   Loader2, CheckCircle2, AlertTriangle, Phone, Mail,
 } from "lucide-react";
 import { FLOWOPS_API_URL } from "../lib/env";
-const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 type Branding = {
   name: string;
@@ -187,7 +187,7 @@ function TrackTab({ companyId, accent }: { companyId: string; accent: string }) 
       if (!res.ok) throw new Error("Unable to fetch shipments.");
       const data = await res.json();
       setWaybills(data.waybills || []);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
       setWaybills([]);
     } finally {
@@ -306,7 +306,7 @@ function InvoicesTab({ companyId, accent }: { companyId: string; accent: string 
       if (!res.ok) throw new Error("Unable to fetch invoices.");
       const data = await res.json();
       setInvoices(data.invoices || []);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
       setInvoices([]);
     } finally {
@@ -423,7 +423,7 @@ function BookPickupTab({ companyId, accent }: { companyId: string; accent: strin
       });
       if (!res.ok) throw new Error("Unable to submit pickup request.");
       setSuccess(true);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);

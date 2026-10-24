@@ -10,6 +10,8 @@ export type ShipmentLike = {
   customerName?: string;
   driverName?: string;
   driverPhone?: string;
+  podRequired?: boolean;
+  podCaptured?: boolean;
   origin?: string;
   destination?: string;
   waybill?: string;

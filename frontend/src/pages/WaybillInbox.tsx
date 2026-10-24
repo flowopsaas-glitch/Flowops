@@ -1,19 +1,18 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"; 
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { api } from '../api/client';
 import { formatMoney } from "../lib/currency";
-import { 
-  ScanLine, Box, RefreshCcw,
-  Zap, Info, Trash2, UploadCloud, Banknote, 
-  User, MapPin, Phone, Building2, Hash, ZoomIn, Package, Images, FileText, Printer
+import {
+  ScanLine, Box,
+  Zap, Trash2, UploadCloud, Banknote, MapPin, Building2, Hash, ZoomIn, Package, FileText, Printer,
+  type LucideIcon,
 } from "lucide-react";
-import { useAuth } from "../contexts/AuthContext";
 import { usePremiumWebSocket } from "../hooks/usePremiumWebSocket";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { printWaybillLabel } from "../lib/labelPrint";
 import { FLOWOPS_HTTP_ORIGIN } from "../lib/env";
-const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
-const RATE_PER_KG = 700; 
+const RATE_PER_KG = 700;
 
 function ImageMagnifier({ src, className }: { src: string; className?: string }) {
   const [[x, y], setXY] = useState([0, 0]);
@@ -72,13 +71,31 @@ function ImageMagnifier({ src, className }: { src: string; className?: string })
   );
 }
 
+
+type InboxExtracted = {
+  waybillNumber?: string; weight?: string | number; quantity?: string | number;
+  totalAmount?: string | number; paymentType?: string; payer?: string;
+  senderName?: string; senderAddress?: string; sender?: string;
+  recipientName?: string; recipientAddress?: string; recipient?: string; deliveryAddress?: string;
+};
+type InboxItem = {
+  id: number;
+  waybillNumber?: string;
+  fileUrl?: string;
+  extractedData?: InboxExtracted;
+  weight?: string | number;
+  quantity?: string | number;
+  totalAmount?: string | number;
+  paymentType?: string;
+  billTo?: string;
+  contractId?: string;
+};
+
 export default function WaybillInbox() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? undefined;
-  
-  const [items, setItems] = useState<any[]>([]);
+
+  const [items, setItems] = useState<InboxItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'DOCUMENT' | 'PARCELS' | 'AI'>('DOCUMENT'); 
+  const [activeTab, setActiveTab] = useState<'DOCUMENT' | 'PARCELS' | 'AI'>('DOCUMENT');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [editForm, setEditForm] = useState({
@@ -88,7 +105,7 @@ export default function WaybillInbox() {
     totalAmount: "350.00",
     paymentType: "CONTRACT",
     billTo: "SENDER",
-    contractId: "", 
+    contractId: "",
     senderName: "", senderAddress: "", recipientName: "", recipientAddress: "",
   });
 
@@ -97,19 +114,24 @@ export default function WaybillInbox() {
 
   // 🔴 Real-time: new inbox item arrives → refresh the list
   usePremiumWebSocket({
-    onEvent: (event: any) => {
+    onEvent: (event: { type?: string }) => {
       if (event?.type === "inbox:new" || event?.type === "waybill:inbox") {
         void fetchData();
       }
     },
   });
 
-  useEffect(() => {
-    if (selectedItem) {
+  // Initialize the edit form when a different inbox item is selected.
+  // Adjusting during render (keyed on the item's identity) replaces the
+  // former effect, which re-ran — and discarded edits — on every list refresh.
+  const [editFormItem, setEditFormItem] = useState<InboxItem | null>(null);
+  if (selectedItem && selectedItem !== editFormItem) {
+    setEditFormItem(selectedItem);
+    {
       const ai = selectedItem.extractedData || {};
-      const rawWeight = parseFloat(selectedItem.weight || ai.weight || 0.5);
-      const rawAmount = parseFloat(selectedItem.totalAmount || ai.totalAmount || (rawWeight * RATE_PER_KG));
-      
+      const rawWeight = parseFloat(String(selectedItem.weight || ai.weight || 0.5));
+      const rawAmount = parseFloat(String(selectedItem.totalAmount || ai.totalAmount || (rawWeight * RATE_PER_KG)));
+
       setEditForm({
         waybillNumber: String(selectedItem.waybillNumber || ai.waybillNumber || ""),
         weight: rawWeight.toString(),
@@ -124,7 +146,7 @@ export default function WaybillInbox() {
         recipientAddress: String(ai.recipientAddress || ai.deliveryAddress || ""),
       });
     }
-  }, [selectedItem]);
+  }
 
   const handleAmountChange = (val: string) => {
     const amt = parseFloat(val) || 0;
@@ -142,19 +164,19 @@ export default function WaybillInbox() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res: any = await api.get("/waybills/inbox");
+      const res = await api.get("/waybills/inbox");
       const list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       setItems(list);
       if (list.length > 0 && selectedId === null) setSelectedId(list[0].id);
     } catch (err) { console.error("Inbox Fetch Failed:", err); }
-  }, [selectedId, showToast]);
+  }, [selectedId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleApprove = async (opts?: { print?: boolean }) => {
     if (!selectedItem) return;
     try {
-      const res: any = await api.post(`/waybills/inbox/${selectedItem.id}/commit`, editForm);
+      const res = await api.post(`/waybills/inbox/${selectedItem.id}/commit`, editForm);
       const wb = res?.data ?? res;
       const tn = wb?.trackingNumber ? ` ${wb.trackingNumber}` : "";
       if (opts?.print && wb?.id) {
@@ -169,12 +191,12 @@ export default function WaybillInbox() {
       }
       setSelectedId(null);
       fetchData();
-    } catch (err) { showToast("Commit failed.", "error"); }
+    } catch { showToast("Commit failed.", "error"); }
   };
 
   return (
     <div className="flex h-screen bg-[#020817] text-slate-200 overflow-hidden text-left font-sans">
-      
+
       {/* 🟦 LEFT: QUEUE */}
       <div className="w-[320px] border-r border-white/5 flex flex-col bg-slate-950/50 backdrop-blur-xl">
         <div className="p-8 border-b border-white/5 flex justify-between items-center">
@@ -200,7 +222,7 @@ export default function WaybillInbox() {
       <div className="flex-1 p-8 flex flex-col bg-black/20 overflow-hidden">
         {selectedItem ? (
           <div className="h-full flex flex-col">
-            
+
             {/* Navigation Tabs */}
             <div className="mb-6 flex justify-between items-center">
               <div className="flex bg-slate-900/80 p-1.5 rounded-2xl border border-white/5 shadow-inner">
@@ -215,10 +237,10 @@ export default function WaybillInbox() {
                 <button onClick={() => void handleApprove({ print: true })} className="bg-sky-500 hover:bg-sky-400 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-2xl transition-all inline-flex items-center gap-2"><Printer size={16} /> Commit &amp; Print</button>
               </div>
             </div>
-            
+
             {/* Workspace Area */}
             <div className="flex-1 bg-slate-900/40 rounded-[48px] border border-white/10 overflow-hidden shadow-2xl relative">
-               
+
                {activeTab === 'DOCUMENT' && (
                   <div className="h-full w-full p-8 flex items-center justify-center bg-slate-900/50">
                     <div className="w-full h-full relative">
@@ -275,16 +297,16 @@ export default function WaybillInbox() {
       {selectedItem && (
         <div key={selectedId} className="w-[450px] border-l border-white/5 bg-slate-950/50 p-8 overflow-y-auto custom-scrollbar">
           <div className="space-y-8 pb-10">
-            
+
             {/* FINANCIALS & LOGISTICS */}
             <section className="space-y-5 p-6 bg-white/5 rounded-[32px] border border-white/10 shadow-inner">
               <TriageField icon={Hash} label="Waybill Reference" value={editForm.waybillNumber} onChange={(v) => setEditForm({...editForm, waybillNumber: v})} />
-              
+
               <div className="space-y-2 text-left">
-                <label className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-2"><Banknote size={12}/> Chargeable Amount (ZAR)</label>
+                <label className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-2" htmlFor="field-chargeable-amount-zar-1"><Banknote size={12}/> Chargeable Amount (ZAR)</label>
                 <div className="relative">
                   <span className="absolute left-4 top-4 text-slate-500 text-sm font-bold">R</span>
-                  <input type="number" value={editForm.totalAmount} onChange={(e) => handleAmountChange(e.target.value)} 
+                  <input id="field-chargeable-amount-zar-1" type="number" value={editForm.totalAmount} onChange={(e) => handleAmountChange(e.target.value)}
                     className="w-full bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 pl-8 text-emerald-400 font-black text-xl outline-none focus:border-emerald-500 transition-all" />
                 </div>
               </div>
@@ -329,7 +351,7 @@ export default function WaybillInbox() {
 
 // --- HELPERS ---
 
-function TabButton({ active, onClick, icon: Icon, label }: any) {
+function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: LucideIcon; label: string }) {
   return (
     <button onClick={onClick} className={`px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all ${active ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
       <Icon size={14} />
@@ -338,7 +360,7 @@ function TabButton({ active, onClick, icon: Icon, label }: any) {
   );
 }
 
-function SummaryItem({ label, value, color = "text-white" }: any) {
+function SummaryItem({ label, value, color = "text-white" }: { label: string; value: unknown; color?: string }) {
   return (
     <div className="space-y-1">
       <div className="text-[9px] font-black text-sky-500 uppercase tracking-widest">{label}</div>
@@ -347,7 +369,7 @@ function SummaryItem({ label, value, color = "text-white" }: any) {
   );
 }
 
-function TriageField({ label, value, onChange, type = "text", icon: Icon }: any) {
+function TriageField({ label, value, onChange, type = "text", icon: Icon }: { label: string; value: unknown; onChange: (v: string) => void; type?: string; icon?: LucideIcon }) {
   return (
     <div className="space-y-1.5 text-left">
       <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{label}</label>
@@ -360,13 +382,13 @@ function TriageField({ label, value, onChange, type = "text", icon: Icon }: any)
   );
 }
 
-function TriageSelect({ label, value, onChange, options }: any) {
+function TriageSelect({ label, value, onChange, options }: { label: string; value: unknown; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <div className="space-y-1.5 flex-1 text-left">
       <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{label}</label>
       <select value={String(value || "")} onChange={(e) => onChange(e.target.value)}
         className="w-full bg-slate-900 border border-white/10 rounded-2xl p-4 text-white font-bold text-xs outline-none cursor-pointer appearance-none">
-        {options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        {options.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
       </select>
     </div>
   );

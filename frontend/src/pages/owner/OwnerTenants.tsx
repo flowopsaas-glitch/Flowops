@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -52,9 +53,7 @@ function planBadge(plan?: string | null) {
   );
 }
 
-function unwrap(res: any) {
-  return res?.data ?? res;
-}
+function unwrap<T>(res: unknown): T { return ((res as { data?: T } | null)?.data ?? res) as T; }
 
 export default function OwnerTenants() {
   const navigate = useNavigate();
@@ -71,29 +70,30 @@ export default function OwnerTenants() {
   const [form, setForm] = useState({ name: "", email: "", phone: "", plan: "starter" });
 
   async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const [tRes, aRes] = await Promise.allSettled([
-        api.get("/owner/tenants"),
-        api.get("/owner/approval-requests"),
-      ]);
+  return (async () => {
+    const [tRes, aRes] = await Promise.allSettled([
+      api.get("/owner/tenants"),
+      api.get("/owner/approval-requests"),
+    ]);
 
-      if (tRes.status === "fulfilled") {
-        const d = unwrap(tRes.value);
-        setTenants(Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : []);
-      }
-      if (aRes.status === "fulfilled") {
-        const d = unwrap(aRes.value);
-        const items = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
-        setApprovals(items.filter((r: ApprovalRequest) => r.status === "PENDING"));
-      }
-    } catch (err: any) {
-      setError(err?.message || "Failed to load tenants.");
-    } finally {
-      setLoading(false);
+    if (tRes.status === "fulfilled") {
+      const d = unwrap<TenantRow[] | { data?: TenantRow[] }>(tRes.value);
+      setTenants(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []);
     }
-  }
+    if (aRes.status === "fulfilled") {
+      const d = unwrap<ApprovalRequest[] | { data?: ApprovalRequest[] }>(aRes.value);
+      const items = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
+      setApprovals(items.filter((r: ApprovalRequest) => r.status === "PENDING"));
+    }
+
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || "Failed to load tenants.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  });
+}
 
   useEffect(() => { void load(); }, []);
 
@@ -105,8 +105,8 @@ export default function OwnerTenants() {
       await fn();
       setSuccess(msg);
       await load();
-    } catch (err: any) {
-      setError(err?.message || "Action failed.");
+    } catch (err) {
+      setError(errorMessageOf(err) || "Action failed.");
     } finally {
       setBusy("");
     }
@@ -173,13 +173,13 @@ export default function OwnerTenants() {
     setBusy(`view-${id}`);
     setError("");
     try {
-      const res: any = await api.post(`/owner/impersonate/${id}`, {});
-      const token = unwrap(res)?.access_token;
+      const res = await api.post(`/owner/impersonate/${id}`, {});
+      const token = unwrap<{ access_token?: string }>(res)?.access_token;
       if (!token) throw new Error("No impersonation token returned");
       startImpersonation(token, name);
-      window.location.href = "/dashboard";
-    } catch (err: any) {
-      setError(err?.message || "Impersonation failed.");
+      window.location.assign("/dashboard");
+    } catch (err) {
+      setError(errorMessageOf(err) || "Impersonation failed.");
       setBusy("");
     }
   }
@@ -236,7 +236,7 @@ export default function OwnerTenants() {
               <div key={key}>
                 <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">{label}</label>
                 <input
-                  value={(form as any)[key]}
+                  value={form[key as keyof typeof form]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
                   placeholder={ph}
                   className="mt-1.5 w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-2.5 text-sm text-white outline-none focus:border-blue-400"
@@ -244,8 +244,8 @@ export default function OwnerTenants() {
               </div>
             ))}
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Plan</label>
-              <select value={form.plan} onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value }))}
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-plan-1">Plan</label>
+              <select id="field-plan-1" value={form.plan} onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value }))}
                 className="mt-1.5 w-full rounded-2xl border border-white/10 bg-[#071224] px-4 py-2.5 text-sm text-white outline-none focus:border-blue-400">
                 <option value="starter">Starter (Free)</option>
                 <option value="professional">Professional — 3 drivers (R5,999)</option>

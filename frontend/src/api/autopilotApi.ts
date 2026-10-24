@@ -41,11 +41,11 @@ export type AutopilotLogEntry = {
   title: string;
   body: string;
   severity: string;
-  metadata?: any;
+  metadata?: unknown;
   createdAt: string;
 };
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export async function getAutopilotConfig(): Promise<AutopilotConfig> {
   return unwrap(await api.get("/autopilot/config"));

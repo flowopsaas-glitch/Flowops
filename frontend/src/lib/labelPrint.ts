@@ -35,7 +35,7 @@ export async function printWaybillLabel(id: string): Promise<void> {
   if (!id) return;
   const blob = await api.get<Blob>(`/waybills/${id}/label`, {
     responseType: "blob",
-  } as any);
+  } as Record<string, unknown>);
   openOrDownloadPdf(blob as unknown as Blob, `label-${id}.pdf`);
 }
 
@@ -50,7 +50,7 @@ export async function printWaybillLabels(ids: Array<string | null | undefined>):
   const blob = await api.post<Blob>(
     "/waybills/labels",
     { ids: clean },
-    { responseType: "blob" } as any,
+    { responseType: "blob" } as Record<string, unknown>,
   );
   openOrDownloadPdf(blob as unknown as Blob, `labels-${clean.length}.pdf`);
   return clean.length;

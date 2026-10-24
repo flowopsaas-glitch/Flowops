@@ -62,7 +62,7 @@ export default function SignupMobile() {
       }
       startCountdown();
       setStep("otp");
-    } catch (err: any) {
+    } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "Could not send verification code. Please check and try again.";
       setError(msg);
     } finally {
@@ -84,7 +84,7 @@ export default function SignupMobile() {
       setStep("profile");
       // Pre-fill email if verified via email
       if (method === "email") setEmail(emailAddr);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.response?.data?.message || err?.message || "Invalid code.");
     } finally {
       setLoading(false);
@@ -108,7 +108,7 @@ export default function SignupMobile() {
         password,
       });
       setStep("done");
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "Registration failed. Try again.");
     } finally {
       setLoading(false);
@@ -127,7 +127,7 @@ export default function SignupMobile() {
         await api.post("/auth/send-email-otp", { email: emailAddr });
       }
       startCountdown();
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "Could not resend code.");
     } finally {
       setLoading(false);
@@ -208,10 +208,10 @@ export default function SignupMobile() {
 
             {method === "whatsapp" ? (
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block">Phone number</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block" htmlFor="field-phone-number-6">Phone number</label>
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-bold text-white/60">+27</span>
-                  <input
+                  <input id="field-phone-number-6"
                     type="tel"
                     value={phone}
                     onChange={(e) => { setPhone(e.target.value); setError(""); }}
@@ -222,8 +222,8 @@ export default function SignupMobile() {
               </div>
             ) : (
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block">Email address</label>
-                <input
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block" htmlFor="field-email-address-5">Email address</label>
+                <input id="field-email-address-5"
                   type="email"
                   value={emailAddr}
                   onChange={(e) => { setEmailAddr(e.target.value); setError(""); }}
@@ -275,8 +275,7 @@ export default function SignupMobile() {
                 value={otp}
                 onChange={(e) => { setOtp(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(""); }}
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-center text-2xl font-black tracking-[0.5em] text-white placeholder-white/20 focus:border-sky-500/40 focus:outline-none focus:ring-1 focus:ring-sky-500/20"
-                autoFocus
-              />
+                  />
             </div>
 
             {error && <p className="text-sm text-red-400 text-center">{error}</p>}
@@ -315,24 +314,23 @@ export default function SignupMobile() {
 
             <div className="space-y-3">
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block" htmlFor="field-full-name-4">
                   <User className="inline h-3 w-3 mr-1" />Full name
                 </label>
-                <input
+                <input id="field-full-name-4"
                   type="text"
                   placeholder="Meluxolo Jara"
                   value={fullName}
                   onChange={(e) => { setFullName(e.target.value); setError(""); }}
                   className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/25 focus:border-sky-500/40 focus:outline-none focus:ring-1 focus:ring-sky-500/20"
-                  autoFocus
-                />
+                      />
               </div>
 
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block" htmlFor="field-company-name-3">
                   <Building2 className="inline h-3 w-3 mr-1" />Company name
                 </label>
-                <input
+                <input id="field-company-name-3"
                   type="text"
                   placeholder="Ukheshe Courier"
                   value={company}
@@ -342,10 +340,10 @@ export default function SignupMobile() {
               </div>
 
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block" htmlFor="field-email-for-login-2">
                   Email (for login)
                 </label>
-                <input
+                <input id="field-email-for-login-2"
                   type="email"
                   placeholder="you@email.com"
                   value={email}
@@ -355,10 +353,10 @@ export default function SignupMobile() {
               </div>
 
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1 block" htmlFor="field-password-1">
                   Password
                 </label>
-                <input
+                <input id="field-password-1"
                   type="password"
                   placeholder="Min 8 characters"
                   value={password}

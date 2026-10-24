@@ -32,21 +32,21 @@ export interface TruckAppointmentSummary {
   changeCutoffHours?: number;
 }
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export async function listTruckAppointments(params?: Record<string, string>): Promise<TruckAppointment[]> {
-  const r: any = await api.get("/rail/truck-appointments", { params });
+  const r = await api.get("/rail/truck-appointments", { params });
   const body = unwrap(r);
   return Array.isArray(body) ? body : [];
 }
 
 export async function getTruckAppointmentSummary(): Promise<TruckAppointmentSummary> {
-  const r: any = await api.get("/rail/truck-appointments/summary");
+  const r = await api.get("/rail/truck-appointments/summary");
   return unwrap(r);
 }
 
 export async function bookTruckAppointment(dto: Record<string, unknown>): Promise<TruckAppointment> {
-  const r: any = await api.post("/rail/truck-appointments", dto);
+  const r = await api.post("/rail/truck-appointments", dto);
   return unwrap(r);
 }
 
@@ -54,8 +54,8 @@ export async function transitionTruckAppointment(
   id: string,
   action: "arrive" | "start-loading" | "complete" | "no-show" | "cancel" | "reschedule",
   dto?: Record<string, unknown>,
-): Promise<TruckAppointment> {
-  const r: any = await api.post(`/rail/truck-appointments/${id}/${action}`, dto ?? {});
+): Promise<TruckAppointment & { forced?: boolean }> {
+  const r = await api.post(`/rail/truck-appointments/${id}/${action}`, dto ?? {});
   return unwrap(r);
 }
 
@@ -76,23 +76,23 @@ export interface SharedTruckAppointment {
 
 /** Public, token-gated counterparty view — no login required. */
 export async function getSharedTruckAppointment(token: string): Promise<SharedTruckAppointment> {
-  const r: any = await api.get(`/rail/truck-appointments/public/${encodeURIComponent(token)}`);
+  const r = await api.get(`/rail/truck-appointments/public/${encodeURIComponent(token)}`);
   return unwrap(r);
 }
 
 export async function createTruckShareLink(id: string): Promise<{ token: string; path: string }> {
-  const r: any = await api.post(`/rail/truck-appointments/${id}/share`, {});
+  const r = await api.post(`/rail/truck-appointments/${id}/share`, {});
   return unwrap(r);
 }
 
 export async function revokeTruckShareLink(id: string): Promise<{ revoked: boolean }> {
-  const r: any = await api.delete(`/rail/truck-appointments/${id}/share`);
+  const r = await api.delete(`/rail/truck-appointments/${id}/share`);
   return unwrap(r);
 }
 
 export async function replanTruckDay(dto: {
   terminalName: string; date: string; shiftMinutes: number; reason: string;
 }): Promise<{ shifted: number; withConflicts: number }> {
-  const r: any = await api.post("/rail/truck-appointments/replan-day", dto);
+  const r = await api.post("/rail/truck-appointments/replan-day", dto);
   return unwrap(r);
 }

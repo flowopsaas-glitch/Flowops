@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Sparkles, Send, Loader2, BarChart3, TrendingUp, PieChart, Bot } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
+import { Sparkles, Send, Loader2, Bot } from "lucide-react";
+import { useToast } from "../components/toast-context";
 import { cn } from "../lib/utils";
 import { askCopilot, getCopilotSuggestions, type CopilotAnswer, type CopilotChart } from "../api/copilotApi";
 
@@ -13,6 +13,8 @@ export default function AskFlowOps() {
   const { showToast } = useToast();
   const [q, setQ] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
+  // Monotonic ids for chat entries — unique without an impure clock call.
+  const entryIdRef = useRef(0);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -24,13 +26,13 @@ export default function AskFlowOps() {
     const text = question.trim();
     if (!text || busy) return;
     setQ("");
-    const id = Date.now();
+    const id = (entryIdRef.current += 1);
     setEntries((e) => [...e, { id, question: text, pending: true }]);
     setBusy(true);
     try {
       const answer = await askCopilot(text);
       setEntries((e) => e.map((x) => (x.id === id ? { ...x, answer, pending: false } : x)));
-    } catch (err: any) {
+    } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "Something went wrong";
       setEntries((e) => e.map((x) => (x.id === id ? { ...x, error: msg, pending: false } : x)));
       showToast(msg, "error");
@@ -166,10 +168,12 @@ function Chart({ chart, unit }: { chart: CopilotChart; unit?: string | null }) {
 
   if (chart.type === "donut") {
     const total = chart.values.reduce((s, v) => s + v, 0) || 1;
-    let acc = 0;
+    // Prefix sums (each entry includes its own value) — computed by reduction
+    // so segment boundaries need no mutable accumulator during render.
+    const prefix = chart.values.reduce<number[]>((arr, v) => [...arr, (arr[arr.length - 1] ?? 0) + v], []);
     const segs = chart.values.map((v, i) => {
-      const start = (acc / total) * 100; acc += v;
-      return `${PALETTE[i % PALETTE.length]} ${start}% ${(acc / total) * 100}%`;
+      const end = (prefix[i] / total) * 100;
+      return `${PALETTE[i % PALETTE.length]} ${end - (v / total) * 100}% ${end}%`;
     });
     return (
       <div className="mt-3 flex items-center gap-4">

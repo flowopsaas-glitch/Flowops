@@ -1,5 +1,5 @@
 ﻿import { Link, Navigate } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
+import { useAuth } from "../../contexts/auth-context";
 
 function ActionCard(props: { title: string; desc: string; to: string }) {
   return (

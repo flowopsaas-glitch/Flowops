@@ -19,7 +19,21 @@ const QUICK_ACTIONS = [
   { id: "route_whatif", title: "Route What-If Simulation", hint: "Estimate ETA impact of reroutes" },
 ];
 
+type OpsWaybill = {
+  status?: string;
+  updatedAt?: string;
+  nextAttemptAt?: string | null;
+  attemptCount?: number;
+  podSignatureUrl?: string | null;
+  podImageUrl?: string | null;
+};
+
 export default function CommandPalette({ open, onOpenChange, items, onNavigate }: Props) {
+  // "Now" is captured once when the palette mounts via the sanctioned lazy initializer
+  // (Date.now() must not be called during render). The ages computed from it
+  // below are day-granular, so mount-time precision is honest.
+  const [now] = useState(() => Date.now());
+
   const [q, setQ] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const query = q.trim().toLowerCase();
@@ -39,12 +53,16 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onOpenChange]);
 
-  useEffect(() => {
+  // Clear the query/message when the palette closes (render-time adjustment
+  // on the open transition rather than an effect).
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (!open) {
       setQ("");
       setMessage(null);
     }
-  }, [open]);
+  }
 
   const results = useMemo(() => {
     const navMatches = items.filter((it) => {
@@ -70,13 +88,12 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
         fetch(`${FLOWOPS_HTTP_ORIGIN}/health`)
           .then((r) => r.json())
           .catch(() => null),
-        api.get("/waybills").then((r: any) => {
+        api.get("/waybills").then((r): OpsWaybill[] => {
           const raw = r?.data ?? r;
-          return Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+          return (Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : []) as OpsWaybill[];
         }),
       ]);
 
-      const now = Date.now();
       const STALE_MS = 24 * 60 * 60 * 1000; // no tracking update in 24h
       const ACTIVE = new Set([
         "PENDING",
@@ -89,7 +106,7 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
       let stale = 0;
       let sla = 0;
       let pod = 0;
-      for (const w of wb as any[]) {
+      for (const w of wb) {
         const updatedAt = new Date(w?.updatedAt ?? 0).getTime();
         if (ACTIVE.has(w?.status) && now - updatedAt > STALE_MS) stale += 1;
         const retryMissed = w?.nextAttemptAt && new Date(w.nextAttemptAt).getTime() < now;
@@ -102,7 +119,7 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
       setMessage(
         `Ops Health — ${apiState} · stale tracking: ${stale} · SLA risk: ${sla} · POD risk: ${pod} (of ${wb.length} waybills)`,
       );
-    } catch (err: any) {
+    } catch (err) {
       setMessage(`Ops Health Check failed: ${err?.message ?? "unknown error"}`);
     }
   }
@@ -122,8 +139,8 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
 
   return (
     <div className="fixed inset-0 z-[100]">
-      <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="absolute left-1/2 top-16 w-[min(860px,92vw)] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="absolute inset-0 bg-black/40" ><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => onOpenChange(false)} /></div>
+      <div role="dialog" aria-modal="true" aria-label="FlowOps Command" className="absolute left-1/2 top-16 w-[min(860px,92vw)] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white">
             <Sparkles className="h-5 w-5" />
@@ -143,8 +160,7 @@ export default function CommandPalette({ open, onOpenChange, items, onNavigate }
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
             <Search className="h-4 w-4 text-slate-400" />
             <input
-              autoFocus
-              value={q}
+                value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder='Try: "invoices", "drivers", "control tower", "audit"...'
               className="w-full border-0 bg-transparent text-sm outline-none"

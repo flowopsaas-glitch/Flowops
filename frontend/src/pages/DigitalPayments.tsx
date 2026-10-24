@@ -1,9 +1,10 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
 import { formatMoney } from "../lib/currency";
-import { CreditCard, Plus, DollarSign, TrendingUp, AlertCircle, CheckCircle2, Loader2, RotateCcw, XCircle } from 'lucide-react';
+import { CreditCard, Plus, DollarSign, TrendingUp, AlertCircle, CheckCircle2, Loader2, RotateCcw } from 'lucide-react';
 import { listPayments, createPayment, getPaymentStats, refundPayment, type DigitalPayment, type PaymentStats, type CreatePaymentPayload, type PaymentMethod } from '../api/digitalPaymentsApi';
-import { useToast } from '../components/ToastProvider';
-const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
+import { useToast } from '../components/toast-context';
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 export default function DigitalPayments() {
   const { showToast } = useToast();
@@ -16,20 +17,20 @@ export default function DigitalPayments() {
     amount: '', method: 'CARD', payerName: '', payerEmail: '', waybillId: '',
   });
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: Record<string, string> = {};
-      if (filter) params.status = filter;
-      const [paymentsData, statsData] = await Promise.all([listPayments(params), getPaymentStats()]);
-      setPayments(paymentsData);
-      setStats(statsData);
-    } catch (e: any) {
-      showToast(e.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, showToast]);
+  const load = useCallback(() => (async () => {
+    const params: Record<string, string> = {};
+    if (filter) params.status = filter;
+    const [paymentsData, statsData] = await Promise.all([listPayments(params), getPaymentStats()]);
+    setPayments(paymentsData);
+    setStats(statsData);
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e), 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [filter, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -48,12 +49,12 @@ export default function DigitalPayments() {
       setShowCreate(false);
       setForm({ amount: '', method: 'CARD', payerName: '', payerEmail: '', waybillId: '' });
       load();
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleRefund = async (id: string) => {
     try { await refundPayment(id); showToast('Payment refunded', 'success'); load(); }
-    catch (e: any) { showToast(e.message, 'error'); }
+    catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const statusBadge = (s: string) => {

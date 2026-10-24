@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useToast } from "../components/ToastProvider";
+import React, { useMemo, useState } from "react";
+import { useToast } from "../components/toast-context";
 import { printWaybillLabel } from "../lib/labelPrint";
 import { api } from "../api/client";
 import {
-  FileText, Plus, Save, Upload, ScanLine, Sparkles, AlertTriangle,
-  BadgeCheck, Hash, CreditCard, Truck, ClipboardList, Package,
-  ChevronRight, UserRound, Calculator, Trash2, Printer
+  FileText, Save, Upload, ScanLine, Sparkles, CreditCard, Truck, ClipboardList, Package, UserRound, Calculator, Trash2, Printer,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
@@ -52,9 +51,9 @@ type WaybillDraft = {
 // --- Helper Functions ---
 const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
 const todayISO = () => new Date().toISOString().split('T')[0];
-const nnum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-const moneyZAR = (v: any) => {
-  const code = (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
+const nnum = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const moneyZAR = (v: unknown) => {
+  const code = window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
   const sym = { ZAR: 'R', USD: '$', GBP: '£', EUR: '€', ZIG: 'ZiG', KES: 'KSh', NGN: '₦', BWP: 'P' }[code] ?? code;
   return `${sym}${nnum(v).toFixed(2)}`;
 };
@@ -100,14 +99,8 @@ const Tab = ({ active, onClick, children }: { active: boolean, onClick: () => vo
   </button>
 );
 
-const Card = ({ title, children }: { title: string, children: React.ReactNode }) => (
-  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-md">
-    <h3 className="mb-3 text-sm font-extrabold text-white/90">{title}</h3>
-    <div className="text-sm text-white/70">{children}</div>
-  </div>
-);
 
-const PillButton = ({ active, onClick, text, icon: Icon }: any) => (
+const PillButton = ({ active, onClick, text, icon: Icon }: { active?: boolean; onClick?: () => void; text: string; icon?: LucideIcon }) => (
   <button
     type="button"
     onClick={onClick}
@@ -121,7 +114,7 @@ const PillButton = ({ active, onClick, text, icon: Icon }: any) => (
   </button>
 );
 
-const NumInput = ({ value, onChange, placeholder }: any) => (
+const NumInput = ({ value, onChange, placeholder }: { value?: number; onChange: (v: number) => void; placeholder?: string }) => (
   <input
     type="number"
     value={value || ""}
@@ -131,7 +124,7 @@ const NumInput = ({ value, onChange, placeholder }: any) => (
   />
 );
 
-const PartyCard = ({ title, name, company, phone, email, address, city, onChange, payerActive }: any) => (
+const PartyCard = ({ title, name, company, phone, email, address, city, onChange, payerActive }: { title: string; name?: string; company?: string; phone?: string; email?: string; address?: string; city?: string; onChange: (patch: Record<string, string>) => void; payerActive?: boolean }) => (
   <div className={cn(
     "rounded-2xl border p-5 transition-all",
     payerActive ? "border-sky-400/30 bg-sky-400/5 shadow-[0_0_20px_rgba(56,189,248,0.05)]" : "border-white/10 bg-white/5"
@@ -182,7 +175,7 @@ export default function Waybills() {
   }));
 
   const t = useMemo(() => totals(draft.parcels), [draft.parcels]);
-  
+
   // Logic for UI handling
   function set<K extends keyof WaybillDraft>(key: K, value: WaybillDraft[K]) { setDraft(d => ({ ...d, [key]: value })); }
   function setParcel(id: string, patch: Partial<ParcelLine>) {
@@ -224,7 +217,7 @@ export default function Waybills() {
         payload.codAmount = draft.codAmount;
       }
 
-      const saved: any = await api.post("/waybills", payload);
+      const saved = await api.post("/waybills", payload);
       const savedWb = saved?.data ?? saved;
       showToast(`Waybill ${draft.waybillNo} saved successfully!`, "success");
       if (savedWb?.id) {
@@ -247,7 +240,7 @@ export default function Waybills() {
         parcels: [{ id: uid(), qty: 1, weightKg: 2.5, lengthCm: 30, widthCm: 20, heightCm: 15 }],
       });
       setStep("DETAILS");
-    } catch (err: any) {
+    } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "Failed to save waybill";
       showToast(msg, "error");
     } finally {
@@ -260,7 +253,7 @@ export default function Waybills() {
     setIsPrinting(true);
     try {
       await printWaybillLabel(id);
-    } catch (err: any) {
+    } catch (err) {
       const msg =
         err?.response?.data?.message || err?.message || "Failed to generate label";
       showToast(msg, "error");
@@ -279,7 +272,7 @@ export default function Waybills() {
   return (
     <div className="relative min-h-screen bg-[#060B1A] text-white p-4 font-sans">
       <div className="mx-auto max-w-6xl space-y-6">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -332,7 +325,7 @@ export default function Waybills() {
               <Field label="Waybill Number"><input className={glassInput()} value={draft.waybillNo} onChange={e => set("waybillNo", e.target.value)}/></Field>
               <Field label="Order Date"><input type="date" className={glassInput()} value={draft.orderDate} onChange={e => set("orderDate", e.target.value)}/></Field>
               <Field label="Service Level">
-                <select className={glassSelect()} value={draft.serviceLevel} onChange={e => set("serviceLevel", e.target.value as any)}>
+                <select className={glassSelect()} value={draft.serviceLevel} onChange={e => set("serviceLevel", e.target.value as WaybillDraft["serviceLevel"])}>
                   <option>Next Day</option><option>Same Day</option><option>Economy</option>
                 </select>
               </Field>
@@ -358,8 +351,8 @@ export default function Waybills() {
 
         {step === "PARTIES" && (
           <div className="grid md:grid-cols-2 gap-6">
-            <PartyCard title="Sender" payerActive={draft.chargeSide === "SENDER"} name={draft.senderName} company={draft.senderCompany} phone={draft.senderPhone} email={draft.senderEmail} address={draft.senderAddress1} city={draft.senderCity} onChange={(p: any) => setDraft(d => ({...d, senderName: p.name ?? d.senderName, senderCity: p.city ?? d.senderCity, senderPhone: p.phone ?? d.senderPhone, senderEmail: p.email ?? d.senderEmail, senderAddress1: p.address ?? d.senderAddress1, senderCompany: p.company ?? d.senderCompany}))} />
-            <PartyCard title="Receiver" payerActive={draft.chargeSide === "RECEIVER"} name={draft.receiverName} company={draft.receiverCompany} phone={draft.receiverPhone} email={draft.receiverEmail} address={draft.receiverAddress1} city={draft.receiverCity} onChange={(p: any) => setDraft(d => ({...d, receiverName: p.name ?? d.receiverName, receiverCity: p.city ?? d.receiverCity, receiverPhone: p.phone ?? d.receiverPhone, receiverEmail: p.email ?? d.receiverEmail, receiverAddress1: p.address ?? d.receiverAddress1, receiverCompany: p.company ?? d.receiverCompany}))} />
+            <PartyCard title="Sender" payerActive={draft.chargeSide === "SENDER"} name={draft.senderName} company={draft.senderCompany} phone={draft.senderPhone} email={draft.senderEmail} address={draft.senderAddress1} city={draft.senderCity} onChange={(p) => setDraft(d => ({...d, senderName: p.name ?? d.senderName, senderCity: p.city ?? d.senderCity, senderPhone: p.phone ?? d.senderPhone, senderEmail: p.email ?? d.senderEmail, senderAddress1: p.address ?? d.senderAddress1, senderCompany: p.company ?? d.senderCompany}))} />
+            <PartyCard title="Receiver" payerActive={draft.chargeSide === "RECEIVER"} name={draft.receiverName} company={draft.receiverCompany} phone={draft.receiverPhone} email={draft.receiverEmail} address={draft.receiverAddress1} city={draft.receiverCity} onChange={(p) => setDraft(d => ({...d, receiverName: p.name ?? d.receiverName, receiverCity: p.city ?? d.receiverCity, receiverPhone: p.phone ?? d.receiverPhone, receiverEmail: p.email ?? d.receiverEmail, receiverAddress1: p.address ?? d.receiverAddress1, receiverCompany: p.company ?? d.receiverCompany}))} />
           </div>
         )}
 

@@ -4,7 +4,6 @@ import {
   Activity,
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
   Clock,
   Download,
   MapPin,
@@ -23,7 +22,7 @@ import { api } from "../api/client";
 import { exportCsv, csvFilename } from "../lib/exportCsv";
 import { printWaybillLabels } from "../lib/labelPrint";
 import { TiltCard } from "../components/premium/TiltCard";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -149,27 +148,27 @@ export default function Shipments() {
   // Bulk parcel-label printing — set of selected waybill ids.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isPrinting, setIsPrinting] = useState(false);
-  const [statusFilter, setStatusFilter] = useSearchParams();
+  const [statusFilter] = useSearchParams();
   const activeStatusFilter = (statusFilter.get("status") || "").toUpperCase() as ShipmentStatus | "";
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    try {
-      const res: any = await api.get("/shipments?limit=500");
-      if (signal?.aborted) return;
-      const data = res?.data ?? res;
-      setShipments(Array.isArray(data) ? data : []);
-      api.get("/shipments/health").then((r: any) => {
-        if (!signal?.aborted) setHealth(r?.data ?? r);
-      }).catch(() => {
-        if (!signal?.aborted) setHealth(null);
-      });
-    } catch {
-      if (!signal?.aborted) setShipments([]);
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
+  const load = useCallback((signal?: AbortSignal) => (async () => {
+    const res = await api.get("/shipments?limit=500");
+    if (signal?.aborted) return;
+    const data = res?.data ?? res;
+    setShipments(Array.isArray(data) ? data : []);
+    api.get("/shipments/health").then((r) => {
+      if (!signal?.aborted) setHealth(r?.data ?? r);
+    }).catch(() => {
+      if (!signal?.aborted) setHealth(null);
+    });
+
+  })().catch(() => {
+    if (!signal?.aborted) setShipments([]);
+
+  }).finally(() => {
+    if (!signal?.aborted) setLoading(false);
+
+  }), []);
 
   /** Manual refresh (used as onClick handler). */
   const refresh = useCallback(() => { void load(); }, [load]);
@@ -246,7 +245,7 @@ export default function Shipments() {
     try {
       const n = await printWaybillLabels([...selected]);
       showToast(`Generated ${n} label${n === 1 ? "" : "s"}.`, "success");
-    } catch (err: any) {
+    } catch (err) {
       const msg =
         err?.response?.data?.message || err?.message || "Failed to generate labels";
       showToast(msg, "error");

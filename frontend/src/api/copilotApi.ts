@@ -12,20 +12,20 @@ export type CopilotAnswer = {
   value?: number | string | null;
   unit?: "count" | "currency" | "percent" | null;
   chart?: CopilotChart | null;
-  table?: Array<Record<string, any>> | null;
+  table?: Array<Record<string, unknown>> | null;
   intent: string;
   matched: boolean;
   tookMs: number;
 };
 
-const unwrap = <T>(r: any): T => (r?.data ?? r) as T;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export async function askCopilot(question: string): Promise<CopilotAnswer> {
   return unwrap<CopilotAnswer>(await api.post("/copilot/ask", { question }));
 }
 
 export async function getCopilotSuggestions(): Promise<string[]> {
-  const r: any = await api.get("/copilot/suggestions");
+  const r = await api.get("/copilot/suggestions");
   const data = r?.data ?? r;
   return data?.suggestions ?? [];
 }

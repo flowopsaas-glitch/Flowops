@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Building2, Lock, Sparkles, ArrowRight, Loader2, AlertCircle } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { persistTermsAcceptanceLocally } from "../legal/termsAcceptance";
 import { register } from "../api/authApi";
 
@@ -140,10 +140,10 @@ export default function Signup() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400" htmlFor="field-full-name-5">
               Full name
             </label>
-            <input
+            <input id="field-full-name-5"
               name="fullName"
               required
               disabled={submitting}
@@ -155,10 +155,10 @@ export default function Signup() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400" htmlFor="field-work-email-4">
               Work email
             </label>
-            <input
+            <input id="field-work-email-4"
               name="email"
               type="email"
               required
@@ -171,10 +171,10 @@ export default function Signup() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400" htmlFor="field-phone-3">
               Phone
             </label>
-            <input
+            <input id="field-phone-3"
               name="phone"
               required
               disabled={submitting}
@@ -186,10 +186,10 @@ export default function Signup() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400" htmlFor="field-company-2">
               Company
             </label>
-            <input
+            <input id="field-company-2"
               name="company"
               required
               disabled={submitting}
@@ -201,10 +201,10 @@ export default function Signup() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400" htmlFor="field-password-1">
               Password
             </label>
-            <input
+            <input id="field-password-1"
               name="password"
               type="password"
               required

@@ -9,7 +9,7 @@
  *   <span>{money(1500)}</span>  // → "R1,500.00" or "$1,500.00" depending on tenant
  */
 
-import { useTenant } from "../contexts/TenantContext";
+import { useTenant } from "../contexts/tenant-context";
 import { formatMoney, currencySymbol, getCurrency, getCountry, getMapCenter } from "../lib/currency";
 import type { CurrencyConfig, CountryConfig } from "../lib/currency";
 

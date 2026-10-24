@@ -5,7 +5,7 @@ import { updateConsignment, type RailConsignment } from "../../api/railApi";
 import {
   DG_FIELDS, DG_FIELD_LABEL, dgBadge, dgFormFrom, dgFormToPayload, validateDgForm, wagonDgLabel, type DgFormState,
 } from "../../lib/railDangerousGoods";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { Banner, Field, Pill, btnPrimary, inputCls } from "./railUi";
 
 /** The list badge: nothing for a consignment with no dangerous goods, green when ready, red with the number of gaps otherwise. */
@@ -34,13 +34,20 @@ export default function DangerousGoodsSection({ consignment, canWrite, onSaved }
   const [form, setForm] = useState<DgFormState>(() => dgFormFrom(consignment));
   const [saving, setSaving] = useState(false);
 
-  const loadReadiness = useCallback(async () => {
-    try { setReadiness(await getDangerousGoods(consignment.id)); setLoadFailed(false); } catch { setReadiness(null); setLoadFailed(true); }
-  }, [consignment.id]);
+  const loadReadiness = useCallback(() => (async () => {
+ setReadiness(await getDangerousGoods(consignment.id)); setLoadFailed(false);
+  })().catch(() => {
+ setReadiness(null); setLoadFailed(true);
+  }), [consignment.id]);
 
   useEffect(() => { void loadReadiness(); }, [loadReadiness]);
-  // a different consignment (or a refreshed row) resets the form to what is saved
-  useEffect(() => { setForm(dgFormFrom(consignment)); }, [consignment]);
+  // A different consignment (or a refreshed row) resets the form to what is
+  // saved — adjusted during render when the prop changes, not in an effect.
+  const [formConsignment, setFormConsignment] = useState(consignment);
+  if (consignment !== formConsignment) {
+    setFormConsignment(consignment);
+    setForm(dgFormFrom(consignment));
+  }
 
   const errors = validateDgForm(form);
   const hasErrors = Object.keys(errors).length > 0;

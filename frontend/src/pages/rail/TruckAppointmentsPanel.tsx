@@ -5,7 +5,7 @@ import {
   replanTruckDay, revokeTruckShareLink, transitionTruckAppointment,
   type TruckAppointment, type TruckAppointmentSummary,
 } from "../../api/railTruckAppointmentsApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { Banner, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
 
 /**
@@ -53,16 +53,15 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
   const [replanning, setReplanning] = useState(false);
   const [editing, setEditing] = useState<{ id: string; start: string; end: string; force: boolean; reason: string } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true); setLoadError(null);
+  const load = useCallback(() => (async () => {
     try {
       const [list, sum] = await Promise.all([listTruckAppointments(), getTruckAppointmentSummary()]);
-      setRows(list); setSummary(sum);
+      setRows(list); setSummary(sum); setLoadError(null);
     } catch (e) {
       setLoadError(String((e as Error)?.message ?? e));
       setRows([]); setSummary(null);
     } finally { setLoading(false); }
-  }, []);
+  })(), []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -123,7 +122,7 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
     if (!editing.start || !editing.end) { showToast("New window start and end are required.", "error"); return; }
     if (editing.force && !editing.reason.trim()) { showToast("A forced change inside the cut-off needs a recorded reason.", "error"); return; }
     try {
-      const res: any = await transitionTruckAppointment(editing.id, "reschedule", {
+      const res = await transitionTruckAppointment(editing.id, "reschedule", {
         windowStart: new Date(editing.start).toISOString(),
         windowEnd: new Date(editing.end).toISOString(),
         ...(editing.force ? { force: true, note: editing.reason.trim() } : {}),

@@ -109,7 +109,7 @@ export default function TrackingPage() {
       dataRef.current = payload as TrackData;
       setData(payload as TrackData);
       setLastFetchedAt(new Date());
-    } catch (e: any) {
+    } catch (e) {
       const message = e.message || "Unable to load tracking.";
       if (keepCurrentSnapshot) {
         setError(`${message} Showing the last successfully loaded snapshot.`);

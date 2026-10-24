@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import {
-  ArrowRight, Shield, Truck, BarChart3, Clock, MapPin,
-  CheckCircle2, Zap, MessageCircle, Star, Target, Award,
+  ArrowRight, Shield, BarChart3, Clock, MapPin,
+  CheckCircle2, MessageCircle, Target, Award,
   TrendingUp, DollarSign, Package, Activity, Lock, Eye,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";

@@ -2,7 +2,6 @@
 import { useNavigate } from 'react-router-dom'
 import { hasOwnerSession } from '../lib/ownerSession'
 
-import { isTenantAdminFullAccess, canTenantAdminSeeNavItem, canTenantAdminAccessRoute, isHiddenOwnerPath } from '../lib/tenantAdminFullAccess';
 export function useOwnerRouteGuard(options?: {
   requireSession?: boolean
   redirectTo?: string
@@ -29,4 +28,3 @@ export function useOwnerRouteGuard(options?: {
     }
   }, [navigate, requireSession, redirectTo, redirectIfLoggedIn, loggedInRedirectTo])
 }
-

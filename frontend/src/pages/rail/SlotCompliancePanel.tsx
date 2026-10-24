@@ -10,7 +10,7 @@ import { listConsignments, type RailConsignment } from "../../api/railApi";
 import {
   describeDaysLeft, docTone, envelopeLabel, envelopeTone, formatDate, rsrBlocksSubmission, rsrTone, slotStatusTone,
 } from "../../lib/railSlot";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import EnvelopeChecker from "./EnvelopeChecker";
 import SlotApplicationDrawer, { MobilisationBadge } from "./SlotApplicationDrawer";
 import { Banner, Field, Modal, Pill, Section, btnDanger, btnNeutral, btnPrimary, inputCls } from "./railUi";
@@ -37,8 +37,7 @@ export default function SlotCompliancePanel({ canWrite, canSign }: { canWrite: b
   const [showNew, setShowNew] = useState(false);
   const [docModal, setDocModal] = useState<RailComplianceDocType | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     const [overviewResult, complianceResult, applicationsResult, corridorsResult, consignmentsResult] = await Promise.allSettled([
       getSlotOverview(), getCompliance(), listSlotApplications(), getCorridors(), listConsignments(),
     ]);
@@ -61,7 +60,7 @@ export default function SlotCompliancePanel({ canWrite, canSign }: { canWrite: b
     }
     setLoadErrors(errors);
     setLoading(false);
-  }, []);
+  })(), []);
 
   useEffect(() => { void load(); }, [load]);
 

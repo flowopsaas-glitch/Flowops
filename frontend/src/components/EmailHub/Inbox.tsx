@@ -1,23 +1,23 @@
 import React from 'react';
-import { Mail, Search, CheckCircle2 } from 'lucide-react';
+import { Search, CheckCircle2 } from 'lucide-react';
 
 const EmailHubInbox = () => {
   const emails = [
-    { 
-      id: 1, 
+    {
+      id: 1,
       sender: 'Dispatch Desk',
       subject: 'Collection request for...',
       summary: 'Collection request with...',
       status: 'Collection Intake',
       confidence: 0.92
     },
-    { 
-      id: 2, 
+    {
+      id: 2,
       sender: 'Logistics Partner',
-      subject: 'New Pickup Request', 
+      subject: 'New Pickup Request',
       summary: 'Please arrange a pick...',
-      status: 'Pending AI', 
-      confidence: null 
+      status: 'Pending AI',
+      confidence: null
     },
   ];
 

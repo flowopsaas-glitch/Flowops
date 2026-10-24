@@ -158,19 +158,18 @@ export default function HighRiskQueuePage() {
   const [showResolved, setShowResolved] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [evRes, stRes] = await Promise.allSettled([
         api.get("/ai-events"),
         api.get("/ai-events/stats"),
       ]);
       if (evRes.status === "fulfilled") {
-        const d: any = evRes.value;
+        const d = evRes.value as unknown as { data?: AiEvent[] } | AiEvent[];
         setEvents(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []));
       }
       if (stRes.status === "fulfilled") {
-        const s: any = stRes.value;
-        setStats(s?.data ?? s);
+        const s = stRes.value as unknown as { data?: Stats } | Stats;
+        setStats((s as { data?: Stats })?.data ?? (s as Stats));
       }
     } finally {
       setLoading(false);

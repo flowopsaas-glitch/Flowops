@@ -11,7 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api } from "../../api/client";
-const tenantCurrency = () => (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR';
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 type VerifyResult = {
   success: boolean;
@@ -39,26 +39,26 @@ type VerifyResult = {
 export default function BillingCallback() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [result, setResult] = useState<VerifyResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const reference = params.get("reference") || params.get("trxref") || "";
+  const [loading, setLoading] = useState(Boolean(reference));
+  const [result, setResult] = useState<VerifyResult | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  // A missing reference is known from the URL at render time — no effect
+  // needs to copy that fact into state.
+  const error = reference
+    ? verifyError
+    : "No payment reference found. Please try upgrading again.";
 
   useEffect(() => {
-    if (!reference) {
-      setError("No payment reference found. Please try upgrading again.");
-      setLoading(false);
-      return;
-    }
+    if (!reference) return;
 
     void (async () => {
       try {
-        const res: any = await api.get(`/paystack/verify-subscription/${reference}`);
+        const res = await api.get(`/paystack/verify-subscription/${reference}`);
         const data = res?.data ?? res;
         setResult(data);
-      } catch (err: any) {
-        setError(
+      } catch (err) {
+        setVerifyError(
           err?.response?.data?.message ||
             err?.message ||
             "Could not verify your payment. Please contact support."

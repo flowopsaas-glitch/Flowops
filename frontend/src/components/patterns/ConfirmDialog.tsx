@@ -57,10 +57,14 @@ export function ConfirmDialog({
   const [typed, setTyped] = React.useState('');
 
   // Reset the typed value whenever the dialog closes, so a previous entry
-  // cannot satisfy the check the next time it opens.
-  React.useEffect(() => {
+  // cannot satisfy the check the next time it opens. Adjusting state during
+  // render on the open transition is the React-endorsed replacement for the
+  // effect that used to do this.
+  const [wasOpen, setWasOpen] = React.useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (!open) setTyped('');
-  }, [open]);
+  }
 
   const phraseOk =
     !requireTypedConfirmation || typed.trim() === requireTypedConfirmation.trim();

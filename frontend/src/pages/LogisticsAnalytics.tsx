@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from "react";
 import {
   BarChart3,
   TrendingUp,
-  TrendingDown,
   Truck,
   Package,
   DollarSign,
@@ -19,7 +18,6 @@ import {
   Shield,
   Activity,
   Globe,
-  Award,
   ChevronRight,
   Calendar,
   Flame,
@@ -142,6 +140,8 @@ function KpiCard({
 
 
 function MiniSparkline({ data, color = "sky" }: { data: number[]; color?: string }) {
+  // Stable per-instance gradient id, randomised once via the lazy initializer.
+  const [gradientId] = useState(() => `spark-${color}-${Math.random().toString(36).slice(2)}`);
   if (data.length < 2) return null;
   const max = Math.max(...data, 1);
   const min = Math.min(...data, 0);
@@ -154,7 +154,6 @@ function MiniSparkline({ data, color = "sky" }: { data: number[]; color?: string
     return `${x},${y}`;
   }).join(" ");
 
-  const gradientId = `spark-${color}-${Math.random().toString(36).slice(2)}`;
   const fillPoints = `0,${h} ${points} ${w},${h}`;
 
   return (
@@ -181,7 +180,6 @@ function MiniSparkline({ data, color = "sky" }: { data: number[]; color?: string
 
 function TrendChart({ data }: { data: TrendPoint[] }) {
   const maxDeliveries = Math.max(...data.map((d) => d.totalDeliveries), 1);
-  const maxRevenue = Math.max(...data.map((d) => d.revenue), 1);
 
   return (
     <div className="space-y-4">
@@ -371,7 +369,7 @@ export default function LogisticsAnalytics() {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
+    // loading starts true (useState) and is cleared in finally; no sync set in the effect.
     Promise.all([getLogisticsAnalytics(), getLogisticsTrends()])
       .then(([snap, trendData]) => {
         if (alive) { setSnapshot(snap); setTrends(trendData); }
@@ -390,7 +388,7 @@ export default function LogisticsAnalytics() {
       ]);
       setSnapshot(snap);
       setTrends(trendData);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Refresh failed");
     } finally {
       setRefreshing(false);

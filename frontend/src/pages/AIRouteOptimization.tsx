@@ -1,7 +1,8 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
 import { Route, MapPin, Truck, Zap, Clock, TrendingDown, Brain, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { listOptimizations, createOptimization, getOptimization, type RouteOptimization, type CreateOptimizationPayload } from '../api/routeOptimizationApi';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 export default function AIRouteOptimization() {
   const { showToast } = useToast();
@@ -12,17 +13,17 @@ export default function AIRouteOptimization() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', deliveryIds: '', vehicleIds: '' });
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await listOptimizations();
-      setOptimizations(data);
-    } catch (e: any) {
-      showToast(e.message || 'Failed to load optimizations', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  const load = useCallback(() => (async () => {
+    const data = await listOptimizations();
+    setOptimizations(data);
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e) || 'Failed to load optimizations', 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -43,8 +44,8 @@ export default function AIRouteOptimization() {
       setShowCreate(false);
       setForm({ name: '', deliveryIds: '', vehicleIds: '' });
       load();
-    } catch (e: any) {
-      showToast(e.message || 'Failed to create optimization', 'error');
+    } catch (e) {
+      showToast(errorMessageOf(e) || 'Failed to create optimization', 'error');
     } finally {
       setCreating(false);
     }
@@ -54,8 +55,8 @@ export default function AIRouteOptimization() {
     try {
       const full = await getOptimization(opt.id);
       setSelected(full);
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessageOf(e), 'error');
     }
   };
 
@@ -157,7 +158,7 @@ export default function AIRouteOptimization() {
             </div>
           ) : (
             optimizations.map(opt => (
-              <div key={opt.id} onClick={() => handleSelect(opt)} className={`rounded-2xl border ${selected?.id === opt.id ? 'border-violet-500/50 bg-violet-500/5' : 'border-white/10 bg-white/[0.03]'} p-5 cursor-pointer hover:border-white/20 transition`}>
+              <div key={opt.id} onClick={() => handleSelect(opt)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => handleSelect(opt))(); } }} role="button" tabIndex={0} className={`rounded-2xl border ${selected?.id === opt.id ? 'border-violet-500/50 bg-violet-500/5' : 'border-white/10 bg-white/[0.03]'} p-5 cursor-pointer hover:border-white/20 transition`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-white font-bold">{opt.name || 'Unnamed Route'}</h3>
@@ -194,7 +195,7 @@ export default function AIRouteOptimization() {
                 <div className="pt-3 border-t border-white/10">
                   <h4 className="text-xs text-white/50 uppercase tracking-wider mb-2">Allocations ({selected.allocations.length})</h4>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {selected.allocations.map((a, i) => (
+                    {selected.allocations.map((a) => (
                       <div key={a.id} className="flex items-center gap-2 text-xs text-white/70 px-2 py-1.5 rounded-lg bg-white/5">
                         <span className="w-5 h-5 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center text-[10px] font-bold">{a.sequence}</span>
                         <span className="truncate flex-1">{a.waybillId.slice(0, 12)}...</span>

@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useEffect, useState, useMemo } from 'react'
 import {
   Bell, BellOff, CheckCheck, AlertTriangle, Truck, FileText,
@@ -51,9 +52,9 @@ function timeAgo(dateStr: string): string {
   return `${d}d ago`
 }
 
-function unwrapList(raw: any): NotificationItem[] {
-  const data = raw?.data ?? raw
-  return Array.isArray(data) ? data : []
+function unwrapList(raw: unknown): NotificationItem[] {
+  const data = (raw as { data?: unknown } | null)?.data ?? raw
+  return Array.isArray(data) ? (data as NotificationItem[]) : []
 }
 
 export default function Notifications() {
@@ -66,17 +67,18 @@ export default function Notifications() {
 
   // ── data loading ────────────────────────────────────────────────────────────
   async function load() {
-    setLoading(true)
-    setError('')
-    try {
-      const raw: any = await api.get('/notifications')
-      setItems(unwrapList(raw))
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load notifications')
-    } finally {
-      setLoading(false)
-    }
-  }
+  return (async () => {
+    const raw = await api.get('/notifications')
+    setItems(unwrapList(raw))
+
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || 'Failed to load notifications')
+
+  }).finally(() => {
+    setLoading(false)
+
+  });
+}
 
   useEffect(() => { void load() }, [])
 
@@ -97,8 +99,8 @@ export default function Notifications() {
       setItems(prev => prev.map(n => ({ ...n, read: true, readAt: new Date().toISOString() })))
       setToast('All notifications marked as read')
       setTimeout(() => setToast(''), 3000)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to mark all as read')
+    } catch (err) {
+      setError(errorMessageOf(err) || 'Failed to mark all as read')
     } finally {
       setMarking(false)
     }

@@ -1,7 +1,8 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, Brain, BarChart3, Target, Shield, Loader2, Send, Lightbulb, Globe } from 'lucide-react';
 import { getMarketTrends, askMarketInsight, type MarketTrendData, type MarketInsight } from '../api/marketTrendsApi';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 export default function MarketTrends() {
   const { showToast } = useToast();
@@ -12,16 +13,16 @@ export default function MarketTrends() {
   const [askingInsight, setAskingInsight] = useState(false);
   const [tab, setTab] = useState<'overview' | 'segments' | 'competitors' | 'opportunities' | 'predictions' | 'ask'>('overview');
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      setData(await getMarketTrends());
-    } catch (e: any) {
-      showToast(e.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  const load = useCallback(() => (async () => {
+    setData(await getMarketTrends());
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e), 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -30,7 +31,7 @@ export default function MarketTrends() {
     setAskingInsight(true);
     try {
       setInsight(await askMarketInsight(question));
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
     finally { setAskingInsight(false); }
   };
 
@@ -79,7 +80,7 @@ export default function MarketTrends() {
           { id: 'predictions', label: 'Predictions', icon: Lightbulb },
           { id: 'ask', label: 'Ask AI', icon: Brain },
         ].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id as any)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${tab === t.id ? 'bg-cyan-500/20 text-cyan-400' : 'text-white/50 hover:text-white/70'}`}>
+          <button key={t.id} onClick={() => setTab(t.id as typeof tab)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${tab === t.id ? 'bg-cyan-500/20 text-cyan-400' : 'text-white/50 hover:text-white/70'}`}>
             <t.icon className="w-3.5 h-3.5" />{t.label}
           </button>
         ))}

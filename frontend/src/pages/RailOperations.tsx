@@ -18,6 +18,7 @@ import {
   CircleDot,
   Loader2,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import {
   getRailOverview,
@@ -29,9 +30,9 @@ import {
   type RailStatus,
 } from "../api/railApi";
 import { getPossessionConflicts, type ConflictScan } from "../api/railChangeApi";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { useDismissOnEscape } from "../components/patterns";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/auth-context";
 import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
 import SlotCompliancePanel from "./rail/SlotCompliancePanel";
 import SlotOptimizerPanel from "./rail/SlotOptimizerPanel";
@@ -194,7 +195,7 @@ function Kpi({
   sub,
   accent = "text-emerald-400",
 }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   value: string | number;
   sub?: string;
@@ -320,10 +321,7 @@ export default function RailOperations() {
   const closeDrawer = useCallback(() => setSelected(null), []);
   useDismissOnEscape(Boolean(selected), closeDrawer);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    setOverviewError(null);
+  const load = useCallback(() => (async () => {
     try {
       const [overviewResult, consignmentsResult, conflictsResult] = await Promise.allSettled([
         getRailOverview(),
@@ -333,6 +331,7 @@ export default function RailOperations() {
 
       if (overviewResult.status === "fulfilled") {
         setOverview(overviewResult.value);
+        setOverviewError(null);
       } else {
         setOverview(null);
         setOverviewError(String(overviewResult.reason?.message ?? overviewResult.reason));
@@ -341,7 +340,8 @@ export default function RailOperations() {
 
       if (consignmentsResult.status === "rejected") throw consignmentsResult.reason;
       setRows(consignmentsResult.value);
-    } catch (e: any) {
+      setLoadError(null);
+    } catch (e) {
       const message = String(e?.message ?? e);
       setRows([]);
       setLoadError(message);
@@ -349,7 +349,7 @@ export default function RailOperations() {
     } finally {
       setLoading(false);
     }
-  }, [q, statusFilter, showToast]);
+  })(), [q, statusFilter, showToast]);
 
   useEffect(() => {
     load();
@@ -359,7 +359,7 @@ export default function RailOperations() {
     try {
       const full = await getConsignment(id);
       setSelected(full);
-    } catch (e: any) {
+    } catch (e) {
       showToast(`Could not open consignment: ${String(e?.message ?? e)}`, "error");
     }
   };
@@ -380,7 +380,7 @@ export default function RailOperations() {
       setSelected(full);
       await load();
       showToast(`Advanced to ${STATUS_LABEL[next]}`, "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(`Could not advance: ${String(e?.message ?? e)}`, "error");
     } finally {
       setAdvancing(false);
@@ -602,10 +602,10 @@ export default function RailOperations() {
 
       {/* Detail drawer */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={closeDrawer}>
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={closeDrawer} />
           <div
             className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6"
-            onClick={(e) => e.stopPropagation()}
+
             role="dialog"
             aria-modal="true"
             aria-label={`Consignment ${selected.consignmentNumber}`}

@@ -35,35 +35,35 @@ export type OrchestrationPlan = {
   model: string;
 };
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export async function listCourierOrders(status?: string): Promise<CourierOrder[]> {
-  const r: any = await api.get("/couriers/orders", { params: status ? { status } : {} });
+  const r = await api.get("/couriers/orders", { params: status ? { status } : {} });
   const d = unwrap(r);
   return Array.isArray(d) ? d : [];
 }
 
 export async function getCourierStats(): Promise<CourierStats> {
-  const r: any = await api.get("/couriers/stats");
+  const r = await api.get("/couriers/stats");
   return unwrap(r);
 }
 
 export async function createCourierOrder(payload: Partial<CourierOrder>): Promise<CourierOrder> {
-  const r: any = await api.post("/couriers/orders", payload);
+  const r = await api.post("/couriers/orders", payload);
   return unwrap(r);
 }
 
 export async function updateCourierOrder(id: string, payload: Partial<CourierOrder>): Promise<CourierOrder> {
-  const r: any = await api.patch(`/couriers/orders/${id}`, payload);
+  const r = await api.patch(`/couriers/orders/${id}`, payload);
   return unwrap(r);
 }
 
 export async function orchestrateCouriers(): Promise<OrchestrationPlan> {
-  const r: any = await api.post("/couriers/orchestrate", {});
+  const r = await api.post("/couriers/orchestrate", {});
   return unwrap(r);
 }
 
 export async function applyOrchestration(assignments: { driverId: string; orderIds: string[] }[]): Promise<{ applied: number }> {
-  const r: any = await api.post("/couriers/orchestrate/apply", { assignments });
+  const r = await api.post("/couriers/orchestrate/apply", { assignments });
   return unwrap(r);
 }

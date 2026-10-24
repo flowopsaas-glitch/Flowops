@@ -4,9 +4,10 @@ import {
   Activity, AlertTriangle, Brain,
   FileText, Package, Truck, Users,
   RotateCcw, Zap, Target, X, LocateFixed,
-  TrendingUp, TrendingDown, Minus, Clock, CheckCircle2, Wallet
+  TrendingUp, TrendingDown, Minus, Clock, CheckCircle2, Wallet,
+  type LucideIcon,
 } from "lucide-react";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/auth-context";
 import { normalizeTenantNavPermissions } from "../lib/tenantUserPermissions";
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
 import { ForwardingControlTower } from "../components/premium/ForwardingControlTower";
@@ -31,11 +32,11 @@ import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 
-const DefaultIcon = L.icon({ 
-  iconUrl: icon, 
-  shadowUrl: iconShadow, 
-  iconSize: [25, 41], 
-  iconAnchor: [12, 41] 
+const DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
@@ -55,8 +56,8 @@ function MapController({ center }: { center: [number, number] }) {
   );
 }
 
-function MetricCard(props: { 
-  title: string; value: string; subtitle: string; icon: any; 
+function MetricCard(props: {
+  title: string; value: string; subtitle: string; icon: LucideIcon;
   gradient: string; to: string; onAiClick?: () => void; className?: string;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -158,7 +159,7 @@ function formatKpiValue(kpi: Kpi, currency: string) {
   }
 }
 
-function KpiCard(props: { title: string; kpi: Kpi; icon: any; currency: string; to: string }) {
+function KpiCard(props: { title: string; kpi: Kpi; icon: LucideIcon; currency: string; to: string }) {
   const navigate = useNavigate();
   const { kpi } = props;
   const Icon = props.icon;
@@ -212,7 +213,7 @@ function KpiCard(props: { title: string; kpi: Kpi; icon: any; currency: string; 
 
 export default function Dashboard() {
   const { user, booting } = useAuth();
-  const [activeDrivers, setActiveDrivers] = useState<any[]>([]);
+  const [activeDrivers, setActiveDrivers] = useState<{ id: string | number; name?: string; vehicleReg?: string; lat: number; lng: number }[]>([]);
   const [liveMetrics, setLiveMetrics] = useState({
     collections: "—", activeDrivers: "—", transit: "—", stock: "—", risks: "—"
   });
@@ -234,7 +235,7 @@ export default function Dashboard() {
     (async () => {
       try {
         const ent = await getEntitlements().catch(() => null);
-        setForwardingEntitled(Boolean((ent as any)?.features?.freightForwarding));
+        setForwardingEntitled(Boolean((ent as { features?: { freightForwarding?: boolean } } | null)?.features?.freightForwarding));
       } catch { /* entitlement check best-effort */ }
     })();
   }, [user, booting]);
@@ -249,7 +250,7 @@ export default function Dashboard() {
   const perms = useMemo(
     () =>
       normalizeTenantNavPermissions(
-        (user as any)?.permissions ?? (user as any)?.navPermissions,
+        user?.permissions ?? user?.navPermissions,
         user?.role,
       ),
     [user],
@@ -278,7 +279,7 @@ export default function Dashboard() {
       setMetricsLoading(true);
       setMetricsError(null);
       try {
-        const res = await api.get<any, any>(`/dashboard/metrics`);
+        const res = await api.get(`/dashboard/metrics`);
         const data = res && typeof res === "object" && "data" in res ? res.data : res;
         const metricKeys = ["collections", "activeDrivers", "transit", "stock", "risks"] as const;
         const isCount = (value: unknown) =>
@@ -299,14 +300,14 @@ export default function Dashboard() {
           stock: String(data.stock),
           risks: String(data.risks),
         });
-        const locatedDrivers = data.drivers.flatMap((driver: any) => {
+        const locatedDrivers = data.drivers.flatMap((driver: { id?: string | number | null; name?: string; vehicleReg?: string; lat?: unknown; lng?: unknown }) => {
           const coordinates = getMapCoordinates(driver?.lat, driver?.lng);
           return coordinates && driver?.id != null ? [{ ...driver, ...coordinates }] : [];
         });
         setUnlocatedDriverCount(data.drivers.length - locatedDrivers.length);
         setActiveDrivers(locatedDrivers);
         setMetricsUpdatedAt(new Date());
-      } catch (err: any) {
+      } catch (err) {
         setMetricsError("Operational metrics could not be refreshed.");
         console.error("Dashboard metrics synchronization dropped:", err);
       } finally {
@@ -317,8 +318,8 @@ export default function Dashboard() {
     const fetchEtas = async () => {
       setEtaError(null);
       try {
-        const res = await api.get<any, any>(`/dashboard/live-etas`);
-        const data: any = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : null;
+        const res = await api.get(`/dashboard/live-etas`);
+        const data: { driverId?: string | number; etaMinutes?: unknown; distanceKm?: unknown; trackingNumber: string; urgency: string }[] | null = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : null;
         if (!data) throw new Error("The ETA service returned an unexpected response.");
         const map: typeof etaMap = {};
         let excludedCount = 0;
@@ -340,7 +341,7 @@ export default function Dashboard() {
         setEtaMap(map);
         setEtaUpdatedAt(new Date());
         if (excludedCount > 0) setEtaError("Some live ETA records were unusable and excluded.");
-      } catch (err: any) {
+      } catch (err) {
         setEtaError("Live ETAs could not be refreshed.");
         console.error("Dashboard live ETA synchronization dropped:", err);
       }
@@ -350,23 +351,25 @@ export default function Dashboard() {
       setKpisLoading(true);
       setKpisError(null);
       try {
-        const res = await api.get<any, any>(`/dashboard/kpis`);
+        const res = await api.get(`/dashboard/kpis`);
         const data = res && typeof res === "object" && "data" in res ? res.data : res;
         const kpiKeys = [
           "onTimeDeliveryRate", "deliverySuccessRate", "avgDeliveryHours",
           "revenuePerWaybill", "exceptionRate", "outstandingRevenue",
         ];
-        const isValidKpi = (kpi: any) =>
-          kpi && typeof kpi === "object" && !Array.isArray(kpi) &&
-          (kpi.value === null || Number.isFinite(kpi.value)) &&
-          (kpi.delta === null || Number.isFinite(kpi.delta)) &&
-          ["percent", "hours", "currency"].includes(kpi.unit) &&
-          ["up", "down"].includes(kpi.goodDirection);
+        const isValidKpi = (kpi: unknown): kpi is Kpi => {
+          const k = kpi as Partial<Kpi> | null;
+          return Boolean(k) && typeof kpi === "object" && !Array.isArray(kpi) &&
+            (k!.value === null || Number.isFinite(k!.value)) &&
+            (k!.delta === null || Number.isFinite(k!.delta)) &&
+            ["percent", "hours", "currency"].includes(k!.unit ?? "") &&
+            ["up", "down"].includes(k!.goodDirection ?? "");
+        };
         if (!data || typeof data !== "object" || kpiKeys.some((key) => !isValidKpi(data[key]))) {
           throw new Error("The KPI service returned an incomplete response.");
         }
         setKpis(data as KpiSet);
-      } catch (err: any) {
+      } catch (err) {
         setKpisError("Performance KPIs could not be refreshed.");
         console.error("Dashboard KPI synchronization dropped:", err);
       } finally {
@@ -389,7 +392,7 @@ export default function Dashboard() {
 
     socket.emit('joinCompanyDashboard', { companyId: user?.companyId || 1 });
 
-    socket.on('telemetryStreamUpdate', (data: any) => {
+    socket.on('telemetryStreamUpdate', (data: { lat?: unknown; lng?: unknown; driverId?: string | number; name?: string; vehicleReg?: string }) => {
       const coordinates = getMapCoordinates(data?.lat, data?.lng);
       if (!coordinates || data?.driverId == null) return;
       setActiveDrivers((prevDrivers) => {
@@ -513,7 +516,7 @@ export default function Dashboard() {
           </p>
           {unlocatedDriverCount > 0 && <p className="mt-1 text-[10px] font-semibold normal-case tracking-normal">{unlocatedDriverCount} returned driver record{unlocatedDriverCount === 1 ? "" : "s"} excluded from map: invalid coordinates.</p>}
         </div>
-        
+
         <MapContainer center={mapCenterPoint} zoom={5} style={{ height: "100%", width: "100%", borderRadius: "24px" }} zoomControl={false}>
           <OpenStreetMapLayer />
           <MarkerClusterGroup>
@@ -588,4 +591,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

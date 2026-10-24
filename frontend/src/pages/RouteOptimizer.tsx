@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Route as RouteIcon, MapPin, Zap, Loader2, CheckSquare, Square, RefreshCw } from "lucide-react";
 import { MapContainer, Marker, Polyline, Popup } from "react-leaflet";
@@ -36,17 +37,17 @@ type OptimizedRoute = {
   routingEngine?: "osrm" | "haversine";
 };
 
-function unwrapCollectionList(raw: any): Collection[] | null {
-  const body = raw?.data ?? raw;
-  if (Array.isArray(body)) return body;
-  if (Array.isArray(body?.data)) return body.data;
+function unwrapCollectionList(raw: unknown): Collection[] | null {
+  const body = (raw as { data?: unknown } | null)?.data ?? raw;
+  if (Array.isArray(body)) return body as Collection[];
+  if (Array.isArray((body as { data?: unknown } | null)?.data)) return (body as { data: Collection[] }).data;
   return null;
 }
 
-function unwrapOptimizedRoute(raw: any): OptimizedRoute | null {
-  const body = raw?.data ?? raw;
+function unwrapOptimizedRoute(raw: unknown): OptimizedRoute | null {
+  const body = ((raw as { data?: unknown } | null)?.data ?? raw) as { stops?: { lat?: unknown; lng?: unknown; id?: unknown; seq?: unknown; legKm?: unknown }[]; totalKm?: unknown } | null;
   if (!body || !Array.isArray(body.stops) || !Number.isFinite(body.totalKm)) return null;
-  const stops = body.stops.map((stop: any) => {
+  const stops = body.stops.map((stop) => {
     const coordinates = getMapCoordinates(stop?.lat, stop?.lng);
     if (!coordinates || typeof stop?.id !== "string" || !Number.isFinite(stop?.seq) || !Number.isFinite(stop?.legKm)) {
       return null;
@@ -84,27 +85,27 @@ export default function RouteOptimizer() {
     [collections],
   );
 
-  const loadCollections = useCallback(async () => {
-    setLoading(true);
+  const loadCollections = useCallback(() => (async () => {
+    const raw = await api.get("/collections");
+    const list = unwrapCollectionList(raw);
+    if (!list) throw new Error("The collection service returned an unexpected response.");
+    setCollections(list);
+    setSelected(new Set(list.flatMap((collection) =>
+      getMapCoordinates(collection.pickupLat, collection.pickupLng) ? [collection.id] : [],
+    )));
+    setRoute(null);
+    setOptimizeError(null);
     setLoadError(null);
-    try {
-      const raw = await api.get("/collections");
-      const list = unwrapCollectionList(raw);
-      if (!list) throw new Error("The collection service returned an unexpected response.");
-      setCollections(list);
-      setSelected(new Set(list.flatMap((collection) =>
-        getMapCoordinates(collection.pickupLat, collection.pickupLng) ? [collection.id] : [],
-      )));
-      setRoute(null);
-      setOptimizeError(null);
-      setLastLoadedAt(new Date());
-    } catch (err: any) {
-      const message = err?.response?.data?.message ?? err?.message ?? "Couldn’t load collections. Please try again.";
-      setLoadError(Array.isArray(message) ? message.join(", ") : String(message));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    setLastLoadedAt(new Date());
+
+  })().catch((err: unknown) => {
+    const message = errorMessageOf(err) || "Couldn’t load collections. Please try again.";
+    setLoadError(Array.isArray(message) ? message.join(", ") : String(message));
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => {
     void loadCollections();
@@ -132,8 +133,8 @@ export default function RouteOptimizer() {
       const result = unwrapOptimizedRoute(raw);
       if (!result) throw new Error("The routing service returned invalid or incomplete route data.");
       setRoute(result);
-    } catch (err: any) {
-      const message = err?.response?.data?.message ?? err?.message ?? "Route optimization failed. Please try again.";
+    } catch (err) {
+      const message = errorMessageOf(err) || "Route optimization failed. Please try again.";
       setOptimizeError(Array.isArray(message) ? message.join(", ") : String(message));
     } finally {
       setOptimizing(false);

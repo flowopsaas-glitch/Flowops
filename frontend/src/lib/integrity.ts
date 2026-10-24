@@ -18,7 +18,7 @@
  *   VITE_CANONICAL_HOSTS      comma-separated allowed host suffixes
  *   VITE_INTEGRITY_BEACON_URL absolute API base of the canonical backend
  */
-const env: Record<string, string | undefined> = (import.meta as any).env || {};
+const env: Record<string, string | undefined> = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
 
 const DEFAULT_ALLOWED = ["flowop.work", "localhost", "127.0.0.1"];
 const DEFAULT_BEACON_BASE = "https://app.flowop.work/api/v1";

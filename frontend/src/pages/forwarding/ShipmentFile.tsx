@@ -1,12 +1,14 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Loader2, Plus, Trash2, Sparkles, Wand2, FileText, Truck, AlertTriangle,
   Box, Package, DollarSign, Anchor, ChevronRight, CheckCircle2, Download, Calculator,
   Stamp, Send, Timer, Layers, Globe, Shield,
+  type LucideIcon,
 } from "lucide-react";
 import * as fwd from "../../api/forwardingApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import BackButton from "../../components/BackButton";
 
 const STATUS_FLOW: fwd.ShipmentStatus[] = [
@@ -22,21 +24,23 @@ export default function ShipmentFilePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [f, t] = await Promise.all([fwd.getFile(id), fwd.getTotals(id).catch(() => null)]);
-      setFile(f); setTotals(t);
-    } catch (e: any) {
-      showToast(e?.message ?? "Could not load file", "error");
-    } finally { setLoading(false); }
-  }, [id]);
+  const load = useCallback(() => (async () => {
+    const [f, t] = await Promise.all([fwd.getFile(id), fwd.getTotals(id).catch(() => null)]);
+    setFile(f); setTotals(t);
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e) || "Could not load file", "error");
+
+  }).finally(() => {
+ setLoading(false);
+  }), [id, showToast]);
 
   useEffect(() => { void load(); }, [load]);
 
-  const run = async (key: string, fn: () => Promise<any>, ok?: string) => {
+  const run = async (key: string, fn: () => Promise<unknown>, ok?: string) => {
     setBusy(key);
     try { await fn(); if (ok) showToast(ok, "success"); await load(); }
-    catch (e: any) { showToast(e?.message ?? "Action failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Action failed", "error"); }
     finally { setBusy(null); }
   };
 
@@ -76,7 +80,7 @@ export default function ShipmentFilePage() {
             <FileText className="h-4 w-4" /> Generate invoice
           </button>
           {(file.status === "CUSTOMS_CLEARED" || file.status === "ARRIVED") && (
-            <button onClick={() => run("deliv", async () => { const r: any = await fwd.createDelivery(id); showToast("Domestic delivery created", "success"); if (r?.collectionId) navigate(`/collections?collectionId=${r.collectionId}`); }, undefined)} disabled={!!busy}
+            <button onClick={() => run("deliv", async () => { const r = await fwd.createDelivery(id); showToast("Domestic delivery created", "success"); if (r?.collectionId) navigate(`/collections?collectionId=${r.collectionId}`); }, undefined)} disabled={!!busy}
               className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-2 text-sm font-bold text-amber-200 hover:bg-amber-500/25 disabled:opacity-50">
               <Truck className="h-4 w-4" /> Create domestic delivery
             </button>
@@ -125,7 +129,7 @@ export default function ShipmentFilePage() {
             </Row>
           ))}
           <AddContainer onAdd={(dto) => run("addc", async () => {
-            const r: any = await fwd.addContainer(id, dto);
+            const r = await fwd.addContainer(id, dto);
             if (r && r.wellFormed && r.checkDigitValid === false) showToast("Added — but the container check-digit looks invalid", "error");
           }, "Container added")} disabled={!!busy} />
         </Section>
@@ -197,7 +201,7 @@ export default function ShipmentFilePage() {
 
 // ── Small building blocks ──────────────────────────────────────────────────────
 
-function Section({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
+function Section({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
     <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-5 fx-lift fx-reveal">
       <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white/55 mb-3 flex items-center gap-2"><Icon className="h-4 w-4 text-cyan-300" />{title}</h2>
@@ -220,7 +224,7 @@ function Row({ children, onDelete, busy }: { children: React.ReactNode; onDelete
 }
 const inputCls = "rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-sm text-white placeholder-white/25";
 
-function AddContainer({ onAdd, disabled }: { onAdd: (d: any) => void; disabled: boolean }) {
+function AddContainer({ onAdd, disabled }: { onAdd: (d: Partial<fwd.Container>) => void; disabled: boolean }) {
   const [containerNo, setNo] = useState(""); const [isoType, setIso] = useState("40HC");
   return (
     <div className="flex gap-2 flex-wrap pt-1">
@@ -232,7 +236,7 @@ function AddContainer({ onAdd, disabled }: { onAdd: (d: any) => void; disabled: 
   );
 }
 
-function AddCargo({ fileId, onAdd, disabled }: { fileId: string; onAdd: (d: any) => void; disabled: boolean }) {
+function AddCargo({ fileId, onAdd, disabled }: { fileId: string; onAdd: (d: Partial<fwd.Cargo>) => void; disabled: boolean }) {
   const { showToast } = useToast();
   const [description, setDesc] = useState(""); const [hsCode, setHs] = useState(""); const [classifying, setClassifying] = useState(false);
   const classify = async () => {
@@ -258,7 +262,7 @@ function AddCargo({ fileId, onAdd, disabled }: { fileId: string; onAdd: (d: any)
   );
 }
 
-function AddCharge({ onAdd, disabled }: { onAdd: (d: any) => void; disabled: boolean }) {
+function AddCharge({ onAdd, disabled }: { onAdd: (d: Partial<fwd.Charge>) => void; disabled: boolean }) {
   const [description, setDesc] = useState(""); const [cost, setCost] = useState(""); const [sell, setSell] = useState(""); const [currency, setCur] = useState("ZAR");
   return (
     <div className="flex gap-2 flex-wrap pt-1">
@@ -314,8 +318,12 @@ function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.C
   const [edits, setEdits] = useState<Record<string, { customsValue?: string; dutyRatePct?: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
-  const loadEst = async () => { try { setEst(await fwd.getCustomsEstimate(fileId)); } catch { /* none yet */ } };
-  useEffect(() => { void loadEst();   }, [fileId]);
+  const loadEst = useCallback(() => (async () => {
+ setEst(await fwd.getCustomsEstimate(fileId));
+  })().catch(() => {
+ /* none yet */
+  }), [fileId]);
+  useEffect(() => { void loadEst(); }, [loadEst]);
 
   const dl = async (type: fwd.ForwardingDocType) => {
     setBusy(type);
@@ -334,7 +342,7 @@ function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.C
       });
       await loadEst(); onChange();
       showToast("Customs line updated", "success");
-    } catch (err: any) { showToast(err?.message ?? "Update failed", "error"); }
+    } catch (err) { showToast(errorMessageOf(err) || "Update failed", "error"); }
     finally { setBusy(null); }
   };
 
@@ -382,8 +390,8 @@ function CustomsDocs({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.C
         ) : (
           <div className="space-y-1.5">
             {cargo.map((c) => {
-              const e = edits[c.id] || {};
-              const line = est?.lines.find((l) => l.cargoId === c.id);
+                  const e = edits[c.id] || {};
+                  const line = est?.lines.find((l) => l.cargoId === c.id);
               return (
                 <div key={c.id} className="flex items-center gap-2 rounded-xl border border-white/6 bg-black/20 px-3 py-2 flex-wrap text-sm">
                   <span className="text-white/75 flex-1 min-w-[120px] truncate">{c.description}{c.hsCode ? ` · HS ${c.hsCode}` : ""}</span>
@@ -434,17 +442,17 @@ function DeclarationPanel({ fileId }: { fileId: string }) {
   const [mrn, setMrn] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
-  const loadMsgs = async (did: string) => { try { setMsgs(await fwd.getDeclarationMessages(did)); } catch { /* none */ } };
-  const load = async () => {
+  const loadMsgs = useCallback(async (did: string) => { try { setMsgs(await fwd.getDeclarationMessages(did)); } catch { /* none */ } }, []);
+  const load = useCallback(() => (async () => {
     try {
       const d = await fwd.getDeclaration(fileId);
       setDecl(d);
       if (d) await loadMsgs(d.id);
     } catch { /* none */ }
-  };
-  useEffect(() => { void load();   }, [fileId]);
+  })(), [fileId, loadMsgs]);
+  useEffect(() => { void load(); }, [load]);
 
-  const act = async (key: string, fn: () => Promise<any>, ok: string) => {
+  const act = async (key: string, fn: () => Promise<fwd.CustomsDeclaration>, ok: string) => {
     setBusy(key);
     try {
       const r = await fn();
@@ -452,7 +460,7 @@ function DeclarationPanel({ fileId }: { fileId: string }) {
       if (r?.id) await loadMsgs(r.id);
       showToast(ok, "success");
     }
-    catch (e: any) { showToast(e?.message ?? "Action failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Action failed", "error"); }
     finally { setBusy(null); }
   };
 
@@ -534,11 +542,11 @@ function DeclarationPanel({ fileId }: { fileId: string }) {
 function DemurragePanel({ fileId, containers }: { fileId: string; containers: fwd.Container[] }) {
   const { showToast } = useToast();
   const [dem, setDem] = useState<fwd.Demurrage | null>(null);
-  const [edits, setEdits] = useState<Record<string, any>>({});
+  const [edits, setEdits] = useState<Record<string, Record<string, string>>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = async () => { try { setDem(await fwd.getDemurrage(fileId)); } catch { /* none */ } };
-  useEffect(() => { void load();   }, [fileId]);
+  const load = useCallback(() => (async () => { try { setDem(await fwd.getDemurrage(fileId)); } catch { /* none */ } })(), [fileId]);
+  useEffect(() => { void load(); }, [load]);
 
   if (containers.length === 0) return null;
 
@@ -554,7 +562,7 @@ function DemurragePanel({ fileId, containers }: { fileId: string; containers: fw
       });
       await load();
       showToast("Demurrage terms saved", "success");
-    } catch (err: any) { showToast(err?.message ?? "Save failed", "error"); }
+    } catch (err) { showToast(errorMessageOf(err) || "Save failed", "error"); }
     finally { setBusy(null); }
   };
 
@@ -572,7 +580,6 @@ function DemurragePanel({ fileId, containers }: { fileId: string; containers: fw
       )}
       <div className="space-y-1.5">
         {containers.map((c) => {
-          const e = edits[c.id] || {};
           const ln = lineFor(c.id);
           return (
             <div key={c.id} className="rounded-xl border border-white/6 bg-black/20 px-3 py-2 space-y-1.5">
@@ -608,19 +615,19 @@ function ConsolidationPanel({ file, onChange }: { file: fwd.ShipmentFile; onChan
   const isMaster = !!file.isMaster;
   const isHouse = !!file.masterFileId;
 
-  const load = async () => {
+  const load = useCallback(() => (async () => {
     if (!isMaster) return;
     try {
       const [v, c] = await Promise.all([fwd.getConsolidation(file.id), fwd.attachableHouses(file.id)]);
       setView(v); setCandidates(c);
     } catch { /* none */ }
-  };
-  useEffect(() => { void load();   }, [file.id, file.isMaster]);
+  })(), [file.id, isMaster]);
+  useEffect(() => { void load(); }, [load]);
 
-  const act = async (key: string, fn: () => Promise<any>, ok: string) => {
+  const act = async (key: string, fn: () => Promise<unknown>, ok: string) => {
     setBusy(key);
     try { await fn(); showToast(ok, "success"); await load(); onChange(); }
-    catch (e: any) { showToast(e?.message ?? "Action failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Action failed", "error"); }
     finally { setBusy(null); }
   };
 
@@ -702,14 +709,14 @@ function CrossBorderPanel({ fileId, file, onChange }: { fileId: string; file: fw
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
-    shipperAddress: (file as any).shipperAddress || "",
-    consigneeAddress: (file as any).consigneeAddress || "",
-    originCountry: (file as any).originCountry || "",
-    destinationCountry: (file as any).destinationCountry || "",
-    transitCountries: (file as any).transitCountries || "",
-    vehicleReg: (file as any).vehicleReg || "",
-    sealNumbers: (file as any).sealNumbers || "",
-    importerTin: (file as any).importerTin || "",
+    shipperAddress: file.shipperAddress || "",
+    consigneeAddress: file.consigneeAddress || "",
+    originCountry: file.originCountry || "",
+    destinationCountry: file.destinationCountry || "",
+    transitCountries: file.transitCountries || "",
+    vehicleReg: file.vehicleReg || "",
+    sealNumbers: file.sealNumbers || "",
+    importerTin: file.importerTin || "",
   });
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -717,12 +724,12 @@ function CrossBorderPanel({ fileId, file, onChange }: { fileId: string; file: fw
   const save = async () => {
     setBusy(true);
     try {
-      const payload: any = {};
+      const payload: Partial<fwd.ShipmentFile> = {};
       Object.entries(form).forEach(([k, v]) => { if (v) payload[k] = v; });
       await fwd.updateFile(fileId, payload);
       showToast("Cross-border details saved", "success");
       onChange();
-    } catch (err: any) { showToast(err?.message ?? "Save failed", "error"); }
+    } catch (err) { showToast(errorMessageOf(err) || "Save failed", "error"); }
     finally { setBusy(false); }
   };
 
@@ -732,36 +739,36 @@ function CrossBorderPanel({ fileId, file, onChange }: { fileId: string; file: fw
     <Section title="Cross-border & transport" icon={Globe}>
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Shipper Address</label>
-          <input value={form.shipperAddress} onChange={set("shipperAddress")} placeholder="Full shipper address" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-shipper-address-8">Shipper Address</label>
+          <input id="field-shipper-address-8" value={form.shipperAddress} onChange={set("shipperAddress")} placeholder="Full shipper address" className={`${inputCls} w-full`} />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Consignee Address</label>
-          <input value={form.consigneeAddress} onChange={set("consigneeAddress")} placeholder="Full consignee address" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-consignee-address-7">Consignee Address</label>
+          <input id="field-consignee-address-7" value={form.consigneeAddress} onChange={set("consigneeAddress")} placeholder="Full consignee address" className={`${inputCls} w-full`} />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Origin Country</label>
-          <input value={form.originCountry} onChange={set("originCountry")} placeholder="e.g. South Africa" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-origin-country-6">Origin Country</label>
+          <input id="field-origin-country-6" value={form.originCountry} onChange={set("originCountry")} placeholder="e.g. South Africa" className={`${inputCls} w-full`} />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Destination Country</label>
-          <input value={form.destinationCountry} onChange={set("destinationCountry")} placeholder="e.g. Zimbabwe" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-destination-country-5">Destination Country</label>
+          <input id="field-destination-country-5" value={form.destinationCountry} onChange={set("destinationCountry")} placeholder="e.g. Zimbabwe" className={`${inputCls} w-full`} />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Transit Countries</label>
-          <input value={form.transitCountries} onChange={set("transitCountries")} placeholder="e.g. Mozambique, Botswana" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-transit-countries-4">Transit Countries</label>
+          <input id="field-transit-countries-4" value={form.transitCountries} onChange={set("transitCountries")} placeholder="e.g. Mozambique, Botswana" className={`${inputCls} w-full`} />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Vehicle Registration</label>
-          <input value={form.vehicleReg} onChange={set("vehicleReg")} placeholder="e.g. CA 123-456" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-vehicle-registration-3">Vehicle Registration</label>
+          <input id="field-vehicle-registration-3" value={form.vehicleReg} onChange={set("vehicleReg")} placeholder="e.g. CA 123-456" className={`${inputCls} w-full`} />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Seal Numbers</label>
-          <input value={form.sealNumbers} onChange={set("sealNumbers")} placeholder="Customs seal numbers" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-seal-numbers-2">Seal Numbers</label>
+          <input id="field-seal-numbers-2" value={form.sealNumbers} onChange={set("sealNumbers")} placeholder="Customs seal numbers" className={`${inputCls} w-full`} />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-white/35">Importer TIN (ZIMRA)</label>
-          <input value={form.importerTin} onChange={set("importerTin")} placeholder="Tax ID for import declaration" className={`${inputCls} w-full`} />
+          <label className="text-[10px] uppercase tracking-wider text-white/35" htmlFor="field-importer-tin-zimra-1">Importer TIN (ZIMRA)</label>
+          <input id="field-importer-tin-zimra-1" value={form.importerTin} onChange={set("importerTin")} placeholder="Tax ID for import declaration" className={`${inputCls} w-full`} />
         </div>
       </div>
       <div className="flex items-center gap-3 pt-2">
@@ -782,7 +789,7 @@ function CrossBorderPanel({ fileId, file, onChange }: { fileId: string; file: fw
 
 function DGCargoEditor({ fileId, cargo, onChange }: { fileId: string; cargo: fwd.Cargo[]; onChange: () => void }) {
   const { showToast } = useToast();
-  const [edits, setEdits] = useState<Record<string, any>>({});
+  const [edits, setEdits] = useState<Record<string, Record<string, string>>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
   const save = async (cargoId: string) => {
@@ -794,10 +801,10 @@ function DGCargoEditor({ fileId, cargo, onChange }: { fileId: string; cargo: fwd
         dgClass: e.dgClass || undefined,
         packingGroup: e.packingGroup || undefined,
         emergencyPhone: e.emergencyPhone || undefined,
-      } as any); // DG fields aren't on fwd.Cargo yet — add them to the type for full typing
+      });
       showToast("DG fields updated", "success");
       onChange();
-    } catch (err: any) { showToast(err?.message ?? "Update failed", "error"); }
+    } catch (err) { showToast(errorMessageOf(err) || "Update failed", "error"); }
     finally { setBusy(null); }
   };
 
@@ -808,15 +815,14 @@ function DGCargoEditor({ fileId, cargo, onChange }: { fileId: string; cargo: fwd
       <p className="text-[11px] text-white/40 mb-2">If any cargo is hazardous, fill in UN number, DG class, packing group, and 24-hour emergency contact. This populates the Dangerous Goods Declaration PDF.</p>
       <div className="space-y-2">
         {cargo.map((c) => {
-          const e = edits[c.id] || {};
           return (
             <div key={c.id} className="rounded-xl border border-white/6 bg-black/20 px-3 py-2 space-y-1.5">
               <span className="text-sm text-white/75 font-bold">{c.description}</span>
               <div className="flex gap-2 flex-wrap">
-                <input placeholder="UN No. (e.g. 1203)" defaultValue={(c as any).unNumber || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], unNumber: ev.target.value } }))} className={`${inputCls} w-28`} />
-                <input placeholder="Class (e.g. 3)" defaultValue={(c as any).dgClass || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], dgClass: ev.target.value } }))} className={`${inputCls} w-20`} />
-                <input placeholder="PG (I/II/III)" defaultValue={(c as any).packingGroup || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], packingGroup: ev.target.value } }))} className={`${inputCls} w-24`} />
-                <input placeholder="Emergency phone" defaultValue={(c as any).emergencyPhone || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], emergencyPhone: ev.target.value } }))} className={`${inputCls} w-40`} />
+                <input placeholder="UN No. (e.g. 1203)" defaultValue={c.unNumber || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], unNumber: ev.target.value } }))} className={`${inputCls} w-28`} />
+                <input placeholder="Class (e.g. 3)" defaultValue={c.dgClass || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], dgClass: ev.target.value } }))} className={`${inputCls} w-20`} />
+                <input placeholder="PG (I/II/III)" defaultValue={c.packingGroup || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], packingGroup: ev.target.value } }))} className={`${inputCls} w-24`} />
+                <input placeholder="Emergency phone" defaultValue={c.emergencyPhone || ""} onChange={(ev) => setEdits((p) => ({ ...p, [c.id]: { ...p[c.id], emergencyPhone: ev.target.value } }))} className={`${inputCls} w-40`} />
                 <button onClick={() => save(c.id)} disabled={busy === c.id}
                   className="rounded-lg border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 disabled:opacity-40">{busy === c.id ? "..." : "Save DG"}</button>
               </div>
@@ -847,12 +853,11 @@ function VesselTrackingPanel({ fileId, file, onChange }: { fileId: string; file:
   const [mmsi, setMmsi] = useState(file.vesselMmsi ?? "");
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try { setTrack(await fwd.trackVessel(fileId)); }
     catch { /* endpoint may 404 on non-ocean; panel is ocean-only anyway */ }
     finally { setLoading(false); }
-  }, [fileId]);
+  })(), [fileId]);
 
   useEffect(() => { void load(); }, [load]);
   // Auto-refresh the live position every 60s while the page is open.
@@ -870,8 +875,8 @@ function VesselTrackingPanel({ fileId, file, onChange }: { fileId: string; file:
       showToast(clean ? "MMSI saved — live tracking enabled" : "MMSI cleared", "success");
       onChange();
       await load();
-    } catch (e: any) {
-      showToast(e?.response?.data?.message || e?.message || "Could not save MMSI", "error");
+    } catch (e) {
+      showToast(errorMessageOf(e) || "Could not save MMSI", "error");
     } finally { setSaving(false); }
   };
 

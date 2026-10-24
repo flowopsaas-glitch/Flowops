@@ -48,8 +48,8 @@ vi.mock('./rail/ChangeRequestModal', () => ({
     </div>
   ),
 }));
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => h.auth }));
-vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../contexts/auth-context', () => ({ useAuth: () => h.auth }));
+vi.mock('../components/toast-context', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../api/railHandshakeApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/railHandshakeApi')>()),
   getHandshakeOverview: vi.fn().mockResolvedValue({

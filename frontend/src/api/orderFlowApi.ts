@@ -1,7 +1,7 @@
 import { api } from './client';
 
-const unwrap = <T>(r: any): T => (r?.data ?? r) as T;
-const arr = <T>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
+const arr = <T>(r: unknown): T[] => (Array.isArray(r) ? r : ((r as { data?: T[] } | null)?.data ?? [])) as T[];
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -19,8 +19,8 @@ export type OrderFlowIntegration = {
   failedOrders: number;
   createdAt: string;
   updatedAt: string;
-  config?: Record<string, any>;
-  dispatchRules?: Record<string, any>;
+  config?: Record<string, unknown>;
+  dispatchRules?: Record<string, unknown>;
   syncLogs?: OrderSyncLog[];
 };
 
@@ -37,24 +37,24 @@ export type OrderSyncLog = {
 export type CreateIntegrationPayload = {
   name: string;
   type: IntegrationType;
-  config?: Record<string, any>;
-  credentials?: Record<string, any>;
+  config?: Record<string, unknown>;
+  credentials?: Record<string, unknown>;
   autoDispatch?: boolean;
-  dispatchRules?: Record<string, any>;
+  dispatchRules?: Record<string, unknown>;
 };
 
 export type UpdateIntegrationPayload = {
   name?: string;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   autoDispatch?: boolean;
-  dispatchRules?: Record<string, any>;
+  dispatchRules?: Record<string, unknown>;
   status?: string;
 };
 
 export type IngestOrderPayload = {
   integrationId: string;
   externalOrderId: string;
-  orderData: Record<string, any>;
+  orderData: Record<string, unknown>;
 };
 
 // ── API Functions ────────────────────────────────────────────────────────

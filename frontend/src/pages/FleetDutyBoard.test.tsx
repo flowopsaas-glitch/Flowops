@@ -27,8 +27,8 @@ const BOARD = {
 };
 
 describe("FleetDutyBoard", () => {
-  const g = globalThis as any;
-  let api: any;
+  const g = globalThis as { fetch?: unknown };
+  let api: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     api = { get: vi.fn().mockResolvedValue(BOARD), post: vi.fn().mockResolvedValue({}) };

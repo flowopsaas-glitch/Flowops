@@ -58,7 +58,7 @@ vi.mock('leaflet', () => {
     },
   };
 });
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => h.auth }));
+vi.mock('../contexts/auth-context', () => ({ useAuth: () => h.auth }));
 vi.mock('../hooks/useSocket', () => ({ useSocket: () => ({ socket: null, isConnected: false }) }));
 vi.mock('../api/billingApi', () => ({ getEntitlements: vi.fn(async () => ({ features: {} })) }));
 vi.mock('../api/client', () => ({
@@ -75,7 +75,7 @@ vi.mock('../components/premium/CommandCenterHeader', () => ({ CommandCenterHeade
 vi.mock('../components/premium/ForwardingControlTower', () => ({ ForwardingControlTower: () => <div data-testid="fwd-tower-stub" /> }));
 vi.mock('../components/premium/TiltCard', () => ({ TiltCard: ({ children }: { children?: unknown }) => <div>{children as never}</div> }));
 vi.mock('../components/premium/PerformanceTrends', () => ({ PerformanceTrends: () => <div data-testid="trends-stub" /> }));
-vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../components/toast-context', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../api/railApi', () => ({
   importRailTimetable: vi.fn(), listRailTimetableImports: vi.fn(async () => []), listRailTimetableRows: vi.fn(async () => ({ rows: [], total: 0 })),
 }));

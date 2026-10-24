@@ -30,8 +30,8 @@ vi.mock('react-leaflet', () => ({
   TileLayer: () => null, Polyline: () => null, CircleMarker: () => null, Tooltip: () => null,
 }));
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => h.auth }));
-vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: h.showToast }) }));
+vi.mock('../contexts/auth-context', () => ({ useAuth: () => h.auth }));
+vi.mock('../components/toast-context', () => ({ useToast: () => ({ showToast: h.showToast }) }));
 vi.mock('../api/railApi', () => ({
   getRailOverview: h.getRailOverview,
   listConsignments: h.listConsignments,

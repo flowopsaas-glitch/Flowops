@@ -118,7 +118,7 @@ export default function FileUpload({
         setFiles((prev) => prev.map((p, idx) =>
           idx === files.length + i ? { ...p, status: "done", progress: 100, result } : p,
         ));
-      } catch (err: any) {
+      } catch (err) {
         const errorMsg = err.message || "Upload failed";
         onError?.(errorMsg);
         setFiles((prev) => prev.map((p, idx) =>
@@ -143,8 +143,6 @@ export default function FileUpload({
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const allDone = files.length > 0 && files.every((f) => f.status === "done" || f.status === "error");
-  const isUploading = files.some((f) => f.status === "uploading");
 
   return (
     <div className={`w-full ${className}`}>
@@ -160,7 +158,7 @@ export default function FileUpload({
           onDragOver={(e) => { e.preventDefault(); if (!disabled) setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          onClick={() => !disabled && inputRef.current?.click()}
+          onClick={() => !disabled && inputRef.current?.click()} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => !disabled && inputRef.current?.click())(); } }} role="button" tabIndex={0}
           className={`
             relative cursor-pointer rounded-2xl border-2 border-dashed transition-all
             ${isDragging

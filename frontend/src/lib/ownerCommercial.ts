@@ -7,11 +7,12 @@ export type OwnerCommercialSummary = {
   commercialStatus: string | null
   commercialStatusReason: string | null
   statusChangedAt: string | null
-  subscriptionOverride: any
-  subscriptionOverrideSummary: any
-  latestQuote: any
-  latestInvoice: any
-  latestCommercialNote: any
+  /** Opaque backend payloads — carried through, not inspected by the frontend. */
+  subscriptionOverride: unknown
+  subscriptionOverrideSummary: unknown
+  latestQuote: unknown
+  latestInvoice: unknown
+  latestCommercialNote: unknown
   counts: {
     notes: number
     quotes: number
@@ -20,7 +21,7 @@ export type OwnerCommercialSummary = {
   updatedAt: string | null
 }
 
-async function ownerFetch(path: string, init?: RequestInit) {
+async function ownerFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getOwnerAccessToken()
 
   if (!token) {
@@ -38,7 +39,7 @@ async function ownerFetch(path: string, init?: RequestInit) {
 
   const text = await response.text()
 
-  let data: any
+  let data: unknown
 
   try {
     data = text ? JSON.parse(text) : null
@@ -47,15 +48,16 @@ async function ownerFetch(path: string, init?: RequestInit) {
   }
 
   if (!response.ok) {
+    const body = data as { message?: unknown; error?: unknown } | null
     const message =
-      data?.message ||
-      data?.error ||
+      body?.message ||
+      body?.error ||
       'Owner commercial request failed'
 
     throw new Error(String(message))
   }
 
-  return data
+  return data as T
 }
 
 export async function getOwnerTenantCommercialList(): Promise<OwnerCommercialSummary[]> {
@@ -100,7 +102,7 @@ export async function updateOwnerCommercialStatus(
 
 export async function updateOwnerSubscriptionOverride(
   tenantId: number,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
 ) {
   return ownerFetch(`/owner/tenants/${tenantId}/subscription-override`, {
     method: 'POST',
@@ -110,7 +112,7 @@ export async function updateOwnerSubscriptionOverride(
 
 export async function createOwnerQuote(
   tenantId: number,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
 ) {
   return ownerFetch(`/owner/tenants/${tenantId}/quotes`, {
     method: 'POST',
@@ -120,7 +122,7 @@ export async function createOwnerQuote(
 
 export async function createOwnerInvoice(
   tenantId: number,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
 ) {
   return ownerFetch(`/owner/tenants/${tenantId}/invoices`, {
     method: 'POST',

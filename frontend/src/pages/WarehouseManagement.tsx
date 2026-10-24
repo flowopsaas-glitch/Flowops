@@ -1,27 +1,66 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
-  Package, Warehouse, MapPin, TrendingUp, AlertTriangle, Loader2,
-  RefreshCw, Sparkles, BarChart3, ArrowUpRight, ArrowDownRight,
+  Package, Warehouse, TrendingUp, AlertTriangle, Loader2,
+  RefreshCw, Sparkles, BarChart3,
   CheckCircle2, Layers, ScanLine, Truck, Box, Activity, Target,
   ShieldAlert, Clock, Zap,
+  type LucideIcon,
 } from "lucide-react";
 import {
-  getWmsDashboard, getWmsKpis, getWmsAiInsights, getInventory,
-  getInventorySummary, getReplenishment, getMovements, adjustStock, transferStock,
+  getWmsDashboard, getWmsKpis, getWmsAiInsights, getInventory, getReplenishment, getMovements, adjustStock, transferStock,
 } from "../api/warehouseApi";
 
 type Tab = 'dashboard' | 'inventory' | 'movements' | 'kpis' | 'replenish' | 'ai';
 
+
+type WmsInventoryItem = {
+  sku: string; description?: string; quantityOnHand: number; quantityAvailable: number;
+  binId?: string; bin?: { code?: string; id?: string } | null; status: string;
+};
+type WmsMovement = {
+  performedAt: string; quantity: number; reason?: string; reference?: string; sku: string; type: string;
+};
+type WmsReplenishRow = {
+  sku: string; description?: string; currentQty: number; reorderPoint: number;
+  suggestedQty: number; urgency: string; bin?: string;
+};
+type WmsDashboard = {
+  inventory?: { totalSKUs?: number; totalUnits?: number; totalValue?: number; expiringSoon?: number; damaged?: number };
+  warehouses?: number; pendingReceipts?: number; activePicks?: number;
+  replenishmentNeeded?: number; criticalReplenishment?: number; todayMovements?: number;
+};
+type WmsKpis = {
+  throughput?: { avgMovementsPerDay?: number; unitsReceived?: number; unitsPicked?: number; movementsToday?: number };
+  accuracy?: {
+    inventoryAccuracy?: number | null; inventoryObservations?: number; pickAccuracy?: number | null;
+    picksFullyPicked?: number; pickOrdersObserved?: number; totalVariances?: number; varianceValue?: number;
+    receiveAccuracy?: number | null; completedReceiptsObserved?: number; undamagedReceipts?: number;
+  };
+  utilisation?: { totalBins?: number; binUtilisation?: number; occupiedBins?: number; blockedBins?: number };
+  efficiency?: { avgPickTimeHours?: number | null; pickOrdersBacklog?: number; receiptsBacklog?: number };
+  period?: string; generatedAt?: string;
+};
+type WmsInsights = {
+  insights?: {
+    healthScore?: number; summary?: string; alerts?: string[];
+    recommendations?: string[]; optimizations?: string[];
+  } | null;
+  message?: string; generatedAt?: string;
+};
+
 export default function WarehouseManagement() {
   const [tab, setTab] = useState<Tab>('dashboard');
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [loadedTab, setLoadedTab] = useState<Tab | null>(null);
+  const [data, setData] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
+  // Loading is derived from which tab's payload is on screen: switching tabs
+  // (a render-time transition) is immediately "loading" without an effect
+  // having to raise a flag synchronously.
+  const loading = loadedTab !== tab;
 
-  const loadTab = async (t: Tab) => {
-    setLoading(true); setError(null);
+  const loadTab = (t: Tab) => (async () => {
     try {
-      let result: any;
+      let result: unknown;
       switch (t) {
         case 'dashboard': result = await getWmsDashboard(); break;
         case 'inventory': result = await getInventory(); break;
@@ -30,15 +69,21 @@ export default function WarehouseManagement() {
         case 'replenish': result = await getReplenishment(); break;
         case 'ai': result = await getWmsAiInsights(); break;
       }
-      setData(result?.data ?? result);
-    } catch (e: any) {
+      setData((result as { data?: unknown } | null)?.data ?? result);
+      setError(null);
+    } catch (e) {
       setError(e?.message || 'Failed to load data');
-    } finally { setLoading(false); }
+    } finally { setLoadedTab(t); }
+  })();
+
+  const refreshTab = (t: Tab) => {
+    setLoadedTab(null);
+    void loadTab(t);
   };
 
-  useEffect(() => { loadTab(tab); }, [tab]);
+  useEffect(() => { void loadTab(tab); }, [tab]);
 
-  const tabs: { key: Tab; label: string; icon: any }[] = [
+  const tabs: { key: Tab; label: string; icon: LucideIcon }[] = [
     { key: 'dashboard', label: 'Overview', icon: Warehouse },
     { key: 'inventory', label: 'Inventory', icon: Package },
     { key: 'movements', label: 'Movements', icon: Activity },
@@ -57,7 +102,7 @@ export default function WarehouseManagement() {
           <h1 className="text-2xl font-black mt-1">Warehouse Management System</h1>
           <p className="text-sm text-white/50 mt-1">Inventory, receiving, pick/pack, cycle counts & AI optimization</p>
         </div>
-        <button onClick={() => loadTab(tab)}
+        <button onClick={() => refreshTab(tab)}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm">
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
@@ -85,12 +130,12 @@ export default function WarehouseManagement() {
         <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 text-center">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <p className="text-red-300">{error}</p>
-          <button onClick={() => loadTab(tab)} className="mt-4 px-4 py-2 bg-red-600 rounded-lg text-sm">Retry</button>
+          <button onClick={() => refreshTab(tab)} className="mt-4 px-4 py-2 bg-red-600 rounded-lg text-sm">Retry</button>
         </div>
       ) : (
         <>
           {tab === 'dashboard' && <DashboardView data={data} />}
-          {tab === 'inventory' && <InventoryView data={data} onChanged={() => loadTab('inventory')} />}
+          {tab === 'inventory' && <InventoryView data={data} onChanged={() => refreshTab('inventory')} />}
           {tab === 'movements' && <MovementsView data={data} />}
           {tab === 'kpis' && <KpisView data={data} />}
           {tab === 'replenish' && <ReplenishView data={data} />}
@@ -102,7 +147,7 @@ export default function WarehouseManagement() {
 }
 
 
-function KpiCard({ label, value, icon: Icon, color = 'amber', sub }: any) {
+function KpiCard({ label, value, icon: Icon, color = 'amber', sub }: { label: string; value: ReactNode; icon: LucideIcon; color?: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
       <div className="flex items-center justify-between mb-3">
@@ -115,7 +160,8 @@ function KpiCard({ label, value, icon: Icon, color = 'amber', sub }: any) {
   );
 }
 
-function DashboardView({ data }: { data: any }) {
+function DashboardView({ data: rawData }: { data: unknown }) {
+  const data = rawData as WmsDashboard | null;
   if (!data) return null;
   const inv = data.inventory || {};
   return (
@@ -146,16 +192,16 @@ function DashboardView({ data }: { data: any }) {
 }
 
 
-function InventoryView({ data, onChanged }: { data: any; onChanged?: () => void }) {
-  const items = Array.isArray(data) ? data : data?.data ?? [];
-  const [action, setAction] = useState<{ type: 'adjust' | 'transfer'; item: any } | null>(null);
+function InventoryView({ data, onChanged }: { data: unknown; onChanged?: () => void }) {
+  const items: WmsInventoryItem[] = Array.isArray(data) ? (data as WmsInventoryItem[]) : ((data as { data?: WmsInventoryItem[] } | null)?.data ?? []);
+  const [action, setAction] = useState<{ type: 'adjust' | 'transfer'; item: WmsInventoryItem } | null>(null);
   const [qty, setQty] = useState('');
   const [toBin, setToBin] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const openAction = (type: 'adjust' | 'transfer', item: any) => {
+  const openAction = (type: 'adjust' | 'transfer', item: WmsInventoryItem) => {
     setAction({ type, item });
     setQty(''); setToBin(''); setReason(''); setFormError(null);
   };
@@ -186,7 +232,7 @@ function InventoryView({ data, onChanged }: { data: any; onChanged?: () => void 
       }
       setAction(null);
       onChanged?.();
-    } catch (e: any) {
+    } catch (e) {
       setFormError(e?.message || 'Action failed');
     } finally {
       setBusy(false);
@@ -213,7 +259,7 @@ function InventoryView({ data, onChanged }: { data: any; onChanged?: () => void 
             </tr>
           </thead>
           <tbody>
-            {items.slice(0, 50).map((item: any, i: number) => (
+            {items.slice(0, 50).map((item, i) => (
               <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                 <td className="p-3 font-mono text-xs font-bold">{item.sku}</td>
                 <td className="p-3">{item.description}</td>
@@ -251,10 +297,10 @@ function InventoryView({ data, onChanged }: { data: any; onChanged?: () => void 
       </div>
 
       {action && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setAction(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => setAction(null)} />
           <div
             className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0b0f14] p-6"
-            onClick={(e) => e.stopPropagation()}
+
             role="dialog"
             aria-label={action.type === 'adjust' ? 'Adjust stock' : 'Transfer stock'}
           >
@@ -278,8 +324,8 @@ function InventoryView({ data, onChanged }: { data: any; onChanged?: () => void 
 
             {action.type === 'transfer' && (
               <>
-                <label className="block text-xs text-white/50 mb-1">Destination bin</label>
-                <input
+                <label className="block text-xs text-white/50 mb-1" htmlFor="field-destination-bin-1">Destination bin</label>
+                <input id="field-destination-bin-1"
                   value={toBin}
                   onChange={(e) => setToBin(e.target.value)}
                   className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white mb-3"
@@ -322,8 +368,8 @@ function InventoryView({ data, onChanged }: { data: any; onChanged?: () => void 
   );
 }
 
-function MovementsView({ data }: { data: any }) {
-  const items = Array.isArray(data) ? data : data?.data ?? [];
+function MovementsView({ data }: { data: unknown }) {
+  const items: WmsMovement[] = Array.isArray(data) ? (data as WmsMovement[]) : ((data as { data?: WmsMovement[] } | null)?.data ?? []);
   const typeColor: Record<string, string> = {
     RECEIPT: 'text-emerald-400', PUT_AWAY: 'text-blue-400', PICK: 'text-amber-400',
     TRANSFER: 'text-purple-400', ADJUSTMENT: 'text-red-400', DISPATCH: 'text-cyan-400',
@@ -346,7 +392,7 @@ function MovementsView({ data }: { data: any }) {
             </tr>
           </thead>
           <tbody>
-            {items.slice(0, 50).map((m: any, i: number) => (
+            {items.slice(0, 50).map((m, i) => (
               <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                 <td className={`p-3 font-bold text-xs ${typeColor[m.type] || 'text-white/60'}`}>{m.type}</td>
                 <td className="p-3 font-mono text-xs">{m.sku}</td>
@@ -373,7 +419,8 @@ function rateLabel(rate: unknown): string {
   return typeof rate === 'number' && Number.isFinite(rate) ? `${rate}%` : 'Unavailable';
 }
 
-function KpisView({ data }: { data: any }) {
+function KpisView({ data: rawData }: { data: unknown }) {
+  const data = rawData as WmsKpis | null;
   if (!data) return null;
   const t = data.throughput || {};
   const a = data.accuracy || {};
@@ -422,8 +469,8 @@ function KpisView({ data }: { data: any }) {
   );
 }
 
-function ReplenishView({ data }: { data: any }) {
-  const items = Array.isArray(data) ? data : data?.data ?? [];
+function ReplenishView({ data }: { data: unknown }) {
+  const items: WmsReplenishRow[] = Array.isArray(data) ? (data as WmsReplenishRow[]) : ((data as { data?: WmsReplenishRow[] } | null)?.data ?? []);
   return (
     <div className="space-y-4">
       {items.length === 0 ? (
@@ -452,7 +499,7 @@ function ReplenishView({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((r: any, i: number) => (
+                {items.map((r, i) => (
                   <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                     <td className="p-3 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -477,7 +524,8 @@ function ReplenishView({ data }: { data: any }) {
 }
 
 
-function AiView({ data }: { data: any }) {
+function AiView({ data: rawData }: { data: unknown }) {
+  const data = rawData as WmsInsights | null;
   if (!data?.insights) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">

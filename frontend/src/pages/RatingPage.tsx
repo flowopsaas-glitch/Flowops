@@ -24,7 +24,7 @@ export default function RatingPage() {
   useEffect(() => {
     if (!token) return;
     api.get(`/waybills/rate/${token}`)
-      .then((d: any) => setData(d?.data ?? d))
+      .then((d) => setData(d?.data ?? d))
       .catch(() => setError("This rating link is invalid or has expired."))
       .finally(() => setLoading(false));
   }, [token]);
@@ -35,7 +35,7 @@ export default function RatingPage() {
     try {
       await api.post(`/waybills/rate/${token}`, { rating: selected, note: note || undefined });
       setSubmitted(true);
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "Failed to submit rating. Please try again.");
     } finally {
       setSubmitting(false);

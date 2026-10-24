@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Brain, Loader2, ArrowUpRight, ArrowDownRight, ArrowRight } from "lucide-react";
+import { Brain, Loader2, ArrowUpRight, ArrowDownRight, ArrowRight , type LucideIcon } from "lucide-react";
 import { getSlotting, listWarehouses } from "../../api/warehouseApi";
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -8,22 +8,33 @@ const PRIORITY_COLORS: Record<string, string> = {
   LOW: "border-sky-500/30 bg-sky-500/10 text-sky-300",
 };
 
-const REC_ICONS: Record<string, any> = {
+const REC_ICONS: Record<string, LucideIcon> = {
   MOVE_TO_PICK_ZONE: ArrowUpRight,
   MOVE_CLOSER_TO_DISPATCH: ArrowRight,
   MOVE_TO_BULK: ArrowDownRight,
 };
 
+type SlottingRecommendation = {
+  sku: string; description?: string; reason?: string; velocity?: string;
+  priority?: string; recommendation?: string; picksLast30d?: number;
+  currentBin?: string; currentZone?: string;
+};
+type SlottingResult = {
+  velocityAnalysis?: { A?: number; B?: number; C?: number; totalSKUs?: number };
+  summary?: { message?: string; totalRecommendations?: number };
+  recommendations?: SlottingRecommendation[];
+};
+
 export default function AISlotting() {
-  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<SlottingResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
 
   useEffect(() => {
-    listWarehouses().then((r: any) => {
+    listWarehouses().then((r) => {
       const data = r?.data ?? r;
       setWarehouses(Array.isArray(data) ? data : []);
       if (data?.[0]?.id) setWarehouseId(data[0].id);
@@ -36,7 +47,7 @@ export default function AISlotting() {
     try {
       const res = await getSlotting(warehouseId);
       setResult(res?.data ?? res);
-    } catch (e: any) { setError(e?.response?.data?.message || e.message || "Failed"); }
+    } catch (e) { setError(e?.response?.data?.message || e.message || "Failed"); }
     finally { setLoading(false); }
   };
 
@@ -65,8 +76,8 @@ export default function AISlotting() {
       {/* Controls */}
       <div className="flex items-end gap-4">
         <div className="flex-1 max-w-xs">
-          <label className="block text-xs font-bold text-white/50 mb-1">Warehouse</label>
-          <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
+          <label className="block text-xs font-bold text-white/50 mb-1" htmlFor="field-warehouse-1">Warehouse</label>
+          <select id="field-warehouse-1" value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
             className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none focus:border-fuchsia-400/40">
             <option value="">Select warehouse...</option>
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -121,7 +132,7 @@ export default function AISlotting() {
               <h3 className="text-sm font-black text-white/70 uppercase tracking-wider">
                 Relocation Recommendations ({result.summary?.totalRecommendations || result.recommendations.length})
               </h3>
-              {result.recommendations.slice(0, 20).map((rec: any, i: number) => {
+              {result.recommendations.slice(0, 20).map((rec, i) => {
                 const Icon = REC_ICONS[rec.recommendation] || ArrowRight;
                 return (
                   <div key={i} className={`rounded-xl border p-3 ${PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.LOW}`}>

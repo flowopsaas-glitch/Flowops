@@ -29,7 +29,7 @@ const h = vi.hoisted(() => {
 });
 
 const toast = vi.fn();
-vi.mock('../../components/ToastProvider', () => ({ useToast: () => ({ showToast: toast }) }));
+vi.mock('../../components/toast-context', () => ({ useToast: () => ({ showToast: toast }) }));
 vi.mock('../../api/railSlotApi', () => ({
   getCorridors: vi.fn(async () => [{ code: 'COR-ORE', name: 'Ore corridor', aliases: [], workbookRoutes: [], gauge: null, electrification: [], maxAxleLoadTonnes: null, vehicleProfile: null, maxTrainLengthM: null, dataStatus: 'SOURCE_PENDING', sourceRef: null, notes: null, fromCatalog: true }]),
 }));

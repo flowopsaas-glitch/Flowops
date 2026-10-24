@@ -119,12 +119,12 @@ export async function listReturns(filters: ReturnFilters = {}): Promise<ReturnRe
   for (const [k, v] of Object.entries(filters)) {
     if (v) params[k] = String(v);
   }
-  const res: any = await api.get("/returns", { params });
+  const res = await api.get("/returns", { params });
   return Array.isArray(res) ? res : res?.data ?? [];
 }
 
 export async function getReturnStats(): Promise<ReturnStats> {
-  const res: any = await api.get("/returns/stats");
+  const res = await api.get("/returns/stats");
   return res?.data ?? res;
 }
 
@@ -143,22 +143,22 @@ export type ReturnInsights = {
 };
 
 export async function getReturnInsights(): Promise<ReturnInsights> {
-  const res: any = await api.get("/returns/insights");
+  const res = await api.get("/returns/insights");
   return res?.data ?? res;
 }
 
 export async function getReturn(id: string): Promise<ReturnRecord> {
-  const res: any = await api.get(`/returns/${id}`);
+  const res = await api.get(`/returns/${id}`);
   return res?.data ?? res;
 }
 
 export async function createReturn(payload: CreateReturnPayload): Promise<ReturnRecord> {
-  const res: any = await api.post("/returns", payload);
+  const res = await api.post("/returns", payload);
   return res?.data ?? res;
 }
 
-export async function updateReturn(id: string, payload: Partial<CreateReturnPayload> & Record<string, any>): Promise<ReturnRecord> {
-  const res: any = await api.patch(`/returns/${id}`, payload);
+export async function updateReturn(id: string, payload: Partial<CreateReturnPayload> & Record<string, unknown>): Promise<ReturnRecord> {
+  const res = await api.patch(`/returns/${id}`, payload);
   return res?.data ?? res;
 }
 
@@ -167,11 +167,11 @@ export async function transitionReturn(
   action: ReturnTransition,
   payload: TransitionPayload = {},
 ): Promise<ReturnRecord> {
-  const res: any = await api.post(`/returns/${id}/transition/${action}`, payload);
+  const res = await api.post(`/returns/${id}/transition/${action}`, payload);
   return res?.data ?? res;
 }
 
 export async function deleteReturn(id: string): Promise<{ deleted: boolean }> {
-  const res: any = await api.delete(`/returns/${id}`);
+  const res = await api.delete(`/returns/${id}`);
   return res?.data ?? res;
 }

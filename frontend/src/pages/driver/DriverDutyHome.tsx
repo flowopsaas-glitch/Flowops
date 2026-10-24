@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ClipboardCheck, ListChecks, Loader2, Package, RefreshCw } from "lucide-react";
 import {
   getDriverModes, getDriverWork, getTrainBoard,
-  type DriverDuty, type DriveModeConfig, type DriverMode, type TrainBoardResponse, type WorkResponse,
+  type DriverDuty, type DriveModeConfig, type TrainBoardResponse, type WorkResponse,
 } from "../../api/driverPortalApi";
 import DriverShiftBar from "./DriverShiftBar";
 import DriverTrainBoard from "./DriverTrainBoard";
@@ -24,25 +24,25 @@ export default function DriverDutyHome() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [m, w] = await Promise.all([getDriverModes(), getDriverWork()]);
-      setModes(m.modes);
-      setDuty(w.duty ?? m.activeDuty);
-      setVehicleReg(m.vehicleReg);
-      setWork(w);
-      if (w.mode === "TRAIN") {
-        setBoard(await getTrainBoard());
-      } else {
-        setBoard(null);
-      }
-    } catch (e) {
-      setError((e as Error)?.message ?? "Could not load your duty board");
-    } finally {
-      setLoading(false);
+  const load = useCallback(() => (async () => {
+    const [m, w] = await Promise.all([getDriverModes(), getDriverWork()]);
+    setModes(m.modes);
+    setDuty(w.duty ?? m.activeDuty);
+    setVehicleReg(m.vehicleReg);
+    setWork(w);
+    if (w.mode === "TRAIN") {
+      setBoard(await getTrainBoard());
+    } else {
+      setBoard(null);
     }
-  }, []);
+
+  })().catch((e) => {
+    setError((e as Error)?.message ?? "Could not load your duty board");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => { void load(); }, [load]);
 

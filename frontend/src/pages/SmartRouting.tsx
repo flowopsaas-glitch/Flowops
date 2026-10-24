@@ -1,7 +1,8 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
-import { Navigation, Plus, Play, Square, Ban, Calendar, MapPin, Clock, Truck, Loader2, Route } from 'lucide-react';
+import { Navigation, Plus, Play, Square, Ban, Calendar, MapPin, Clock, Loader2, Route } from 'lucide-react';
 import { listRoutePlans, createRoutePlan, activateRoutePlan, completeRoutePlan, cancelRoutePlan, type RoutePlan, type CreateRoutePlanPayload } from '../api/smartRoutingApi';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 export default function SmartRouting() {
   const { showToast } = useToast();
@@ -11,18 +12,18 @@ export default function SmartRouting() {
   const [filter, setFilter] = useState('');
   const [form, setForm] = useState({ name: '', stops: '', scheduledDate: '' });
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: Record<string, string> = {};
-      if (filter) params.status = filter;
-      setPlans(await listRoutePlans(params));
-    } catch (e: any) {
-      showToast(e.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, showToast]);
+  const load = useCallback(() => (async () => {
+    const params: Record<string, string> = {};
+    if (filter) params.status = filter;
+    setPlans(await listRoutePlans(params));
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e), 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [filter, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -39,7 +40,7 @@ export default function SmartRouting() {
       setShowCreate(false);
       setForm({ name: '', stops: '', scheduledDate: '' });
       load();
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleAction = async (id: string, action: 'activate' | 'complete' | 'cancel') => {
@@ -49,7 +50,7 @@ export default function SmartRouting() {
       else await cancelRoutePlan(id);
       showToast(`Route ${action}d successfully`, 'success');
       load();
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const statusStyle = (s: string) => {

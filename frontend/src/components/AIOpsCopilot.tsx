@@ -10,18 +10,21 @@ function getToken(): string {
   return getAccessToken() ?? "";
 }
 
+type CopilotAction = { type?: string; [key: string]: unknown };
+type CopilotReply = { summary?: string; [key: string]: unknown };
+
 type Props = {
   domain: "dispatch" | "sales" | "warehouse" | "collections" | "invoices" | "drivers";
   title?: string;
-  context: any;
-  onAction?: (action: any) => Promise<void> | void;
+  context: unknown;
+  onAction?: (action: CopilotAction) => Promise<void> | void;
 };
 
-export default function AIOpsCopilot({ domain, title, context, onAction }: Props) {
+export default function AIOpsCopilot({ domain, title, context }: Props) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [last, setLast] = useState<any>(null);
+  const [last, setLast] = useState<CopilotReply | null>(null);
 
   const token = useMemo(() => getToken(), []);
 
@@ -45,7 +48,7 @@ export default function AIOpsCopilot({ domain, title, context, onAction }: Props
       const body = res.data?.data ?? res.data;
       const reply = body?.reply ?? body?.data?.reply ?? "";
       setLast({ summary: reply });
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.response?.data?.message || e?.message || "AI request failed");
     } finally {
       setBusy(false);

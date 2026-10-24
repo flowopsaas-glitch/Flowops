@@ -32,7 +32,7 @@ type Invoice = {
   paidAt?: string | null;
   sentAt?: string | null;
   createdAt: string;
-  items?: any[];
+  items?: { waybillId?: string; description?: string; quantity?: number; unitPrice?: number }[];
 };
 
 type Metrics = {
@@ -65,12 +65,12 @@ const STATUS: Record<string, { cls: string; label: string }> = {
 function money(v?: number | null) {
   // Uses tenant currency when available via the global formatMoney import.
   // Falls back to ZAR if no tenant context (e.g. in modals rendered before context loads).
-  return formatMoney(v ?? 0, (window as any).__FLOWOPS_CURRENCY__ ?? 'ZAR');
+  return formatMoney(v ?? 0, window.__FLOWOPS_CURRENCY__ ?? 'ZAR');
 }
 
 // ── Generate Invoice Modal ─────────────────────────────────────────────────
 function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [waybills, setWaybills] = useState<any[]>([]);
+  const [waybills, setWaybills] = useState<{ id: string; trackingNumber?: string; recipientName?: string; totalAmount?: number }[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [clientName, setClientName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -80,7 +80,7 @@ function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     (async () => {
       // Use the dedicated unbilled-waybills endpoint so the modal only shows
       // deliveries that haven't been invoiced yet — prevents double-billing.
-      const raw: any = await api.get("/invoices/unbilled-waybills");
+      const raw = await api.get("/invoices/unbilled-waybills");
       const data = raw?.data ?? raw;
       setWaybills(Array.isArray(data) ? data : []);
     })();
@@ -113,7 +113,7 @@ function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         })),
       }));
       onSaved(); onClose();
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to generate invoice.");
     } finally {
       setSaving(false);
@@ -130,8 +130,8 @@ function GenerateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
           <div>
-            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Client Name *</label>
-            <input value={clientName} onChange={(e) => setClientName(e.target.value)}
+            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-client-name-1">Client Name *</label>
+            <input id="field-client-name-1" value={clientName} onChange={(e) => setClientName(e.target.value)}
               placeholder="e.g. Acme Logistics" className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400" />
           </div>
           <div>
@@ -184,21 +184,20 @@ export default function BillingBatches() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [invRes, metRes] = await Promise.allSettled([
         api.get("/invoices"),
         api.get("/invoices/metrics"),
       ]);
       if (invRes.status === "fulfilled") {
-        const d: any = invRes.value;
+        const d = invRes.value as unknown as { data?: Invoice[] } | Invoice[];
         setInvoices(Array.isArray(d) ? d : (d?.data ?? []));
       }
       if (metRes.status === "fulfilled") {
-        const m: any = metRes.value;
-        setMetrics(m?.data ?? m);
+        const m = metRes.value as unknown as { data?: Metrics } | Metrics;
+        setMetrics((m as { data?: Metrics })?.data ?? (m as Metrics));
       }
-      api.get("/invoices/billing-coverage").then((r: any) => setCoverage(r?.data ?? r)).catch(() => setCoverage(null));
+      api.get("/invoices/billing-coverage").then((r) => setCoverage(r?.data ?? r)).catch(() => setCoverage(null));
     } finally {
       setLoading(false);
     }

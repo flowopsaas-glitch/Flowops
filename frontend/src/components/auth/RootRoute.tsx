@@ -1,5 +1,5 @@
 import { Navigate } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
+import { useAuth } from "../../contexts/auth-context";
 import { isOwnerMode } from "../../api/client";
 import PageLoader from "../PageLoader";
 import { lazy, Suspense } from "react";

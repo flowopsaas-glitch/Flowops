@@ -10,7 +10,7 @@ type SidebarProps = {
   onClose?: () => void; 
   collapsed?: boolean; 
   onToggleCollapsed?: () => void; 
-  counters?: any; 
+  counters?: { inbox?: number };
   onOpenAi?: () => void; 
 };
 

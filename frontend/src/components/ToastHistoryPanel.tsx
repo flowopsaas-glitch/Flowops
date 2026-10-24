@@ -1,5 +1,6 @@
 import { useContext } from 'react';
-import { NotificationContext, UserRole } from '@/context/NotificationContext';
+import { NotificationContext } from '@/context/notification-context';
+import type { UserRole } from '@/context/NotificationContext';
 
 export default function ToastHistoryPanel({
   role,

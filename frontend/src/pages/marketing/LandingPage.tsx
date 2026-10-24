@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -12,9 +11,6 @@ import {
   Clock,
   CheckCircle2,
   ChevronRight,
-  ChevronLeft,
-  X,
-  ZoomIn,
   Ship,
   Activity,
   Train,
@@ -370,46 +366,7 @@ function Features() {
 }
 
 /* ── Visual Gallery ───────────────────────────────────────────── */
-type GalleryImage = {
-  src: string;
-  alt: string;
-  caption: string;
-  /** grid sizing for the thumbnail tile */
-  tile: string;
-};
 
-const GALLERY: GalleryImage[] = [
-  {
-    src: "/flowops-render1.png",
-    alt: "FlowOps platform — workflow automation, team collaboration and system integration",
-    caption: "Automate. Orchestrate. Innovate. Elevate. — all in flow.",
-    tile: "col-span-2 md:col-span-1 md:row-span-2 min-h-[280px] h-full",
-  },
-  {
-    src: "/flowops-render2.png",
-    alt: "FlowOps — Platform. Control. Results.",
-    caption: "Platform. Control. Results.",
-    tile: "aspect-square",
-  },
-  {
-    src: "/flowops-render3.png",
-    alt: "FlowOps — all your operations, one powerful flow",
-    caption: "All your operations. One powerful flow.",
-    tile: "aspect-square",
-  },
-  {
-    src: "/flowops-photo1.jpg",
-    alt: "FlowOps — one platform, infinite impact",
-    caption: "One platform. Infinite impact.",
-    tile: "aspect-video",
-  },
-  {
-    src: "/flowops-photo2.jpg",
-    alt: "FlowOps — real-time logistics operations in action",
-    caption: "Real-time visibility, end to end.",
-    tile: "aspect-video",
-  },
-];
 
 function VisualGallery() {
   const images = [

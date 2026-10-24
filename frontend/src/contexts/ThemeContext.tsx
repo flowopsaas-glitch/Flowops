@@ -1,18 +1,13 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { ThemeContext } from "./theme-context";
 
 type Theme = "dark" | "light";
 
-interface ThemeContextValue {
+export interface ThemeContextValue {
   theme:      Theme;
   toggleTheme: () => void;
   isDark:     boolean;
 }
-
-const ThemeContext = createContext<ThemeContextValue>({
-  theme:       "dark",
-  toggleTheme: () => {},
-  isDark:      true,
-});
 
 const STORAGE_KEY = "flowops.theme";
 
@@ -48,5 +43,3 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     </ThemeContext.Provider>
   );
 }
-
-export const useTheme = () => useContext(ThemeContext);

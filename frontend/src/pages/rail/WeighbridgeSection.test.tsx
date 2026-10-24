@@ -17,7 +17,7 @@ const h = vi.hoisted(() => {
   return { reading, consignment, verdict, toast: vi.fn(), state: { readings: [] as unknown[] } };
 });
 
-vi.mock('../../components/ToastProvider', () => ({ useToast: () => ({ showToast: h.toast }) }));
+vi.mock('../../components/toast-context', () => ({ useToast: () => ({ showToast: h.toast }) }));
 vi.mock('../../api/railTariffApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/railTariffApi')>()),
   listWeighbridgeReadings: vi.fn(async () => h.state.readings),

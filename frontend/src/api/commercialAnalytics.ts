@@ -1,7 +1,7 @@
 import api from './client';
 
 export const getCommercialConfig = () => api.get('/commercial-analytics/config');
-export const updateCommercialConfig = (data: any) => api.patch('/commercial-analytics/config', data);
+export const updateCommercialConfig = (data: Record<string, unknown>) => api.patch('/commercial-analytics/config', data);
 export const getProfitability = (period?: string) =>
   api.get('/commercial-analytics/profitability', { params: { period } });
 export const getClientMatrix = (period?: string) =>

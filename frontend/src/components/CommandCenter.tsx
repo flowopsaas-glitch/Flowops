@@ -160,16 +160,18 @@ export default function CommandCenter() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, active, list]);
 
-  useEffect(() => {
-    if (!open) return;
-    setActive(0);
-  }, [q, open]);
+  // Reset the highlighted row when the query or open state changes
+  // (render-time adjustment; same condition the effect used to watch).
+  const [prevKey, setPrevKey] = useState({ open, q });
+  if (open !== prevKey.open || q !== prevKey.q) {
+    setPrevKey({ open, q });
+    if (open) setActive(0);
+  }
 
   if (!open) return null;
 
   return (
     <div
-      onMouseDown={() => setOpen(false)}
       style={{
         position: "fixed",
         inset: 0,
@@ -180,8 +182,8 @@ export default function CommandCenter() {
         zIndex: 9999
       }}
     >
+      <button type="button" aria-label="Close" className="absolute inset-0 h-full w-full cursor-default" onMouseDown={() => setOpen(false)} />
       <div
-        onMouseDown={(e) => e.stopPropagation()}
         style={{
           width: "min(820px, 94vw)",
           borderRadius: 16,
@@ -193,7 +195,6 @@ export default function CommandCenter() {
       >
         <div style={{ padding: 14, borderBottom: "1px solid rgba(255,255,255,0.10)" }}>
           <input
-            autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Type: dispatch â€¢ driver â€¢ invoice â€¢ tracking"
@@ -226,7 +227,10 @@ export default function CommandCenter() {
                   onClick={() => {
                     setPage(c.key);
                     setOpen(false);
-                  }}
+                  }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => {
+                    setPage(c.key);
+                    setOpen(false);
+                  })(); } }} role="button" tabIndex={0}
                   style={{
                     padding: "12px 14px",
                     cursor: "pointer",

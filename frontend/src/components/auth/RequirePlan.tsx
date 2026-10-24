@@ -6,7 +6,7 @@
  * renders an overlay nudging the user to upgrade via WhatsApp.
  */
 
-import { useAuth } from "../../contexts/AuthContext";
+import { useAuth } from "../../contexts/auth-context";
 import { Zap } from "lucide-react";
 
 type Plan = "starter" | "professional" | "enterprise";
@@ -25,7 +25,7 @@ interface Props {
 
 export default function RequirePlan({ requiredPlan, children, featureName }: Props) {
   const { user } = useAuth();
-  const co = user?.company as any;
+  const co = user?.company;
   const currentPlan = (co?.plan ?? "starter").toLowerCase() as Plan;
   const trialExpired = co?.trialExpired ?? false;
 

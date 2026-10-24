@@ -15,6 +15,7 @@ export default function SignatureModal({
   onSave,
 }: SignatureModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const penRef = useRef<{ x: number; y: number; down: boolean } | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
   // Resize canvas to look sharp on high-DPI mobile screens
@@ -82,11 +83,43 @@ export default function SignatureModal({
     setIsDrawing(false);
   };
 
+  // Keyboard signing: focus the pad, move the pen with arrow keys,
+  // Space drops/lifts the pen. Same canvas, same ink as pointer input.
+  const keyDraw = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    if (!penRef.current) {
+      penRef.current = { x: canvas.offsetWidth / 2, y: canvas.offsetHeight / 2, down: false };
+    }
+    const pen = penRef.current;
+    const step = e.shiftKey ? 12 : 4;
+    let { x, y } = pen;
+    if (e.key === " ") {
+      e.preventDefault();
+      pen.down = !pen.down;
+      if (pen.down) { ctx.beginPath(); ctx.moveTo(x, y); }
+      return;
+    }
+    if (e.key === "ArrowLeft") x -= step;
+    else if (e.key === "ArrowRight") x += step;
+    else if (e.key === "ArrowUp") y -= step;
+    else if (e.key === "ArrowDown") y += step;
+    else return;
+    e.preventDefault();
+    x = Math.max(0, Math.min(canvas.offsetWidth, x));
+    y = Math.max(0, Math.min(canvas.offsetHeight, y));
+    if (pen.down) { ctx.lineTo(x, y); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.moveTo(x, y); }
+    pen.x = x; pen.y = y;
+  };
+
   const clearCanvas = () => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (canvas && ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+    penRef.current = null;
     }
   };
 
@@ -123,10 +156,15 @@ export default function SignatureModal({
         <div className="bg-white rounded-3xl overflow-hidden shadow-2xl shadow-blue-900/20 relative aspect-square max-h-[400px]">
           <canvas
             ref={canvasRef}
+            tabIndex={0}
+            role="img"
+            aria-label="Signature pad. Draw with mouse, touch, or keyboard: arrow keys move the pen, Space drops or lifts it."
+            onKeyDown={keyDraw}
             onMouseDown={startDrawing}
             onMouseMove={draw}
             onMouseUp={stopDrawing}
             onMouseOut={stopDrawing}
+            onBlur={stopDrawing}
             onTouchStart={startDrawing}
             onTouchMove={draw}
             onTouchEnd={stopDrawing}

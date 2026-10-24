@@ -38,10 +38,10 @@ export default function LoadScan() {
   const [manualInput, setManualInput] = useState("");
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [completing, setCompleting] = useState(false);
-  const [completionResult, setCompletionResult] = useState<any>(null);
+  const [completionResult, setCompletionResult] = useState<{ loaded: number; totalExpected: number; unscanned: { trackingNumber: string; recipientName?: string }[] } | null>(null);
   const [showConfirmComplete, setShowConfirmComplete] = useState(false);
 
-  const fetchManifest = useCallback(async () => {
+  const fetchManifest = useCallback(() => (async () => {
     if (!id) return;
     try {
       const res = await api.get(`/manifests/${id}/load-scan`);
@@ -51,7 +51,7 @@ export default function LoadScan() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  })(), [id]);
 
   useEffect(() => {
     fetchManifest();
@@ -147,7 +147,7 @@ export default function LoadScan() {
                 </p>
               </div>
               <div className="space-y-2">
-                {completionResult.unscanned.map((item: any) => (
+                {completionResult.unscanned.map((item) => (
                   <div key={item.trackingNumber} className="flex items-center justify-between text-sm">
                     <span className="text-white/70 font-mono">{item.trackingNumber}</span>
                     <span className="text-white/50">{item.recipientName}</span>

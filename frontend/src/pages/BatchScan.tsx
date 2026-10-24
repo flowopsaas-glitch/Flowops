@@ -56,7 +56,7 @@ export default function BatchScan() {
     setProcessing(true);
     setResults([]);
     try {
-      const raw: any = await api.post("/waybills/batch-scan", {
+      const raw = await api.post("/waybills/batch-scan", {
         trackingNumbers: queue,
         targetStatus,
       });
@@ -74,7 +74,7 @@ export default function BatchScan() {
       setHistory(next);
       localStorage.setItem("batchScanHistory", JSON.stringify(next));
       setQueue([]);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Batch scan failed:", err?.message);
     } finally {
       setProcessing(false);
@@ -105,11 +105,11 @@ export default function BatchScan() {
 
         {/* Target status selector */}
         <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
-          <label className="text-[11px] font-black uppercase tracking-[0.16em] text-white/50 block mb-3">
+          <label className="text-[11px] font-black uppercase tracking-[0.16em] text-white/50 block mb-3" htmlFor="field-target-action-applied-to-all-2">
             Target Action — applied to all scanned waybills
           </label>
           <div className="relative">
-            <select
+            <select id="field-target-action-applied-to-all-2"
               value={targetStatus}
               onChange={(e) => setStatus(e.target.value)}
               className="w-full appearance-none rounded-2xl border border-white/10 bg-[#071224] px-4 py-3 pr-10 text-sm font-bold text-white outline-none focus:border-sky-400"
@@ -138,10 +138,10 @@ export default function BatchScan() {
           </div>
 
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 space-y-3">
-            <label className="text-[11px] font-black uppercase tracking-[0.16em] text-white/50">
+            <label className="text-[11px] font-black uppercase tracking-[0.16em] text-white/50" htmlFor="field-manual-entry-one-per-line-or-1">
               Manual Entry (one per line or comma-separated)
             </label>
-            <textarea
+            <textarea id="field-manual-entry-one-per-line-or-1"
               value={manualInput}
               onChange={(e) => setManualInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addManual(); } }}

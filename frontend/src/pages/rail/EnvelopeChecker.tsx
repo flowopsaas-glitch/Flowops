@@ -6,7 +6,7 @@ import {
 import type { RailConsignment } from "../../api/railApi";
 import { envelopeLabel, envelopeTone } from "../../lib/railSlot";
 import { Field, Pill, Section, btnPrimary, inputCls } from "./railUi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 
 /**
  * Corridor-envelope compatibility checker. It reports COMPATIBLE / INCOMPATIBLE / UNVERIFIED —

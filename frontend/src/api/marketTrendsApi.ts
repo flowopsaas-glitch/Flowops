@@ -1,6 +1,6 @@
 import { api } from './client';
 
-const unwrap = <T>(r: any): T => (r?.data ?? r) as T;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 // ── Types ────────────────────────────────────────────────────────────────
 

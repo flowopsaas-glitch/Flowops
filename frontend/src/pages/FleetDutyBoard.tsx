@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Clock, Loader2, Phone, RefreshCw, ShieldAlert, Truck, XOctagon } from "lucide-react";
 import { api } from "../api/client";
@@ -61,19 +62,19 @@ export default function FleetDutyBoard() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    const board = (await api.get("/dispatch/fleet-duty")) as unknown as { summary: Summary | null; roster: RosterRow[] };
+    setSummary(board?.summary ?? null);
+    setRoster(board?.roster ?? []);
     setError(null);
-    try {
-      const board: any = await api.get("/dispatch/fleet-duty");
-      setSummary(board?.summary ?? null);
-      setRoster(board?.roster ?? []);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load the board");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+  })().catch((e: unknown) => {
+    setError(errorMessageOf(e) || "Failed to load the board");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => {
     void load();
@@ -99,8 +100,8 @@ export default function FleetDutyBoard() {
       await api.post(`/dispatch/fleet-duty/${dutyId}/force-end`, { note: "force-ended from the duty board" });
       setConfirmId(null);
       await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Force-end failed");
+    } catch (e) {
+      setError(errorMessageOf(e) || "Force-end failed");
     } finally {
       setBusyId(null);
     }

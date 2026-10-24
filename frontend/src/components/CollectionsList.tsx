@@ -1,6 +1,6 @@
 // src/components/CollectionsList.tsx
 interface Props {
-  collections: any[];
+  collections: { id: string | number; name: string; status: string }[];
 }
 
 export default function CollectionsList({ collections }: Props) {

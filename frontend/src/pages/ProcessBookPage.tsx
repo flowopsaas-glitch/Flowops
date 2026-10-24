@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -75,34 +76,33 @@ export default function ProcessBookPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { enabled: isEnabled } = await processControlApi.isEnabled();
-      setEnabled(isEnabled);
-      if (!isEnabled) {
-        setBook([]);
-        setInstances([]);
-        setIncidents([]);
-        return;
-      }
-      const [bookData, instanceData, incidentData, auditData] = await Promise.all([
-        processControlApi.getBook(),
-        processControlApi.listInstances(),
-        processControlApi.listIncidents(),
-        processControlApi.listAudit(),
-      ]);
-      setBook(bookData);
-      setInstances(instanceData);
-      setIncidents(incidentData);
-      setAudit(auditData);
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? err?.message ?? 'Could not load the Process Book');
-    } finally {
-      setLoading(false);
+  const load = useCallback(() => (async () => {
+    const { enabled: isEnabled } = await processControlApi.isEnabled();
+    setEnabled(isEnabled);
+    if (!isEnabled) {
+      setBook([]);
+      setInstances([]);
+      setIncidents([]);
+      return;
     }
-  }, []);
+    const [bookData, instanceData, incidentData, auditData] = await Promise.all([
+      processControlApi.getBook(),
+      processControlApi.listInstances(),
+      processControlApi.listIncidents(),
+      processControlApi.listAudit(),
+    ]);
+    setBook(bookData);
+    setInstances(instanceData);
+    setIncidents(incidentData);
+    setAudit(auditData);
+
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || 'Could not load the Process Book');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => {
     void load();
@@ -126,8 +126,8 @@ export default function ProcessBookPage() {
       await fn();
       if (successMessage) setNotice(successMessage);
       await load();
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? err?.message ?? 'Action failed');
+    } catch (err) {
+      setError(errorMessageOf(err) || 'Action failed');
     } finally {
       setBusy(null);
     }
@@ -138,8 +138,8 @@ export default function ProcessBookPage() {
     setError(null);
     try {
       setSelectedInstance(await processControlApi.getInstance(id));
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Could not load the instance');
+    } catch (err) {
+      setError(errorMessageOf(err) || 'Could not load the instance');
     } finally {
       setBusy(null);
     }

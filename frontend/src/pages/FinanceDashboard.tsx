@@ -4,9 +4,10 @@ import {
   AlertTriangle, ArrowRight, BarChart2, CheckCircle2, CreditCard,
   Download, FileText, Layers, RefreshCw, Scale, TrendingDown,
   TrendingUp, Users, Wallet,
+  type LucideIcon,
 } from "lucide-react";
 import {
-  Area, AreaChart, Bar, BarChart, Cell, ResponsiveContainer,
+  Area, AreaChart, Bar, BarChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
 import { api } from "../api/client";
@@ -31,8 +32,8 @@ function money(v?: number | null) {
 function moneyFull(v?: number | null) {
   return `ZAR ${(v ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-function unwrap(r: any): any  { return r?.data ?? r; }
-function unwrapList(r: any): any[] { const d = r?.data ?? r; return Array.isArray(d) ? d : []; }
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
+function unwrapList<T>(r: unknown): T[] { const d = (r as { data?: unknown } | null)?.data ?? r; return Array.isArray(d) ? (d as T[]) : []; }
 
 // ── Aging bucket colours ──────────────────────────────────────────────────
 const AGING_CFG: Record<string, { bar: string; badge: string }> = {
@@ -44,12 +45,12 @@ const AGING_CFG: Record<string, { bar: string; badge: string }> = {
 };
 
 // ── Tooltip component ─────────────────────────────────────────────────────
-function ChartTooltip({ active, payload, label }: any) {
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; color: string; value: number }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-2xl border border-white/10 bg-[#0b1628] p-3 text-xs shadow-xl">
       <div className="font-black text-white mb-1">{label}</div>
-      {payload.map((p: any) => (
+      {payload.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full" style={{ background: p.color }} />
           <span className="text-white/60 capitalize">{p.dataKey}:</span>
@@ -71,7 +72,6 @@ export default function FinanceDashboard() {
   const [loading, setLoading]     = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [metRes, trendRes, agingRes, clientRes] = await Promise.allSettled([
         api.get("/invoices/metrics"),
@@ -79,10 +79,10 @@ export default function FinanceDashboard() {
         api.get("/invoices/ar-aging"),
         api.get("/invoices/client-metrics"),
       ]);
-      if (metRes.status === "fulfilled")    setMetrics(unwrap(metRes.value));
-      if (trendRes.status === "fulfilled")  setTrend(unwrapList(trendRes.value));
-      if (agingRes.status === "fulfilled")  setAging(unwrap(agingRes.value));
-      if (clientRes.status === "fulfilled") setClients(unwrapList(clientRes.value));
+      if (metRes.status === "fulfilled")    setMetrics(unwrap<Metrics>(metRes.value));
+      if (trendRes.status === "fulfilled")  setTrend(unwrapList<RevTrend>(trendRes.value));
+      if (agingRes.status === "fulfilled")  setAging(unwrap<{ buckets: AgingBucket[]; total: number }>(agingRes.value));
+      if (clientRes.status === "fulfilled") setClients(unwrapList<ClientRow>(clientRes.value));
     } finally { setLoading(false); }
   }, []);
 
@@ -190,7 +190,7 @@ export default function FinanceDashboard() {
               tone: "text-sky-300",
               border: "border-sky-400/20",
             },
-          ].map(({ icon: Icon, label, val, sub, tone, border, delta }: any) => (
+          ].map(({ icon: Icon, label, val, sub, tone, border, delta }: { icon: LucideIcon; label: string; val: string; sub: string; tone: string; border: string; delta?: { up?: boolean; pct?: number } | null }) => (
             <div key={label} className={`rounded-[24px] border ${border} bg-white/[0.05] p-5`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">{label}</div>

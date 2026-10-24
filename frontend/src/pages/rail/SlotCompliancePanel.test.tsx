@@ -30,7 +30,7 @@ const h = vi.hoisted(() => {
   return { mob, app, evaluation, envelope, state };
 });
 
-vi.mock('../../components/ToastProvider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../components/toast-context', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../api/railApi', () => ({
   listConsignments: vi.fn().mockResolvedValue([{ id: 'c1', consignmentNumber: 'RAIL-2026-00007', commodity: 'Manganese', status: 'PLANNED' }]),
 }));

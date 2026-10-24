@@ -19,7 +19,7 @@ export type SupervisorRecommendation = {
   description: string;
   impact: string;
   category: "CUSTOMER" | "ROUTE" | "BILLING" | "OPERATIONS" | "TENANT";
-  action: { type: string; payload?: any };
+  action: { type: string; payload?: unknown };
 };
 
 export type SupervisorOverview = {
@@ -44,7 +44,7 @@ export type SupervisorOverview = {
   };
   alerts: SupervisorAlert[];
   recommendations: SupervisorRecommendation[];
-  copilotContext: Record<string, any>;
+  copilotContext: Record<string, unknown>;
 };
 
 /**
@@ -56,7 +56,7 @@ api.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 404 || error.response?.status === 500) {
       console.error("🕵️ THE CLAW DETECTED SYSTEM DAMAGE:", error.config.url);
-      
+
       // Attempt to notify the backend to "Auto-Upgrade" or fix the route
       try {
         await api.post("/ai/repair-route", {
@@ -64,7 +64,7 @@ api.interceptors.response.use(
           error: error.message,
           timestamp: new Date().toISOString()
         });
-      } catch (reportError) {
+      } catch {
         console.warn("AI Repair engine unreachable. System requires manual backend restart.");
       }
     }

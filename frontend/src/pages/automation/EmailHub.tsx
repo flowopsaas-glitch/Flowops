@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useDismissOnEscape } from "../../components/patterns/useDismissOnEscape";
 import {
   Mail,
-  Package,
   FileText,
   Bot,
   Bell,
-  MessageSquare,
   ArrowUpRight,
   ShieldAlert,
   ShieldCheck,
@@ -13,7 +12,6 @@ import {
   Paperclip,
   Send,
   X,
-  Plus,
   Loader2,
   RefreshCw,
   Search,
@@ -107,7 +105,7 @@ function formatType(value: EmailHubType) {
 
 export default function EmailHub() {
   const [items, setItems] = useState<EmailHubItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<{
     total: number;
     unread: number;
@@ -132,6 +130,7 @@ export default function EmailHub() {
   // Compose
   const [composeOpen, setComposeOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  useDismissOnEscape(composeOpen && !sending, () => setComposeOpen(false));
   const [composeError, setComposeError] = useState("");
   const [composeForm, setComposeForm] = useState({ to: "", subject: "", body: "" });
   const [composeFiles, setComposeFiles] = useState<File[]>([]);
@@ -141,9 +140,7 @@ export default function EmailHub() {
     [items, selectedId]
   );
 
-  async function loadAll() {
-    setLoading(true);
-    setPageError("");
+  const loadAll = useCallback(async () => {
 
     try {
       const [rows, statsData] = await Promise.all([
@@ -152,6 +149,7 @@ export default function EmailHub() {
       ]);
 
       setItems(rows);
+      setPageError("");
       setStats({
         total: statsData.total,
         unread: statsData.unread,
@@ -170,19 +168,23 @@ export default function EmailHub() {
     } finally {
       setLoading(false);
     }
+  }, [search, type, status, priority]);
+
+  // Refetch (debounced) whenever the filter inputs change: loadAll is keyed
+  // on them, so this effect is the live-filter path; mutation handlers also
+  // call loadAll directly for an immediate refresh.
+  useEffect(() => {
+    const t = setTimeout(() => { void loadAll(); }, 250);
+    return () => clearTimeout(t);
+  }, [loadAll]);
+
+  // Seed the ops-note editor when the selection changes (render-time
+  // adjustment keyed on the item, instead of an effect).
+  const [opsNoteItem, setOpsNoteItem] = useState<typeof selectedItem>(null);
+  if (selectedItem !== opsNoteItem) {
+    setOpsNoteItem(selectedItem);
+    setOpsNote(selectedItem?.opsNote ?? "");
   }
-
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  useEffect(() => {
-    if (selectedItem) {
-      setOpsNote(selectedItem.opsNote ?? "");
-    } else {
-      setOpsNote("");
-    }
-  }, [selectedItem]);
 
   async function handleRefresh() {
     await loadAll();
@@ -234,7 +236,6 @@ export default function EmailHub() {
     if (!selectedItem) return;
 
     setSavingNote(true);
-    setPageError("");
 
     try {
       await updateEmailHubItem(selectedItem.id, { opsNote });
@@ -438,7 +439,7 @@ export default function EmailHub() {
                   // 🚀 FIXED: Swapped <button> to <div> to avoid nested button error
                   <div
                     key={item.id}
-                    onClick={() => setSelectedId(item.id)}
+                    onClick={() => setSelectedId(item.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => setSelectedId(item.id))(); } }} role="button" tabIndex={0}
                     className={cn(
                       "w-full cursor-pointer rounded-[24px] border p-5 text-left backdrop-blur-2xl transition",
                       selected
@@ -624,11 +625,11 @@ export default function EmailHub() {
       {composeOpen ? (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-          onClick={() => !sending && setComposeOpen(false)}
-        >
+
+        ><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => !sending && setComposeOpen(false)} />
           <div
             className="w-full max-w-2xl rounded-[24px] border border-white/10 bg-[#0b1530] p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()} role="dialog">
+            role="dialog">
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-xl font-black text-white">
                 <Send className="h-5 w-5" /> Compose email

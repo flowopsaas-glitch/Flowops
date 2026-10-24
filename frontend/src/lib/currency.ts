@@ -6,6 +6,15 @@
  * every page uses these utilities to display money and center maps.
  */
 
+declare global {
+  interface Window {
+    /** Tenant currency code published by TenantContext for money formatting. */
+    __FLOWOPS_CURRENCY__?: string;
+    __FLOWOPS_COUNTRY__?: string;
+    __VITE_API_BASE__?: string;
+  }
+}
+
 export interface CurrencyConfig {
   code: string;
   symbol: string;

@@ -25,9 +25,7 @@ type PresenceResponse = {
   tenants: TenantPresence[];
 };
 
-function unwrap(r: any): any {
-  return r?.data ?? r;
-}
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
 
 const DOT: Record<PresenceStatus, string> = {
   online: "bg-emerald-400 shadow-[0_0_10px_2px_rgba(52,211,153,0.6)]",
@@ -68,26 +66,30 @@ export default function OwnerPresence() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | PresenceStatus>("all");
 
-  const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
-    if (mode === "refresh") setRefreshing(true); else setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
-      const r: any = await api.get("/owner/tenants/presence");
-      setData(unwrap(r));
+      const r = await api.get("/owner/tenants/presence");
+      setData(unwrap<PresenceResponse>(r));
       setError(null);
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.response?.data?.message ?? e?.message ?? "Could not load tenant presence.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  })(), []);
+
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    return load();
+  }, [load]);
 
   useEffect(() => {
-    void load("initial");
+    void load();
     // Auto-refresh every 30s so the green lights stay live.
-    const t = setInterval(() => load("refresh"), 30_000);
+    const t = setInterval(() => void refresh(), 30_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, refresh]);
 
   const tenants = useMemo(() => {
     let list = data?.tenants ?? [];
@@ -123,7 +125,7 @@ export default function OwnerPresence() {
           </div>
         </div>
         <button
-          onClick={() => load("refresh")}
+          onClick={() => void refresh()}
           className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/70 hover:bg-white/10"
         >
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
@@ -228,7 +230,7 @@ export default function OwnerPresence() {
   );
 }
 
-function SummaryCard({ label, value, dot, icon }: { label: string; value: number; dot?: PresenceStatus; icon?: boolean }) {
+function SummaryCard({ label, value, dot }: { label: string; value: number; dot?: PresenceStatus; icon?: boolean }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
       <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-white/45">

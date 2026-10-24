@@ -1,6 +1,6 @@
 import { api, getToken, getApiBaseUrl } from "./client";
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 export type FreightMode = "OCEAN" | "AIR" | "ROAD";
 export type FreightDirection = "IMPORT" | "EXPORT";
@@ -10,7 +10,7 @@ export type ShipmentStatus =
   | "ARRIVED" | "CUSTOMS_CLEARED" | "DELIVERED" | "CANCELLED";
 
 export interface Container { id: string; containerNo: string; isoType: string; sealNo?: string | null; vgmKg?: number | null; freeDays?: number | null; perDiemRate?: number | null; availableFrom?: string | null; returnedAt?: string | null; }
-export interface Cargo { id: string; description: string; pieces?: number | null; weightKg?: number | null; dimensions?: string | null; hsCode?: string | null; customsValue?: number | null; dutyRatePct?: number | null; }
+export interface Cargo { id: string; description: string; pieces?: number | null; weightKg?: number | null; dimensions?: string | null; hsCode?: string | null; customsValue?: number | null; dutyRatePct?: number | null; unNumber?: string | null; dgClass?: string | null; packingGroup?: string | null; emergencyPhone?: string | null; }
 export interface Charge { id: string; description: string; currency: string; cost: number; sell: number; invoiceTo?: string | null; }
 export interface ShipDoc { id: string; type: string; fileName: string; fileKey: string; createdAt: string; }
 export interface Milestone { id: string; status: ShipmentStatus; note?: string | null; reachedAt: string; }
@@ -35,6 +35,14 @@ export interface ShipmentFile {
   pol?: string | null;
   pod?: string | null;
   vesselVoyage?: string | null;
+  shipperAddress?: string | null;
+  consigneeAddress?: string | null;
+  originCountry?: string | null;
+  destinationCountry?: string | null;
+  transitCountries?: string | null;
+  vehicleReg?: string | null;
+  sealNumbers?: string | null;
+  importerTin?: string | null;
   vesselMmsi?: string | null;
   vesselImo?: string | null;
   etd?: string | null;
@@ -70,7 +78,7 @@ export const updateFile = async (id: string, dto: Partial<ShipmentFile>): Promis
 export const cancelFile = async (id: string) => unwrap(await api.delete(`/forwarding/files/${id}`));
 export const advanceMilestone = async (id: string, status: string, note?: string) => unwrap(await api.post(`/forwarding/files/${id}/milestone`, { status, note }));
 
-export const addContainer = async (id: string, dto: Partial<Container>) => unwrap(await api.post(`/forwarding/files/${id}/containers`, dto));
+export const addContainer = async (id: string, dto: Partial<Container>): Promise<Container & { wellFormed?: boolean; checkDigitValid?: boolean }> => unwrap(await api.post(`/forwarding/files/${id}/containers`, dto));
 export const removeContainer = async (id: string, cid: string) => unwrap(await api.delete(`/forwarding/files/${id}/containers/${cid}`));
 export const addCargo = async (id: string, dto: Partial<Cargo>) => unwrap(await api.post(`/forwarding/files/${id}/cargo`, dto));
 export const removeCargo = async (id: string, cid: string) => unwrap(await api.delete(`/forwarding/files/${id}/cargo/${cid}`));
@@ -83,7 +91,7 @@ export const generateInvoice = async (id: string) => unwrap(await api.post(`/for
 export const addDocument = async (id: string, dto: { type: string; fileName: string; fileKey: string }) => unwrap(await api.post(`/forwarding/files/${id}/documents`, dto));
 export const removeDocument = async (id: string, did: string) => unwrap(await api.delete(`/forwarding/files/${id}/documents/${did}`));
 
-export const createDelivery = async (id: string) => unwrap(await api.post(`/forwarding/files/${id}/create-delivery`, {}));
+export const createDelivery = async (id: string): Promise<{ collectionId?: string }> => unwrap(await api.post(`/forwarding/files/${id}/create-delivery`, {}));
 export const hsClassify = async (id: string, description: string): Promise<{ available: boolean; suggestions: HsSuggestion[] }> =>
   unwrap(await api.post(`/forwarding/files/${id}/ai/hs-classify`, { description }));
 export const assessRisk = async (id: string): Promise<{ riskScore: number; riskNote: string }> =>
@@ -125,7 +133,7 @@ export interface CustomsDeclaration {
   id: string; status: DeclarationStatus; type: string;
   lrn?: string | null; mrn?: string | null;
   customsValueTotal?: number | null; dutyTotal?: number | null; vatTotal?: number | null;
-  submittedAt?: string | null; responseNote?: string | null; payload?: any;
+  submittedAt?: string | null; responseNote?: string | null; payload?: unknown;
   lodgementProvider?: string | null;
 }
 

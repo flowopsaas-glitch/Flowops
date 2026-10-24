@@ -6,7 +6,7 @@ import {
   OVERLOAD_LABEL, buildWeighbridgeDraft, currentReadingIds, describeLimit, emptyWeighbridgeForm, fmtNum, isOnHold, overloadTone, weighbridgeFormErrors,
   type WeighbridgeFormState,
 } from "../../lib/railTariff";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { Banner, Field, Modal, Pill, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
 
 /**
@@ -22,9 +22,11 @@ export default function WeighbridgeSection({ consignment, canWrite, onChanged }:
   const [error, setError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
 
-  const reload = useCallback(async () => {
-    try { setReadings(await listWeighbridgeReadings(consignment.id)); setError(null); } catch (e) { setError((e as Error)?.message || "request failed"); }
-  }, [consignment.id]);
+  const reload = useCallback(() => (async () => {
+ setReadings(await listWeighbridgeReadings(consignment.id)); setError(null);
+  })().catch((e) => {
+ setError((e as Error)?.message || "request failed");
+  }), [consignment.id]);
 
   useEffect(() => { void reload(); }, [reload]);
 

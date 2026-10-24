@@ -21,7 +21,7 @@ type WalletDetail = {
 function money(v?: number | null) {
   return `ZAR ${(v ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`;
 }
-function unwrap(raw: any): any { return raw?.data ?? raw; }
+function unwrap<T>(raw: unknown): T { return ((raw as { data?: T } | null)?.data ?? raw) as T; }
 
 const TYPE_CFG = {
   COLLECTION: { label: "Collected",   cls: "border-sky-400/20 bg-sky-500/10 text-sky-200",       sign: "+" },
@@ -43,10 +43,9 @@ export default function DriverWalletPage() {
 
   const load = useCallback(async () => {
     if (!driverId) return;
-    setLoading(true);
     try {
-      const raw: any = await api.get(`/cod/wallets/${driverId}`);
-      setWallet(unwrap(raw));
+      const raw = await api.get(`/cod/wallets/${driverId}`);
+      setWallet(unwrap<WalletDetail>(raw));
     } finally { setLoading(false); }
   }, [driverId]);
 
@@ -89,7 +88,7 @@ export default function DriverWalletPage() {
       pendingSettlement.current = null;
       setSettleAmount(""); setSettleNote("");
       await load();
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Settlement failed.");
     } finally { setSettling(false); }
   };
@@ -231,10 +230,10 @@ export default function DriverWalletPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">Amount *</label>
+              <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50" htmlFor="field-amount-2">Amount *</label>
               <div className="relative mt-1.5">
                 <span className="absolute left-3.5 top-3 text-slate-400 text-sm font-bold">ZAR</span>
-                <input
+                <input id="field-amount-2"
                   value={settleAmount}
                   onChange={(e) => setSettleAmount(e.target.value)}
                   type="number" min="0.01" step="0.01"
@@ -253,8 +252,8 @@ export default function DriverWalletPage() {
               )}
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">Note</label>
-              <input
+              <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50" htmlFor="field-note-1">Note</label>
+              <input id="field-note-1"
                 value={settleNote}
                 onChange={(e) => setSettleNote(e.target.value)}
                 placeholder="e.g. Cash handed over at depot"

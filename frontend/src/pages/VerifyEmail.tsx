@@ -14,9 +14,10 @@ export default function VerifyEmail() {
   useEffect(() => {
     if (!token) return;
 
-    api.get<any, any>(`/auth/verify-email?token=${encodeURIComponent(token)}`)
+    api.get(`/auth/verify-email?token=${encodeURIComponent(token)}`)
       .then((res) => {
-        setMessage(res?.data?.message || res?.message || 'Email verified successfully.');
+        const body = res as unknown as { data?: { message?: string }; message?: string };
+        setMessage(body?.data?.message || body?.message || 'Email verified successfully.');
         setStatus('success');
       })
       .catch((err) => {

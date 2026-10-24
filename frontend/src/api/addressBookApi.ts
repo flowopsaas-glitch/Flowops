@@ -21,8 +21,9 @@ export const getAddressBook = (type?: string) =>
   api.get('/address-book', { params: type ? { type } : {} });
 
 export const searchAddresses = (query: string, type?: string) =>
-  api.get('/address-book', { params: { type: type || 'ALL' } }).then((res: any) => {
-    const data: AddressEntry[] = Array.isArray(res?.data ?? res) ? (res?.data ?? res) : [];
+  api.get('/address-book', { params: { type: type || 'ALL' } }).then((res) => {
+    const body = res as { data?: unknown } | null;
+    const data: AddressEntry[] = Array.isArray(body?.data ?? res) ? ((body?.data ?? res) as AddressEntry[]) : [];
     if (!query.trim()) return data.slice(0, 10);
     const q = query.toLowerCase();
     return data.filter(
@@ -36,4 +37,4 @@ export const searchAddresses = (query: string, type?: string) =>
     ).slice(0, 8);
   });
 
-export const createAddress = (data: any) => api.post('/address-book', data);
+export const createAddress = (data: Record<string, unknown>) => api.post('/address-book', data);

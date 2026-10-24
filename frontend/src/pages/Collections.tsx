@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {useCallback,  useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Truck,
@@ -68,18 +68,13 @@ type DriverRow = {
   status?: string | null;
 };
 
-function pickArray<T>(payload: any): T[] {
+function pickArray<T>(payload: unknown): T[] {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray((payload as { data?: unknown }).data)) return (payload as { data: T[] }).data;
   return [];
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const d = new Date(value);
-  return d.toISOString().slice(0, 16).replace("T", " ");
-}
 
 function statusPill(status: string) {
   const base = "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-extrabold border";
@@ -107,11 +102,11 @@ export default function Collections() {
   const [success, setSuccess] = useState("");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showCancelled, setShowCancelled] = useState(false);
+  const [showCancelled] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
   // 🚀 AI Suggestion Engine States
-  const [suggestion, setSuggestion] = useState<any>(null);
+  const [suggestion, setSuggestion] = useState<{ id: string; name: string; vehicleType?: string; score?: number; zone?: string } | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Form States
@@ -121,8 +116,6 @@ export default function Collections() {
   const [collectionAddress, setCollectionAddress] = useState("");
   const [parcelCount, setParcelCount] = useState("1");
   const [palletCount, setPalletCount] = useState("0");
-  const [driverName, setDriverName] = useState("");
-  const [driverPhone, setDriverPhone] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [recipientName, setRecipientName] = useState("");
@@ -137,50 +130,61 @@ export default function Collections() {
   const [scheduledTime, setScheduledTime] = useState("");
   const [specialInstructions, setSpecialInstructions] = useState("");
 
-  async function loadAll(mode: "initial" | "refresh" = "initial") {
-    try {
-      if (mode === "initial") setLoading(true);
-      if (mode === "refresh") setRefreshing(true);
-      setError(""); // Clear previous errors to satisfy CLAW
+  // The fetch runs as a promise chain (state updates in callbacks, never
+  // synchronously inside the triggering effect). fetchAll is what the effect
+  // calls; loadAll adds the refresh indicator for handler-driven reloads.
+  const fetchAll = useCallback(() => (async () => {
+    const [collectionsRes, driversRes] = await Promise.all([
+      api.get("/collections"),
+      api.get("/drivers"),
+    ]);
 
-      const [collectionsRes, driversRes] = await Promise.all([
-        api.get("/collections"),
-        api.get("/drivers"),
-      ]);
+    // api client auto-unwraps the HTTP body; don't access .data on top
+    const collectionsData = pickArray<CollectionRow>(collectionsRes);
+    const driversData = pickArray<DriverRow>(driversRes);
 
-      // api client auto-unwraps the HTTP body; don't access .data on top
-      const collectionsData = pickArray<CollectionRow>(collectionsRes);
-      const driversData = pickArray<DriverRow>(driversRes);
+    setRows(collectionsData);
+    setDrivers(driversData);
+    setError(""); // Clear previous errors on a successful load
+    api.get("/collections/insights").then((r) => setInsights(r?.data ?? r)).catch(() => setInsights(null));
 
-      setRows(collectionsData);
-      setDrivers(driversData);
-      api.get("/collections/insights").then((r: any) => setInsights(r?.data ?? r)).catch(() => setInsights(null));
+    // Auto-select first item if none is currently selected and we have data
+    // (functional update, so fetchAll does not depend on selectedId).
+    if (collectionsData.length > 0) {
+      setSelectedId((current) => current ?? collectionsData[0].id);
+    }
+  })().catch((err: unknown) => {
+    console.error("Fetch Error:", err);
+    setError("System Sync Failed: Check Backend Routes");
+  }).finally(() => {
+    setLoading(false);
+    setRefreshing(false);
+  }), []);
 
-      // Auto-select first item if none is currently selected and we have data
-      if (collectionsData.length > 0 && selectedId === null) {
-        setSelectedId(collectionsData[0].id);
-      }
-    } catch (err: any) {
-      console.error("Fetch Error:", err);
-      setError("System Sync Failed: Check Backend Routes");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  const loadAll = useCallback((mode: "initial" | "refresh" = "initial") => {
+    if (mode === "refresh") setRefreshing(true);
+    return fetchAll();
+  }, [fetchAll]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Deep-link selection: honour ?collectionId= and default to the first row.
+  // Render-time adjustment on the (requestedId, first-row) transition — the
+  // same conditions the effect used to watch.
+  const requestedCollectionId = searchParams.get("collectionId");
+  const [prevDeepLinkKey, setPrevDeepLinkKey] = useState("");
+  const deepLinkKey = `${requestedCollectionId ?? ""}:${rows[0]?.id ?? ""}:${rows.length}`;
+  if (rows.length > 0 && deepLinkKey !== prevDeepLinkKey) {
+    setPrevDeepLinkKey(deepLinkKey);
+    const found = requestedCollectionId
+      ? rows.find((r) => String(r.id) === requestedCollectionId)
+      : undefined;
+    if (found) {
+      if (selectedId !== found.id) setSelectedId(found.id);
+    } else if (selectedId === null) {
+      setSelectedId(rows[0].id);
     }
   }
-
-  useEffect(() => { loadAll("initial"); }, []);
-
-  useEffect(() => {
-    if (!rows.length) return;
-    const requestedId = searchParams.get("collectionId");
-    if (requestedId) {
-      const found = rows.find((r) => String(r.id) === requestedId);
-      if (found && selectedId !== found.id) setSelectedId(found.id);
-      return;
-    }
-    if (selectedId === null && rows.length > 0) setSelectedId(rows[0].id);
-  }, [rows, searchParams, selectedId]);
 
   useEffect(() => {
     if (selectedId === null) return;
@@ -216,7 +220,7 @@ export default function Collections() {
     setSuggestion(null);
     setError("");
     try {
-      const res: any = await api.get(`/collections/${id}/auto-suggest`);
+      const res = await api.get(`/collections/${id}/auto-suggest`);
       // Backend returns { drivers, suggestedDriver }. The recommendation card
       // renders a single driver, so unwrap suggestedDriver (falling back to the
       // first ranked driver) rather than treating the wrapper object as a driver.
@@ -242,7 +246,7 @@ export default function Collections() {
       setSuccess("Dispatch confirmed.");
       setSuggestion(null);
       loadAll("refresh");
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to assign driver.");
     } finally { setSaving(false); }
   }
@@ -250,7 +254,7 @@ export default function Collections() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(43,76,168,0.16),transparent_30%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 text-white">
       <div className="mx-auto max-w-[1700px] space-y-6">
-        
+
         {/* STAT BAR */}
         <div className="rounded-[30px] border border-white/10 bg-white/6 p-6 shadow-2xl backdrop-blur-2xl">
           <div className="flex justify-between items-start mb-6">
@@ -288,7 +292,7 @@ export default function Collections() {
               <Save className="h-4 w-4" /> CSV
             </button>
           </div>
-          
+
           {error && <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-400 font-bold">{error}</div>}
           {success && <div className="mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm text-emerald-400 font-bold">{success}</div>}
 
@@ -372,7 +376,7 @@ export default function Collections() {
                   <Field label="Pallets"><input type="number" min="0" value={palletCount} onChange={e=>setPalletCount(e.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none text-center" /></Field>
                   <Field label="Weight (kg)"><input type="number" min="0" step="0.5" value={weightKg} onChange={e=>setWeightKg(e.target.value)} placeholder="0" className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm outline-none text-center" /></Field>
                   <Field label="Service Level">
-                    <select value={serviceLevel} onChange={e=>setServiceLevel(e.target.value as any)} className="w-full rounded-xl border border-white/10 bg-[#1a1f2e] p-3 text-sm outline-none">
+                    <select value={serviceLevel} onChange={e=>setServiceLevel(e.target.value as typeof serviceLevel)} className="w-full rounded-xl border border-white/10 bg-[#1a1f2e] p-3 text-sm outline-none">
                       <option value="SAME_DAY">Same Day</option>
                       <option value="NEXT_DAY">Next Day</option>
                       <option value="ECONOMY">Economy</option>
@@ -455,7 +459,7 @@ export default function Collections() {
                     setPaymentType("PREPAID"); setCodAmount(""); setSpecialInstructions("");
                     setServiceLevel("SAME_DAY");
                     loadAll("refresh");
-                  } catch (err: any) {
+                  } catch (err) {
                     setError(err?.message || "Failed to create collection.");
                   } finally { setSaving(false); }
                 }}
@@ -509,11 +513,11 @@ export default function Collections() {
             {selected ? (
               <div className="rounded-[28px] border border-white/10 bg-white/6 p-8 shadow-2xl animate-in fade-in duration-300 h-full flex flex-col">
                 <h2 className="text-3xl font-black tracking-tighter mb-8">{selected.clientName ?? "Collection"}</h2>
-                
+
                 {/* 🚀 AI Suggestion Module */}
                 <div className="space-y-6 flex-1">
                   <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30">Logistics AI Layer</label>
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30">Logistics AI Layer</span>
                     <button onClick={() => handleAutoSuggest(selected.id)} disabled={isAnalyzing} className="flex w-full items-center justify-center gap-3 rounded-2xl border border-fuchsia-500/40 bg-fuchsia-500/10 py-5 text-sm font-black text-fuchsia-200 hover:bg-fuchsia-500/20 disabled:opacity-50 transition-all shadow-lg active:scale-95">
                       <Sparkles className={cn("h-5 w-5", isAnalyzing && "animate-spin")} />
                       {isAnalyzing ? "Analyzing Asset Proximity..." : "Ask FlowOps AI for Best Fit"}
@@ -550,7 +554,7 @@ export default function Collections() {
                   )}
 
                   <div className="pt-6 border-t border-white/5 mt-auto">
-                    <label className="text-[10px] font-black uppercase tracking-[0.3em] opacity-20 mb-4 block">Manual Override</label>
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-20 mb-4 block">Manual Override</span>
                     <DriverAssignButton drivers={drivers} disabled={saving} onAssign={(did)=>handleAssignDriver(selected.id, did)} />
                   </div>
                 </div>
@@ -590,7 +594,7 @@ function Field({ label, children }: { label: string, children: React.ReactNode }
   );
 }
 
-function DriverAssignButton({ drivers, disabled, onAssign }: { drivers: any[], disabled: boolean, onAssign: (id: string) => void }) {
+function DriverAssignButton({ drivers, disabled, onAssign }: { drivers: DriverRow[], disabled: boolean, onAssign: (id: string) => void }) {
   const [val, setVal] = useState("");
   return (
     <div className="flex gap-4">
