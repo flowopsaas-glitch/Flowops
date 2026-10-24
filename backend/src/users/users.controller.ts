@@ -18,6 +18,7 @@ const USER_ADMIN_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN] as const;
 export class UsersController {
   constructor(private readonly svc: UsersService) {}
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get('my-company')
   findByCompany(@CurrentUser() u: any) {
     return this.svc.findByCompany(u.companyId);
@@ -29,6 +30,7 @@ export class UsersController {
     return this.svc.create(u.companyId, body, u);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);

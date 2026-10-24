@@ -30,6 +30,7 @@
     "rbac:test": "node --test scripts/rbac-inventory.test.mjs",
     "rbac:inventory": "node scripts/rbac-inventory.mjs",
     "rbac:inventory:json": "node scripts/rbac-inventory.mjs --format json",
+    "rbac:check": "node scripts/rbac-inventory.mjs --check",
     "tenant-scope:audit": "node scripts/tenant-scope-audit.mjs",
     "tenant-scope:audit:json": "node scripts/tenant-scope-audit.mjs --format json"
   },

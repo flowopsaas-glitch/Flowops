@@ -2,9 +2,13 @@ import { Controller, Get, Post, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { AnyAuthenticated } from '../common/decorators/any-authenticated.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Dashboard')
 @ApiBearerAuth()
+@AnyAuthenticated()
 @Controller()
 export class DashboardController {
   constructor(private readonly svc: DashboardService) {}
@@ -59,11 +63,13 @@ export class DashboardController {
     return this.svc.getCollectionsSyncRecords(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post('collections-state-sync/bulk-sync')
   bulkSync(@CurrentUser() u: any) {
     return this.svc.bulkSync(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post('collections-state-sync/sync/:id')
   syncOne(@CurrentUser() u: any, @Param('id') _id: string) {
     return this.svc.bulkSync(u.companyId); // same logic for single

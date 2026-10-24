@@ -6,12 +6,20 @@ import { AskDto } from './dto/ask.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const COPILOT_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH, UserRole.VIEWER,
+];
+
 
 @ApiTags('Copilot')
 @ApiBearerAuth()
 @Throttle({ default: { limit: 30, ttl: 60_000 } }) // cap expensive LLM calls per user
 @UseGuards(FeatureGuard)
 @RequireFeature('copilot')
+@Roles(...COPILOT_ROLES)
 @Controller('copilot')
 export class CopilotController {
   constructor(private readonly svc: CopilotService) {}

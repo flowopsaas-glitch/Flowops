@@ -2,9 +2,17 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { FleetIntelligenceService } from './fleet-intelligence.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const FLEET_INTELLIGENCE_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH,
+];
+
 
 @ApiTags('Fleet Intelligence')
 @ApiBearerAuth()
+@Roles(...FLEET_INTELLIGENCE_ROLES)
 @Controller('fleet-intelligence')
 export class FleetIntelligenceController {
   constructor(private readonly svc: FleetIntelligenceService) {}

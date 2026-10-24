@@ -12,6 +12,7 @@ import { RequireFeature } from '../billing/require-feature.decorator';
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('orderFlowIntegration')
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
 @Controller('order-flow')
 export class OrderFlowController {
   constructor(private readonly svc: OrderFlowService) {}

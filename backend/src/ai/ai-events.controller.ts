@@ -10,7 +10,15 @@ import {
 } from '@nestjs/common';
 import { AiEventsService } from './ai-events.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const AI_EVENT_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH,
+];
 
+
+@Roles(...AI_EVENT_ROLES)
 @Controller('ai-events')
 export class AiEventsController {
   constructor(private readonly aiEventsService: AiEventsService) {}

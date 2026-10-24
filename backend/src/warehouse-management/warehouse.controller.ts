@@ -12,10 +12,16 @@ const WMS_STRUCTURE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MA
 const WMS_OPERATION_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE, UserRole.DISPATCH,
 ] as const;
+const WAREHOUSE_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.WAREHOUSE, UserRole.DISPATCH,
+];
+
 
 @ApiTags('Warehouse Management')
 @ApiBearerAuth()
 @RequireFeature('warehouseManagement')
+@Roles(...WAREHOUSE_READ_ROLES)
 @Controller('wms')
 export class WarehouseController {
   constructor(

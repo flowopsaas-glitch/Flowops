@@ -2,9 +2,17 @@ import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { QuotesService } from './quotes.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const QUOTE_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH, UserRole.VIEWER,
+];
+
 
 @ApiTags('Quotes')
 @ApiBearerAuth()
+@Roles(...QUOTE_READ_ROLES)
 @Controller('quotes')
 export class QuotesController {
   constructor(private readonly svc: QuotesService) {}
@@ -19,11 +27,13 @@ export class QuotesController {
     return this.svc.metrics(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post()
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Patch(':id/accept')
   accept(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.accept(id, u.companyId);

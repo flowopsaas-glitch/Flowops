@@ -331,9 +331,19 @@ jobs:
         # annotations, so failures are visible without downloading job logs.
         run: npm test -- --reporters=default --reporters=github-actions
 
+      - name: RBAC coverage (blocking)
+        # Every route must carry one deliberate access decision (@Roles,
+        # @AnyAuthenticated, @Public, or @OwnerOnly). This is the option-3
+        # ratchet from docs/SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md: with
+        # the undecided list at zero, RBAC_STRICT=true can reject any future
+        # route that ships without a decision instead of publishing it.
+        run: node scripts/rbac-inventory.mjs --check
+
       - name: Advisory RBAC + tenant-scope reports (non-blocking)
-        # These scanners cannot see runtime control flow, so they inform review
-        # rather than fail the build. Legitimate hits exist (platform-admin
+        # Full scanner output as a review artifact. RBAC *coverage* is
+        # enforced by the blocking step above; the tenant-scope scanner
+        # cannot see runtime control flow, so it informs review rather than
+        # failing the build. Legitimate hits exist (platform-admin
         # endpoints, token lookups, writes to rows already proven in-tenant).
         run: |
           mkdir -p audit-reports

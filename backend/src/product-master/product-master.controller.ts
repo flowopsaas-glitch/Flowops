@@ -120,6 +120,7 @@ const PRODUCT_MASTER_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.M
 @ApiTags('Product Master')
 @ApiBearerAuth()
 @RequireFeature('warehouseManagement')
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE)
 @Controller('product-master')
 export class ProductMasterController {
   constructor(private readonly products: ProductMasterService) {}

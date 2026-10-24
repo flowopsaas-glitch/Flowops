@@ -7,6 +7,8 @@ import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { DriverPortalService } from './driver-portal.service';
 import { AuthService } from '../auth/auth.service';
 import type { DriverMode } from '@prisma/client';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 /** Real client IP behind Cloudflare -> nginx -> Docker (see auth.controller). */
 function clientIp(req: any): string | undefined {
@@ -228,12 +230,14 @@ export class DriverPortalController {
   // ── Dispatch-facing (tenant JWT required — unchanged) ─────────────────────────
 
   /** GET /driver-portal/dispatch/conversations — drivers with unread counts. */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Get('dispatch/conversations')
   getConversations(@CurrentUser() u: any) {
     return this.svc.getDriverConversations(u.companyId);
   }
 
   /** GET /driver-portal/dispatch/messages/:driverId — thread with a specific driver. */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Get('dispatch/messages/:driverId')
   getDriverThread(
     @CurrentUser() u: any,
@@ -246,6 +250,7 @@ export class DriverPortalController {
   }
 
   /** POST /driver-portal/dispatch/messages/:driverId — dispatch sends to driver. */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('dispatch/messages/:driverId')
   dispatchSend(
     @Param('driverId') driverId: string,

@@ -89,6 +89,74 @@ export class XController {
   assert.equal(a.roles, false, "comment text is not @Roles metadata");
 });
 
+test("decorators below the HTTP verb count (Nest applies them to the handler)", (t) => {
+  const { allRoutes } = fixture(
+    t,
+    `${HEADER}
+@Controller('x')
+export class XController {
+  @Post('one')
+  @Roles(UserRole.ADMIN)
+  one() {}
+
+  @Get('two')
+  two() {}
+}`,
+  );
+  const byHandler = Object.fromEntries(allRoutes.map((r) => [r.handler, r]));
+  assert.equal(byHandler.one.roles, true, "@Roles below @Post is still metadata");
+  assert.equal(byHandler.two.roles, false);
+});
+
+test("a comment line between @Public() and the verb does not hide it", (t) => {
+  const { allRoutes } = fixture(
+    t,
+    `${HEADER}
+@Controller('x')
+export class XController {
+  @Public()
+  // A login route must still be rate-limited; see the throttle note.
+  @Post('login')
+  login() {}
+}`,
+  );
+  assert.equal(allRoutes[0].public, true);
+});
+
+test("owner-only and any-authenticated routes are deliberate decisions", (t) => {
+  const { allRoutes, summary } = fixture(
+    t,
+    `${HEADER}
+import { OwnerOnly } from '../common/decorators/owner-only.decorator';
+import { AnyAuthenticated } from '../common/decorators/any-authenticated.decorator';
+
+@OwnerOnly()
+@Controller('owner/x')
+export class OwnerXController {
+  @Get('a')
+  a() {}
+}
+
+@Controller('y')
+export class YController {
+  @AnyAuthenticated()
+  @Get('me')
+  me() {}
+
+  @Get('undecided')
+  undecided() {}
+}`,
+  );
+  const byHandler = Object.fromEntries(allRoutes.map((r) => [r.handler, r]));
+  assert.equal(byHandler.a.owner, true);
+  assert.equal(byHandler.me.anyAuth, true);
+  assert.equal(byHandler.undecided.owner, false);
+  assert.equal(byHandler.undecided.anyAuth, false);
+  assert.equal(summary.routesOwnerOnly, 1);
+  assert.equal(summary.routesAnyAuthenticated, 1);
+  assert.equal(summary.routesWithNoRoles, 1, "only the undecided route remains");
+});
+
 test("the real tree: every route is exactly one of roles / public / unroled", () => {
   const { allRoutes } = collectRouteInventory();
   assert.equal(

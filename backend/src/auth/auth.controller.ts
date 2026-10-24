@@ -10,6 +10,7 @@ import { RefreshDto } from './dto/refresh.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { AnyAuthenticated } from '../common/decorators/any-authenticated.decorator';
 
 /**
  * Resolve the real client IP behind our proxy chain (Cloudflare -> nginx ->
@@ -53,6 +54,7 @@ export class AuthController {
 
   /** GET /api/v1/auth/me  — get current user profile */
   @ApiBearerAuth()
+  @AnyAuthenticated()
   @Get('me')
   @ApiOperation({ summary: 'Get current authenticated user' })
   me(@CurrentUser() user: any) {
@@ -71,6 +73,7 @@ export class AuthController {
 
   /** POST /api/v1/auth/logout */
   @ApiBearerAuth()
+  @AnyAuthenticated()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout (revoke refresh tokens)' })
@@ -150,6 +153,7 @@ export class AuthController {
    * Resends the verification email to the authenticated user.
    */
   @ApiBearerAuth()
+  @AnyAuthenticated()
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resend email verification link' })

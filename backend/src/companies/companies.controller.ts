@@ -10,6 +10,7 @@ import { CompaniesService } from './companies.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
 import { Roles } from '../common/decorators/roles.decorator';
+import { AnyAuthenticated } from '../common/decorators/any-authenticated.decorator';
 
 @ApiTags('Companies')
 @ApiBearerAuth()
@@ -17,11 +18,13 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class CompaniesController {
   constructor(private readonly svc: CompaniesService) {}
 
+  @AnyAuthenticated()
   @Get('my-company')
   getMyCompany(@CurrentUser() u: any) {
     return this.svc.getMyCompany(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Patch('my-company')
   updateMyCompany(@CurrentUser() u: any, @Body() body: UpdateCompanyDto) {
     return this.svc.updateMyCompany(u.companyId, body);
@@ -81,6 +84,7 @@ export class CompaniesController {
    * Returns the onboarding checklist progress for the current company.
    * Used by the frontend to decide whether to show the onboarding wizard.
    */
+  @AnyAuthenticated()
   @Get('onboarding-status')
   getOnboardingStatus(@CurrentUser() u: any) {
     return this.svc.getOnboardingStatus(u.companyId);
@@ -91,12 +95,14 @@ export class CompaniesController {
    * Marks the company's onboarding as complete. Called by the wizard on the
    * final step. Once complete, the tenant is never redirected to onboarding again.
    */
+  @AnyAuthenticated()
   @Post('onboarding-complete')
   @HttpCode(HttpStatus.OK)
   markOnboardingComplete(@CurrentUser() u: any) {
     return this.svc.markOnboardingComplete(u.companyId);
   }
 
+  @AnyAuthenticated()
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: { companyId: string }) {
     if (!user?.companyId || id !== user.companyId) {

@@ -10,6 +10,7 @@ import { SmartResolveDto } from './dto/smart-resolve.dto';
 
 @ApiTags('Geocoding')
 @ApiBearerAuth()
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
 @Controller('geocode')
 export class GeocodingController {
   constructor(

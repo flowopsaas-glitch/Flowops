@@ -28,6 +28,7 @@ const ADMIN_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER];
  */
 @ApiTags('Integration Connections')
 @ApiBearerAuth()
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
 @Controller('integrations/connections')
 export class IntegrationCredentialController {
   constructor(

@@ -4,11 +4,19 @@ import { LogisticsAnalyticsService } from './logistics-analytics.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const LOGISTICS_ANALYTICS_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.VIEWER,
+];
+
 
 @ApiTags('Logistics Analytics')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('logisticsAnalytics')
+@Roles(...LOGISTICS_ANALYTICS_READ_ROLES)
 @Controller('logistics-analytics')
 export class LogisticsAnalyticsController {
   constructor(private readonly svc: LogisticsAnalyticsService) {}
@@ -36,6 +44,7 @@ export class LogisticsAnalyticsController {
    * POST /logistics-analytics/refresh
    * Force-recalculates the current period's analytics and regenerates AI insights.
    */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post('refresh')
   refresh(@CurrentUser() u: any) {
     return this.svc.refreshAnalytics(u.companyId);

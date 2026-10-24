@@ -36,10 +36,16 @@ const PROCESS_EXECUTION_ROLES = [
 ] as const;
 
 const PROCESS_RESOLUTION_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER] as const;
+const PROCESS_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+];
+
 
 @ApiTags('Process Control')
 @ApiBearerAuth()
 @RequireFeature('warehouseManagement')
+@Roles(...PROCESS_READ_ROLES)
 @Controller('process-control')
 export class ProcessControlController {
   constructor(private readonly processControl: ProcessControlService) {}

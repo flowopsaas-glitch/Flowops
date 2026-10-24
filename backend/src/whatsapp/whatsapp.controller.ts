@@ -9,6 +9,8 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('WhatsApp')
 @ApiBearerAuth()
@@ -18,38 +20,63 @@ import { RequireFeature } from '../billing/require-feature.decorator';
 export class WhatsAppController {
   constructor(private readonly svc: WhatsAppService) {}
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Get('threads')
   getThreads(@CurrentUser() u: any) {
     return this.svc.getThreads(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Get('settings')
   getSettings(@CurrentUser() u: any) {
     return this.svc.getSettings(u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Post('compose')
   @HttpCode(200)
   compose(@CurrentUser() u: any, @Body() body: { to: string; message: string }) {
     return this.svc.compose(u.companyId, body.to, body.message);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Get('messages/:phone')
   getMessages(@Param('phone') phone: string, @CurrentUser() u: any) {
     return this.svc.getMessages(phone, u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Post('send')
   @HttpCode(200)
   sendMessage(@CurrentUser() u: any, @Body() body: { to: string; message: string }) {
     return this.svc.sendMessage(u.companyId, body.to, body.message);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Get('templates')
   templates() {
     return this.svc.listTemplates();
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Post('send-template')
   @HttpCode(200)
   sendTemplate(
@@ -65,6 +92,7 @@ export class WhatsAppController {
     );
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('register-client-number')
   registerNumber(@CurrentUser() u: any, @Body() body: { phoneNumber: string }) {
     return this.svc.registerNumber(u.companyId, body.phoneNumber);

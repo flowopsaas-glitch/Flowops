@@ -3,10 +3,18 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CommercialAnalyticsService } from './commercial-analytics.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const COMMERCIAL_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.VIEWER,
+];
+
 
 @ApiTags('Commercial Analytics')
 @ApiBearerAuth()
 @RequireFeature('commercialAnalytics')
+@Roles(...COMMERCIAL_READ_ROLES)
 @Controller('commercial-analytics')
 export class CommercialAnalyticsController {
   constructor(private readonly svc: CommercialAnalyticsService) {}
@@ -18,6 +26,7 @@ export class CommercialAnalyticsController {
   }
 
   /** PATCH /commercial-analytics/config — update cost model */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch('config')
   updateConfig(@CurrentUser() u: any, @Body() dto: any) {
     return this.svc.updateConfig(u.companyId, dto);

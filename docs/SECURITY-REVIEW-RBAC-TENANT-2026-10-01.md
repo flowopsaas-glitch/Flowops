@@ -143,3 +143,66 @@ Deliberate choices for the owner to confirm or adjust at merge time:
   tenant + ownership-checked writes) and the DB-backed suite runs green in CI, but the rows
   call for deployed-environment evidence and stay **NOT VERIFIED**.
 - Privileged-change audit events — not examined in this pass; remains with the platform owner.
+
+---
+
+## Follow-up 2026-10-24 — option-3 ratchet completed (PR #454)
+
+The undecided-route list has been driven to **zero**, so `RBAC_STRICT=true`
+is now safe to enable in a deployed environment (set it in the deployment
+environment; it is documented in `backend/.env.example`). CI enforces the
+precondition from here on: `node scripts/rbac-inventory.mjs --check`
+(blocking Backend-job step "RBAC coverage") fails if any route ships
+without a deliberate access decision.
+
+Final inventory (826 routes, 92 controllers):
+
+| Decision | Routes | Meaning |
+|---|---|---|
+| `@Roles(...)` | 664 | restricted to named tenant roles |
+| `@Public()` | 73 | no tenant JWT (logins, health, token/code callbacks) |
+| `@OwnerOnly()` | 60 | platform-owner identity (`OwnerAuthGuard`) |
+| `@AnyAuthenticated()` | 29 | any signed-in tenant role — self-service only |
+| **undecided** | **0** | — |
+
+What changed:
+
+- **Role pass over 54 controllers.** Policy derived from the frontend
+  permission matrix (`frontend/src/lib/tenantUserPermissions.ts`) and the
+  existing house precedents (invoices/collections/disbursements role sets,
+  `rail-roles.ts`): class-level read sets per domain, narrower method-level
+  write sets, finance writes `ADMIN/COMPANY_ADMIN/MANAGER`, user/company
+  administration `ADMIN/COMPANY_ADMIN`, `VIEWER` never mutates, `AGENT`
+  reads broadly and may capture waybills/shipments/clients (its frontend
+  work queues) but is excluded from money, collections writes, and
+  dispatch decisions. Driver-token routes (`driver-portal`), public token
+  views, and owner routes were deliberately left on their own guards.
+- **`@AnyAuthenticated()` marker** (`common/decorators/any-authenticated.decorator.ts`)
+  for routes where the role layer has nothing to decide because tenant +
+  identity scoping already constrain the caller (own profile, own
+  notifications, own company record, onboarding, the COD geofence driver
+  automation). Preferring an explicit marker over nine-role `@Roles` lists
+  keeps the decision honest and immune to future enum additions.
+- **`RolesGuard`** now passes `@OwnerOnly` (OwnerAuthGuard's job) and
+  `@Public` routes before role checks. The public-route pass also fixes a
+  latent lockout: a class-level `@Roles` on a mixed controller would
+  otherwise 403 its public handlers (the accounting OAuth callback and the
+  token-based truck-appointment shared view were both exposed to this).
+- **Scanner hardened** (`rbac-inventory.mjs`): sees decorators below the
+  HTTP verb, tolerates comment lines inside decorator blocks, resolves
+  class blocks per route, classifies all four decisions, and gained the
+  `--check` gate. Ten fixture/real-tree tests pin the behaviour
+  (`npm run rbac:test`, also in `release:safety:test`).
+
+Companion verification (same PR): all 115 "unscoped" tenant-scope findings
+hand-verified (one real cross-tenant hole on `/companies/:id` routes,
+fixed), plus a 36-finding stratified sample of the 250 "guarded?" findings
+— 36/36 resolved to a scoped fetch, ownership helper, `withTenant` RLS
+context, parent-chain scope, or provider-token scope. The sample raises
+confidence; it is not a proof for the remaining unscanned-by-hand majority,
+and the tenant-scope scanner stays advisory for that reason.
+
+Still open (unchanged from the review above): deployed-environment
+negative tests (a `VIEWER`/`WAREHOUSE` token against live finance/warehouse
+writes) remain the platform owner's evidence item; role metadata is now in
+place for those tests to assert against.

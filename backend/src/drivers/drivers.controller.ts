@@ -7,9 +7,15 @@ import { LeaderboardService } from './leaderboard.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { LogServiceDto } from '../fleet-maintenance/dto/log-service.dto';
+const DRIVER_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH,
+];
+
 
 @ApiTags('Drivers')
 @ApiBearerAuth()
+@Roles(...DRIVER_READ_ROLES)
 @Controller('drivers')
 export class DriversController {
   constructor(
@@ -22,6 +28,7 @@ export class DriversController {
     return this.svc.findAll(u.companyId, q);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post()
   create(@CurrentUser() u: any, @Body() body: CreateDriverDto) {
     return this.svc.create(u.companyId, body);
@@ -51,6 +58,7 @@ export class DriversController {
     return this.svc.findOne(id, u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch(':id')
   update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateDriverDto) {
     return this.svc.update(id, u.companyId, body);
@@ -61,6 +69,7 @@ export class DriversController {
     return this.svc.updateLocation(id, u.companyId, body.lat, body.lng);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.remove(id, u.companyId);
@@ -83,6 +92,7 @@ export class DriversController {
     return this.svc.logService(id, u.companyId, body);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch(':id/odometer')
   updateOdometer(
     @Param('id') id: string,
@@ -94,11 +104,13 @@ export class DriversController {
 
   // ── Driver PIN management ─────────────────────────────────────────────────
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch(':id/pin')
   setPin(@Param('id') id: string, @CurrentUser() u: any, @Body() body: { pin: string }) {
     return this.svc.setPin(id, u.companyId, body.pin);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch(':id/reset-pin')
   resetPin(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.resetPin(id, u.companyId);

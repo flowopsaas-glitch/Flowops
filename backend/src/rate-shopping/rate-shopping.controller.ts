@@ -4,11 +4,19 @@ import { RateShoppingService, RateRequest, CarrierConfig } from './rate-shopping
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const RATE_SHOPPING_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.VIEWER,
+];
+
 
 @ApiTags('Rate Shopping')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('rateShopping')
+@Roles(...RATE_SHOPPING_READ_ROLES)
 @Controller('rate-shopping')
 export class RateShoppingController {
   constructor(private readonly svc: RateShoppingService) {}

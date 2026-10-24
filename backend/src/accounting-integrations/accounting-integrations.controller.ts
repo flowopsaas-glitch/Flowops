@@ -13,6 +13,7 @@ const INTEGRATION_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN] as cons
 @ApiTags('Accounting Integrations')
 @ApiBearerAuth()
 @RequireFeature('accountingBridge')
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
 @Controller()
 export class AccountingIntegrationsController {
   constructor(private readonly svc: AccountingIntegrationsService) {}

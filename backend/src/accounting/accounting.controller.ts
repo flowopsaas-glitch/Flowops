@@ -12,11 +12,16 @@ import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
 
 const FINANCE_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER] as const;
+const ACCOUNTING_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.VIEWER,
+];
 
 @ApiTags('Accounting')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('accounting')
+@Roles(...ACCOUNTING_READ_ROLES)
 @Controller()
 export class AccountingController {
   constructor(private readonly svc: AccountingService) {}

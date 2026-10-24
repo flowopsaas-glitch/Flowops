@@ -4,11 +4,14 @@ import { WebhooksService } from './webhooks.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Webhooks')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('api')
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
 @Controller('integrations/webhooks')
 export class WebhooksController {
   constructor(private readonly svc: WebhooksService) {}

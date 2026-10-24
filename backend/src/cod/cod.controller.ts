@@ -9,6 +9,7 @@ import { UserRole } from '@prisma/client';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { AnyAuthenticated } from '../common/decorators/any-authenticated.decorator';
 
 @ApiTags('COD Reconciliation')
 @ApiBearerAuth()
@@ -20,12 +21,20 @@ export class CodController {
     private readonly guardian: CodGuardianService,
   ) {}
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.VIEWER,
+  )
   @Get('summary')
   @RequireFeature('codReconciliation')
   getSummary(@CurrentUser() u: AuthenticatedUser) {
     return this.svc.getSummary(u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.VIEWER,
+  )
   @Get('outstanding')
   @RequireFeature('codReconciliation')
   getOutstanding(@CurrentUser() u: AuthenticatedUser) {
@@ -75,6 +84,7 @@ export class CodController {
    * NOT feature-gated: this is core delivery automation driven by driver GPS,
    * not COD reconciliation, so it must work on every plan.
    */
+  @AnyAuthenticated()
   @Post('geofence')
   geofence(
     @Body() body: { driverId: string; lat: number; lng: number; radiusM?: number },
@@ -86,12 +96,20 @@ export class CodController {
     return this.svc.checkGeofence(body.driverId, u.companyId, body.lat, body.lng, body.radiusM ?? 500);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.VIEWER,
+  )
   @Get('wallets')
   @RequireFeature('codReconciliation')
   listWallets(@CurrentUser() u: AuthenticatedUser) {
     return this.svc.listWallets(u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.VIEWER,
+  )
   @Get('wallets/:driverId')
   @RequireFeature('codReconciliation')
   getWallet(@Param('driverId') driverId: string, @CurrentUser() u: AuthenticatedUser) {
@@ -102,6 +120,10 @@ export class CodController {
   // CASH FLOW GUARDIAN — AI-Powered COD Intelligence
   // ══════════════════════════════════════════════════════════════════════════
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.VIEWER,
+  )
   @Get('guardian/report')
   @RequireFeature('codReconciliation')
   @ApiOperation({ summary: 'Cash Flow Guardian — full cash position report with driver risk scoring' })
@@ -109,6 +131,7 @@ export class CodController {
     return this.guardian.generateCashPosition(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post('guardian/alert')
   @RequireFeature('codReconciliation')
   @ApiOperation({ summary: 'Manually trigger Cash Flow Guardian WhatsApp alert to owner' })
