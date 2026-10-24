@@ -425,7 +425,7 @@ export default function AppLayout() {
     { section: "INSIGHTS", label: "Warehouse Management", desc: "Inventory, pick/pack & AI optimization", to: "/wms", icon: Layers, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Cross-Docking", desc: "Bypass storage — direct to dispatch", to: "/wms/cross-dock", icon: Zap, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Wave Planning", desc: "Batch picks into efficient waves", to: "/wms/waves", icon: Layers, entitlement: "warehouseManagement" },
-    { section: "INSIGHTS", label: "AI Slotting", desc: "Velocity-based bin optimization", to: "/wms/slotting", icon: Brain, entitlement: "warehouseManagement" },
+    { section: "INSIGHTS", label: "Slotting Analysis", desc: "Rule-based velocity bin suggestions", to: "/wms/slotting", icon: Brain, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Barcode Verify", desc: "Scan & validate warehouse items", to: "/wms/scan", icon: ScanLine, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Process Book", desc: "Versioned SOPs, evidence & exceptions", to: "/process-book", icon: BookOpen, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Product Master", desc: "Product / variant / SKU governance", to: "/product-master", icon: Boxes, entitlement: "warehouseManagement" },

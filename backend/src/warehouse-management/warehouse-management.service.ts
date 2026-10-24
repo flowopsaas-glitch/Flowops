@@ -1194,10 +1194,13 @@ Return ONLY valid JSON:
       summary: {
         totalRecommendations: recommendations.length,
         highPriority: recommendations.filter(r => r.priority === 'HIGH').length,
-        estimatedPickTimeReduction: `${Math.min(misplacedA * 5, 40)}%`,
+        // No pick-time saving is estimated here: the ABC rules identify
+        // candidate moves, but any time saving depends on warehouse layout
+        // and must be measured after relocation — it is not computed.
+        estimatedPickTimeReduction: null,
         message: misplacedA > 0
-          ? `${misplacedA} high-velocity items are in suboptimal locations. Relocating them could reduce pick time by up to ${Math.min(misplacedA * 5, 40)}%.`
-          : 'Slotting is well optimized. No urgent moves needed.',
+          ? `${misplacedA} high-velocity items are in suboptimal locations. Review the suggested moves against your layout before relocating stock.`
+          : 'No urgent moves suggested by the current pick-frequency data.',
       },
     };
   }

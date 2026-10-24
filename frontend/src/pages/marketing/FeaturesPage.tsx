@@ -288,8 +288,8 @@ const sections = [
         points: [
           "Import/export shipment files — ocean, air & road",
           "Container (ISO 6346), cargo, charges & margin tracking",
-          "SA customs estimator (ATV-based VAT) + AI HS classification",
-          "Commercial invoice, packing list, B/L & SAD500 PDFs",
+          "Customs duty/VAT estimator + HS classification",
+          "Commercial invoice, packing list, B/L & customs PDFs",
         ],
       },
       {
@@ -299,14 +299,14 @@ const sections = [
           "Rail consignment lifecycle — planned → loaded → in-transit → offloaded",
           "Wagon/rake register with tonnage, seals & last-known siding",
           "Road↔rail↔port intermodal handoffs with dwell-time tracking",
-          "SADC corridor KPIs — on-time %, transit time & interchange dwell",
+          "Cross-border corridor KPIs — on-time %, transit time & interchange dwell",
         ],
       },
       {
         icon: ShieldCheck,
         title: "Single Sign-On (SSO)",
         points: [
-          "OIDC SSO — Okta, Azure AD, Google Workspace, Auth0",
+          "OIDC SSO with major identity providers",
           "Just-in-time user provisioning on first login",
           "Domain restriction and default-role mapping",
           "Centralised identity for your whole team",
@@ -358,7 +358,7 @@ export default function FeaturesPage() {
           Everything your team needs
         </h1>
         <p className="text-lg text-white/50 max-w-xl mx-auto">
-          Built for South African courier and freight-forwarding operations —
+          Built for courier and freight-forwarding operations worldwide —
           from waybill to invoice, driver to depot, cash to reconciliation, with
           decision intelligence on every department.
         </p>
@@ -401,7 +401,7 @@ export default function FeaturesPage() {
       {/* CTA */}
       <div className="border-t border-white/5 py-20 text-center px-6">
         <h2 className="text-4xl font-black text-white mb-4">Start using all of this today</h2>
-        <p className="text-white/50 mb-8">14-day free trial · No credit card · ZAR billing</p>
+        <p className="text-white/50 mb-8">14-day free trial · No credit card · Local-currency billing</p>
         <Link
           to="/signup"
           className="inline-flex items-center gap-2 rounded-2xl bg-sky-500 px-8 py-4 text-base font-black text-white hover:bg-sky-400 transition-colors"

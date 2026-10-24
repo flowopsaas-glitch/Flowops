@@ -43,6 +43,7 @@ import DangerousGoodsSection, { DgBadge, WagonDgPill } from "./rail/DangerousGoo
 import PossessionConflictBanner from "./rail/PossessionConflictBanner";
 import TariffPanel from "./rail/TariffPanel";
 import WeighbridgeSection from "./rail/WeighbridgeSection";
+import TruckAppointmentsPanel from "./rail/TruckAppointmentsPanel";
 import { isOnHold } from "../lib/railTariff";
 import { MapContainer, Polyline, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -303,7 +304,7 @@ export default function RailOperations() {
   // VIEWER sees Rail read-only: no "Advance" control (the API refuses it anyway).
   const canWrite = getRailAccessLevel(user?.role, userPermissionOverrides(user)) === "FULL";
   const canSign = canSignRailHandshake(user?.role);
-  const [tab, setTab] = useState<"consignments" | "slots" | "optimizer" | "manifests" | "tracking" | "changes" | "tariffs">("consignments");
+  const [tab, setTab] = useState<"consignments" | "slots" | "optimizer" | "manifests" | "tracking" | "changes" | "tariffs" | "trucks">("consignments");
   const [overview, setOverview] = useState<RailOverview | null>(null);
   const [rows, setRows] = useState<RailConsignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -428,7 +429,7 @@ export default function RailOperations() {
 
       {/* Tabs */}
       <div className="mb-5 flex flex-wrap gap-2 border-b border-white/10" role="group" aria-label="Rail operations sections">
-        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["optimizer", "Schedule Optimizer"], ["manifests", "Train Manifests"], ["tracking", "Live Tracking"], ["changes", "Changes & Possessions"], ["tariffs", "Tariffs & Weighbridge"]] as const).map(([key, label]) => (
+        {([["consignments", "Consignments"], ["slots", "Slot Applications & Compliance"], ["optimizer", "Schedule Optimizer"], ["manifests", "Train Manifests"], ["tracking", "Live Tracking"], ["changes", "Changes & Possessions"], ["tariffs", "Tariffs & Weighbridge"], ["trucks", "Truck Appointments"]] as const).map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -447,6 +448,7 @@ export default function RailOperations() {
       {tab === "tracking" && <LiveTrackingPanel canWrite={canWrite} />}
       {tab === "changes" && <ChangesPossessionsPanel canWrite={canWrite} canSign={canSign} />}
       {tab === "tariffs" && <TariffPanel canWrite={canWrite} />}
+      {tab === "trucks" && <TruckAppointmentsPanel canWrite={canWrite} />}
 
       {tab === "consignments" && (<>
       {/* Possession windows that overlap booked consignments (server-detected, advisory) */}

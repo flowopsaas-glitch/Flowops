@@ -121,9 +121,9 @@ describe('RailOperations — tabs', () => {
     expect(screen.queryByText('No rail consignments yet.')).toBeTruthy();
   });
 
-  it('has a labelled section control group with seven buttons and starts on Consignments', async () => {
+  it('has a labelled section control group with eight buttons and starts on Consignments', async () => {
     const tabs = await open('MANAGER');
-    expect(within(tabs).getAllByRole('button').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Schedule Optimizer', 'Train Manifests', 'Live Tracking', 'Changes & Possessions', 'Tariffs & Weighbridge']);
+    expect(within(tabs).getAllByRole('button').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Schedule Optimizer', 'Train Manifests', 'Live Tracking', 'Changes & Possessions', 'Tariffs & Weighbridge', 'Truck Appointments']);
     expect(screen.getByRole('button', { name: 'Consignments' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Slot Applications & Compliance' }).getAttribute('aria-pressed')).toBe('false');
     expect(within(screen.getByRole('combobox', { name: 'Filter rail consignments by status' })).getByRole('option', { name: 'Cancelled' })).toBeTruthy();

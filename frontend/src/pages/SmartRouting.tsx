@@ -35,7 +35,7 @@ export default function SmartRouting() {
     try {
       const payload: CreateRoutePlanPayload = { name: form.name || undefined, stops, scheduledDate: form.scheduledDate || undefined };
       await createRoutePlan(payload);
-      showToast('Route plan created with optimized stop order', 'success');
+      showToast('Route plan created with sequenced stop order (straight-line estimate)', 'success');
       setShowCreate(false);
       setForm({ name: '', stops: '', scheduledDate: '' });
       load();
@@ -71,7 +71,7 @@ export default function SmartRouting() {
             </div>
             Smart Routing
           </h1>
-          <p className="text-sm text-white/50 mt-1">Route planning & scheduling with 2-opt optimization</p>
+          <p className="text-sm text-white/50 mt-1">Route planning & scheduling with 2-opt sequencing over straight-line distances — distances and times are estimates, not road routes.</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 transition flex items-center gap-2">
           <Plus className="w-4 h-4" /> New Route Plan
@@ -83,7 +83,7 @@ export default function SmartRouting() {
         {[
           { label: 'Total Plans', value: plans.length, color: 'text-white' },
           { label: 'Active', value: plans.filter(p => p.status === 'ACTIVE').length, color: 'text-emerald-400' },
-          { label: 'Avg Distance', value: `${Math.round(plans.filter(p => p.estimatedDistance).reduce((s, p) => s + (p.estimatedDistance || 0), 0) / Math.max(plans.filter(p => p.estimatedDistance).length, 1))} km`, color: 'text-blue-400' },
+          { label: 'Avg Distance (straight-line est.)', value: plans.some(p => p.estimatedDistance) ? `${Math.round(plans.filter(p => p.estimatedDistance).reduce((s, p) => s + (p.estimatedDistance || 0), 0) / Math.max(plans.filter(p => p.estimatedDistance).length, 1))} km` : 'Unavailable', color: 'text-blue-400' },
           { label: 'Completed', value: plans.filter(p => p.status === 'COMPLETED').length, color: 'text-violet-400' },
         ].map((s, i) => (
           <div key={i} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -123,8 +123,8 @@ export default function SmartRouting() {
                     <h3 className="text-white font-bold">{plan.name || 'Unnamed Route'}</h3>
                     <div className="flex items-center gap-3 mt-1 text-xs text-white/40">
                       <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{plan.totalStops} stops</span>
-                      {plan.estimatedDistance && <span className="flex items-center gap-1"><Route className="w-3 h-3" />{plan.estimatedDistance.toFixed(1)} km</span>}
-                      {plan.estimatedTime && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{plan.estimatedTime} min</span>}
+                      {plan.estimatedDistance && <span className="flex items-center gap-1"><Route className="w-3 h-3" />{plan.estimatedDistance.toFixed(1)} km (straight-line est.)</span>}
+                      {plan.estimatedTime && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{plan.estimatedTime} min (est.)</span>}
                       {plan.scheduledDate && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{new Date(plan.scheduledDate).toLocaleDateString()}</span>}
                     </div>
                   </div>

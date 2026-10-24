@@ -7,12 +7,14 @@ import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RAIL_READ_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /** Weighbridge readings. An overloaded wagon puts its consignment on HOLD_FOR_LOAD_ADJUSTMENT until it is re-weighed within its limit. */
 @ApiTags('Rail / Weighbridge')
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(...RAIL_READ_ROLES)
+@RequireFeature('rail')
 @Controller('rail/weighbridge')
 export class RailWeighbridgeController {
   constructor(private readonly weighbridge: RailWeighbridgeService) {}

@@ -47,17 +47,18 @@ export default function AISlotting() {
           <Brain className="h-6 w-6 text-fuchsia-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-black">AI Slotting Optimization</h1>
-          <p className="text-sm text-white/40">ABC velocity analysis — fast movers near dispatch, slow movers to bulk.</p>
+          <h1 className="text-2xl font-black">Slotting Analysis</h1>
+          <p className="text-sm text-white/40">Rule-based ABC velocity analysis — fast movers near dispatch, slow movers to bulk. Not a machine-learning model.</p>
         </div>
       </div>
 
 
       {/* Procedure */}
       <div className="rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-4">
-        <p className="text-xs font-bold text-fuchsia-300 uppercase tracking-wider mb-1">World-Class Procedure</p>
+        <p className="text-xs font-bold text-fuchsia-300 uppercase tracking-wider mb-1">How it works</p>
         <p className="text-sm text-white/60">
-          30-day pick frequency analysis. A-class (top 20%) near dispatch. B-class mid-warehouse. C-class (50%) bulk storage. Reduces picker walk time by up to 40%.
+          30-day pick frequency analysis. A-class (top 20%) near dispatch. B-class mid-warehouse. C-class (50%) bulk storage.
+          Recommendations are suggestions from your pick history — review them before moving stock; no saving is guaranteed.
         </p>
       </div>
 
@@ -74,7 +75,7 @@ export default function AISlotting() {
         <button onClick={analyze} disabled={loading}
           className="flex items-center gap-2 rounded-2xl bg-fuchsia-500 px-6 py-2.5 text-sm font-black text-white hover:bg-fuchsia-400 transition disabled:opacity-50">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
-          Run AI Analysis
+          Run analysis
         </button>
       </div>
 
@@ -103,12 +104,12 @@ export default function AISlotting() {
             </div>
           </div>
 
-          {/* AI Summary */}
+          {/* Rule-based summary */}
           {result.summary && (
             <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
               <p className="text-sm text-white/80">{result.summary.message}</p>
-              <p className="text-xs text-emerald-300 mt-1 font-bold">
-                Est. pick time reduction: {result.summary.estimatedPickTimeReduction}
+              <p className="text-xs text-white/40 mt-1">
+                Pick-time impact is not estimated — measure it after relocating stock.
               </p>
             </div>
           )}

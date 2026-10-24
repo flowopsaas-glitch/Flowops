@@ -368,14 +368,25 @@ function MovementsView({ data }: { data: any }) {
 }
 
 
+/** Format a rate honestly: null/undefined means "no observations" → unavailable, never 100%. */
+function rateLabel(rate: unknown): string {
+  return typeof rate === 'number' && Number.isFinite(rate) ? `${rate}%` : 'Unavailable';
+}
+
 function KpisView({ data }: { data: any }) {
   if (!data) return null;
   const t = data.throughput || {};
   const a = data.accuracy || {};
   const u = data.utilisation || {};
   const e = data.efficiency || {};
+  const period = data.period || '30d';
   return (
     <div className="space-y-4">
+      <p className="text-xs text-white/40">
+        Source: warehouse movements, pick orders, goods receipts and cycle counts recorded in FlowOps for the last {period}.
+        Rates are only shown when at least one observation exists; otherwise they are marked unavailable.
+        {data.generatedAt ? ` Updated ${new Date(data.generatedAt).toLocaleString('en-ZA')}.` : ''}
+      </p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard label="Avg Movements/Day" value={t.avgMovementsPerDay || 0} icon={Activity} color="blue" />
         <KpiCard label="Units Received" value={(t.unitsReceived || 0).toLocaleString()} icon={Truck} color="emerald" />
@@ -383,10 +394,10 @@ function KpisView({ data }: { data: any }) {
         <KpiCard label="Today's Activity" value={t.movementsToday || 0} icon={Zap} color="purple" />
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label="Inventory Accuracy" value={`${a.inventoryAccuracy || 100}%`} icon={Target} color="emerald" sub="From cycle counts" />
-        <KpiCard label="Pick Accuracy" value={`${a.pickAccuracy || 100}%`} icon={CheckCircle2} color="blue" />
-        <KpiCard label="Bin Utilisation" value={`${u.binUtilisation || 0}%`} icon={Layers} color="amber" sub={`${u.occupiedBins || 0}/${u.totalBins || 0} bins`} />
-        <KpiCard label="Avg Pick Time" value={`${e.avgPickTimeHours || 0}h`} icon={Clock} color="purple" />
+        <KpiCard label="Inventory Accuracy" value={rateLabel(a.inventoryAccuracy)} icon={Target} color="emerald" sub={a.inventoryAccuracy == null ? 'No cycle counts in period' : `From ${a.inventoryObservations ?? 0} cycle count(s)`} />
+        <KpiCard label="Pick Accuracy" value={rateLabel(a.pickAccuracy)} icon={CheckCircle2} color="blue" sub={a.pickAccuracy == null ? 'No pick orders in period' : `${a.picksFullyPicked ?? 0} of ${a.pickOrdersObserved ?? 0} pick orders fully picked`} />
+        <KpiCard label="Bin Utilisation" value={u.totalBins ? `${u.binUtilisation || 0}%` : 'Unavailable'} icon={Layers} color="amber" sub={u.totalBins ? `${u.occupiedBins || 0}/${u.totalBins} bins` : 'No bins configured'} />
+        <KpiCard label="Avg Pick Time" value={e.avgPickTimeHours == null ? 'Unavailable' : `${e.avgPickTimeHours}h`} icon={Clock} color="purple" sub={e.avgPickTimeHours == null ? 'No completed picks in period' : undefined} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
@@ -402,7 +413,8 @@ function KpisView({ data }: { data: any }) {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-white/50">Total variances</span><span className="font-bold">{a.totalVariances || 0}</span></div>
             <div className="flex justify-between"><span className="text-white/50">Variance value</span><span className="font-bold text-red-400">R{(a.varianceValue || 0).toLocaleString()}</span></div>
-            <div className="flex justify-between"><span className="text-white/50">Receive accuracy</span><span className="font-bold text-emerald-400">{a.receiveAccuracy || 100}%</span></div>
+            <div className="flex justify-between"><span className="text-white/50">Receive accuracy</span><span className="font-bold text-emerald-400">{a.receiveAccuracy == null ? 'Unavailable' : `${a.receiveAccuracy}%`}</span></div>
+            <div className="flex justify-between"><span className="text-white/50">Receipts observed</span><span className="font-bold">{a.completedReceiptsObserved ?? 0} completed{a.receiveAccuracy != null ? ` · ${a.undamagedReceipts ?? 0} undamaged` : ''}</span></div>
           </div>
         </div>
       </div>
@@ -478,6 +490,10 @@ function AiView({ data }: { data: any }) {
   const ins = data.insights;
   return (
     <div className="space-y-4">
+      <p className="text-xs text-white/40">
+        Optional AI-generated commentary based on your inventory summary and the last 7 days of stock movements.
+        It is advisory only — verify figures on the KPIs and Inventory tabs before acting.
+      </p>
       {/* Health Score */}
       <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 flex items-center gap-6">
         <div className="text-5xl font-black text-amber-400">{ins.healthScore || '—'}</div>

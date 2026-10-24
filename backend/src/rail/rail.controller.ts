@@ -18,6 +18,7 @@ import { RAIL_READ_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
 import { RailHandoffService } from './rail-handoff.service';
 import { AddHandoffEvidenceDto, CreateHandoffReadinessDto } from './dto/handoff.dto';
 import { RailTimetableService } from './rail-timetable.service';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /**
  * Class-level roles are the READ set (includes VIEWER); every mutating handler
@@ -27,6 +28,7 @@ import { RailTimetableService } from './rail-timetable.service';
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(...RAIL_READ_ROLES)
+@RequireFeature('rail')
 @Controller('rail')
 export class RailController {
   constructor(

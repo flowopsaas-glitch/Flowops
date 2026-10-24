@@ -62,7 +62,8 @@ type Analytics = {
     deliveries30: number;
     deliverySuccess: number;
     exceptionRate: number;
-    onTimeRate: number;
+    onTimeRate: number | null;
+    onTimeObservations?: number;
   };
   health: Array<{
     id: string;
@@ -469,7 +470,7 @@ export default function SuperAdminDashboard() {
               <Kpi icon={<TrendingUp className="h-5 w-5" />} label="NRR" value={`${nrr}%`}
                 goodWhenUp sub="Net Revenue Retention" />
             ) : (
-              <Kpi icon={<PackageCheck className="h-5 w-5" />} label="On-Time Delivery" value={`${num(a.operations.onTimeRate, 1)}%`} sub="platform-wide" />
+              <Kpi icon={<PackageCheck className="h-5 w-5" />} label="On-Time Delivery (by est. delivery)" value={a.operations.onTimeRate == null ? "Unavailable" : `${num(a.operations.onTimeRate, 1)}%`} sub={a.operations.onTimeRate == null ? "No delivered shipments with an estimated delivery" : `platform-wide · ${a.operations.onTimeObservations ?? 0} shipments with estimates`} />
             )}
           </div>
 

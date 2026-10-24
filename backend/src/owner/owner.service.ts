@@ -448,7 +448,10 @@ export class OwnerService {
     const onTime = shipDelivered.filter(
       (s) => s.deliveredAt! <= s.estimatedDelivery!,
     ).length;
-    const onTimeRate = shipDelivered.length ? (onTime / shipDelivered.length) * 100 : 0;
+    // True on-time (deliveredAt <= estimatedDelivery). Null — unavailable,
+    // never 0% — when no delivered shipment has an estimated delivery.
+    const onTimeRate = shipDelivered.length ? (onTime / shipDelivered.length) * 100 : null;
+    const onTimeObservations = shipDelivered.length;
 
     // ── Collected revenue (payments) — total + 30-day window ──
     const [revAll, rev30, rev60] = await Promise.all([
@@ -500,7 +503,7 @@ export class OwnerService {
       planDistribution,
       growth,
       operations: {
-        totalWaybills, deliveries30, deliverySuccess, exceptionRate, onTimeRate,
+        totalWaybills, deliveries30, deliverySuccess, exceptionRate, onTimeRate, onTimeObservations,
       },
       health,
       topByVolume,
@@ -618,7 +621,8 @@ export class OwnerService {
     const deliverySuccess = outcomes ? (delivered / outcomes) * 100 : 0;
     const exceptionRate = outcomes ? ((failed + returned) / outcomes) * 100 : 0;
     const onTime = shipments.filter((s) => s.deliveredAt! <= s.estimatedDelivery!).length;
-    const onTimeRate = shipments.length ? (onTime / shipments.length) * 100 : 0;
+    const onTimeRate = shipments.length ? (onTime / shipments.length) * 100 : null;
+    const onTimeObservations = shipments.length;
 
     const [revAll, rev30] = await Promise.all([
       this.prisma.payment.aggregate({ where: { companyId: tenantId, status: 'SUCCESS' }, _sum: { amount: true } }),
@@ -680,7 +684,7 @@ export class OwnerService {
         collectedTotal: revAll._sum.amount ?? 0,
         collected30: rev30._sum.amount ?? 0,
       },
-      operations: { delivered, failed, returned, deliverySuccess, exceptionRate, onTimeRate },
+      operations: { delivered, failed, returned, deliverySuccess, exceptionRate, onTimeRate, onTimeObservations },
       trend,
       recentWaybills,
       auditTrail,

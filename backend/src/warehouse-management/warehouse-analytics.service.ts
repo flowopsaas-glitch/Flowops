@@ -56,16 +56,24 @@ export class WarehouseAnalyticsService {
     const movementsToday = movements.filter(m => new Date(m.performedAt) >= today).length;
 
     // ── Accuracy ─────────────────────────────────────────────────────────
-    const avgCountAccuracy = counts.length > 0
-      ? Math.round(counts.reduce((s, c) => s + (c.accuracyRate || 100), 0) / counts.length * 10) / 10
-      : 100;
+    // Honest denominators: a rate is only reported when at least one
+    // observation exists in the period. With zero observations the rate is
+    // null (unavailable) — never 100%, which would claim perfect performance
+    // for a warehouse that has not been measured yet. Counts are returned
+    // alongside each rate so the UI can disclose numerator/denominator.
+    const ratedCounts = counts.filter(c => c.accuracyRate != null);
+    const avgCountAccuracy = ratedCounts.length > 0
+      ? Math.round(ratedCounts.reduce((s, c) => s + (c.accuracyRate as number), 0) / ratedCounts.length * 10) / 10
+      : null;
+    const picksFullyPicked = picks.filter(p => p.pickedQty >= p.totalQty).length;
     const pickAccuracy = picks.length > 0
-      ? Math.round((picks.filter(p => p.pickedQty >= p.totalQty).length / picks.length) * 1000) / 10
-      : 100;
-    const receiveAccuracy = receipts.filter(r => r.status === 'COMPLETED').length > 0
-      ? Math.round((receipts.filter(r => r.damagedQty === 0 && r.status === 'COMPLETED').length /
-          receipts.filter(r => r.status === 'COMPLETED').length) * 1000) / 10
-      : 100;
+      ? Math.round((picksFullyPicked / picks.length) * 1000) / 10
+      : null;
+    const completedReceiptsForAccuracy = receipts.filter(r => r.status === 'COMPLETED');
+    const undamagedReceipts = completedReceiptsForAccuracy.filter(r => r.damagedQty === 0).length;
+    const receiveAccuracy = completedReceiptsForAccuracy.length > 0
+      ? Math.round((undamagedReceipts / completedReceiptsForAccuracy.length) * 1000) / 10
+      : null;
 
     // ── Utilisation ──────────────────────────────────────────────────────
     const totalBins = bins.length;
@@ -80,17 +88,18 @@ export class WarehouseAnalyticsService {
       ? Math.round(completedPicks.reduce((s, p) => {
           return s + (new Date(p.completedAt!).getTime() - new Date(p.assignedAt!).getTime()) / 3600000;
         }, 0) / completedPicks.length * 10) / 10
-      : 0;
+      : null;
 
     const completedReceipts = receipts.filter(r => r.arrivedAt && r.completedAt);
     const avgReceiveTimeHours = completedReceipts.length > 0
       ? Math.round(completedReceipts.reduce((s, r) => {
           return s + (new Date(r.completedAt!).getTime() - new Date(r.arrivedAt!).getTime()) / 3600000;
         }, 0) / completedReceipts.length * 10) / 10
-      : 0;
+      : null;
 
     return {
       period: `${days}d`,
+      generatedAt: new Date().toISOString(),
       throughput: {
         totalMovements,
         movementsToday,
@@ -104,6 +113,13 @@ export class WarehouseAnalyticsService {
         inventoryAccuracy: avgCountAccuracy,
         pickAccuracy,
         receiveAccuracy,
+        // Observation counts / numerators so consumers can show denominators
+        // instead of a bare percentage. Null rate + 0 observations = unavailable.
+        inventoryObservations: ratedCounts.length,
+        pickOrdersObserved: picks.length,
+        picksFullyPicked,
+        completedReceiptsObserved: completedReceiptsForAccuracy.length,
+        undamagedReceipts,
         totalVariances: counts.reduce((s, c) => s + c.totalVariances, 0),
         varianceValue: Math.round(counts.reduce((s, c) => s + c.varianceValue, 0)),
       },

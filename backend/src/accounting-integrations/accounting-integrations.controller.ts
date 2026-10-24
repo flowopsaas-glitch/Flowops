@@ -6,11 +6,13 @@ import { AccountingIntegrationsService } from './accounting-integrations.service
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 const INTEGRATION_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN] as const;
 
 @ApiTags('Accounting Integrations')
 @ApiBearerAuth()
+@RequireFeature('accountingBridge')
 @Controller()
 export class AccountingIntegrationsController {
   constructor(private readonly svc: AccountingIntegrationsService) {}

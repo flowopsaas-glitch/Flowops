@@ -7,6 +7,7 @@ import { DisbursementsService } from './disbursements.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 const DISBURSEMENT_READ_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.VIEWER];
 const DISBURSEMENT_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER];
@@ -15,6 +16,7 @@ const DISBURSEMENT_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRo
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(...DISBURSEMENT_READ_ROLES)
+@RequireFeature('accounting')
 @Controller('disbursements')
 export class DisbursementsController {
   constructor(private readonly disbursements: DisbursementsService) {}

@@ -253,6 +253,7 @@ model Company {
   railConsignments    RailConsignment[]
   railHandoffReadinesses RailHandoffReadiness[]
   railHandoffEvidence RailHandoffEvidence[]
+  terminalTruckAppointments TerminalTruckAppointment[]
   railScheduleImports RailScheduleImport[]
 
   // Process Control (Process Book) + Product master data
@@ -4080,6 +4081,7 @@ model RailConsignment {
   events RailConsignmentEvent[]
   waybills Waybill[]
   handoffReadinesses RailHandoffReadiness[]
+  truckAppointments  TerminalTruckAppointment[]
 
   @@unique([consignmentNumber, companyId])
   @@index([companyId, status])
@@ -4355,6 +4357,7 @@ model IntermodalLeg {
   note          String?             @db.Text
 
   handoffReadinesses RailHandoffReadiness[]
+  truckAppointments  TerminalTruckAppointment[]
 
   @@index([consignmentId])
   @@map("intermodal_legs")
@@ -6045,4 +6048,54 @@ model RailTariffCalculation {
   @@unique([companyId, calculationNumber])
   @@index([companyId, consignmentId])
   @@map("rail_tariff_calculations")
+}
+
+// ── Terminal truck appointments (road side of the road<->rail handoff) ──────
+// lapo gap: terminals absorb variability because trucks arrive unscheduled
+// and queue. An appointment is a booked window at a terminal/yard gate,
+// owned by the terminal workflow in this tenant, worked through
+// BOOKED -> ARRIVED -> LOADING -> COMPLETED with NO_SHOW / CANCELLED exits.
+// Wait and dwell figures are computed from recorded timestamps only.
+
+enum TruckAppointmentStatus {
+  BOOKED
+  ARRIVED
+  LOADING
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+model TerminalTruckAppointment {
+  id            String                 @id @default(cuid())
+  companyId     String
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  consignmentId String?
+  consignment   RailConsignment?       @relation(fields: [consignmentId], references: [id], onDelete: SetNull)
+  legId         String?
+  leg           IntermodalLeg?         @relation(fields: [legId], references: [id], onDelete: SetNull)
+
+  terminalName  String                 // terminal / yard name (operator-entered)
+  haulierName   String                 // haulier company (operator-entered)
+  vehicleReg    String
+  driverName    String?
+  purpose       String                 @default("DELIVERY") // DELIVERY | COLLECTION
+
+  windowStart   DateTime
+  windowEnd     DateTime
+  arrivedAt     DateTime?
+  loadingAt     DateTime?
+  completedAt   DateTime?
+
+  status        TruckAppointmentStatus @default(BOOKED)
+  bookedBy      String?
+  note          String?                @db.Text
+
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([companyId, windowStart])
+  @@index([companyId, status])
+  @@index([consignmentId])
+  @@map("terminal_truck_appointments")
 }

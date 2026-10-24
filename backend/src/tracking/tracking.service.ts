@@ -65,6 +65,11 @@ export class TrackingService {
     // Falls back to great-circle approximation on any network error.
     let etaMinutes: number | null = null;
     let remainingKm: number | null = null;
+    // Provenance of the estimate, disclosed to the customer: "osrm" is a
+    // road-route estimate; "haversine" is a straight-line approximation used
+    // only when the routing service is unavailable. Never present the
+    // fallback as if it were a road distance.
+    let etaSource: 'osrm' | 'haversine' | null = null;
     if (!delivered && current && destination) {
       try {
         const osrmBase = process.env.OSRM_BASE_URL ?? 'https://router.project-osrm.org';
@@ -84,6 +89,7 @@ export class TrackingService {
           if (route?.distance != null && route?.duration != null) {
             remainingKm  = Math.round((route.distance / 1000) * 10) / 10;
             etaMinutes   = Math.max(1, Math.round(route.duration / 60));
+            etaSource    = 'osrm';
           }
         }
       } catch { /* fall through to haversine */ }
@@ -96,6 +102,7 @@ export class TrackingService {
         );
         remainingKm = Math.round(gc * 10) / 10;
         etaMinutes  = Math.max(1, Math.round((gc / 35) * 60));
+        etaSource   = 'haversine';
       }
     }
 
@@ -120,6 +127,7 @@ export class TrackingService {
       destination,
       remainingKm,
       etaMinutes,
+      etaSource,
       estimatedDelivery: shipment?.estimatedDelivery ?? null,
       deliveredAt: waybill.podDeliveredAt ?? null,
       // Only expose the rating token once the parcel is delivered — prevents

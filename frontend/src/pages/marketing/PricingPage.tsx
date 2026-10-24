@@ -62,12 +62,12 @@ const faqs = [
     a: "Yes. Upgrade from Starter to Professional at any time inside the app (Billing & Plans page). Downgrade also works — just contact us on WhatsApp.",
   },
   {
-    q: "Is billing in ZAR?",
-    a: "Yes. All pricing is in South African Rand and billed locally via Paystack. No surprise currency conversions.",
+    q: "What currency am I billed in?",
+    a: "Your plan price and billing currency are confirmed before you subscribe — no surprise currency conversions.",
   },
   {
     q: "What payment methods do you accept?",
-    a: "We accept card payments via Paystack. EFT available on request for annual plans.",
+    a: "We accept online card payments. Bank transfer is available on request for annual plans.",
   },
   {
     q: "Do you offer discounts for NGOs or startups?",
@@ -86,7 +86,7 @@ export default function PricingPage() {
           <Zap className="h-3.5 w-3.5 text-sky-400" /> Transparent Pricing
         </div>
         <h1 className="text-5xl font-black text-white mb-4">
-          Simple, ZAR pricing
+          Simple, transparent pricing
         </h1>
         <p className="text-lg text-white/50 max-w-xl mx-auto">
           No setup fees. No hidden costs. Start free for 14 days — no card

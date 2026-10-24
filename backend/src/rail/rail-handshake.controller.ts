@@ -12,6 +12,7 @@ import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RAIL_READ_ROLES, RAIL_SIGNATORY_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /**
  * Daily Handshake (Transnet Network Statement — Annexure 28).
@@ -26,6 +27,7 @@ import { RAIL_READ_ROLES, RAIL_SIGNATORY_ROLES, RAIL_WRITE_ROLES } from './rail-
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(...RAIL_READ_ROLES)
+@RequireFeature('rail')
 @Controller('rail/handshake')
 export class RailHandshakeController {
   constructor(private readonly handshake: RailHandshakeService) {}

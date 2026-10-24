@@ -23,7 +23,7 @@ type TenantAnalytics = {
   };
   usage: { users: number; waybillsTotal: number; waybills30: number; collections: number; drivers: number; invoices: number };
   revenue: { mrr: number; collectedTotal: number; collected30: number };
-  operations: { delivered: number; failed: number; returned: number; deliverySuccess: number; exceptionRate: number; onTimeRate: number };
+  operations: { delivered: number; failed: number; returned: number; deliverySuccess: number; exceptionRate: number; onTimeRate: number | null; onTimeObservations?: number };
   trend: Array<{ month: string; waybills: number }>;
   recentWaybills: Array<{ id: string; trackingNumber: string; status: string; createdAt: string }>;
   auditTrail: Array<{ id: string; action: string; actorEmail?: string | null; createdAt: string; metadata?: any }>;
@@ -425,7 +425,7 @@ export default function OwnerTenantDetail() {
               <div className="text-xl font-black text-white">Delivery Performance</div>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <Stat label="Delivery Success" value={`${num(d.operations.deliverySuccess, 1)}%`} />
-                <Stat label="On-Time" value={`${num(d.operations.onTimeRate, 1)}%`} />
+                <Stat label="On-Time (by est. delivery)" value={d.operations.onTimeRate == null ? "Unavailable" : `${num(d.operations.onTimeRate, 1)}%`} sub={d.operations.onTimeRate == null ? "No delivered shipments with an estimated delivery" : `${d.operations.onTimeObservations ?? 0} shipments with estimates`} />
                 <Stat label="Exception Rate" value={`${num(d.operations.exceptionRate, 1)}%`} />
                 <Stat label="SLA Breach" value={`${num(d.tenant.slaBreachMinutes)}m`} sub="threshold" />
                 <Stat label="Delivered" value={num(d.operations.delivered)} />

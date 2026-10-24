@@ -32,30 +32,13 @@ import {
   type LogisticsSnapshot,
   type TrendPoint,
 } from "../api/logisticsAnalyticsApi";
+import { computeLogisticsHealthScore, deliverySuccessRate } from "../lib/logisticsHealth";
 
 
 // ─── Utility: compute operational health score (0-100) ──────────────────────
-function computeHealthScore(s: LogisticsSnapshot): number {
-  const onTimeWeight = 0.35;
-  const failWeight = 0.25;
-  const slaWeight = 0.20;
-  const ratingWeight = 0.20;
-
-  const onTimeScore = Math.min(s.onTimePercentage, 100);
-  const failScore = s.totalDeliveries > 0
-    ? Math.max(0, 100 - (s.failedDeliveries / s.totalDeliveries) * 100 * 5)
-    : 100;
-  const slaScore = s.totalDeliveries > 0
-    ? Math.max(0, 100 - (s.slaBreaches / s.totalDeliveries) * 100 * 3)
-    : 100;
-  const ratingScore = s.customerRatingAvg ? (s.customerRatingAvg / 5) * 100 : 70;
-
-  return Math.round(
-    onTimeScore * onTimeWeight +
-    failScore * failWeight +
-    slaScore * slaWeight +
-    ratingScore * ratingWeight
-  );
+// Null when the period has no deliveries — see logisticsHealth for the rule.
+function computeHealthScore(s: LogisticsSnapshot): number | null {
+  return computeLogisticsHealthScore(s);
 }
 
 function getHealthGrade(score: number): { grade: string; color: string; label: string } {
@@ -69,7 +52,21 @@ function getHealthGrade(score: number): { grade: string; color: string; label: s
 
 // ─── Components ─────────────────────────────────────────────────────────────
 
-function HealthRing({ score, size = 120 }: { score: number; size?: number }) {
+function HealthRing({ score, size = 120 }: { score: number | null; size?: number }) {
+  if (score === null) {
+    return (
+      <div className="flex flex-col items-center gap-2" style={{ width: size }}>
+        <div
+          className="flex flex-col items-center justify-center rounded-full border-8 border-white/[0.06] text-center"
+          style={{ width: size, height: size }}
+        >
+          <span className="text-lg font-black text-white/50">Unavailable</span>
+          <span className="px-4 text-[10px] font-bold text-white/40">No deliveries in this period</span>
+        </div>
+        <span className="text-xs font-black uppercase tracking-wider text-white/40">Operational Health</span>
+      </div>
+    );
+  }
   const { grade, color, label } = getHealthGrade(score);
   const radius = (size - 16) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -234,25 +231,48 @@ function TrendChart({ data }: { data: TrendPoint[] }) {
 
 
 function PerformanceGauges({ s }: { s: LogisticsSnapshot }) {
-  const gauges = [
-    { label: "On-Time Rate", value: s.onTimePercentage, target: 95, unit: "%" },
-    { label: "Customer Rating", value: (s.customerRatingAvg ?? 0) * 20, target: 90, unit: "/5" },
-    { label: "Success Rate", value: s.totalDeliveries > 0 ? ((s.totalDeliveries - s.failedDeliveries) / s.totalDeliveries) * 100 : 100, target: 98, unit: "%" },
+  const successRate = deliverySuccessRate(s.totalDeliveries, s.failedDeliveries);
+  const gauges: { label: string; value: number | null; target: number; unit: string; display: string; note?: string }[] = [
+    {
+      label: "Delivery Completion Rate",
+      value: s.totalDeliveries > 0 ? s.onTimePercentage : null,
+      target: 95,
+      unit: "%",
+      display: s.totalDeliveries > 0 ? `${Math.round(s.onTimePercentage)}%` : "Unavailable",
+      note: s.totalDeliveries > 0 ? `${s.deliveredOnTime} of ${s.totalDeliveries} waybills delivered — completion, not measured against a promised delivery time` : "No deliveries in period",
+    },
+    {
+      label: "Customer Rating",
+      value: s.customerRatingAvg != null ? s.customerRatingAvg * 20 : null,
+      target: 90,
+      unit: "/5",
+      display: s.customerRatingAvg != null ? `${s.customerRatingAvg.toFixed(1)}/5` : "Unavailable",
+      note: s.customerRatingAvg == null ? "No ratings in period" : undefined,
+    },
+    {
+      label: "Success Rate",
+      value: successRate,
+      target: 98,
+      unit: "%",
+      display: successRate != null ? `${Math.round(successRate)}%` : "Unavailable",
+      note: successRate != null ? `${s.totalDeliveries - s.failedDeliveries} of ${s.totalDeliveries} deliveries succeeded` : "No deliveries in period",
+    },
   ];
 
   return (
     <div className="space-y-3">
       {gauges.map((g) => {
-        const pct = Math.min(g.value, 100);
-        const atTarget = pct >= g.target;
+        const pct = g.value != null ? Math.min(g.value, 100) : 0;
+        const atTarget = g.value != null && pct >= g.target;
         return (
           <div key={g.label}>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[11px] font-bold text-white/50">{g.label}</span>
-              <span className={`text-xs font-black ${atTarget ? "text-emerald-400" : "text-amber-400"}`}>
-                {g.unit === "/5" ? `${(s.customerRatingAvg ?? 0).toFixed(1)}/5` : `${Math.round(pct)}%`}
+              <span className={`text-xs font-black ${g.value == null ? "text-white/40" : atTarget ? "text-emerald-400" : "text-amber-400"}`}>
+                {g.display}
               </span>
             </div>
+            {g.note && <div className="mb-1 text-[10px] text-white/30">{g.note}</div>}
             <div className="relative h-2 rounded-full bg-white/5 overflow-hidden">
               <div
                 className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${
@@ -377,7 +397,7 @@ export default function LogisticsAnalytics() {
     }
   };
 
-  const healthScore = useMemo(() => snapshot ? computeHealthScore(snapshot) : 0, [snapshot]);
+  const healthScore = useMemo(() => (snapshot ? computeHealthScore(snapshot) : null), [snapshot]);
 
   if (loading) {
     return (
@@ -487,15 +507,15 @@ export default function LogisticsAnalytics() {
               value={s.totalDeliveries.toLocaleString()}
               icon={Package}
               color="bg-sky-500/20 text-sky-300"
-              subtitle={`${s.deliveredOnTime} on time`}
+              subtitle={`${s.deliveredOnTime} delivered` }
             />
             <KpiCard
-              label="On-Time Rate"
-              value={`${s.onTimePercentage}%`}
+              label="Delivery Completion Rate"
+              value={s.totalDeliveries > 0 ? `${s.onTimePercentage}%` : "Unavailable"}
               icon={Clock}
               color="bg-emerald-500/20 text-emerald-300"
-              trend={s.onTimePercentage >= 85 ? "up" : "down"}
-              subtitle="Target: 95%"
+              trend={s.totalDeliveries > 0 ? (s.onTimePercentage >= 85 ? "up" : "down") : null}
+              subtitle={s.totalDeliveries > 0 ? `Target: 95% · ${s.deliveredOnTime} of ${s.totalDeliveries} waybills delivered in period (not vs. a promised time)` : "No deliveries in this period"}
             />
             <KpiCard
               label="Failed Deliveries"
@@ -586,7 +606,7 @@ export default function LogisticsAnalytics() {
                 </div>
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3 text-center">
                   <Activity className="mx-auto h-5 w-5 text-sky-400/60" />
-                  <div className="mt-1 text-lg font-black text-white">{healthScore}</div>
+                  <div className="mt-1 text-lg font-black text-white">{healthScore ?? "Unavailable"}</div>
                   <div className="text-[10px] font-bold text-white/30">Health Score</div>
                 </div>
               </div>
@@ -607,7 +627,7 @@ export default function LogisticsAnalytics() {
             <div className="space-y-3">
               {[
                 { label: "Total Created", value: s.totalDeliveries, pct: 100, color: "bg-sky-400" },
-                { label: "Delivered On-Time", value: s.deliveredOnTime, pct: s.totalDeliveries > 0 ? (s.deliveredOnTime / s.totalDeliveries) * 100 : 0, color: "bg-emerald-400" },
+                { label: "Delivered (completion)", value: s.deliveredOnTime, pct: s.totalDeliveries > 0 ? (s.deliveredOnTime / s.totalDeliveries) * 100 : 0, color: "bg-emerald-400" },
                 { label: "Delivered Late", value: Math.max(0, s.totalDeliveries - s.deliveredOnTime - s.failedDeliveries - s.returnedParcels), pct: s.totalDeliveries > 0 ? (Math.max(0, s.totalDeliveries - s.deliveredOnTime - s.failedDeliveries - s.returnedParcels) / s.totalDeliveries) * 100 : 0, color: "bg-amber-400" },
                 { label: "Failed", value: s.failedDeliveries, pct: s.totalDeliveries > 0 ? (s.failedDeliveries / s.totalDeliveries) * 100 : 0, color: "bg-red-400" },
                 { label: "Returned", value: s.returnedParcels, pct: s.totalDeliveries > 0 ? (s.returnedParcels / s.totalDeliveries) * 100 : 0, color: "bg-orange-400" },
@@ -665,7 +685,7 @@ export default function LogisticsAnalytics() {
 
               <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-white/40">On-Time Sparkline</span>
+                  <span className="text-[11px] font-bold text-white/40">Completion-Rate Trend</span>
                 </div>
                 <div className="mt-2">
                   <MiniSparkline data={trends.map(t => t.onTimePercentage)} color="emerald" />
