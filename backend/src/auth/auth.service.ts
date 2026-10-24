@@ -510,7 +510,7 @@ export class AuthService {
 
     const accessToken = this.jwt.sign(payload, {
       secret: this.config.get('JWT_SECRET'),
-      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h'),
+      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h') as '4h',
     });
 
     const refreshToken = await this.issueOwnerRefreshToken(owner.id);
@@ -544,7 +544,7 @@ export class AuthService {
 
     const accessToken = this.jwt.sign(payload, {
       secret: this.config.get('JWT_SECRET'),
-      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h'),
+      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h') as '4h',
     });
 
     const refreshToken = await this.issueOwnerRefreshToken(stored.owner.id);
@@ -764,7 +764,7 @@ export class AuthService {
 
     const accessToken = this.jwt.sign(payload, {
       secret: this.config.get('JWT_SECRET'),
-      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h'),
+      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h') as '4h',
     });
 
     const refreshToken = uuid();
