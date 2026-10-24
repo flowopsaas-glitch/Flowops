@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { RawString } from '../../common/decorators/raw-string.decorator';
 
 export class BookTruckAppointmentDto {
@@ -23,7 +23,6 @@ export class TruckAppointmentTransitionDto {
   @IsOptional() @IsDateString() windowEnd?: string;
 }
 
-import { IsBoolean, IsInt, Max, Min } from 'class-validator';
 
 export class ShiftTruckAppointmentsDto {
   @RawString() @IsString() @MinLength(1) @MaxLength(120) terminalName!: string;
