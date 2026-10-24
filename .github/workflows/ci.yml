@@ -148,6 +148,34 @@ jobs:
       - name: Build
         run: npx vite build
 
+  # The driver portal (which the Capacitor mobile shell packages via
+  # driver-mobile/scripts/prepare-web.mjs) had no CI coverage at all: it
+  # could stop typechecking or building without any check noticing. Keep
+  # the gate to what the app itself defines (typecheck + production build).
+  driver-portal:
+    name: Driver Portal
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: driver-portal
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: driver-portal/package-lock.json
+
+      - run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
   backend:
     name: Backend
     runs-on: ubuntu-latest
