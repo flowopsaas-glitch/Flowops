@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Truck, Package, MapPin, LogOut, RefreshCw, Navigation, Inbox,
-  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight, ScanLine, Bell, BellOff,
+  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight, ScanLine, Bell, BellOff, Fuel,
 } from 'lucide-react';
 import api from '../services/api';
 import { clearSession, getStoredDriver } from '../services/auth';
@@ -154,6 +154,9 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <button onClick={() => setScanning(true)} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Scan waybill">
               <ScanLine className="w-5 h-5 text-emerald-300" />
+            </button>
+            <button onClick={() => navigate('/costs')} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Log a cost (fuel or toll)">
+              <Fuel className="w-5 h-5" />
             </button>
             <button onClick={() => navigate('/chat')} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Chat with dispatch">
               <MessageCircle className="w-5 h-5 text-blue-300" />

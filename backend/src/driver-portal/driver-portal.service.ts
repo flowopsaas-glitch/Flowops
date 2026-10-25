@@ -17,7 +17,7 @@ import { legalPredecessorStatuses } from '../waybills/waybill-status.machine';
 import {
   DRIVE_MODE_CONFIG, DRIVER_MODES, canEndDuty, checkStartDuty, dutyMinutes, jobKindsForMode, JobKind,
 } from './driver-mode.rules';
-import { CollectionStatus, type DriverMode } from '@prisma/client';
+import { CollectionStatus, TripCostType, type DriverMode } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 const CONFIRMABLE_COLLECTION_STATUSES: CollectionStatus[] = [
@@ -595,6 +595,84 @@ export class DriverPortalService {
   }
 
   // ── Driver modes & duties (one shift, one mode, one vehicle) ──────────────
+
+  // ── Measured trip costs (driver capture) ─────────────────────────────────
+  // A driver records what a trip actually cost (fuel at the pump, tolls at
+  // the gate) in under half a minute. Identity always comes from the driver
+  // token — the client never supplies a driver id. Entries are raw material
+  // for per-trip margins: until a driver logs fuel, that cost is UNKNOWN
+  // for the trip, never assumed zero.
+
+  async logDriverCost(driverId: string, companyId: string, body: any) {
+    const type = String(body?.type ?? '').toUpperCase();
+    if (!Object.values(TripCostType).includes(type as TripCostType)) {
+      throw new BadRequestException('type must be FUEL, TOLL or OTHER');
+    }
+    const amount = Number(body?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('amount must be a positive number');
+    }
+    const litres = body?.litres != null ? Number(body.litres) : null;
+    if (litres != null && (!Number.isFinite(litres) || litres < 0)) {
+      throw new BadRequestException('litres must be a non-negative number');
+    }
+    const odometerKm = body?.odometerKm != null ? Number(body.odometerKm) : null;
+    if (odometerKm != null && (!Number.isInteger(odometerKm) || odometerKm < 0)) {
+      throw new BadRequestException('odometerKm must be a non-negative integer');
+    }
+
+    let waybillId: string | null = null;
+    if (body?.waybillId) {
+      // Tenant-checked only: the office reconciles which trip a cost belongs
+      // to. The driver's identity and company always come from the token.
+      const waybill = await this.prisma.waybill.findFirst({
+        where: { id: String(body.waybillId), companyId },
+        select: { id: true },
+      });
+      if (!waybill) throw new NotFoundException('Waybill not found');
+      waybillId = waybill.id;
+    }
+
+    const entry = await this.prisma.tripCostEntry.create({
+      data: {
+        companyId,
+        driverId,
+        waybillId,
+        type: type as TripCostType,
+        amount,
+        litres: type === TripCostType.FUEL ? litres : null,
+        odometerKm,
+        note: typeof body?.note === 'string' && body.note.trim() ? body.note.trim().slice(0, 500) : null,
+        occurredAt: new Date(),
+        source: 'DRIVER_APP',
+        createdBy: driverId,
+      },
+    });
+
+    if (odometerKm != null) {
+      const driver = await this.prisma.driver.findFirst({
+        where: { id: driverId, companyId },
+        select: { currentKm: true },
+      });
+      if (driver && odometerKm > (driver.currentKm ?? 0)) {
+        await this.prisma.driver.update({
+          where: { id: driverId },
+          data: { currentKm: odometerKm },
+        });
+      }
+    }
+
+    return entry;
+  }
+
+  /** The driver's most recent cost entries (their own record, token-scoped). */
+  async listDriverCosts(driverId: string, limit = 30) {
+    return this.prisma.tripCostEntry.findMany({
+      where: { driverId },
+      orderBy: { occurredAt: 'desc' },
+      take: Math.min(100, Math.max(1, limit)),
+    });
+  }
 
   /** GET /driver-portal/modes — the five crafts, what this driver may drive, and the active duty. */
   async getModes(driverId: string) {

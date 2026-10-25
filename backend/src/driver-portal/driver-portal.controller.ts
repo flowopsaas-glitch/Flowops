@@ -227,6 +227,22 @@ export class DriverPortalController {
     return this.svc.getTypingStatus(req.driver.id);
   }
 
+  /** POST /driver-portal/costs — driver logs a measured trip cost (fuel/toll). */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('costs')
+  logCost(@Req() req: any, @Body() body: any) {
+    return this.svc.logDriverCost(req.driver.id, req.driver.companyId, body ?? {});
+  }
+
+  /** GET /driver-portal/costs/mine — the driver's recent cost entries. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('costs/mine')
+  myCosts(@Req() req: any) {
+    return this.svc.listDriverCosts(req.driver.id);
+  }
+
   // ── Dispatch-facing (tenant JWT required — unchanged) ─────────────────────────
 
   /** GET /driver-portal/dispatch/conversations — drivers with unread counts. */

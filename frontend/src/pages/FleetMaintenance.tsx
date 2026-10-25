@@ -5,6 +5,7 @@ import {
   Loader2, Plus, RefreshCw, Truck, Wrench, Brain,
 } from "lucide-react";
 import { api } from "../api/client";
+import TripCostsPanel from "../components/fleet/TripCostsPanel";
 const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
@@ -440,6 +441,9 @@ export default function FleetMaintenance() {
             </div>
           )}
         </div>
+      </div>
+      <div className="mt-6">
+        <TripCostsPanel />
       </div>
     </div>
   );

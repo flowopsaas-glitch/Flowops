@@ -221,6 +221,7 @@ model Company {
   driverChatMessages DriverChatMessage[] @relation("CompanyDriverChats")
   branches           Branch[]
   manifests          Manifest[]
+  tripCostEntries    TripCostEntry[]
   invoices           Invoice[]
   invoiceDrafts      InvoiceDraft[]
   rateCards          RateCard[]
@@ -628,6 +629,7 @@ model Driver {
   defaultMode  DriverMode?
   allowedModes DriverMode[]
   duties       DriverDuty[]
+  tripCostEntries TripCostEntry[]
 
   // ── Single active session + login audit (driver portal) ───────────────
   // Mirrors the User model: one device per driver. driver-login mints a new
@@ -1228,6 +1230,7 @@ model Waybill {
 
   shipments        Shipment[]
   manifestWaybills ManifestWaybill[]
+  tripCostEntries  TripCostEntry[]
   invoiceItem      InvoiceItem?
   inboxItem        WaybillInboxItem?
   codTransactions  CodTransaction[]
@@ -1359,6 +1362,7 @@ model Manifest {
   updatedAt DateTime @updatedAt
 
   waybills ManifestWaybill[]
+  tripCostEntries TripCostEntry[]
 
   @@map("manifests")
 }
@@ -3202,6 +3206,59 @@ model DeliveryCostAllocation {
   @@index([companyId, clientName])
   @@index([companyId, fromZone, toZone])
   @@map("delivery_cost_allocations")
+}
+
+enum TripCostType {
+  FUEL
+  TOLL
+  OTHER
+}
+
+enum TripCostSource {
+  DRIVER_APP
+  OFFICE
+  IMPORT
+}
+
+// A single measured operating cost captured against a driver/vehicle and,
+// when known, the exact waybill or manifest (trip) that caused it. This is
+// the raw material of per-trip truth: fuel and tolls recorded at the pump
+// or office, never inferred. DeliveryCostAllocation (below) turns these
+// into per-waybill margins (the allocation table); until an entry exists, a trip's fuel/toll cost
+// is UNKNOWN — not zero.
+model TripCostEntry {
+  id        String @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  driverId String
+  driver   Driver @relation(fields: [driverId], references: [id], onDelete: Restrict)
+
+  waybillId String?
+  waybill   Waybill? @relation(fields: [waybillId], references: [id], onDelete: SetNull)
+
+  manifestId String?
+  manifest   Manifest? @relation(fields: [manifestId], references: [id], onDelete: SetNull)
+
+  type   TripCostType
+  amount Float
+  litres Float?
+  odometerKm Int?
+  note       String?
+  receiptUrl String?
+  currency   String @default("ZAR")
+
+  occurredAt DateTime
+  source     TripCostSource @default(OFFICE)
+  createdBy  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, occurredAt])
+  @@index([companyId, driverId, occurredAt])
+  @@index([waybillId])
+  @@map("trip_cost_entries")
 }
 
 // Periodic lane profitability snapshot (aggregated per zone-pair per month).

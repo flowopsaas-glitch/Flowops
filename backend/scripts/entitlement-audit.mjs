@@ -95,6 +95,7 @@ export const EXEMPT = {
   "notifications/notifications.controller.ts": "core platform notifications",
   "push/push.controller.ts": "core platform push registration",
   "clients/clients.controller.ts": "core CRM data used by waybills/quotes on every plan",
+  "trip-costs/trip-costs.controller.ts": "core operational cost capture — the measured-data foundation for profitability on every plan (roles-guarded)",
   "carriers/carriers.controller.ts": "core ops master data (roles-guarded)",
   "drivers/drivers.controller.ts": "core fleet data, plan-limited in BillingService",
   "dispatch/dispatch.controller.ts": "core dispatch workflow (no plan feature key exists)",

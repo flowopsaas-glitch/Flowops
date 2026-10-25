@@ -22,6 +22,7 @@ import { DriversModule } from './drivers/drivers.module';
 import { BranchesModule } from './branches/branches.module';
 import { WaybillsModule } from './waybills/waybills.module';
 import { CollectionsModule } from './collections/collections.module';
+import { TripCostsModule } from './trip-costs/trip-costs.module';
 import { ClientsModule }     from './clients/clients.module';
 import { ShipmentsModule } from './shipments/shipments.module';
 import { ManifestsModule } from './manifests/manifests.module';
@@ -208,6 +209,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
     BranchesModule,
     WaybillsModule,
     CollectionsModule,
+    TripCostsModule,
     ClientsModule,
     ShipmentsModule,
     ReturnsModule,
