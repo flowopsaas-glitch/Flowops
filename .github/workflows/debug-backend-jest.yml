@@ -20,7 +20,7 @@ jobs:
           set +e
           npm ci --ignore-scripts > /tmp/out.txt 2>&1
           npx prisma generate >> /tmp/out.txt 2>&1
-          npx jest src/trip-costs src/commercial-analytics --runInBand >> /tmp/out.txt 2>&1
+          npm test -- --reporters=default >> /tmp/out.txt 2>&1
           echo "JEST_EXIT=$?" >> /tmp/out.txt
           tail -400 /tmp/out.txt > debug-jest-output.txt
           cp debug-jest-output.txt ../debug-jest-output.txt

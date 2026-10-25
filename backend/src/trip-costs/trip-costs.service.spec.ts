@@ -5,6 +5,7 @@ import { TripCostsService } from './trip-costs.service';
 const makePrisma = () => ({
   driver: {
     findFirst: jest.fn().mockResolvedValue({ id: 'driver-1', currentKm: 100_000 }),
+    findMany: jest.fn().mockResolvedValue([]),
     update: jest.fn().mockResolvedValue({}),
   },
   waybill: { findFirst: jest.fn().mockResolvedValue({ id: 'wb-1' }) },
@@ -96,8 +97,8 @@ describe('TripCostsService', () => {
       .mockResolvedValueOnce([
         { driverId: 'driver-1', _sum: { amount: 1820 }, _count: { _all: 3 } },
       ]);
-    prisma.driver.findMany = jest.fn().mockResolvedValue([
-      { id: 'driver-1', name: 'Sam Driver', vehicleReg: 'CA 123' },
+    prisma.driver.findMany.mockResolvedValue([
+      { id: 'driver-1', name: 'Sam Driver', vehicleReg: 'CA 123' } as any,
     ]);
     const svc = new TripCostsService(prisma as any);
 
