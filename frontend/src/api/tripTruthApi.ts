@@ -57,6 +57,23 @@ export type RecomputeSummary = {
   estimatedCost: number;
   unallocatedCost: number;
   unallocatedEntries: number;
+  exceptionsOpened: number;
+  exceptionsOpen: number;
+};
+
+export type MarginExceptionStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+
+export type TripExceptionRow = TripTruthRow & {
+  exceptionStatus: MarginExceptionStatus | null;
+  exceptionNote?: string | null;
+  exceptionBy?: string | null;
+  exceptionAt?: string | null;
+};
+
+export type TripExceptionList = {
+  period: string;
+  exceptions: TripExceptionRow[];
+  counts: { open: number; acknowledged: number };
 };
 
 function unwrap<T>(r: unknown): T {
@@ -75,4 +92,23 @@ export async function listTripTruth(params: {
 export async function recomputeTripTruth(period: string): Promise<RecomputeSummary> {
   const res = await api.post("/commercial-analytics/trip-truth/recompute", { period });
   return unwrap<RecomputeSummary>(res.data);
+}
+
+export async function listTripExceptions(period: string): Promise<TripExceptionList> {
+  const res = await api.get("/commercial-analytics/trip-truth/exceptions", {
+    params: { period },
+  });
+  return unwrap<TripExceptionList>(res.data);
+}
+
+export async function updateTripException(
+  waybillId: string,
+  status: MarginExceptionStatus,
+  note?: string,
+): Promise<TripExceptionRow> {
+  const res = await api.patch(`/commercial-analytics/trip-truth/${waybillId}/exception`, {
+    status,
+    note,
+  });
+  return unwrap<TripExceptionRow>(res.data);
 }

@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommercialAnalyticsService } from './commercial-analytics.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -81,6 +82,7 @@ export class TripTruthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly commercial: CommercialAnalyticsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Recompute ────────────────────────────────────────────────────────────
@@ -212,10 +214,19 @@ export class TripTruthService {
       }
     }
 
+    // Existing exception states, so recompute preserves acknowledgements
+    // and only notifies on a genuine transition into below-cost.
+    const existingRows = await this.prisma.deliveryCostAllocation.findMany({
+      where: { companyId, waybillId: { in: [...deliveredIds] } },
+      select: { waybillId: true, exceptionStatus: true },
+    });
+    const existingException = new Map(existingRows.map((r) => [r.waybillId, r.exceptionStatus]));
+
     // Write one allocation per delivered waybill.
     const counts = { MEASURED: 0, ALLOCATED: 0, ESTIMATED: 0 };
     let recordedCost = 0;
     let estimatedCostTotal = 0;
+    const computed: { waybillId: string; trackingNumber: string; provenance: string; grossMargin: number }[] = [];
     const writes = delivered.map((w) => {
       const a = acc.get(w.id);
       const recorded = a ? a.fuel + a.tolls + a.other : 0;
@@ -266,6 +277,13 @@ export class TripTruthService {
         };
       }
 
+      computed.push({
+        waybillId: w.id,
+        trackingNumber: w.trackingNumber,
+        provenance: String((data as { provenance: string }).provenance),
+        grossMargin: (data as { grossMargin: number }).grossMargin,
+      });
+
       const base = {
         period: targetPeriod,
         revenue,
@@ -288,6 +306,56 @@ export class TripTruthService {
       await Promise.all(writes.slice(i, i + 200));
     }
 
+    // ── Below-cost exception lifecycle (Slice 3) ──────────────────────────
+    // Only MEASURED/ALLOCATED trips can raise an exception: acting on an
+    // estimate would mean acting on a guess. A trip that recovers (margin
+    // back above water, or evidence changes) auto-resolves. Notifications
+    // fire once per transition into OPEN — never per recompute.
+    const now = new Date();
+    const newlyOpened: typeof computed = [];
+    const exceptionWrites: Promise<unknown>[] = [];
+    for (const c of computed) {
+      const prev = existingException.get(c.waybillId) ?? null;
+      const belowCost =
+        (c.provenance === 'MEASURED' || c.provenance === 'ALLOCATED') && c.grossMargin < 0;
+      if (belowCost && (prev === null || prev === 'RESOLVED')) {
+        exceptionWrites.push(
+          this.prisma.deliveryCostAllocation.updateMany({
+            where: { waybillId: c.waybillId, companyId },
+            data: { exceptionStatus: 'OPEN', exceptionAt: now, exceptionBy: null, exceptionNote: null },
+          }),
+        );
+        newlyOpened.push(c);
+      } else if (!belowCost && (prev === 'OPEN' || prev === 'ACKNOWLEDGED')) {
+        exceptionWrites.push(
+          this.prisma.deliveryCostAllocation.updateMany({
+            where: { waybillId: c.waybillId, companyId },
+            data: { exceptionStatus: 'RESOLVED', exceptionAt: now, exceptionBy: null },
+          }),
+        );
+      }
+    }
+    await Promise.all(exceptionWrites);
+
+    if (newlyOpened.length > 0) {
+      const worst = newlyOpened.reduce((a, b) => (b.grossMargin < a.grossMargin ? b : a));
+      await this.notifications.broadcast(
+        companyId,
+        newlyOpened.length === 1
+          ? 'A measured trip landed below cost'
+          : `${newlyOpened.length} measured trips landed below cost`,
+        `Trip Truth (${targetPeriod}): worst is ${worst.trackingNumber} at ` +
+          `${worst.grossMargin.toFixed(2)} margin on recorded costs. Open ` +
+          'Commercial Analytics → Trip Truth to acknowledge and act.',
+        'warning',
+        '/commercial-analytics?tab=truth',
+      );
+    }
+
+    const exceptionsOpen = await this.prisma.deliveryCostAllocation.count({
+      where: { companyId, period: targetPeriod, exceptionStatus: { in: ['OPEN', 'ACKNOWLEDGED'] } },
+    });
+
     return {
       period: targetPeriod,
       computedAt: new Date().toISOString(),
@@ -299,6 +367,8 @@ export class TripTruthService {
       estimatedCost: round2(estimatedCostTotal),
       unallocatedCost: round2(unallocatedCost),
       unallocatedEntries,
+      exceptionsOpened: newlyOpened.length,
+      exceptionsOpen,
     };
   }
 
@@ -442,6 +512,80 @@ export class TripTruthService {
         driverDayPool,
       },
     };
+  }
+
+  // ── Below-cost exception queue (Slice 3) ─────────────────────────────────
+
+  async listExceptions(companyId: string, query: { period?: string; status?: string }) {
+    const targetPeriod = query.period || this.currentPeriod();
+    const statuses = ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'];
+    const where: Record<string, unknown> = {
+      companyId,
+      period: targetPeriod,
+      exceptionStatus: query.status && statuses.includes(query.status)
+        ? query.status
+        : { in: ['OPEN', 'ACKNOWLEDGED'] },
+    };
+    const [rows, openCount, ackCount] = await Promise.all([
+      this.prisma.deliveryCostAllocation.findMany({
+        where,
+        orderBy: [{ exceptionAt: 'desc' }],
+        take: 100,
+      }),
+      this.prisma.deliveryCostAllocation.count({
+        where: { companyId, period: targetPeriod, exceptionStatus: 'OPEN' },
+      }),
+      this.prisma.deliveryCostAllocation.count({
+        where: { companyId, period: targetPeriod, exceptionStatus: 'ACKNOWLEDGED' },
+      }),
+    ]);
+
+    const tracking = new Map<string, string>();
+    if (rows.length > 0) {
+      const waybills = await this.prisma.waybill.findMany({
+        where: { id: { in: rows.map((r) => r.waybillId) }, companyId },
+        select: { id: true, trackingNumber: true },
+      });
+      for (const w of waybills) tracking.set(w.id, w.trackingNumber);
+    }
+
+    return {
+      period: targetPeriod,
+      exceptions: rows.map((r) => ({ ...r, trackingNumber: tracking.get(r.waybillId) ?? null })),
+      counts: { open: openCount, acknowledged: ackCount },
+    };
+  }
+
+  async updateException(
+    companyId: string,
+    waybillId: string,
+    dto: { status?: string; note?: string },
+    actorId?: string,
+  ) {
+    const status = String(dto?.status ?? '').toUpperCase();
+    if (!['OPEN', 'ACKNOWLEDGED', 'RESOLVED'].includes(status)) {
+      throw new BadRequestException('status must be OPEN, ACKNOWLEDGED or RESOLVED');
+    }
+    const existing = await this.prisma.deliveryCostAllocation.findFirst({
+      where: { waybillId, companyId },
+      select: { id: true, exceptionStatus: true, exceptionNote: true },
+    });
+    if (!existing || !existing.exceptionStatus) {
+      throw new NotFoundException('No below-cost exception recorded for this trip');
+    }
+    await this.prisma.deliveryCostAllocation.updateMany({
+      where: { waybillId, companyId },
+      data: {
+        exceptionStatus: status as 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED',
+        exceptionNote:
+          typeof dto.note === 'string' && dto.note.trim()
+            ? dto.note.trim().slice(0, 500)
+            : existing.exceptionNote,
+        exceptionBy: actorId ?? null,
+        exceptionAt: new Date(),
+      },
+    });
+    return this.prisma.deliveryCostAllocation.findFirst({ where: { waybillId, companyId } });
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

@@ -110,6 +110,27 @@ export class CommercialAnalyticsController {
     });
   }
 
+  /** GET /commercial-analytics/trip-truth/exceptions — below-cost exception queue */
+  @Get('trip-truth/exceptions')
+  listTripExceptions(
+    @CurrentUser() u: any,
+    @Query('period') period?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.tripTruth.listExceptions(u.companyId, { period, status });
+  }
+
+  /** PATCH /commercial-analytics/trip-truth/:waybillId/exception — acknowledge / resolve */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
+  @Patch('trip-truth/:waybillId/exception')
+  updateTripException(
+    @CurrentUser() u: any,
+    @Param('waybillId') waybillId: string,
+    @Body() body: { status?: string; note?: string },
+  ) {
+    return this.tripTruth.updateException(u.companyId, waybillId, body ?? {}, u?.id);
+  }
+
   /** GET /commercial-analytics/trip-truth/:waybillId — one trip and the entries behind its cost */
   @Get('trip-truth/:waybillId')
   getTripTruth(@CurrentUser() u: any, @Param('waybillId') waybillId: string) {

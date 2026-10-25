@@ -3171,6 +3171,12 @@ model DockAppointment {
 // Per-delivery cost model — enables true margin calculation per waybill.
 // Costs are estimated from distance × per-km rate, driver hourly cost, and
 // fixed overheads. Updated by the cost-allocation engine or set manually.
+enum MarginExceptionStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
 enum AllocationProvenance {
   MEASURED   // costs come from recorded trip-cost entries (direct, or direct + shared pools)
   ALLOCATED  // costs include shared recorded entries split by a stated rule
@@ -3201,6 +3207,14 @@ model DeliveryCostAllocation {
   provenance       AllocationProvenance?
   sourceEntryCount Int     @default(0) // recorded TripCostEntry rows behind this cost
   allocationNote   String?             // human-readable basis, e.g. "driver-day share of 3 entries"
+
+  // Below-cost exception lifecycle (Slice 3). Set by the Trip Truth engine
+  // when a MEASURED/ALLOCATED trip lands below cost; estimates never raise
+  // exceptions. Null = this trip has never been below cost.
+  exceptionStatus MarginExceptionStatus?
+  exceptionNote   String?
+  exceptionBy     String?
+  exceptionAt     DateTime?
 
   // Derived
   grossMargin     Float @default(0) // revenue - totalCost

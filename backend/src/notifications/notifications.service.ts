@@ -100,9 +100,9 @@ export class NotificationsService {
 
   // ── Internal: broadcast a notification to a whole company ────────────
 
-  async broadcast(companyId: string, title: string, body: string, type = 'info') {
+  async broadcast(companyId: string, title: string, body: string, type = 'info', link?: string) {
     return this.prisma.notification.create({
-      data: { title, body, type, companyId },
+      data: { title, body, type, companyId, link: link ?? null },
     });
   }
 

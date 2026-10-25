@@ -33,6 +33,7 @@ const makeService = (opts: {
   manifestLinks?: any[];
 }) => {
   const upserts = new Map<string, any>();
+  const exceptionUpdates: { waybillId: string; data: any }[] = [];
   const prisma: any = {
     waybill: {
       findMany: jest.fn().mockResolvedValue(opts.delivered),
@@ -45,13 +46,22 @@ const makeService = (opts: {
         upserts.set(where.waybillId, create);
         return Promise.resolve(create);
       }),
-      findMany: jest.fn(),
-      count: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       findFirst: jest.fn(),
+      update: jest.fn(({ where, data }: any) => {
+        exceptionUpdates.push({ waybillId: where.waybillId, data });
+        return Promise.resolve({ waybillId: where.waybillId, ...data });
+      }),
+      updateMany: jest.fn(({ where, data }: any) => {
+        exceptionUpdates.push({ waybillId: where.waybillId, data });
+        return Promise.resolve({ count: 1 });
+      }),
     },
   };
   const commercial: any = { getConfig: jest.fn().mockResolvedValue(CFG) };
-  return { svc: new TripTruthService(prisma, commercial), prisma, upserts };
+  const notifications: any = { broadcast: jest.fn().mockResolvedValue({}) };
+  return { svc: new TripTruthService(prisma, commercial, notifications), prisma, upserts, notifications, exceptionUpdates };
 };
 
 describe('TripTruthService.recompute', () => {
@@ -150,5 +160,93 @@ describe('TripTruthService.listTrips', () => {
     expect(out.summary.deliveredNotComputed).toBe(1);
     expect(out.trips[0].trackingNumber).toBe('WB-1');
     expect(out.total).toBe(2);
+  });
+});
+
+describe('TripTruthService below-cost exceptions (Slice 3)', () => {
+  const BLEEDING = {
+    delivered: [waybill({ id: 'w1', totalAmount: 1000 })],
+    entries: [
+      { id: 'e1', driverId: 'd1', waybillId: 'w1', manifestId: null, type: 'FUEL', amount: 1400, occurredAt: new Date('2026-10-05T08:00:00Z') },
+    ],
+  };
+
+  it('opens an exception and notifies once when a measured trip lands below cost', async () => {
+    const { svc, notifications, exceptionUpdates } = makeService(BLEEDING);
+    const summary = await svc.recompute('company-a', '2026-10');
+    expect(summary.exceptionsOpened).toBe(1);
+    expect(exceptionUpdates).toEqual([
+      { waybillId: 'w1', data: expect.objectContaining({ exceptionStatus: 'OPEN' }) },
+    ]);
+    expect(notifications.broadcast).toHaveBeenCalledTimes(1);
+    expect(notifications.broadcast).toHaveBeenCalledWith(
+      'company-a',
+      expect.stringContaining('below cost'),
+      expect.stringContaining('WB-1'),
+      'warning',
+      '/commercial-analytics?tab=truth',
+    );
+  });
+
+  it('does not re-notify or reset an already-open exception on recompute', async () => {
+    const { svc, prisma, notifications, exceptionUpdates } = makeService(BLEEDING);
+    prisma.deliveryCostAllocation.findMany.mockResolvedValue([
+      { waybillId: 'w1', exceptionStatus: 'OPEN' },
+    ]);
+    const summary = await svc.recompute('company-a', '2026-10');
+    expect(summary.exceptionsOpened).toBe(0);
+    expect(exceptionUpdates).toHaveLength(0);
+    expect(notifications.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('auto-resolves an acknowledged exception when the trip recovers', async () => {
+    const { svc, prisma, exceptionUpdates } = makeService({
+      delivered: [waybill({ id: 'w1', totalAmount: 1000 })],
+      entries: [
+        { id: 'e1', driverId: 'd1', waybillId: 'w1', manifestId: null, type: 'FUEL', amount: 400, occurredAt: new Date('2026-10-05T08:00:00Z') },
+      ],
+    });
+    prisma.deliveryCostAllocation.findMany.mockResolvedValue([
+      { waybillId: 'w1', exceptionStatus: 'ACKNOWLEDGED' },
+    ]);
+    await svc.recompute('company-a', '2026-10');
+    expect(exceptionUpdates).toEqual([
+      { waybillId: 'w1', data: expect.objectContaining({ exceptionStatus: 'RESOLVED' }) },
+    ]);
+  });
+
+  it('never raises an exception from an estimate, however negative', async () => {
+    const { svc, notifications, exceptionUpdates } = makeService({
+      delivered: [waybill({ id: 'w1', totalAmount: 10 })], // estimate 85.35 → margin −75.35
+      entries: [],
+    });
+    const summary = await svc.recompute('company-a', '2026-10');
+    expect(summary.estimated).toBe(1);
+    expect(summary.exceptionsOpened).toBe(0);
+    expect(exceptionUpdates).toHaveLength(0);
+    expect(notifications.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('updateException records the actor and note; 404 when no exception exists', async () => {
+    const { svc, prisma } = makeService(BLEEDING);
+    prisma.deliveryCostAllocation.findFirst.mockResolvedValue(null);
+    await expect(
+      svc.updateException('company-a', 'w1', { status: 'ACKNOWLEDGED' }, 'user-7'),
+    ).rejects.toThrow('No below-cost exception');
+
+    prisma.deliveryCostAllocation.findFirst
+      .mockResolvedValueOnce({ id: 'a1', exceptionStatus: 'OPEN', exceptionNote: null })
+      .mockResolvedValueOnce({
+        id: 'a1', exceptionStatus: 'ACKNOWLEDGED',
+        exceptionNote: 'Repricing with client', exceptionBy: 'user-7',
+      });
+    const out = await svc.updateException(
+      'company-a', 'w1', { status: 'ACKNOWLEDGED', note: 'Repricing with client' }, 'user-7',
+    );
+    expect(out).toMatchObject({
+      exceptionStatus: 'ACKNOWLEDGED',
+      exceptionNote: 'Repricing with client',
+      exceptionBy: 'user-7',
+    });
   });
 });

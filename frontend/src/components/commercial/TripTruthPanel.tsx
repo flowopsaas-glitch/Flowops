@@ -9,6 +9,7 @@ import {
 } from "../../api/tripTruthApi";
 import { errorMessageOf } from "../patterns/errorMessage";
 import { formatMoney } from "../../lib/currency";
+import BelowCostQueue from "./BelowCostQueue";
 
 const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? "ZAR";
 
@@ -156,6 +157,13 @@ export default function TripTruthPanel() {
         <p role="status" className="text-sm text-white/60">
           Recomputed {lastCompute.trips} trips: {lastCompute.measured} measured,{" "}
           {lastCompute.allocated} allocated, {lastCompute.estimated} estimated.
+          {lastCompute.exceptionsOpened > 0 && (
+            <span className="text-red-300">
+              {" "}
+              {lastCompute.exceptionsOpened} new below-cost{" "}
+              {lastCompute.exceptionsOpened === 1 ? "exception" : "exceptions"} opened below.
+            </span>
+          )}
           {lastCompute.unallocatedEntries > 0 && (
             <>
               {" "}
@@ -169,6 +177,8 @@ export default function TripTruthPanel() {
           )}
         </p>
       )}
+
+      <BelowCostQueue period={period} />
 
       {allEstimated && (
         <p role="status" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">

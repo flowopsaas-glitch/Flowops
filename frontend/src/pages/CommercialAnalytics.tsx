@@ -51,7 +51,14 @@ type CommercialData = {
 
 
 export default function CommercialAnalytics() {
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>(() => {
+    // Deep links (e.g. below-cost notifications) may name a tab.
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    return wanted === 'truth' || wanted === 'clients' || wanted === 'lanes'
+      || wanted === 'forecast' || wanted === 'intelligence' || wanted === 'ai'
+      ? wanted
+      : 'overview';
+  });
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CommercialData | null>(null);
   const [error, setError] = useState<string | null>(null);
