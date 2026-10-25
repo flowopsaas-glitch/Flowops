@@ -1,0 +1,33 @@
+name: Debug Backend Jest (temporary)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  debug:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run the new specs, capture everything
+        run: |
+          set +e
+          npm ci --ignore-scripts > /tmp/out.txt 2>&1
+          npx prisma generate >> /tmp/out.txt 2>&1
+          npx jest src/trip-costs src/commercial-analytics --runInBand >> /tmp/out.txt 2>&1
+          echo "JEST_EXIT=$?" >> /tmp/out.txt
+          tail -400 /tmp/out.txt > debug-jest-output.txt
+          cp debug-jest-output.txt ../debug-jest-output.txt
+      - name: Publish output to scratch branch
+        working-directory: ${{ github.workspace }}
+        run: |
+          git config user.email "ci-debug@example.invalid"
+          git config user.name "ci-debug"
+          git add -f debug-jest-output.txt
+          git commit -m "debug jest output" || true
+          git push origin HEAD:refs/heads/ci-logs-scratch --force
