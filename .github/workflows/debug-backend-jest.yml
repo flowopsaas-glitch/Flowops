@@ -1,6 +1,7 @@
 name: Debug Backend Jest (temporary)
 on:
-  workflow_dispatch: {}
+  push:
+    branches: [arena/154c2a8f-flowops]
 permissions:
   contents: write
 jobs:
