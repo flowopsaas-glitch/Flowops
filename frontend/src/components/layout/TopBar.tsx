@@ -2,7 +2,6 @@
 import { Menu, Sparkles } from "lucide-react";
 import { Button } from "../ui/button";
 
-import { isTenantAdminFullAccess, canTenantAdminSeeNavItem, canTenantAdminAccessRoute, isHiddenOwnerPath } from '../../lib/tenantAdminFullAccess';
 type Props = {
   title: string;
   subtitle?: string;

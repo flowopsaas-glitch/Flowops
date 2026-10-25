@@ -7,6 +7,8 @@ import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { DriverPortalService } from './driver-portal.service';
 import { AuthService } from '../auth/auth.service';
 import type { DriverMode } from '@prisma/client';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 /** Real client IP behind Cloudflare -> nginx -> Docker (see auth.controller). */
 function clientIp(req: any): string | undefined {
@@ -225,15 +227,33 @@ export class DriverPortalController {
     return this.svc.getTypingStatus(req.driver.id);
   }
 
+  /** POST /driver-portal/costs — driver logs a measured trip cost (fuel/toll). */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('costs')
+  logCost(@Req() req: any, @Body() body: any) {
+    return this.svc.logDriverCost(req.driver.id, req.driver.companyId, body ?? {});
+  }
+
+  /** GET /driver-portal/costs/mine — the driver's recent cost entries. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('costs/mine')
+  myCosts(@Req() req: any) {
+    return this.svc.listDriverCosts(req.driver.id);
+  }
+
   // ── Dispatch-facing (tenant JWT required — unchanged) ─────────────────────────
 
   /** GET /driver-portal/dispatch/conversations — drivers with unread counts. */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Get('dispatch/conversations')
   getConversations(@CurrentUser() u: any) {
     return this.svc.getDriverConversations(u.companyId);
   }
 
   /** GET /driver-portal/dispatch/messages/:driverId — thread with a specific driver. */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Get('dispatch/messages/:driverId')
   getDriverThread(
     @CurrentUser() u: any,
@@ -246,6 +266,7 @@ export class DriverPortalController {
   }
 
   /** POST /driver-portal/dispatch/messages/:driverId — dispatch sends to driver. */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('dispatch/messages/:driverId')
   dispatchSend(
     @Param('driverId') driverId: string,

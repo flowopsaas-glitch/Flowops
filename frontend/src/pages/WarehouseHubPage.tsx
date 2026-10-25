@@ -12,12 +12,29 @@ type HubStats = {
   podPending: number; podCompleted: number; waybillsToday: number;
 };
 
-function unwrap(r: any): any { return r?.data ?? r; }
-function unwrapList(r: any): any[] {
-  const d = r?.data ?? r;
-  if (Array.isArray(d)) return d;
-  const d2 = d?.data ?? d?.items ?? d;
-  return Array.isArray(d2) ? d2 : [];
+type HubWaybill = {
+  id: string | number;
+  trackingNumber?: string;
+  waybillNumber?: string;
+  status?: string;
+  senderName?: string;
+  senderAddress?: string;
+  createdAt: string;
+  updatedAt?: string;
+  podSignatureUrl?: string | null;
+  podImageUrl?: string | null;
+  pieces?: number;
+  weight?: number;
+};
+type HubManifest = { dispatched?: boolean; _count?: { waybills?: number } };
+type HubInboxItem = { id?: string | number; waybillNumber?: string; weight?: number; pieces?: number; status?: string };
+
+function unwrapList<T>(r: unknown): T[] {
+  const d = (r as { data?: unknown } | null)?.data ?? r;
+  if (Array.isArray(d)) return d as T[];
+  const inner = d as { data?: unknown; items?: unknown } | null;
+  const d2 = inner?.data ?? inner?.items ?? d;
+  return Array.isArray(d2) ? (d2 as T[]) : [];
 }
 
 function QuickAction({ icon: Icon, label, desc, to, color }: {
@@ -63,19 +80,20 @@ function StatCard({ label, value, sub, icon: Icon, color }: {
  * be received here before it can be loaded onto a linehaul.
  */
 function DepotReceivePanel() {
-  const [pending, setPending] = useState<any[]>([]);
+  const [pending, setPending] = useState<HubWaybill[]>([]);
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPending = useCallback(async () => {
-    try {
-      const r: any = await api.get("/hub/pending-receive");
-      const d = r?.data ?? r;
-      setPending(Array.isArray(d?.waybills) ? d.waybills : []);
-    } catch { /* best-effort */ }
-  }, []);
+  const loadPending = useCallback(() => (async () => {
+    const r = await api.get("/hub/pending-receive");
+    const d = r?.data ?? r;
+    setPending(Array.isArray(d?.waybills) ? d.waybills : []);
+
+  })().catch(() => {
+ /* best-effort */
+  }), []);
 
   useEffect(() => { void loadPending(); }, [loadPending]);
 
@@ -84,7 +102,7 @@ function DepotReceivePanel() {
     if (clean.length === 0) return;
     setBusy(true); setError(null); setResult(null);
     try {
-      const r: any = await api.post("/hub/receive", { refs: clean });
+      const r = await api.post("/hub/receive", { refs: clean });
       const d = r?.data ?? r;
       const parts: string[] = [];
       if (d?.receivedCount) parts.push(`${d.receivedCount} received`);
@@ -94,7 +112,7 @@ function DepotReceivePanel() {
       setResult(parts.join(" · ") || "Done");
       setScan("");
       await loadPending();
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.response?.data?.message || err?.message || "Receive failed");
     } finally { setBusy(false); }
   }
@@ -183,12 +201,11 @@ export default function WarehouseHubPage() {
     manifestsPending: 0, manifestsDispatched: 0, manifestsWaybills: 0,
     podPending: 0, podCompleted: 0, waybillsToday: 0,
   });
-  const [recentInbox, setRecentInbox] = useState<any[]>([]);
+  const [recentInbox, setRecentInbox] = useState<HubInboxItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [, setLastRefresh] = useState(new Date());
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [inboxRes, manifestsRes, waybillsRes] = await Promise.allSettled([
         api.get("/waybills/inbox"),
@@ -196,9 +213,9 @@ export default function WarehouseHubPage() {
         api.get("/waybills"),
       ]);
 
-      const inbox: any[]     = inboxRes.status === "fulfilled"     ? unwrapList(inboxRes.value)     : [];
-      const manifests: any[] = manifestsRes.status === "fulfilled" ? unwrapList(manifestsRes.value) : [];
-      const allWb: any[]     = waybillsRes.status === "fulfilled"  ? unwrapList(waybillsRes.value)  : [];
+      const inbox: HubInboxItem[] = inboxRes.status === "fulfilled" ? unwrapList<HubInboxItem>(inboxRes.value) : [];
+      const manifests: HubManifest[] = manifestsRes.status === "fulfilled" ? unwrapList<HubManifest>(manifestsRes.value) : [];
+      const allWb: HubWaybill[] = waybillsRes.status === "fulfilled" ? unwrapList<HubWaybill>(waybillsRes.value) : [];
 
       const today = new Date(); today.setHours(0,0,0,0);
       const todayWb = allWb.filter(w => new Date(w.createdAt) >= today);
@@ -211,7 +228,7 @@ export default function WarehouseHubPage() {
         inboxExtracting:     inbox.filter(i => i.status === "EXTRACTING").length,
         manifestsPending:    manifests.filter(m => !m.dispatched).length,
         manifestsDispatched: manifests.filter(m => m.dispatched).length,
-        manifestsWaybills:   manifests.reduce((s: number, m: any) => s + (m._count?.waybills ?? 0), 0),
+        manifestsWaybills:   manifests.reduce((s: number, m) => s + (m._count?.waybills ?? 0), 0),
         podPending:          pendingPod.length,
         podCompleted:        deliveredToday.length,
         waybillsToday:       todayWb.length,
@@ -304,7 +321,7 @@ export default function WarehouseHubPage() {
                 </div>
               ) : (
                 recentInbox.map(item => (
-                  <div key={item.id} onClick={() => navigate("/waybills/inbox")}
+                  <div key={item.id} onClick={() => navigate("/waybills/inbox")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => navigate("/waybills/inbox"))(); } }} role="button" tabIndex={0}
                     className="flex items-center justify-between rounded-2xl border border-white/6 bg-black/25 px-4 py-3 cursor-pointer hover:border-white/15 hover:bg-white/5 transition">
                     <div className="flex items-center gap-3">
                       <div className={`h-2 w-2 rounded-full ${item.status === "READY" ? "bg-emerald-400" : item.status === "EXTRACTING" ? "bg-blue-400 animate-pulse" : "bg-rose-400"}`} />

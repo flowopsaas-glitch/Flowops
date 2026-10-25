@@ -84,6 +84,10 @@ export class LogisticsAnalyticsService {
       ]);
 
     // ── Performance KPIs ────────────────────────────────────────────────
+    // Owner-approved semantics (2026-10-20): this is a Delivery Completion
+    // Rate — delivered waybills / waybills created in period — NOT an
+    // on-time-vs-promised-time measure. API field name kept for compatibility;
+    // do not relabel as on-time in any client.
     const onTimePercentage = totalDeliveries > 0
       ? Math.round((deliveredOnTime / totalDeliveries) * 10000) / 100
       : 0;

@@ -7,7 +7,6 @@ import {
   ShieldAlert,
   Gavel,
   CircleDot,
-  Loader2,
   X,
   ArrowUpRight,
   CheckCircle2,
@@ -38,8 +37,8 @@ import {
   type ResponsibleParty,
   type SlotImpact,
 } from "../api/railHandshakeApi";
-import { useToast } from "../components/ToastProvider";
-import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../components/toast-context";
+import { useAuth } from "../contexts/auth-context";
 import { canSignRailHandshake, getRailAccessLevel, userPermissionOverrides } from "../lib/tenantUserPermissions";
 import ChangeRequestModal from "./rail/ChangeRequestModal";
 import {
@@ -152,26 +151,26 @@ export default function RailHandshake() {
   const [showLog, setShowLog] = useState(false);
   const [showChange, setShowChange] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    // The overview is a secondary panel, so its failure is tolerated and it
+    // simply renders empty. The report list is the primary content: its
+    // failure is surfaced rather than swallowed, so a dead API can never be
+    // mistaken for an operating day with no reports.
+    const [ov, rs] = await Promise.all([
+      getHandshakeOverview().catch(() => null),
+      listHandshakeReports(),
+    ]);
+    setOverview(ov);
+    setReports(rs);
     setLoadError(null);
-    try {
-      // The overview is a secondary panel, so its failure is tolerated and it
-      // simply renders empty. The report list is the primary content: its
-      // failure is surfaced rather than swallowed, so a dead API can never be
-      // mistaken for an operating day with no reports.
-      const [ov, rs] = await Promise.all([
-        getHandshakeOverview().catch(() => null),
-        listHandshakeReports(),
-      ]);
-      setOverview(ov);
-      setReports(rs);
-    } catch (e) {
-      setLoadError(e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+  })().catch((e) => {
+    setLoadError(e);
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -179,7 +178,7 @@ export default function RailHandshake() {
     try {
       const r = await getHandshakeReport(id);
       setSelected(r);
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message || "Could not open report", "error");
     }
   }
@@ -191,7 +190,7 @@ export default function RailHandshake() {
       showToast(ok, "success");
       await load();
       if (selected) await openReport(selected.id);
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message || "Action failed", "error");
     } finally {
       setBusy("");
@@ -452,10 +451,10 @@ function ReportDrawer({
   const exportCsv = () => downloadTextFile(handshakeCsvFilename(report), buildHandshakeCsv(report));
   const printDossier = () => printHtmlDocument(buildHandshakeDossierHtml(report, { generatedBy }));
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/60"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
       <div
         className="h-full w-full max-w-3xl overflow-y-auto border-l border-white/10 bg-[#0b0f14] p-6"
-        onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Handshake report ${report.reportNumber}`}>
+        role="dialog" aria-modal="true" aria-label={`Handshake report ${report.reportNumber}`}>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -608,14 +607,14 @@ function CreateReportModal({ busy, onClose, onCreate }: {
   const [imReference, setImReference] = useState("");
   return (
     <Modal title="New daily handshake report" onClose={onClose}>
-      <label className="block text-xs font-semibold text-slate-400">Operating day (defaults to yesterday)</label>
-      <input type="date" className={inputCls} value={reportDate} onChange={(e) => setReportDate(e.target.value)} />
-      <label className="mt-3 block text-xs font-semibold text-slate-400">Infrastructure Manager</label>
-      <input className={inputCls} placeholder="e.g. TRIM" value={railOperator} onChange={(e) => setRailOperator(e.target.value)} />
-      <label className="mt-3 block text-xs font-semibold text-slate-400">Corridor</label>
-      <input className={inputCls} placeholder="e.g. North / Cape / Ore / Container" value={corridor} onChange={(e) => setCorridor(e.target.value)} />
-      <label className="mt-3 block text-xs font-semibold text-slate-400">IM reference (TOL)</label>
-      <input className={inputCls} placeholder="optional" value={imReference} onChange={(e) => setImReference(e.target.value)} />
+      <label className="block text-xs font-semibold text-slate-400" htmlFor="field-operating-day-defaults-to-ye-13">Operating day (defaults to yesterday)</label>
+      <input id="field-operating-day-defaults-to-ye-13" type="date" className={inputCls} value={reportDate} onChange={(e) => setReportDate(e.target.value)} />
+      <label className="mt-3 block text-xs font-semibold text-slate-400" htmlFor="field-infrastructure-manager-12">Infrastructure Manager</label>
+      <input id="field-infrastructure-manager-12" className={inputCls} placeholder="e.g. TRIM" value={railOperator} onChange={(e) => setRailOperator(e.target.value)} />
+      <label className="mt-3 block text-xs font-semibold text-slate-400" htmlFor="field-corridor-11">Corridor</label>
+      <input id="field-corridor-11" className={inputCls} placeholder="e.g. North / Cape / Ore / Container" value={corridor} onChange={(e) => setCorridor(e.target.value)} />
+      <label className="mt-3 block text-xs font-semibold text-slate-400" htmlFor="field-im-reference-tol-10">IM reference (TOL)</label>
+      <input id="field-im-reference-tol-10" className={inputCls} placeholder="optional" value={imReference} onChange={(e) => setImReference(e.target.value)} />
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
         <button
@@ -655,46 +654,46 @@ function LogDeviationModal({
     <Modal title="Log deviation" onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Train / Slot ref *</label>
-          <input className={inputCls} value={trainSlotRef} onChange={(e) => setTrainSlotRef(e.target.value)} placeholder="e.g. NS-0412 / Slot 118" />
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-train-slot-ref-9">Train / Slot ref *</label>
+          <input id="field-train-slot-ref-9" className={inputCls} value={trainSlotRef} onChange={(e) => setTrainSlotRef(e.target.value)} placeholder="e.g. NS-0412 / Slot 118" />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Order number</label>
-          <input className={inputCls} value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-order-number-8">Order number</label>
+          <input id="field-order-number-8" className={inputCls} value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Category</label>
-          <select className={inputCls} value={category} onChange={(e) => setCategory(e.target.value as DeviationCategory)}>
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-category-7">Category</label>
+          <select id="field-category-7" className={inputCls} value={category} onChange={(e) => setCategory(e.target.value as DeviationCategory)}>
             {CATEGORIES.map((c) => <option key={c} value={c}>{DEVIATION_CATEGORY_LABEL[c]}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Slot impact</label>
-          <select className={inputCls} value={slotImpact} onChange={(e) => setSlotImpact(e.target.value as SlotImpact)}>
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-slot-impact-6">Slot impact</label>
+          <select id="field-slot-impact-6" className={inputCls} value={slotImpact} onChange={(e) => setSlotImpact(e.target.value as SlotImpact)}>
             {IMPACTS.map((c) => <option key={c} value={c}>{c.replace("_", " ")}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Responsible party</label>
-          <select className={inputCls} value={responsibleParty} onChange={(e) => setResponsibleParty(e.target.value as ResponsibleParty)}>
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-responsible-party-5">Responsible party</label>
+          <select id="field-responsible-party-5" className={inputCls} value={responsibleParty} onChange={(e) => setResponsibleParty(e.target.value as ResponsibleParty)}>
             {PARTIES.map((c) => <option key={c} value={c}>{RESPONSIBLE_PARTY_LABEL[c]}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Location</label>
-          <input className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} />
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-location-4">Location</label>
+          <input id="field-location-4" className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Delay (minutes)</label>
-          <input type="number" min="0" className={inputCls} value={delayMinutes} onChange={(e) => setDelayMinutes(e.target.value)} />
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-delay-minutes-3">Delay (minutes)</label>
+          <input id="field-delay-minutes-3" type="number" min="0" className={inputCls} value={delayMinutes} onChange={(e) => setDelayMinutes(e.target.value)} />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400">Cost (ZAR)</label>
-          <input type="number" min="0" className={inputCls} value={costZar} onChange={(e) => setCostZar(e.target.value)} />
+          <label className="block text-xs font-semibold text-slate-400" htmlFor="field-cost-zar-2">Cost (ZAR)</label>
+          <input id="field-cost-zar-2" type="number" min="0" className={inputCls} value={costZar} onChange={(e) => setCostZar(e.target.value)} />
         </div>
       </div>
-      <label className="mt-3 block text-xs font-semibold text-slate-400">Reason / description *</label>
-      <textarea className={inputCls} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What happened" />
+      <label className="mt-3 block text-xs font-semibold text-slate-400" htmlFor="field-reason-description-1">Reason / description *</label>
+      <textarea id="field-reason-description-1" className={inputCls} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What happened" />
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
         <button
@@ -719,8 +718,8 @@ function LogDeviationModal({
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   useDismissOnEscape(true, onClose, 1);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b0f14] p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b0f14] p-6" role="dialog" aria-modal="true" aria-label={title}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-black text-white">{title}</h3>
           <button type="button" onClick={onClose} aria-label="Close dialog" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60">

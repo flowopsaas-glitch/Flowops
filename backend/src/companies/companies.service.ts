@@ -128,44 +128,14 @@ export class CompaniesService {
     }
   }
 
-  // ── Owner-level: all companies ──────────────────────────────────────
-
-  async findAll(query: { page?: number; limit?: number; search?: string }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 50;
-    const skip = (page - 1) * limit;
-
-    const where: any = {};
-    if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { email: { contains: query.search, mode: 'insensitive' } },
-      ];
-    }
-
-    const [companies, total] = await Promise.all([
-      this.prisma.company.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } }),
-      this.prisma.company.count({ where }),
-    ]);
-
-    return { data: companies, total, page, limit };
-  }
+  // Platform-wide company listing/creation/overview used to live here behind
+  // plain tenant auth (any authenticated user could list, create, or edit
+  // other tenants). That surface now belongs exclusively to the owner
+  // console (owner/tenants, @OwnerOnly + OwnerAuthGuard); only own-company
+  // reads/updates remain, with ownership enforced in the controller.
 
   async findOne(id: string) {
     return this.prisma.company.findUniqueOrThrow({ where: { id } });
-  }
-
-  async create(data: any) {
-    // Set 14-day trial for new companies (starters)
-    const trialStart = new Date();
-    const trialEnd   = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
-    return this.prisma.company.create({
-      data: {
-        ...data,
-        trialStartedAt: trialStart,
-        trialEndsAt: data.plan === 'professional' || data.plan === 'enterprise' ? null : trialEnd,
-      },
-    });
   }
 
   async update(id: string, data: any) {
@@ -173,15 +143,6 @@ export class CompaniesService {
     return this.prisma.company.update({ where: { id }, data: safe });
   }
 
-  async platformOverview() {
-    const [totalCompanies, activeCompanies, totalUsers, totalWaybills] = await Promise.all([
-      this.prisma.company.count(),
-      this.prisma.company.count({ where: { isActive: true } }),
-      this.prisma.user.count(),
-      this.prisma.waybill.count(),
-    ]);
-    return { totalCompanies, activeCompanies, totalUsers, totalWaybills };
-  }
 
   // ── Collections-state-sync (used by frontend collections panel) ───
 

@@ -41,7 +41,7 @@ export default function BarcodeQrScanner({ onDetected, onScan, className }: Prop
     return () => {
       try {
         readerRef.current?.reset();
-      } catch {}
+      } catch { /* scanner already stopped — nothing to recover */ }
       readerRef.current = null;
     };
   }, [hints]);
@@ -71,7 +71,7 @@ export default function BarcodeQrScanner({ onDetected, onScan, className }: Prop
           void error;
         }
       );
-    } catch (e: any) {
+    } catch (e) {
       setRunning(false);
       setErr(e?.message || "Camera scanner failed.");
     }
@@ -80,7 +80,7 @@ export default function BarcodeQrScanner({ onDetected, onScan, className }: Prop
   function stopCamera() {
     try {
       readerRef.current?.reset();
-    } catch {}
+    } catch { /* scanner already stopped — nothing to recover */ }
     setRunning(false);
   }
 
@@ -100,7 +100,7 @@ export default function BarcodeQrScanner({ onDetected, onScan, className }: Prop
       setLast(text);
       if (onDetected) onDetected(text);
       if (onScan) onScan(text);
-    } catch (e: any) {
+    } catch (e) {
       setErr(e?.message || "Image scan failed.");
     }
   }

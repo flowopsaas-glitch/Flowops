@@ -30,8 +30,8 @@ vi.mock('react-leaflet', () => ({
   TileLayer: () => null, Polyline: () => null, CircleMarker: () => null, Tooltip: () => null,
 }));
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => h.auth }));
-vi.mock('../components/ToastProvider', () => ({ useToast: () => ({ showToast: h.showToast }) }));
+vi.mock('../contexts/auth-context', () => ({ useAuth: () => h.auth }));
+vi.mock('../components/toast-context', () => ({ useToast: () => ({ showToast: h.showToast }) }));
 vi.mock('../api/railApi', () => ({
   getRailOverview: h.getRailOverview,
   listConsignments: h.listConsignments,
@@ -121,9 +121,9 @@ describe('RailOperations — tabs', () => {
     expect(screen.queryByText('No rail consignments yet.')).toBeTruthy();
   });
 
-  it('has a labelled section control group with seven buttons and starts on Consignments', async () => {
+  it('has a labelled section control group with eight buttons and starts on Consignments', async () => {
     const tabs = await open('MANAGER');
-    expect(within(tabs).getAllByRole('button').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Schedule Optimizer', 'Train Manifests', 'Live Tracking', 'Changes & Possessions', 'Tariffs & Weighbridge']);
+    expect(within(tabs).getAllByRole('button').map((t) => t.textContent)).toEqual(['Consignments', 'Slot Applications & Compliance', 'Schedule Optimizer', 'Train Manifests', 'Live Tracking', 'Changes & Possessions', 'Tariffs & Weighbridge', 'Truck Appointments']);
     expect(screen.getByRole('button', { name: 'Consignments' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Slot Applications & Compliance' }).getAttribute('aria-pressed')).toBe('false');
     expect(within(screen.getByRole('combobox', { name: 'Filter rail consignments by status' })).getByRole('option', { name: 'Cancelled' })).toBeTruthy();

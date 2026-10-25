@@ -12,9 +12,11 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Waybills')
 @ApiBearerAuth()
+@RequireFeature('waybills')
 @Controller()
 export class WaybillsController {
   constructor(
@@ -76,26 +78,50 @@ export class WaybillsController {
 
   // ── Waybills CRUD ─────────────────────────────────────────────────
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+    UserRole.USER,
+  )
   @Get('waybills')
   findAll(@CurrentUser() u: any, @Query() q: any) {
     return this.svc.findAll(u.companyId, q);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+    UserRole.USER, UserRole.DRIVER,
+  )
   @Get('waybills/my-deliveries')
   findMyDeliveries(@CurrentUser() u: any) {
     return this.svc.findMyDeliveries(u.id, u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+    UserRole.USER,
+  )
   @Get('waybills/recent')
   findRecent(@CurrentUser() u: any) {
     return this.svc.findRecent(u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+    UserRole.USER,
+  )
   @Get('waybills/quality')
   deliveryQuality(@CurrentUser() u: any) {
     return this.svc.deliveryQuality(u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.AGENT,
+  )
   @Post('waybills')
   @HttpCode(HttpStatus.CREATED)
   create(@CurrentUser() u: any, @Body() body: any) {
@@ -107,6 +133,10 @@ export class WaybillsController {
    * Used by warehouse clerks scanning multiple waybills at the hub.
    * Accepts a list of tracking numbers and a target status, updates them all.
    */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Post('waybills/batch-scan')
   batchScan(
     @CurrentUser() u: any,
@@ -120,6 +150,7 @@ export class WaybillsController {
    * Accepts a CSV file and creates waybills in bulk.
    * Returns per-row results (created, failed, duplicate).
    */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('waybills/bulk-import')
   @HttpCode(HttpStatus.CREATED)
   @ApiConsumes('multipart/form-data')
@@ -133,11 +164,20 @@ export class WaybillsController {
     return this.svc.bulkImportCsv(u.companyId, file);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+    UserRole.USER,
+  )
   @Get('waybills/:id')
   findOne(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.findOne(id, u.companyId);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.AGENT,
+  )
   @Patch('waybills/:id')
   update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
     return this.svc.update(id, u.companyId, body);
@@ -150,6 +190,7 @@ export class WaybillsController {
    * queue.  The Waybill model has no driverId column — the link lives on
    * Shipment — so this is the canonical assignment endpoint.
    */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('waybills/:id/assign')
   assignDriver(
     @Param('id') id: string,
@@ -162,6 +203,7 @@ export class WaybillsController {
   // ── Customer rating endpoints ──────────────────────────────────────
 
   /** POST /waybills/:id/rate-request — dispatcher sends rating invite */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('waybills/:id/rate-request')
   requestRating(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.requestRating(id, u.companyId);
@@ -185,6 +227,7 @@ export class WaybillsController {
   }
 
   /** POST /waybills/:id/notify-eta — dispatcher triggers ETA + stops-ahead */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('waybills/:id/notify-eta')
   notifyCustomerEta(
     @Param('id') id: string,
@@ -194,6 +237,10 @@ export class WaybillsController {
     return this.svc.notifyCustomerEta(id, u.companyId, body);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE,
+  )
   @Post('waybills/:id/deliver')
   @UseInterceptors(uploadConcurrency, FileInterceptor('photo', {
     limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 3, fieldSize: 1_400_000, parts: 4 },
@@ -208,6 +255,11 @@ export class WaybillsController {
     return this.svc.recordDelivery(id, u.companyId, body, photo);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+    UserRole.USER,
+  )
   @Get('waybills/:id/receipt')
   async getReceipt(@Param('id') id: string, @CurrentUser() u: any, @Res() res: Response) {
     const { buffer, filename, contentType } = await this.svc.getReceipt(id, u.companyId);
@@ -215,6 +267,11 @@ export class WaybillsController {
     res.end(buffer);
   }
 
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+    UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
+    UserRole.USER,
+  )
   @Get('waybills/:id/assist')
   getAssist(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.getAssist(id, u.companyId);
@@ -230,16 +287,19 @@ export class WaybillsController {
 
   // ── Inbox (AI extraction) ────────────────────────────────────────
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Get('waybills/inbox')
   getInbox(@CurrentUser() u: any, @Query() q: any) {
     return this.svc.getInbox(u.companyId, q);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Get('waybills/inbox/stats')
   getInboxStats(@CurrentUser() u: any) {
     return this.svc.getInboxStats(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('waybills/inbox/upload')
   @UseInterceptors(uploadConcurrency, FileInterceptor('file', {
     limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2, fieldSize: 64 * 1024, parts: 3 },
@@ -249,11 +309,13 @@ export class WaybillsController {
     return this.svc.uploadInbox(u.companyId, file);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('waybills/inbox/:id/commit')
   commitInbox(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
     return this.svc.commitInboxItem(id, u.companyId, body);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Delete('waybills/inbox/:id')
   deleteInbox(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.deleteInboxItem(id, u.companyId);

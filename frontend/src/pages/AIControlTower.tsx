@@ -1,15 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import React, { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
   BadgeCheck,
-  BellRing,
-  Bot,
   Brain,
-  CheckCircle2,
   ChevronRight,
-  Clock3,
   Package,
   Receipt,
   Route,
@@ -18,18 +15,13 @@ import {
   TrendingDown,
   TrendingUp,
   Truck,
+  type LucideIcon,
 } from "lucide-react";
 import AIOpsCopilot from "../components/AIOpsCopilot";
 import {
   getSupervisorOverview,
-  type SupervisorAlert,
   type SupervisorOverview,
-  type SupervisorRecommendation,
 } from "../api/aiSupervisorApi";
-
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
 
 type AlertSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
@@ -41,9 +33,6 @@ function severityPill(severity: AlertSeverity) {
   return `${base} border-emerald-400/30 bg-emerald-500/10 text-emerald-200`;
 }
 
-function areaPill(area: SupervisorAlert["area"]) {
-  return "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-white/10 text-white/75";
-}
 
 function HeroStat(props: {
   title: string;
@@ -76,48 +65,32 @@ function HeroStat(props: {
   );
 }
 
-function ActionCard(props: { title: string; desc: string; icon: React.ComponentType<{ className?: string }>; tone?: string; onClick: () => void }) {
-  const Icon = props.icon;
-  const tone = props.tone === "green" ? "from-emerald-400/20 to-emerald-500/5" : props.tone === "purple" ? "from-violet-400/20 to-violet-500/5" : props.tone === "orange" ? "from-amber-400/20 to-amber-500/5" : "from-sky-400/20 to-sky-500/5";
-  return (
-    <button type="button" onClick={props.onClick} className={cn("rounded-[24px] border border-white/10 bg-white/6 p-4 text-left backdrop-blur-2xl transition hover:bg-white/10 bg-gradient-to-br", tone)}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/10">
-          <Icon className="h-5 w-5 text-white" />
-        </div>
-        <ChevronRight className="h-4 w-4 text-white/45" />
-      </div>
-      <div className="mt-4 text-sm font-bold text-white">{props.title}</div>
-      <div className="mt-1 text-xs leading-relaxed text-white/65">{props.desc}</div>
-    </button>
-  );
-}
 
 export default function AIControlTower() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedArea, setSelectedArea] = useState<any>("ALL");
+  const [selectedArea] = useState<string>("ALL");
   const [overview, setOverview] = useState<SupervisorOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const refreshOverview = async () => {
-    try {
-      setLoading(true);
-      const next = await getSupervisorOverview();
-      setOverview(next);
-      setError("");
-    } catch (err: any) {
-      setError(err?.message || "Failed to load AI supervisor.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const refreshOverview = () => (async () => {
+    const next = await getSupervisorOverview();
+    setOverview(next);
+    setError("");
+
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || "Failed to load AI supervisor.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  });
 
   useEffect(() => { refreshOverview(); }, []);
 
-  const alerts = overview?.alerts ?? [];
-  const recommendations = overview?.recommendations ?? [];
+  // Stable identity (memoised on the overview snapshot) so the summary memo
+  // keyed on alerts does not recompute on every render.
+  const alerts = useMemo(() => overview?.alerts ?? [], [overview]);
   const filteredAlerts = selectedArea === "ALL" ? alerts : alerts.filter((a) => a.area === selectedArea);
 
   const summary = useMemo(() => ({
@@ -187,11 +160,11 @@ export default function AIControlTower() {
                 ))}
               </div>
             </div>
-            <AIOpsCopilot 
-                domain="collections" 
-                title="Supervisor Copilot" 
-                context={overview?.copilotContext ?? {}} 
-                onAction={refreshOverview} 
+            <AIOpsCopilot
+                domain="collections"
+                title="Supervisor Copilot"
+                context={overview?.copilotContext ?? {}}
+                onAction={refreshOverview}
             />
           </div>
         </div>
@@ -201,7 +174,7 @@ export default function AIControlTower() {
 }
 
 // Helper Components
-function AlertCard({ alert, onOpen }: any) {
+function AlertCard({ alert, onOpen }: { alert: { severity: AlertSeverity; title: string; description: string }; onOpen: (path: string) => void }) {
   return (
     <div className="p-4 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center">
       <div>
@@ -214,7 +187,7 @@ function AlertCard({ alert, onOpen }: any) {
   );
 }
 
-function WatchRow({ icon: Icon, title, value, subtitle }: any) {
+function WatchRow({ icon: Icon, title, value, subtitle }: { icon: LucideIcon; title: string; value: ReactNode; subtitle: string }) {
   return (
     <div className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-white/10">
       <div className="flex items-center gap-3">

@@ -8,7 +8,7 @@ import {
   ACK_LABEL, ATTRIBUTION_LABEL, CHANGE_ACTION_DONE, CHANGE_ACTION_LABEL, CHANGE_STATUS_LABEL, COMMERCIAL_WINDOW_LABEL, CONSEQUENCE_LABEL, INITIATOR_LABEL, KIND_LABEL, NOTICE_BAND_LABEL,
   ackTone, allowedAttributions, attributionTone, availableChangeActions, changeStatusTone, consequenceTone, formatDateTime, localInputToIso, type ChangeActionKey,
 } from "../../lib/railChange";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import ChangeRequestModal from "./ChangeRequestModal";
 import NoteModal from "./NoteModal";
 import { Field, Modal, Pill, Section, btnNeutral, btnPrimary, btnWarn, inputCls } from "./railUi";
@@ -29,20 +29,20 @@ export default function ChangeRequestsSection({ canWrite, canSign }: { canWrite:
   const [propose, setPropose] = useState<ChangeRequest | null>(null);
   const [allocate, setAllocate] = useState<ChangeRequest | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    setRows(await listChanges());
     setLoadError(null);
-    try {
-      setRows(await listChanges());
-    } catch (e) {
-      const message = String((e as Error)?.message ?? e);
-      setRows([]);
-      setLoadError(message);
-      showToast(`Could not load change requests: ${message}`, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+
+  })().catch((e) => {
+    const message = String((e as Error)?.message ?? e);
+    setRows([]);
+    setLoadError(message);
+    showToast(`Could not load change requests: ${message}`, "error");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
   useEffect(() => { void load(); }, [load]);
 
   async function run(req: ChangeRequest, action: ChangeActionKey) {

@@ -52,6 +52,7 @@ export class ComplianceQueryDto {
 
 @ApiTags('Driver Compliance')
 @ApiBearerAuth()
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
 @Controller('compliance/drivers')
 export class DriverComplianceController {
   constructor(private readonly compliance: DriverComplianceService) {}

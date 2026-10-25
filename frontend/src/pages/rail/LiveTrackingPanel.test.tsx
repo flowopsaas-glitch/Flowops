@@ -39,7 +39,7 @@ vi.mock('./RailTelemetryMap', () => ({
     <div data-testid="rail-telemetry-map">map:{devices.length}:{trail.length}</div>
   ),
 }));
-vi.mock('../../components/ToastProvider', () => ({
+vi.mock('../../components/toast-context', () => ({
   useToast: () => ({ showToast: h.showToast }),
 }));
 

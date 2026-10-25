@@ -1,7 +1,9 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import React, { useEffect, useMemo, useState } from "react";
+import { useDismissOnEscape } from "./patterns/useDismissOnEscape";
 import api from "../services/api";
 import { useAuth } from "../hooks/useAuth";
-import { useToast } from "./ToastProvider";
+import { useToast } from "./toast-context";
 
 type SyncRecord = {
   id?: string | number;
@@ -19,6 +21,10 @@ type SyncRecord = {
   podLinked?: boolean;
   invoiceLinked?: boolean;
   rateCardLinked?: boolean;
+  shipmentId?: string | number | null;
+  dispatchId?: string | number | null;
+  podId?: string | number | null;
+  invoiceId?: string | number | null;
   driverAssigned?: boolean;
   driverName?: string | null;
   driverId?: string | number | null;
@@ -72,7 +78,25 @@ type WorkflowDrawerState = {
   recommendedScore?: number;
 };
 
-function truthText(...values: any[]) {
+
+type WorkflowSection = {
+  status?: string; name?: string; id?: string | number; driverName?: string;
+  driverId?: string | number; reference?: string; customerName?: string;
+  destination?: string; syncHealth?: string; aiPriority?: string;
+  [key: string]: unknown;
+};
+type CollectionWorkflow = {
+  driver?: WorkflowSection | null;
+  collection?: WorkflowSection | null;
+  dispatch?: WorkflowSection | null;
+  shipment?: WorkflowSection | null;
+  pod?: WorkflowSection | null;
+  invoice?: WorkflowSection | null;
+  recommendedDriver?: WorkflowSection | null;
+  nextActions?: unknown;
+};
+
+function truthText(...values: unknown[]) {
   for (const value of values) {
     if (value === undefined || value === null) continue;
     const cleaned = String(value).trim();
@@ -81,19 +105,19 @@ function truthText(...values: any[]) {
   return "";
 }
 
-function truthStatus(value: any, fallback: string) {
+function truthStatus(value: unknown, fallback: string) {
   const cleaned = truthText(value).replace(/[_-]+/g, " ").trim();
   if (!cleaned) return fallback;
   return cleaned.toUpperCase().replace(/\s+/g, "_");
 }
 
-function normalizeSyncHealth(value: any) {
+function normalizeSyncHealth(value: unknown) {
   const v = truthStatus(value, "PARTIAL");
   if (v === "FULLY_SYNCED") return "SYNCED";
   return v;
 }
 
-function buildNextActions(resolved: any, rawActions: any) {
+function buildNextActions(resolved: { driverAssigned: boolean; dispatchStatus: string; syncHealth: string }, rawActions: unknown) {
   const items: string[] = [];
 
   if (Array.isArray(rawActions)) {
@@ -121,9 +145,9 @@ function buildNextActions(resolved: any, rawActions: any) {
 
 function resolveCollectionTruth(
   record: SyncRecord,
-  workflow: any,
+  workflow: CollectionWorkflow | null | undefined,
   announcementLabel: string,
-  fallbackActions: any,
+  fallbackActions: unknown,
 ) {
   const announcementDriverName = announcementLabel ? announcementLabel.split(" • ")[0] : "";
 
@@ -215,18 +239,19 @@ function flagTone(flag?: string) {
   return "blue";
 }
 
-function extractDrivers(payload: any): Driver[] {
-  const source = Array.isArray(payload)
+function extractDrivers(payload: unknown): Driver[] {
+  const envelope = payload as { drivers?: unknown; items?: unknown; records?: unknown } | null;
+  const source: unknown[] = Array.isArray(payload)
     ? payload
-    : Array.isArray(payload?.drivers)
-    ? payload.drivers
-    : Array.isArray(payload?.items)
-    ? payload.items
-    : Array.isArray(payload?.records)
-    ? payload.records
+    : Array.isArray(envelope?.drivers)
+    ? (envelope.drivers as unknown[])
+    : Array.isArray(envelope?.items)
+    ? (envelope.items as unknown[])
+    : Array.isArray(envelope?.records)
+    ? (envelope.records as unknown[])
     : [];
 
-  return source.map((item: any) => ({
+  return source.map((raw) => { const item = (raw ?? {}) as Record<string, unknown>; return ({
     id: String(item?.id ?? item?.driverId ?? item?.value ?? ""),
     name: truthText(item?.name, item?.driverName, item?.fullName, `Driver ${item?.id ?? ""}`),
     vehicleType: truthText(item?.vehicleType, item?.vehicle, item?.vehicle_class),
@@ -234,7 +259,7 @@ function extractDrivers(payload: any): Driver[] {
     maxLoad: Number(item?.maxLoad ?? item?.capacity ?? item?.maxAssignments ?? 0),
     status: truthText(item?.status, item?.availability, "AVAILABLE"),
     rating: item?.rating != null ? Number(item.rating) : undefined,
-  })).filter((d: Driver) => d.id && d.name);
+  }); }).filter((d: Driver) => d.id && d.name);
 }
 
 const shellStyle: React.CSSProperties = {
@@ -553,7 +578,7 @@ const drawerInnerCardStyle: React.CSSProperties = {
 export default function Collections() {
 
   const { showToast } = useToast();
-  const [liveRefreshTick, setLiveRefreshTick] = useState(0);
+  const [, setLiveRefreshTick] = useState(0);
 
   const requestLiveRefresh = () => {
     setTimeout(() => {
@@ -578,7 +603,7 @@ export default function Collections() {
   const [records, setRecords] = useState<SyncRecord[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
-  const [driversLoading, setDriversLoading] = useState(false);
+  const [driversLoading, setDriversLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -588,32 +613,33 @@ export default function Collections() {
   const [drawerBusy, setDrawerBusy] = useState(false);
   const [drawerMessage, setDrawerMessage] = useState("");
   const [drawerSelectedDriverId, setDrawerSelectedDriverId] = useState("");
-  const [drawerRefreshTick, setDrawerRefreshTick] = useState(0);
 
-  const moduleHealth = dashboard?.moduleHealth ?? {};
+  // Stable identity (memoised on the dashboard snapshot) so downstream
+  // memos keyed on moduleHealth do not recompute on every render.
+  const moduleHealth = useMemo(() => dashboard?.moduleHealth ?? {}, [dashboard]);
 
   const linkedCounts = useMemo(() => {
     const base = Array.isArray(records) ? records : [];
 
-    const hasLink = (value: any) => {
+    const hasLink = (value: unknown) => {
       if (value === undefined || value === null) return false;
       const cleaned = String(value).trim().toLowerCase();
       return cleaned !== "" && cleaned !== "null" && cleaned !== "undefined";
     };
 
-    const shipmentCount = base.filter((r: any) =>
+    const shipmentCount = base.filter((r) =>
       Boolean(r?.shipmentLinked) || hasLink(r?.links?.shipmentId) || hasLink(r?.shipmentId)
     ).length
 
-    const dispatchCount = base.filter((r: any) =>
+    const dispatchCount = base.filter((r) =>
       Boolean(r?.dispatchLinked) || hasLink(r?.links?.dispatchId) || hasLink(r?.dispatchId)
     ).length
 
-    const podCount = base.filter((r: any) =>
+    const podCount = base.filter((r) =>
       Boolean(r?.podLinked) || hasLink(r?.links?.podId) || hasLink(r?.podId)
     ).length
 
-    const invoiceCount = base.filter((r: any) =>
+    const invoiceCount = base.filter((r) =>
       Boolean(r?.invoiceLinked) || hasLink(r?.links?.invoiceId) || hasLink(r?.invoiceId)
     ).length
 
@@ -631,10 +657,7 @@ export default function Collections() {
 
 
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
     fetchLayer();
     fetchDrivers();
   }, [token]);
@@ -649,7 +672,7 @@ export default function Collections() {
         announcementLabel,
       };
     });
-  }, [records, driverAnnouncements, drawerRefreshTick]);
+  }, [records, driverAnnouncements]);
 
   const { highRiskCount, mediumRiskCount, healthyCount } = useMemo(() => {
     let high = 0;
@@ -682,14 +705,13 @@ export default function Collections() {
     });
   }, [filter, normalizedRecords]);
 
-  async function fetchLayer() {
-    setLoading(true);
-    try {
-      const [dashboardRes, recordsRes] = await Promise.all([
-        api.get("/collections-state-sync/dashboard"),
-        api.get("/collections-state-sync/records"),
-      ]);
-
+  // Promise-chain form: every state update lands in a .then/.catch/.finally
+  // callback, never synchronously inside the effect that triggers the load.
+  function fetchLayer() {
+    return Promise.all([
+      api.get("/collections-state-sync/dashboard"),
+      api.get("/collections-state-sync/records"),
+    ]).then(([dashboardRes, recordsRes]) => {
       setDashboard(dashboardRes.data || {});
       setRecords(
         Array.isArray(recordsRes.data)
@@ -699,25 +721,26 @@ export default function Collections() {
           : [],
       );
       setError("");
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || "Failed to load Collections command center.");
+    }).catch((err: unknown) => {
+      setError(errorMessageOf(err) || "Failed to load Collections command center.");
       setDashboard((prev) => prev || { totals: {}, moduleHealth: {}, records: [] });
       setRecords((prev) => (Array.isArray(prev) ? prev : []));
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
+    });
   }
 
-  async function fetchDrivers() {
-    setDriversLoading(true);
-    try {
-      const res = await api.get("/drivers", { params: { status: "AVAILABLE" } });
-      setDrivers(extractDrivers(res.data));
-    } catch {
-      setDrivers([]);
-    } finally {
-      setDriversLoading(false);
-    }
+  function fetchDrivers() {
+    return api.get("/drivers", { params: { status: "AVAILABLE" } })
+      .then((res) => {
+        setDrivers(extractDrivers(res.data));
+      })
+      .catch(() => {
+        setDrivers([]);
+      })
+      .finally(() => {
+        setDriversLoading(false);
+      });
   }
 
   async function runBulkSync() {
@@ -728,8 +751,8 @@ export default function Collections() {
       });
       await fetchLayer();
       showToast(`Bulk sync completed. Synced records: ${response.data?.synced ?? 0}`, "success");
-    } catch (err: any) {
-      showToast(err?.response?.data?.message || err?.message || "Bulk sync repair failed.", "error");
+    } catch (err) {
+      showToast(errorMessageOf(err) || "Bulk sync repair failed.", "error");
     } finally {
       setBulkBusy(false);
     }
@@ -756,8 +779,8 @@ export default function Collections() {
         .join(", ");
 
       showToast(`Sync completed for ${collectionId}. Updated: ${changed || "No linked changes needed"}`, "success");
-    } catch (err: any) {
-      showToast(err?.response?.data?.message || err?.message || "Record sync failed.", "error");
+    } catch (err) {
+      showToast(errorMessageOf(err) || "Record sync failed.", "error");
     } finally {
       setBusyId(null);
     }
@@ -790,6 +813,7 @@ export default function Collections() {
     return await api.post(`/collections/${collectionId}/release-driver`);
   }
 
+  useDismissOnEscape(Boolean(workflowDrawer), closeWorkflowDrawer);
   function closeWorkflowDrawer() {
     setWorkflowDrawer(null);
     setDrawerBusy(false);
@@ -808,7 +832,6 @@ export default function Collections() {
     }
     setDrawerMessage("");
     await openLinkedWorkflow(liveRecord);
-    setDrawerRefreshTick((tick) => tick + 1);
   }
 
   async function assignDrawerRecommendedDriver() {
@@ -826,8 +849,8 @@ export default function Collections() {
       if (liveRecord) await openLinkedWorkflow(liveRecord);
 
       setDrawerMessage("Best driver assigned successfully.");
-    } catch (error: any) {
-      setDrawerMessage(error?.response?.data?.message || error?.message || "Driver assignment failed.");
+    } catch (error) {
+      setDrawerMessage(errorMessageOf(error) || "Driver assignment failed.");
     } finally {
       setDrawerBusy(false);
     }
@@ -862,8 +885,8 @@ export default function Collections() {
       if (liveRecord) await openLinkedWorkflow(liveRecord);
 
       setDrawerMessage("Manual driver assignment applied successfully.");
-    } catch (error: any) {
-      setDrawerMessage(error?.response?.data?.message || error?.message || "Manual driver assignment failed.");
+    } catch (error) {
+      setDrawerMessage(errorMessageOf(error) || "Manual driver assignment failed.");
     } finally {
       setDrawerBusy(false);
     }
@@ -894,8 +917,8 @@ export default function Collections() {
       if (liveRecord) await openLinkedWorkflow(liveRecord);
 
       setDrawerMessage("Driver released successfully.");
-    } catch (error: any) {
-      setDrawerMessage(error?.response?.data?.message || error?.message || "Driver release failed.");
+    } catch (error) {
+      setDrawerMessage(errorMessageOf(error) || "Driver release failed.");
     } finally {
       setDrawerBusy(false);
     }
@@ -915,8 +938,8 @@ export default function Collections() {
       if (liveRecord) await openLinkedWorkflow(liveRecord);
 
       setDrawerMessage("Workflow sync repaired successfully.");
-    } catch (error: any) {
-      setDrawerMessage(error?.response?.data?.message || error?.message || "Workflow sync repair failed.");
+    } catch (error) {
+      setDrawerMessage(errorMessageOf(error) || "Workflow sync repair failed.");
     } finally {
       setDrawerBusy(false);
     }
@@ -994,8 +1017,8 @@ export default function Collections() {
 
       setDrawerSelectedDriverId("");
       setDrawerMessage("");
-    } catch (err: any) {
-      showToast(err?.response?.data?.message || err?.message || "Failed to open workflow.", "error");
+    } catch (err) {
+      showToast(errorMessageOf(err) || "Failed to open workflow.", "error");
     }
   }
 
@@ -1266,8 +1289,8 @@ export default function Collections() {
                               await fetchLayer();
                               await fetchDrivers();
                               showToast("Driver auto-assigned successfully!", "success");
-                            } catch (e: any) {
-                              showToast(e?.response?.data?.message || e?.message || "Auto-assign failed.", "error");
+                            } catch (e) {
+                              showToast(errorMessageOf(e) || "Auto-assign failed.", "error");
                             }
                           }}
                           style={miniButtonStyle("amber")}
@@ -1282,8 +1305,8 @@ export default function Collections() {
                               await fetchLayer();
                               await fetchDrivers();
                               showToast("Driver released successfully!", "success");
-                            } catch (e: any) {
-                              showToast(e?.response?.data?.message || e?.message || "Release driver failed.", "error");
+                            } catch (e) {
+                              showToast(errorMessageOf(e) || "Release driver failed.", "error");
                             }
                           }}
                           style={miniButtonStyle("red")}
@@ -1315,7 +1338,6 @@ export default function Collections() {
         {workflowDrawer ? (
           <>
             <div
-              onClick={closeWorkflowDrawer}
               style={{
                 position: "fixed",
                 inset: 0,
@@ -1324,9 +1346,11 @@ export default function Collections() {
                 WebkitBackdropFilter: "blur(6px)",
                 zIndex: 60,
               }}
-            />
+            >
+              <button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={closeWorkflowDrawer} />
+            </div>
 
-            <aside
+            <aside role="dialog" aria-modal="true" aria-label="Collection workflow"
               style={{
                 position: "fixed",
                 top: 0,

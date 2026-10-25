@@ -7,12 +7,14 @@ import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RAIL_READ_ROLES, RAIL_SIGNATORY_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /** Cancel / reschedule / re-plan (Annexure 20a) with Annexure 20b reasons. Allocating a "could be …" party is signatory-only. */
 @ApiTags('Rail / Cancellations & reschedules')
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(...RAIL_READ_ROLES)
+@RequireFeature('rail')
 @Controller('rail/changes')
 export class RailChangeController {
   constructor(private readonly changes: RailChangeService) {}

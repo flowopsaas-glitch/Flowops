@@ -2,21 +2,31 @@ import { useState, useEffect } from "react";
 import { Layers, Loader2, CheckCircle2, Clock, MapPin, Package } from "lucide-react";
 import { createWave, listWarehouses } from "../../api/warehouseApi";
 
+type WaveResult = {
+  waveId?: string;
+  orders?: number;
+  lines?: number;
+  zones?: number;
+  estimatedPickTime?: number;
+  message?: string;
+  pickSequence?: Record<string, { sku?: string; binCode?: string }[]>;
+};
+
 export default function WavePlanning() {
-  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
   const [maxOrders, setMaxOrders] = useState(20);
   const [maxLines, setMaxLines] = useState(100);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<WaveResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    listWarehouses().then((r: any) => {
+    listWarehouses().then((r) => {
       const data = r?.data ?? r;
       setWarehouses(Array.isArray(data) ? data : []);
       if (data?.[0]?.id) setWarehouseId(data[0].id);
-    }).catch(() => {});
+    }).catch((e) => console.error('warehouse list failed to load', e));
   }, []);
 
   const submit = async () => {
@@ -25,7 +35,7 @@ export default function WavePlanning() {
     try {
       const res = await createWave({ warehouseId, maxOrders, maxLines });
       setResult(res?.data ?? res);
-    } catch (e: any) { setError(e?.response?.data?.message || e.message || "Failed"); }
+    } catch (e) { setError(e?.response?.data?.message || e.message || "Failed"); }
     finally { setLoading(false); }
   };
 
@@ -55,21 +65,21 @@ export default function WavePlanning() {
         <h3 className="text-sm font-black text-white/70 uppercase tracking-wider">Wave Configuration</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-bold text-white/50 mb-1">Warehouse</label>
-            <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
+            <label className="block text-xs font-bold text-white/50 mb-1" htmlFor="field-warehouse-3">Warehouse</label>
+            <select id="field-warehouse-3" value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none focus:border-violet-400/40">
               <option value="">Select warehouse...</option>
               {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-bold text-white/50 mb-1">Max Orders per Wave</label>
-            <input type="number" value={maxOrders} onChange={e => setMaxOrders(+e.target.value)} min={1} max={50}
+            <label className="block text-xs font-bold text-white/50 mb-1" htmlFor="field-max-orders-per-wave-2">Max Orders per Wave</label>
+            <input id="field-max-orders-per-wave-2" type="number" value={maxOrders} onChange={e => setMaxOrders(+e.target.value)} min={1} max={50}
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none focus:border-violet-400/40" />
           </div>
           <div>
-            <label className="block text-xs font-bold text-white/50 mb-1">Max Lines per Wave</label>
-            <input type="number" value={maxLines} onChange={e => setMaxLines(+e.target.value)} min={10} max={500}
+            <label className="block text-xs font-bold text-white/50 mb-1" htmlFor="field-max-lines-per-wave-1">Max Lines per Wave</label>
+            <input id="field-max-lines-per-wave-1" type="number" value={maxLines} onChange={e => setMaxLines(+e.target.value)} min={10} max={500}
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none focus:border-violet-400/40" />
           </div>
         </div>
@@ -112,7 +122,7 @@ export default function WavePlanning() {
               </div>
 
               {/* Pick Sequence by Zone */}
-              {result.pickSequence && Object.entries(result.pickSequence).map(([zone, items]: [string, any]) => (
+              {result.pickSequence && Object.entries(result.pickSequence).map(([zone, items]) => (
                 <div key={zone} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <MapPin className="h-4 w-4 text-violet-400" />
@@ -120,7 +130,7 @@ export default function WavePlanning() {
                     <span className="text-[10px] text-white/30 ml-auto">{items.length} lines</span>
                   </div>
                   <div className="space-y-1">
-                    {items.slice(0, 5).map((item: any, idx: number) => (
+                    {items.slice(0, 5).map((item, idx) => (
                       <div key={idx} className="flex items-center gap-2 text-xs text-white/50">
                         <span className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold">{idx + 1}</span>
                         <Package className="h-3 w-3" />

@@ -5,29 +5,39 @@ import { useEffect } from "react";
 
 type Line = { sku: string; quantity: number; destinationClient: string; destinationAddress: string };
 
+type CrossDockResult = {
+  receiptNumber?: string;
+  totalItems?: number;
+  destinations?: number;
+  pickOrders?: { id: string; orderNumber?: string; client?: string }[];
+};
+
 export default function CrossDocking() {
-  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
   const [supplierName, setSupplierName] = useState("");
   const [inboundRef, setInboundRef] = useState("");
   const [lines, setLines] = useState<Line[]>([{ sku: "", quantity: 1, destinationClient: "", destinationAddress: "" }]);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<CrossDockResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    listWarehouses().then((r: any) => {
+    listWarehouses().then((r) => {
       const data = r?.data ?? r;
       setWarehouses(Array.isArray(data) ? data : []);
       if (data?.[0]?.id) setWarehouseId(data[0].id);
-    }).catch(() => {});
+    }).catch((e) => console.error('warehouse list failed to load', e));
   }, []);
 
   const addLine = () => setLines([...lines, { sku: "", quantity: 1, destinationClient: "", destinationAddress: "" }]);
   const removeLine = (i: number) => setLines(lines.filter((_, idx) => idx !== i));
   const updateLine = (i: number, field: keyof Line, value: string | number) => {
     const updated = [...lines];
-    (updated[i] as any)[field] = value;
+    const next = { ...updated[i] };
+    if (field === "quantity") next.quantity = Number(value);
+    else next[field] = String(value);
+    updated[i] = next;
     setLines(updated);
   };
 
@@ -38,7 +48,7 @@ export default function CrossDocking() {
     try {
       const res = await createCrossDock({ warehouseId, supplierName, inboundRef, lines });
       setResult(res?.data ?? res);
-    } catch (e: any) { setError(e?.response?.data?.message || e.message || "Failed"); }
+    } catch (e) { setError(e?.response?.data?.message || e.message || "Failed"); }
     finally { setLoading(false); }
   };
 
@@ -68,21 +78,21 @@ export default function CrossDocking() {
           {/* Warehouse + Supplier */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-bold text-white/50 mb-1">Warehouse</label>
-              <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
+              <label className="block text-xs font-bold text-white/50 mb-1" htmlFor="field-warehouse-4">Warehouse</label>
+              <select id="field-warehouse-4" value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none focus:border-sky-400/40">
                 <option value="">Select warehouse...</option>
                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-white/50 mb-1">Supplier Name</label>
-              <input value={supplierName} onChange={e => setSupplierName(e.target.value)} placeholder="e.g. Unilever"
+              <label className="block text-xs font-bold text-white/50 mb-1" htmlFor="field-supplier-name-3">Supplier Name</label>
+              <input id="field-supplier-name-3" value={supplierName} onChange={e => setSupplierName(e.target.value)} placeholder="e.g. Unilever"
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-sky-400/40" />
             </div>
             <div>
-              <label className="block text-xs font-bold text-white/50 mb-1">Inbound Reference</label>
-              <input value={inboundRef} onChange={e => setInboundRef(e.target.value)} placeholder="PO-12345"
+              <label className="block text-xs font-bold text-white/50 mb-1" htmlFor="field-inbound-reference-2">Inbound Reference</label>
+              <input id="field-inbound-reference-2" value={inboundRef} onChange={e => setInboundRef(e.target.value)} placeholder="PO-12345"
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-sky-400/40" />
             </div>
           </div>
@@ -90,7 +100,7 @@ export default function CrossDocking() {
           {/* Lines */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="text-xs font-bold text-white/50 uppercase tracking-wider">Inbound Lines (Sort by Destination)</label>
+              <label className="text-xs font-bold text-white/50 uppercase tracking-wider" htmlFor="field-inbound-lines-sort-by-destin-1">Inbound Lines (Sort by Destination)</label>
               <button onClick={addLine} className="flex items-center gap-1 text-xs font-bold text-sky-400 hover:text-sky-300">
                 <Plus className="h-3.5 w-3.5" /> Add Line
               </button>
@@ -98,7 +108,7 @@ export default function CrossDocking() {
             <div className="space-y-2">
               {lines.map((line, i) => (
                 <div key={i} className="grid grid-cols-[1fr_80px_1fr_1fr_40px] gap-2 items-center">
-                  <input value={line.sku} onChange={e => updateLine(i, "sku", e.target.value)} placeholder="SKU / Barcode"
+                  <input id="field-inbound-lines-sort-by-destin-1" value={line.sku} onChange={e => updateLine(i, "sku", e.target.value)} placeholder="SKU / Barcode"
                     className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none" />
                   <input type="number" value={line.quantity} onChange={e => updateLine(i, "quantity", +e.target.value)} min={1}
                     className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white text-center outline-none" />
@@ -147,7 +157,7 @@ export default function CrossDocking() {
           </div>
           <div>
             <p className="text-xs font-bold text-white/50 mb-2">Auto-Created Pick Orders:</p>
-            {result.pickOrders?.map((po: any) => (
+            {result.pickOrders?.map((po) => (
               <div key={po.id} className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2 mb-1">
                 <Package className="h-4 w-4 text-sky-400" />
                 <span className="text-sm font-bold text-white">{po.orderNumber}</span>

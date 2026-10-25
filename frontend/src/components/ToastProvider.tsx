@@ -1,19 +1,15 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
+
+import { ToastContext } from "./toast-context";
+import type { ToastType } from "./toast-context";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
 
-type ToastType = "success" | "error" | "info";
 
 interface Toast {
   id: number;
   message: string;
   type: ToastType;
 }
-
-interface ToastContextType {
-  showToast: (message: string, type?: ToastType) => void;
-}
-
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -33,8 +29,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-center gap-3 rounded-2xl border p-4 shadow-2xl transition-all animate-in slide-in-from-right-full 
-              ${t.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-red-50 border-red-200 text-red-900"} 
+            className={`pointer-events-auto flex items-center gap-3 rounded-2xl border p-4 shadow-2xl transition-all animate-in slide-in-from-right-full
+              ${t.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-red-50 border-red-200 text-red-900"}
               min-w-[320px]`}
           >
             {t.type === "success" ? <CheckCircle2 size={20} className="text-emerald-500" /> : <AlertCircle size={20} className="text-red-500" />}
@@ -48,9 +44,3 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     </ToastContext.Provider>
   );
 }
-
-export const useToast = () => {
-  const context = useContext(ToastContext);
-  if (!context) throw new Error("useToast must be used within ToastProvider");
-  return context;
-};

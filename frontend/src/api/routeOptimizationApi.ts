@@ -1,7 +1,7 @@
 import { api } from './client';
 
-const unwrap = <T>(r: any): T => (r?.data ?? r) as T;
-const arr = <T>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+const unwrap = <T>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
+const arr = <T>(r: unknown): T[] => (Array.isArray(r) ? r : ((r as { data?: T[] } | null)?.data ?? [])) as T[];
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -26,12 +26,12 @@ export type RouteOptimization = {
   deliveryIds: string[];
   vehicleIds: string[];
   depot: { lat: number; lng: number; address?: string } | null;
-  optimizedRoutes: any[] | null;
+  optimizedRoutes: OptimizedRoute[] | null;
   totalDistance: number | null;
   totalDuration: number | null;
   savingsPercent: number | null;
   modelUsed: string | null;
-  aiInsights: any | null;
+  aiInsights: RouteAiInsights | null;
   allocations: DeliveryAllocation[];
   createdAt: string;
   updatedAt: string;
@@ -40,12 +40,23 @@ export type RouteOptimization = {
 export type RouteInsights = {
   id: string;
   status: RouteOptimizationStatus;
-  aiInsights: any;
+  aiInsights: RouteAiInsights;
   savingsPercent: number | null;
   totalDistance: number | null;
   totalDuration: number | null;
   modelUsed: string | null;
 };
+
+export type OptimizedRoute = {
+  driverId?: string | null;
+  vehicleId?: string | null;
+  stops?: unknown[];
+  totalDistance?: number | null;
+  totalTime?: number | null;
+  [key: string]: unknown;
+};
+
+export type RouteAiInsights = string | { summary?: string; [key: string]: unknown };
 
 export type CreateOptimizationPayload = {
   name?: string;

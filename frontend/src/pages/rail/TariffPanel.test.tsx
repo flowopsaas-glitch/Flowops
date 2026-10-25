@@ -39,7 +39,7 @@ const h = vi.hoisted(() => {
   };
 });
 
-vi.mock('../../components/ToastProvider', () => ({ useToast: () => ({ showToast: h.toast }) }));
+vi.mock('../../components/toast-context', () => ({ useToast: () => ({ showToast: h.toast }) }));
 vi.mock('../../api/railApi', () => ({ listConsignments: vi.fn(async () => h.state.consignments) }));
 vi.mock('../../api/railTariffApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/railTariffApi')>()),

@@ -60,9 +60,9 @@ const EVENT_GROUPS: { label: string; events: string[] }[] = [
 ];
 const EVENT_OPTIONS = EVENT_GROUPS.flatMap((g) => g.events);
 
-function unwrapList(raw: any): any[] {
-  const d = raw?.data ?? raw;
-  return Array.isArray(d) ? d : [];
+function unwrapList<T>(raw: unknown): T[] {
+  const d = (raw as { data?: unknown } | null)?.data ?? raw;
+  return Array.isArray(d) ? (d as T[]) : [];
 }
 
 const DELIVERY_STATUS_CFG: Record<DeliveryStatus, { cls: string; icon: React.ComponentType<{ className?: string }> }> = {
@@ -90,13 +90,12 @@ export default function Integrations() {
   const [busy, setBusy]           = useState(false);
   const [loadingLog, setLoadingLog] = useState(false);
 
-  const loadKeys  = () => api.get("/integrations/api-keys").then((r: any)  => setKeys(unwrapList(r)));
-  const loadHooks = () => api.get("/integrations/webhooks").then((r: any) => setHooks(unwrapList(r)));
+  const loadKeys  = () => api.get("/integrations/api-keys").then((r)  => setKeys(unwrapList<ApiKey>(r)));
+  const loadHooks = () => api.get("/integrations/webhooks").then((r) => setHooks(unwrapList<WebhookEndpoint>(r)));
   const loadLog   = async () => {
-    setLoadingLog(true);
     try {
-      const r: any = await api.get("/integrations/webhooks/deliveries");
-      setDeliveries(unwrapList(r));
+      const r = await api.get("/integrations/webhooks/deliveries");
+      setDeliveries(unwrapList<WebhookDelivery>(r));
     } finally { setLoadingLog(false); }
   };
 
@@ -118,7 +117,7 @@ export default function Integrations() {
   const createKey = async () => {
     setBusy(true);
     try {
-      const r: any = await api.post("/integrations/api-keys", { name: keyName || "Default key" });
+      const r = await api.post("/integrations/api-keys", { name: keyName || "Default key" });
       const payload = r?.data ?? r;
       setNewKey(payload.key);
       setKeyName("");
@@ -136,7 +135,7 @@ export default function Integrations() {
     const events = selectedEvents.length ? selectedEvents : EVENT_OPTIONS;
     setBusy(true);
     try {
-      const r: any = await api.post("/integrations/webhooks", { url: hookUrl.trim(), events });
+      const r = await api.post("/integrations/webhooks", { url: hookUrl.trim(), events });
       const payload = r?.data ?? r;
       setNewSecret(payload.secret);
       setHookUrl("");
@@ -465,13 +464,12 @@ function ConnectionForm({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const base = (window as any).__VITE_API_BASE__ ?? window.location.origin;
+  const base = window.__VITE_API_BASE__ ?? window.location.origin;
   const endpoint = webhookPath ? `${base}/api/v1${webhookPath}` : null;
 
-  const load = async () => {
-    setLoading(true);
+  const load = () => (async () => {
     try {
-      const r: any = await api.get(`/integrations/connections/${provider}`);
+      const r = await api.get(`/integrations/connections/${provider}`);
       const c = (r?.data ?? r) as MaskedConnection;
       setConn(c);
       const seed: Record<string, string> = {};
@@ -484,7 +482,7 @@ function ConnectionForm({
     } finally {
       setLoading(false);
     }
-  };
+  })();
 
   useEffect(() => {
     void load();
@@ -510,7 +508,7 @@ function ConnectionForm({
         return next;
       });
       await load();
-    } catch (e: any) {
+    } catch (e) {
       setMsg({ kind: "err", text: e?.message || "Could not save this connection." });
     } finally {
       setSaving(false);
@@ -524,7 +522,7 @@ function ConnectionForm({
       setValues({});
       setMsg({ kind: "ok", text: "Disconnected." });
       await load();
-    } catch (e: any) {
+    } catch (e) {
       setMsg({ kind: "err", text: e?.message || "Could not disconnect." });
     } finally {
       setSaving(false);
@@ -654,7 +652,7 @@ function WhatsAppTab() {
   useEffect(() => {
     let alive = true;
     api.get("/integrations/connections/whatsapp")
-      .then((r: any) => {
+      .then((r) => {
         const g = (r?.data ?? r)?.config?.gateway;
         if (alive && (g === "meta" || g === "telesign")) setGateway(g);
       })
@@ -807,4 +805,3 @@ function StoresTab() {
     </div>
   );
 }
-

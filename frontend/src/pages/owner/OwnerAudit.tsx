@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Filter, Shield } from "lucide-react";
 import { api } from "../../api/client";
@@ -10,7 +11,7 @@ type AuditRow = {
   targetType?: string | null;
   targetId?: string | null;
   targetName?: string | null;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, unknown> | null;
   ip?: string | null;
   createdAt: string;
 };
@@ -75,18 +76,20 @@ export default function OwnerAudit() {
   const [toDate, setToDate] = useState("");
 
   async function load() {
-    setLoading(true);
+  return (async () => {
+    const res = await api.get("/owner/audit");
+    const data = res?.data ?? res;
+    setRows(Array.isArray(data) ? data : []);
     setError("");
-    try {
-      const res: any = await api.get("/owner/audit");
-      const data = res?.data ?? res;
-      setRows(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load audit log.");
-    } finally {
-      setLoading(false);
-    }
-  }
+
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || "Failed to load audit log.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  });
+}
 
   useEffect(() => { void load(); }, []);
 

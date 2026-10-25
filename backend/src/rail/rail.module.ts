@@ -25,6 +25,8 @@ import { RailTrainManifestController } from './rail-manifest.controller';
 import { RailTrainManifestService } from './rail-manifest.service';
 import { RailTelemetryController } from './rail-telemetry.controller';
 import { RailTelemetryService } from './rail-telemetry.service';
+import { RailTruckAppointmentsController } from './rail-truck-appointments.controller';
+import { RailTruckAppointmentsService } from './rail-truck-appointments.service';
 
 /**
  * Rail / Intermodal Operations.
@@ -52,17 +54,17 @@ import { RailTelemetryService } from './rail-telemetry.service';
   controllers: [
     RailController, RailHandshakeController, RailSlotController,
     RailChangeController, RailPossessionController, RailOccurrenceController, RailTariffController, RailWeighbridgeController,
-    RailTimetableOwnerController, RailOptimizerController, RailTrainManifestController, RailTelemetryController,
+    RailTimetableOwnerController, RailOptimizerController, RailTrainManifestController, RailTelemetryController, RailTruckAppointmentsController,
   ],
   providers: [
     RailService, RailHandshakeService, RailSlotService,
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
-    RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService,
+    RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService, RailTruckAppointmentsService,
   ],
   exports: [
     RailService, RailHandshakeService, RailSlotService,
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
-    RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService,
+    RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService, RailTruckAppointmentsService,
   ],
 })
 export class RailModule {}

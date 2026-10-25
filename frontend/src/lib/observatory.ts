@@ -68,7 +68,7 @@ export function initObservatory(): void {
   });
 
   window.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
-    const reason: any = e.reason;
+    const reason: { message?: string; stack?: string } | null = (e.reason ?? null) as { message?: string; stack?: string } | null;
     const message = reason?.message || String(reason) || "Unhandled promise rejection";
     reportClientError(`Unhandled rejection: ${message}`, reason?.stack);
   });

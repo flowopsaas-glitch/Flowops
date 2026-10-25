@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, XCircle, Loader2, ArrowUpCircle, RefreshCw, Clock } from "lucide-react";
 import { api } from "../../api/client";
@@ -17,9 +18,7 @@ type UpgradeRequest = {
   company?: { name?: string | null; email?: string | null; plan?: string | null } | null;
 };
 
-function unwrap(r: any): any {
-  return r?.data ?? r;
-}
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
 
 const PLAN_LABEL: Record<string, string> = {
   starter: "Starter",
@@ -46,19 +45,19 @@ export default function OwnerUpgradeRequests() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r: any = await api.get("/owner/plan-upgrade-requests");
-      const list = unwrap(r);
-      setRows(Array.isArray(list) ? list : []);
-      setError(null);
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Could not load upgrade requests.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const load = useCallback(() => (async () => {
+    const r = await api.get("/owner/plan-upgrade-requests");
+    const list = unwrap<UpgradeRequest[]>(r);
+    setRows(Array.isArray(list) ? list : []);
+    setError(null);
+
+  })().catch((e: unknown) => {
+    setError(errorMessageOf(e) || "Could not load upgrade requests.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => {
     void load();
@@ -66,12 +65,11 @@ export default function OwnerUpgradeRequests() {
 
   const approve = async (id: string) => {
     setBusy(id);
-    setError(null);
-    try {
+        try {
       await api.post(`/owner/plan-upgrade-requests/${id}/approve`);
       await load();
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Could not approve.");
+    } catch (e) {
+      setError(errorMessageOf(e) || "Could not approve.");
     } finally {
       setBusy(null);
     }
@@ -80,12 +78,11 @@ export default function OwnerUpgradeRequests() {
   const decline = async (id: string) => {
     const reason = window.prompt("Reason for declining (optional — shown to the tenant):") ?? undefined;
     setBusy(id);
-    setError(null);
     try {
       await api.post(`/owner/plan-upgrade-requests/${id}/decline`, { reason });
       await load();
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Could not decline.");
+    } catch (e) {
+      setError(errorMessageOf(e) || "Could not decline.");
     } finally {
       setBusy(null);
     }

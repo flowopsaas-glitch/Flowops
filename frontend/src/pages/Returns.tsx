@@ -1,9 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import React, { useCallback, useEffect, useState } from "react";
+import { useDismissOnEscape } from "../components/patterns/useDismissOnEscape";
 import {
   RotateCcw, Plus, Search, PackageCheck, Truck, ClipboardCheck,
   CheckCircle2, XCircle, Clock, RefreshCw, Banknote, Boxes, X, Trash2,
+  type LucideIcon,
 } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { TiltCard } from "../components/premium/TiltCard";
@@ -11,7 +14,7 @@ import {
   listReturns, getReturnStats, createReturn, transitionReturn, deleteReturn,
   getReturnInsights,
   type ReturnRecord, type ReturnStats, type ReturnStatus, type ReturnReason,
-  type ReturnResolution, type ReturnTransition, type CreateReturnPayload,
+  type ReturnResolution, type ReturnTransition, type CreateReturnPayload, type TransitionPayload,
   type ReturnInsights,
 } from "../api/returnsApi";
 
@@ -58,7 +61,7 @@ function actionsFor(status: ReturnStatus): { action: ReturnTransition; label: st
   }
 }
 
-const StatCard = ({ icon: Icon, label, value, accent }: { icon: any; label: string; value: React.ReactNode; accent: string }) => (
+const StatCard = ({ icon: Icon, label, value, accent }: { icon: LucideIcon; label: string; value: React.ReactNode; accent: string }) => (
   <div className={glassCard("p-4 flex items-center gap-3")}>
     <div className={cn("grid h-10 w-10 place-items-center rounded-xl", accent)}><Icon className="h-5 w-5" /></div>
     <div>
@@ -83,33 +86,33 @@ export default function Returns() {
   const [createOpen, setCreateOpen] = useState(false);
   const [resolveFor, setResolveFor] = useState<ReturnRecord | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [list, st] = await Promise.all([
-        listReturns({ search, status: statusFilter, reason: reasonFilter }),
-        getReturnStats(),
-      ]);
-      setRows(list);
-      setStats(st);
-      getReturnInsights().then(setInsights).catch(() => setInsights(null));
-    } catch (e: any) {
-      showToast(e?.response?.data?.message || "Failed to load returns", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [search, statusFilter, reasonFilter, showToast]);
+  const load = useCallback(() => (async () => {
+    const [list, st] = await Promise.all([
+      listReturns({ search, status: statusFilter, reason: reasonFilter }),
+      getReturnStats(),
+    ]);
+    setRows(list);
+    setStats(st);
+    getReturnInsights().then(setInsights).catch(() => setInsights(null));
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e) || "Failed to load returns", "error");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [search, statusFilter, reasonFilter, showToast]);
 
   useEffect(() => { void load(); }, [load]);
 
-  async function runTransition(r: ReturnRecord, action: ReturnTransition, payload?: any) {
+  async function runTransition(r: ReturnRecord, action: ReturnTransition, payload?: TransitionPayload) {
     setBusyId(r.id);
     try {
       await transitionReturn(r.id, action, payload);
       showToast(`${r.rmaNumber}: ${pretty(action)} done`, "success");
       await load();
-    } catch (e: any) {
-      showToast(e?.response?.data?.message || `Could not ${action}`, "error");
+    } catch (e) {
+      showToast(errorMessageOf(e) || `Could not ${action}`, "error");
     } finally {
       setBusyId(null);
     }
@@ -132,8 +135,8 @@ export default function Returns() {
       await deleteReturn(r.id);
       showToast(`${r.rmaNumber} deleted`, "success");
       await load();
-    } catch (e: any) {
-      showToast(e?.response?.data?.message || "Delete failed (admins/managers only)", "error");
+    } catch (e) {
+      showToast(errorMessageOf(e) || "Delete failed (admins/managers only)", "error");
     } finally {
       setBusyId(null);
     }
@@ -188,12 +191,12 @@ export default function Returns() {
             className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm outline-none focus:border-sky-400/50"
           />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as ReturnStatus | "")}
           className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-sky-400/50">
           <option value="">All statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
         </select>
-        <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value as any)}
+        <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value as ReturnReason | "")}
           className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-sky-400/50">
           <option value="">All reasons</option>
           {REASONS.map((r) => <option key={r} value={r}>{pretty(r)}</option>)}
@@ -326,8 +329,8 @@ function CreateReturnModal({ onClose, onCreated }: { onClose: () => void; onCrea
       });
       showToast("Return logged", "success");
       onCreated();
-    } catch (e: any) {
-      showToast(e?.response?.data?.message || "Could not create return", "error");
+    } catch (e) {
+      showToast(errorMessageOf(e) || "Could not create return", "error");
     } finally {
       setSaving(false);
     }
@@ -374,7 +377,7 @@ function CreateReturnModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
 function ResolveModal({
   record, onClose, onResolved,
-}: { record: ReturnRecord; onClose: () => void; onResolved: (p: any) => void }) {
+}: { record: ReturnRecord; onClose: () => void; onResolved: (p: TransitionPayload) => void }) {
   const [resolution, setResolution] = useState<ReturnResolution>("REFUND");
   const [refund, setRefund] = useState<string>(record.refundAmount != null ? String(record.refundAmount) : "");
   const [restockFee, setRestockFee] = useState<string>("");
@@ -422,9 +425,10 @@ function ResolveModal({
 // ── Tiny shared UI ────────────────────────────────────────────────────────
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  useDismissOnEscape(true, onClose);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className={glassCard("w-full max-w-lg p-5")} role="dialog">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-black">{title}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-5 w-5" /></button>

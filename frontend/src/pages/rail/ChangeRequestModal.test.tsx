@@ -25,7 +25,7 @@ const h = vi.hoisted(() => {
 });
 
 const toast = vi.fn();
-vi.mock('../../components/ToastProvider', () => ({ useToast: () => ({ showToast: toast }) }));
+vi.mock('../../components/toast-context', () => ({ useToast: () => ({ showToast: toast }) }));
 vi.mock('../../api/railChangeApi', () => ({
   getCancellationCodes: vi.fn(async () => { if (h.state.codesError) throw new Error(h.state.codesError); return h.codes; }),
   getChangeWindows: vi.fn(async () => ({ windows: { noticeWithinMinutes: 15, acknowledgeWithinHours: 1, shortNoticeThresholdHours: 48, commercialWindowHours: 72, itpPlanningVersions: [], clearinghouse: { disputeWindowHours: 24, closedToDisputeAfterHours: 48 } }, initiators: [], processSteps: [] })),

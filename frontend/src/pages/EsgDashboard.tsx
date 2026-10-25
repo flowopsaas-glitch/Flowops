@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Leaf, TrendingDown, TrendingUp, Truck, Loader2, RefreshCw, AlertTriangle, BarChart3, TreePine, Plane, Home, Coins } from "lucide-react";
+import { Leaf, TrendingDown, TrendingUp, Truck, Loader2, RefreshCw, AlertTriangle, BarChart3, TreePine, Plane, Home, Coins,
+  type LucideIcon,
+} from "lucide-react";
 import { api } from "../api/client";
 
 // Matches backend CarbonService.getFleetReport (FleetCarbonReport)
@@ -41,12 +43,12 @@ export default function EsgDashboard() {
 
   useEffect(() => {
     Promise.all([
-      api.get("/esg/report").then((r: any) => r?.data ?? r),
-      api.get("/esg/trends").then((r: any) => r?.data ?? r),
+      api.get("/esg/report").then((r) => r?.data ?? r),
+      api.get("/esg/trends").then((r) => r?.data ?? r),
       // Carbon engine (DEFRA 2024 factors) — separate controller, complementary
       // detail: offset cost + real-world equivalents. Best-effort; ESG still
       // renders if it fails.
-      api.get("/carbon/report").then((r: any) => r?.data ?? r).catch(() => null),
+      api.get("/carbon/report").then((r) => r?.data ?? r).catch(() => null),
     ]).then(([r, t, c]) => { setReport(r); setTrends(t); setCarbon(c); })
       .finally(() => setLoading(false));
   }, []);
@@ -54,7 +56,7 @@ export default function EsgDashboard() {
   const refresh = async () => {
     setRefreshing(true);
     try {
-      const r: any = await api.post("/esg/refresh");
+      const r = await api.post("/esg/refresh");
       setReport(r?.data ?? r);
     } finally { setRefreshing(false); }
   };
@@ -172,7 +174,7 @@ export default function EsgDashboard() {
   );
 }
 
-function Equivalent({ icon: Icon, color, value, label }: { icon: any; color: string; value: string; label: string }) {
+function Equivalent({ icon: Icon, color, value, label }: { icon: LucideIcon; color: string; value: string; label: string }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
       <Icon className={`h-6 w-6 shrink-0 ${color}`} />
@@ -184,7 +186,7 @@ function Equivalent({ icon: Icon, color, value, label }: { icon: any; color: str
   );
 }
 
-function KPI({ label, value, icon: Icon, color, trend }: { label: string; value: string; icon: any; color: string; trend?: number | null }) {
+function KPI({ label, value, icon: Icon, color, trend }: { label: string; value: string; icon: LucideIcon; color: string; trend?: number | null }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
       <div className="flex items-center justify-between mb-2">

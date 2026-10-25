@@ -1,8 +1,7 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useEffect, useState } from "react";
 import {
-  Trophy, Medal, Star, Truck, Package, DollarSign,
-  TrendingUp, Loader2, AlertTriangle, Crown, Flame,
-  Award, Target, ChevronDown,
+  Trophy, Medal, Star, Truck, Package, DollarSign, Loader2, AlertTriangle, Crown, Target, ChevronDown,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -84,8 +83,8 @@ export default function DriverLeaderboard() {
 
   useEffect(() => {
     api.get("/drivers/leaderboard")
-      .then((r: any) => setDrivers(r?.data ?? r))
-      .catch((e: any) => setError(e?.message || "Failed to load"))
+      .then((r) => setDrivers(r?.data ?? r))
+      .catch((e: unknown) => setError(errorMessageOf(e) || "Failed to load"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -135,7 +134,7 @@ export default function DriverLeaderboard() {
             <div className="relative">
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
                 className="appearance-none rounded-xl border border-white/10 bg-white/5 px-3 py-2 pr-8 text-xs font-bold text-white outline-none focus:border-amber-400/30"
               >
                 <option value="score">Overall Score</option>

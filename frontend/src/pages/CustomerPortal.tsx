@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { formatMoney } from "../lib/currency";
 import { useParams } from "react-router-dom";
 import {
   Package, Search, FileText, Truck, MapPin, Send,
   Loader2, CheckCircle2, AlertTriangle, Phone, Mail,
 } from "lucide-react";
 import { FLOWOPS_API_URL } from "../lib/env";
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 type Branding = {
   name: string;
@@ -185,7 +187,7 @@ function TrackTab({ companyId, accent }: { companyId: string; accent: string }) 
       if (!res.ok) throw new Error("Unable to fetch shipments.");
       const data = await res.json();
       setWaybills(data.waybills || []);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
       setWaybills([]);
     } finally {
@@ -304,7 +306,7 @@ function InvoicesTab({ companyId, accent }: { companyId: string; accent: string 
       if (!res.ok) throw new Error("Unable to fetch invoices.");
       const data = await res.json();
       setInvoices(data.invoices || []);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
       setInvoices([]);
     } finally {
@@ -373,7 +375,7 @@ function InvoicesTab({ companyId, accent }: { companyId: string; accent: string 
               </div>
               <div className="flex items-center justify-between text-xs text-white/40">
                 <span className="text-white font-bold text-base">
-                  R {inv.total.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                  {formatMoney(inv.total, tenantCurrency())}
                 </span>
                 <div className="flex flex-col items-end gap-0.5">
                   <span>Due: {new Date(inv.dueDate).toLocaleDateString("en-ZA")}</span>
@@ -421,7 +423,7 @@ function BookPickupTab({ companyId, accent }: { companyId: string; accent: strin
       });
       if (!res.ok) throw new Error("Unable to submit pickup request.");
       setSuccess(true);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);

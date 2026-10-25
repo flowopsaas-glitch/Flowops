@@ -1,20 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import {useCallback,  useEffect, useMemo, useState } from "react";
+import { formatMoney } from "../../lib/currency";
 import { useNavigate } from "react-router-dom";
 import {
   Ship, Plane, Truck, Plus, Loader2, Crown, Search, AlertTriangle,
   ArrowRight, Anchor, Package, KeyRound, Stamp, Timer, Wallet, ShieldAlert,
   FileWarning, Activity, Gauge, Route,
+  type LucideIcon,
 } from "lucide-react";
 import {
   listFiles, createFile, getForwardingOverview,
-  type ShipmentFile, type ForwardingOverview, type ForwardingException,
+  type ShipmentFile, type ForwardingOverview, type ForwardingException, type FreightMode, type FreightDirection, type LoadType,
 } from "../../api/forwardingApi";
 import { getEntitlements } from "../../api/billingApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { TiltCard } from "../../components/premium/TiltCard";
 import SarsEdiSetup from "./SarsEdiSetup";
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
-const MODE_ICON: Record<string, any> = { OCEAN: Ship, AIR: Plane, ROAD: Truck };
+const MODE_ICON: Record<string, LucideIcon> = { OCEAN: Ship, AIR: Plane, ROAD: Truck };
 
 const STATUS_CLS: Record<string, string> = {
   DRAFT: "border-white/15 bg-white/5 text-white/50",
@@ -36,6 +39,10 @@ export default function ForwardingConsole() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [entitled, setEntitled] = useState<boolean | null>(null);
+  // "Now" is captured once on mount via the sanctioned lazy initializer
+  // (Date.now() must not be called during render). The ages computed from it
+  // below are day-granular, so mount-time precision is honest.
+  const [now] = useState(() => Date.now());
   const [files, setFiles] = useState<ShipmentFile[]>([]);
   const [overview, setOverview] = useState<ForwardingOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,15 +74,15 @@ export default function ForwardingConsole() {
     })();
   }, []);
 
-  const reload = async () => setFiles(await listFiles(filter).catch(() => []));
-  useEffect(() => { if (entitled) void reload();   }, [filter.direction, filter.status]);
+  const reload = useCallback(() => listFiles(filter).catch(() => []).then(setFiles), [filter]);
+  useEffect(() => { if (entitled) void reload(); }, [entitled, reload]);
 
   const kpis = useMemo(() => {
     const open = files.filter((f) => !["DELIVERED", "CANCELLED"].includes(f.status)).length;
-    const arriving = files.filter((f) => f.eta && new Date(f.eta).getTime() < Date.now() + 7 * 86400000 && !["DELIVERED", "CANCELLED"].includes(f.status)).length;
+    const arriving = files.filter((f) => f.eta && new Date(f.eta).getTime() < now + 7 * 86400000 && !["DELIVERED", "CANCELLED"].includes(f.status)).length;
     const atRisk = files.filter((f) => (f.aiRiskScore ?? 0) >= 50).length;
     return { open, arriving, atRisk, total: files.length };
-  }, [files]);
+  }, [files, now]);
 
   // Prefer the server roll-up (covers all files + customs/demurrage/disbursement
   // exposure); fall back to what we can derive from the loaded list.
@@ -92,11 +99,11 @@ export default function ForwardingConsole() {
   const submitNew = async () => {
     setCreating(true);
     try {
-      const created = await createFile(form as any);
+      const created = await createFile({ ...form, mode: form.mode as FreightMode, direction: form.direction as FreightDirection, loadType: form.loadType as LoadType });
       showToast(`Created ${created.fileNumber}`, "success");
       setShowNew(false);
       navigate(`/forwarding/${created.id}`);
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Could not create file", "error");
     } finally { setCreating(false); }
   };
@@ -169,7 +176,7 @@ export default function ForwardingConsole() {
           {showNew && (
             <div className="mt-4 rounded-2xl border border-cyan-500/20 bg-black/30 p-4 grid sm:grid-cols-5 gap-2">
               {(["mode", "direction", "loadType"] as const).map((k) => (
-                <select key={k} value={(form as any)[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+                <select key={k} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })}
                   className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
                   {(k === "mode" ? ["OCEAN", "AIR", "ROAD"] : k === "direction" ? ["IMPORT", "EXPORT"] : ["FCL", "LCL", "BREAKBULK", "AIR"]).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
@@ -318,10 +325,10 @@ export default function ForwardingConsole() {
 }
 
 function fmtMoney(n: number) {
-  return `R ${Math.round(n).toLocaleString("en-ZA")}`;
+  return formatMoney(Math.round(n), tenantCurrency());
 }
 
-function Kpi({ label, value, tone, icon: Icon, sub }: { label: string; value: number | string; tone: string; icon?: any; sub?: string }) {
+function Kpi({ label, value, tone, icon: Icon, sub }: { label: string; value: number | string; tone: string; icon?: LucideIcon; sub?: string }) {
   return (
     <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4 fx-lift h-full">
       <div className="flex items-center justify-between">
@@ -334,7 +341,7 @@ function Kpi({ label, value, tone, icon: Icon, sub }: { label: string; value: nu
   );
 }
 
-const EXC_META: Record<string, { tone: string; icon: any }> = {
+const EXC_META: Record<string, { tone: string; icon: LucideIcon }> = {
   CUSTOMS_QUERY: { tone: "amber", icon: Stamp },
   CUSTOMS_REJECTED: { tone: "rose", icon: FileWarning },
   DEMURRAGE: { tone: "rose", icon: Timer },

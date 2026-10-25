@@ -1,7 +1,8 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
-import { Radio, MapPin, Truck, Clock, Gauge, Navigation, Loader2, RefreshCw, Circle } from 'lucide-react';
+import { Radio, MapPin, Truck, Gauge, Navigation, Loader2, RefreshCw, Circle } from 'lucide-react';
 import { api } from '../api/client';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 type TrackingSession = {
   id: string;
@@ -20,8 +21,7 @@ type TrackingSession = {
   startedAt: string;
 };
 
-const unwrap = <T,>(r: any): T => (r?.data ?? r) as T;
-const arr = <T,>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+const arr = <T,>(r: unknown): T[] => (Array.isArray(r) ? (r as T[]) : (((r as { data?: T[] } | null)?.data ?? []) as T[]));
 
 export default function LiveTrackingDashboard() {
   const { showToast } = useToast();
@@ -30,16 +30,17 @@ export default function LiveTrackingDashboard() {
   const [selected, setSelected] = useState<TrackingSession | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const load = useCallback(async () => {
-    try {
-      const data = arr<TrackingSession>(await api.get('/live-tracking/sessions/active'));
-      setSessions(data);
-    } catch (e: any) {
-      showToast(e.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  const load = useCallback(() => (async () => {
+    const data = arr<TrackingSession>(await api.get('/live-tracking/sessions/active'));
+    setSessions(data);
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e), 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -49,9 +50,17 @@ export default function LiveTrackingDashboard() {
     return () => clearInterval(interval);
   }, [autoRefresh, load]);
 
+  // Ticking clock for the "x ago" labels (Date.now() is not allowed during
+  // render); 10s cadence matches the data auto-refresh below.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(t);
+  }, []);
+
   const timeSince = (date: string | null) => {
     if (!date) return 'Never';
-    const secs = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+    const secs = Math.floor((now - new Date(date).getTime()) / 1000);
     if (secs < 60) return `${secs}s ago`;
     if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
     return `${Math.floor(secs / 3600)}h ago`;
@@ -120,7 +129,7 @@ export default function LiveTrackingDashboard() {
             </div>
           ) : (
             sessions.map(session => (
-              <div key={session.id} onClick={() => setSelected(session)} className={`rounded-2xl border ${selected?.id === session.id ? 'border-red-500/50 bg-red-500/5' : 'border-white/10 bg-white/[0.03]'} p-5 cursor-pointer hover:border-white/20 transition`}>
+              <div key={session.id} onClick={() => setSelected(session)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => setSelected(session))(); } }} role="button" tabIndex={0} className={`rounded-2xl border ${selected?.id === session.id ? 'border-red-500/50 bg-red-500/5' : 'border-white/10 bg-white/[0.03]'} p-5 cursor-pointer hover:border-white/20 transition`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="relative">

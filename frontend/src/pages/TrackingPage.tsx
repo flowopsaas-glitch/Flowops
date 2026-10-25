@@ -23,6 +23,7 @@ type TrackData = {
   destination: { lat: number; lng: number } | null;
   remainingKm: number | null;
   etaMinutes: number | null;
+  etaSource?: "osrm" | "haversine" | null;
   estimatedDelivery: string | null;
   deliveredAt: string | null;
   branding: { brandName: string; logoUrl: string | null; primaryColor: string };
@@ -108,7 +109,7 @@ export default function TrackingPage() {
       dataRef.current = payload as TrackData;
       setData(payload as TrackData);
       setLastFetchedAt(new Date());
-    } catch (e: any) {
+    } catch (e) {
       const message = e.message || "Unable to load tracking.";
       if (keepCurrentSnapshot) {
         setError(`${message} Showing the last successfully loaded snapshot.`);
@@ -234,6 +235,13 @@ export default function TrackingPage() {
                   {data.remainingKm != null && Number.isFinite(data.remainingKm) && (
                     <span className="text-white/40 ml-2">· {data.remainingKm.toFixed(1)} km away</span>
                   )}
+                  <span className="block text-[11px] font-medium text-white/40 mt-0.5">
+                    {data.etaSource === "haversine"
+                      ? "Estimate based on straight-line distance — live road routing is temporarily unavailable, so allow extra time."
+                      : data.etaSource === "osrm"
+                        ? "Estimate based on the current road route; traffic and stops can change it."
+                        : "Estimate only — it can change with traffic and stops."}
+                  </span>
                 </div>
               )}
 

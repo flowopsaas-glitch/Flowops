@@ -44,7 +44,7 @@ function typeBadge(type?: string | null) {
 export default function NotificationsBell() {
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [data, setData] = useState<NotificationsResponse>({
     total: 0,
     unreadCount: 0,
@@ -56,7 +56,6 @@ export default function NotificationsBell() {
   const boxRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
-    setLoading(true);
     try {
       // Pull 50 from backend, we’ll show top 10 in dropdown
       const res = await api.get<NotificationsResponse>(ENDPOINTS.list, { params: { take: 50, skip: 0 } });
@@ -71,7 +70,7 @@ export default function NotificationsBell() {
     load();
     const t = setInterval(load, 15000); // 15s
     return () => clearInterval(t);
-     
+
   }, []);
 
   // click outside to close

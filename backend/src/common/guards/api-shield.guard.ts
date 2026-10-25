@@ -91,10 +91,14 @@ const BOT_PATTERNS = [
 export class ApiShieldGuard implements CanActivate {
   private readonly logger = new Logger('API_SHIELD');
 
-  // Track suspicious IPs (in-memory, resets on restart)
+  // Track suspicious IPs (in-memory, resets on restart). Bounded: an
+  // attacker rotating source IPs must not be able to grow this map until
+  // the shield itself runs out of memory — when full, the oldest entry is
+  // evicted (its block history is the least valuable to keep).
   private readonly suspiciousIps = new Map<string, { count: number; lastSeen: number }>();
   private static readonly BLOCK_THRESHOLD = 10; // Block after 10 violations
   private static readonly BLOCK_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+  private static readonly MAX_TRACKED_IPS = 10_000;
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
@@ -151,13 +155,14 @@ export class ApiShieldGuard implements CanActivate {
 
       if (this.hasSqlInjection(bodyStr)) {
         this.recordViolation(ip, 'sql_injection');
-        this.logger.error(`SQL_INJECTION_ATTEMPT: ${ip} | ${method} ${path} | Body snippet: ${bodyStr.slice(0, 100)}`);
+        // Never log raw body content — payloads can carry credentials/PII.
+        this.logger.error(`SQL_INJECTION_ATTEMPT: ${ip} | ${method} ${path}`);
         throw new HttpException('Invalid input detected.', 400);
       }
 
       if (this.hasXss(bodyStr)) {
         this.recordViolation(ip, 'xss_attempt');
-        this.logger.error(`XSS_ATTEMPT: ${ip} | ${method} ${path} | Body snippet: ${bodyStr.slice(0, 100)}`);
+        this.logger.error(`XSS_ATTEMPT: ${ip} | ${method} ${path}`);
         throw new HttpException('Invalid input detected.', 400);
       }
     }
@@ -200,8 +205,22 @@ export class ApiShieldGuard implements CanActivate {
     const entry = this.suspiciousIps.get(ip) || { count: 0, lastSeen: 0 };
     entry.count++;
     entry.lastSeen = Date.now();
+    if (!this.suspiciousIps.has(ip) && this.suspiciousIps.size >= ApiShieldGuard.MAX_TRACKED_IPS) {
+      // Evict the least-recently-seen entry to stay bounded.
+      let oldestIp: string | null = null;
+      let oldestSeen = Infinity;
+      for (const [k, v] of this.suspiciousIps) {
+        if (v.lastSeen < oldestSeen) { oldestSeen = v.lastSeen; oldestIp = k; }
+      }
+      if (oldestIp) this.suspiciousIps.delete(oldestIp);
+    }
     this.suspiciousIps.set(ip, entry);
     this.logger.warn(`VIOLATION[${type}]: ${ip} — count: ${entry.count}/${ApiShieldGuard.BLOCK_THRESHOLD}`);
+  }
+
+  /** Tracked-IP count (bounded by MAX_TRACKED_IPS) — exposed for tests/metrics. */
+  trackedIpCount(): number {
+    return this.suspiciousIps.size;
   }
 
   private isKnownBot(ua: string): boolean {

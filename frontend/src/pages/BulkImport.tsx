@@ -9,7 +9,6 @@ import {
   FileText,
   X,
   ChevronDown,
-  ChevronRight,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -49,7 +48,6 @@ const OPTIONAL_COLUMNS = [
   "dimensions",
 ];
 
-const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS];
 
 const TEMPLATE_HEADERS =
   "senderName,senderPhone,senderAddress,recipientName,recipientPhone,recipientAddress,recipientEmail,weight,description,codAmount,totalAmount";
@@ -169,7 +167,7 @@ export default function BulkImport() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      const data: any = (result as any)?.data ?? result;
+      const data: ImportResult = ((result as { data?: ImportResult } | null)?.data ?? result) as ImportResult;
       setImportResult({
         created: data.created ?? 0,
         failed: data.failed ?? 0,
@@ -177,7 +175,7 @@ export default function BulkImport() {
         results: data.results ?? [],
       });
       setStatus("done");
-    } catch (err: any) {
+    } catch (err) {
       setErrorMessage(err?.message || "Import failed. Please try again.");
       setStatus("error");
     }
@@ -311,7 +309,7 @@ export default function BulkImport() {
             onDrop={onDrop}
             onDragOver={onDragOver}
             onDragLeave={onDragLeave}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => fileInputRef.current?.click()} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => fileInputRef.current?.click())(); } }} role="button" tabIndex={0}
             className={`group cursor-pointer rounded-[24px] border-2 border-dashed p-12 text-center transition-all duration-300 ${
               dragOver
                 ? "border-sky-400 bg-sky-500/10 scale-[1.01]"

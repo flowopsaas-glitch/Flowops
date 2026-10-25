@@ -5,11 +5,13 @@ import { AutopilotService } from './autopilot.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 @ApiTags('Autopilot')
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
+@RequireFeature('clawAutopilot')
 @Controller('autopilot')
 export class AutopilotController {
   constructor(private readonly autopilot: AutopilotService) {}

@@ -2,9 +2,19 @@ import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/commo
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RateCardsService } from './rate-cards.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const RATE_CARD_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.VIEWER,
+];
+
 
 @ApiTags('Rate Cards')
 @ApiBearerAuth()
+@RequireFeature('rateCards')
+@Roles(...RATE_CARD_READ_ROLES)
 @Controller('rate-cards')
 export class RateCardsController {
   constructor(private readonly svc: RateCardsService) {}
@@ -14,6 +24,7 @@ export class RateCardsController {
     return this.svc.findAll(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post()
   create(@CurrentUser() u: any, @Body() body: any) {
     return this.svc.create(u.companyId, body);
@@ -24,11 +35,13 @@ export class RateCardsController {
     return this.svc.calculate(u.companyId, body);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch(':id')
   update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
     return this.svc.update(id, u.companyId, body);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() u: any) {
     return this.svc.remove(id, u.companyId);

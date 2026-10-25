@@ -10,6 +10,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 const BINDING_COOKIE = 'flowops_sso_binding';
 
@@ -21,6 +22,7 @@ export class SsoController {
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
+  @RequireFeature('sso')
   @Get('config')
   @ApiOperation({ summary: 'Get SSO (OIDC) config for the workspace' })
   getConfig(@CurrentUser() u: any) {
@@ -30,6 +32,7 @@ export class SsoController {
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
+  @RequireFeature('sso')
   @Put('config')
   @ApiOperation({ summary: 'Create/update SSO config (Enterprise)' })
   setConfig(@CurrentUser() u: any, @Body() dto: any) {

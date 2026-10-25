@@ -34,9 +34,9 @@ const SA_CITIES = [
   { name: "Nelspruit",    lat: -25.4753, lng: 30.9694 },
 ];
 
-function unwrap(res: any): any[] {
-  const d = res?.data ?? res;
-  return Array.isArray(d) ? d : [];
+function unwrap<T>(res: unknown): T[] {
+  const d = (res as { data?: unknown } | null)?.data ?? res;
+  return Array.isArray(d) ? (d as T[]) : [];
 }
 
 function DepotModal({
@@ -55,7 +55,7 @@ function DepotModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  const set = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k: string, v: string | number | undefined) => setForm(p => ({ ...p, [k]: v }));
 
   function fillCity(city: typeof SA_CITIES[0]) {
     setForm(p => ({ ...p, city: city.name, lat: city.lat, lng: city.lng }));
@@ -67,7 +67,7 @@ function DepotModal({
     setSaving(true); setErr("");
     try {
       await onSave(form);
-    } catch (ex: any) {
+    } catch (ex) {
       setErr(ex?.message ?? "Failed to save.");
     } finally {
       setSaving(false);
@@ -90,20 +90,20 @@ function DepotModal({
           {err && <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-300">{err}</div>}
 
           <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Depot Name *</label>
-            <input value={form.name} onChange={e => set("name", e.target.value)} required
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-depot-name-5">Depot Name *</label>
+            <input id="field-depot-name-5" value={form.name} onChange={e => set("name", e.target.value)} required
               placeholder="e.g. Johannesburg Hub" className={inputCls} />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Address</label>
-              <input value={form.address ?? ""} onChange={e => set("address", e.target.value)}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-address-4">Address</label>
+              <input id="field-address-4" value={form.address ?? ""} onChange={e => set("address", e.target.value)}
                 placeholder="Street address" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">City</label>
-              <input value={form.city ?? ""} onChange={e => set("city", e.target.value)}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-city-3">City</label>
+              <input id="field-city-3" value={form.city ?? ""} onChange={e => set("city", e.target.value)}
                 placeholder="City" className={inputCls} />
             </div>
           </div>
@@ -129,14 +129,14 @@ function DepotModal({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Latitude</label>
-              <input type="number" step="0.0001" value={form.lat ?? ""}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-latitude-2">Latitude</label>
+              <input id="field-latitude-2" type="number" step="0.0001" value={form.lat ?? ""}
                 onChange={e => set("lat", e.target.value ? +e.target.value : undefined)}
                 placeholder="e.g. -26.2041" className={inputCls + " [appearance:textfield]"} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Longitude</label>
-              <input type="number" step="0.0001" value={form.lng ?? ""}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-longitude-1">Longitude</label>
+              <input id="field-longitude-1" type="number" step="0.0001" value={form.lng ?? ""}
                 onChange={e => set("lng", e.target.value ? +e.target.value : undefined)}
                 placeholder="e.g. 28.0473" className={inputCls + " [appearance:textfield]"} />
             </div>
@@ -170,10 +170,9 @@ export default function DepotsPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await api.get("/branches");
-      setDepots(unwrap(res));
+      setDepots(unwrap<Depot>(res));
     } finally {
       setLoading(false);
     }

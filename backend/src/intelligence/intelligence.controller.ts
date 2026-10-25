@@ -3,9 +3,17 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PredictiveDeliveryService } from './predictive-delivery.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const INTELLIGENCE_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH,
+];
+
 
 @ApiTags('Delivery Intelligence')
 @ApiBearerAuth()
+@Roles(...INTELLIGENCE_ROLES)
 @Controller('intelligence')
 export class IntelligenceController {
   constructor(private readonly engine: PredictiveDeliveryService) {}

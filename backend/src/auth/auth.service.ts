@@ -80,7 +80,7 @@ export class AuthService {
         email: emailLower,
         ip: ctx?.ip,
         message: `Account ${emailLower} is locked — ${lockStatus.remainingSeconds}s remaining. Possible brute-force attack in progress.`,
-      }).catch(() => {});
+      }).catch((e) => this.logger.warn(`login audit log failed: ${(e as Error)?.message}`));
 
       throw new ForbiddenException(lockStatus.message);
     }
@@ -139,7 +139,7 @@ export class AuthService {
       email: emailLower,
       ip: ctx?.ip,
       message: `${user.name || user.email} (${user.company?.name}) logged in successfully.`,
-    }).catch(() => {});
+    }).catch((e) => this.logger.warn(`login audit log failed: ${(e as Error)?.message}`));
 
     return {
       access_token: tokens.accessToken,
@@ -510,7 +510,7 @@ export class AuthService {
 
     const accessToken = this.jwt.sign(payload, {
       secret: this.config.get('JWT_SECRET'),
-      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h'),
+      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h') as '4h',
     });
 
     const refreshToken = await this.issueOwnerRefreshToken(owner.id);
@@ -544,7 +544,7 @@ export class AuthService {
 
     const accessToken = this.jwt.sign(payload, {
       secret: this.config.get('JWT_SECRET'),
-      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h'),
+      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h') as '4h',
     });
 
     const refreshToken = await this.issueOwnerRefreshToken(stored.owner.id);
@@ -764,7 +764,7 @@ export class AuthService {
 
     const accessToken = this.jwt.sign(payload, {
       secret: this.config.get('JWT_SECRET'),
-      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h'),
+      expiresIn: this.config.get('JWT_EXPIRES_IN', '4h') as '4h',
     });
 
     const refreshToken = uuid();

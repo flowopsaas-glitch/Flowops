@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, MapPin, Truck, AlertTriangle, Clock, Route, Anchor, RefreshCw, Scale } from "lucide-react";
+import { Loader2, MapPin, Truck, AlertTriangle, Clock, Route, Anchor, RefreshCw, Scale,
+  type LucideIcon,
+} from "lucide-react";
 import * as fwd from "../../api/forwardingApi";
 import BackButton from "../../components/BackButton";
 
@@ -75,7 +77,7 @@ export default function SadcCorridors() {
             { k: "borders", label: "Border posts", icon: MapPin },
             { k: "compare", label: "Walvis vs Durban", icon: Scale },
           ].map((t) => (
-            <button key={t.k} onClick={() => setTab(t.k as any)}
+            <button key={t.k} onClick={() => setTab(t.k as typeof tab)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition ${tab === t.k ? "bg-cyan-500 text-slate-950" : "text-white/50 hover:text-white"}`}>
               <t.icon className="h-4 w-4" /> {t.label}
             </button>
@@ -151,8 +153,8 @@ export default function SadcCorridors() {
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="flex items-end gap-2 flex-wrap mb-4">
               <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-1">Destination</label>
-                <input
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-1" htmlFor="field-destination-1">Destination</label>
+                <input id="field-destination-1"
                   value={dest} onChange={(e) => setDest(e.target.value)}
                   placeholder="e.g. Lusaka, Gaborone, Harare, Lubumbashi"
                   className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder-white/25 w-64"
@@ -197,7 +199,7 @@ export default function SadcCorridors() {
   );
 }
 
-function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
     <div className="flex items-center gap-1.5 text-white/70">
       <Icon className="h-3 w-3 text-white/30" />

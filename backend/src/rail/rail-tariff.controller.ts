@@ -7,12 +7,14 @@ import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RAIL_READ_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /** Tariff calculation and the invoice draft. Nothing is priced without a VERIFIED loaded rate. */
 @ApiTags('Rail / Tariffs')
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(...RAIL_READ_ROLES)
+@RequireFeature('rail')
 @Controller('rail/tariffs')
 export class RailTariffController {
   constructor(private readonly tariffs: RailTariffService) {}

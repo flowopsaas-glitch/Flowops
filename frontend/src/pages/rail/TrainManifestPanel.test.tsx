@@ -43,7 +43,7 @@ vi.mock('../../api/railManifestApi', async () => {
 vi.mock('../../api/railApi', () => ({
   listConsignments: h.listConsignments,
 }));
-vi.mock('../../components/ToastProvider', () => ({
+vi.mock('../../components/toast-context', () => ({
   useToast: () => ({ showToast: h.showToast }),
 }));
 

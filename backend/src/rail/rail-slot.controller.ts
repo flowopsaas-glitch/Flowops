@@ -15,6 +15,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { RAIL_READ_ROLES, RAIL_SIGNATORY_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
 import { SELF_SCREENING_QUESTIONS, SELF_SCREENING_VERSION } from './catalog/self-screening.catalog';
 import { NETWORK_CONTACTS } from './catalog/corridors.catalog';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /**
  * Slot applications, Annexure 25 self-screening, operator compliance and the corridor-envelope
@@ -26,6 +27,7 @@ import { NETWORK_CONTACTS } from './catalog/corridors.catalog';
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(...RAIL_READ_ROLES)
+@RequireFeature('rail')
 @Controller('rail/slots')
 export class RailSlotController {
   constructor(private readonly slots: RailSlotService) {}

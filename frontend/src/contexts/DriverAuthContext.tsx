@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { useState, useEffect, ReactNode } from 'react';
+import { DriverAuthContext } from './driver-auth-context';
 import { api, setMemoryToken } from '../api/client';
 
 interface DriverProfile { id: number; name: string; vehicle: string; }
 
-interface DriverAuthContextType {
+export interface DriverAuthContextType {
   driver: DriverProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -11,7 +12,6 @@ interface DriverAuthContextType {
   logout: () => Promise<void>;
 }
 
-const DriverAuthContext = createContext<DriverAuthContextType | undefined>(undefined);
 
 export const DriverAuthProvider = ({ children }: { children: ReactNode }) => {
   const [driver, setDriver] = useState<DriverProfile | null>(null);
@@ -57,10 +57,4 @@ export const DriverAuthProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </DriverAuthContext.Provider>
   );
-};
-
-export const useDriverAuth = () => {
-  const ctx = useContext(DriverAuthContext);
-  if (!ctx) throw new Error('useDriverAuth must be used within DriverAuthProvider');
-  return ctx;
 };

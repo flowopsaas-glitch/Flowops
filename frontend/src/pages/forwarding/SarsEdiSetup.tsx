@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, ShieldCheck, ShieldAlert, Send, Save, KeyRound } from "lucide-react";
 import * as fwd from "../../api/forwardingApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 
 const PATHS: { id: fwd.CustomsEdiPath; label: string; blurb: string }[] = [
   { id: "CLEARING_AGENT_HANDOFF", label: "Clearing agent", blurb: "We package the SAD500 + docs and email your agent, who lodges with SARS." },
@@ -26,24 +26,25 @@ export default function SarsEdiSetup() {
   const [path, setPath] = useState<fwd.CustomsEdiPath>("CLEARING_AGENT_HANDOFF");
   const [form, setForm] = useState({ customsClientCode: "", providerName: "", endpointUrl: "", agentEmail: "", secret: "" });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const c = await fwd.getEdiCredential();
-      setCred(c);
-      if (c) {
-        setPath(c.path);
-        setForm({
-          customsClientCode: c.customsClientCode ?? "",
-          providerName: c.providerName ?? "",
-          endpointUrl: c.endpointUrl ?? "",
-          agentEmail: c.agentEmail ?? "",
-          secret: "",
-        });
-      }
-    } catch { /* none configured */ }
-    finally { setLoading(false); }
-  };
+  const load = () => (async () => {
+    const c = await fwd.getEdiCredential();
+    setCred(c);
+    if (c) {
+      setPath(c.path);
+      setForm({
+        customsClientCode: c.customsClientCode ?? "",
+        providerName: c.providerName ?? "",
+        endpointUrl: c.endpointUrl ?? "",
+        agentEmail: c.agentEmail ?? "",
+        secret: "",
+      });
+    }
+
+  })().catch(() => {
+ /* none configured */
+  }).finally(() => {
+ setLoading(false);
+  });
   useEffect(() => { void load();   }, []);
 
   const save = async () => {
@@ -65,7 +66,7 @@ export default function SarsEdiSetup() {
       setCred(saved);
       setForm((f) => ({ ...f, secret: "" }));
       showToast("Transmission method saved", "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Could not save", "error");
     } finally { setBusy(null); }
   };
@@ -76,7 +77,7 @@ export default function SarsEdiSetup() {
       const r = await fwd.verifyEdi();
       showToast(r.ok ? "Connection verified" : (r.reason ?? "Not verified"), r.ok ? "success" : "error");
       await load();
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Verify failed", "error");
     } finally { setBusy(null); }
   };

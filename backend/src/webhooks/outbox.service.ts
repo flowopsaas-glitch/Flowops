@@ -129,7 +129,7 @@ export class OutboxService {
       await (this.prisma as unknown as PrismaService).outboxEvent.update({
         where: { id: event.id },
         data: { status: 'PROCESSED', attempts, processedAt: new Date(), lastError: null, nextAttemptAt: new Date() },
-      }).catch(() => {});
+      }).catch((e) => this.logger.warn(` outbox status update failed: ${(e as Error)?.message}`.replace(' outbox','Outbox')));
     } catch (err) {
       const message = (err as Error)?.message ?? 'Dispatch failed';
       const exhausted = attempts >= 5;
@@ -142,7 +142,7 @@ export class OutboxService {
           lastError: message.slice(0, 1000),
           nextAttemptAt: exhausted ? new Date() : new Date(Date.now() + OutboxService.retryDelayMs(attempts)),
         },
-      }).catch(() => {});
+      }).catch((e) => this.logger.warn(` outbox status update failed: ${(e as Error)?.message}`.replace(' outbox','Outbox')));
     }
   }
 }

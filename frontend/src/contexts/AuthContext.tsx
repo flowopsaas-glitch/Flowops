@@ -1,11 +1,10 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useState,
   type ReactNode,
 } from "react";
+import { AuthContext } from "./auth-context";
 import api, {
   clearClientSession,
   getToken,
@@ -93,7 +92,6 @@ export type AuthContextValue = {
   refreshMe: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 type LoginResponse = {
   accessToken?: string;
@@ -102,13 +100,16 @@ type LoginResponse = {
 } & Partial<User>;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [booting, setBooting] = useState(true);
+  // Booting only means "tenant session hydration is in flight". With no
+  // token, or in owner/driver mode, there is nothing to hydrate, so the
+  // initial value is already false and refreshMe needs no synchronous
+  // setState on those paths.
+  const [booting, setBooting] = useState(() => Boolean(getToken()) && isTenantMode());
   const [user, setUser] = useState<User | null>(null);
 
-  const refreshMe = useCallback(async () => {
+  const refreshMe = useCallback(() => {
     if (!getToken()) {
-      setBooting(false);
-      return;
+      return Promise.resolve();
     }
     // Only tenant users have a `/auth/me`. Owner and driver sessions are
     // validated by their own guards/endpoints — calling the tenant `/auth/me`
@@ -116,18 +117,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // session (bouncing owners back to /login). Skip tenant hydration unless
     // we're actually in tenant mode.
     if (!isTenantMode()) {
-      setBooting(false);
-      return;
+      return Promise.resolve();
     }
-    try {
-      const res = await api.get<User>("/auth/me");
-      setUser(res.data);
-    } catch {
-      clearClientSession();
-      setUser(null);
-    } finally {
-      setBooting(false);
-    }
+    return api.get<User>("/auth/me")
+      .then((res) => {
+        setUser(res.data);
+      })
+      .catch(() => {
+        clearClientSession();
+        setUser(null);
+      })
+      .finally(() => {
+        setBooting(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -185,12 +187,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
   );
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used inside <AuthProvider>");
-  }
-  return ctx;
 }

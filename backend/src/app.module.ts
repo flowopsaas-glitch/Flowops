@@ -22,6 +22,7 @@ import { DriversModule } from './drivers/drivers.module';
 import { BranchesModule } from './branches/branches.module';
 import { WaybillsModule } from './waybills/waybills.module';
 import { CollectionsModule } from './collections/collections.module';
+import { TripCostsModule } from './trip-costs/trip-costs.module';
 import { ClientsModule }     from './clients/clients.module';
 import { ShipmentsModule } from './shipments/shipments.module';
 import { ManifestsModule } from './manifests/manifests.module';
@@ -55,6 +56,7 @@ import { AlertingModule } from './alerting/alerting.module';
 import { EmailHubModule } from './email-hub/email-hub.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { BillingModule } from './billing/billing.module';
+import { FeatureGuard } from './billing/feature.guard';
 import { ForwardingModule } from './forwarding/forwarding.module';
 import { RailModule } from './rail/rail.module';
 import { OkrModule } from './okr/okr.module';
@@ -207,6 +209,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
     BranchesModule,
     WaybillsModule,
     CollectionsModule,
+    TripCostsModule,
     ClientsModule,
     ShipmentsModule,
     ReturnsModule,
@@ -242,6 +245,13 @@ import { DispatchModule } from './dispatch/dispatch.module';
 
     // Apply RolesGuard globally — only enforced when @Roles() is present
     { provide: APP_GUARD, useClass: RolesGuard },
+
+    // Plan-entitlement guard globally — no-ops unless @RequireFeature() is
+    // present, and passes @Public() routes. This is the server-side
+    // enforcement behind the frontend <RequireFeature> UX gate (which fails
+    // open on network errors): every paid capability must declare its
+    // feature here so direct API calls cannot bypass the plan.
+    { provide: APP_GUARD, useClass: FeatureGuard },
 
     // Rate limiting runs last so authenticated requests are tracked per-user
     { provide: APP_GUARD, useClass: ThrottlerProxyGuard },

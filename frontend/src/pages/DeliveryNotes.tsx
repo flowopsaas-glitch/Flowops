@@ -1,7 +1,8 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
-import { StickyNote, Plus, Search, Filter, CheckCircle2, AlertTriangle, Clock, Loader2, Trash2 } from 'lucide-react';
+import { StickyNote, Plus, Search, CheckCircle2, Loader2, Trash2 } from 'lucide-react';
 import { listDeliveryNotes, createDeliveryNote, resolveDeliveryNote, deleteDeliveryNote, type DeliveryNote, type CreateNotePayload, type NotePriority } from '../api/deliveryNotesApi';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 export default function DeliveryNotes() {
   const { showToast } = useToast();
@@ -12,20 +13,20 @@ export default function DeliveryNotes() {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<CreateNotePayload>({ content: '', priority: 'NORMAL', category: 'GENERAL' });
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: Record<string, string> = {};
-      if (filter.priority) params.priority = filter.priority;
-      if (filter.isResolved) params.isResolved = filter.isResolved;
-      const data = await listDeliveryNotes(params);
-      setNotes(data);
-    } catch (e: any) {
-      showToast(e.message || 'Failed to load notes', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, showToast]);
+  const load = useCallback(() => (async () => {
+    const params: Record<string, string> = {};
+    if (filter.priority) params.priority = filter.priority;
+    if (filter.isResolved) params.isResolved = filter.isResolved;
+    const data = await listDeliveryNotes(params);
+    setNotes(data);
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e) || 'Failed to load notes', 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [filter, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -37,8 +38,8 @@ export default function DeliveryNotes() {
       setShowCreate(false);
       setForm({ content: '', priority: 'NORMAL', category: 'GENERAL' });
       load();
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessageOf(e), 'error');
     }
   };
 
@@ -47,7 +48,7 @@ export default function DeliveryNotes() {
       await resolveDeliveryNote(id);
       showToast('Note resolved', 'success');
       load();
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleDelete = async (id: string) => {
@@ -55,7 +56,7 @@ export default function DeliveryNotes() {
       await deleteDeliveryNote(id);
       showToast('Note deleted', 'success');
       load();
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const priorityStyle = (p: NotePriority) => {
@@ -187,7 +188,7 @@ export default function DeliveryNotes() {
                 <option value="HIGH">High Priority</option>
                 <option value="URGENT">Urgent</option>
               </select>
-              <select className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/70 outline-none" value={form.category || ''} onChange={e => setForm({ ...form, category: e.target.value as any })}>
+              <select className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/70 outline-none" value={form.category || ''} onChange={e => setForm({ ...form, category: e.target.value as CreateNotePayload["category"] })}>
                 <option value="GENERAL">General</option>
                 <option value="INSTRUCTION">Instruction</option>
                 <option value="ISSUE">Issue</option>

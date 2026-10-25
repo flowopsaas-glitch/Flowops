@@ -18,7 +18,7 @@ export default function AIWorkflowDashboard() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setItems(Array.isArray(data) ? data : data.items ?? []);
-      } catch (e: any) {
+      } catch (e) {
         setError(e?.message ?? "Failed to load workflow");
       }
     })();

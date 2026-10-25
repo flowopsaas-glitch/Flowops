@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { Lock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -35,11 +35,11 @@ export default function ResetPassword() {
 
     setBusy(true);
     try {
-      await api.post<any, any>('/auth/reset-password', { token, password });
+      await api.post('/auth/reset-password', { token, password });
       setDone(true);
       showToast('Password reset successfully.', 'success');
       setTimeout(() => navigate('/login'), 2500);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || 'Reset link is invalid or has expired.');
     } finally {
       setBusy(false);
@@ -74,10 +74,10 @@ export default function ResetPassword() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-xs uppercase tracking-[0.2em] text-slate-400" htmlFor="field-new-password-2">
               New password
             </label>
-            <input
+            <input id="field-new-password-2"
               type="password"
               required
               minLength={8}
@@ -90,10 +90,10 @@ export default function ResetPassword() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-xs uppercase tracking-[0.2em] text-slate-400" htmlFor="field-confirm-password-1">
               Confirm password
             </label>
-            <input
+            <input id="field-confirm-password-1"
               type="password"
               required
               value={confirm}

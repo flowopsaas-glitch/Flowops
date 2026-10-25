@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Users, Shield, Mail, Lock, Save, X, ChevronRight, 
+import { Mail, X,
   Eye, EyeOff, Settings, Activity, Search, Command, Filter
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -11,11 +10,26 @@ import {
   buildRoleDefaultTenantNavPermissions,
 } from '../lib/tenantUserPermissions';
 
+
+type CompanyUser = {
+  id: string | number;
+  name?: string;
+  email?: string;
+  role?: string;
+  permissions?: string[] | Record<string, boolean>;
+};
+type DriverPinRow = {
+  id: string;
+  name: string;
+  phone?: string;
+  vehicleReg?: string;
+  hasPinSet: boolean;
+};
+
 export default function UsersRoles() {
-  const [users, setUsers] = useState([]);
-  const [flippedId, setFlippedId] = useState<number | null>(null);
+  const [users, setUsers] = useState<CompanyUser[]>([]);
+  const [flippedId, setFlippedId] = useState<string | number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [cEmail, setCEmail] = useState('');
   const [cPassword, setCPassword] = useState('');
@@ -23,31 +37,32 @@ export default function UsersRoles() {
   const [cName, setCName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState('');
-  const [drivers, setDrivers] = useState<any[]>([]);
+  const [drivers, setDrivers] = useState<DriverPinRow[]>([]);
   const [pinInputs, setPinInputs] = useState<Record<string,string>>({});
   const [pinSaving, setPinSaving] = useState<string|null>(null);
   const [pinMsg, setPinMsg] = useState('');
 
   // 🚀 SYNC: Pull real-time personnel data
-  const fetchUsers = async () => {
+  const fetchUsers = () => (async () => {
+    const res = await api.get('/users/my-company');
+    const list = Array.isArray(res) ? res : (res?.data ?? res ?? []);
+    setUsers(list);
+
+  })().catch((err) => {
+
+    console.error("AI Sync failed: Connection to FlowOps core lost.", err);
+
+  });
+
+  const loadDrivers = () => (async () => {
     try {
-      const res: any = await api.get('/users/my-company');
-      const list = Array.isArray(res) ? res : (res?.data ?? res ?? []);
-      setUsers(list);
-    } catch (err) { 
-      console.error("AI Sync failed: Connection to FlowOps core lost.", err); 
-    }
-  };
+      const res = await api.get('/drivers');
+      const list = Array.isArray(res) ? res : (res?.data ?? []);
+      setDrivers((list as { id: string | number; name?: string; phone?: string; vehicleReg?: string; driverPin?: string | null }[]).map((d) => ({ id: String(d.id), name: d.name||'Driver', phone: d.phone, vehicleReg: d.vehicleReg, hasPinSet: !!d.driverPin })));
+    } catch (e) { console.error('driver list failed to load', e); }
+  })();
 
   useEffect(() => { fetchUsers(); loadDrivers(); }, []);
-
-  const loadDrivers = async () => {
-    try {
-      const res: any = await api.get('/drivers');
-      const list = Array.isArray(res) ? res : (res?.data ?? []);
-      setDrivers(list.map((d:any) => ({ id: String(d.id), name: d.name||'Driver', phone: d.phone, vehicleReg: d.vehicleReg, hasPinSet: !!d.driverPin })));
-    } catch {}
-  };
 
   const handleSetPin = async (id: string) => {
     const pin = (pinInputs[id]||'').trim();
@@ -73,7 +88,7 @@ export default function UsersRoles() {
       setCreateMsg('User created successfully!');
       setCEmail(''); setCPassword(''); setCName('');
       setTimeout(() => { setShowCreate(false); setCreateMsg(''); fetchUsers(); }, 1200);
-    } catch (e: any) {
+    } catch (e) {
       setCreateMsg(e?.response?.data?.message || 'Failed to create user');
     } finally { setCreating(false); }
   };
@@ -81,7 +96,7 @@ export default function UsersRoles() {
   // 🚀 PERMISSION ENGINE: writes the FULL canonical nav-permission set so the
   // toggles here actually drive the sidebar + route guards (RequirePermission /
   // AppLayout both read these exact keys from tenantUserPermissions).
-  const handleTogglePermission = async (user: any, key: string) => {
+  const handleTogglePermission = async (user: CompanyUser, key: string) => {
     const current = normalizeTenantNavPermissions(user.permissions, user.role);
     const updatedPermissions = { ...current, [key]: !current[key] };
     try {
@@ -93,7 +108,7 @@ export default function UsersRoles() {
   };
 
   // Bulk: revoke everything except the dashboard (so the user can still log in).
-  const handleRevokeAll = async (user: any) => {
+  const handleRevokeAll = async (user: CompanyUser) => {
     const cleared = Object.fromEntries(
       ALL_TENANT_NAV_PERMISSION_KEYS.map((k) => [k, k === "dashboard"]),
     );
@@ -106,7 +121,7 @@ export default function UsersRoles() {
   };
 
   // Bulk: reset to the sensible defaults for the user's role / department.
-  const handleResetToRole = async (user: any) => {
+  const handleResetToRole = async (user: CompanyUser) => {
     try {
       await api.patch(`/users/${user.id}`, {
         permissions: buildRoleDefaultTenantNavPermissions(user.role),
@@ -120,7 +135,7 @@ export default function UsersRoles() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(55,90,180,0.12),transparent_45%),#07111f] p-8 font-sans selection:bg-blue-500/30">
       <div className="max-w-7xl mx-auto space-y-10">
-        
+
         {/* --- OMNISCIENT HEADER --- */}
         <header className="space-y-8">
           <div className="flex justify-between items-end">
@@ -145,7 +160,7 @@ export default function UsersRoles() {
             <div className="absolute inset-y-0 left-7 flex items-center pointer-events-none">
               <Search className="text-blue-500 group-focus-within:text-white transition-colors" size={24} />
             </div>
-            <input 
+            <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -167,10 +182,10 @@ export default function UsersRoles() {
 
         {/* --- PERSONNEL GRID --- */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
-          {users.map((user: any) => (
+          {users.map((user) => (
             <div key={user.id} className="group h-[360px] [perspective:2000px]">
               <div className={`relative w-full h-full transition-all duration-[1000ms] [transform-style:preserve-3d] ${flippedId === user.id ? '[transform:rotateX(180deg)]' : ''}`}>
-                
+
                 {/* --- FRONT: THE IDENTITY SURFACE --- */}
                 <div className={`absolute inset-0 backface-hidden bg-white/5 border border-white/10 rounded-[48px] p-10 backdrop-blur-3xl shadow-2xl flex flex-col justify-between hover:border-blue-500/30 transition-colors${flippedId === user.id ? " pointer-events-none" : ""}` }>
                   <div className="flex justify-between items-start">
@@ -205,7 +220,7 @@ export default function UsersRoles() {
                       </div>
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter ml-2">Active Modules</span>
                     </div>
-                    <button 
+                    <button
                       onClick={() => setFlippedId(user.id)}
                       className="bg-white/5 hover:bg-white text-white hover:text-black px-8 py-3.5 rounded-2xl text-xs font-black transition-all flex items-center gap-3 active:scale-95"
                     >
@@ -317,8 +332,8 @@ export default function UsersRoles() {
           {pinMsg && <div style={{marginBottom:16,padding:'10px 16px',borderRadius:16,background:pinMsg.includes('set')||pinMsg.includes('clear')||pinMsg.includes('!')? 'rgba(16,185,129,0.15)':'rgba(239,68,68,0.15)',color:pinMsg.includes('set')||pinMsg.includes('clear')||pinMsg.includes('!')?'#6ee7b7':'#fca5a5',fontSize:13,fontWeight:700}}>{pinMsg}</div>}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:16}}>
             {drivers.length===0 && <div style={{color:'#475569',fontSize:14}}>No drivers yet. Add drivers in Driver Dispatch first.</div>}
-            {drivers.map((d:any) => (
-              <div key={d.id} style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:24,padding:20,display:'flex',flexWrap:'wrap' as any,alignItems:'center',gap:12}}>
+            {drivers.map((d) => (
+              <div key={d.id} style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:24,padding:20,display:'flex',flexWrap:'wrap',alignItems:'center',gap:12}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{color:'white',fontWeight:900,fontSize:15}}>{d.name}</div>
                   <div style={{color:'#64748b',fontSize:12,marginTop:2}}>{d.phone||'—'}{d.vehicleReg?` · ${d.vehicleReg}`:''}</div>

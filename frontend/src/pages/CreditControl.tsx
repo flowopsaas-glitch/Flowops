@@ -13,7 +13,6 @@ import {
   Wallet,
   XCircle,
 } from "lucide-react";
-import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { api } from "../api/client";
 import { exportCsv, csvFilename } from "../lib/exportCsv";
 
@@ -115,6 +114,8 @@ function PaymentModal({
 
 // ── Main page ──────────────────────────────────────────────────────────────
 
+type CreditAgingBucket = { label: string; amount: number; count: number; pct: number };
+
 export default function CreditControl() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -122,12 +123,11 @@ export default function CreditControl() {
   const [search, setSearch] = useState("");
   const [payTarget, setPayTarget] = useState<Invoice | null>(null);
   const [filter, setFilter] = useState<"overdue" | "sent" | "all">("overdue");
-  const [aging, setAging] = useState<{ buckets: any[]; total: number } | null>(null);
+  const [aging, setAging] = useState<{ buckets: CreditAgingBucket[]; total: number } | null>(null);
   const [reminderBusy, setReminderBusy] = useState<string | null>(null);
   const [reminderMsg, setReminderMsg] = useState("");
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [invRes, metRes, agingRes] = await Promise.allSettled([
         api.get("/invoices"),
@@ -135,16 +135,16 @@ export default function CreditControl() {
         api.get("/invoices/ar-aging"),
       ]);
       if (invRes.status === "fulfilled") {
-        const d: any = invRes.value;
+        const d = invRes.value as unknown as { data?: Invoice[] } | Invoice[];
         setInvoices(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []));
       }
       if (metRes.status === "fulfilled") {
-        const m: any = metRes.value;
-        setMetrics(m?.data ?? m);
+        const m = metRes.value as unknown as { data?: Metrics } | Metrics;
+        setMetrics((m as { data?: Metrics })?.data ?? (m as Metrics));
       }
       if (agingRes.status === "fulfilled") {
-        const a: any = agingRes.value;
-        setAging(a?.data ?? a);
+        const a = agingRes.value as unknown as { data?: { buckets: CreditAgingBucket[]; total: number } };
+        setAging(a?.data ?? (a as unknown as { buckets: CreditAgingBucket[]; total: number }));
       }
     } finally {
       setLoading(false);
@@ -178,7 +178,7 @@ export default function CreditControl() {
     setReminderBusy(id);
     setReminderMsg("");
     try {
-      const raw: any = await api.post(`/invoices/${id}/send-reminder`, {});
+      const raw = await api.post(`/invoices/${id}/send-reminder`, {});
       const r = raw?.data ?? raw;
       setReminderMsg(r.sent ? `Reminder queued for ${r.to}` : r.message);
       setTimeout(() => setReminderMsg(""), 4000);
@@ -274,7 +274,7 @@ export default function CreditControl() {
             </span>
           </div>
           <div className="grid gap-3 sm:grid-cols-5">
-            {aging.buckets.map((b: any, i: number) => (
+            {aging.buckets.map((b, i) => (
               <div key={b.label} className="rounded-2xl border border-white/8 bg-white/3 p-3 text-center">
                 <div className="text-[10px] font-black uppercase tracking-wider text-white/40 mb-1">{b.label}</div>
                 <div

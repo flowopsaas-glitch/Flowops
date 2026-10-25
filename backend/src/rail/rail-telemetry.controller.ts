@@ -11,6 +11,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { RAIL_READ_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /**
  * Telemetry — device registry, ingest, positions, alerts.
@@ -21,6 +22,7 @@ import { RAIL_READ_ROLES, RAIL_WRITE_ROLES } from './rail-roles';
  * when hardware partners arrive. Everything else is tenant-scoped RBAC.
  */
 @ApiTags('Rail / Telemetry')
+@RequireFeature('rail')
 @Controller('rail/telemetry')
 export class RailTelemetryController {
   constructor(private readonly telemetry: RailTelemetryService) {}

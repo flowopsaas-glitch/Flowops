@@ -210,9 +210,9 @@ export default function WaybillCapture() {
       setForm((f) => ({
         ...f,
         ...parsed.data,
-        waybillNumber: f.waybillNumber?.trim() ? f.waybillNumber : (parsed.data as any).waybillNumber || "",
+        waybillNumber: f.waybillNumber?.trim() ? f.waybillNumber : (parsed.data as { waybillNumber?: string }).waybillNumber || "",
       }));
-    } catch (e: any) {
+    } catch (e) {
       setErr(e?.message || "OCR failed.");
     } finally {
       setOcrBusy(false);
@@ -245,7 +245,7 @@ export default function WaybillCapture() {
       setImgUrl(null);
       setOcrText("");
       setHints([]);
-    } catch (e: any) {
+    } catch (e) {
       setErr(e?.message || "Save failed.");
     } finally {
       setSaving(false);

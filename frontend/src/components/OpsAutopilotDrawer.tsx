@@ -1,6 +1,5 @@
 ﻿import React, { useMemo, useState } from "react";
 
-import { isTenantAdminFullAccess, canTenantAdminSeeNavItem, canTenantAdminAccessRoute, isHiddenOwnerPath } from '../lib/tenantAdminFullAccess';
 type Action = { id: string; label: string };
 type Plan = { name: string; severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; score: number; actions: Action[] };
 
@@ -71,4 +70,3 @@ export default function OpsAutopilotDrawer() {
     </div>
   );
 }
-

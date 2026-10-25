@@ -32,7 +32,7 @@ interface Stats {
   bySeverity: { severity: string; count: number }[];
 }
 
-const unwrap = (r: any) => r?.data ?? r;
+const unwrap = <T,>(r: unknown): T => ((r as { data?: T } | null)?.data ?? r) as T;
 
 function sevColor(sev?: string | null) {
   switch ((sev || "").toUpperCase()) {
@@ -64,16 +64,15 @@ export default function Observatory() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const q = filter === "all" ? "" : `?resolved=${filter === "resolved"}`;
       const [s, e] = await Promise.allSettled([
         api.get("/owner/observatory/stats"),
         api.get(`/owner/observatory/errors${q}`),
       ]);
-      if (s.status === "fulfilled") setStats(unwrap(s.value) as Stats);
+      if (s.status === "fulfilled") setStats(unwrap<Stats>(s.value));
       if (e.status === "fulfilled") {
-        const d = unwrap(e.value);
+        const d = unwrap<ErrorGroup[]>(e.value);
         setErrors(Array.isArray(d) ? d : []);
       }
     } finally {
@@ -88,7 +87,7 @@ export default function Observatory() {
     try {
       await api.patch(`/owner/observatory/errors/${id}/resolve`, { resolved });
       await load();
-    } catch (e: any) {
+    } catch (e) {
       setActionError(e?.message || "Could not update this error. Please try again.");
       setTimeout(() => setActionError(null), 6000);
     }
@@ -100,7 +99,7 @@ export default function Observatory() {
     try {
       await api.post(`/owner/observatory/errors/${id}/retriage`, {});
       await load();
-    } catch (e: any) {
+    } catch (e) {
       setActionError(e?.message || "Re-triage failed. Please try again.");
       setTimeout(() => setActionError(null), 6000);
     }

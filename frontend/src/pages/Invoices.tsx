@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  AlertTriangle,
   CheckCircle2,
   Download,
   FileText,
@@ -114,7 +113,6 @@ function CreateInvoiceModal({
     if (!clientName.trim()) { setError("Client name is required."); return; }
     if (items.some((it) => !it.description.trim())) { setError("All line items need a description."); return; }
     setSaving(true);
-    setError("");
     try {
       await api.post("/invoices", buildInvoiceCreatePayload({
         clientName,
@@ -125,7 +123,7 @@ function CreateInvoiceModal({
       }));
       onSaved();
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to create invoice.");
     } finally {
       setSaving(false);
@@ -151,14 +149,14 @@ function CreateInvoiceModal({
           {/* Client */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Client Name *</label>
-              <input value={clientName} onChange={(e) => setClientName(e.target.value)}
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-client-name-4">Client Name *</label>
+              <input id="field-client-name-4" value={clientName} onChange={(e) => setClientName(e.target.value)}
                 placeholder="Acme Logistics"
                 className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400" />
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Client Email</label>
-              <input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)}
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-client-email-3">Client Email</label>
+              <input id="field-client-email-3" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)}
                 placeholder="billing@acme.com" type="email"
                 className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400" />
             </div>
@@ -166,13 +164,13 @@ function CreateInvoiceModal({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Due Date</label>
-              <input value={dueDate} onChange={(e) => setDueDate(e.target.value)} type="date"
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-due-date-2">Due Date</label>
+              <input id="field-due-date-2" value={dueDate} onChange={(e) => setDueDate(e.target.value)} type="date"
                 className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400" />
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Notes</label>
-              <input value={notes} onChange={(e) => setNotes(e.target.value)}
+              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-notes-1">Notes</label>
+              <input id="field-notes-1" value={notes} onChange={(e) => setNotes(e.target.value)}
                 placeholder="Payment terms, ref…"
                 className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400" />
             </div>
@@ -181,7 +179,7 @@ function CreateInvoiceModal({
           {/* Line items */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Line Items</label>
+              <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Line Items</span>
               <button
                 onClick={() => setItems((p) => [...p, { description: "", quantity: 1, unitPrice: 0, total: 0 }])}
                 className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/10"
@@ -253,26 +251,25 @@ export default function Invoices() {
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = (searchParams.get("status") || "").toUpperCase() as InvoiceStatus | "";
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
       const [invRes, metRes] = await Promise.allSettled([
         api.get("/invoices"),
         api.get("/invoices/metrics"),
       ]);
       if (invRes.status === "fulfilled") {
-        const data: any = invRes.value;
+        const data = invRes.value as unknown as { data?: Invoice[] } | Invoice[];
         const arr = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
         setInvoices(arr);
       }
       if (metRes.status === "fulfilled") {
-        const m: any = metRes.value;
-        setMetrics(m?.data ?? m);
+        const m = metRes.value as unknown as { data?: Metrics } | Metrics;
+        setMetrics((m as { data?: Metrics })?.data ?? (m as Metrics));
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  })(), []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -320,11 +317,11 @@ export default function Invoices() {
     setGenerating(true);
     setGenMsg(null);
     try {
-      const res: any = await api.post("/invoices/auto-generate", {});
+      const res = await api.post("/invoices/auto-generate", {});
       const r = res?.data ?? res;
       setGenMsg(r?.message ?? (r?.generated ? "Statement generated." : "No unbilled deliveries to invoice."));
       await load();
-    } catch (err: any) {
+    } catch (err) {
       setGenMsg(err?.message || "Could not generate statement.");
     } finally {
       setGenerating(false);

@@ -14,9 +14,9 @@ export default function ForgotPassword() {
     setBusy(true);
     setError('');
     try {
-      await api.post<any, any>('/auth/forgot-password', { email });
+      await api.post('/auth/forgot-password', { email });
       setSent(true);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || 'Something went wrong. Please try again.');
     } finally {
       setBusy(false);
@@ -60,10 +60,10 @@ export default function ForgotPassword() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+            <label className="text-xs uppercase tracking-[0.2em] text-slate-400" htmlFor="field-email-address-1">
               Email address
             </label>
-            <input
+            <input id="field-email-address-1"
               type="email"
               required
               value={email}

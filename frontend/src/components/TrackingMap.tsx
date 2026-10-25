@@ -8,7 +8,6 @@ import { getMapCenter } from '../lib/currency';
 import OpenStreetMapLayer from "./maps/OpenStreetMapLayer";
 
 // Default center — resolved dynamically per tenant country.
-const DEFAULT_CENTER: [number, number] = [-26.2041, 28.0473]; // Fallback: Johannesburg
 
 interface DriverTelemetry {
   driverId: number;

@@ -8,6 +8,8 @@ import { Request } from 'express';
 import { PaystackService } from './paystack.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Paystack')
 @ApiBearerAuth()
@@ -17,6 +19,7 @@ export class PaystackController {
 
   constructor(private readonly svc: PaystackService) {}
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('initialize')
   @ApiOperation({ summary: 'Initialize a Paystack payment' })
   initializePayment(@CurrentUser() u: any, @Body() body: any) {
@@ -31,24 +34,28 @@ export class PaystackController {
     });
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get('verify/:reference')
   @ApiOperation({ summary: 'Verify a Paystack payment by reference' })
   verifyPayment(@Param('reference') reference: string) {
     return this.svc.verifyPayment(reference);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get('payments')
   @ApiOperation({ summary: 'List company payment history' })
   getPayments(@CurrentUser() u: any) {
     return this.svc.getCompanyPayments(u.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get('plans')
   @ApiOperation({ summary: 'List Paystack billing plans' })
   listPlans() {
     return this.svc.listPlans();
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('plans')
   @ApiOperation({ summary: 'Create a new Paystack billing plan' })
   createPlan(@Body() body: any) {
@@ -69,6 +76,7 @@ export class PaystackController {
    *   { planCode: 'PLN_l3kobthzahnkpf3' }   ← Professional
    *   { planCode: 'PLN_9at9kn2ra8jtae0' }   ← Enterprise
    */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('checkout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Start subscription checkout (redirect to Paystack)' })
@@ -92,6 +100,7 @@ export class PaystackController {
    * Called by the frontend callback page after Paystack redirects back.
    * Verifies the transaction, activates the plan, and returns result for the UI.
    */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get('verify-subscription/:reference')
   @ApiOperation({ summary: 'Verify subscription payment and activate plan' })
   verifySubscription(@Param('reference') reference: string) {
@@ -116,6 +125,7 @@ export class PaystackController {
    *   authorization  — Paystack authorization code to reuse an existing card
    *   email          — override the email used for the subscription
    */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('subscribe')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Activate a plan — free (starter) or paid (Professional / Enterprise)' })
@@ -148,12 +158,14 @@ export class PaystackController {
     });
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get('subscriptions/:code')
   @ApiOperation({ summary: 'Get a subscription by code' })
   getSubscription(@Param('code') code: string) {
     return this.svc.getSubscription(code);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('subscriptions/:code/cancel')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancel a subscription' })

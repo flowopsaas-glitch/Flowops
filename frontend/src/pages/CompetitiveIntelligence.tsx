@@ -7,8 +7,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  AlertTriangle, ArrowRight, Bot, Check, CheckCircle2, ChevronDown, ChevronUp,
+import { Bot, Check, CheckCircle2, ChevronDown, ChevronUp,
   Clock, Copy, ExternalLink, Github, Globe, Hammer, HeartPulse, Lightbulb, ListChecks, Loader2, RefreshCw, Sparkles, Target,
   TrendingUp, X, Zap,
 } from "lucide-react";
@@ -32,6 +31,24 @@ interface Report {
   summary:    string;
   topAction:  string;
   rawResults: number;
+}
+
+interface BuildPlan {
+  title?: string;
+  entitlementTier?: string;
+  effort?: string;
+  summary?: string;
+  dataModelChanges?: string[];
+  backendChanges?: string[];
+  newEndpoints?: string[];
+  frontendChanges?: string[];
+  acceptanceCriteria?: string[];
+  risks?: string[];
+  implementationSteps?: string[];
+  suggestedBranch?: string;
+  navPlacement?: string;
+  agentPrompt?: string;
+  githubIssueUrl?: string;
 }
 
 interface IntelEvent {
@@ -118,26 +135,27 @@ function InsightCard({ insight }: { insight: Insight }) {
 
 // ── Build Plan Panel (CLAW Build Planner output) ───────────────────────────
 
+function PlanSection({ label, items }: { label: string; items?: string[] }) {
+  return items && items.length ? (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-wider text-white/35">{label}</p>
+      <ul className="mt-1 space-y-0.5">
+        {items.map((it, i) => (
+          <li key={i} className="text-[11px] text-white/60 leading-relaxed">• {it}</li>
+        ))}
+      </ul>
+    </div>
+  ) : null;
+}
+
 function BuildPlanPanel({ plan, onCopy, copied, onCreateIssue, creatingIssue, issueUrl }: {
-  plan: any;
+  plan: BuildPlan;
   onCopy: () => void;
   copied: boolean;
   onCreateIssue: () => void;
   creatingIssue: boolean;
   issueUrl?: string;
 }) {
-  const Section = ({ label, items }: { label: string; items?: string[] }) =>
-    items && items.length ? (
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-wider text-white/35">{label}</p>
-        <ul className="mt-1 space-y-0.5">
-          {items.map((it, i) => (
-            <li key={i} className="text-[11px] text-white/60 leading-relaxed">• {it}</li>
-          ))}
-        </ul>
-      </div>
-    ) : null;
-
   return (
     <div className="mt-3 rounded-[14px] border border-sky-500/20 bg-sky-500/[0.05] p-3 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
@@ -156,13 +174,13 @@ function BuildPlanPanel({ plan, onCopy, copied, onCreateIssue, creatingIssue, is
       </div>
       {plan.summary && <p className="text-xs text-white/70 leading-relaxed">{plan.summary}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Section label="Data model" items={plan.dataModelChanges} />
-        <Section label="Backend" items={plan.backendChanges} />
-        <Section label="Endpoints" items={plan.newEndpoints} />
-        <Section label="Frontend" items={plan.frontendChanges} />
-        <Section label="Acceptance criteria" items={plan.acceptanceCriteria} />
-        <Section label="Risks" items={plan.risks} />
-        <Section label="Steps" items={plan.implementationSteps} />
+        <PlanSection label="Data model" items={plan.dataModelChanges} />
+        <PlanSection label="Backend" items={plan.backendChanges} />
+        <PlanSection label="Endpoints" items={plan.newEndpoints} />
+        <PlanSection label="Frontend" items={plan.frontendChanges} />
+        <PlanSection label="Acceptance criteria" items={plan.acceptanceCriteria} />
+        <PlanSection label="Risks" items={plan.risks} />
+        <PlanSection label="Steps" items={plan.implementationSteps} />
       </div>
       {plan.suggestedBranch && (
         <p className="text-[11px] text-white/40">
@@ -229,7 +247,7 @@ export default function CompetitiveIntelligencePage() {
   const [filter,    setFilter]    = useState<ThreatLevel | "ALL">("ALL");
 
   // CLAW Build Planner state
-  const [plans,      setPlans]      = useState<Record<string, any>>({});
+  const [plans,      setPlans]      = useState<Record<string, BuildPlan>>({});
   const [planningId, setPlanningId] = useState<string | null>(null);
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
   const [copiedId,   setCopiedId]   = useState<string | null>(null);
@@ -238,7 +256,6 @@ export default function CompetitiveIntelligencePage() {
   const [planError,  setPlanError]  = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [latestRes, histRes, actRes] = await Promise.allSettled([
         api.get("/owner/intel/latest"),
@@ -246,15 +263,15 @@ export default function CompetitiveIntelligencePage() {
         api.get("/owner/intel/actions"),
       ]);
       if (latestRes.status === "fulfilled") {
-        const d = (latestRes.value as any)?.data ?? latestRes.value;
+        const d = latestRes.value?.data ?? latestRes.value;
         setReport(d as Report);
       }
       if (histRes.status === "fulfilled") {
-        const d = (histRes.value as any)?.data ?? histRes.value;
+        const d = histRes.value?.data ?? histRes.value;
         setHistory(Array.isArray(d) ? d : []);
       }
       if (actRes.status === "fulfilled") {
-        const d = (actRes.value as any)?.data ?? actRes.value;
+        const d = actRes.value?.data ?? actRes.value;
         setActions(Array.isArray(d) ? d : []);
       }
     } finally {
@@ -283,11 +300,11 @@ export default function CompetitiveIntelligencePage() {
     if (plans[id]) { setOpenPlanId(prev => (prev === id ? null : id)); return; }
     setPlanningId(id);
     try {
-      const res: any = await api.post(`/owner/intel/actions/${id}/build-plan`, {});
+      const res = await api.post(`/owner/intel/actions/${id}/build-plan`, {});
       const d = res?.data ?? res;
       setPlans(prev => ({ ...prev, [id]: d }));
       setOpenPlanId(id);
-    } catch (e: any) {
+    } catch (e) {
       setPlanError(e?.message || "Could not generate a build plan. Please try again.");
       setTimeout(() => setPlanError(null), 6000);
     }
@@ -307,10 +324,10 @@ export default function CompetitiveIntelligencePage() {
   const createIssue = async (id: string) => {
     setIssuingId(id);
     try {
-      const res: any = await api.post(`/owner/intel/actions/${id}/create-issue`, {});
+      const res = await api.post(`/owner/intel/actions/${id}/create-issue`, {});
       const d = res?.data ?? res;
       if (d?.url) setIssues(prev => ({ ...prev, [id]: d.url }));
-    } catch (e: any) {
+    } catch (e) {
       setPlanError(e?.message || "Could not create the GitHub issue — check the GitHub integration is configured.");
       setTimeout(() => setPlanError(null), 6000);
     }
@@ -320,10 +337,10 @@ export default function CompetitiveIntelligencePage() {
   const runSweep = async () => {    setSweeping(true);
     try {
       const res = await api.post("/owner/intel/sweep", {});
-      const d = (res as any)?.data ?? res;
+      const d = res?.data ?? res;
       setReport(d as Report);
       await load();
-    } catch (e: any) {
+    } catch (e) {
       setPlanError(e?.message || "Competitor sweep failed. Please try again.");
       setTimeout(() => setPlanError(null), 6000);
     }
@@ -335,7 +352,7 @@ export default function CompetitiveIntelligencePage() {
     try {
       await api.post("/owner/intel/suggest-upgrades", {});
       await load(); // new upgrade ideas land in the Action items queue
-    } catch (e: any) {
+    } catch (e) {
       setPlanError(e?.message || "Could not generate upgrade suggestions. Please try again.");
       setTimeout(() => setPlanError(null), 6000);
     }
@@ -345,11 +362,11 @@ export default function CompetitiveIntelligencePage() {
   const runHealthCheck = async () => {
     setCheckingHealth(true);
     try {
-      const res: any = await api.get("/owner/health/integrations");
+      const res = await api.get("/owner/health/integrations");
       const d = res?.data ?? res;
       setIntegrations(Array.isArray(d?.checks) ? d.checks : []);
       await load(); // any failing integration also shows up in Action items
-    } catch (e: any) {
+    } catch (e) {
       setPlanError(e?.message || "Integration health check failed. Please try again.");
       setTimeout(() => setPlanError(null), 6000);
     }

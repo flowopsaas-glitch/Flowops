@@ -11,8 +11,8 @@ export const WhatsAppChat: React.FC = () => {
   // 1. Fetch all active conversations
   useEffect(() => {
     const fetchThreads = async () => {
-      const res = await api.get<any, any>(`/whatsapp/threads`);
-      setThreads(res);
+      const res = await api.get(`/whatsapp/threads`);
+      setThreads(((res as unknown as { data?: WhatsAppThread[] })?.data ?? res) as WhatsAppThread[]);
     };
     fetchThreads();
   }, []);
@@ -21,8 +21,8 @@ export const WhatsAppChat: React.FC = () => {
   useEffect(() => {
     if (selectedPhone) {
       const fetchMessages = async () => {
-        const res = await api.get<any, any>(`/whatsapp/messages/${selectedPhone}`);
-        setMessages(res);
+        const res = await api.get(`/whatsapp/messages/${selectedPhone}`);
+        setMessages(((res as unknown as { data?: WhatsAppMessage[] })?.data ?? res) as WhatsAppMessage[]);
       };
       fetchMessages();
       const interval = setInterval(fetchMessages, 3000); // Auto-refresh every 3s
@@ -32,7 +32,7 @@ export const WhatsAppChat: React.FC = () => {
 
   const handleSendMessage = async () => {
     if (!inputValue || !selectedPhone) return;
-    await api.post<any, any>('/whatsapp/send', {
+    await api.post('/whatsapp/send', {
       to: selectedPhone,
       message: inputValue,
     });
@@ -47,7 +47,7 @@ export const WhatsAppChat: React.FC = () => {
         {threads.map((t) => (
           <div
             key={t.phone}
-            onClick={() => setSelectedPhone(t.phone)}
+            onClick={() => setSelectedPhone(t.phone)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => setSelectedPhone(t.phone))(); } }} role="button" tabIndex={0}
             className={`p-4 border-b cursor-pointer hover:bg-gray-100 ${selectedPhone === t.phone ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}
           >
             <p className="font-medium">+{t.phone}</p>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle, Clock, XCircle, ArrowLeft } from 'lucide-react';
 
@@ -10,12 +10,18 @@ type CompanyInfo = {
 };
 
 export default function StatusPage() {
-  const [company, setCompany] = useState<CompanyInfo | null>(null);
+  const [company] = useState<CompanyInfo | null>(() => {
+    // Read once, lazily, at first render — no effect round-trip needed for a
+    // synchronous localStorage snapshot.
+    try {
+      const data = localStorage.getItem('companyInfo');
+      return data ? (JSON.parse(data) as CompanyInfo) : null;
+    } catch {
+      return null;
+    }
+  });
 
-  useEffect(() => {
-    const data = localStorage.getItem('companyInfo');
-    if (data) setCompany(JSON.parse(data));
-  }, []);
+  // (company state is initialised lazily from localStorage — see useState above.)
 
   if (!company) {
     return (

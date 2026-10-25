@@ -3,10 +3,10 @@ import { api } from '../api/client';
 import { Activity, ArrowRightLeft, PackageCheck } from 'lucide-react';
 
 export const ActivityFeed: React.FC = () => {
-  const [logs, setLogs] = useState([]);
+  const [logs, setLogs] = useState<{ id: string | number; type?: string; message?: string; createdAt?: string }[]>([]);
 
   useEffect(() => {
-    const fetchLogs = () => api.get<any, any>(`/dashboard/activities`).then(res => setLogs(res));
+    const fetchLogs = () => api.get(`/dashboard/activities`).then(res => setLogs((((res as unknown as { data?: unknown })?.data ?? res) as typeof logs)));
     fetchLogs();
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
@@ -18,7 +18,7 @@ export const ActivityFeed: React.FC = () => {
         <Activity size={16} className="text-blue-500" /> Live Ops Feed
       </h3>
       <div className="space-y-4">
-        {logs.map((log: any) => (
+        {logs.map((log) => (
           <div key={log.id} className="flex gap-4 items-start border-l-2 border-blue-500/20 pl-4 py-1">
             <div className="mt-1">
               {log.type === 'MOVEMENT' ? <ArrowRightLeft size={14} className="text-blue-400" /> : <PackageCheck size={14} className="text-green-400" />}

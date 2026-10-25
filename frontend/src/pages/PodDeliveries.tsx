@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { formatMoney } from "../lib/currency";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ClipboardCheck,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from '../api/client';
 import { TiltCard } from "../components/premium/TiltCard";
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 import DeliveryAction from './Deliveries/DeliveryAction'; // 🚀 Importing our signature logic
 
 type DeliveryQuality = {
@@ -44,9 +46,9 @@ function Tile(props: {
 }) {
   const Icon = props.icon;
   return (
-    <div 
-      onClick={props.onClick}
-      className={`group rounded-[26px] border border-white/10 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition-all cursor-pointer fx-lift 
+    <div
+      onClick={props.onClick} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (props.onClick)(); } }} role="button" tabIndex={0}
+      className={`group rounded-[26px] border border-white/10 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition-all cursor-pointer fx-lift
       ${props.active ? 'bg-blue-500/10 border-blue-500/50' : 'bg-white/5 hover:bg-white/10'}`}
     >
       <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/10 group-hover:ring-blue-500/30 transition-all">
@@ -61,74 +63,66 @@ function Tile(props: {
   );
 }
 
+
+type PodWaybill = {
+  id: string | number;
+  trackingNumber?: string;
+  status?: string;
+  recipientName?: string;
+  recipientAddress?: string;
+};
+type PodReview = {
+  completenessScore?: number;
+  podReady?: boolean;
+  blockingIssues?: string[];
+  warnings?: string[];
+  suggestions?: string[];
+};
+
 export default function PodDeliveries() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [view, setView] = useState<'overview' | 'queue'>('overview');
-  const [waybills, setWaybills] = useState<any[]>([]);
-  const [selectedWaybill, setSelectedWaybill] = useState<any | null>(null);
-  const [aiReview, setAiReview] = useState<any | null>(null);
-  const [reviewLoading, setReviewLoading] = useState(false);
+  const [view, setView] = useState<'overview' | 'queue'>(() => searchParams.get("waybillId") ? 'queue' : 'overview');
+  const [waybills, setWaybills] = useState<PodWaybill[]>([]);
+  const [selectedWaybillId, setSelectedWaybillId] = useState<string | null>(() => searchParams.get("waybillId"));
+  const [review, setReview] = useState<{ waybillId: string; data: PodReview | null } | null>(null);
   const [quality, setQuality] = useState<DeliveryQuality | null>(null);
 
   useEffect(() => {
-    api.get("/waybills/quality").then((r: any) => setQuality(r?.data ?? r)).catch(() => setQuality(null));
+    api.get("/waybills/quality").then((r) => setQuality(r?.data ?? r)).catch(() => setQuality(null));
   }, []);
 
   // 📡 Fetch pending waybills from the backend
-  const fetchQueue = async () => {
+  const fetchQueue = () => (async () => {
     try {
-      const res: any = await api.get<any, any>(`/waybills`);
-      const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+      const res = await api.get(`/waybills`);
+      const data: PodWaybill[] = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       // Filter for those not yet delivered
-      setWaybills(data.filter((w: any) => w.status !== 'DELIVERED'));
+      setWaybills(data.filter((w) => w.status !== 'DELIVERED'));
     } catch (err) {
       console.error("Failed to load POD queue", err);
     }
-  };
+  })();
 
   useEffect(() => {
-    if (view === 'queue') fetchQueue();
+    if (view === 'queue') void fetchQueue();
   }, [view]);
 
-  useEffect(() => {
-    if (searchParams.get("waybillId")) {
-      setView("queue");
-    }
-  }, [searchParams]);
+  // Selection is stored as an id and the waybill itself is derived from the
+  // loaded queue, so deep links resolve as soon as the queue arrives without
+  // an effect copying the object into state.
+  const selectedWaybill = waybills.find((waybill) => String(waybill.id) === selectedWaybillId) ?? null;
+  const aiReview = review && selectedWaybill && review.waybillId === String(selectedWaybill.id) ? review.data : null;
+  const reviewLoading = Boolean(selectedWaybill?.id && review?.waybillId !== String(selectedWaybill.id));
 
   useEffect(() => {
-    if (!waybills.length) return;
-
-    const requestedWaybillId = searchParams.get("waybillId");
-    if (requestedWaybillId) {
-      const requested = waybills.find((waybill) => String(waybill.id) === requestedWaybillId);
-      if (requested && String(selectedWaybill?.id) !== String(requested.id)) {
-        setSelectedWaybill(requested);
-      }
-    }
-  }, [waybills, searchParams, selectedWaybill?.id]);
-
-  useEffect(() => {
-    if (!selectedWaybill?.id) {
-      setAiReview(null);
-      return;
-    }
+    if (!selectedWaybill?.id) return;
 
     let active = true;
-    async function loadAssist() {
-      try {
-        setReviewLoading(true);
-        const data = await api.get<any, any>(`/waybills/${selectedWaybill.id}/assist`);
-        if (active) setAiReview(data);
-      } catch {
-        if (active) setAiReview(null);
-      } finally {
-        if (active) setReviewLoading(false);
-      }
-    }
-
-    void loadAssist();
+    const waybillId = String(selectedWaybill.id);
+    api.get(`/waybills/${selectedWaybill.id}/assist`)
+      .then((data) => { if (active) setReview({ waybillId, data: (data as { data?: PodReview } | null)?.data ?? (data as PodReview) }); })
+      .catch(() => { if (active) setReview({ waybillId, data: null }); });
     return () => {
       active = false;
     };
@@ -147,8 +141,8 @@ export default function PodDeliveries() {
   if (view === 'queue') {
     return (
       <div className="min-h-full bg-[#07111f] p-6 sm:p-8 animate-in fade-in slide-in-from-right-4 duration-300">
-        <button 
-          onClick={() => { setView('overview'); setSelectedWaybill(null); }}
+        <button
+          onClick={() => { setView('overview'); setSelectedWaybillId(null); }}
           className="flex items-center gap-2 text-white/50 hover:text-white transition-colors font-bold text-xs uppercase tracking-widest mb-8"
         >
           <ChevronLeft size={16} /> Back to Overview
@@ -156,10 +150,10 @@ export default function PodDeliveries() {
 
         {selectedWaybill ? (
           <div className="mx-auto grid max-w-[1200px] gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <DeliveryAction 
-              waybillId={selectedWaybill.id} 
-              waybillNumber={selectedWaybill.trackingNumber} 
-              onSuccess={() => { setSelectedWaybill(null); fetchQueue(); }} 
+            <DeliveryAction
+              waybillId={Number(selectedWaybill.id)}
+              waybillNumber={selectedWaybill.trackingNumber}
+              onSuccess={() => { setSelectedWaybillId(null); void fetchQueue(); }}
             />
 
             <div className="rounded-[28px] border border-white/10 bg-white/6 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.30)]">
@@ -221,9 +215,9 @@ export default function PodDeliveries() {
               </div>
             ) : (
               waybills.map(wb => (
-                <div 
-                  key={wb.id} 
-                  onClick={() => setSelectedWaybill(wb)}
+                <div
+                  key={wb.id}
+                  onClick={() => setSelectedWaybillId(String(wb.id))} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedWaybillId(String(wb.id)); } }} role="button" tabIndex={0}
                   className="group flex items-center justify-between rounded-[22px] border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition-all cursor-pointer"
                 >
                   <div>
@@ -245,7 +239,7 @@ export default function PodDeliveries() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(31,104,140,0.18),transparent_30%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8 overflow-y-auto">
       <div className="mx-auto max-w-[1600px] space-y-6">
-        
+
         {/* Header Block */}
         <div className="rounded-[30px] border border-white/10 bg-white/6 p-6 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
           <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/85 ring-1 ring-white/15">
@@ -353,7 +347,7 @@ function AssistList({ title, items }: { title: string; items: string[] }) {
 // ── Delivery quality scorecard (CSAT + success + COD) ───────────────────────
 
 function qMoney(v: number) {
-  return `R ${Math.round(v).toLocaleString("en-ZA")}`;
+  return formatMoney(Math.round(v), tenantCurrency());
 }
 
 function DeliveryQualityPanel({ q }: { q: DeliveryQuality }) {

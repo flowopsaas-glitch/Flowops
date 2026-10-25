@@ -20,7 +20,7 @@ vi.mock("../../api/railChangeApi", () => ({
   notifyOccurrence: vi.fn(),
   startInvestigation: vi.fn(),
 }));
-vi.mock("../../components/ToastProvider", () => ({ useToast: () => ({ showToast: h.showToast }) }));
+vi.mock("../../components/toast-context", () => ({ useToast: () => ({ showToast: h.showToast }) }));
 
 import ChangeRequestsSection from "./ChangeRequestsSection";
 import OccurrencesSection from "./OccurrencesSection";

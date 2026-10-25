@@ -2,9 +2,12 @@ import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billing: BillingService) {}

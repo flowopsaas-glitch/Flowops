@@ -1,10 +1,13 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useDismissOnEscape } from "../components/patterns/useDismissOnEscape";
 import {
   Calculator, Sparkles, FileMinus, FilePlus, ScrollText, Layers, Percent,
   Download, Plus, X, RefreshCw, CheckCircle2, Banknote, AlertTriangle, TrendingUp,
   Plug, ShieldCheck, Link2,
+  type LucideIcon,
 } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import {
@@ -30,7 +33,7 @@ const pretty = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
 type TabKey = "ai" | "credit" | "debit" | "statements" | "aging" | "commission" | "bridge";
-const TABS: { key: TabKey; label: string; icon: any }[] = [
+const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "ai", label: "AI Assist", icon: Sparkles },
   { key: "bridge", label: "AI Bridge", icon: Link2 },
   { key: "credit", label: "Credit Notes", icon: FileMinus },
@@ -66,7 +69,7 @@ export default function Accounting() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ExportButton onPick={async (t) => { try { await downloadExport(t); } catch (e: any) { showToast(e?.message || "Export failed", "error"); } }} />
+          <ExportButton onPick={async (t) => { try { await downloadExport(t); } catch (e) { showToast(errorMessageOf(e) || "Export failed", "error"); } }} />
         </div>
       </div>
 
@@ -108,7 +111,7 @@ function ExportButton({ onPick }: { onPick: (t: "invoices" | "credit-notes" | "p
       </Button>
       {open && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-10" ><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => setOpen(false)} /></div>
           <div className={glassCard("absolute right-0 z-20 mt-2 w-56 p-1.5")}>
             {opts.map((o) => (
               <button key={o.t} onClick={() => { setOpen(false); onPick(o.t); }}
@@ -129,12 +132,13 @@ function AiAssistPanel() {
   const [data, setData] = useState<AiAssist | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setData(await getAiAssist()); }
-    catch (e: any) { showToast(e?.response?.data?.message || "AI assist unavailable", "error"); }
-    finally { setLoading(false); }
-  }, [showToast]);
+  const load = useCallback(() => (async () => {
+ setData(await getAiAssist());
+  })().catch((e: unknown) => {
+ showToast(errorMessageOf(e) || "AI assist unavailable", "error");
+  }).finally(() => {
+ setLoading(false);
+  }), [showToast]);
   useEffect(() => { void load(); }, [load]);
 
   const riskColor = (s: number) => s >= 60 ? "text-rose-300" : s >= 30 ? "text-amber-300" : "text-emerald-300";
@@ -231,17 +235,16 @@ function CreditNotesTab() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try { setRows(await listCreditNotes()); }
-    catch (e: any) { showToast(e?.response?.data?.message || "Failed to load credit notes", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Failed to load credit notes", "error"); }
     finally { setLoading(false); }
-  }, [showToast]);
+  })(), [showToast]);
   useEffect(() => { void load(); }, [load]);
 
-  async function act(fn: () => Promise<any>, ok: string) {
+  async function act(fn: () => Promise<unknown>, ok: string) {
     try { await fn(); showToast(ok, "success"); await load(); }
-    catch (e: any) { showToast(e?.response?.data?.message || "Action failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Action failed", "error"); }
   }
 
   function onApply(cn: CreditNote) {
@@ -286,17 +289,16 @@ function DebitNotesTab() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try { setRows(await listDebitNotes()); }
-    catch (e: any) { showToast(e?.response?.data?.message || "Failed to load debit notes", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Failed to load debit notes", "error"); }
     finally { setLoading(false); }
-  }, [showToast]);
+  })(), [showToast]);
   useEffect(() => { void load(); }, [load]);
 
-  async function act(fn: () => Promise<any>, ok: string) {
+  async function act(fn: () => Promise<unknown>, ok: string) {
     try { await fn(); showToast(ok, "success"); await load(); }
-    catch (e: any) { showToast(e?.response?.data?.message || "Action failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Action failed", "error"); }
   }
 
   return (
@@ -324,9 +326,9 @@ function DebitNotesTab() {
   );
 }
 
-function NotesTable({ rows, loading, kind, renderActions }: {
-  rows: (CreditNote | DebitNote)[]; loading: boolean; kind: "credit" | "debit";
-  renderActions: (r: any) => React.ReactNode;
+function NotesTable<T extends CreditNote | DebitNote>({ rows, loading, kind, renderActions }: {
+  rows: T[]; loading: boolean; kind: "credit" | "debit";
+  renderActions: (r: T) => React.ReactNode;
 }) {
   return (
     <div className={glassCard("overflow-hidden")}>
@@ -342,13 +344,13 @@ function NotesTable({ rows, loading, kind, renderActions }: {
           <tbody className="divide-y divide-white/5">
             {loading && <tr><td colSpan={7} className="p-10 text-center text-white/40">Loading…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-white/40">None yet.</td></tr>}
-            {!loading && rows.map((r: any) => (
+            {!loading && rows.map((r) => (
               <tr key={r.id} className="hover:bg-white/[0.02]">
                 <td className="p-3 font-mono font-bold text-emerald-300">{r.number}</td>
                 <td className="p-3">{r.clientName}</td>
                 <td className="p-3 text-white/60">{r.reason || "—"}</td>
                 <td className="p-3 font-mono">{money(r.total)}</td>
-                {kind === "credit" && <td className="p-3 font-mono text-white/60">{money(r.appliedAmount)}</td>}
+                {kind === "credit" && <td className="p-3 font-mono text-white/60">{money((r as CreditNote).appliedAmount)}</td>}
                 <td className="p-3"><span className={cn("inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold", STATUS_CLS[r.status])}>{pretty(r.status)}</span></td>
                 <td className="p-3"><div className="flex justify-end gap-1.5">{renderActions(r)}</div></td>
               </tr>
@@ -367,13 +369,12 @@ function StatementsTab() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [stmt, setStmt] = useState<Statement | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function run() {
     if (!client.trim()) { showToast("Enter a client name", "error"); return; }
-    setLoading(true);
     try { setStmt(await getStatement(client.trim(), from || undefined, to || undefined)); }
-    catch (e: any) { showToast(e?.response?.data?.message || "Could not build statement", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Could not build statement", "error"); }
     finally { setLoading(false); }
   }
 
@@ -439,7 +440,7 @@ function AgingTab() {
   useEffect(() => {
     (async () => {
       try { setData(await getAgeAnalysis()); }
-      catch (e: any) { showToast(e?.response?.data?.message || "Failed", "error"); }
+      catch (e) { showToast(errorMessageOf(e) || "Failed", "error"); }
       finally { setLoading(false); }
     })();
   }, [showToast]);
@@ -493,15 +494,14 @@ function CommissionTab() {
   const [genSp, setGenSp] = useState("");
   const [genPeriod, setGenPeriod] = useState(thisMonth());
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
       const [p, c, s] = await Promise.all([listSalespeople(), listCommissions(), commissionSummary()]);
       setPeople(p); setRows(c); setSummary(s);
       if (!genSp && p[0]) setGenSp(p[0].id);
-    } catch (e: any) { showToast(e?.response?.data?.message || "Failed to load commission", "error"); }
+    } catch (e) { showToast(errorMessageOf(e) || "Failed to load commission", "error"); }
     finally { setLoading(false); }
-  }, [showToast, genSp]);
+  })(), [showToast, genSp]);
   useEffect(() => { void load(); }, [load]);
 
   async function addSalesperson() {
@@ -509,7 +509,7 @@ function CommissionTab() {
     try {
       await createSalesperson({ name: spName.trim(), defaultCommissionPct: spPct ? Number(spPct) : 0 });
       setSpName(""); setSpPct(""); showToast("Salesperson added", "success"); await load();
-    } catch (e: any) { showToast(e?.response?.data?.message || "Failed", "error"); }
+    } catch (e) { showToast(errorMessageOf(e) || "Failed", "error"); }
   }
 
   async function generate() {
@@ -518,12 +518,12 @@ function CommissionTab() {
       const r = await generateCommissions({ salespersonId: genSp, periodMonth: genPeriod });
       showToast(`${r.created} commission(s) created (${money(r.totalCommission)}), ${r.skipped} skipped`, "success");
       await load();
-    } catch (e: any) { showToast(e?.response?.data?.message || "Generate failed", "error"); }
+    } catch (e) { showToast(errorMessageOf(e) || "Generate failed", "error"); }
   }
 
-  async function act(fn: () => Promise<any>, ok: string) {
+  async function act(fn: () => Promise<unknown>, ok: string) {
     try { await fn(); showToast(ok, "success"); await load(); }
-    catch (e: any) { showToast(e?.response?.data?.message || "Action failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Action failed", "error"); }
   }
 
   return (
@@ -611,6 +611,7 @@ function CommissionTab() {
 
 // ── Create note modal ─────────────────────────────────────────────────────
 function NoteModal({ kind, onClose, onCreated }: { kind: "credit" | "debit"; onClose: () => void; onCreated: () => void }) {
+  useDismissOnEscape(true, onClose);
   const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const [clientName, setClientName] = useState("");
@@ -640,13 +641,13 @@ function NoteModal({ kind, onClose, onCreated }: { kind: "credit" | "debit"; onC
       if (kind === "credit") await createCreditNote(payload); else await createDebitNote(payload);
       showToast(`${kind === "credit" ? "Credit" : "Debit"} note created`, "success");
       onCreated();
-    } catch (e: any) { showToast(e?.response?.data?.message || "Create failed", "error"); }
+    } catch (e) { showToast(errorMessageOf(e) || "Create failed", "error"); }
     finally { setSaving(false); }
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className={glassCard("w-full max-w-xl p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className={glassCard("w-full max-w-xl p-5")} role="dialog">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-black">New {kind === "credit" ? "Credit" : "Debit"} Note</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-5 w-5" /></button>
@@ -718,18 +719,17 @@ function BridgeTab() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
       const [p, r] = await Promise.all([listIntegrations(), reconcileBooks()]);
       setProviders(p);
       setRecon(r);
-    } catch (e: any) {
-      showToast(e?.response?.data?.message || "Failed to load accounting bridge", "error");
+    } catch (e) {
+      showToast(errorMessageOf(e) || "Failed to load accounting bridge", "error");
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  })(), [showToast]);
   useEffect(() => { void load(); }, [load]);
 
   // surface the OAuth redirect result if present
@@ -750,10 +750,10 @@ function BridgeTab() {
         showToast(`${p.name} isn't configured on the server (admin must set ${p.provider}_CLIENT_ID/SECRET).`, "error");
       } else {
         const { url } = await authorizeProvider(p.provider);
-        window.location.href = url; // OAuth redirect
+        window.location.assign(url); // OAuth redirect
       }
-    } catch (e: any) {
-      showToast(e?.response?.data?.message || "Connect failed", "error");
+    } catch (e) {
+      showToast(errorMessageOf(e) || "Connect failed", "error");
     } finally {
       setBusy(null);
     }
@@ -763,7 +763,7 @@ function BridgeTab() {
     if (!p.connectionId) return;
     setBusy(p.provider);
     try { await disconnectIntegration(p.connectionId); showToast(`${p.name} disconnected`, "success"); await load(); }
-    catch (e: any) { showToast(e?.response?.data?.message || "Failed", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Failed", "error"); }
     finally { setBusy(null); }
   }
 
@@ -800,7 +800,7 @@ function BridgeTab() {
               {p.status === "CONNECTED" ? (
                 <>
                   {p.provider === "PASTEL" && (
-                    <Button className="bg-white/10 hover:bg-white/20 text-xs" onClick={() => void downloadPastelImport().catch((e) => showToast(e.message, "error"))}>
+                    <Button className="bg-white/10 hover:bg-white/20 text-xs" onClick={() => void downloadPastelImport().catch((e) => showToast(errorMessageOf(e), "error"))}>
                       <Download className="mr-1 h-3.5 w-3.5" /> Export
                     </Button>
                   )}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useDismissOnEscape } from "../components/patterns/useDismissOnEscape";
 import {
   Shield, Plus, Search, Edit2, Trash2, MapPin, AlertTriangle, Radio,
   CheckCircle2, XCircle, X, Save, Zap, Brain, Eye, Clock, Activity,
@@ -65,6 +66,7 @@ export default function SafetyZones() {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"zones" | "alerts">("zones");
   const [showForm, setShowForm] = useState(false);
+  useDismissOnEscape(showForm, () => setShowForm(false));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormData>({ name: "", description: "", lat: "", lng: "", radiusM: "1000", riskLevel: "HIGH", alertMessage: "", notifyDriver: true, notifyDispatch: true, notifyAdmin: true });
   const [saving, setSaving] = useState(false);
@@ -81,8 +83,8 @@ export default function SafetyZones() {
         api.get("/safety/zones"),
         api.get("/safety/alerts?limit=30"),
       ]);
-      setZones(Array.isArray(z) ? z : (z as any)?.data ?? []);
-      setAlerts(Array.isArray(a) ? a : (a as any)?.data ?? []);
+      setZones(Array.isArray(z) ? (z as SafetyZone[]) : (((z as { data?: SafetyZone[] } | null)?.data ?? []) as SafetyZone[]));
+      setAlerts(Array.isArray(a) ? (a as SafetyAlert[]) : (((a as { data?: SafetyAlert[] } | null)?.data ?? []) as SafetyAlert[]));
     } catch { /* silent */ }
     finally { setLoading(false); }
   }
@@ -90,14 +92,14 @@ export default function SafetyZones() {
   async function seedDefaults() {
     setSeeding(true); setError(""); setSuccess("");
     try {
-      const res = await api.post("/safety/zones/seed") as any;
+      const res = (await api.post("/safety/zones/seed")) as unknown as { seeded?: boolean; count?: number; existing?: number };
       if (res?.seeded) {
         setSuccess(`Seeded ${res.count} SA crime hotspots from SAPS statistics.`);
         void loadAll();
       } else {
         setSuccess(`Already have ${res?.existing ?? 0} zones — no seed needed.`);
       }
-    } catch (err: any) { setError(err?.message || "Failed to seed zones"); }
+    } catch (err) { setError(err?.message || "Failed to seed zones"); }
     finally { setSeeding(false); }
   }
 
@@ -140,7 +142,7 @@ export default function SafetyZones() {
         setSuccess("Zone created");
       }
       setShowForm(false); void loadAll();
-    } catch (err: any) { setError(err?.message || "Failed to save zone"); }
+    } catch (err) { setError(err?.message || "Failed to save zone"); }
     finally { setSaving(false); }
   }
 
@@ -305,8 +307,8 @@ export default function SafetyZones() {
 
       {/* Create/Edit Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#0b1628] p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} role="dialog">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => setShowForm(false)} />
+          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#0b1628] p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto" role="dialog">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-black text-white">{editingId ? "Edit Safety Zone" : "Add Safety Zone"}</h2>
               <button onClick={() => setShowForm(false)} className="p-2 rounded-xl border border-white/10 hover:bg-white/10"><X className="h-4 w-4 text-white/60" /></button>

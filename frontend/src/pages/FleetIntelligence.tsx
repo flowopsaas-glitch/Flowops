@@ -1,8 +1,9 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Brain, TrendingUp, TrendingDown, AlertTriangle, Users, MapPin,
+  Brain, TrendingUp, TrendingDown, Users, MapPin,
   Zap, RefreshCw, Truck, Activity, Target, ArrowRight,
-  Gauge, Timer, Flame, Snowflake, ChevronRight,
+  Gauge, Timer, Flame, Snowflake,
 } from "lucide-react";
 import { api } from "../api/client";
 import { TiltCard } from "../components/premium/TiltCard";
@@ -22,6 +23,9 @@ type IdleDriver = {
   id: string; name: string; phone: string | null; vehicleType: string | null;
   lastDeliveryDaysAgo: number; severity: string;
 };
+type BranchBalance = {
+  id: string; name: string; city?: string; load: number; totalWaybills: number; delivered: number;
+};
 type Recommendation = {
   type: string; priority: string; title: string; description: string; impact: string;
 };
@@ -31,7 +35,7 @@ type Report = {
   drivers: { totalDrivers: number; avgUtilization: number; highPerformers: number; mediumPerformers: number; lowPerformers: number; drivers: DriverStat[]; insight: string };
   idle: { idleCount: number; totalDrivers: number; idleRatePct: number; estimatedWaste: number; drivers: IdleDriver[]; insight: string };
   forecast: { history: Array<{ month: string; count: number }>; currentLoad: number; currentCapacity: number; capacityUsedPct: number; activeDrivers: number; monthlyGrowthRate: number; monthsUntilCapacity: number | null; forecast: Array<{ month: string; projected: number; capacityPct: number }>; driversNeeded3mo: number; insight: string };
-  branches: { branchCount: number; branches: any[]; imbalanceScore: number; insight: string };
+  branches: { branchCount: number; branches: BranchBalance[]; imbalanceScore: number; insight: string };
   repositioning: { count: number; recommendations: Recommendation[]; insight: string };
 };
 
@@ -71,18 +75,18 @@ export default function FleetIntelligence() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    const res = await api.get("/fleet-intelligence/dashboard");
+    setReport(res?.data ?? res);
     setError("");
-    try {
-      const res: any = await api.get("/fleet-intelligence/dashboard");
-      setReport(res?.data ?? res);
-    } catch (e: any) {
-      setError(e?.message || "Failed to load fleet intelligence.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+  })().catch((e: unknown) => {
+    setError(errorMessageOf(e) || "Failed to load fleet intelligence.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -299,7 +303,7 @@ export default function FleetIntelligence() {
 
           {/* Mini bar chart — history + forecast */}
           <div className="flex items-end gap-1 h-28 mb-3">
-            {r.forecast.history.map((m, i) => (
+            {r.forecast.history.map((m) => (
               <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
                 <div
                   className="w-full rounded-t bg-sky-500/60 transition-all"
@@ -391,7 +395,7 @@ export default function FleetIntelligence() {
           </div>
           <p className="text-[11px] text-white/40 mb-4">{r.branches.insight}</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {r.branches.branches.map((b: any) => (
+            {r.branches.branches.map((b) => (
               <div key={b.id} className="rounded-xl border border-white/5 bg-black/20 px-3 py-3">
                 <div className="text-sm font-bold text-white">{b.name}</div>
                 <div className="text-[10px] text-white/40 mb-2">{b.city}</div>

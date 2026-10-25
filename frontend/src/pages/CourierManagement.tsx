@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useDismissOnEscape } from "../components/patterns/useDismissOnEscape";
 import { useNavigate } from "react-router-dom";
 import {
   PackageCheck, Plus, Loader2, Crown, Sparkles, X, Check, Truck, Zap,
   MapPin, ArrowRight, Clock, ChevronRight,
 } from "lucide-react";
 import { cn } from "../lib/utils";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { getEntitlements } from "../api/billingApi";
 import {
   listCourierOrders, getCourierStats, createCourierOrder, updateCourierOrder,
@@ -72,7 +73,7 @@ export default function CourierManagement() {
       const p = await orchestrateCouriers();
       setPlan(p);
       if (!p.assignments.length) showToast(p.summary || "Nothing to orchestrate", "info");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.response?.data?.message || e?.message || "Orchestration failed", "error");
     } finally { setOrchestrating(false); }
   };
@@ -85,14 +86,14 @@ export default function CourierManagement() {
       showToast(`Applied — ${res.applied} order(s) assigned.`, "success");
       setPlan(null);
       await load();
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.response?.data?.message || e?.message || "Could not apply plan", "error");
     } finally { setApplying(false); }
   };
 
   const advance = async (o: CourierOrder, status: CourierOrder["status"]) => {
     try { await updateCourierOrder(o.id, { status }); await load(); }
-    catch (e: any) { showToast(e?.message || "Update failed", "error"); }
+    catch (e) { showToast(e?.message || "Update failed", "error"); }
   };
 
   if (loading) return <div className="min-h-full grid place-items-center"><Loader2 className="h-7 w-7 animate-spin text-white/40" /></div>;
@@ -212,20 +213,21 @@ function QuickBtn({ onClick, label }: { onClick: () => void; label: string }) {
 }
 
 function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  useDismissOnEscape(true, onClose);
   const { showToast } = useToast();
   const [f, setF] = useState({ clientName: "", pickupAddress: "", dropoffAddress: "", priority: "NORMAL" as CourierOrderPriority, contactPhone: "", itemsDesc: "" });
   const [saving, setSaving] = useState(false);
-  const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+  const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
 
   const submit = async () => {
     setSaving(true);
     try { await createCourierOrder(f); showToast("Order created", "success"); onCreated(); }
-    catch (e: any) { showToast(e?.response?.data?.message || e?.message || "Could not create order", "error"); setSaving(false); }
+    catch (e) { showToast(e?.response?.data?.message || e?.message || "Could not create order", "error"); setSaving(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className={glassCard("w-full max-w-lg p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className={glassCard("w-full max-w-lg p-5")} role="dialog">
         <div className="flex items-center gap-2">
           <PackageCheck className="h-5 w-5 text-cyan-300" />
           <h2 className="text-lg font-black">New courier order</h2>
@@ -262,10 +264,11 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
 function PlanModal({ plan, onClose, onApply, applying, orders }: {
   plan: OrchestrationPlan; onClose: () => void; onApply: () => void; applying: boolean; orders: CourierOrder[];
 }) {
+  useDismissOnEscape(true, onClose);
   const refOf = (id: string) => orders.find((o) => o.id === id)?.reference || id.slice(0, 6);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className={glassCard("flex max-h-[85vh] w-full max-w-2xl flex-col p-5")} onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className={glassCard("flex max-h-[85vh] w-full max-w-2xl flex-col p-5")} role="dialog">
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-violet-300" />
           <h2 className="text-lg font-black">AI orchestration plan</h2>

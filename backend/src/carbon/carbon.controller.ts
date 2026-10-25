@@ -2,9 +2,12 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CarbonService } from './carbon.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Carbon & ESG')
 @ApiBearerAuth()
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.VIEWER)
 @Controller('carbon')
 export class CarbonController {
   constructor(private readonly carbon: CarbonService) {}

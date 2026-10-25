@@ -14,7 +14,7 @@ vi.mock("../api/railApi", () => ({
   listRailTimetableImports: h.listRailTimetableImports,
   listRailTimetableRows: h.listRailTimetableRows,
 }));
-vi.mock("../components/ToastProvider", () => ({
+vi.mock("../components/toast-context", () => ({
   useToast: () => ({ showToast: h.showToast }),
 }));
 

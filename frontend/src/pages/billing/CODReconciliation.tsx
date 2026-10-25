@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, CheckCircle2, CreditCard, Loader2, RefreshCw,
@@ -29,13 +29,10 @@ function money(v?: number | null) {
   return `ZAR ${(v ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function unwrap(raw: any): any {
-  const d = raw?.data ?? raw;
-  return d;
-}
-function unwrapList(raw: any): any[] {
-  const d = raw?.data ?? raw;
-  return Array.isArray(d) ? d : [];
+function unwrap<T>(raw: unknown): T { return ((raw as { data?: T } | null)?.data ?? raw) as T; }
+function unwrapList<T>(raw: unknown): T[] {
+  const d = (raw as { data?: unknown } | null)?.data ?? raw;
+  return Array.isArray(d) ? (d as T[]) : [];
 }
 
 // ── Collect modal ─────────────────────────────────────────────────────────
@@ -90,6 +87,10 @@ function CollectModal({ waybill, onClose, onDone }: {
 export default function CODReconciliation() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"outstanding" | "wallets">("outstanding");
+  // "Now" is captured once on mount via the sanctioned lazy initializer
+  // (Date.now() must not be called during render). The ages computed from it
+  // below are day-granular, so mount-time precision is honest.
+  const [now] = useState(() => Date.now());
   const [summary, setSummary] = useState<Summary | null>(null);
   const [outstanding, setOutstanding] = useState<Waybill[]>([]);
   const [wallets, setWallets] = useState<WalletRow[]>([]);
@@ -97,28 +98,20 @@ export default function CODReconciliation() {
   const [collectTarget, setCollectTarget] = useState<Waybill | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [sumRes, outRes, walRes] = await Promise.allSettled([
         api.get("/cod/summary"),
         api.get("/cod/outstanding"),
         api.get("/cod/wallets"),
       ]);
-      if (sumRes.status === "fulfilled")  setSummary(unwrap(sumRes.value));
-      if (outRes.status === "fulfilled")  setOutstanding(unwrapList(outRes.value));
-      if (walRes.status === "fulfilled")  setWallets(unwrapList(walRes.value));
+      if (sumRes.status === "fulfilled")  setSummary(unwrap<Summary>(sumRes.value));
+      if (outRes.status === "fulfilled")  setOutstanding(unwrapList<Waybill>(outRes.value));
+      if (walRes.status === "fulfilled")  setWallets(unwrapList<WalletRow>(walRes.value));
     } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
 
-  const overdueCount = useMemo(
-    () => outstanding.filter((w) => {
-      const d = new Date(w.createdAt);
-      return (Date.now() - d.getTime()) > 86400000 * 2; // >2 days
-    }).length,
-    [outstanding],
-  );
 
   return (
     <div className="space-y-6">
@@ -210,7 +203,7 @@ export default function CODReconciliation() {
                     </td>
                   </tr>
                 ) : outstanding.map((w) => {
-                  const ageMs = Date.now() - new Date(w.createdAt).getTime();
+                  const ageMs = now - new Date(w.createdAt).getTime();
                   const ageDays = Math.floor(ageMs / 86400000);
                   const driver = w.shipments?.[0]?.driver;
                   return (

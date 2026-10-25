@@ -15,7 +15,7 @@ vi.mock("../../api/railTariffApi", () => ({
   listCalculations: h.listCalculations,
 }));
 vi.mock("../../api/railApi", () => ({ listConsignments: h.listConsignments }));
-vi.mock("../../components/ToastProvider", () => ({ useToast: () => ({ showToast: h.showToast }) }));
+vi.mock("../../components/toast-context", () => ({ useToast: () => ({ showToast: h.showToast }) }));
 
 import TariffPanel from "./TariffPanel";
 

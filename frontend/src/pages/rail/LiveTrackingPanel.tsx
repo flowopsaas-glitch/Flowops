@@ -5,8 +5,8 @@ import {
   listRailDevices, listTelemetryAlerts, resolveAlert, rotateDeviceToken,
   type RailAlertKind, type RailDevice, type TelemetryAlert, type TelemetryPoint, type TelemetrySummary,
 } from "../../api/railTelemetryApi";
-import { useToast } from "../../components/ToastProvider";
-import { Banner, Field, Modal, Pill, Section, btnDanger, btnNeutral, btnPrimary, inputCls } from "./railUi";
+import { useToast } from "../../components/toast-context";
+import { Banner, Field, Modal, Pill, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
 import type { Tone } from "../../lib/railSlot";
 import RailTelemetryMap from "./RailTelemetryMap";
 
@@ -53,7 +53,7 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
   const [newLabel, setNewLabel] = useState("");
   const [newWagon, setNewWagon] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => (async () => {
     const [devicesResult, alertsResult] = await Promise.allSettled([
       listRailDevices(),
       listTelemetryAlerts(),
@@ -71,7 +71,18 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
       setAlertsError(errorMessage(alertsResult.reason));
     }
     setLoading(false);
-  }, []);
+  })(), []);
+
+  // When the selection changes, the previous device's detail is stale.
+  // Adjust it during render (React's documented pattern for prop/state
+  // transitions) instead of clearing it synchronously in the fetch effect.
+  const [detailSelection, setDetailSelection] = useState<string | null>(null);
+  if (selected !== detailSelection) {
+    setDetailSelection(selected);
+    setTrail([]);
+    setSummary(null);
+    setDetailError(null);
+  }
 
   useEffect(() => {
     void load();
@@ -80,14 +91,8 @@ export default function LiveTrackingPanel({ canWrite }: { canWrite: boolean }) {
   }, [load]);
 
   useEffect(() => {
-    if (!selected) {
-      setTrail([]);
-      setSummary(null);
-      setDetailError(null);
-      return;
-    }
+    if (!selected) return;
     let alive = true;
-    setDetailError(null);
     const fetchDetail = async () => {
       const [pointsResult, summaryResult] = await Promise.allSettled([
         getDevicePoints(selected, { limit: 200 }),

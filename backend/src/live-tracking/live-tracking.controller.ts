@@ -5,11 +5,19 @@ import { StartTrackingDto, UpdateLocationDto, StopCompletedDto } from './dto/liv
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const LIVE_TRACKING_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH,
+];
+
 
 @ApiTags('Live Tracking')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('liveTracking')
+@Roles(...LIVE_TRACKING_ROLES)
 @Controller('live-tracking')
 export class LiveTrackingController {
   constructor(private readonly svc: LiveTrackingService) {}

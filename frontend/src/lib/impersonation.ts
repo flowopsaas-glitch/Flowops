@@ -10,6 +10,7 @@ import {
   getLoginMode,
   setAccessToken,
   setLoginMode,
+  type LoginMode,
 } from "./session";
 
 const BACKUP_KEY = "flowops.impersonation";
@@ -67,6 +68,6 @@ export function exitImpersonation() {
   }
   if (backup) {
     setAccessToken(backup.ownerToken);
-    setLoginMode((backup.ownerMode as any) || "owner");
+    setLoginMode(((backup.ownerMode || "owner") as LoginMode));
   }
 }

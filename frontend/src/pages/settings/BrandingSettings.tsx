@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Check, Image as ImageIcon, Loader2, Palette, RefreshCw, Upload, Trash2 } from "lucide-react";
 import {
   updateMyCompanyBranding,
   type UpdateMyCompanyBrandingPayload,
 } from "../../api/companiesApi";
-import { useToast } from "../../components/ToastProvider";
-import { useTenant } from "../../contexts/TenantContext";
+import { useToast } from "../../components/toast-context";
+import { useTenant } from "../../contexts/tenant-context";
 
 type FormState = {
   brandName: string;
@@ -65,10 +65,13 @@ export default function BrandingSettings() {
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Reset form when the tenant record loads / changes.
-  useEffect(() => {
+  // Reset the form when the tenant record loads / changes — adjusted
+  // during render when a different record arrives, not in an effect.
+  const [formTenant, setFormTenant] = useState(tenant);
+  if (tenant !== formTenant) {
+    setFormTenant(tenant);
     setForm(buildInitialForm(tenant));
-  }, [tenant?.id, tenant?.brandName, tenant?.logoUrl, tenant?.primaryColor, tenant?.secondaryColor, tenant?.invoiceHeaderColor, tenant?.portalSubdomain]);
+  }
 
   const isDirty = useMemo(() => Object.keys(diff(form, tenant)).length > 0, [form, tenant]);
 

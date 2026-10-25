@@ -5,15 +5,23 @@ import { WarehouseAnalyticsService } from './warehouse-analytics.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 const WMS_STRUCTURE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER] as const;
 
 const WMS_OPERATION_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE, UserRole.DISPATCH,
 ] as const;
+const WAREHOUSE_READ_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.WAREHOUSE, UserRole.DISPATCH,
+];
+
 
 @ApiTags('Warehouse Management')
 @ApiBearerAuth()
+@RequireFeature('warehouseManagement')
+@Roles(...WAREHOUSE_READ_ROLES)
 @Controller('wms')
 export class WarehouseController {
   constructor(
@@ -185,10 +193,10 @@ export class WarehouseController {
     return this.wms.createWave(u.companyId, dto?.warehouseId, dto);
   }
 
-  // ── AI Slotting Optimization ──────────────────────────────────────────────
+  // ── Slotting analysis (rule-based ABC, not machine learning) ─────────────
 
   @Get('slotting/:warehouseId')
-  @ApiOperation({ summary: 'AI slotting analysis — velocity-based ABC classification + relocation recommendations' })
+  @ApiOperation({ summary: 'Slotting analysis — rule-based velocity (ABC) classification + relocation recommendations' })
   getSlotting(@CurrentUser() u: any, @Param('warehouseId') warehouseId: string) {
     return this.wms.aiSlottingOptimization(u.companyId, warehouseId);
   }

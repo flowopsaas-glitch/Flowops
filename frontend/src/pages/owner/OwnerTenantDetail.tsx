@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import {useCallback,  useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Area,
@@ -23,12 +24,15 @@ type TenantAnalytics = {
   };
   usage: { users: number; waybillsTotal: number; waybills30: number; collections: number; drivers: number; invoices: number };
   revenue: { mrr: number; collectedTotal: number; collected30: number };
-  operations: { delivered: number; failed: number; returned: number; deliverySuccess: number; exceptionRate: number; onTimeRate: number };
+  operations: { delivered: number; failed: number; returned: number; deliverySuccess: number; exceptionRate: number; onTimeRate: number | null; onTimeObservations?: number };
   trend: Array<{ month: string; waybills: number }>;
   recentWaybills: Array<{ id: string; trackingNumber: string; status: string; createdAt: string }>;
-  auditTrail: Array<{ id: string; action: string; actorEmail?: string | null; createdAt: string; metadata?: any }>;
+  auditTrail: Array<{ id: string; action: string; actorEmail?: string | null; createdAt: string; metadata?: unknown }>;
   health: { score: number; risk: string };
 };
+
+type OwnerPlanOption = { id: string; name: string; price: number; currency?: string; interval?: string | null };
+type FeatureCatalogEntry = { key: string; label: string; includedIn: { starter: boolean; professional: boolean; enterprise: boolean } };
 
 function money(v: number | null | undefined, c = "ZAR") {
   if (v == null || !Number.isFinite(Number(v))) return "—";
@@ -60,8 +64,8 @@ export default function OwnerTenantDetail() {
   const [showPlan, setShowPlan] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newPlan, setNewPlan] = useState("professional");
-  const [plans, setPlans] = useState<Array<{ id: string; name: string; price: number; currency?: string; interval?: string | null }>>([]);
-  const [catalog, setCatalog] = useState<Array<{ key: string; label: string; includedIn: { starter: boolean; professional: boolean; enterprise: boolean } }>>([]);
+  const [plans, setPlans] = useState<OwnerPlanOption[]>([]);
+  const [catalog, setCatalog] = useState<FeatureCatalogEntry[]>([]);
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [customPrice, setCustomPrice] = useState<string>(""); // blank = use plan price
   const [newUser, setNewUser] = useState({ name: "", email: "", password: "" });
@@ -76,31 +80,29 @@ export default function OwnerTenantDetail() {
     setShowPlan((v) => !v);
   }
 
-  async function load() {
+  const load = useCallback(() => (async () => {
     if (!id) return;
-    setLoading(true);
-    setError("");
     try {
-      const res: any = await api.get(`/owner/tenants/${id}/analytics`);
+      const res = await api.get(`/owner/tenants/${id}/analytics`);
       setD((res?.data ?? res) as TenantAnalytics);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load tenant analytics.");
+    } catch (err) {
+      setError(errorMessageOf(err) || "Failed to load tenant analytics.");
     } finally {
       setLoading(false);
     }
-  }
+  })(), [id]);
 
   useEffect(() => {
     void load();
-  }, [id]);
+  }, [load]);
 
   // Plan price book (single source of truth = GET /owner/plans → plan-entitlements).
   useEffect(() => {
     api.get("/owner/plans")
-      .then((r: any) => setPlans((r?.data ?? r) as any[]))
+      .then((r) => setPlans((r?.data ?? r) as OwnerPlanOption[]))
       .catch(() => setPlans([]));
     api.get("/owner/feature-catalog")
-      .then((r: any) => setCatalog((r?.data ?? r) as any[]))
+      .then((r) => setCatalog((r?.data ?? r) as FeatureCatalogEntry[]))
       .catch(() => setCatalog([]));
   }, []);
 
@@ -113,17 +115,17 @@ export default function OwnerTenantDetail() {
     return p?.name ?? (planId ? planId[0].toUpperCase() + planId.slice(1) : "—");
   };
 
-  async function doAction(key: string, fn: () => Promise<void>, msg: string) {
+  async function doAction(key: string, fn: () => Promise<unknown>, msg: string) {
     setBusy(key); setError(""); setSuccess("");
     try { await fn(); setSuccess(msg); void load(); }
-    catch (err: any) { setError(err?.message || "Action failed."); }
+    catch (err) { setError(errorMessageOf(err) || "Action failed."); }
     finally { setBusy(""); }
   }
 
   async function viewAs() {
     if (!d) return;
     doAction("view", async () => {
-      const res: any = await api.post(`/owner/impersonate/${d.tenant.id}`, {});
+      const res = await api.post(`/owner/impersonate/${d.tenant.id}`, {});
       const token = (res?.data ?? res)?.access_token;
       if (!token) throw new Error("No impersonation token");
       startImpersonation(token, d.tenant.name);
@@ -133,12 +135,12 @@ export default function OwnerTenantDetail() {
 
   function activateTenant() {
     if (!d) return;
-    doAction("activate", () => api.post(`/owner/tenants/${d.tenant.id}/activate`, {}) as any, `${d.tenant.name} activated.`);
+    doAction("activate", () => api.post(`/owner/tenants/${d.tenant.id}/activate`, {}), `${d.tenant.name} activated.`);
   }
 
   function suspendTenant() {
     if (!d) return;
-    doAction("suspend", () => api.patch(`/owner/tenants/${d.tenant.id}/action`, { action: "suspend" }) as any, `${d.tenant.name} suspended.`);
+    doAction("suspend", () => api.patch(`/owner/tenants/${d.tenant.id}/action`, { action: "suspend" }), `${d.tenant.name} suspended.`);
   }
 
   function saveSubscription() {
@@ -181,7 +183,7 @@ export default function OwnerTenantDetail() {
     setBusy("delete"); setError(""); setSuccess("");
     api.delete(`/owner/tenants/${d.tenant.id}`)
       .then(() => navigate("/owner/tenants"))
-      .catch((err: any) => { setError(err?.message || "Delete failed."); setBusy(""); });
+      .catch((err: unknown) => { setError(errorMessageOf(err) || "Delete failed."); setBusy(""); });
   }
 
   const cur = d?.currency || "ZAR";
@@ -295,8 +297,8 @@ export default function OwnerTenantDetail() {
 
                     {/* Plan tier */}
                     <div className="flex flex-wrap items-center gap-3">
-                      <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Plan tier</label>
-                      <select value={newPlan} onChange={(e) => setNewPlan(e.target.value)}
+                      <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-plan-tier-2">Plan tier</label>
+                      <select id="field-plan-tier-2" value={newPlan} onChange={(e) => setNewPlan(e.target.value)}
                         className="rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400">
                         <option value="starter">Starter (Free)</option>
                         <option value="professional">Professional</option>
@@ -338,8 +340,8 @@ export default function OwnerTenantDetail() {
                     {/* Custom price + effective cost */}
                     <div className="flex flex-wrap items-end gap-4">
                       <div>
-                        <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Custom price (ZAR/mo)</label>
-                        <input type="number" min={0} value={customPrice} onChange={(e) => setCustomPrice(e.target.value)}
+                        <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-custom-price-zar-mo-1">Custom price (ZAR/mo)</label>
+                        <input id="field-custom-price-zar-mo-1" type="number" min={0} value={customPrice} onChange={(e) => setCustomPrice(e.target.value)}
                           placeholder={`${planList} (plan price)`}
                           className="mt-1 w-44 rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400" />
                         <div className="mt-1 text-[10px] text-white/35">Blank = bill at the {planLabel(newPlan)} list price.</div>
@@ -369,7 +371,7 @@ export default function OwnerTenantDetail() {
                   {[{ key: "name", label: "Name", ph: "Jane Smith" }, { key: "email", label: "Email *", ph: "jane@tenant.com" }, { key: "password", label: "Password *", ph: "••••••••" }].map(({ key, label, ph }) => (
                     <div key={key}>
                       <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">{label}</label>
-                      <input type={key === "password" ? "password" : "text"} value={(newUser as any)[key]}
+                      <input type={key === "password" ? "password" : "text"} value={newUser[key as keyof typeof newUser]}
                         onChange={(e) => setNewUser((u) => ({ ...u, [key]: e.target.value }))}
                         placeholder={ph} className="mt-1 w-full rounded-xl border border-white/10 bg-[#071224] px-3 py-2 text-sm text-white outline-none focus:border-blue-400" />
                     </div>
@@ -425,7 +427,7 @@ export default function OwnerTenantDetail() {
               <div className="text-xl font-black text-white">Delivery Performance</div>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <Stat label="Delivery Success" value={`${num(d.operations.deliverySuccess, 1)}%`} />
-                <Stat label="On-Time" value={`${num(d.operations.onTimeRate, 1)}%`} />
+                <Stat label="On-Time (by est. delivery)" value={d.operations.onTimeRate == null ? "Unavailable" : `${num(d.operations.onTimeRate, 1)}%`} sub={d.operations.onTimeRate == null ? "No delivered shipments with an estimated delivery" : `${d.operations.onTimeObservations ?? 0} shipments with estimates`} />
                 <Stat label="Exception Rate" value={`${num(d.operations.exceptionRate, 1)}%`} />
                 <Stat label="SLA Breach" value={`${num(d.tenant.slaBreachMinutes)}m`} sub="threshold" />
                 <Stat label="Delivered" value={num(d.operations.delivered)} />

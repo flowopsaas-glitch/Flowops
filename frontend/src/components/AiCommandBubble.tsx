@@ -5,11 +5,11 @@ const AiCommandBubble = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [command, setCommand] = useState('');
   const [loading, setLoading] = useState(false);
-  const [response, setResponse] = useState<any>(null);
+  const [response, setResponse] = useState<{ response?: string; insight?: { insight?: string }; drivers?: unknown[]; availableCount?: number } | null>(null);
 
   const handleSendInstruction = async () => {
     if (!command.trim()) return;
-    
+
     setLoading(true);
     setResponse(null);
 
@@ -27,7 +27,7 @@ const AiCommandBubble = () => {
       const data = await res.json();
       setResponse(data);
       setCommand('');
-    } catch (error) {
+    } catch {
       setResponse({ response: "System offline. Unable to reach AI controller." });
     } finally {
       setLoading(false);
@@ -59,7 +59,7 @@ const AiCommandBubble = () => {
                     Found {response.availableCount} drivers available.
                   </div>
                 )}
-                <button 
+                <button
                   onClick={() => setResponse(null)}
                   className="text-xs text-blue-500 hover:underline"
                 >
@@ -74,7 +74,7 @@ const AiCommandBubble = () => {
           </div>
 
           <div className="p-3 border-t bg-gray-50 flex gap-2">
-            <input 
+            <input
               type="text"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
@@ -82,7 +82,7 @@ const AiCommandBubble = () => {
               placeholder="Instruct AI..."
               className="flex-1 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <button 
+            <button
               onClick={handleSendInstruction}
               disabled={loading}
               className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors disabled:bg-gray-300"

@@ -4,9 +4,17 @@ import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const AI_OPS_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH,
+];
+
 
 @UseGuards(FeatureGuard)
 @RequireFeature('aiControlTower')
+@Roles(...AI_OPS_ROLES)
 @Controller('ai-ops')
 export class AiOpsController {
   constructor(

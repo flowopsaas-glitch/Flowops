@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useDismissOnEscape } from "../components/patterns/useDismissOnEscape";
 import {
   Truck, Plus, Search, Edit2, Power, Shield, TrendingUp, Phone,
   User, Hash, Save, X, CheckCircle2, XCircle, MapPin, Clock, Star,
@@ -49,24 +50,13 @@ export default function DriversManagement() {
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  useDismissOnEscape(showForm, () => setShowForm(false));
   const [form, setForm] = useState<FormData>({ name: "", phone: "", email: "", vehicleType: "VAN", vehicleReg: "", pin: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [aiInsight, setAiInsight] = useState<string | null>(null);
 
-  useEffect(() => { void loadDrivers(); }, []);
-
-  async function loadDrivers() {
-    setLoading(true);
-    try {
-      const res = await api.get("/drivers");
-      const data = Array.isArray(res) ? res : (res as any)?.data ?? [];
-      setDrivers(data);
-      generateAiInsight(data);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
-  }
 
   function generateAiInsight(data: Driver[]) {
     const active = data.filter(d => d.isActive !== false);
@@ -79,6 +69,21 @@ export default function DriversManagement() {
     if (active.length >= 3 && offline.length === 0) insights.push("All drivers active and checked in — fleet is healthy");
     setAiInsight(insights.length > 0 ? insights.join(". ") + "." : null);
   }
+
+
+  const loadDrivers = useCallback(() => (async () => {
+    const res = await api.get("/drivers");
+    const data: Driver[] = Array.isArray(res) ? (res as Driver[]) : (((res as { data?: Driver[] } | null)?.data ?? []) as Driver[]);
+    setDrivers(data);
+    generateAiInsight(data);
+
+  })().catch(() => {
+ /* silent */
+  }).finally(() => {
+ setLoading(false);
+  }), []);
+
+  useEffect(() => { void loadDrivers(); }, [loadDrivers]);
 
   function openCreate() {
     setForm({ name: "", phone: "", email: "", vehicleType: "VAN", vehicleReg: "", pin: "" });
@@ -105,7 +110,7 @@ export default function DriversManagement() {
     if (!form.name.trim()) { setError("Driver name is required"); return; }
     setSaving(true); setError("");
     try {
-      const payload: any = {
+      const payload: Record<string, string | undefined> = {
         name: form.name.trim(),
         phone: form.phone.trim() || undefined,
         email: form.email.trim() || undefined,
@@ -127,7 +132,7 @@ export default function DriversManagement() {
       }
       setShowForm(false);
       void loadDrivers();
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to save driver");
     } finally { setSaving(false); }
   }
@@ -279,8 +284,8 @@ export default function DriversManagement() {
 
       {/* Create/Edit Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#0b1628] p-6 space-y-5 shadow-2xl" onClick={e => e.stopPropagation()} role="dialog">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => setShowForm(false)} />
+          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#0b1628] p-6 space-y-5 shadow-2xl" role="dialog">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-black text-white">{editingId ? "Edit Driver" : "Add New Driver"}</h2>
               <button onClick={() => setShowForm(false)} className="p-2 rounded-xl border border-white/10 hover:bg-white/10"><X className="h-4 w-4 text-white/60" /></button>

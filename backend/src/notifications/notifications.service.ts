@@ -100,9 +100,9 @@ export class NotificationsService {
 
   // ── Internal: broadcast a notification to a whole company ────────────
 
-  async broadcast(companyId: string, title: string, body: string, type = 'info') {
+  async broadcast(companyId: string, title: string, body: string, type = 'info', link?: string) {
     return this.prisma.notification.create({
-      data: { title, body, type, companyId },
+      data: { title, body, type, companyId, link: link ?? null },
     });
   }
 
@@ -341,7 +341,7 @@ export class NotificationsService {
           type: 'ETA_ALERT',
         },
       });
-    } catch {}
+    } catch (e) { this.logger.warn(`notification side-effect failed: ${(e as Error)?.message}`); }
 
     // Customer email
     if (waybill.recipientEmail) {
@@ -477,7 +477,7 @@ export class NotificationsService {
           type: 'RATING_REQUEST',
         },
       });
-    } catch {}
+    } catch (e) { this.logger.warn(`notification side-effect failed: ${(e as Error)?.message}`); }
   }
 
   // ── Driver Dispatched notification (WhatsApp + email) ───────────────
@@ -510,7 +510,7 @@ export class NotificationsService {
           type: 'DISPATCH',
         },
       });
-    } catch {}
+    } catch (e) { this.logger.warn(`notification side-effect failed: ${(e as Error)?.message}`); }
 
     // WhatsApp auto-send to recipient
     if (waybill.recipientPhone) {
@@ -664,7 +664,7 @@ export class NotificationsService {
           type: 'COLLECTION_SCHEDULED',
         },
       });
-    } catch {}
+    } catch (e) { this.logger.warn(`notification side-effect failed: ${(e as Error)?.message}`); }
   }
 
   // ── Returns (RMA) status notifications ───────────────────────────────

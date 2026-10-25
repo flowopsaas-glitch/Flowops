@@ -1,7 +1,8 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
-import { FileSignature, Camera, CheckCircle2, AlertTriangle, Loader2, MapPin, Clock, Eye, Shield } from 'lucide-react';
+import { FileSignature, Camera, AlertTriangle, Loader2, MapPin, Clock, Eye, Shield } from 'lucide-react';
 import { listEpods, getEpodStats, verifyEpod, disputeEpod, type ElectronicPod as EPod, type EpodStats } from '../api/epodApi';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
 
 export default function ElectronicPod() {
   const { showToast } = useToast();
@@ -11,33 +12,33 @@ export default function ElectronicPod() {
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<EPod | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: Record<string, string> = {};
-      if (filter) params.status = filter;
-      const [podsData, statsData] = await Promise.all([listEpods(params), getEpodStats()]);
-      setPods(podsData);
-      setStats(statsData);
-    } catch (e: any) {
-      showToast(e.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, showToast]);
+  const load = useCallback(() => (async () => {
+    const params: Record<string, string> = {};
+    if (filter) params.status = filter;
+    const [podsData, statsData] = await Promise.all([listEpods(params), getEpodStats()]);
+    setPods(podsData);
+    setStats(statsData);
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e), 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [filter, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleVerify = async (id: string) => {
     try { await verifyEpod(id); showToast('ePOD verified', 'success'); load(); setSelected(null); }
-    catch (e: any) { showToast(e.message, 'error'); }
+    catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleDispute = async (id: string) => {
     const reason = prompt('Dispute reason:');
     if (!reason) return;
     try { await disputeEpod(id, reason); showToast('ePOD disputed', 'success'); load(); setSelected(null); }
-    catch (e: any) { showToast(e.message, 'error'); }
+    catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const statusStyle = (s: string) => {
@@ -96,7 +97,7 @@ export default function ElectronicPod() {
             </div>
           ) : (
             pods.map(pod => (
-              <div key={pod.id} onClick={() => setSelected(pod)} className={`rounded-2xl border ${selected?.id === pod.id ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-white/10 bg-white/[0.03]'} p-4 cursor-pointer hover:border-white/20 transition`}>
+              <div key={pod.id} onClick={() => setSelected(pod)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => setSelected(pod))(); } }} role="button" tabIndex={0} className={`rounded-2xl border ${selected?.id === pod.id ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-white/10 bg-white/[0.03]'} p-4 cursor-pointer hover:border-white/20 transition`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">

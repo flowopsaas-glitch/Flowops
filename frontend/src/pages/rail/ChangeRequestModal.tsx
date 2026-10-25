@@ -8,7 +8,7 @@ import {
   ATTRIBUTION_LABEL, CODE_PARTY_LABEL, COMMERCIAL_WINDOW_LABEL, CONSEQUENCE_LABEL, INITIATOR_LABEL, KIND_LABEL, NOTICE_BAND_LABEL,
   attributionTone, buildChangeBody, consequenceTone, initialChangeForm, isChangeFormReady, type ChangeContext, type ChangeFormState,
 } from "../../lib/railChange";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import { Banner, Field, Modal, Pill, btnNeutral, btnPrimary, inputCls } from "./railUi";
 
 const PARTY_ORDER: CodeParty[] = ["RAIL_OPERATIONS", "INFRASTRUCTURE_MANAGER", "FORCE_MAJEURE", "ALLOCATION_REQUIRED"];
@@ -36,22 +36,19 @@ export default function ChangeRequestModal({
   const [codesError, setCodesError] = useState<string | null>(null);
   const [codeFilter, setCodeFilter] = useState("");
   const [form, setForm] = useState<ChangeFormState>(() => initialChangeForm(context));
-  const [preview, setPreview] = useState<ChangePreview | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewState, setPreviewState] = useState<{ key: string; preview: ChangePreview | null; error: string | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const set = (patch: Partial<ChangeFormState>) => setForm((f) => ({ ...f, ...patch }));
 
-  const loadReference = async () => {
-    setCodesError(null);
-    try {
-      const [c, w] = await Promise.all([getCancellationCodes(), getChangeWindows().catch(() => null)]);
-      setCodes(c); setWindows(w);
-    } catch (e) {
-      setCodesError((e as Error)?.message ?? "Could not load the Annexure 20b reasons.");
-    }
-  };
+  const loadReference = () => (async () => {
+    const [c, w] = await Promise.all([getCancellationCodes(), getChangeWindows().catch(() => null)]);
+    setCodes(c); setWindows(w);
+
+  })().catch((e) => {
+    setCodesError((e as Error)?.message ?? "Could not load the Annexure 20b reasons.");
+
+  });
   useEffect(() => { void loadReference(); }, []);
 
   // The body for preview and create is the same object.
@@ -59,18 +56,22 @@ export default function ChangeRequestModal({
   const bodyKey = JSON.stringify(body);
   const ready = isChangeFormReady(form);
 
+  // The preview is keyed by the exact request body it was computed for:
+  // while the form differs from the keyed body (debounce/fetch in flight) the
+  // preview reads as "previewing" and no stale consequence is shown.
+  const preview = ready && previewState?.key === bodyKey ? previewState.preview : null;
+  const previewError = ready && previewState?.key === bodyKey ? previewState.error : null;
+  const previewing = ready && previewState?.key !== bodyKey;
+
   useEffect(() => {
-    if (!ready) { setPreview(null); setPreviewError(null); setPreviewing(false); return undefined; }
+    if (!ready) return undefined;
     let stale = false;
-    setPreviewing(true);
     const timer = setTimeout(async () => {
       try {
         const p = await previewChange(JSON.parse(bodyKey));
-        if (!stale) { setPreview(p); setPreviewError(null); }
+        if (!stale) setPreviewState({ key: bodyKey, preview: p, error: null });
       } catch (e) {
-        if (!stale) { setPreview(null); setPreviewError((e as Error)?.message ?? "The consequence could not be worked out."); }
-      } finally {
-        if (!stale) setPreviewing(false);
+        if (!stale) setPreviewState({ key: bodyKey, preview: null, error: (e as Error)?.message ?? "The consequence could not be worked out." });
       }
     }, PREVIEW_DEBOUNCE_MS);
     return () => { stale = true; clearTimeout(timer); };

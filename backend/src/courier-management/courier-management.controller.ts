@@ -7,6 +7,7 @@ import { ApplyPlanDto, CreateCourierOrderDto, UpdateCourierOrderDto } from './dt
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 /**
  * Courier Management Suite — client orders + AI delivery orchestration.
@@ -16,6 +17,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
+@RequireFeature('courierManagement')
 @Controller('couriers')
 export class CourierManagementController {
   constructor(private readonly svc: CourierManagementService) {}

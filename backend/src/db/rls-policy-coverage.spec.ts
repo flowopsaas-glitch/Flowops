@@ -35,9 +35,17 @@ function tenantTables(): Set<string> {
 }
 
 function rlsMigrationSql(): string {
+  // The RLS migration defines the helpers and the bulk of the policies.
+  // Tenant tables created AFTER it carry their policy in their own creating
+  // migration (so fresh-database replay creates the table before its
+  // policy), so coverage is judged over the union of every migration.
   const dirs = readdirSync(MIGRATION_DIR).filter((d) => d.includes('rls_tenant_isolation'));
   expect(dirs.length).toBe(1);
-  return readFileSync(join(MIGRATION_DIR, dirs[0], 'migration.sql'), 'utf8');
+  const all = readdirSync(MIGRATION_DIR)
+    .filter((d) => existsSync(join(MIGRATION_DIR, d, 'migration.sql')))
+    .sort()
+    .map((d) => readFileSync(join(MIGRATION_DIR, d, 'migration.sql'), 'utf8'));
+  return all.join('\n');
 }
 
 /** TS mirror of SQL `app_tenant_guard("companyId")` — the policy's meaning, executable. */

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowRight, CheckCircle2, ChevronRight, Clock, FileText,
-  Mail, MessageCircle, Package, Plus, RefreshCw, Scale,
-  Send, TrendingUp, Users, XCircle, Zap,
+  ArrowRight, CheckCircle2,
+  Mail, MessageCircle, Package, Plus, RefreshCw, Scale, Users, XCircle,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -27,10 +26,11 @@ type Thread = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function unwrapList(r: any): any[] {
-  const d = r?.data ?? r;
-  if (Array.isArray(d)) return d;
-  return Array.isArray(d?.data) ? d.data : [];
+function unwrapList<T>(r: unknown): T[] {
+  const d = (r as { data?: unknown } | null)?.data ?? r;
+  if (Array.isArray(d)) return d as T[];
+  const inner = (d as { data?: unknown } | null)?.data;
+  return Array.isArray(inner) ? (inner as T[]) : [];
 }
 
 function relTime(ts?: string | null): string {
@@ -74,19 +74,18 @@ export default function CustomerServiceHub() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [threads,     setThreads]     = useState<Thread[]>([]);
   const [loading,     setLoading]     = useState(true);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [, setLastRefresh] = useState(new Date());
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [qRes, cRes, tRes] = await Promise.allSettled([
         api.get("/quotes"),
         api.get("/collections"),
         api.get("/whatsapp/threads"),
       ]);
-      if (qRes.status === "fulfilled") setQuotes(unwrapList(qRes.value).slice(0, 8));
-      if (cRes.status === "fulfilled") setCollections(unwrapList(cRes.value));
-      if (tRes.status === "fulfilled") setThreads(unwrapList(tRes.value).slice(0, 5));
+      if (qRes.status === "fulfilled") setQuotes(unwrapList<Quote>(qRes.value).slice(0, 8));
+      if (cRes.status === "fulfilled") setCollections(unwrapList<Collection>(cRes.value));
+      if (tRes.status === "fulfilled") setThreads(unwrapList<Thread>(tRes.value).slice(0, 5));
       setLastRefresh(new Date());
     } finally { setLoading(false); }
   }, []);
@@ -200,7 +199,7 @@ export default function CustomerServiceHub() {
                 </div>
               ) : (
                 quotes.slice(0, 5).map(q => (
-                  <div key={q.id} onClick={() => navigate("/quotes")}
+                  <div key={q.id} onClick={() => navigate("/quotes")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => navigate("/quotes"))(); } }} role="button" tabIndex={0}
                     className="flex items-center justify-between rounded-2xl border border-white/6 bg-black/25 px-4 py-3 cursor-pointer hover:border-white/15 hover:bg-white/5 transition">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`h-2 w-2 rounded-full flex-shrink-0 ${q.accepted ? "bg-emerald-400" : isExpired(q.expiresAt) ? "bg-rose-400" : "bg-amber-400"}`} />
@@ -254,7 +253,7 @@ export default function CustomerServiceHub() {
                   <div className="text-center py-4 text-white/20 text-xs">No conversations yet</div>
                 ) : (
                   threads.map(t => (
-                    <div key={t.id} onClick={() => navigate("/whatsapp")}
+                    <div key={t.id} onClick={() => navigate("/whatsapp")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => navigate("/whatsapp"))(); } }} role="button" tabIndex={0}
                       className="flex items-center gap-3 rounded-2xl border border-white/6 bg-black/25 px-4 py-3 cursor-pointer hover:border-green-500/20 hover:bg-green-500/4 transition">
                       <div className="grid h-8 w-8 place-items-center rounded-full bg-green-500/20 text-sm font-black text-green-300 flex-shrink-0">
                         {(t.name || t.phone || "?").charAt(0).toUpperCase()}
@@ -293,7 +292,7 @@ export default function CustomerServiceHub() {
               </div>
               <div className="space-y-2">
                 {collections.filter(c => c.status === "PENDING").slice(0, 4).map(c => (
-                  <div key={c.id} onClick={() => navigate("/collections")}
+                  <div key={c.id} onClick={() => navigate("/collections")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => navigate("/collections"))(); } }} role="button" tabIndex={0}
                     className="flex items-center justify-between rounded-2xl border border-amber-500/15 bg-black/25 px-4 py-3 cursor-pointer hover:border-amber-500/30 hover:bg-amber-500/5 transition">
                     <div>
                       <div className="text-sm font-bold text-white">{c.clientName || "Unknown Client"}</div>

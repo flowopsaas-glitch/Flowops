@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
+import { useDismissOnEscape } from "./patterns/useDismissOnEscape";
 import { X, Send, Bot, Sparkles } from "lucide-react";
 import type { ShipmentLike, AiInsight } from "../utils/aiHeuristics";
 import { insightsFromShipments } from "../utils/aiHeuristics";
@@ -43,11 +44,12 @@ function severityPill(sev: "LOW" | "MEDIUM" | "HIGH") {
 }
 
 export default function AiCopilotPanel({ open, onClose, shipmentsForSignals = [] }: Props) {
+  useDismissOnEscape(open, onClose);
   const [mode, setMode] = useState<"FREE" | "LOCAL_LLM">("FREE");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  
+
   const [chat, setChat] = useState<ChatMsg[]>([
     {
       role: "assistant",
@@ -109,11 +111,11 @@ export default function AiCopilotPanel({ open, onClose, shipmentsForSignals = []
   return (
     <div className="fixed inset-0 z-[100] flex justify-end">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" ><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} /></div>
+
       {/* Panel */}
-      <div className="relative h-full w-full sm:w-[500px] bg-white shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-300">
-        
+      <div className="relative h-full w-full sm:w-[500px] bg-white shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-300" role="dialog" aria-modal="true" aria-label="AI copilot">
+
         {/* Header */}
         <div className="h-16 border-b border-slate-100 px-6 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-3">
@@ -135,11 +137,11 @@ export default function AiCopilotPanel({ open, onClose, shipmentsForSignals = []
           <div className="flex items-center justify-between mb-4">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Processing Mode</span>
             <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <button 
+              <button
                 onClick={() => setMode("FREE")}
                 className={`px-3 py-1 text-[10px] font-bold rounded-lg transition-all ${mode === "FREE" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
               >FREE</button>
-              <button 
+              <button
                 onClick={() => setMode("LOCAL_LLM")}
                 className={`px-3 py-1 text-[10px] font-bold rounded-lg transition-all ${mode === "LOCAL_LLM" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
               >LOCAL LLM</button>
@@ -193,7 +195,7 @@ export default function AiCopilotPanel({ open, onClose, shipmentsForSignals = []
               placeholder="How do I clear the backlog?"
               className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-4 pr-12 text-sm outline-none focus:ring-2 ring-slate-900/5 transition-all"
             />
-            <button 
+            <button
               onClick={send}
               disabled={busy || !input.trim()}
               className="absolute right-2 top-2 h-8 w-8 bg-slate-900 text-white rounded-xl flex items-center justify-center hover:bg-slate-800 disabled:bg-slate-200 transition-colors"

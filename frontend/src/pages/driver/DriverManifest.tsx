@@ -1,23 +1,39 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { formatMoney } from "../../lib/currency";
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { ChevronLeft, Package, CheckCircle, Square, PenTool, X, ScanLine, Camera } from 'lucide-react';
-import { useToast } from "../../components/ToastProvider"; 
+import { useToast } from "../../components/toast-context";
 import SignatureCanvas from 'react-signature-canvas';
 import BarcodeScanner from '../../components/BarcodeScanner';
 import { queuePod, registerPodAutoSync } from '../../lib/offlinePod';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import '../../i18n';
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
+
+type ManifestJob = {
+  quantity?: number;
+  trackingNumber?: string;
+  waybillNumber?: string;
+  codAmount?: number | string;
+  codCollected?: boolean;
+  recipientLat?: number | string;
+  recipientLng?: number | string;
+  recipientAddress?: string;
+  recipientName?: string;
+  recipientPhone?: string;
+  shipments?: { driverId?: string | number; driver?: { id?: string | number } | null }[];
+};
 
 export default function DriverManifest() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation('driver');
-  const [job, setJob] = useState<any>(null);
+  const [job, setJob] = useState<ManifestJob | null>(null);
   const [confirmed, setConfirmed] = useState<number[]>([]);
   const [showSig, setShowSig] = useState(false);
-  const sigPad = useRef<any>(null);
+  const sigPad = useRef<SignatureCanvas | null>(null);
   const { showToast } = useToast();
 
   // ── New POD capture state ────────────────────────────────────────────────
@@ -36,13 +52,13 @@ export default function DriverManifest() {
   useEffect(() => {
     if (id) {
       api.get(`/waybills/${id}`)
-        .then((res: any) => setJob(res?.data ?? res))
+        .then((res) => setJob(res?.data ?? res))
         .catch(() => {
           showToast(t('waybill_not_found'), "error");
           navigate('/driver/portal');
         });
     }
-  }, [id, navigate, showToast]);
+  }, [id, navigate, showToast, t]);
 
   // ── Hooks must all be declared before the early return ─────────────────
   /**
@@ -54,7 +70,7 @@ export default function DriverManifest() {
    */
   const triggerGeofence = useCallback(async () => {
     try {
-      const shipments = (job as any)?.shipments as any[] | undefined;
+      const shipments = job?.shipments;
       const driverId  = shipments?.[0]?.driverId ?? shipments?.[0]?.driver?.id;
       if (!driverId) return;
 
@@ -161,7 +177,7 @@ export default function DriverManifest() {
       await api.post(`/waybills/${id}/deliver`, formData);
       showToast(t('delivery_confirmed'), "success");
       navigate('/driver/portal');
-    } catch (err) {
+    } catch {
       // Network/other failure → queue offline instead of losing the POD.
       queuePod({
         waybillId: String(id),
@@ -178,7 +194,7 @@ export default function DriverManifest() {
 
   return (
     <div className="driver-portal-scope min-h-screen bg-[#020817] text-white p-6 pb-32 text-left font-sans">
-      <button onClick={() => navigate('/driver/portal')} 
+      <button onClick={() => navigate('/driver/portal')}
         className="mb-8 text-sky-500 font-black text-[10px] uppercase flex items-center gap-2"
       >
         <ChevronLeft size={16}/> {t('return_to_portal')}
@@ -201,7 +217,7 @@ export default function DriverManifest() {
           <div>
             <div className="text-xs font-black uppercase tracking-widest text-amber-300">Cash on Delivery</div>
             <div className="text-xl font-black text-white mt-0.5">
-              R {Number(job.codAmount).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+              {formatMoney(Number(job.codAmount) || 0, tenantCurrency())}
             </div>
             <div className="text-[10px] text-amber-200/50">Collect from recipient before handover</div>
           </div>
@@ -252,14 +268,14 @@ export default function DriverManifest() {
       {/* Parcel Audit List — scan fills these; tap still works as manual fallback */}
       <section className="space-y-3 my-6">
         {Array.from({ length: job.quantity || 1 }).map((_, i) => (
-          <button 
-            key={i} 
-            onClick={() => setConfirmed(prev => 
+          <button
+            key={i}
+            onClick={() => setConfirmed(prev =>
               prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
             )}
             className={`w-full p-7 rounded-[32px] border flex items-center justify-between transition-all ${
-              confirmed.includes(i) 
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+              confirmed.includes(i)
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                 : 'bg-white/5 border-white/5 text-slate-500'
             }`}
           >
@@ -282,16 +298,16 @@ export default function DriverManifest() {
       </section>
 
       {/* Bottom Action Button */}
-      <button 
-        onClick={handleOpenSignature} 
-        disabled={!isComplete} 
+      <button
+        onClick={handleOpenSignature}
+        disabled={!isComplete}
         className={`w-full py-6 rounded-[32px] font-black text-sm uppercase flex justify-center items-center gap-3 shadow-2xl transition-all ${
-          isComplete 
-            ? 'bg-sky-500 text-white active:scale-95 shadow-sky-500/20' 
+          isComplete
+            ? 'bg-sky-500 text-white active:scale-95 shadow-sky-500/20'
             : 'bg-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
         }`}
       >
-        {isComplete ? <PenTool size={20}/> : <Package size={20}/>} 
+        {isComplete ? <PenTool size={20}/> : <Package size={20}/>}
         {isComplete ? t('sign_for_handover') : t('complete_audit_first')}
       </button>
 
@@ -302,14 +318,14 @@ export default function DriverManifest() {
              <h2 className="text-3xl font-black italic text-white tracking-tighter uppercase">
                {t('proof_of_delivery')}
              </h2>
-             <button 
-               onClick={() => setShowSig(false)} 
+             <button
+               onClick={() => setShowSig(false)}
                className="p-3 bg-white/5 rounded-full text-white"
              >
                <X size={20}/>
              </button>
           </div>
-          
+
           {/* Recipient name */}
           <input
             value={recipientName}
@@ -344,15 +360,15 @@ export default function DriverManifest() {
 
           <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-white/45">Signature</p>
           <div className="flex-1 bg-white rounded-[40px] overflow-hidden shadow-inner min-h-[180px]">
-            <SignatureCanvas 
-              ref={sigPad} 
-              penColor="black" 
-              canvasProps={{ className: 'w-full h-full' }} 
+            <SignatureCanvas
+              ref={sigPad}
+              penColor="black"
+              canvasProps={{ className: 'w-full h-full' }}
             />
           </div>
 
-          <button 
-            onClick={submitPOD} 
+          <button
+            onClick={submitPOD}
             className="w-full mt-6 bg-emerald-500 py-6 rounded-3xl font-black text-xs uppercase tracking-widest text-white shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
           >
             {t('confirm_complete')}

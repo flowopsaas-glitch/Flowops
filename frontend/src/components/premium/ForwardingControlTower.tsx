@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Ship, Plane, Truck, Anchor, AlertTriangle, Clock, FileCheck, Timer,
   TrendingUp, ArrowRight, Plus, Loader2, PackageSearch, Globe2,
+  type LucideIcon,
 } from "lucide-react";
 import { api } from "../../api/client";
 
@@ -26,7 +27,7 @@ interface ForwardingMetrics {
   }>;
 }
 
-const MODE_ICON: Record<string, any> = { OCEAN: Ship, AIR: Plane, ROAD: Truck };
+const MODE_ICON: Record<string, LucideIcon> = { OCEAN: Ship, AIR: Plane, ROAD: Truck };
 const money = (v: number) => `R${(v ?? 0).toLocaleString("en-ZA")}`;
 const fmtEta = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-ZA", { day: "numeric", month: "short" }) : "—";
@@ -48,7 +49,7 @@ export function ForwardingControlTower() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get<any, any>("/dashboard/forwarding-metrics");
+        const res = await api.get("/dashboard/forwarding-metrics");
         setM(res && typeof res === "object" && "data" in res ? res.data : res);
       } catch { /* leave null */ }
       finally { setLoading(false); }
@@ -131,7 +132,7 @@ export function ForwardingControlTower() {
               return (
                 <div key={mode} className="flex items-center gap-2">
                   <Icon className="h-4 w-4 text-cyan-300" />
-                  <span className="text-lg font-black text-white">{(m.mode as any)[mode]}</span>
+                  <span className="text-lg font-black text-white">{m.mode[mode]}</span>
                   <span className="text-[10px] text-white/40">{mode}</span>
                 </div>
               );
@@ -190,7 +191,7 @@ export function ForwardingControlTower() {
 }
 
 function Kpi({ icon: Icon, label, value, sub, tone = "text-white", alert, isText }: {
-  icon: any; label: string; value: number | string; sub?: string; tone?: string; alert?: boolean; isText?: boolean;
+  icon: LucideIcon; label: string; value: number | string; sub?: string; tone?: string; alert?: boolean; isText?: boolean;
 }) {
   return (
     <div className={`rounded-2xl border p-4 fx-lift ${alert ? "border-rose-500/25 bg-rose-500/[0.06]" : "border-white/8 bg-white/[0.03]"}`}>

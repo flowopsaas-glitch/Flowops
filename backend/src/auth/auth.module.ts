@@ -14,7 +14,7 @@ import { AccountLockoutService } from '../common/guards/account-lockout.service'
     JwtModule.registerAsync({
       useFactory: (config: ConfigService) => ({
         secret: config.get('JWT_SECRET'),
-        signOptions: { expiresIn: config.get('JWT_EXPIRES_IN', '4h') },
+        signOptions: { expiresIn: config.get('JWT_EXPIRES_IN', '4h') as '4h' },
       }),
       inject: [ConfigService],
     }),

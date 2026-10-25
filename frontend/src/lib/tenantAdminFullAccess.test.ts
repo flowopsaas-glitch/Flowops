@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  getToken, setToken, setLoginMode, clearAuth,
+import { setToken, setLoginMode, clearAuth,
   isOwnerMode, isTenantMode,
 } from '../api/client';
 import { canTenantAdminAccessRoute, isTenantAdminFullAccess, isHiddenOwnerPath } from '../lib/tenantAdminFullAccess';

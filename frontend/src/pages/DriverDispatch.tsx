@@ -13,9 +13,9 @@ import 'leaflet/dist/leaflet.css';
 
 import { api } from '../api/client';
 import { CommandCenterHeader } from "../components/premium/CommandCenterHeader";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { useSocket } from "../hooks/useSocket";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/auth-context";
 import { getMapCoordinates, hasMapCoordinates } from "../lib/mapCoordinates";
 import OpenStreetMapLayer from "../components/maps/OpenStreetMapLayer";
 
@@ -108,14 +108,37 @@ function AvailableDriverChooser({
   );
 }
 
+type DispatchJobRaw = { id: string | number; recipientPhone?: string | null };
+type DispatchJob = {
+  id: string; reference: string; customer: string; area: string;
+  type: "DELIVERY" | "COLLECTION"; lat: number | null; lng: number | null; raw: DispatchJobRaw;
+};
+type DispatchDriver = {
+  id: string; name: string; status: string; vehicle: string; phone: string;
+  lat: number | null; lng: number | null; jobsActive: number;
+};
+type WaybillRow = {
+  id: string | number; status: string; updatedAt?: string; trackingNumber?: string;
+  recipientName?: string; recipientAddress?: string; recipientLat?: number | null; recipientLng?: number | null;
+};
+type CollectionRow = {
+  id: string | number; status: string; driverId?: string | number | null; clientName?: string;
+  pickupAddress?: string; pickupLat?: number | null; pickupLng?: number | null;
+};
+type DriverRow = {
+  id: string | number; name?: string; status?: string; vehicleReg?: string; phone?: string;
+  lastLat?: number | null; lastLng?: number | null;
+};
+type ShipmentRow = { driverId?: string | number | null; status?: string };
+
 export default function DriverDispatch() {
   const { showToast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { socket } = useSocket(user?.companyId ?? "");
+  useSocket(user?.companyId ?? ""); // connection + listeners only; socket handle unused here
   const [viewMode, setViewMode] = useState<'LIST' | 'MAP'>('LIST');
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [drivers, setDrivers] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<DispatchJob[]>([]);
+  const [drivers, setDrivers] = useState<DispatchDriver[]>([]);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [offlineReason, setOfflineReason] = useState<'backend'|'session'>('backend');
@@ -130,19 +153,17 @@ export default function DriverDispatch() {
   // Backend returns: { data: X, statusCode, message } (TransformInterceptor)
   // Waybills also return paginated: { data: { data: [], total: n, page: p, limit: l } }
   // Collections and drivers return plain arrays: { data: [] }
-  const unwrapList = (val: any): any[] => {
+  const unwrapList = <T, >(val: unknown): T[] => {
     if (!val) return [];
-    const d = val?.data ?? val;                        // strip TransformInterceptor envelope
-    if (Array.isArray(d)) return d;                    // plain array → done
-    const d2 = d?.data ?? d?.items ?? d?.results ?? d; // strip pagination wrapper
-    return Array.isArray(d2) ? d2 : [];
+    const d = (val as { data?: unknown }).data ?? val;  // strip TransformInterceptor envelope
+    if (Array.isArray(d)) return d as T[];              // plain array → done
+    const inner = d as { data?: unknown; items?: unknown; results?: unknown } | null;
+    const d2 = inner?.data ?? inner?.items ?? inner?.results ?? d; // strip pagination wrapper
+    return Array.isArray(d2) ? (d2 as T[]) : [];
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(() => (async () => {
     try {
-      setLoading(true);
-      setOffline(false);
-      setSourceErrors([]);
       const [wbRes, collRes, driversTableRes, shipmentsRes] = await Promise.allSettled([
         api.get('/waybills'), api.get('/collections'), api.get('/drivers'), api.get('/shipments')
       ]);
@@ -158,10 +179,11 @@ export default function DriverDispatch() {
         .map(({ name }) => name);
       setSourceErrors(unavailableSources);
 
+      if (unavailableSources.length < sourceResults.length) setOffline(false);
       const allFailed = unavailableSources.length === sourceResults.length;
       if (allFailed) {
-        const firstErr: any = [wbRes, collRes, driversTableRes, shipmentsRes].find(r => r.status === 'rejected');
-        const status = (firstErr as any)?.reason?.status;
+        const firstErr = [wbRes, collRes, driversTableRes, shipmentsRes].find(r => r.status === 'rejected');
+        const status = (firstErr?.reason as { status?: number } | undefined)?.status;
         setOfflineReason(status === 401 || status === 403 ? 'session' : 'backend');
         setJobs([]);
         setDrivers([]);
@@ -173,21 +195,21 @@ export default function DriverDispatch() {
         return;
       }
 
-      const allWb = unwrapList(wbRes.status === 'fulfilled' ? wbRes.value : null);
+      const allWb = unwrapList<WaybillRow>(wbRes.status === 'fulfilled' ? wbRes.value : null);
 
       // Today's progress stats
       const today = new Date(); today.setHours(0,0,0,0);
       setTodayStats({
-        assigned:  allWb.filter((w: any) => ['IN_TRANSIT','OUT_FOR_DELIVERY','COLLECTED'].includes(w.status)).length,
-        completed: allWb.filter((w: any) => w.status === 'DELIVERED' && new Date(w.updatedAt) >= today).length,
-        failed:    allWb.filter((w: any) => ['FAILED_DELIVERY','RETURNED'].includes(w.status) && new Date(w.updatedAt) >= today).length,
-        pending:   allWb.filter((w: any) => w.status === 'PENDING').length,
+        assigned:  allWb.filter((w) => ['IN_TRANSIT','OUT_FOR_DELIVERY','COLLECTED'].includes(w.status)).length,
+        completed: allWb.filter((w) => w.status === 'DELIVERED' && w.updatedAt != null && new Date(w.updatedAt) >= today).length,
+        failed:    allWb.filter((w) => ['FAILED_DELIVERY','RETURNED'].includes(w.status) && w.updatedAt != null && new Date(w.updatedAt) >= today).length,
+        pending:   allWb.filter((w) => w.status === 'PENDING').length,
       });
 
       const waybillsData    = allWb;
-      const collectionsData = unwrapList(collRes.status       === 'fulfilled' ? collRes.value      : null);
-      const rawDriversTable = unwrapList(driversTableRes.status === 'fulfilled' ? driversTableRes.value : null);
-      const activeShipments = unwrapList(shipmentsRes.status === 'fulfilled' ? shipmentsRes.value : null);
+      const collectionsData = unwrapList<CollectionRow>(collRes.status       === 'fulfilled' ? collRes.value      : null);
+      const rawDriversTable = unwrapList<DriverRow>(driversTableRes.status === 'fulfilled' ? driversTableRes.value : null);
+      const activeShipments = unwrapList<ShipmentRow>(shipmentsRes.status === 'fulfilled' ? shipmentsRes.value : null);
 
       // Build per-driver job count from IN_TRANSIT/PENDING shipments
       const jobsByDriver: Record<string, number> = {};
@@ -200,8 +222,8 @@ export default function DriverDispatch() {
       // FIX: Waybill has no driverId field — it links via Shipment.
       // Filter by status instead: PENDING and COLLECTED = unassigned to driver
       const deliveries = waybillsData
-        .filter((w: any) => ['PENDING', 'COLLECTED'].includes(w.status))
-        .map((w: any) => {
+        .filter((w) => ['PENDING', 'COLLECTED'].includes(w.status))
+        .map((w) => {
           const location = getMapCoordinates(w.recipientLat, w.recipientLng);
           return {
             id: `DEL-${w.id}`,
@@ -216,8 +238,8 @@ export default function DriverDispatch() {
         });
 
       const collections = collectionsData
-        .filter((c: any) => !c.driverId && c.status === 'PENDING')
-        .map((c: any) => {
+        .filter((c) => !c.driverId && c.status === 'PENDING')
+        .map((c) => {
           const location = getMapCoordinates(c.pickupLat, c.pickupLng);
           return {
             id: `COL-${c.id}`,
@@ -231,7 +253,7 @@ export default function DriverDispatch() {
           };
         });
 
-      const fleet = rawDriversTable.map((d: any) => {
+      const fleet = rawDriversTable.map((d) => {
         const location = getMapCoordinates(d.lastLat, d.lastLng);
         return {
           id: String(d.id),
@@ -247,7 +269,7 @@ export default function DriverDispatch() {
 
       setJobs([...deliveries, ...collections]);
       setDrivers(fleet);
-      if (deliveries.length > 0 && !selectedJobId) setSelectedJobId(deliveries[0].id);
+      if (deliveries.length > 0) setSelectedJobId((current) => current || deliveries[0].id);
     } catch {
       setOfflineReason('backend');
       setSourceErrors(['Dispatch data']);
@@ -260,9 +282,9 @@ export default function DriverDispatch() {
     } finally {
       setLoading(false);
     }
-  };
+  })(), []);
 
-  useEffect(() => { loadData(); }, [refreshTick]);
+  useEffect(() => { loadData(); }, [loadData, refreshTick]);
 
   // 30-second auto-refresh for live dispatch view
   useEffect(() => {
@@ -276,10 +298,11 @@ export default function DriverDispatch() {
   }), [jobs, drivers]);
 
   const selectedJob = useMemo(() => jobs.find(j => j.id === selectedJobId) || null, [jobs, selectedJobId]);
-  const locatedJobs = useMemo(() => jobs.filter((job: any) => hasMapCoordinates(job)), [jobs]);
-  const locatedDrivers = useMemo(() => drivers.filter((driver: any) => hasMapCoordinates(driver)), [drivers]);
+  const locatedJobs = useMemo(() => jobs.filter((job) => hasMapCoordinates(job)), [jobs]);
+  const locatedDrivers = useMemo(() => drivers.filter((driver) => hasMapCoordinates(driver)), [drivers]);
   const mapPositions = useMemo<[number, number][]>(
-    () => [...locatedJobs, ...locatedDrivers].map((item: any) => [item.lat, item.lng]),
+    () => [...locatedJobs, ...locatedDrivers].flatMap((item) =>
+      item.lat != null && item.lng != null ? [[item.lat, item.lng] as [number, number]] : []),
     [locatedJobs, locatedDrivers],
   );
   const selectedMapPosition = useMemo<[number, number] | null>(
@@ -348,7 +371,7 @@ export default function DriverDispatch() {
       }
       showToast(`Assigned ${selectedJob.reference}`, "success");
       setRefreshTick(v => v + 1);
-    } catch (err: any) {
+    } catch (err) {
       // Surface the real backend message so failures are diagnosable, not a
       // generic "Failed to assign" that hides the cause.
       const msg = err?.response?.data?.message || err?.message || "Failed to assign";
@@ -358,7 +381,7 @@ export default function DriverDispatch() {
   };
 
   // Quick WhatsApp contact for a driver
-  const contactDriver = useCallback((driver: any) => {
+  const contactDriver = useCallback((driver: DispatchDriver) => {
     if (driver.phone) {
       // Normalise: strip non-digits, replace leading 0 with SA country code 27
       const phone = driver.phone.replace(/\D/g, '').replace(/^0/, '27');
@@ -366,21 +389,11 @@ export default function DriverDispatch() {
     }
   }, []);
 
-  // Notify customer with stops-ahead ETA via POST /waybills/:id/notify-eta
-  const notifyEta = useCallback(async (job: any, stopsAhead: number) => {
-    if (job.type !== 'DELIVERY') return;
-    try {
-      await (api as any).post(`/waybills/${job.raw.id}/notify-eta`, { stopsAhead, etaMinutes: 30 });
-      showToast(`Customer notified: ${stopsAhead} stop${stopsAhead !== 1 ? 's' : ''} ahead`, "success");
-    } catch {
-      showToast("Notification failed", "error");
-    }
-  }, [showToast]);
 
   return (
     <div className="min-h-screen bg-[#07111f] p-7">
       <div className="mx-auto max-w-[1820px] space-y-6">
-        
+
         <CommandCenterHeader
           eyebrow="Operations · Branch Dispatch"
           title="Control Tower"
@@ -497,7 +510,7 @@ export default function DriverDispatch() {
                           ? <CheckSquare className="h-4 w-4 text-sky-400" />
                           : <Square className="h-4 w-4 text-white/30" />}
                       </button>
-                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedJobId(job.id)}>
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedJobId(job.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => setSelectedJobId(job.id))(); } }} role="button" tabIndex={0}>
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-2">
                             {job.type === 'DELIVERY' ? <Package className="text-cyan-400 shrink-0" size={16} /> : <PackagePlus className="text-indigo-400 shrink-0" size={16} />}

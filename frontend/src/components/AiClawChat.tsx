@@ -20,14 +20,14 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
     { role: 'claw', text: "SYSTEM READY. Neural logic initialized. Awaiting tactical input..." }
   ]);
   const [isThinking, setIsThinking] = useState(false);
-  
+
   // Self-awareness metrics state for superintelligence telemetry
   const [telemetry, setTelemetry] = useState({
     latencyMs: 0,
     contextTokens: 0,
     activeSubroutines: ['Core Logic Layer', 'Risk Analytics Engine']
   });
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -45,9 +45,9 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
 
     // 1. Log the user message & inject a local introspective thought step immediately
     const userMessage: Message = { role: 'user', text: trimmedInput };
-    const introspectiveThought: Message = { 
-      role: 'system_thought', 
-      text: `[INTROSPECTION] Evaluating risks (${liveMetrics?.risks ?? 0}) and active drivers (${liveMetrics?.activeDrivers ?? 0}). Formatting vector parameters...` 
+    const introspectiveThought: Message = {
+      role: 'system_thought',
+      text: `[INTROSPECTION] Evaluating risks (${liveMetrics?.risks ?? 0}) and active drivers (${liveMetrics?.activeDrivers ?? 0}). Formatting vector parameters...`
     };
 
     setHistory(prev => [...prev, userMessage, introspectiveThought]);
@@ -68,7 +68,7 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
       // 3. Expanded payload for NestJS to make the LLM aware of its ecosystem
       const requestBody = {
         command: trimmedInput,
-        companyId: 1, 
+        companyId: 1,
         context: {
           liveMetrics: liveMetrics || { risks: 0, activeDrivers: 0 },
           history: cleanHistory,
@@ -79,8 +79,8 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
       // Route through the shared api client: same-origin (no baked-in
       // localhost), JWT auth + silent refresh, and consistent error handling.
       // The TransformInterceptor wraps the payload as { data, statusCode, message }.
-      const res: any = await api.post('/ai/claw-chat/query', requestBody);
-      const data: any = res?.data ?? res ?? {};
+      const res = await api.post('/ai/claw-chat/query', requestBody);
+      const data: { telemetry?: { tokensUsed?: number; subroutines?: string[] }; redirect?: string; reply?: string } = (res as { data?: unknown })?.data as typeof data ?? (res as typeof data) ?? {};
 
       // Update self-awareness metrics based on actual server output data
       setTelemetry({
@@ -95,12 +95,12 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
       }
 
       setHistory(prev => [...prev, { role: 'claw', text: data.reply || "COMMAND_EXECUTED_SUCCESSFULLY" }]);
-      
-    } catch (err: any) {
+
+    } catch (err) {
       console.error("CLAW_BRIDGE_ERROR:", err);
-      setHistory(prev => [...prev, { 
-        role: 'system', 
-        text: `SIGNAL_LOST: ${err.message}` 
+      setHistory(prev => [...prev, {
+        role: 'system',
+        text: `SIGNAL_LOST: ${err.message}`
       }]);
     } finally {
       setIsThinking(false);
@@ -109,7 +109,7 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
 
   return (
     <div className="flex flex-col h-[650px] w-full bg-[#040d21] border border-sky-500/30 rounded-2xl overflow-hidden font-mono shadow-[0_0_80px_rgba(0,0,0,0.8)] backdrop-blur-xl">
-      
+
       {/* HEADER / STATUS BAR */}
       <div className="bg-sky-950/40 p-4 border-b border-white/10 flex justify-between items-center">
         <div className="flex items-center gap-3">
@@ -153,14 +153,14 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
             ) : (
               <>
                 <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${
-                  msg.role === 'user' ? 'text-white/40' : 
+                  msg.role === 'user' ? 'text-white/40' :
                   msg.role === 'system' ? 'text-rose-500/60' : 'text-sky-400/60'
                 }`}>
                   {msg.role === 'user' ? 'USER_AUTH_SESSION' : msg.role === 'system' ? 'KERNEL_CRITICAL' : 'AI_CLAW_LOGIC'}
                 </div>
-                
+
                 <div className={`text-[12px] leading-relaxed ${
-                  msg.role === 'user' ? 'text-white' : 
+                  msg.role === 'user' ? 'text-white' :
                   msg.role === 'system' ? 'text-rose-400 font-bold' : 'text-sky-300'
                 }`}>
                   <span className="text-sky-500/30 mr-2">»</span>
@@ -183,9 +183,8 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
       {/* COMMAND INPUT */}
       <div className="p-4 bg-black/40 border-t border-white/10 backdrop-blur-md">
         <div className="relative group">
-          <input 
-            autoFocus
-            value={query} 
+          <input
+            value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Execute system commands..."
@@ -202,4 +201,3 @@ export default function AiClawChat({ onClose, liveMetrics }: ClawProps) {
     </div>
   );
 }
-

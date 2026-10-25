@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useDismissOnEscape } from "../../components/patterns/useDismissOnEscape";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -11,7 +12,6 @@ import {
   FileText,
   Loader2,
   Package,
-  RefreshCw,
   Sparkles,
   Truck,
   Users,
@@ -86,7 +86,7 @@ const PLAN_LABEL: Record<string, string> =
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function unwrap(r: any): any { return r?.data ?? r; }
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
 
 function fmt(amount: number, currency = "ZAR") {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency }).format(amount);
@@ -182,12 +182,13 @@ export default function BillingPlans() {
   const [selectedTier, setSelectedTier] = useState<string>("");
   const [requestNote, setRequestNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  useDismissOnEscape(pickerOpen && !submitting, () => setPickerOpen(false));
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const loadRequests = async () => {
     try {
-      const r: any = await api.get("/billing/upgrade-requests");
-      const list = unwrap(r);
+      const r = await api.get("/billing/upgrade-requests");
+      const list = unwrap<UpgradeRequest[]>(r);
       setRequests(Array.isArray(list) ? list : []);
     } catch { /* non-fatal */ }
   };
@@ -200,8 +201,8 @@ export default function BillingPlans() {
           api.get("/invoices/supervisor"),
           getEntitlements().catch(() => null),
         ]);
-        const c = unwrap(cRaw);
-        const iList: any = unwrap(iRaw);
+        const c = unwrap<Company>(cRaw);
+        const iList = unwrap<Invoice[] | { data?: Invoice[] }>(iRaw);
         setCompany(c);
         if (entRaw) setEntitlements(entRaw);
         const arr: Invoice[] = Array.isArray(iList)
@@ -230,8 +231,12 @@ export default function BillingPlans() {
   const currentTierLabel = PLAN_LABEL[currentPlanKey] ?? currentPlan.name;
 
   // Trial countdown
+  // "Now" is captured once when the plan data loads (the sanctioned lazy
+  // initializer) instead of calling Date.now() during render; trial math is
+  // day-granular, so mount-time now is the honest precision here.
+  const [now] = useState(() => Date.now());
   const trialDaysLeft = company?.trialEndsAt
-    ? Math.ceil((new Date(company.trialEndsAt).getTime() - Date.now()) / 86400000)
+    ? Math.ceil((new Date(company.trialEndsAt).getTime() - now) / 86400000)
     : null;
   const onTrial = trialDaysLeft !== null && trialDaysLeft > 0;
 
@@ -266,7 +271,7 @@ export default function BillingPlans() {
         text: `Upgrade request sent to FlowOps for approval. You'll be notified once it's reviewed.`,
       });
       await loadRequests();
-    } catch (e: any) {
+    } catch (e) {
       const msg = e?.response?.data?.message ?? e?.message ?? "Could not send the request. Please try again.";
       setNotice({ kind: "err", text: String(msg) });
     } finally {
@@ -587,7 +592,7 @@ export default function BillingPlans() {
               {invoices.map(inv => (
                 <div
                   key={inv.id}
-                  onClick={() => navigate("/invoices")}
+                  onClick={() => navigate("/invoices")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => navigate("/invoices"))(); } }} role="button" tabIndex={0}
                   className="flex items-center justify-between gap-4 rounded-2xl border border-white/6 bg-black/20 px-4 py-3 cursor-pointer hover:border-white/15 hover:bg-white/5 transition"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -626,11 +631,11 @@ export default function BillingPlans() {
       {pickerOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={() => !submitting && setPickerOpen(false)}
-        >
+
+        ><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => !submitting && setPickerOpen(false)} />
           <div
             className="w-full max-w-md rounded-[24px] border border-white/12 bg-[#0b1226] p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()} role="dialog">
+            role="dialog">
             <div className="flex items-center gap-3 mb-1">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500/15 ring-1 ring-sky-500/25">
                 <Sparkles className="h-5 w-5 text-sky-300" />
@@ -641,9 +646,9 @@ export default function BillingPlans() {
               Pick the tier you'd like. FlowOps reviews and activates it — no card required here.
             </p>
 
-            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">
+            <span className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">
               Target tier
-            </label>
+            </span>
             <div className="space-y-2 mb-4">
               {REQUESTABLE_TIERS.filter((t) => t.key !== currentPlanKey).map((t) => (
                 <button
@@ -661,10 +666,10 @@ export default function BillingPlans() {
               ))}
             </div>
 
-            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2">
+            <label className="block text-[11px] font-black uppercase tracking-wider text-white/45 mb-2" htmlFor="field-note-optional-1">
               Note (optional)
             </label>
-            <textarea
+            <textarea id="field-note-optional-1"
               value={requestNote}
               onChange={(e) => setRequestNote(e.target.value)}
               rows={3}

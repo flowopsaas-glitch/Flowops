@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CircleMarker, MapContainer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -35,8 +36,8 @@ type LiveOps = {
   exceptions: Exception[];
 };
 
-function unwrapLiveOps(raw: any): LiveOps | null {
-  const body = raw?.data ?? raw;
+function unwrapLiveOps(raw: unknown): LiveOps | null {
+  const body = (raw as { data?: LiveOps } | null)?.data ?? (raw as LiveOps | null);
   if (
     !body ||
     typeof body !== "object" ||
@@ -97,22 +98,22 @@ export default function OwnerOpsMap() {
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [tenantFilter, setTenantFilter] = useState("all");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    const raw = await api.get("/owner/ops/live");
+    const response = unwrapLiveOps(raw);
+    if (!response) throw new Error("The live operations service returned an unexpected response.");
+    setData(response);
     setError("");
-    try {
-      const raw = await api.get("/owner/ops/live");
-      const response = unwrapLiveOps(raw);
-      if (!response) throw new Error("The live operations service returned an unexpected response.");
-      setData(response);
-      setLastLoadedAt(new Date());
-    } catch (err: any) {
-      const message = err?.response?.data?.message ?? err?.message ?? "Failed to load live operations.";
-      setError(Array.isArray(message) ? message.join(", ") : String(message));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    setLastLoadedAt(new Date());
+
+  })().catch((err: unknown) => {
+    const message = errorMessageOf(err) || "Failed to load live operations.";
+    setError(Array.isArray(message) ? message.join(", ") : String(message));
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => {
     void load();
@@ -326,4 +327,3 @@ export default function OwnerOpsMap() {
     </div>
   );
 }
-

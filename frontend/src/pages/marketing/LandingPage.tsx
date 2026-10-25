@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -12,10 +11,6 @@ import {
   Clock,
   CheckCircle2,
   ChevronRight,
-  ChevronLeft,
-  X,
-  ZoomIn,
-  Star,
   Ship,
   Activity,
   Train,
@@ -41,7 +36,7 @@ function Hero() {
           {/* Badge */}
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-300">
             <Zap className="h-4 w-4" />
-            Built for South African logistics teams
+            Built for logistics teams worldwide
           </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
@@ -58,8 +53,8 @@ function Hero() {
 
           <p className="text-xl text-white/60 leading-relaxed max-w-2xl mb-10">
             Waybills, dispatch, driver tracking, warehousing, invoicing, COD reconciliation,
-            and AI oversight — all in a single platform designed for SA courier,
-            freight, and 3PL companies.
+            and AI oversight — all in a single platform designed for courier,
+            freight, and 3PL companies worldwide.
           </p>
 
           {/* CTAs */}
@@ -84,7 +79,7 @@ function Hero() {
 
           {/* Trust signals */}
           <div className="flex flex-wrap items-center gap-5 text-sm text-white/40">
-            {["14-day free trial","No credit card required","ZAR billing","SA support"].map((t) => (
+            {["14-day free trial","No credit card required","Local-currency billing","Human support"].map((t) => (
               <span key={t} className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-emerald-400/60" />
                 {t}
@@ -117,11 +112,13 @@ function Hero() {
 
 /* ── Stats bar ────────────────────────────────────────────────── */
 function Stats() {
+  // Evidence-safe product facts only — no unverified volume, customer-count
+  // or uptime figures. Update only with measured, sourced numbers.
   const stats = [
-    { value: "50,000+", label: "Deliveries tracked", icon: "📦" },
-    { value: "500+",    label: "Active drivers",     icon: "🚚" },
-    { value: "30+",     label: "Courier companies",  icon: "🏢" },
-    { value: "99.9%",   label: "Platform uptime",    icon: "⚡" },
+    { value: "14-day", label: "Free trial, no card required", icon: "📦" },
+    { value: "Live",    label: "Tracking, POD & dispatch boards", icon: "🚚" },
+    { value: "Local",   label: "Currency billing, shown upfront", icon: "🏢" },
+    { value: "Status",  label: "Public service status page", icon: "⚡" },
   ];
 
   return (
@@ -145,10 +142,12 @@ function Stats() {
 
 /* ── E-commerce Opportunity ────────────────────────────────────── */
 function EcommerceOpportunity() {
+  // No unsourced market-size or adoption statistics — describe the workflow
+  // problem and the product capability instead.
   const stats = [
-    { value: "R100B+", label: "SA e-commerce by 2026", icon: "🛒" },
-    { value: "60–70%", label: "of couriers still use paper", icon: "📄" },
-    { value: "3×", label: "growth in online orders since 2020", icon: "📈" },
+    { value: "Online", label: "Orders need trackable delivery partners", icon: "🛒" },
+    { value: "Digital", label: "Waybills instead of paper and spreadsheets", icon: "📄" },
+    { value: "Instant", label: "Proof of delivery your customers can see", icon: "📈" },
   ];
 
   return (
@@ -160,16 +159,16 @@ function EcommerceOpportunity() {
             Market Opportunity
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
-            South Africa's e-commerce boom needs
+            Growing online orders need
             <br />
             <span className="bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent">
               delivery infrastructure
             </span>
           </h2>
           <p className="text-lg text-white/50 max-w-2xl mx-auto">
-            The SA e-commerce market is racing toward R100 billion by 2026, but
-            most courier companies still run on paper, phone calls, and
-            spreadsheets. That gap is your opportunity.
+            As order volumes grow, courier companies still running on paper,
+            phone calls, and spreadsheets struggle to give retailers the
+            tracking and proof they expect. That gap is your opportunity.
           </p>
         </div>
 
@@ -194,8 +193,7 @@ function EcommerceOpportunity() {
           <p className="text-lg text-white/70 leading-relaxed max-w-3xl mx-auto mb-8">
             Online retailers need courier partners who can offer real-time
             tracking, automated waybill creation, and instant proof of delivery.
-            FlowOps gives you the platform to plug into this R100 billion
-            ecosystem — without building tech from scratch.
+            FlowOps gives you that platform — without building tech from scratch.
           </p>
           <Link
             to="/signup"
@@ -273,14 +271,14 @@ function Features() {
       icon: Ship,
       color: "cyan",
       title: "Freight Forwarding",
-      desc: "Import/export shipment files across ocean, air & road — containers, customs (SA duty/VAT + AI HS codes), SAD500/B-L docs and demurrage, bridged to the domestic last mile.",
+      desc: "Import/export shipment files across ocean, air & road — containers, customs duty/VAT estimates and HS classification, shipping documents and demurrage, bridged to the domestic last mile.",
       tag: "Enterprise",
     },
     {
       icon: Train,
       color: "emerald",
       title: "Rail & Intermodal",
-      desc: "Coordinate cargo across the SADC rail network — consignment lifecycle, wagon/rake register and road↔rail↔port handoffs with dwell tracking, plus corridor KPIs (on-time %, transit time, interchange dwell).",
+      desc: "Coordinate cargo across rail networks — consignment lifecycle, wagon/rake register and road↔rail↔port handoffs with dwell tracking, plus corridor KPIs (on-time %, transit time, interchange dwell).",
       tag: "Enterprise",
     },
     {
@@ -323,7 +321,7 @@ function Features() {
             Everything in one platform
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
-            Built for how SA couriers actually work
+            Built for how courier teams actually work
           </h2>
           <p className="text-lg text-white/50 max-w-2xl mx-auto">
             No bolt-on modules, no separate systems. Every tool your team needs,
@@ -368,46 +366,7 @@ function Features() {
 }
 
 /* ── Visual Gallery ───────────────────────────────────────────── */
-type GalleryImage = {
-  src: string;
-  alt: string;
-  caption: string;
-  /** grid sizing for the thumbnail tile */
-  tile: string;
-};
 
-const GALLERY: GalleryImage[] = [
-  {
-    src: "/flowops-render1.png",
-    alt: "FlowOps platform — workflow automation, team collaboration and system integration",
-    caption: "Automate. Orchestrate. Innovate. Elevate. — all in flow.",
-    tile: "col-span-2 md:col-span-1 md:row-span-2 min-h-[280px] h-full",
-  },
-  {
-    src: "/flowops-render2.png",
-    alt: "FlowOps — Platform. Control. Results.",
-    caption: "Platform. Control. Results.",
-    tile: "aspect-square",
-  },
-  {
-    src: "/flowops-render3.png",
-    alt: "FlowOps — all your operations, one powerful flow",
-    caption: "All your operations. One powerful flow.",
-    tile: "aspect-square",
-  },
-  {
-    src: "/flowops-photo1.jpg",
-    alt: "FlowOps — one platform, infinite impact",
-    caption: "One platform. Infinite impact.",
-    tile: "aspect-video",
-  },
-  {
-    src: "/flowops-photo2.jpg",
-    alt: "FlowOps — real-time logistics operations in action",
-    caption: "Real-time visibility, end to end.",
-    tile: "aspect-video",
-  },
-];
 
 function VisualGallery() {
   const images = [
@@ -578,7 +537,7 @@ function HowItWorks() {
             <ArrowRight className="h-5 w-5" />
           </Link>
           <p className="mt-3 text-xs text-white/30">
-            14-day trial · No credit card · ZAR billing
+            14-day trial · No credit card · Local-currency billing
           </p>
         </div>
       </div>
@@ -627,7 +586,7 @@ function DigitisationCTA() {
             </span>
           </h2>
           <p className="text-lg text-white/50 max-w-2xl mx-auto">
-            60–70% of emerging market couriers still rely on paper processes.
+            Many growing courier teams still rely on paper processes.
             Every lost waybill, every untracked delivery, every manual invoice
             is revenue leaking out of your business.
           </p>
@@ -684,26 +643,20 @@ function DigitisationCTA() {
   );
 }
 
-/* ── Social proof ─────────────────────────────────────────────── */
+/* ── Workflow proof (no fabricated testimonials or customer claims) ── */
 function SocialProof() {
-  const testimonials = [
+  const workflows = [
     {
-      quote:
-        "FlowOps replaced three different systems we were using. Waybill capture, driver dispatch, and invoicing — all in one place. Our billing errors dropped significantly.",
-      name: "Operations Director",
-      company: "Johannesburg Courier Co.",
+      title: "One register, fewer hand-offs",
+      body: "Waybill capture, driver dispatch, and invoicing live in one place, so operations and finance work from the same record instead of reconciling three systems.",
     },
     {
-      quote:
-        "The COD reconciliation feature alone saved us hours every week. Drivers check in, cash is logged automatically, and disputes are easy to resolve.",
-      name: "Finance Manager",
-      company: "Cape Town Freight Services",
+      title: "COD you can trace",
+      body: "Cash collected by drivers is logged per waybill with a live balance, so settlements and disputes can be checked against the delivery record.",
     },
     {
-      quote:
-        "We tried 3 other platforms before FlowOps. This is the first one that actually understands how South African logistics works — ZAR billing, local carriers, local support.",
-      name: "MD",
-      company: "Durban Express Logistics",
+      title: "Built for local billing",
+      body: "Local-currency billing, local carriers, and local support — designed for the way courier and freight teams here actually work.",
     },
   ];
 
@@ -712,36 +665,23 @@ function SocialProof() {
       <div className="mx-auto max-w-7xl px-6">
         <div className="text-center mb-12">
           <h2 className="text-4xl font-black text-white mb-3">
-            Trusted by SA logistics teams
+            Built for daily logistics work
           </h2>
           <p className="text-white/50">
-            Companies across Gauteng, Western Cape, and KZN run on FlowOps.
+            The workflows teams run every day — capture, dispatch, delivery, and billing.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {testimonials.map((t) => (
+          {workflows.map((t) => (
             <div
-              key={t.name}
+              key={t.title}
               className="rounded-[24px] border border-white/10 bg-white/[0.03] p-7"
             >
-              <div className="flex gap-0.5 mb-4">
-                {Array(5)
-                  .fill(0)
-                  .map((_, i) => (
-                    <Star
-                      key={i}
-                      className="h-4 w-4 fill-amber-400 text-amber-400"
-                    />
-                  ))}
-              </div>
-              <p className="text-sm text-white/70 leading-relaxed mb-5 italic">
-                "{t.quote}"
+              <h3 className="text-base font-bold text-white mb-3">{t.title}</h3>
+              <p className="text-sm text-white/70 leading-relaxed">
+                {t.body}
               </p>
-              <div>
-                <div className="text-sm font-bold text-white">{t.name}</div>
-                <div className="text-xs text-white/40">{t.company}</div>
-              </div>
             </div>
           ))}
         </div>

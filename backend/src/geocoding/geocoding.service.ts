@@ -223,7 +223,7 @@ export class GeocodingService {
             where: { id: entry.id },
             data: { usageCount: { increment: 1 }, lastUsedAt: new Date() },
           })
-          .catch(() => {});
+          .catch((e) => this.logger.warn(`address usage tracking failed: ${(e as Error)?.message}`));
       }
 
       return {

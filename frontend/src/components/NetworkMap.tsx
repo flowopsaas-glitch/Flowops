@@ -15,13 +15,14 @@ export const NetworkMap: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
 
-  const fetchNetwork = async () => {
-    try {
-      const res = await api.get<any, any>(`/branches/snapshot`);
-      setHubs(res);
-    } catch (err) {
-      console.error("Failed to fetch network snapshot", err);
-    }
+  const fetchNetwork = () => {
+    return api.get(`/branches/snapshot`)
+      .then((res) => {
+        setHubs((((res as unknown as { data?: unknown })?.data ?? res) as BranchSnapshot[]));
+      })
+      .catch((err) => {
+        console.error("Failed to fetch network snapshot", err);
+      });
   };
 
   useEffect(() => {
@@ -39,8 +40,8 @@ export const NetworkMap: React.FC = () => {
     <div className="text-white">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {hubs.map((hub) => (
-          <div 
-            key={hub.id} 
+          <div
+            key={hub.id}
             className="bg-[rgba(13,25,48,0.6)] border border-[rgba(118,166,255,0.15)] p-5 rounded-2xl hover:border-blue-500/50 transition-all group"
           >
             <div className="flex justify-between items-start mb-4">
@@ -54,7 +55,7 @@ export const NetworkMap: React.FC = () => {
                 <div className={`text-2xl font-black ${hub.totalItems > 20 ? 'text-orange-400' : 'text-green-400'}`}>
                   {hub.totalItems}
                 </div>
-                <button 
+                <button
                   onClick={() => handleManage(hub.id)}
                   className="text-[10px] font-bold text-blue-400 hover:text-white uppercase tracking-tighter transition-colors"
                 >
@@ -70,7 +71,7 @@ export const NetworkMap: React.FC = () => {
                   <div key={idx} className="flex justify-between text-xs items-center">
                     <span className="text-slate-400 font-medium">{s.status}</span>
                     <span className="font-mono bg-white/5 px-2 rounded text-slate-200">
-                      {typeof s._count === 'number' ? s._count : (s._count as any).inventory || 0}
+                      {typeof s._count === 'number' ? s._count : s._count.inventory || 0}
                     </span>
                   </div>
                 ))
@@ -87,7 +88,7 @@ export const NetworkMap: React.FC = () => {
         <TransferCargoModal
   isOpen={true}
           // For now, passing a dummy array. In Step 2 we'll link real Waybill selectors
-          selectedWaybills={[]} 
+          selectedWaybills={[]}
           onClose={() => setIsModalOpen(false)}
           onSuccess={() => {
             setIsModalOpen(false);

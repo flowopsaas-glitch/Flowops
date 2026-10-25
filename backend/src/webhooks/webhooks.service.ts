@@ -105,7 +105,7 @@ export class WebhooksService {
                 // Schedule first retry in 1 minute on non-2xx
                 nextRetryAt: !res.ok ? new Date(Date.now() + 60_000) : null,
               },
-            }).catch(() => {});
+            }).catch((e) => this.logger.warn(`webhook delivery bookkeeping failed: ${(e as Error)?.message}`));
           }
         } catch (err: any) {
           this.logger.warn(`Webhook delivery to ${ep.url} failed: ${err?.message ?? err}`);
@@ -118,7 +118,7 @@ export class WebhooksService {
                 // Schedule first retry in 1 minute
                 nextRetryAt: new Date(Date.now() + 60_000),
               },
-            }).catch(() => {});
+            }).catch((e) => this.logger.warn(`webhook delivery bookkeeping failed: ${(e as Error)?.message}`));
           }
         }
       }),
@@ -191,7 +191,7 @@ export class WebhooksService {
       await this.prisma.webhookDelivery.update({
         where: { id: delivery.id },
         data: { status: 'EXHAUSTED' },
-      }).catch(() => {});
+      }).catch((e) => this.logger.warn(`webhook delivery bookkeeping failed: ${(e as Error)?.message}`));
       return;
     }
 
@@ -228,7 +228,7 @@ export class WebhooksService {
             ? new Date(Date.now() + WebhooksService.retryDelay(newAttempts))
             : null,
         },
-      }).catch(() => {});
+      }).catch((e) => this.logger.warn(`webhook delivery bookkeeping failed: ${(e as Error)?.message}`));
     } catch (err: any) {
       const status = newAttempts >= 5 ? 'EXHAUSTED' : 'RETRYING';
       await this.prisma.webhookDelivery.update({
@@ -241,7 +241,7 @@ export class WebhooksService {
             ? new Date(Date.now() + WebhooksService.retryDelay(newAttempts))
             : null,
         },
-      }).catch(() => {});
+      }).catch((e) => this.logger.warn(`webhook delivery bookkeeping failed: ${(e as Error)?.message}`));
     }
   }
 

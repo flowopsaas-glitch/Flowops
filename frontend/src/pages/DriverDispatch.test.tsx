@@ -12,9 +12,9 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/client", () => ({ api: { get: h.get, post: h.post } }));
-vi.mock("../contexts/AuthContext", () => ({ useAuth: () => ({ user: { id: "user-1", role: "ADMIN", companyId: "tenant-1" } }) }));
+vi.mock("../contexts/auth-context", () => ({ useAuth: () => ({ user: { id: "user-1", role: "ADMIN", companyId: "tenant-1" } }) }));
 vi.mock("../hooks/useSocket", () => ({ useSocket: () => ({ socket: null, isConnected: false }) }));
-vi.mock("../components/ToastProvider", () => ({ useToast: () => ({ showToast: h.showToast }) }));
+vi.mock("../components/toast-context", () => ({ useToast: () => ({ showToast: h.showToast }) }));
 vi.mock("../components/premium/CommandCenterHeader", () => ({
   CommandCenterHeader: ({ children, title }: { children?: ReactNode; title?: string }) => <header><h1>{title}</h1>{children}</header>,
 }));

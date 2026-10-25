@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildInvoiceCreatePayload } from './invoiceCreatePayload';
+import { buildInvoiceCreatePayload, type InvoiceCreateInput, type InvoiceCreateLineInput } from './invoiceCreatePayload';
 
 describe('buildInvoiceCreatePayload', () => {
   it('keeps only server-supported invoice fields and links batch deliveries by waybill ID', () => {
+    // Simulate an untrusted JS caller: extra fields must be stripped, not trusted.
     const payload = buildInvoiceCreatePayload({
       clientName: '  Acme Logistics  ',
       clientEmail: ' billing@acme.example ',
@@ -16,7 +17,7 @@ describe('buildInvoiceCreatePayload', () => {
           waybillId: ' waybill-123 ',
           // UI-only values must not become trusted API fields.
           total: 999,
-        } as any,
+        },
       ],
       // Totals and status are intentionally not part of the input contract.
       subtotal: 999,
@@ -24,7 +25,7 @@ describe('buildInvoiceCreatePayload', () => {
       total: 1998,
       status: 'PAID',
       companyId: 'untrusted-company',
-    } as any);
+    } as unknown as InvoiceCreateInput);
 
     expect(payload).toEqual({
       clientName: 'Acme Logistics',
@@ -46,7 +47,7 @@ describe('buildInvoiceCreatePayload', () => {
       clientEmail: ' ',
       dueDate: '',
       notes: '  ',
-      items: [{ description: 'Manual service', quantity: 2, unitPrice: 100, total: 200 } as any],
+      items: [{ description: 'Manual service', quantity: 2, unitPrice: 100, total: 200 } as unknown as InvoiceCreateLineInput],
     });
 
     expect(payload).toEqual({

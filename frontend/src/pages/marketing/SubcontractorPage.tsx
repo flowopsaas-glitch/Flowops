@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import {
-  ArrowRight, Shield, Truck, BarChart3, Clock, MapPin,
-  CheckCircle2, Zap, MessageCircle, Star, Target, Award,
+  ArrowRight, Shield, BarChart3, Clock, MapPin,
+  CheckCircle2, MessageCircle, Target, Award,
   TrendingUp, DollarSign, Package, Activity, Lock, Eye,
 } from "lucide-react";
 import PublicNav from "../../components/layout/PublicNav";
@@ -35,7 +35,7 @@ function Hero() {
           </h1>
 
           <p className="text-xl text-white/60 leading-relaxed max-w-2xl mb-10">
-            You're the backbone of South Africa's last mile — running 50, 500, or
+            You're the backbone of the last mile — running 50, 500, or
             5,000 deliveries a day for retailers, 3PLs, and enterprise shippers.
             FlowOps gives you the operations platform to prove your performance,
             protect your contracts, and scale without the chaos.
@@ -61,7 +61,7 @@ function Hero() {
           </div>
 
           <div className="flex flex-wrap items-center gap-5 text-sm text-white/40">
-            {["14-day free trial", "No lock-in contract", "ZAR billing", "Live in 24 hours"].map((t) => (
+            {["14-day free trial", "No lock-in contract", "Local-currency billing", "Live in 24 hours"].map((t) => (
               <span key={t} className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-emerald-400/60" />
                 {t}
@@ -85,7 +85,7 @@ function TheProblem() {
     {
       icon: DollarSign,
       title: "COD cash disappears",
-      desc: "Driver collected R2,400 three days ago. Did he settle? Which waybills? Paper-based reconciliation loses you 3-8% of COD revenue every month.",
+      desc: "Driver collected R2,400 three days ago. Did he settle? Which waybills? Paper-based reconciliation makes that hard to prove — and easy to lose track of.",
     },
     {
       icon: Clock,
@@ -147,7 +147,7 @@ function TheSolution() {
       icon: MapPin,
       color: "emerald",
       title: "Live Fleet Visibility",
-      desc: "Know where every driver is, right now. GPS telemetry with 30-second refresh, geofenced delivery zones, and predictive ETA that accounts for SA traffic patterns.",
+      desc: "Know where every driver is, right now. GPS telemetry with 30-second refresh, geofenced delivery zones, and ETA estimates from current route data.",
     },
     {
       icon: Shield,
@@ -165,13 +165,13 @@ function TheSolution() {
       icon: DollarSign,
       color: "emerald",
       title: "COD Wallet & Reconciliation",
-      desc: "Every rand collected by every driver, tracked per-waybill with a live balance. Auto-reconcile settlements. Stop the 3-8% COD leakage overnight.",
+      desc: "Every rand collected by every driver, tracked per-waybill with a live balance, so settlements can be reconciled against the delivery record.",
     },
     {
       icon: TrendingUp,
       color: "sky",
-      title: "AI Route Optimization",
-      desc: "Nearest-neighbour + 2-opt sequencing cuts km by 15-25%. See estimated fuel savings in rands before you dispatch. Your drivers finish earlier, you spend less on diesel.",
+      title: "Route Optimization",
+      desc: "Stop sequencing with an estimated fuel cost in rands before you dispatch, so you can compare the plan with your current route. Savings depend on your stops and road distances — check the estimate, not a promised percentage.",
     },
     {
       icon: Activity,
@@ -310,21 +310,22 @@ function ContractProtection() {
 
 /* ── Social Proof ─────────────────────────────────────────────── */
 function SocialProof() {
+  // No fabricated testimonials or result claims — workflow cards only.
   const testimonials = [
     {
-      quote: "We went from panicking before every quarterly review to walking in with live dashboards. Our shipper extended our contract for 3 years.",
-      name: "Fleet Manager",
-      company: "JHB last-mile operator, 38 vehicles",
+      quote: "Walk into shipper reviews with live dashboards — deliveries, exceptions, and POD evidence from the same record your team worked from.",
+      name: "Contract reviews",
+      company: "Evidence, not spreadsheets",
     },
     {
-      quote: "COD reconciliation alone saved us over R40,000 in the first month. We didn't even know we were losing that much to driver cash discrepancies.",
-      name: "Operations Director",
-      company: "Durban courier company, 22 drivers",
+      quote: "Cash collected by drivers is logged per waybill, so settlements and discrepancies can be checked against the delivery record.",
+      name: "COD reconciliation",
+      company: "Traceable per waybill",
     },
     {
-      quote: "Our guys were sceptical about the driver app. Within a week they were competing on the leaderboard. On-time rate jumped 12% in the first month.",
-      name: "Owner",
-      company: "Cape Town express delivery, 15 vehicles",
+      quote: "Drivers see their jobs, scans, and delivery outcomes in one app, and dispatch sees the same status without chasing chat messages.",
+      name: "Driver app",
+      company: "One shared status",
     },
   ];
 
@@ -333,9 +334,9 @@ function SocialProof() {
       <div className="mx-auto max-w-7xl px-6">
         <div className="text-center mb-14">
           <h2 className="text-3xl md:text-4xl font-black text-white">
-            SA transport operators trust FlowOps
+            Built for transport operators
           </h2>
-          <p className="mt-2 text-sm text-white/40">Real results from real fleets</p>
+          <p className="mt-2 text-sm text-white/40">The workflows operator teams run every day</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -344,10 +345,7 @@ function SocialProof() {
               key={t.company}
               className="rounded-[24px] border border-white/8 bg-white/[0.025] p-7 flex flex-col"
             >
-              <div className="flex gap-1 mb-4">
-                {[1,2,3,4,5].map(i => <Star key={i} className="h-4 w-4 text-amber-400 fill-amber-400" />)}
-              </div>
-              <p className="text-sm text-white/70 leading-relaxed flex-1 italic">"{t.quote}"</p>
+              <p className="text-sm text-white/70 leading-relaxed flex-1">{t.quote}</p>
               <div className="mt-5 pt-4 border-t border-white/5">
                 <div className="text-sm font-bold text-white">{t.name}</div>
                 <div className="text-xs text-white/40">{t.company}</div>
@@ -400,7 +398,7 @@ function PricingCTA() {
           <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-white/30">
             <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/60" /> From R0/mo (Starter)</span>
             <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/60" /> Unlimited waybills on Pro</span>
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/60" /> SA-based support</span>
+            <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/60" /> Human support</span>
           </div>
         </div>
       </div>

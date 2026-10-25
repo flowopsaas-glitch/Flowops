@@ -8,7 +8,7 @@ import {
   OCCURRENCE_ACTION_LABEL, OCCURRENCE_LEVEL_LABEL, OCCURRENCE_STATUS_LABEL, OCCURRENCE_TYPE_LABEL, formatDateTime, localInputToIso, occurrenceActions,
   occurrenceLevelTone, occurrenceStatusTone, preliminaryClock, type OccurrenceActionKey,
 } from "../../lib/railChange";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 import NoteModal from "./NoteModal";
 import { Field, Modal, Pill, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
 
@@ -28,20 +28,20 @@ export default function OccurrencesSection({ canWrite, canSign }: { canWrite: bo
   const [showNew, setShowNew] = useState(false);
   const [noteFor, setNoteFor] = useState<{ occurrence: OccurrenceReport; action: NoteAction } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
+    setRows(await listOccurrences());
     setLoadError(null);
-    try {
-      setRows(await listOccurrences());
-    } catch (e) {
-      const message = String((e as Error)?.message ?? e);
-      setRows([]);
-      setLoadError(message);
-      showToast(`Could not load occurrence reports: ${message}`, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+
+  })().catch((e) => {
+    const message = String((e as Error)?.message ?? e);
+    setRows([]);
+    setLoadError(message);
+    showToast(`Could not load occurrence reports: ${message}`, "error");
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [showToast]);
   useEffect(() => { void load(); }, [load]);
 
   async function notify(o: OccurrenceReport, to: "TCO" | "RSR") {

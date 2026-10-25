@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ScanLine, CheckCircle2, XCircle, Package, Box, Truck, Loader2 } from "lucide-react";
+import { ScanLine, CheckCircle2, XCircle, Package, Box, Truck, Loader2 , type LucideIcon } from "lucide-react";
 import { verifyScan } from "../../api/warehouseApi";
 
 const CONTEXTS = [
@@ -10,7 +10,7 @@ const CONTEXTS = [
   { value: "CYCLE_COUNT", label: "Cycle Count", desc: "Stock verification" },
 ];
 
-const TYPE_ICONS: Record<string, any> = {
+const TYPE_ICONS: Record<string, LucideIcon> = {
   SKU: Package,
   BIN: Box,
   GOODS_RECEIPT: Truck,
@@ -18,14 +18,23 @@ const TYPE_ICONS: Record<string, any> = {
 };
 
 
+type ScanResult = {
+  verification?: { valid?: boolean; errors?: string[] };
+  matched?: boolean;
+  type?: string;
+  data?: Record<string, unknown>;
+  barcode?: string;
+};
+type ScanHistoryItem = ScanResult & { scannedAt: string };
+
 export default function BarcodeScan() {
   const [barcode, setBarcode] = useState("");
   const [context, setContext] = useState("RECEIVE");
   const [expectedSku, setExpectedSku] = useState("");
   const [expectedBin, setExpectedBin] = useState("");
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<ScanHistoryItem[]>([]);
 
   const scan = async () => {
     if (!barcode.trim()) return;
@@ -40,7 +49,7 @@ export default function BarcodeScan() {
       const data = res?.data ?? res;
       setResult(data);
       setHistory(prev => [{ ...data, scannedAt: new Date().toISOString() }, ...prev.slice(0, 19)]);
-    } catch (e: any) {
+    } catch (e) {
       setResult({ matched: false, verification: { valid: false, errors: [e.message || "Scan failed"] } });
     }
     finally { setLoading(false); setBarcode(""); }
@@ -81,8 +90,7 @@ export default function BarcodeScan() {
             <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-white/30" />
             <input value={barcode} onChange={e => setBarcode(e.target.value)}
               placeholder="Scan or type barcode..."
-              autoFocus
-              className="w-full rounded-2xl border border-white/10 bg-white/5 pl-10 pr-4 py-3.5 text-lg font-mono text-white placeholder-white/30 outline-none focus:border-sky-400/40" />
+                className="w-full rounded-2xl border border-white/10 bg-white/5 pl-10 pr-4 py-3.5 text-lg font-mono text-white placeholder-white/30 outline-none focus:border-sky-400/40" />
           </div>
           <button type="submit" disabled={loading || !barcode.trim()}
             className="rounded-2xl bg-sky-500 px-6 py-3.5 text-sm font-black text-white hover:bg-sky-400 transition disabled:opacity-50">
@@ -125,7 +133,7 @@ export default function BarcodeScan() {
 
           {result.data && (
             <div className="rounded-xl bg-white/5 p-4 space-y-2">
-              {Object.entries(result.data).map(([key, val]: [string, any]) => (
+              {Object.entries(result.data).map(([key, val]) => (
                 val != null && (
                   <div key={key} className="flex justify-between text-sm">
                     <span className="text-white/40 capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>

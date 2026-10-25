@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useDismissOnEscape } from "../patterns/useDismissOnEscape";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Package, FileText, Receipt, Users, Menu, X, Search,
   ClipboardList, Truck, ClipboardCheck, Route, MessageCircle, Mail,
-  ScrollText, CreditCard, Settings, ShieldAlert, Bell, Download, LogOut, Sparkles,
+  ScrollText, CreditCard, Settings, ShieldAlert, Download, LogOut, Sparkles,
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, BarChart3, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, Train, Handshake, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight, PieChart, Brain,
@@ -11,12 +12,12 @@ import {
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
-import { cn } from "../../lib/utils";  
+import { cn } from "../../lib/utils";
 import logo from "../../assets/logo.png";
-import { useTenant } from "../../contexts/TenantContext";
-import { useAuth } from "../../contexts/AuthContext";
+import { useTenant } from "../../contexts/tenant-context";
+import { useAuth } from "../../contexts/auth-context";
 import { isImpersonating, impersonatedTenantName, exitImpersonation } from "../../lib/impersonation";
-import { useTheme } from "../../contexts/ThemeContext";
+import { useTheme } from "../../contexts/theme-context";
 import {
   normalizeTenantNavPermissions,
   type TenantNavPermissionKey,
@@ -161,7 +162,7 @@ function SidebarContent(props: {
   collapsed?: boolean;
   ent?: Entitlements | null;
 }) {
-  const sections: ("CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN")[] = 
+  const sections: ("CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN")[] =
     ["CORE", "OPS", "RAIL", "COMMUNICATIONS", "BILLING", "INSIGHTS", "AI", "ADMIN"];
   const { collapsed } = props;
 
@@ -170,15 +171,19 @@ function SidebarContent(props: {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem("flowops.sidebar.sections") || "{}"); } catch { return {}; }
   });
-  useEffect(() => {
-    if (props.currentPath !== "/rail" && !props.currentPath.startsWith("/rail/")) return;
-    setOpenSections((prev) => {
-      if (prev.RAIL !== false) return prev;
-      const next = { ...prev, RAIL: true };
+  // Force the RAIL section open whenever the route is (or moves within) the
+  // rail area. Render-time adjustment on the path transition; persistence to
+  // localStorage rides along exactly as the effect version did.
+  const [prevPath, setPrevPath] = useState(props.currentPath);
+  if (props.currentPath !== prevPath) {
+    setPrevPath(props.currentPath);
+    const onRailRoute = props.currentPath === "/rail" || props.currentPath.startsWith("/rail/");
+    if (onRailRoute && openSections.RAIL === false) {
+      const next = { ...openSections, RAIL: true };
+      setOpenSections(next);
       try { localStorage.setItem("flowops.sidebar.sections", JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  }, [props.currentPath]);
+    }
+  }
 
   const toggleSection = (s: string) =>
     setOpenSections((prev) => {
@@ -191,10 +196,10 @@ function SidebarContent(props: {
     <div className="flex h-full flex-col bg-[#081120]">
       <div className={cn("shrink-0 border-b border-white/10 py-5", collapsed ? "px-3" : "px-5")}>
         <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-          <img 
-            src={props.brandLogoUrl ?? logo} 
-            alt={`${props.brandName} logo`} 
-            className="h-12 w-12 rounded-2xl border border-white/10 bg-white object-contain p-1 shrink-0" 
+          <img
+            src={props.brandLogoUrl ?? logo}
+            alt={`${props.brandName} logo`}
+            className="h-12 w-12 rounded-2xl border border-white/10 bg-white object-contain p-1 shrink-0"
             onError={(e) => { (e.target as HTMLImageElement).src = logo; }}
           />
           {!collapsed && (
@@ -212,12 +217,12 @@ function SidebarContent(props: {
 
       <div role="navigation" aria-label="Main navigation" className="flex-1 overflow-y-auto py-6 custom-scrollbar min-h-0">
         {sections.map((sec) => (
-          <SidebarSection 
-            key={sec} 
-            title={sec} 
-            items={props.grouped[sec] || []} 
-            currentPath={props.currentPath} 
-            onNavigate={props.onNavigate} 
+          <SidebarSection
+            key={sec}
+            title={sec}
+            items={props.grouped[sec] || []}
+            currentPath={props.currentPath}
+            onNavigate={props.onNavigate}
             collapsed={collapsed}
             open={openSections[sec] !== false}
             onToggle={() => toggleSection(sec)}
@@ -271,22 +276,22 @@ function SidebarContent(props: {
             </div>
           )
         )}
-        <button 
+        <button
           onClick={props.onInstall}
           aria-label="Install application"
           title={collapsed ? "Install application" : undefined}
-          disabled={!props.canInstall} 
+          disabled={!props.canInstall}
           className={cn(
-            "flex w-full items-center justify-center gap-2 rounded-2xl border text-xs font-bold transition", 
+            "flex w-full items-center justify-center gap-2 rounded-2xl border text-xs font-bold transition",
             collapsed ? "px-2 py-2.5" : "px-4 py-3",
-            props.canInstall 
-              ? "border-sky-300/20 bg-sky-300/10 text-sky-100 cursor-pointer hover:bg-sky-300/20" 
+            props.canInstall
+              ? "border-sky-300/20 bg-sky-300/10 text-sky-100 cursor-pointer hover:bg-sky-300/20"
               : "border-white/5 bg-white/[0.02] text-white/20 cursor-not-allowed"
           )}
         >
           <Download className="h-4 w-4" /> {!collapsed && "Install Application"}
         </button>
-        <button 
+        <button
           onClick={props.onLogout}
           aria-label="Log out"
           title={collapsed ? "Terminate session" : undefined}
@@ -306,6 +311,7 @@ function SidebarContent(props: {
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  useDismissOnEscape(mobileOpen, () => setMobileOpen(false));
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem("flowops.sidebar.collapsed") === "1"; } catch { return false; }
   });
@@ -334,9 +340,9 @@ export default function AppLayout() {
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
-    const handler = (e: Event) => { 
-      e.preventDefault(); 
-      setInstallPrompt(e as DeferredInstallPrompt); 
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as DeferredInstallPrompt);
     };
     window.addEventListener("beforeinstallprompt", handler as EventListener);
     return () => window.removeEventListener("beforeinstallprompt", handler as EventListener);
@@ -348,13 +354,13 @@ export default function AppLayout() {
     if (location.pathname !== '/dashboard') return;
     let alive = true;
     api.get('/companies/onboarding-status')
-      .then((res: any) => {
+      .then((res) => {
         const data = res?.data ?? res;
         if (alive && data?.shouldShowOnboarding) {
           navigate('/onboarding', { replace: true });
         }
       })
-      .catch(() => {});
+      .catch((e) => console.error('layout badge counts failed to load', e));
     return () => { alive = false; };
   }, [isAuthenticated, location.pathname, navigate]);
 
@@ -367,7 +373,7 @@ export default function AppLayout() {
     { section: "CORE", label: "Bulk Import", desc: "CSV waybill upload", to: "/waybills/bulk-import", icon: ClipboardList, perm: "waybillInbox" },
     { section: "CORE", label: "Waybills", desc: "Digital register", to: "/waybills", icon: ClipboardList, perm: "waybills" },
     { section: "CORE", label: "Clients", desc: "Enterprise data", to: "/clients", icon: Users, perm: "clients" },
-    
+
     { section: "OPS", label: "Ops Command Centre", desc: "Today's stats & driver board", to: "/operations", icon: Activity, perm: "driverDispatch" },
     { section: "OPS", label: "Warehouse Hub",       desc: "Intake, manifests & POD",      to: "/warehouse",          icon: Box,      perm: "waybillInbox"  },
     { section: "OPS", label: "Client Hub",          desc: "Quotes, pickups & comms",       to: "/customer-service",   icon: Users,    perm: "quotes"        },
@@ -401,11 +407,11 @@ export default function AppLayout() {
     { section: "RAIL", label: "Network Sources", desc: "Provenance, coverage & preserved anomalies", to: "/rail/sources", icon: Database, perm: "rail", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
-    
+
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
     { section: "COMMUNICATIONS", label: "Client Queries", desc: "Customer questions & tickets", to: "/communications/client-queries", icon: MessageCircle, perm: "clientQueries" },
-    
+
     { section: "BILLING", label: "Finance Home", desc: "Revenue, AR aging, clients", to: "/finance", icon: BarChart2, perm: "invoices" },
     { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
     { section: "BILLING", label: "Rate Shopping", desc: "Compare carrier quotes", to: "/rate-shopping", icon: Gauge, perm: "rateCards", entitlement: "rateShopping" },
@@ -419,17 +425,17 @@ export default function AppLayout() {
     { section: "BILLING", label: "Disbursements", desc: "Duties paid for clients & recovery", to: "/disbursements", icon: Wallet, perm: "accounting", entitlement: "accounting" },
     { section: "BILLING", label: "Plans & Usage", desc: "Subscription, limits & upgrades", to: "/billing/plans", icon: Crown, perm: "invoices" },
     { section: "BILLING", label: "Client Portal Links", desc: "Customer booking portal access", to: "/billing/client-portal-links", icon: Globe, perm: "creditControl" },
-    
+
     { section: "INSIGHTS", label: "Logistics Analytics", desc: "AI-powered delivery insights (Enterprise)", to: "/logistics-analytics", icon: BarChart3, entitlement: "logisticsAnalytics" },
     { section: "INSIGHTS", label: "Commercial Analytics", desc: "Pricing, profitability & revenue intelligence", to: "/commercial-analytics", icon: PieChart, entitlement: "commercialAnalytics" },
     { section: "INSIGHTS", label: "Warehouse Management", desc: "Inventory, pick/pack & AI optimization", to: "/wms", icon: Layers, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Cross-Docking", desc: "Bypass storage — direct to dispatch", to: "/wms/cross-dock", icon: Zap, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Wave Planning", desc: "Batch picks into efficient waves", to: "/wms/waves", icon: Layers, entitlement: "warehouseManagement" },
-    { section: "INSIGHTS", label: "AI Slotting", desc: "Velocity-based bin optimization", to: "/wms/slotting", icon: Brain, entitlement: "warehouseManagement" },
+    { section: "INSIGHTS", label: "Slotting Analysis", desc: "Rule-based velocity bin suggestions", to: "/wms/slotting", icon: Brain, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Barcode Verify", desc: "Scan & validate warehouse items", to: "/wms/scan", icon: ScanLine, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Process Book", desc: "Versioned SOPs, evidence & exceptions", to: "/process-book", icon: BookOpen, entitlement: "warehouseManagement" },
     { section: "INSIGHTS", label: "Product Master", desc: "Product / variant / SKU governance", to: "/product-master", icon: Boxes, entitlement: "warehouseManagement" },
-    
+
     { section: "AI", label: "AI Control Tower",        desc: "6-Claw Mesh Status",          to: "/ai-control-tower", icon: Sparkles,    perm: "aiControlTower", entitlement: "aiControlTower"   },
     { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
     { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
@@ -437,7 +443,7 @@ export default function AppLayout() {
     { section: "AI", label: "Fleet Intelligence",        desc: "Network balancing & demand AI",  to: "/fleet-intelligence", icon: Brain },
     { section: "AI", label: "Safety Zones",             desc: "Crime hotspot alerts for drivers", to: "/safety-zones", icon: ShieldAlert },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
-    
+
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
     { section: "ADMIN", label: "Admin Approvals", desc: "Signup approval queue", to: "/admin/approvals", icon: ShieldCheck, adminOnly: true },
     { section: "ADMIN", label: "User Roles", desc: "Permission matrix", to: "/user-roles", icon: Users, perm: "usersRoles" },
@@ -452,7 +458,7 @@ export default function AppLayout() {
   const perms = useMemo(
     () =>
       normalizeTenantNavPermissions(
-        (user as any)?.permissions ?? (user as any)?.navPermissions,
+        user?.permissions ?? user?.navPermissions,
         user?.role,
       ),
     [user],
@@ -462,8 +468,8 @@ export default function AppLayout() {
     const role = String(user?.role || "").toUpperCase();
     return (
       ["ADMIN", "COMPANY_ADMIN", "TENANT_ADMIN", "SUPER_ADMIN", "ULTIMATE_OWNER"].includes(role) ||
-      Boolean((user as any)?.isSuperAdmin) ||
-      Boolean((user as any)?.isUltimateOwner)
+      Boolean(user?.isSuperAdmin) ||
+      Boolean(user?.isUltimateOwner)
     );
   }, [user]);
 
@@ -502,9 +508,9 @@ export default function AppLayout() {
     return found?.label ?? "FlowOps";
   }, [location.pathname, nav]);
 
-  const handleLogout = () => { 
-    localStorage.clear(); 
-    navigate("/login", { replace: true }); 
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate("/login", { replace: true });
   };
 
   const handleInstall = async () => {
@@ -520,12 +526,12 @@ export default function AppLayout() {
       <a href="#main-content" className="skip-link">Skip to main content</a>
       {/* Desktop Sidebar */}
       <aside className={cn("hidden shrink-0 border-r border-white/5 bg-[#081120] xl:flex xl:flex-col fx-sidebar", collapsed ? "w-[84px]" : "w-[300px]")}>
-        <SidebarContent 
-          grouped={grouped} 
-          currentPath={location.pathname} 
-          onNavigate={() => setMobileOpen(false)} 
-          canInstall={!!installPrompt} 
-          onInstall={handleInstall} 
+        <SidebarContent
+          grouped={grouped}
+          currentPath={location.pathname}
+          onNavigate={() => setMobileOpen(false)}
+          canInstall={!!installPrompt}
+          onInstall={handleInstall}
           onLogout={handleLogout}
           brandName={branding.brandName}
           brandLogoUrl={branding.logoUrl}
@@ -582,7 +588,7 @@ export default function AppLayout() {
         <main id="main-content" tabIndex={-1} role="main" aria-label="Page content" className="flex-1 overflow-y-auto bg-[#07111f] relative custom-scrollbar fx-ambient fx-grid">
           {/* ── Trial Banner ── */}
           {(() => {
-            const co = user?.company as any;
+            const co = user?.company;
             if (!co) return null;
             const days: number | null = co.trialDaysLeft ?? null;
             if (days === null) return null;           // paid plan, no banner
@@ -639,17 +645,17 @@ export default function AppLayout() {
       {/* Mobile Drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 flex xl:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" ><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => setMobileOpen(false)} /></div>
           <aside className="relative w-[300px] border-r border-white/10 bg-[#081120] shadow-2xl">
             <button onClick={() => setMobileOpen(false)} aria-label="Close navigation menu" className="absolute right-4 top-4 z-50 p-2 text-white/20 hover:text-white transition">
               <X className="h-6 w-6" />
             </button>
-            <SidebarContent 
-              grouped={grouped} 
-              currentPath={location.pathname} 
-              onNavigate={() => setMobileOpen(false)} 
-              canInstall={!!installPrompt} 
-              onInstall={handleInstall} 
+            <SidebarContent
+              grouped={grouped}
+              currentPath={location.pathname}
+              onNavigate={() => setMobileOpen(false)}
+              canInstall={!!installPrompt}
+              onInstall={handleInstall}
               onLogout={handleLogout}
               brandName={branding.brandName}
               brandLogoUrl={branding.logoUrl}

@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Boxes,
@@ -62,32 +63,31 @@ export default function ProductMasterPage() {
   const [productForm, setProductForm] = useState({ code: '', name: '', category: '', brand: '', unitOfMeasure: 'EA' });
   const [variantForm, setVariantForm] = useState({ productId: '', code: '', name: '', attributes: '{"colour":"", "size":""}' });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { enabled: isEnabled } = await productMasterApi.isEnabled();
-      setEnabled(isEnabled);
-      if (!isEnabled) {
-        setProducts([]);
-        setVariants([]);
-        setAudit([]);
-        return;
-      }
-      const [productData, variantData, auditData] = await Promise.all([
-        productMasterApi.listProducts(search ? { search } : undefined),
-        productMasterApi.listVariants(),
-        productMasterApi.listAudit(),
-      ]);
-      setProducts(productData);
-      setVariants(variantData);
-      setAudit(auditData);
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? err?.message ?? 'Could not load master data');
-    } finally {
-      setLoading(false);
+  const load = useCallback(() => (async () => {
+    const { enabled: isEnabled } = await productMasterApi.isEnabled();
+    setEnabled(isEnabled);
+    if (!isEnabled) {
+      setProducts([]);
+      setVariants([]);
+      setAudit([]);
+      return;
     }
-  }, [search]);
+    const [productData, variantData, auditData] = await Promise.all([
+      productMasterApi.listProducts(search ? { search } : undefined),
+      productMasterApi.listVariants(),
+      productMasterApi.listAudit(),
+    ]);
+    setProducts(productData);
+    setVariants(variantData);
+    setAudit(auditData);
+
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || 'Could not load master data');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [search]);
 
   useEffect(() => {
     void load();
@@ -111,8 +111,8 @@ export default function ProductMasterPage() {
       await fn();
       if (successMessage) setNotice(successMessage);
       await load();
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? err?.message ?? 'Action failed');
+    } catch (err) {
+      setError(errorMessageOf(err) || 'Action failed');
     } finally {
       setBusy(null);
     }

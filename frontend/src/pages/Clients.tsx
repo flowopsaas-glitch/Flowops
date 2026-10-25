@@ -6,13 +6,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatMoney } from "../lib/currency";
 import {
   BadgeDollarSign, Building2, Edit2, Mail, Package, Phone, Plus, RefreshCw,
   Search, ShieldCheck, Trash2, User, X, AlertCircle, MessageCircle,
-  CalendarClock, Wallet, TrendingUp, Users,
+  CalendarClock, Wallet, Users,
 } from "lucide-react";
 import api from "../api/client";
 import { TiltCard } from "../components/premium/TiltCard";
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -74,9 +76,9 @@ const BILLING_DESCRIPTIONS: Record<BillingType, string> = {
   CASH:     "Walk-in / once-off cash payer",
 };
 
-function unwrap(res: any): any[] {
-  const d = res?.data ?? res;
-  return Array.isArray(d) ? d : [];
+function unwrap<T>(res: unknown): T[] {
+  const d = (res as { data?: unknown } | null)?.data ?? res;
+  return Array.isArray(d) ? (d as T[]) : [];
 }
 
 type ClientOverview = {
@@ -120,7 +122,7 @@ function ClientModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  const set = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k: string, v: string | number | undefined) => setForm(p => ({ ...p, [k]: v }));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -129,7 +131,7 @@ function ClientModal({
     setErr("");
     try {
       await onSave(form);
-    } catch (ex: any) {
+    } catch (ex) {
       setErr(ex?.message ?? "Failed to save client.");
     } finally {
       setSaving(false);
@@ -176,30 +178,30 @@ function ClientModal({
           {/* Basic info */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Client Name *</label>
-              <input value={form.name} onChange={e => set("name", e.target.value)} required
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-client-name-10">Client Name *</label>
+              <input id="field-client-name-10" value={form.name} onChange={e => set("name", e.target.value)} required
                 placeholder="e.g. Acme Logistics" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Trading Name</label>
-              <input value={form.tradingName} onChange={e => set("tradingName", e.target.value)}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-trading-name-9">Trading Name</label>
+              <input id="field-trading-name-9" value={form.tradingName} onChange={e => set("tradingName", e.target.value)}
                 placeholder="Optional" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Phone</label>
-              <input value={form.phone} onChange={e => set("phone", e.target.value)}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-phone-8">Phone</label>
+              <input id="field-phone-8" value={form.phone} onChange={e => set("phone", e.target.value)}
                 placeholder="+27 82 000 0000" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Email</label>
-              <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-email-7">Email</label>
+              <input id="field-email-7" type="email" value={form.email} onChange={e => set("email", e.target.value)}
                 placeholder="billing@client.co.za" className={inputCls} />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Address</label>
-            <input value={form.address} onChange={e => set("address", e.target.value)}
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-address-6">Address</label>
+            <input id="field-address-6" value={form.address} onChange={e => set("address", e.target.value)}
               placeholder="Street, City, Province" className={inputCls} />
           </div>
 
@@ -207,18 +209,18 @@ function ClientModal({
           {form.billingType === "CONTRACT" && (
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Credit Limit (R)</label>
-                <input type="number" value={form.creditLimit ?? ""} onChange={e => set("creditLimit", +e.target.value || undefined)}
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-credit-limit-r-5">Credit Limit (R)</label>
+                <input id="field-credit-limit-r-5" type="number" value={form.creditLimit ?? ""} onChange={e => set("creditLimit", +e.target.value || undefined)}
                   placeholder="e.g. 50000" className={inputCls} />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Payment Terms (days)</label>
-                <input type="number" value={form.paymentTerms ?? 30} onChange={e => set("paymentTerms", +e.target.value)}
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-payment-terms-days-4">Payment Terms (days)</label>
+                <input id="field-payment-terms-days-4" type="number" value={form.paymentTerms ?? 30} onChange={e => set("paymentTerms", +e.target.value)}
                   className={inputCls} />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Account Code</label>
-                <input value={form.accountCode} onChange={e => set("accountCode", e.target.value)}
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-account-code-3">Account Code</label>
+                <input id="field-account-code-3" value={form.accountCode} onChange={e => set("accountCode", e.target.value)}
                   placeholder="e.g. CLI-001" className={inputCls} />
               </div>
             </div>
@@ -226,15 +228,15 @@ function ClientModal({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">VAT Number</label>
-              <input value={form.vatNumber} onChange={e => set("vatNumber", e.target.value)}
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-vat-number-2">VAT Number</label>
+              <input id="field-vat-number-2" value={form.vatNumber} onChange={e => set("vatNumber", e.target.value)}
                 placeholder="Optional" className={inputCls} />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50">Notes</label>
-            <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={3}
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-white/50" htmlFor="field-notes-1">Notes</label>
+            <textarea id="field-notes-1" value={form.notes} onChange={e => set("notes", e.target.value)} rows={3}
               placeholder="Any special instructions or account notes…"
               className={inputCls + " resize-none"} />
           </div>
@@ -276,12 +278,11 @@ export default function ClientsPage() {
   };
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
     try {
       const res = await api.get("/clients?limit=500");
       if (signal?.aborted) return;
-      setClients(unwrap(res));
-      api.get("/clients/overview").then((r: any) => {
+      setClients(unwrap<Client>(res));
+      api.get("/clients/overview").then((r) => {
         if (!signal?.aborted) setOverview(r?.data ?? r);
       }).catch(() => {
         if (!signal?.aborted) setOverview(null);
@@ -540,7 +541,7 @@ export default function ClientsPage() {
 // ── Portfolio intelligence panel ────────────────────────────────────────────
 
 function clientMoney(v: number) {
-  return `R ${Math.round(v).toLocaleString("en-ZA")}`;
+  return formatMoney(Math.round(v), tenantCurrency());
 }
 
 const MIX_META: { key: "COD" | "PREPAID" | "CONTRACT" | "CASH"; label: string; cls: string }[] = [

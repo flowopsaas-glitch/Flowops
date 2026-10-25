@@ -148,6 +148,34 @@ jobs:
       - name: Build
         run: npx vite build
 
+  # The driver portal (which the Capacitor mobile shell packages via
+  # driver-mobile/scripts/prepare-web.mjs) had no CI coverage at all: it
+  # could stop typechecking or building without any check noticing. Keep
+  # the gate to what the app itself defines (typecheck + production build).
+  driver-portal:
+    name: Driver Portal
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: driver-portal
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: driver-portal/package-lock.json
+
+      - run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
   backend:
     name: Backend
     runs-on: ubuntu-latest
@@ -194,6 +222,11 @@ jobs:
       # rather than silently using a hardcoded fallback that leaks.
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       NODE_ENV: test
+      # RBAC ratchet end-state (docs/SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md):
+      # the route inventory is 0-undecided, so strict mode must hold in CI.
+      # Any future route without a deliberate @Roles/@Public/@OwnerOnly/
+      # @AnyAuthenticated decision is rejected here first, not in production.
+      RBAC_STRICT: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -299,11 +332,23 @@ jobs:
           retention-days: 7
 
       - name: Unit tests
-        run: npm test
+        # The github-actions reporter turns failing tests into check
+        # annotations, so failures are visible without downloading job logs.
+        run: npm test -- --reporters=default --reporters=github-actions
+
+      - name: RBAC coverage (blocking)
+        # Every route must carry one deliberate access decision (@Roles,
+        # @AnyAuthenticated, @Public, or @OwnerOnly). This is the option-3
+        # ratchet from docs/SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md: with
+        # the undecided list at zero, RBAC_STRICT=true can reject any future
+        # route that ships without a decision instead of publishing it.
+        run: node scripts/rbac-inventory.mjs --check
 
       - name: Advisory RBAC + tenant-scope reports (non-blocking)
-        # These scanners cannot see runtime control flow, so they inform review
-        # rather than fail the build. Legitimate hits exist (platform-admin
+        # Full scanner output as a review artifact. RBAC *coverage* is
+        # enforced by the blocking step above; the tenant-scope scanner
+        # cannot see runtime control flow, so it informs review rather than
+        # failing the build. Legitimate hits exist (platform-admin
         # endpoints, token lookups, writes to rows already proven in-tenant).
         run: |
           mkdir -p audit-reports
@@ -442,7 +487,11 @@ jobs:
 
   e2e:
     name: E2E Tests
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label migrated to Ubuntu 26
+    # (2026-10-19), where Playwright's --with-deps apt set is not yet
+    # validated — the install step failed in seconds before any test ran.
+    # 24.04 is the image Playwright 1.60 supports and CI historically used.
+    runs-on: ubuntu-24.04
     needs: [detect, frontend, backend]
     if: needs.detect.outputs.has_backend == 'true'
 
@@ -459,9 +508,33 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      # Cache the downloaded browsers (keyed by the lockfile, which pins
+      # the Playwright version) so the job does not depend on the
+      # Playwright CDN being reachable on every run.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      # Only Chromium is needed: both projects in playwright.config.ts
+      # (Desktop Chrome, Pixel 5) run on Chromium. Installing every engine
+      # pulls extra apt packages for browsers no test uses. Retried up to
+      # 3 times to ride out transient CDN/apt failures; the step still
+      # fails the job if all attempts fail — no silent pass.
       - name: Install Playwright
-        run: npx playwright install --with-deps
         working-directory: frontend
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "Playwright install attempt ${attempt} failed; retrying..." >&2
+            sleep $((attempt * 15))
+          done
+          echo "Playwright install failed after 3 attempts" >&2
+          exit 1
 
       - name: Run Playwright tests
         run: npx playwright test

@@ -12,7 +12,6 @@ import {
   Plus,
   Trash2,
   Truck,
-  Package,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -196,9 +195,9 @@ function StepBranding({
         <Input label="Brand Name" value={data.brandName} onChange={(v) => update("brandName", v)} placeholder="Your brand display name" fullWidth />
         <Input label="Logo URL" value={data.logoUrl} onChange={(v) => update("logoUrl", v)} placeholder="https://cdn.example.com/logo.png" fullWidth />
         <div>
-          <label className="block text-xs font-semibold text-white/60 mb-1.5">Primary Color</label>
+          <label className="block text-xs font-semibold text-white/60 mb-1.5" htmlFor="field-primary-color-3">Primary Color</label>
           <div className="flex items-center gap-3">
-            <input
+            <input id="field-primary-color-3"
               type="color"
               value={data.primaryColor}
               onChange={(e) => update("primaryColor", e.target.value)}
@@ -265,8 +264,8 @@ function StepRateCards({
             <Input label="Per-Kg Price" type="number" value={String(card.perKgPrice)} onChange={(v) => updateCard(card.id, "perKgPrice", parseFloat(v) || 0)} placeholder="0" />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-white/60 mb-1.5">Currency</label>
-            <select
+            <label className="block text-xs font-semibold text-white/60 mb-1.5" htmlFor="field-currency-2">Currency</label>
+            <select id="field-currency-2"
               value={card.currency}
               onChange={(e) => updateCard(card.id, "currency", e.target.value)}
               className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50"
@@ -321,8 +320,8 @@ function StepInviteTeam({
             <Input label="Email" type="email" value={member.email} onChange={(v) => updateMember(member.id, "email", v)} placeholder="team@company.co.za" fullWidth />
           </div>
           <div className="w-40">
-            <label className="block text-xs font-semibold text-white/60 mb-1.5">Role</label>
-            <select
+            <label className="block text-xs font-semibold text-white/60 mb-1.5" htmlFor="field-role-1">Role</label>
+            <select id="field-role-1"
               value={member.role}
               onChange={(e) => updateMember(member.id, "role", e.target.value)}
               className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50"
@@ -382,6 +381,13 @@ function Input({
 }
 
 // ─── Confetti CSS Animation ────────────────────────────────────────────────
+// Pure seeded scatter for the confetti burst: stable per-piece values in
+// [0, 1) without calling Math.random() during render.
+function seededScatter(seed: number): number {
+  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 function ConfettiEffect() {
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-50">
@@ -390,10 +396,10 @@ function ConfettiEffect() {
           key={i}
           className="absolute w-2 h-2 rounded-sm animate-confetti"
           style={{
-            left: `${Math.random() * 100}%`,
+            left: `${seededScatter(i * 3) * 100}%`,
             backgroundColor: ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"][i % 6],
-            animationDelay: `${Math.random() * 2}s`,
-            animationDuration: `${2 + Math.random() * 2}s`,
+            animationDelay: `${seededScatter(i * 3 + 1) * 2}s`,
+            animationDuration: `${2 + seededScatter(i * 3 + 2) * 2}s`,
           }}
         />
       ))}
@@ -480,7 +486,7 @@ export default function OnboardingWizard() {
         }
       }
       updateState({ currentStep: currentStep + 1 });
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
@@ -501,7 +507,7 @@ export default function OnboardingWizard() {
       });
       localStorage.removeItem(STORAGE_KEY);
       setCompleted(true);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);

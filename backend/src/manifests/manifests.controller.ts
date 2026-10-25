@@ -2,9 +2,19 @@ import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ManifestsService } from './manifests.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const MANIFEST_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH, UserRole.WAREHOUSE,
+];
+
 
 @ApiTags('Manifests')
 @ApiBearerAuth()
+@RequireFeature('manifests')
+@Roles(...MANIFEST_ROLES)
 @Controller()
 export class ManifestsController {
   constructor(private readonly svc: ManifestsService) {}

@@ -73,6 +73,22 @@ describe("TrackingPage", () => {
     expect(screen.getByText(/Tracking checked/)).toBeInTheDocument();
   });
 
+  it("discloses when the ETA is a straight-line fallback estimate", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse({ ...trackingRecord, etaMinutes: 42, etaSource: "haversine" }));
+    renderTracking();
+
+    expect(await screen.findByText("FO-12345")).toBeInTheDocument();
+    expect(screen.getByText(/straight-line distance/)).toBeInTheDocument();
+  });
+
+  it("labels a road-route ETA as an estimate that can change", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse({ ...trackingRecord, etaMinutes: 42, etaSource: "osrm" }));
+    renderTracking();
+
+    expect(await screen.findByText("FO-12345")).toBeInTheDocument();
+    expect(screen.getByText(/current road route/)).toBeInTheDocument();
+  });
+
   it("keeps the last successful record visible and labels it stale when auto-refresh fails", async () => {
     fetchMock.mockResolvedValueOnce(okResponse({ ...trackingRecord, etaMinutes: null, remainingKm: null }));
     let refresh: (() => void) | undefined;

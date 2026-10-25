@@ -6,7 +6,7 @@ import {
 import {
   getSsoConfig, saveSsoConfig, type SsoConfig, type SsoConfigInput,
 } from "../../api/ssoApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 
 const ROLES = ["AGENT", "DISPATCH", "WAREHOUSE", "MANAGER", "VIEWER", "USER"];
 
@@ -37,7 +37,7 @@ export default function SsoSettings() {
           autoProvision: c.autoProvision ?? true,
           defaultRole: c.defaultRole ?? "AGENT",
         });
-      } catch (e: any) {
+      } catch (e) {
         if (e?.status === 403) setForbidden(true);
       } finally {
         setLoading(false);
@@ -45,7 +45,7 @@ export default function SsoSettings() {
     })();
   }, []);
 
-  const set = (k: keyof SsoConfigInput, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: keyof SsoConfigInput, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = async () => {
     setSaving(true);
@@ -53,7 +53,7 @@ export default function SsoSettings() {
       const next = await saveSsoConfig(form);
       setCfg(next);
       showToast("SSO configuration saved", "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Could not save SSO config", "error");
     } finally {
       setSaving(false);
@@ -168,13 +168,13 @@ export default function SsoSettings() {
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label className={LABEL}>Issuer URL</label>
-              <input className={FIELD} placeholder="https://login.microsoftonline.com/<tenant>/v2.0"
+              <label className={LABEL} htmlFor="field-issuer-url-5">Issuer URL</label>
+              <input id="field-issuer-url-5" className={FIELD} placeholder="https://login.microsoftonline.com/<tenant>/v2.0"
                 value={form.issuer ?? ""} onChange={(e) => set("issuer", e.target.value)} />
             </div>
             <div>
-              <label className={LABEL}>Client ID</label>
-              <input className={FIELD} placeholder="abc123..." value={form.clientId ?? ""}
+              <label className={LABEL} htmlFor="field-client-id-4">Client ID</label>
+              <input id="field-client-id-4" className={FIELD} placeholder="abc123..." value={form.clientId ?? ""}
                 onChange={(e) => set("clientId", e.target.value)} />
             </div>
             <div>
@@ -183,8 +183,8 @@ export default function SsoSettings() {
                 value={form.clientSecret ?? ""} onChange={(e) => set("clientSecret", e.target.value)} />
             </div>
             <div>
-              <label className={LABEL}>Scopes</label>
-              <input className={FIELD} placeholder="openid email profile" value={form.scopes ?? ""}
+              <label className={LABEL} htmlFor="field-scopes-3">Scopes</label>
+              <input id="field-scopes-3" className={FIELD} placeholder="openid email profile" value={form.scopes ?? ""}
                 onChange={(e) => set("scopes", e.target.value)} />
             </div>
           </div>
@@ -197,14 +197,14 @@ export default function SsoSettings() {
           </span>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={LABEL}>Allowed email domain</label>
-              <input className={FIELD} placeholder="acme.com" value={form.allowedDomain ?? ""}
+              <label className={LABEL} htmlFor="field-allowed-email-domain-2">Allowed email domain</label>
+              <input id="field-allowed-email-domain-2" className={FIELD} placeholder="acme.com" value={form.allowedDomain ?? ""}
                 onChange={(e) => set("allowedDomain", e.target.value)} />
               <p className="mt-1 text-[11px] text-white/35">Only emails on this domain may sign in via SSO.</p>
             </div>
             <div>
-              <label className={LABEL}>Default role for new users</label>
-              <select className={FIELD} value={form.defaultRole ?? "AGENT"} onChange={(e) => set("defaultRole", e.target.value)}>
+              <label className={LABEL} htmlFor="field-default-role-for-new-users-1">Default role for new users</label>
+              <select id="field-default-role-for-new-users-1" className={FIELD} value={form.defaultRole ?? "AGENT"} onChange={(e) => set("defaultRole", e.target.value)}>
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>

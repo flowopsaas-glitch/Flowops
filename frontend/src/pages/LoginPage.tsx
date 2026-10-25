@@ -74,7 +74,7 @@ export default function LoginPage() {
       setSessionLoginMode(resolvedMode);
       persistTermsAcceptanceLocally();
       window.location.href = resolvedMode === "owner" ? "/owner/dashboard" : "/dashboard";
-    } catch (err: any) {
+    } catch (err) {
       setError(String(err?.message || err?.response?.data?.message || "Invalid email or password."));
     } finally {
       setBusy(false);
@@ -97,7 +97,7 @@ export default function LoginPage() {
         setError("No single sign-on is configured for this email domain.");
         setSsoBusy(false);
       }
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Could not start single sign-on.");
       setSsoBusy(false);
     }

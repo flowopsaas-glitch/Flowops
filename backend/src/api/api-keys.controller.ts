@@ -4,11 +4,14 @@ import { ApiKeysService } from './api-keys.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('API Keys')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('api')
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
 @Controller('integrations/api-keys')
 export class ApiKeysController {
   constructor(private readonly svc: ApiKeysService) {}

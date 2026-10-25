@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import {useCallback,  useEffect, useMemo, useState } from "react";
 import {
   Ship, Plane, Truck, Package, Building2, Plus, Loader2, Trash2, Anchor, Search,
   TrendingDown, Award, ChevronDown, Route, Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 import * as carrierApi from "../api/carrierApi";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import { TiltCard } from "../components/premium/TiltCard";
 
-const TYPE_META: Record<carrierApi.CarrierType, { label: string; icon: any }> = {
+const TYPE_META: Record<carrierApi.CarrierType, { label: string; icon: LucideIcon }> = {
   OCEAN_LINE: { label: "Ocean line", icon: Ship },
   AIRLINE: { label: "Airline", icon: Plane },
   ROAD_CARRIER: { label: "Road carrier", icon: Truck },
@@ -29,22 +31,25 @@ export default function CarrierManagement() {
   const [busy, setBusy] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", type: "OCEAN_LINE", code: "", contactEmail: "", accountNumber: "" });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [c, m, l] = await Promise.all([
-        carrierApi.listCarriers(),
-        carrierApi.carrierMetrics().catch(() => null),
-        carrierApi.laneAnalysis().catch(() => null),
-      ]);
-      setCarriers(c);
-      setMetrics(m);
-      setLanes(l);
-    } catch (e: any) {
-      showToast(e?.message ?? "Could not load carriers", "error");
-    } finally { setLoading(false); }
-  };
-  useEffect(() => { void load();   }, []);
+  // The load runs as a promise chain: state updates land in .then/.catch/
+  // .finally callbacks, never synchronously inside the triggering effect
+  // (react-hooks/set-state-in-effect). `load()` still returns a promise, so
+  // handler call sites are unchanged.
+  const load = useCallback(() => (async () => {
+    const [c, m, l] = await Promise.all([
+      carrierApi.listCarriers(),
+      carrierApi.carrierMetrics().catch(() => null),
+      carrierApi.laneAnalysis().catch(() => null),
+    ]);
+    setCarriers(c);
+    setMetrics(m);
+    setLanes(l);
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e) || "Could not load carriers", "error");
+  }).finally(() => {
+    setLoading(false);
+  }), [showToast]);
+  useEffect(() => { void load(); }, [load]);
 
   const visible = useMemo(() => {
     if (!q.trim()) return carriers;
@@ -56,19 +61,19 @@ export default function CarrierManagement() {
     if (!form.name.trim()) { showToast("Carrier name is required", "error"); return; }
     setBusy("create");
     try {
-      await carrierApi.createCarrier(form as any);
+      await carrierApi.createCarrier({ ...form, type: form.type as carrierApi.CarrierType });
       setForm({ name: "", type: "OCEAN_LINE", code: "", contactEmail: "", accountNumber: "" });
       setShowNew(false);
       await load();
       showToast("Carrier added", "success");
-    } catch (e: any) { showToast(e?.message ?? "Could not add carrier", "error"); }
+    } catch (e) { showToast(errorMessageOf(e) || "Could not add carrier", "error"); }
     finally { setBusy(null); }
   };
 
   const remove = async (id: string) => {
     setBusy(id);
     try { await carrierApi.deleteCarrier(id); await load(); showToast("Carrier removed", "success"); }
-    catch (e: any) { showToast(e?.message ?? "Could not remove", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Could not remove", "error"); }
     finally { setBusy(null); }
   };
 
@@ -161,14 +166,14 @@ function CarrierRow({ carrier, onChange, busy, setBusy, onRemove }: {
       setShowRate(false);
       await onChange();
       showToast("Buy-rate added", "success");
-    } catch (e: any) { showToast(e?.message ?? "Could not add rate", "error"); }
+    } catch (e) { showToast(errorMessageOf(e) || "Could not add rate", "error"); }
     finally { setBusy(null); }
   };
 
   const delRate = async (rateId: string) => {
     setBusy(`del-${rateId}`);
     try { await carrierApi.deleteCarrierRate(carrier.id, rateId); await onChange(); }
-    catch (e: any) { showToast(e?.message ?? "Could not remove rate", "error"); }
+    catch (e) { showToast(errorMessageOf(e) || "Could not remove rate", "error"); }
     finally { setBusy(null); }
   };
 

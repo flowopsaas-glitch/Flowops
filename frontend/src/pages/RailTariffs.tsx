@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   ancillaryCatalogue,
-  ancillaryCounts,
   ancillarySource,
   type AncillaryGroup,
 } from "../data/railAncillaryData";

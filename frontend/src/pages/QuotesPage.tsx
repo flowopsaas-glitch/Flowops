@@ -84,7 +84,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
       });
       onSaved();
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || "Failed to create quote.");
     } finally {
       setSaving(false);
@@ -119,8 +119,8 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
             </div>
           ))}
           <div>
-            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Client Name</label>
-            <input
+            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-client-name-2">Client Name</label>
+            <input id="field-client-name-2"
               value={form.clientName}
               onChange={(e) => setForm((f) => ({ ...f, clientName: e.target.value }))}
               placeholder="Acme Logistics (optional)"
@@ -128,8 +128,8 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">Weight (kg) *</label>
-            <input
+            <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/50" htmlFor="field-weight-kg-1">Weight (kg) *</label>
+            <input id="field-weight-kg-1"
               value={form.weight}
               onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}
               type="number" min="0.1" step="0.1" placeholder="2.5"
@@ -170,26 +170,25 @@ export default function QuotesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "accepted" | "expired">("all");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
       const [listRes, metRes] = await Promise.allSettled([
         api.get("/quotes"),
         api.get("/quotes/metrics"),
       ]);
       if (listRes.status === "fulfilled") {
-        const res: any = listRes.value;
+        const res = listRes.value as unknown as { data?: Quote[] } | Quote[];
         const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
         setQuotes(data);
       }
       if (metRes.status === "fulfilled") {
-        const m: any = metRes.value;
-        setMetrics(m?.data ?? m);
+        const m = metRes.value as unknown as { data?: QuoteMetrics } | QuoteMetrics;
+        setMetrics((m as { data?: QuoteMetrics })?.data ?? (m as QuoteMetrics));
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  })(), []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -258,7 +257,7 @@ export default function QuotesPage() {
           { k: "accepted", label: "Accepted",        val: stats.accepted, tone: "text-emerald-300" },
           { k: "expired",  label: "Expired",         val: stats.expired,  tone: "text-slate-400" },
         ].map(({ k, label, val, tone }) => (
-          <button key={k} onClick={() => setFilter(k as any)}
+          <button key={k} onClick={() => setFilter(k as typeof filter)}
             className={`rounded-[24px] border p-5 text-left transition-colors ${filter === k ? "border-blue-400/30 bg-blue-500/10" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.08]"}`}>
             <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">{label}</div>
             <div className={`mt-2 text-3xl font-black ${tone}`}>{val}</div>

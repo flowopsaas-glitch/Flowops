@@ -18,6 +18,7 @@ import {
   Sparkles,
   Truck,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 
 import type { TenantNavPermissionKey } from "./tenantUserPermissions";
@@ -28,7 +29,7 @@ export type NavItem = {
   page: string;
   path: string;
   permissionKey: TenantNavPermissionKey;
-  icon: any;
+  icon: LucideIcon;
   section: "CORE" | "BILLING" | "AI";
   badge?: string;
   description?: string;

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useDismissOnEscape } from "./patterns/useDismissOnEscape";
 import { X, Loader2, Send, FileText } from "lucide-react";
 import { api } from "../api/client";
 import { useToast } from "./ui/use-toast";
@@ -27,6 +28,7 @@ export default function WhatsAppTemplateModal({
   onClose: () => void;
   onSent: () => void;
 }) {
+  useDismissOnEscape(true, onClose);
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
@@ -41,7 +43,7 @@ export default function WhatsAppTemplateModal({
   useEffect(() => {
     (async () => {
       try {
-        const res: any = await api.get("/whatsapp/templates");
+        const res = await api.get("/whatsapp/templates");
         const data = res?.data ?? res;
         const approved: Template[] = (data?.templates ?? []).filter(
           (t: Template) => String(t.status).toUpperCase() === "APPROVED",
@@ -64,15 +66,18 @@ export default function WhatsAppTemplateModal({
 
   const varCount = configured ? active?.variableCount ?? 0 : manualCount;
 
-  // keep the vars array sized to the template's variable count
-  useEffect(() => {
+  // Keep the vars array sized to the template's variable count (render-time
+  // adjustment on the varCount transition rather than an effect).
+  const [prevVarCount, setPrevVarCount] = useState(varCount);
+  if (varCount !== prevVarCount) {
+    setPrevVarCount(varCount);
     setVars((prev) => {
       const next = [...prev];
       next.length = varCount;
       for (let i = 0; i < varCount; i++) if (next[i] == null) next[i] = "";
       return next;
     });
-  }, [varCount]);
+  }
 
   function preview(): string {
     const body = configured ? active?.bodyText ?? "" : "";
@@ -92,7 +97,7 @@ export default function WhatsAppTemplateModal({
     }
     setSending(true);
     try {
-      const res: any = await api.post("/whatsapp/send-template", {
+      const res = await api.post("/whatsapp/send-template", {
         to,
         name,
         language,
@@ -105,7 +110,7 @@ export default function WhatsAppTemplateModal({
       }
       toast({ title: "Template sent." });
       onSent();
-    } catch (e: any) {
+    } catch (e) {
       const detail = e?.response?.data?.message || e?.message || "Send failed";
       toast({ title: "Template send failed", description: detail, variant: "destructive" });
     } finally {
@@ -114,10 +119,10 @@ export default function WhatsAppTemplateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
       <div
-        className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b1220] p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b1220] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-label="WhatsApp template"
+
       >
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-lg font-black text-white">

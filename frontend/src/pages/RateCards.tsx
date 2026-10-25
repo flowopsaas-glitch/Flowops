@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {useCallback,  useEffect, useMemo, useState } from "react";
+import { formatMoney } from "../lib/currency";
 import { useSearchParams } from "react-router-dom";
 import { Bot, CheckCircle2, Receipt, ShieldAlert, Sparkles, TrendingUp } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
+import { useToast } from "../components/toast-context";
 import api from "../api/client";
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 type RateCard = {
   id: string;
@@ -16,6 +18,7 @@ type RateCard = {
   vatPercent: number;
   targetMarginPercent: number;
   isActive: boolean;
+  company?: { name?: string } | null;
 };
 
 type RateCardForm = {
@@ -28,10 +31,12 @@ type RateCardForm = {
   marginPercent: string;
 };
 
-function unwrap(r: any): any { return r?.data ?? r; }
-function unwrapList(r: any): any[] {
-  const d = r?.data ?? r;
-  return Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
+function unwrapList<T>(r: unknown): T[] {
+  const d = (r as { data?: unknown } | null)?.data ?? r;
+  if (Array.isArray(d)) return d as T[];
+  const inner = (d as { data?: unknown } | null)?.data;
+  return Array.isArray(inner) ? (inner as T[]) : [];
 }
 
 function cn(...classes: Array<string | false | null | undefined>) {
@@ -39,16 +44,16 @@ function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 function money(value: number) {
-  return `R ${Number(value || 0).toFixed(2)}`;
+  return formatMoney(Number(value || 0), tenantCurrency());
 }
 
 export default function RateCardsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [rateCards, setRateCards] = useState<RateCard[]>([]);
-  const [companies, setCompanies] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<{ id: string | number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
-  const [selectedRateCardId, setSelectedRateCardId] = useState("");
+  const [manualSelectedRateCardId, setSelectedRateCardId] = useState("");
   const [distanceKm, setDistanceKm] = useState("120");
   const [actualWeightKg, setActualWeightKg] = useState("8");
 
@@ -63,54 +68,43 @@ export default function RateCardsPage() {
   });
   const { showToast } = useToast();
 
-  async function fetchData() {
-    setLoading(true);
-    try {
-      const [cardsRaw, compRaw] = await Promise.all([
-        api.get("/rate-cards"),
-        api.get("/companies/my-company"),
-      ]);
-      const cards = unwrapList(cardsRaw);
-      const comp  = unwrap(compRaw);
-      setRateCards(cards);
-      // Tenant has one company — wrap in array for the select dropdown
-      setCompanies(comp && comp.id ? [comp] : []);
-      if (cards.length > 0 && !selectedRateCardId) {
-        setSelectedRateCardId(cards[0].id);
-      }
-    } catch (err) {
-      console.error("Fetch error", err);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const fetchData = useCallback(() => (async () => {
+    const [cardsRaw, compRaw] = await Promise.all([
+      api.get("/rate-cards"),
+      api.get("/companies/my-company"),
+    ]);
+    const cards = unwrapList<RateCard>(cardsRaw);
+    const comp  = unwrap<{ id: string | number; name: string } | null>(compRaw);
+    setRateCards(cards);
+    // Tenant has one company — wrap in array for the select dropdown
+    setCompanies(comp && comp.id ? [comp] : []);
+
+  })().catch((err) => {
+    console.error("Fetch error", err);
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), []);
 
   useEffect(() => {
     void fetchData();
-  }, []);
+  }, [fetchData]);
 
-  useEffect(() => {
-    if (!rateCards.length) return;
-
-    const requestedRateCardId = searchParams.get("rateCardId");
-    const requestedCompanyId = searchParams.get("companyId");
-    const requestedClientName = searchParams.get("clientName")?.toLowerCase();
-    const requested = rateCards.find((card) => {
-      if (requestedRateCardId && card.id === requestedRateCardId) return true;
-      if (requestedCompanyId && String(card.companyId) === requestedCompanyId) return true;
-      if (requestedClientName && String(card.clientName || "").toLowerCase() === requestedClientName) return true;
-      return false;
-    });
-
-    if (requested && selectedRateCardId !== requested.id) {
-      setSelectedRateCardId(requested.id);
-      return;
-    }
-
-    if (!selectedRateCardId) {
-      setSelectedRateCardId(rateCards[0]?.id ?? "");
-    }
-  }, [rateCards, searchParams, selectedRateCardId]);
+  // The effective selection is derived: an explicit deep-link target wins,
+  // then the operator's manual choice, then the first card. No effect has to
+  // copy a resolved selection into state.
+  const requestedRateCardId = searchParams.get("rateCardId");
+  const requestedCompanyId = searchParams.get("companyId");
+  const requestedClientName = searchParams.get("clientName")?.toLowerCase();
+  const requestedRateCard = rateCards.find((card) => {
+    if (requestedRateCardId && card.id === requestedRateCardId) return true;
+    if (requestedCompanyId && String(card.companyId) === requestedCompanyId) return true;
+    if (requestedClientName && String(card.clientName || "").toLowerCase() === requestedClientName) return true;
+    return false;
+  });
+  const selectedRateCardId = requestedRateCard?.id
+    ?? (rateCards.some((card) => card.id === manualSelectedRateCardId) ? manualSelectedRateCardId : rateCards[0]?.id ?? "");
 
   useEffect(() => {
     if (!selectedRateCardId) return;
@@ -224,7 +218,7 @@ export default function RateCardsPage() {
       });
       setShowEditor(false);
       await fetchData();
-    } catch (err) {
+    } catch {
       showToast("Save failed", "error");
     }
   }
@@ -312,7 +306,7 @@ export default function RateCardsPage() {
                   {rateCards.map((card) => (
                     <tr key={card.id} className="transition-colors hover:bg-white/5">
                       <td className="p-6 font-bold text-white">{card.name}</td>
-                      <td className="p-6 text-slate-400">{(card as any).company?.name || "General"}</td>
+                      <td className="p-6 text-slate-400">{card.company?.name || "General"}</td>
                       <td className="p-6 font-mono text-sky-400">{money(Number(card.baseFee))}</td>
                       <td className="p-6">
                         <button onClick={() => setSelectedRateCardId(card.id)} className="text-xs font-black uppercase text-sky-500 hover:text-sky-300">
@@ -340,12 +334,12 @@ export default function RateCardsPage() {
               </h2>
               <div className="space-y-6">
                 <div>
-                  <label className="mb-2 block text-[10px] font-black uppercase text-slate-500">Distance (Km)</label>
-                  <input type="number" className={editorInput()} value={distanceKm} onChange={(e) => setDistanceKm(e.target.value)} />
+                  <label className="mb-2 block text-[10px] font-black uppercase text-slate-500" htmlFor="field-distance-km-2">Distance (Km)</label>
+                  <input id="field-distance-km-2" type="number" className={editorInput()} value={distanceKm} onChange={(e) => setDistanceKm(e.target.value)} />
                 </div>
                 <div>
-                  <label className="mb-2 block text-[10px] font-black uppercase text-slate-500">Weight (Kg)</label>
-                  <input type="number" className={editorInput()} value={actualWeightKg} onChange={(e) => setActualWeightKg(e.target.value)} />
+                  <label className="mb-2 block text-[10px] font-black uppercase text-slate-500" htmlFor="field-weight-kg-1">Weight (Kg)</label>
+                  <input id="field-weight-kg-1" type="number" className={editorInput()} value={actualWeightKg} onChange={(e) => setActualWeightKg(e.target.value)} />
                 </div>
 
                 {simulation ? (
@@ -427,7 +421,7 @@ export default function RateCardsPage() {
                 </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <Meta label="Profile" value={selectedRateCard.name} />
-                  <Meta label="Client" value={(selectedRateCard as any).company?.name || selectedRateCard.clientName || "General"} />
+                  <Meta label="Client" value={selectedRateCard.company?.name || selectedRateCard.clientName || "General"} />
                   <Meta label="Base Fee" value={money(selectedRateCard.baseFee)} />
                   <Meta label="Per Km" value={money(selectedRateCard.perKm)} />
                   <Meta label="Per Kg" value={money(selectedRateCard.perKg)} />

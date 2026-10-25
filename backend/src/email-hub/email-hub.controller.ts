@@ -17,10 +17,18 @@ import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
 import { uploadConcurrency } from '../common/interceptors/upload-concurrency.interceptor';
 import { EMAIL_ATTACHMENT_MAX_BYTES, EMAIL_ATTACHMENT_MAX_FILES } from './attachment-policy';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+const EMAIL_HUB_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH,
+];
+
 
 
 @UseGuards(FeatureGuard)
 @RequireFeature('emailHub')
+@Roles(...EMAIL_HUB_ROLES)
 @Controller('email-hub')
 export class EmailHubController {
   constructor(private readonly svc: EmailHubService) {}
@@ -41,6 +49,7 @@ export class EmailHubController {
     return this.svc.stats(user.companyId);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('seed-demo')
   seedDemo(@CurrentUser() user: { companyId: string }) {
     return this.svc.seedDemo(user.companyId);

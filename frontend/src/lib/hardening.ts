@@ -17,11 +17,11 @@
 (function runtimeHardening() {
   try {
     if (typeof window === 'undefined') return;
-    const isProd = Boolean((import.meta as any).env?.PROD);
+    const isProd = Boolean((import.meta as unknown as { env?: { PROD?: boolean } }).env?.PROD);
     if (!isProd) return;
 
     // 1) Neutralise the React DevTools global hook.
-    const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    const hook = (window as unknown as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Record<string, unknown> }).__REACT_DEVTOOLS_GLOBAL_HOOK__;
     if (hook && typeof hook === 'object') {
       try {
         for (const key of Object.keys(hook)) {
@@ -37,7 +37,7 @@
     //    console.* stripping (pure annotation) does not remove it.
     setTimeout(() => {
       try {
-        const log = (console as any)['log']?.bind(console);
+        const log = (console as unknown as Record<string, ((...args: unknown[]) => void) | undefined>)['log']?.bind(console);
         if (!log) return;
         log('%cStop!', 'font-size:22px;font-weight:bold;color:#ef4444');
         log(

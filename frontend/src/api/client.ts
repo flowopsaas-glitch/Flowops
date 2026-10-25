@@ -76,11 +76,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * (ECONNABORTED), or the server briefly returned 502/503/504. A 4xx (bad
  * request, 401, 404, validation) is NOT transient and must not be retried.
  */
-function isTransient(error: any): boolean {
-  if (error?.code === 'ECONNABORTED') return true;            // axios timeout
-  if (error?.message === 'Network Error') return true;         // no response
-  if (!error?.response) return true;                           // never reached server
-  const s = error.response.status;
+type AxiosLikeError = {
+  code?: string;
+  message?: string;
+  response?: { status?: number };
+};
+
+function isTransient(error: unknown): boolean {
+  const e = error as AxiosLikeError | null;
+  if (e?.code === 'ECONNABORTED') return true;            // axios timeout
+  if (e?.message === 'Network Error') return true;         // no response
+  if (!e?.response) return true;                           // never reached server
+  const s = e.response.status;
   return s === 502 || s === 503 || s === 504;
 }
 
@@ -220,13 +227,13 @@ export { api };
 export default api;
 
 // ── Convenience helpers (return unwrapped data) ──────────────────
-export const get = <T>(url: string, params?: any) =>
+export const get = <T>(url: string, params?: Record<string, unknown>) =>
   api.get<T, T>(url, { params });
-export const post = <T>(url: string, data?: any) =>
+export const post = <T>(url: string, data?: unknown) =>
   api.post<T, T>(url, data);
-export const put = <T>(url: string, data?: any) =>
+export const put = <T>(url: string, data?: unknown) =>
   api.put<T, T>(url, data);
-export const patch = <T>(url: string, data?: any) =>
+export const patch = <T>(url: string, data?: unknown) =>
   api.patch<T, T>(url, data);
 export const del = <T>(url: string) =>
   api.delete<T, T>(url);
@@ -249,7 +256,7 @@ export const apiFetch = async <T>(url: string, opts?: RequestInit): Promise<T> =
     const res = await fetch(`${API_BASE}${url}`, { ...opts, headers, signal: controller.signal });
     if (!res.ok) throw new ApiError(res.statusText, res.status);
     return res.json();
-  } catch (err: any) {
+  } catch (err) {
     if (err?.name === 'AbortError') {
       throw new ApiError('Can’t reach FlowOps — please check your internet connection and try again.');
     }

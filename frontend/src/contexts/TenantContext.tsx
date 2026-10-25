@@ -1,19 +1,18 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { TenantContext } from "./tenant-context";
 import {
   getMyCompany,
   type CompanyBranding,
   type CompanyRecord,
 } from "../api/companiesApi";
 import { FLOWOPS_HTTP_ORIGIN } from "../lib/env";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "./auth-context";
 
 /**
  * The branding object the UI actually consumes.
@@ -60,7 +59,6 @@ const DEFAULT_BRANDING: ResolvedBranding = {
   portalSubdomain: null,
 };
 
-const TenantContext = createContext<TenantContextValue | undefined>(undefined);
 
 /**
  * Resolves a possibly-relative logo URL into something `<img src>` can use.
@@ -122,39 +120,43 @@ function applyBrandingToRoot(branding: ResolvedBranding) {
 export function TenantProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, booting } = useAuth();
   const [tenant, setTenant] = useState<CompanyRecord | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await getMyCompany();
-      setTenant(data);
-    } catch (err: unknown) {
-      // Don't blow up the whole app — sign-in still works without tenant data.
-      // The most common failure mode in this repo is "no backend running"
-      // during dev; we want the UI to keep going on default branding.
-      const message =
-        err instanceof Error ? err.message : "Failed to load tenant";
-      setError(message);
-      setTenant(null);
-    } finally {
-      setIsLoading(false);
-    }
+  const load = useCallback(() => {
+    return getMyCompany()
+      .then((data) => {
+        setTenant(data);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        // Don't blow up the whole app — sign-in still works without tenant
+        // data. The most common failure mode in this repo is "no backend
+        // running" during dev; we want the UI to keep going on default
+        // branding.
+        const message =
+          err instanceof Error ? err.message : "Failed to load tenant";
+        setError(message);
+        setTenant(null);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
   useEffect(() => {
     if (booting) return;
-    if (!isAuthenticated) {
-      setTenant(null);
-      setError(null);
-      return;
-    }
+    if (!isAuthenticated) return;
     void load();
   }, [booting, isAuthenticated, load]);
 
-  const branding = useMemo(() => deriveBranding(tenant), [tenant]);
+  // While signed out, the tenant record is hidden (the derivation below),
+  // rather than cleared by a synchronous effect setState; signing back in
+  // reloads it via load().
+  const visibleTenant = isAuthenticated ? tenant : null;
+  const visibleError = isAuthenticated ? error : null;
+
+  const branding = useMemo(() => deriveBranding(visibleTenant), [visibleTenant]);
 
   // Apply CSS variables whenever the resolved branding changes. Runs once on
   // mount with defaults too, so the tokens are always present.
@@ -162,13 +164,13 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     applyBrandingToRoot(branding);
     // Expose tenant currency globally so page-level money() helpers can read it
     // without needing the hook (backward-compat for existing inline formatters).
-    (window as any).__FLOWOPS_CURRENCY__ = tenant?.currency ?? 'ZAR';
-    (window as any).__FLOWOPS_COUNTRY__ = tenant?.country ?? 'ZA';
-  }, [branding, tenant?.currency, tenant?.country]);
+    window.__FLOWOPS_CURRENCY__ = visibleTenant?.currency ?? 'ZAR';
+    window.__FLOWOPS_COUNTRY__ = visibleTenant?.country ?? 'ZA';
+  }, [branding, visibleTenant?.currency, visibleTenant?.country]);
 
   const value = useMemo<TenantContextValue>(
-    () => ({ tenant, branding, isLoading, error, refresh: load }),
-    [tenant, branding, isLoading, error, load],
+    () => ({ tenant: visibleTenant, branding, isLoading, error: visibleError, refresh: load }),
+    [visibleTenant, branding, isLoading, visibleError, load],
   );
 
   return (
@@ -176,18 +178,6 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useTenant(): TenantContextValue {
-  const ctx = useContext(TenantContext);
-  if (!ctx) {
-    throw new Error("useTenant must be used inside <TenantProvider>");
-  }
-  return ctx;
-}
-
-/** Convenience hook: just the resolved branding object. */
-export function useBranding(): ResolvedBranding {
-  return useTenant().branding;
-}
 
 // Re-export for consumers that only care about the shape.
 export type { CompanyBranding };

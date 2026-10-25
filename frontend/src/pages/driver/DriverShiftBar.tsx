@@ -140,12 +140,12 @@ export default function DriverShiftBar({ modes, activeDuty, vehicleReg, onChange
       </div>
 
       {pickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPickerOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={() => setPickerOpen(false)} />
           <div
             className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b0f14] p-6"
             role="dialog"
             aria-label="Choose your drive mode"
-            onClick={(e) => e.stopPropagation()}
+
           >
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-black text-white">What are you driving?</h3>

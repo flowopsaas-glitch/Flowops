@@ -1,7 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { CompetitiveIntelligenceService } from './competitive-intelligence.service';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
 @Controller('ai/intel')
 export class CompetitiveIntelligenceController {
   constructor(private readonly svc: CompetitiveIntelligenceService) {}

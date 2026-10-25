@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, {useCallback,  useState, useEffect, useRef } from "react";
 import { Send, Zap, MessageSquare, Phone, Plus, Save, ExternalLink, Loader2, FileText } from "lucide-react";
 import { api } from "../../api/client";
 import { useToast } from "../../components/ui/use-toast";
@@ -64,20 +64,20 @@ export default function WhatsAppHub() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const fetchSidebar = async () => {
-    try {
-      const res: any = await api.get("/whatsapp/threads");
-      const list: Thread[] = Array.isArray(res) ? res : (res?.data ?? []);
-      setThreads(list);
-      if (list.length > 0 && !selectedPhone) setSelectedPhone(list[0].phone);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const fetchSidebar = useCallback(() => (async () => {
+    const res = await api.get("/whatsapp/threads");
+    const list: Thread[] = Array.isArray(res) ? res : (res?.data ?? []);
+    setThreads(list);
+    if (list.length > 0) setSelectedPhone((current) => current || list[0].phone);
 
-  const fetchSettings = async () => {
+  })().catch((e) => {
+    console.error(e);
+
+  }), []);
+
+  const fetchSettings = () => (async () => {
     try {
-      const res: any = await api.get("/whatsapp/settings");
+      const res = await api.get("/whatsapp/settings");
       const data = res?.data ?? res;
       const num = data?.whatsappNumber ?? "";
       setCompanyNumber(num);
@@ -86,15 +86,15 @@ export default function WhatsAppHub() {
     } catch (e) {
       console.error(e);
     }
-  };
+  })();
 
   useEffect(() => {
     fetchSidebar();
     fetchSettings();
-  }, []);
+  }, [fetchSidebar]);
 
   const loadMessages = (phone: string) => {
-    api.get(`/whatsapp/messages/${phone}`).then((res: any) => {
+    api.get(`/whatsapp/messages/${phone}`).then((res) => {
       setMessages(Array.isArray(res) ? res : (res?.data ?? []));
       setTimeout(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -112,7 +112,7 @@ export default function WhatsAppHub() {
       await api.patch("/companies/my-company", { whatsappNumber: numberDraft.trim() });
       setCompanyNumber(numberDraft.trim());
       toast({ title: "WhatsApp number saved." });
-    } catch (e) {
+    } catch {
       toast({ title: "Could not save number.", variant: "destructive" });
     } finally {
       setSavingNumber(false);
@@ -129,7 +129,7 @@ export default function WhatsAppHub() {
     setSending(true);
     try {
       if (apiConfigured) {
-        const res: any = await api.post("/whatsapp/send", { to: selectedPhone, message: text });
+        const res = await api.post("/whatsapp/send", { to: selectedPhone, message: text });
         const data = res?.data ?? res;
         // Backend returns { sent:false, configured:false } if tokens missing.
         if (data?.configured === false) {
@@ -141,14 +141,14 @@ export default function WhatsAppHub() {
         fetchSidebar();
         toast({ title: "Message sent via WhatsApp." });
       } else {
-        const res: any = await api.post("/whatsapp/compose", { to: selectedPhone, message: text });
+        const res = (await api.post("/whatsapp/compose", { to: selectedPhone, message: text })) as unknown as { url?: string; data?: { url?: string } };
         const url = res?.url ?? res?.data?.url;
         if (url) window.open(url, "_blank", "noopener,noreferrer");
         setNewMessage("");
         loadMessages(selectedPhone);
         fetchSidebar();
       }
-    } catch (e: any) {
+    } catch (e) {
       // Surface the real Meta error (e.g. outside the 24h window → template required,
       // or recipient not on the test number's allow-list).
       const detail = e?.response?.data?.message || e?.message || "Send failed";
@@ -174,7 +174,7 @@ export default function WhatsAppHub() {
         notes: `WhatsApp message: "${messageText.slice(0, 200)}"`,
       });
       toast({ title: "Collection created from message! Assign a driver in Collections." });
-    } catch (e: any) {
+    } catch (e) {
       toast({ title: "Failed to create collection", description: e?.message, variant: "destructive" });
     }
   };

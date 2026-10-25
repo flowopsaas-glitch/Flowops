@@ -7,6 +7,7 @@ import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { ProductMasterService } from './product-master.service';
+import { RequireFeature } from '../billing/require-feature.decorator';
 
 const ALIAS_TYPES = ['BARCODE', 'SUPPLIER_CODE', 'CUSTOMER_CODE', 'INTERNAL', 'LEGACY'];
 
@@ -118,6 +119,8 @@ const PRODUCT_MASTER_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.M
 
 @ApiTags('Product Master')
 @ApiBearerAuth()
+@RequireFeature('warehouseManagement')
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE)
 @Controller('product-master')
 export class ProductMasterController {
   constructor(private readonly products: ProductMasterService) {}

@@ -10,11 +10,17 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+const RETURN_ROLES = [
+  UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
+  UserRole.DISPATCH, UserRole.WAREHOUSE,
+];
+
 
 @ApiTags('Returns')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('returns')
+@Roles(...RETURN_ROLES)
 @Controller()
 export class ReturnsController {
   constructor(private readonly svc: ReturnsService) {}

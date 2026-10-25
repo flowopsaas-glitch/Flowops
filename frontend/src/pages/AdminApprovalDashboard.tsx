@@ -61,23 +61,30 @@ export default function AdminApprovalDashboard() {
   const [filter, setFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("PENDING");
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = async (mode: "initial" | "refresh" = "initial") => {
-    if (mode === "refresh") setRefreshing(true);
-    else setLoading(true);
-    setError("");
-    try {
-      const res: any = await api.get("/admin/approval-requests");
+  // The fetch runs as a promise chain (state updates in callbacks, never
+  // synchronously inside the triggering effect). The refresh indicator is
+  // raised by the calling handler; the initial indicator comes from the
+  // useState(true) initial value. Both are cleared in .finally.
+  const load = () => {
+    return (async () => {
+      const res = await api.get("/admin/approval-requests");
       const data = Array.isArray(res) ? res : res?.data ?? [];
       setRequests(data);
-    } catch {
+      setError("");
+    })().catch(() => {
       setError("Failed to load approval requests");
-    } finally {
+    }).finally(() => {
       setLoading(false);
       setRefreshing(false);
-    }
+    });
   };
 
-  useEffect(() => { void load("initial"); }, []);
+  useEffect(() => { void load(); }, []);
+
+  const refresh = () => {
+    setRefreshing(true);
+    return load();
+  };
 
   const handleApprove = async (id: string) => {
     setActionLoading(true);
@@ -86,7 +93,7 @@ export default function AdminApprovalDashboard() {
       await api.post(`/admin/approval-requests/${id}/approve`, {});
       setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "APPROVED" } : r));
       setSelected(null);
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message ?? "Approve failed");
     } finally {
       setActionLoading(false);
@@ -102,7 +109,7 @@ export default function AdminApprovalDashboard() {
       setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "REJECTED" } : r));
       setSelected(null);
       setRejectionReason("");
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message ?? "Reject failed");
     } finally {
       setActionLoading(false);
@@ -136,7 +143,7 @@ export default function AdminApprovalDashboard() {
           </div>
         </div>
         <button
-          onClick={() => void load("refresh")}
+          onClick={() => void refresh()}
           disabled={refreshing}
           className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white/60 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
         >
@@ -250,10 +257,10 @@ export default function AdminApprovalDashboard() {
                 <div className="space-y-4 border-t border-white/8 pt-5">
                   {/* Rejection reason */}
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-white/30 mb-1.5 block" htmlFor="field-rejection-reason-if-rejectin-1">
                       Rejection reason (if rejecting)
                     </label>
-                    <textarea
+                    <textarea id="field-rejection-reason-if-rejectin-1"
                       rows={3}
                       placeholder="Provide a reason..."
                       value={rejectionReason}

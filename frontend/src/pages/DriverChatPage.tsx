@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, Truck, ChevronRight, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { MessageCircle, Send, Truck, RefreshCw } from "lucide-react";
 import api from "../api/client";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function unwrap(r: any): any { return r?.data ?? r; }
-function unwrapList(r: any): any[] { const d = r?.data ?? r; return Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []; }
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
+function unwrapList<T>(r: unknown): T[] { const d = (r as { data?: unknown } | null)?.data ?? r; if (Array.isArray(d)) return d as T[]; const inner = (d as { data?: unknown } | null)?.data; return Array.isArray(inner) ? (inner as T[]) : []; }
 
 function timeAgo(ts: string) {
   const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60_000);
@@ -59,19 +59,18 @@ export default function DriverChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const loadDrivers = useCallback(async () => {
+  const loadDrivers = useCallback(() => (async () => {
     try {
       const r = await api.get("/driver-portal/dispatch/conversations");
-      setDrivers(unwrapList(r));
+      setDrivers(unwrapList<Driver>(r));
     } catch { /* offline */ }
     setLoading(false);
-  }, []);
+  })(), []);
 
   const loadMessages = useCallback(async (driverId: string, opts?: { initial?: boolean }) => {
-    if (opts?.initial) setLoadingMsgs(true);
     try {
       const r = await api.get(`/driver-portal/dispatch/messages/${driverId}`);
-      const incoming = unwrapList(r);
+      const incoming = unwrapList<Msg>(r);
       setMessages(prev => {
         // Only update state if new messages arrived (avoid re-render flicker/jump)
         const prevLastId = prev[prev.length - 1]?.id;
@@ -107,8 +106,8 @@ export default function DriverChatPage() {
     setText("");
     setSending(true);
     try {
-      const r = await (api as any).post(`/driver-portal/dispatch/messages/${selectedId}`, { message: msg });
-      const created = unwrap(r);
+      const r = await api.post(`/driver-portal/dispatch/messages/${selectedId}`, { message: msg });
+      const created = unwrap<Msg>(r);
       setMessages(m => [...m, created]);
       setDrivers(ds => ds.map(d => d.id === selectedId ? { ...d, lastMessage: msg, lastMessageAt: new Date().toISOString() } : d));
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -145,7 +144,7 @@ export default function DriverChatPage() {
             </div>
           ) : (
             drivers.map(d => (
-              <DriverItem key={d.id} d={d} selected={d.id === selectedId} onClick={() => setSelectedId(d.id)} />
+              <DriverItem key={d.id} d={d} selected={d.id === selectedId} onClick={() => { if (d.id !== selectedId) { setLoadingMsgs(true); setSelectedId(d.id); } }} />
             ))
           )}
         </div>

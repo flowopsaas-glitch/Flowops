@@ -5,7 +5,7 @@ export type PlaybookAction = {
   id: string;
   label: string;
   type: "PING_DRIVER" | "ASSIGN_DRIVER" | "NOTIFY_CUSTOMER" | "ESCALATE" | "REQUEST_POD" | "REROUTE_SUGGESTION";
-  payload?: Record<string, any>;
+  payload?: Record<string, unknown>;
 };
 
 export type PlaybookPlan = {
@@ -94,7 +94,7 @@ export function buildPlaybookForShipment(s: ShipmentLike & {
     });
   }
 
-  if ((s as any).podRequired && !(s as any).podCaptured) {
+  if (s.podRequired && !s.podCaptured) {
     actions.push({
       id: "request_pod",
       label: "Request POD now (photo/signature reminder)",

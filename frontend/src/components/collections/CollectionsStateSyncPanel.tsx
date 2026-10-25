@@ -1,3 +1,4 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   fetchCollectionsSyncDashboard,
@@ -205,21 +206,22 @@ export default function CollectionsStateSyncPanel() {
   const [driverSuggestions, setDriverSuggestions] = useState<Record<string, string>>({});
 
   async function loadAll() {
-    setLoading(true);
-    setError("");
-    try {
-      const [dashboardData, recordsData] = await Promise.all([
-        fetchCollectionsSyncDashboard(),
-        fetchCollectionsSyncRecords(),
-      ]);
-      setDashboard(dashboardData || {});
-      setRecords(Array.isArray(recordsData) ? recordsData : []);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load collections state sync data.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  return (async () => {
+    const [dashboardData, recordsData] = await Promise.all([
+      fetchCollectionsSyncDashboard(),
+      fetchCollectionsSyncRecords(),
+    ]);
+    setDashboard(dashboardData || {});
+    setRecords(Array.isArray(recordsData) ? recordsData : []);
+
+  })().catch((err: unknown) => {
+    setError(errorMessageOf(err) || "Failed to load collections state sync data.");
+
+  }).finally(() => {
+    setLoading(false);
+
+  });
+}
 
   useEffect(() => {
     loadAll();
@@ -231,8 +233,8 @@ export default function CollectionsStateSyncPanel() {
     try {
       await runCollectionsBulkSync("collections-command-center");
       await loadAll();
-    } catch (err: any) {
-      setError(err?.message || "Bulk sync failed.");
+    } catch (err) {
+      setError(errorMessageOf(err) || "Bulk sync failed.");
     } finally {
       setSyncing(false);
     }
@@ -244,8 +246,8 @@ export default function CollectionsStateSyncPanel() {
     try {
       await syncSingleCollection(collectionId, "collections-command-center");
       await loadAll();
-    } catch (err: any) {
-      setError(err?.message || `Sync failed for ${collectionId}.`);
+    } catch (err) {
+      setError(errorMessageOf(err) || `Sync failed for ${collectionId}.`);
     } finally {
       setSyncing(false);
     }
@@ -253,21 +255,22 @@ export default function CollectionsStateSyncPanel() {
 
   async function handleSuggestDriver(collectionId: string) {
     setDriverLoadingId(collectionId);
-    setError("");
-    try {
+     try {
       const result = await fetchSuggestedDriver(collectionId);
       const text = result?.suggestion
         ? `${result.suggestion.name} • ${result.suggestion.vehicleType} • score ${result.suggestion.score}`
         : "No driver suggestion available";
       setDriverSuggestions((prev) => ({ ...prev, [collectionId]: text }));
-    } catch (err: any) {
-      setError(err?.message || `Failed to suggest driver for ${collectionId}.`);
+    } catch (err) {
+      setError(errorMessageOf(err) || `Failed to suggest driver for ${collectionId}.`);
     } finally {
       setDriverLoadingId("");
     }
   }
 
-  const totals = dashboard?.totals || {};
+  // Stable identity (memoised on the dashboard snapshot) so the header-card
+  // memo keyed on totals does not recompute on every render.
+  const totals = useMemo(() => dashboard?.totals || {}, [dashboard]);
   const headerCards = useMemo(
     () => [
       { label: "Collections", value: totals.collections || 0 },

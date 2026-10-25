@@ -41,18 +41,18 @@ export type TrendPoint = {
 /** Fetch analytics snapshot for a specific period (defaults to current month). */
 export async function getLogisticsAnalytics(period?: string): Promise<LogisticsSnapshot> {
   const params = period ? { period } : undefined;
-  const r: any = await api.get("/logistics-analytics", { params });
+  const r = await api.get("/logistics-analytics", { params });
   return r?.data ?? r;
 }
 
 /** Fetch trend data for the last 6 months. */
 export async function getLogisticsTrends(): Promise<TrendPoint[]> {
-  const r: any = await api.get("/logistics-analytics/trends");
+  const r = await api.get("/logistics-analytics/trends");
   return r?.data ?? r;
 }
 
 /** Force-refresh analytics for the current period (recompute + AI insights). */
 export async function refreshLogisticsAnalytics(): Promise<LogisticsSnapshot> {
-  const r: any = await api.post("/logistics-analytics/refresh");
+  const r = await api.post("/logistics-analytics/refresh");
   return r?.data ?? r;
 }

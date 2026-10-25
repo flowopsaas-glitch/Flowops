@@ -9,7 +9,7 @@ import {
   getAutopilotLog, type AutopilotConfig, type OpsSignal, type AutopilotRun,
   type AutopilotLogEntry, type Severity,
 } from "../../api/autopilotApi";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../../components/toast-context";
 
 const SEV: Record<Severity, string> = {
   critical: "border-rose-500/40 bg-rose-500/10 text-rose-300",
@@ -36,24 +36,25 @@ export default function AutopilotConsole() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"scan" | "run" | "save" | null>(null);
 
-  const load = async () => {
-    try {
-      const cfg = await getAutopilotConfig();
-      setConfig(cfg);
-      if (cfg.available) {
-        const [sig, lg] = await Promise.all([
-          getAutopilotSignals().catch(() => []),
-          getAutopilotLog().catch(() => []),
-        ]);
-        setSignals(sig);
-        setLog(lg);
-      }
-    } catch {
-      /* config endpoint still returns availability=false on non-enterprise */
-    } finally {
-      setLoading(false);
+  const load = () => (async () => {
+    const cfg = await getAutopilotConfig();
+    setConfig(cfg);
+    if (cfg.available) {
+      const [sig, lg] = await Promise.all([
+        getAutopilotSignals().catch(() => []),
+        getAutopilotLog().catch(() => []),
+      ]);
+      setSignals(sig);
+      setLog(lg);
     }
-  };
+
+  })().catch(() => {
+    /* config endpoint still returns availability=false on non-enterprise */
+
+  }).finally(() => {
+    setLoading(false);
+
+  });
 
   useEffect(() => { void load(); }, []);
 
@@ -64,7 +65,7 @@ export default function AutopilotConsole() {
       const next = await setAutopilotConfig({ enabled: !config.enabled });
       setConfig(next);
       showToast(next.enabled ? "Autopilot enabled" : "Autopilot paused", "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Could not update Autopilot", "error");
     } finally { setBusy(null); }
   };
@@ -75,7 +76,7 @@ export default function AutopilotConsole() {
       const next = await setAutopilotConfig({ aggression });
       setConfig(next);
       showToast(`Aggression set to ${aggression}`, "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Could not update aggression", "error");
     } finally { setBusy(null); }
   };
@@ -86,7 +87,7 @@ export default function AutopilotConsole() {
       setSignals(await getAutopilotSignals());
       setLastRun(null);
       showToast("Scan complete", "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Scan failed", "error");
     } finally { setBusy(null); }
   };
@@ -99,7 +100,7 @@ export default function AutopilotConsole() {
       setSignals(res.signals);
       setLog(await getAutopilotLog().catch(() => log));
       showToast(`Autopilot executed ${res.executed} of ${res.totalSignals} signals`, "success");
-    } catch (e: any) {
+    } catch (e) {
       showToast(e?.message ?? "Run failed", "error");
     } finally { setBusy(null); }
   };

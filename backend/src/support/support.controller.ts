@@ -5,6 +5,8 @@ import { SupportService } from './support.service';
 import { AskSupportDto } from './dto/ask.dto';
 import { CreateTicketDto, UpdateTicketDto } from './dto/create-ticket.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { RequireFeature } from '../billing/require-feature.decorator';
+import { AnyAuthenticated } from '../common/decorators/any-authenticated.decorator';
 
 /**
  * AI Support Agent — tenant-facing. Plan gating (Enterprise) is enforced inside
@@ -13,6 +15,8 @@ import { CurrentUser } from '../common/decorators/user.decorator';
  */
 @ApiTags('AI Support Agent')
 @ApiBearerAuth()
+@RequireFeature('aiSupportAgent')
+@AnyAuthenticated()
 @Controller('support')
 export class SupportController {
   constructor(private readonly support: SupportService) {}

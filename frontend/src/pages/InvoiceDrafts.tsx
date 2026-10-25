@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useDismissOnEscape } from "../components/patterns/useDismissOnEscape";
 import { FileText, ArrowRight, Wallet, CheckCircle2, Bot, X, AlertTriangle, Loader2, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { describeDraft } from '../lib/invoiceDraft';
@@ -7,26 +8,30 @@ function money(v: number) {
   return `R${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function unwrap(r: any): any { return r?.data ?? r; }
+function unwrap<T>(r: unknown): T { return ((r as { data?: T } | null)?.data ?? r) as T; }
+
+type DraftRow = import('../lib/invoiceDraft').DraftView & { id: string; [key: string]: unknown };
+type DraftAssist = { issues?: string[]; completeness?: number };
 
 export default function InvoiceDrafts() {
-  const [drafts, setDrafts] = useState<any[]>([]);
+  const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [auditDraft, setAuditDraft] = useState<any | null>(null);
+  const [auditDraft, setAuditDraft] = useState<DraftRow | null>(null);
 
-  const fetchDrafts = async () => {
-    try {
-      const res = await api.get('/invoice-drafts');
-      // api client already unwraps the TransformInterceptor envelope
-      const data = Array.isArray(res) ? res : Array.isArray((res as any)?.data) ? (res as any).data : [];
-      // The API returns raw rows (client, lines and amounts are inside draftData); derive what the list shows.
-      setDrafts(data.map((d: any) => ({ ...d, ...describeDraft(d) })));
-    } catch (err) {
-      console.error("Failed to fetch drafts", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchDrafts = () => (async () => {
+    const res = await api.get('/invoice-drafts');
+    // api client already unwraps the TransformInterceptor envelope
+    const data: Record<string, unknown>[] = Array.isArray(res) ? res : Array.isArray((res as { data?: unknown })?.data) ? ((res as { data?: Record<string, unknown>[] }).data as Record<string, unknown>[]) : [];
+    // The API returns raw rows (client, lines and amounts are inside draftData); derive what the list shows.
+    setDrafts(data.map((d) => ({ ...d, ...describeDraft(d), id: String(d.id ?? '') })));
+
+  })().catch((err) => {
+    console.error("Failed to fetch drafts", err);
+
+  }).finally(() => {
+    setLoading(false);
+
+  });
 
   useEffect(() => { fetchDrafts(); }, []);
 
@@ -42,13 +47,13 @@ export default function InvoiceDrafts() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(55,90,180,0.18),transparent_30%),linear-gradient(180deg,#07111f_0%,#0b1530_55%,#0e1b3f_100%)] p-6 sm:p-8">
       <div className="mx-auto max-w-[1650px] space-y-5">
-        
+
         {/* Header & Stats */}
         <div className="rounded-[30px] border border-white/10 bg-white/5 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
           <div className="text-[10px] font-black text-sky-400 tracking-widest uppercase italic mb-2">Commercial Pipeline</div>
           <h1 className="text-4xl font-black text-white tracking-tight">Invoice Drafts</h1>
           <p className="text-slate-400 mt-2 text-sm">Select a commercial draft to run the Z-AI Compliance Audit before final dispatch.</p>
-          
+
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <HeroStat title="Draft Value" value={money(stats.totalValue)} subtitle="Before VAT · visible invoice draft pipeline" icon={Wallet} />
             <HeroStat title="Drafts" value={String(stats.draftCount)} subtitle="Awaiting finalization" icon={FileText} />
@@ -88,8 +93,8 @@ export default function InvoiceDrafts() {
                       <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Draft Value (before VAT)</div>
                       <div className="text-2xl font-black text-emerald-400">{money(draft.total)}</div>
                     </div>
-                    
-                    <button 
+
+                    <button
                       onClick={() => setAuditDraft(draft)}
                       className="bg-white text-black px-6 py-4 rounded-2xl font-black text-xs flex items-center gap-2 hover:bg-slate-200 hover:gap-3 transition-all shadow-xl shadow-white/5"
                     >
@@ -101,7 +106,7 @@ export default function InvoiceDrafts() {
             )}
           </div>
         </div>
-        
+
       </div>
 
       {auditDraft && (
@@ -121,8 +126,9 @@ export default function InvoiceDrafts() {
  * turn it into a real invoice. Replaces the old dead navigation to a page that
  * never existed.
  */
-function ZAuditModal({ draft, onClose, onFinalized }: { draft: any; onClose: () => void; onFinalized: () => void }) {
-  const [assist, setAssist] = useState<any | null>(null);
+function ZAuditModal({ draft, onClose, onFinalized }: { draft: DraftRow; onClose: () => void; onFinalized: () => void }) {
+  useDismissOnEscape(true, onClose);
+  const [assist, setAssist] = useState<DraftAssist | null>(null);
   const [loading, setLoading] = useState(true);
   const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,8 +139,8 @@ function ZAuditModal({ draft, onClose, onFinalized }: { draft: any; onClose: () 
     (async () => {
       try {
         const r = await api.get(`/invoice-drafts/${draft.id}/assist`);
-        if (alive) setAssist(unwrap(r));
-      } catch (err: any) {
+        if (alive) setAssist(unwrap<DraftAssist>(r));
+      } catch (err) {
         if (alive) setError(err?.response?.data?.message || err?.message || 'Audit failed');
       } finally {
         if (alive) setLoading(false);
@@ -153,7 +159,7 @@ function ZAuditModal({ draft, onClose, onFinalized }: { draft: any; onClose: () 
       await api.post(`/invoice-drafts/${draft.id}/finalize`);
       setDone(true);
       setTimeout(onFinalized, 1200);
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.response?.data?.message || err?.message || 'Could not finalize draft');
     } finally {
       setFinalizing(false);
@@ -161,8 +167,8 @@ function ZAuditModal({ draft, onClose, onFinalized }: { draft: any; onClose: () 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0b1628] shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"><button type="button" aria-label="Close dialog" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0b1628] shadow-2xl" role="dialog">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
           <div className="flex items-center gap-3">
@@ -244,7 +250,7 @@ function ZAuditModal({ draft, onClose, onFinalized }: { draft: any; onClose: () 
   );
 }
 
-function HeroStat(props: { title: string; value: string; subtitle: string; icon: any }) {
+function HeroStat(props: { title: string; value: string; subtitle: string; icon: import('lucide-react').LucideIcon }) {
   const Icon = props.icon;
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">

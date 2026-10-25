@@ -1,54 +1,100 @@
-import { useEffect, useState } from "react";
+import { errorMessageOf } from "@/components/patterns/errorMessage";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   TrendingUp, TrendingDown, DollarSign, Users, MapPin, Target,
   BarChart3, Sparkles, Loader2, ArrowUpRight, ArrowDownRight,
-  AlertTriangle, CheckCircle2, PieChart, Activity, Zap, Crown,
-  ShieldAlert, RefreshCw,
+  AlertTriangle, CheckCircle2, Activity, Zap, Crown,
+  ShieldAlert, RefreshCw, Scale,
+    type LucideIcon,
 } from "lucide-react";
 import {
-  getProfitability, getClientMatrix, getLaneProfitability,
-  getQuoteFunnel, getRevenueForecast, getClientIntelligence,
+  getProfitability, getClientMatrix, getLaneProfitability, getRevenueForecast, getClientIntelligence,
   getCommercialAiInsights,
 } from "../api/commercialAnalytics";
+import TripTruthPanel from "../components/commercial/TripTruthPanel";
 
-type Tab = 'overview' | 'clients' | 'lanes' | 'forecast' | 'intelligence' | 'ai';
+type Tab = 'overview' | 'clients' | 'lanes' | 'forecast' | 'intelligence' | 'ai' | 'truth';
+
+type CommercialClient = {
+  clientName: string; revenue: number; marginPct: number; health: string;
+  deliveryCount: number; avgDaysToPay?: number; collectionRate?: number;
+  churnRisk: number; clv?: number; clvTier?: string; monthlyAvg?: number;
+  monthsActive?: number; volumeTrend: string;
+};
+type CommercialLane = {
+  fromZone: string; toZone: string; deliveries: number; revenue: number;
+  estimatedCost: number; grossProfit: number; marginPct: number; signal: string;
+};
+type CommercialData = {
+  summary?: {
+    totalRevenue: number; totalCost: number; grossProfit: number; marginPct: number;
+    targetMarginPct: number; deliveryCount: number; revenueDelta?: number | null;
+    avgRevenuePerDel?: number; avgCostPerDel?: number; marginHealth?: string;
+  } | null;
+  currency?: string; period?: string;
+  clients?: CommercialClient[]; lanes?: CommercialLane[];
+  forecast?: { period: string; predicted: number; lowerBound: number; upperBound: number }[];
+  historical?: { period: string; revenue: number }[];
+  insights?: {
+    executiveSummary?: string; topOpportunities?: string[]; pricingActions?: string[];
+    clientActions?: string[]; risks?: string[]; forecast?: string;
+  } | null;
+  pipeline?: { value?: number } | null;
+  tiers?: Record<string, number>;
+  totalClients?: number; totalLanes?: number; profitable?: number; marginal?: number;
+  unprofitable?: number; optimal?: number; underpriced?: number; overpriced?: number;
+  confidence?: number; monthlyGrowthRate?: number; model?: string;
+  totalCLV?: number; avgCLV?: number; atRiskCount?: number; growingCount?: number;
+  generatedAt?: string;
+};
+
+
 
 export default function CommercialAnalytics() {
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>(() => {
+    // Deep links (e.g. below-cost notifications) may name a tab.
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    return wanted === 'truth' || wanted === 'clients' || wanted === 'lanes'
+      || wanted === 'forecast' || wanted === 'intelligence' || wanted === 'ai'
+      ? wanted
+      : 'overview';
+  });
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<CommercialData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTab = async (t: Tab) => {
-    setLoading(true);
-    setError(null);
-    try {
-      let result: any;
-      switch (t) {
-        case 'overview': result = await getProfitability(); break;
-        case 'clients': result = await getClientMatrix(); break;
-        case 'lanes': result = await getLaneProfitability(); break;
-        case 'forecast': result = await getRevenueForecast(); break;
-        case 'intelligence': result = await getClientIntelligence(); break;
-        case 'ai': result = await getCommercialAiInsights(); break;
-      }
-      setData(result);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load data');
-    } finally {
-      setLoading(false);
+  const loadTab = (t: Tab) => (async () => {
+    let result: CommercialData;
+    switch (t) {
+      case 'overview': result = (await getProfitability()) as unknown as CommercialData; break;
+      case 'clients': result = (await getClientMatrix()) as unknown as CommercialData; break;
+      case 'lanes': result = (await getLaneProfitability()) as unknown as CommercialData; break;
+      case 'forecast': result = (await getRevenueForecast()) as unknown as CommercialData; break;
+      case 'intelligence': result = (await getClientIntelligence()) as unknown as CommercialData; break;
+      case 'ai': result = (await getCommercialAiInsights()) as unknown as CommercialData; break;
+      case 'truth': result = {} as CommercialData; break; // TripTruthPanel loads its own data
     }
-  };
+    setData(result);
+    setError(null);
+
+  })().catch((e: unknown) => {
+    setError(errorMessageOf(e) || 'Failed to load data');
+
+  }).finally(() => {
+    setLoading(false);
+
+  });
 
   useEffect(() => { loadTab(tab); }, [tab]);
 
-  const tabs: { key: Tab; label: string; icon: any }[] = [
+  const tabs: { key: Tab; label: string; icon: LucideIcon }[] = [
     { key: 'overview', label: 'Profitability', icon: DollarSign },
     { key: 'clients', label: 'Client Matrix', icon: Users },
     { key: 'lanes', label: 'Lane Analysis', icon: MapPin },
     { key: 'forecast', label: 'Revenue Forecast', icon: TrendingUp },
     { key: 'intelligence', label: 'Client Intelligence', icon: Crown },
     { key: 'ai', label: 'AI Insights', icon: Sparkles },
+    { key: 'truth', label: 'Trip Truth', icon: Scale },
   ];
 
 
@@ -101,6 +147,7 @@ export default function CommercialAnalytics() {
           {tab === 'forecast' && <ForecastView data={data} />}
           {tab === 'intelligence' && <IntelligenceView data={data} />}
           {tab === 'ai' && <AiInsightsView data={data} />}
+          {tab === 'truth' && <TripTruthPanel />}
         </>
       )}
     </div>
@@ -110,7 +157,7 @@ export default function CommercialAnalytics() {
 
 // ═══════════════════ SUB-COMPONENTS ═══════════════════
 
-function KpiCard({ label, value, delta, icon: Icon, color = 'blue', suffix = '' }: any) {
+function KpiCard({ label, value, delta, icon: Icon, color = 'blue', suffix = '' }: { label: string; value: ReactNode; delta?: number | null; icon: LucideIcon; color?: string; suffix?: string }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
       <div className="flex items-center justify-between mb-3">
@@ -146,7 +193,7 @@ function HealthBadge({ health }: { health: string }) {
 }
 
 
-function ProfitabilityView({ data }: { data: any }) {
+function ProfitabilityView({ data }: { data: CommercialData | null }) {
   const s = data?.summary;
   if (!s) return null;
   const fmt = (v: number) => `R${v.toLocaleString()}`;
@@ -194,7 +241,7 @@ function ProfitabilityView({ data }: { data: any }) {
 }
 
 
-function ClientMatrixView({ data }: { data: any }) {
+function ClientMatrixView({ data }: { data: CommercialData | null }) {
   if (!data?.clients) return null;
   return (
     <div className="space-y-4">
@@ -223,7 +270,7 @@ function ClientMatrixView({ data }: { data: any }) {
               </tr>
             </thead>
             <tbody>
-              {data.clients.map((c: any, i: number) => (
+              {data.clients.map((c, i) => (
                 <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="p-3 font-medium">{c.clientName}</td>
                   <td className="p-3 text-right text-emerald-400">R{(c.revenue ?? 0).toLocaleString()}</td>
@@ -245,7 +292,7 @@ function ClientMatrixView({ data }: { data: any }) {
 }
 
 
-function LaneView({ data }: { data: any }) {
+function LaneView({ data }: { data: CommercialData | null }) {
   if (!data?.lanes) return null;
   const signalColor: Record<string, string> = {
     UNDERPRICED: 'text-red-400', OPTIMAL: 'text-emerald-400',
@@ -278,7 +325,7 @@ function LaneView({ data }: { data: any }) {
               </tr>
             </thead>
             <tbody>
-              {data.lanes.map((l: any, i: number) => (
+              {data.lanes.map((l, i) => (
                 <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="p-3 font-medium">{l.fromZone} → {l.toZone}</td>
                   <td className="p-3 text-right">{l.deliveries}</td>
@@ -302,7 +349,7 @@ function LaneView({ data }: { data: any }) {
 }
 
 
-function ForecastView({ data }: { data: any }) {
+function ForecastView({ data }: { data: CommercialData | null }) {
   if (!data) return null;
   const fmt = (v: number) => `R${(v ?? 0).toLocaleString()}`;
   return (
@@ -317,7 +364,7 @@ function ForecastView({ data }: { data: any }) {
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
           <h3 className="font-bold text-sm mb-4">Revenue Forecast (Next {data.forecast.length} Months)</h3>
           <div className="space-y-4">
-            {data.forecast.map((f: any, i: number) => (
+            {data.forecast.map((f, i) => (
               <div key={i} className="flex items-center gap-4">
                 <div className="w-20 text-sm text-white/50">{f.period}</div>
                 <div className="flex-1">
@@ -345,8 +392,8 @@ function ForecastView({ data }: { data: any }) {
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
           <h3 className="font-bold text-sm mb-4">Historical Revenue (12 Months)</h3>
           <div className="flex items-end gap-1 h-32">
-            {data.historical.map((m: any, i: number) => {
-              const max = Math.max(...data.historical.map((h: any) => h.revenue), 1);
+            {data.historical.map((m, i) => {
+              const max = Math.max(...data.historical.map((h) => h.revenue), 1);
               const pct = (m.revenue / max) * 100;
               return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1">
@@ -364,14 +411,14 @@ function ForecastView({ data }: { data: any }) {
 }
 
 
-function IntelligenceView({ data }: { data: any }) {
+function IntelligenceView({ data }: { data: CommercialData | null }) {
   if (!data?.clients) return null;
   const tierColor: Record<string, string> = {
     PLATINUM: 'text-purple-300 bg-purple-500/10', GOLD: 'text-yellow-300 bg-yellow-500/10',
     SILVER: 'text-gray-300 bg-gray-500/10', BRONZE: 'text-orange-300 bg-orange-500/10',
     AT_RISK: 'text-red-300 bg-red-500/10',
   };
-  const trendIcon: Record<string, any> = {
+  const trendIcon: Record<string, ReactNode> = {
     GROWING: <TrendingUp className="w-3 h-3 text-emerald-400" />,
     DECLINING: <TrendingDown className="w-3 h-3 text-red-400" />,
     STABLE: <Activity className="w-3 h-3 text-blue-400" />,
@@ -420,7 +467,7 @@ function IntelligenceView({ data }: { data: any }) {
               </tr>
             </thead>
             <tbody>
-              {data.clients.slice(0, 15).map((c: any, i: number) => (
+              {data.clients.slice(0, 15).map((c, i) => (
                 <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="p-3 font-medium">{c.clientName}</td>
                   <td className="p-3 text-right text-emerald-400 font-bold">R{(c.clv ?? 0).toLocaleString()}</td>
@@ -450,13 +497,13 @@ function IntelligenceView({ data }: { data: any }) {
 }
 
 
-function AiInsightsView({ data }: { data: any }) {
+function AiInsightsView({ data }: { data: CommercialData | null }) {
   if (!data?.insights) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
         <Sparkles className="w-12 h-12 text-blue-400 mx-auto mb-4" />
         <h3 className="text-lg font-bold mb-2">AI Commercial Copilot</h3>
-        <p className="text-sm text-white/50">{data?.message || 'Generating insights...'}</p>
+        <p className="text-sm text-white/50">{errorMessageOf(data) || 'Generating insights...'}</p>
       </div>
     );
   }

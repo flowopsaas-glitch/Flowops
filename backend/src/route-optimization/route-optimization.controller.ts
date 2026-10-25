@@ -5,11 +5,14 @@ import { CreateRouteOptimizationDto } from './dto/route-optimization.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { FeatureGuard } from '../billing/feature.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Route Optimization')
 @ApiBearerAuth()
 @UseGuards(FeatureGuard)
 @RequireFeature('routeOptimization')
+@Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
 @Controller('route-optimization')
 export class RouteOptimizationController {
   constructor(private readonly svc: RouteOptimizationService) {}

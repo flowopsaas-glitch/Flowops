@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
-  Loader2,
   MapPin,
   MessageCircle,
   Package,
@@ -27,7 +26,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { api } from "../../api/client";
-import { useAuth } from "../../contexts/AuthContext";
+import { useAuth } from "../../contexts/auth-context";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,9 +55,9 @@ type Collection = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function unwrap(r: unknown): unknown[] {
-  const d = (r as any)?.data ?? r;
+  const d = (r as { data?: unknown } | null)?.data ?? r;
   if (Array.isArray(d)) return d;
-  if (Array.isArray((d as any)?.data)) return (d as any).data;
+  if (Array.isArray((d as { data?: unknown } | null)?.data)) return (d as { data: unknown[] }).data;
   return [];
 }
 
@@ -113,7 +112,7 @@ function WaybillCard({ wb }: { wb: Waybill }) {
   return (
     <div
       className="flex items-start gap-3 rounded-[20px] border border-white/8 bg-white/[0.03] p-4 transition hover:border-white/15 hover:bg-white/[0.06] cursor-pointer"
-      onClick={() => navigate("/pod-deliveries")}
+      onClick={() => navigate("/pod-deliveries")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => navigate("/pod-deliveries"))(); } }} role="button" tabIndex={0}
     >
       <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan-500/20 bg-cyan-500/10">
         <Truck className="h-4.5 w-4.5 text-cyan-400" />
@@ -154,7 +153,7 @@ function CollectionCard({ col }: { col: Collection }) {
   return (
     <div
       className="flex items-start gap-3 rounded-[20px] border border-white/8 bg-white/[0.03] p-4 transition hover:border-white/15 hover:bg-white/[0.06] cursor-pointer"
-      onClick={() => navigate("/collections")}
+      onClick={() => navigate("/collections")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() => navigate("/collections"))(); } }} role="button" tabIndex={0}
     >
       <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-amber-500/20 bg-amber-500/10">
         <Package className="h-4.5 w-4.5 text-amber-400" />
@@ -230,9 +229,7 @@ export default function DriverHomePage() {
     };
   }, []);
 
-  const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
-    if (mode === "refresh") setRefreshing(true);
-    else setLoading(true);
+  const load = useCallback(() => (async () => {
     try {
       const [wbRes, colRes] = await Promise.allSettled([
         api.get("/waybills"),
@@ -256,14 +253,19 @@ export default function DriverHomePage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  })(), []);
 
-  useEffect(() => { void load("initial"); }, [load]);
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    return load();
+  }, [load]);
+
+  useEffect(() => { void load(); }, [load]);
   /* Auto-refresh every 60 s */
   useEffect(() => {
-    const t = setInterval(() => void load("refresh"), 60_000);
+    const t = setInterval(() => void refresh(), 60_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [refresh]);
 
   const totalJobs = useMemo(
     () => waybills.length + collections.length,
@@ -329,7 +331,7 @@ export default function DriverHomePage() {
                 {online ? "Online" : "Offline"}
               </span>
               <button
-                onClick={() => void load("refresh")}
+                onClick={() => void refresh()}
                 disabled={refreshing}
                 className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-white/4 px-3 py-1.5 text-[10px] font-bold text-white/40 hover:bg-white/8 hover:text-white transition disabled:opacity-40"
               >

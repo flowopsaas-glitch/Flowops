@@ -1,7 +1,10 @@
+import { errorMessageOf } from "@/components/patterns/errorMessage";
 import { useState, useEffect, useCallback } from 'react';
-import { CreditCard, Plus, DollarSign, TrendingUp, AlertCircle, CheckCircle2, Loader2, RotateCcw, XCircle } from 'lucide-react';
+import { formatMoney } from "../lib/currency";
+import { CreditCard, Plus, DollarSign, TrendingUp, AlertCircle, CheckCircle2, Loader2, RotateCcw } from 'lucide-react';
 import { listPayments, createPayment, getPaymentStats, refundPayment, type DigitalPayment, type PaymentStats, type CreatePaymentPayload, type PaymentMethod } from '../api/digitalPaymentsApi';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/toast-context';
+const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? 'ZAR';
 
 export default function DigitalPayments() {
   const { showToast } = useToast();
@@ -14,20 +17,20 @@ export default function DigitalPayments() {
     amount: '', method: 'CARD', payerName: '', payerEmail: '', waybillId: '',
   });
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: Record<string, string> = {};
-      if (filter) params.status = filter;
-      const [paymentsData, statsData] = await Promise.all([listPayments(params), getPaymentStats()]);
-      setPayments(paymentsData);
-      setStats(statsData);
-    } catch (e: any) {
-      showToast(e.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, showToast]);
+  const load = useCallback(() => (async () => {
+    const params: Record<string, string> = {};
+    if (filter) params.status = filter;
+    const [paymentsData, statsData] = await Promise.all([listPayments(params), getPaymentStats()]);
+    setPayments(paymentsData);
+    setStats(statsData);
+
+  })().catch((e: unknown) => {
+    showToast(errorMessageOf(e), 'error');
+
+  }).finally(() => {
+    setLoading(false);
+
+  }), [filter, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -46,12 +49,12 @@ export default function DigitalPayments() {
       setShowCreate(false);
       setForm({ amount: '', method: 'CARD', payerName: '', payerEmail: '', waybillId: '' });
       load();
-    } catch (e: any) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const handleRefund = async (id: string) => {
     try { await refundPayment(id); showToast('Payment refunded', 'success'); load(); }
-    catch (e: any) { showToast(e.message, 'error'); }
+    catch (e) { showToast(errorMessageOf(e), 'error'); }
   };
 
   const statusBadge = (s: string) => {
@@ -96,7 +99,7 @@ export default function DigitalPayments() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-emerald-400" /><p className="text-xs text-white/50">Revenue</p></div>
-            <p className="text-xl font-black text-white mt-1">R {stats.totalRevenue.toLocaleString()}</p>
+            <p className="text-xl font-black text-white mt-1">{formatMoney(stats.totalRevenue, tenantCurrency())}</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-blue-400" /><p className="text-xs text-white/50">Success Rate</p></div>
@@ -147,7 +150,7 @@ export default function DigitalPayments() {
                 {payments.map(p => (
                   <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                     <td className="px-4 py-3 text-white/70 font-mono text-xs">{p.reference || '—'}</td>
-                    <td className="px-4 py-3 text-white font-bold">R {p.amount.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-white font-bold">{formatMoney(p.amount, tenantCurrency())}</td>
                     <td className="px-4 py-3"><span className={`flex items-center gap-1.5 ${methodIcon(p.method)}`}><CreditCard className="w-3.5 h-3.5" />{p.method}</span></td>
                     <td className="px-4 py-3">{statusBadge(p.status)}</td>
                     <td className="px-4 py-3 text-white/60 text-xs">{p.payerName || p.payerEmail || '—'}</td>

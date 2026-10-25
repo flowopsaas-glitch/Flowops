@@ -99,8 +99,8 @@ type ExceptionSla = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function unwrap(raw: any): OpsSummary | null {
-  return (raw?.data ?? raw) as OpsSummary | null;
+function unwrap(raw: unknown): OpsSummary | null {
+  return ((raw as { data?: OpsSummary } | null)?.data ?? raw) as OpsSummary | null;
 }
 
 function relTime(ts: string): string {
@@ -164,22 +164,25 @@ export default function OperationsDashboard() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [acknowledging, setAcknowledging] = useState<string | null>(null);
 
-  const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
-    if (mode === "refresh") setRefreshing(true);
-    else setLoading(true);
-    setError("");
+  const load = useCallback(() => (async () => {
     try {
-      const raw: any = await api.get("/operations/summary");
+      const raw = await api.get("/operations/summary");
       setData(unwrap(raw));
-      api.get("/operations/exception-sla").then((r: any) => setSla(r?.data ?? r)).catch(() => setSla(null));
+      setError("");
+      api.get("/operations/exception-sla").then((r) => setSla(r?.data ?? r)).catch(() => setSla(null));
       setLastRefresh(new Date());
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "Failed to load operations data");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  })(), []);
+
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    return load();
+  }, [load]);
 
   const acknowledgeException = useCallback(async (waybillId: string, action: string) => {
     setAcknowledging(waybillId);
@@ -188,9 +191,9 @@ export default function OperationsDashboard() {
         action,
         note: `Action selected from operations exception queue: ${action}`,
       });
-      const raw: any = await api.get("/operations/exception-sla");
+      const raw = await api.get("/operations/exception-sla");
       setSla(raw?.data ?? raw);
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "Could not record exception action");
     } finally {
       setAcknowledging(null);
@@ -198,14 +201,14 @@ export default function OperationsDashboard() {
   }, []);
 
   useEffect(() => {
-    void load("initial");
+    void load();
   }, [load]);
 
   // Auto-refresh every 60 s
   useEffect(() => {
-    const t = setInterval(() => void load("refresh"), 60_000);
+    const t = setInterval(() => void refresh(), 60_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [refresh]);
 
   const driverTotal = useMemo(
     () =>
@@ -277,7 +280,7 @@ export default function OperationsDashboard() {
                 Updated {relTime(lastRefresh.toISOString())}
               </span>
               <button
-                onClick={() => void load("refresh")}
+                onClick={() => void refresh()}
                 disabled={refreshing}
                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/60 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
               >
@@ -471,7 +474,7 @@ export default function OperationsDashboard() {
                       fontSize: 12,
                       color: "#fff",
                     }}
-                    formatter={(v: any) => [v, "Delivered"]}
+                    formatter={(v: unknown) => [v as number, "Delivered"]}
                     labelFormatter={shortDate}
                   />
                   <Bar dataKey="count" radius={[6, 6, 0, 0]}>
@@ -658,7 +661,8 @@ export default function OperationsDashboard() {
                   key={c.id}
                   onClick={() =>
                     navigate(`/collections?collectionId=${c.id}`)
-                  }
+                  } onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (() =>
+                    navigate(`/collections?collectionId=${c.id}`))(); } }} role="button" tabIndex={0}
                   className="cursor-pointer rounded-2xl border border-white/8 bg-black/25 px-4 py-3 hover:border-amber-500/30 hover:bg-amber-500/5 transition"
                 >
                   <div className="text-xs font-black text-amber-200 mb-1 truncate">
