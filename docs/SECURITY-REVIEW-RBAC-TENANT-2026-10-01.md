@@ -206,3 +206,14 @@ Still open (unchanged from the review above): deployed-environment
 negative tests (a `VIEWER`/`WAREHOUSE` token against live finance/warehouse
 writes) remain the platform owner's evidence item; role metadata is now in
 place for those tests to assert against.
+
+## Follow-up 2026-10-26 — strict mode enforced in CI (PR #454)
+
+`RBAC_STRICT: "true"` is now set in the backend CI job, so every CI run
+proves the 0-undecided inventory holds under strict enforcement (a route
+without a deliberate decision is rejected in tests, not discovered in
+production). Trip Truth work (Slices 1–5) was added under this regime:
+838 routes, 0 undecided. The remaining step is the operator's: set
+`RBAC_STRICT=true` in the production deployment environment — that flip
+cannot be made from this repository and has deliberately not been
+claimed here.

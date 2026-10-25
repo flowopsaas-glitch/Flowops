@@ -222,6 +222,11 @@ jobs:
       # rather than silently using a hardcoded fallback that leaks.
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       NODE_ENV: test
+      # RBAC ratchet end-state (docs/SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md):
+      # the route inventory is 0-undecided, so strict mode must hold in CI.
+      # Any future route without a deliberate @Roles/@Public/@OwnerOnly/
+      # @AnyAuthenticated decision is rejected here first, not in production.
+      RBAC_STRICT: "true"
 
     steps:
       - uses: actions/checkout@v4
