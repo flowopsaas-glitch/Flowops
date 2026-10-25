@@ -588,6 +588,244 @@ export class TripTruthService {
     return this.prisma.deliveryCostAllocation.findFirst({ where: { waybillId, companyId } });
   }
 
+  // ── Per-truck month-end pack + loaded/empty km (Slices 4–5) ─────────────
+
+  /**
+   * One honest page per truck per month, rolled up from the SAME allocation
+   * rows Trip Truth shows per trip — nothing here re-derives numbers by a
+   * different route, so the pack always reconciles with the trip list.
+   *
+   * Money rules: revenue/cost/margin headline figures use MEASURED +
+   * ALLOCATED trips only; estimated trips are counted and totalled apart.
+   * Workshop/service spend (VehicleService records, scoped via company
+   * drivers — the table has no companyId) is a separate line, and
+   * netMargin = tripMargin − serviceCost. A truck can look fine per trip
+   * and still lose money at the workshop; owners deserve both numbers.
+   *
+   * Kilometre rules (Slice 5): loaded km = Σ straight-line sender→recipient
+   * distance over delivered trips with coordinates (labelled as such —
+   * road km is longer). Total km evidence = odometer readings logged with
+   * trip costs and services in the period; empty km = odometer span −
+   * loaded km, shown ONLY when both sides are measured, and labelled an
+   * upper bound (loaded is straight-line). Where evidence is missing the
+   * pack says "not measured" — it never invents an empty-km figure.
+   */
+  async getTruckPack(companyId: string, period?: string) {
+    const targetPeriod = period || this.currentPeriod();
+    const { start, end } = this.periodRange(targetPeriod);
+
+    const [rows, companyDrivers, readings] = await Promise.all([
+      this.prisma.deliveryCostAllocation.findMany({ where: { companyId, period: targetPeriod } }),
+      this.prisma.driver.findMany({ where: { companyId }, select: { id: true } }),
+      this.prisma.tripCostEntry.findMany({
+        where: { companyId, occurredAt: { gte: start, lt: end }, odometerKm: { not: null } },
+        select: { driverId: true, odometerKm: true },
+      }),
+    ]);
+    const companyDriverIds = companyDrivers.map((d) => d.id);
+
+    const services = companyDriverIds.length
+      ? await this.prisma.vehicleService.findMany({
+          where: { driverId: { in: companyDriverIds }, servicedAt: { gte: start, lt: end } },
+          select: { driverId: true, cost: true, kmAtService: true },
+        })
+      : [];
+
+    // Odometer evidence per driver: fuel-entry readings + service readings.
+    const readingsByDriver = new Map<string, number[]>();
+    const addReading = (driverId: string, km: number | null) => {
+      if (km == null) return;
+      const list = readingsByDriver.get(driverId) ?? [];
+      list.push(km);
+      readingsByDriver.set(driverId, list);
+    };
+    for (const r of readings) addReading(r.driverId, r.odometerKm);
+    for (const s of services) addReading(s.driverId, s.kmAtService);
+
+    const serviceByDriver = new Map<string, { cost: number; events: number }>();
+    for (const s of services) {
+      const agg = serviceByDriver.get(s.driverId) ?? { cost: 0, events: 0 };
+      agg.cost += s.cost ?? 0;
+      agg.events += 1;
+      serviceByDriver.set(s.driverId, agg);
+    }
+
+    type TruckAcc = {
+      driverId: string;
+      trips: number;
+      measuredTrips: number;
+      estimatedTrips: number;
+      revenue: number;
+      recordedCost: number;
+      estimatedRevenue: number;
+      estimatedCost: number;
+      tripsWithDistance: number;
+      loadedKm: number;
+      belowCostTrips: number;
+      openExceptions: number;
+      worstTripMargin: number | null;
+    };
+    const blank = (driverId: string): TruckAcc => ({
+      driverId, trips: 0, measuredTrips: 0, estimatedTrips: 0,
+      revenue: 0, recordedCost: 0, estimatedRevenue: 0, estimatedCost: 0,
+      tripsWithDistance: 0, loadedKm: 0, belowCostTrips: 0, openExceptions: 0,
+      worstTripMargin: null,
+    });
+    const trucks = new Map<string, TruckAcc>();
+    const unassigned = blank('__unassigned__');
+
+    for (const r of rows) {
+      const acc = r.driverId ? (trucks.get(r.driverId) ?? blank(r.driverId)) : unassigned;
+      if (r.driverId) trucks.set(r.driverId, acc);
+      acc.trips += 1;
+      const measured = r.provenance === 'MEASURED' || r.provenance === 'ALLOCATED';
+      if (measured) {
+        acc.measuredTrips += 1;
+        acc.revenue += r.revenue;
+        acc.recordedCost += r.totalCost;
+        if (r.grossMargin < 0) acc.belowCostTrips += 1;
+        acc.worstTripMargin =
+          acc.worstTripMargin === null ? r.grossMargin : Math.min(acc.worstTripMargin, r.grossMargin);
+      } else if (r.provenance === 'ESTIMATED') {
+        acc.estimatedTrips += 1;
+        acc.estimatedRevenue += r.revenue;
+        acc.estimatedCost += r.totalCost;
+      }
+      if (r.distanceKm != null) {
+        acc.tripsWithDistance += 1;
+        acc.loadedKm += r.distanceKm;
+      }
+      if (r.exceptionStatus === 'OPEN' || r.exceptionStatus === 'ACKNOWLEDGED') {
+        acc.openExceptions += 1;
+      }
+    }
+    // Trucks with workshop spend or readings but no delivered trips still
+    // belong in the pack — an idle truck at the workshop is a cost centre.
+    for (const driverId of serviceByDriver.keys()) {
+      if (!trucks.has(driverId)) trucks.set(driverId, blank(driverId));
+    }
+
+    const driverIds = [...trucks.keys()];
+    const driverDetails = driverIds.length
+      ? await this.prisma.driver.findMany({
+          where: { companyId, id: { in: driverIds } },
+          select: { id: true, name: true, vehicleReg: true },
+        })
+      : [];
+    const detailOf = new Map(driverDetails.map((d) => [d.id, d]));
+
+    const pack = [...trucks.values()].map((acc) => {
+      const detail = detailOf.get(acc.driverId);
+      const svc = serviceByDriver.get(acc.driverId) ?? { cost: 0, events: 0 };
+      const tripMargin = round2(acc.revenue - acc.recordedCost);
+      const loadedKm = acc.tripsWithDistance > 0 ? round1(acc.loadedKm) : null;
+
+      const readingsList = readingsByDriver.get(acc.driverId) ?? [];
+      const span =
+        readingsList.length >= 2
+          ? Math.max(...readingsList) - Math.min(...readingsList)
+          : null;
+      let km: {
+        status: 'MEASURED' | 'PARTIAL' | 'NOT_MEASURED';
+        loadedKm: number | null;
+        odometerSpanKm: number | null;
+        readings: number;
+        emptyKm: number | null;
+        emptyPct: number | null;
+        note: string;
+      };
+      if (span === null || span <= 0) {
+        km = {
+          status: 'NOT_MEASURED', loadedKm, odometerSpanKm: null,
+          readings: readingsList.length, emptyKm: null, emptyPct: null,
+          note: 'No odometer span this period — log the odometer with fuel entries and empty km becomes measurable.',
+        };
+      } else if (loadedKm === null) {
+        km = {
+          status: 'PARTIAL', loadedKm: null, odometerSpanKm: span,
+          readings: readingsList.length, emptyKm: null, emptyPct: null,
+          note: 'Loaded km unknown — delivered trips lack sender/recipient coordinates, so empty km is not shown.',
+        };
+      } else if (span < loadedKm) {
+        km = {
+          status: 'PARTIAL', loadedKm, odometerSpanKm: span,
+          readings: readingsList.length, emptyKm: null, emptyPct: null,
+          note: `Odometer span (${span} km) is below loaded distance (${loadedKm} km) — readings are incomplete, so empty km is not shown rather than guessed.`,
+        };
+      } else {
+        const emptyKm = round1(span - loadedKm);
+        km = {
+          status: 'MEASURED', loadedKm, odometerSpanKm: span,
+          readings: readingsList.length, emptyKm,
+          emptyPct: round1((emptyKm / span) * 100),
+          note: 'Empty km is an upper bound: loaded distance is straight-line, real road distance is longer.',
+        };
+      }
+
+      return {
+        driverId: acc.driverId,
+        driverName: detail?.name ?? 'Unknown driver',
+        vehicleReg: detail?.vehicleReg ?? null,
+        trips: acc.trips,
+        measuredTrips: acc.measuredTrips,
+        estimatedTrips: acc.estimatedTrips,
+        revenue: round2(acc.revenue),
+        recordedCost: round2(acc.recordedCost),
+        tripMargin,
+        marginPct: acc.revenue > 0 ? round1((tripMargin / acc.revenue) * 100) : 0,
+        estimatedRevenue: round2(acc.estimatedRevenue),
+        estimatedCost: round2(acc.estimatedCost),
+        serviceCost: round2(svc.cost),
+        serviceEvents: svc.events,
+        netMargin: round2(tripMargin - svc.cost),
+        costPerKm:
+          loadedKm !== null && loadedKm > 0 && acc.recordedCost > 0
+            ? {
+                value: round2(acc.recordedCost / loadedKm),
+                loadedKm,
+                tripsWithDistance: acc.tripsWithDistance,
+                trips: acc.trips,
+              }
+            : null,
+        belowCostTrips: acc.belowCostTrips,
+        openExceptions: acc.openExceptions,
+        worstTripMargin: acc.worstTripMargin === null ? null : round2(acc.worstTripMargin),
+        km,
+      };
+    });
+
+    pack.sort((a, b) => a.netMargin - b.netMargin);
+
+    const fleet = {
+      trucks: pack.length,
+      trips: pack.reduce((s, t) => s + t.trips, 0),
+      measuredTrips: pack.reduce((s, t) => s + t.measuredTrips, 0),
+      estimatedTrips: pack.reduce((s, t) => s + t.estimatedTrips, 0),
+      revenue: round2(pack.reduce((s, t) => s + t.revenue, 0)),
+      recordedCost: round2(pack.reduce((s, t) => s + t.recordedCost, 0)),
+      tripMargin: round2(pack.reduce((s, t) => s + t.tripMargin, 0)),
+      serviceCost: round2(pack.reduce((s, t) => s + t.serviceCost, 0)),
+      netMargin: round2(pack.reduce((s, t) => s + t.netMargin, 0)),
+    };
+
+    return {
+      period: targetPeriod,
+      trucks: pack,
+      unassigned:
+        unassigned.trips > 0
+          ? {
+              trips: unassigned.trips,
+              measuredTrips: unassigned.measuredTrips,
+              estimatedTrips: unassigned.estimatedTrips,
+              revenue: round2(unassigned.revenue),
+              recordedCost: round2(unassigned.recordedCost),
+              tripMargin: round2(unassigned.revenue - unassigned.recordedCost),
+            }
+          : null,
+      fleet,
+    };
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private async findDelivered(companyId: string, start: Date, end: Date): Promise<DeliveredWaybill[]>;

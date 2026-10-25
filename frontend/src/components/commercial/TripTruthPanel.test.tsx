@@ -10,6 +10,19 @@ const { mockList, mockRecompute } = vi.hoisted(() => ({
 vi.mock("../../api/tripTruthApi", () => ({
   listTripTruth: mockList,
   recomputeTripTruth: mockRecompute,
+  listTripExceptions: vi.fn().mockResolvedValue({
+    period: "2026-10", exceptions: [], counts: { open: 0, acknowledged: 0 },
+  }),
+  updateTripException: vi.fn(),
+  getTruckPack: vi.fn().mockResolvedValue({
+    period: "2026-10",
+    trucks: [],
+    unassigned: null,
+    fleet: {
+      trucks: 0, trips: 0, measuredTrips: 0, estimatedTrips: 0,
+      revenue: 0, recordedCost: 0, tripMargin: 0, serviceCost: 0, netMargin: 0,
+    },
+  }),
 }));
 
 const LIST = {

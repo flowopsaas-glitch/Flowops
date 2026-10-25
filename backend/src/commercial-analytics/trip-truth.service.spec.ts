@@ -250,3 +250,100 @@ describe('TripTruthService below-cost exceptions (Slice 3)', () => {
     });
   });
 });
+
+describe('TripTruthService.getTruckPack (Slices 4–5)', () => {
+  const alloc = (over: Record<string, unknown>) => ({
+    waybillId: 'w1', driverId: 'd1', provenance: 'MEASURED',
+    revenue: 0, totalCost: 0, grossMargin: 0, distanceKm: null,
+    exceptionStatus: null, ...over,
+  });
+
+  const makePackService = (opts: {
+    rows: any[]; services?: any[]; readings?: any[]; drivers: any[];
+    companyDrivers?: any[];
+  }) => {
+    const prisma: any = {
+      deliveryCostAllocation: { findMany: jest.fn().mockResolvedValue(opts.rows) },
+      driver: {
+        findMany: jest.fn(({ select }: any) =>
+          Promise.resolve(select?.name ? opts.drivers : (opts.companyDrivers ?? opts.drivers)),
+        ),
+      },
+      tripCostEntry: { findMany: jest.fn().mockResolvedValue(opts.readings ?? []) },
+      vehicleService: { findMany: jest.fn().mockResolvedValue(opts.services ?? []) },
+    };
+    const commercial: any = { getConfig: jest.fn().mockResolvedValue(CFG) };
+    const notifications: any = { broadcast: jest.fn().mockResolvedValue({}) };
+    return new TripTruthService(prisma, commercial, notifications);
+  };
+
+  it('rolls trips up per truck: measured-only money, service as its own line, km truth states', async () => {
+    const svc = makePackService({
+      rows: [
+        alloc({ waybillId: 'w1', driverId: 'd1', revenue: 1000, totalCost: 1400, grossMargin: -400, distanceKm: 100, exceptionStatus: 'OPEN' }),
+        alloc({ waybillId: 'w2', driverId: 'd1', provenance: 'ALLOCATED', revenue: 2000, totalCost: 900, grossMargin: 1100, distanceKm: 200 }),
+        alloc({ waybillId: 'w3', driverId: 'd1', provenance: 'ESTIMATED', revenue: 500, totalCost: 85, grossMargin: 415, distanceKm: 50 }),
+        alloc({ waybillId: 'w4', driverId: null, revenue: 300, totalCost: 100, grossMargin: 200, distanceKm: 40 }),
+        alloc({ waybillId: 'w5', driverId: 'd2', revenue: 800, totalCost: 300, grossMargin: 500, distanceKm: null }),
+      ],
+      services: [
+        { driverId: 'd1', cost: 250, kmAtService: 101000 },
+        { driverId: 'd3', cost: 800, kmAtService: null }, // serviced, no trips
+      ],
+      readings: [
+        { driverId: 'd1', odometerKm: 100000 },
+        { driverId: 'd1', odometerKm: 100600 },
+        { driverId: 'd2', odometerKm: 50000 },
+      ],
+      drivers: [
+        { id: 'd1', name: 'Sam Driver', vehicleReg: 'CA 123' },
+        { id: 'd2', name: 'Pat Ndlovu', vehicleReg: 'CA 999' },
+        { id: 'd3', name: 'Idle Ivan', vehicleReg: 'CA 555' },
+      ],
+    });
+
+    const pack = await svc.getTruckPack('company-a', '2026-10');
+
+    // Worst net margin first: the idle-but-serviced truck leads.
+    expect(pack.trucks.map((t) => t.driverId)).toEqual(['d3', 'd1', 'd2']);
+    const idle = pack.trucks[0];
+    expect(idle).toMatchObject({ trips: 0, serviceCost: 800, netMargin: -800 });
+
+    const sam = pack.trucks[1];
+    expect(sam).toMatchObject({
+      driverName: 'Sam Driver', vehicleReg: 'CA 123',
+      trips: 3, measuredTrips: 2, estimatedTrips: 1,
+      revenue: 3000, recordedCost: 2300, tripMargin: 700, marginPct: 23.3,
+      serviceCost: 250, serviceEvents: 1, netMargin: 450,
+      belowCostTrips: 1, openExceptions: 1, worstTripMargin: -400,
+    });
+    expect(sam.costPerKm).toEqual({ value: 6.57, loadedKm: 350, tripsWithDistance: 3, trips: 3 });
+    // Readings: 100000 + 100600 (fuel) + 101000 (service) → span 1000, empty 650.
+    expect(sam.km).toMatchObject({ status: 'MEASURED', loadedKm: 350, odometerSpanKm: 1000, readings: 3, emptyKm: 650, emptyPct: 65 });
+
+    const pat = pack.trucks[2];
+    expect(pat.costPerKm).toBeNull();
+    expect(pat.km).toMatchObject({ status: 'NOT_MEASURED', emptyKm: null, readings: 1 });
+
+    expect(pack.unassigned).toEqual({
+      trips: 1, measuredTrips: 1, estimatedTrips: 0, revenue: 300, recordedCost: 100, tripMargin: 200,
+    });
+    expect(pack.fleet).toMatchObject({ trucks: 3, measuredTrips: 3, revenue: 3800, recordedCost: 2600, serviceCost: 1050, netMargin: 150 });
+  });
+
+  it('refuses to show empty km when readings contradict loaded distance', async () => {
+    const svc = makePackService({
+      rows: [
+        alloc({ waybillId: 'w1', driverId: 'd1', revenue: 1000, totalCost: 400, grossMargin: 600, distanceKm: 350 }),
+      ],
+      readings: [
+        { driverId: 'd1', odometerKm: 100000 },
+        { driverId: 'd1', odometerKm: 100100 }, // span 100 < loaded 350
+      ],
+      drivers: [{ id: 'd1', name: 'Sam Driver', vehicleReg: 'CA 123' }],
+    });
+    const pack = await svc.getTruckPack('company-a', '2026-10');
+    expect(pack.trucks[0].km).toMatchObject({ status: 'PARTIAL', emptyKm: null, emptyPct: null });
+    expect(pack.trucks[0].km.note).toContain('not shown rather than guessed');
+  });
+});

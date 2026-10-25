@@ -10,6 +10,7 @@ import {
 import { errorMessageOf } from "../patterns/errorMessage";
 import { formatMoney } from "../../lib/currency";
 import BelowCostQueue from "./BelowCostQueue";
+import TruckPack from "./TruckPack";
 
 const tenantCurrency = () => window.__FLOWOPS_CURRENCY__ ?? "ZAR";
 
@@ -233,6 +234,8 @@ export default function TripTruthPanel() {
           )}
         </div>
       )}
+
+      <TruckPack period={period} />
 
       <div className="flex flex-wrap items-center gap-4 text-sm">
         <label className="flex items-center gap-2 text-white/70">

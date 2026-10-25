@@ -91,6 +91,12 @@ export class CommercialAnalyticsController {
     return this.tripTruth.recompute(u.companyId, body?.period);
   }
 
+  /** GET /commercial-analytics/trip-truth/truck-pack — per-truck month-end pack + km truth */
+  @Get('trip-truth/truck-pack')
+  getTruckPack(@CurrentUser() u: any, @Query('period') period?: string) {
+    return this.tripTruth.getTruckPack(u.companyId, period);
+  }
+
   /** GET /commercial-analytics/trip-truth — per-trip cost truth, worst margin first */
   @Get('trip-truth')
   listTripTruth(

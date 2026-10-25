@@ -112,3 +112,72 @@ export async function updateTripException(
   });
   return unwrap<TripExceptionRow>(res.data);
 }
+
+export type TruckKmTruth = {
+  status: "MEASURED" | "PARTIAL" | "NOT_MEASURED";
+  loadedKm: number | null;
+  odometerSpanKm: number | null;
+  readings: number;
+  emptyKm: number | null;
+  emptyPct: number | null;
+  note: string;
+};
+
+export type TruckPackRow = {
+  driverId: string;
+  driverName: string;
+  vehicleReg?: string | null;
+  trips: number;
+  measuredTrips: number;
+  estimatedTrips: number;
+  revenue: number;
+  recordedCost: number;
+  tripMargin: number;
+  marginPct: number;
+  estimatedRevenue: number;
+  estimatedCost: number;
+  serviceCost: number;
+  serviceEvents: number;
+  netMargin: number;
+  costPerKm: {
+    value: number;
+    loadedKm: number;
+    tripsWithDistance: number;
+    trips: number;
+  } | null;
+  belowCostTrips: number;
+  openExceptions: number;
+  worstTripMargin: number | null;
+  km: TruckKmTruth;
+};
+
+export type TruckPack = {
+  period: string;
+  trucks: TruckPackRow[];
+  unassigned: {
+    trips: number;
+    measuredTrips: number;
+    estimatedTrips: number;
+    revenue: number;
+    recordedCost: number;
+    tripMargin: number;
+  } | null;
+  fleet: {
+    trucks: number;
+    trips: number;
+    measuredTrips: number;
+    estimatedTrips: number;
+    revenue: number;
+    recordedCost: number;
+    tripMargin: number;
+    serviceCost: number;
+    netMargin: number;
+  };
+};
+
+export async function getTruckPack(period: string): Promise<TruckPack> {
+  const res = await api.get("/commercial-analytics/trip-truth/truck-pack", {
+    params: { period },
+  });
+  return unwrap<TruckPack>(res.data);
+}
