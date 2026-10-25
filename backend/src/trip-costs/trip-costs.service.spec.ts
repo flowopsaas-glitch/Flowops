@@ -89,14 +89,17 @@ describe('TripCostsService', () => {
   it('lists with filter totals and reports summary counts honestly', async () => {
     const prisma = makePrisma();
     prisma.tripCostEntry.count.mockResolvedValue(3);
-    prisma.tripCostEntry.groupBy
-      .mockResolvedValueOnce([
-        { type: 'FUEL', _sum: { amount: 1700 }, _count: { _all: 2 } },
-        { type: 'TOLL', _sum: { amount: 120 }, _count: { _all: 1 } },
-      ])
-      .mockResolvedValueOnce([
-        { driverId: 'driver-1', _sum: { amount: 1820 }, _count: { _all: 3 } },
-      ]);
+    // Argument-aware (not call-order): list() and summary() share this mock.
+    prisma.tripCostEntry.groupBy.mockImplementation(({ by }: any) =>
+      Promise.resolve(
+        by[0] === 'driverId'
+          ? [{ driverId: 'driver-1', _sum: { amount: 1820 }, _count: { _all: 3 } }]
+          : [
+              { type: 'FUEL', _sum: { amount: 1700 }, _count: { _all: 2 } },
+              { type: 'TOLL', _sum: { amount: 120 }, _count: { _all: 1 } },
+            ],
+      ),
+    );
     prisma.driver.findMany.mockResolvedValue([
       { id: 'driver-1', name: 'Sam Driver', vehicleReg: 'CA 123' } as any,
     ]);
