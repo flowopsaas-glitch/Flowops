@@ -4,15 +4,16 @@ import {
   TrendingUp, TrendingDown, DollarSign, Users, MapPin, Target,
   BarChart3, Sparkles, Loader2, ArrowUpRight, ArrowDownRight,
   AlertTriangle, CheckCircle2, Activity, Zap, Crown,
-  ShieldAlert, RefreshCw,
+  ShieldAlert, RefreshCw, Scale,
     type LucideIcon,
 } from "lucide-react";
 import {
   getProfitability, getClientMatrix, getLaneProfitability, getRevenueForecast, getClientIntelligence,
   getCommercialAiInsights,
 } from "../api/commercialAnalytics";
+import TripTruthPanel from "../components/commercial/TripTruthPanel";
 
-type Tab = 'overview' | 'clients' | 'lanes' | 'forecast' | 'intelligence' | 'ai';
+type Tab = 'overview' | 'clients' | 'lanes' | 'forecast' | 'intelligence' | 'ai' | 'truth';
 
 type CommercialClient = {
   clientName: string; revenue: number; marginPct: number; health: string;
@@ -64,6 +65,7 @@ export default function CommercialAnalytics() {
       case 'forecast': result = (await getRevenueForecast()) as unknown as CommercialData; break;
       case 'intelligence': result = (await getClientIntelligence()) as unknown as CommercialData; break;
       case 'ai': result = (await getCommercialAiInsights()) as unknown as CommercialData; break;
+      case 'truth': result = {} as CommercialData; break; // TripTruthPanel loads its own data
     }
     setData(result);
     setError(null);
@@ -85,6 +87,7 @@ export default function CommercialAnalytics() {
     { key: 'forecast', label: 'Revenue Forecast', icon: TrendingUp },
     { key: 'intelligence', label: 'Client Intelligence', icon: Crown },
     { key: 'ai', label: 'AI Insights', icon: Sparkles },
+    { key: 'truth', label: 'Trip Truth', icon: Scale },
   ];
 
 
@@ -137,6 +140,7 @@ export default function CommercialAnalytics() {
           {tab === 'forecast' && <ForecastView data={data} />}
           {tab === 'intelligence' && <IntelligenceView data={data} />}
           {tab === 'ai' && <AiInsightsView data={data} />}
+          {tab === 'truth' && <TripTruthPanel />}
         </>
       )}
     </div>
