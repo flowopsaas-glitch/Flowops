@@ -6,7 +6,10 @@ import {
   type TruckAppointment, type TruckAppointmentSummary,
 } from "../../api/railTruckAppointmentsApi";
 import { useToast } from "../../components/toast-context";
-import { Banner, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
+import { useAuth } from "../../contexts/auth-context";
+import { canChangeWindowRole, WINDOW_CHANGE_DENIED_HINT } from "../../lib/railWindowAuthority";
+import TruckWindowAckBoard from "./TruckWindowAckBoard";
+import { Banner, Pill, Section, btnNeutral, btnPrimary, inputCls } from "./railUi";
 
 /**
  * Terminal truck appointments — booked gate windows for the road side of the
@@ -42,6 +45,15 @@ const emptyForm = { terminalName: "", haulierName: "", vehicleReg: "", driverNam
 
 export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean }) {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  /**
+   * Moving a published window is a separate permission from writing rail data:
+   * inside one tenant sit both the terminal-side managers and the haulier's
+   * dispatch desk, and only the former may re-time the terminal's gate. The
+   * server enforces this; the UI states it instead of offering a control that
+   * will be refused.
+   */
+  const canChangeWindow = canWrite && canChangeWindowRole(user?.role);
   const [rows, setRows] = useState<TruckAppointment[]>([]);
   const [summary, setSummary] = useState<TruckAppointmentSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,6 +64,13 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
   const [replan, setReplan] = useState({ terminalName: "", date: "", shiftMinutes: "120", reason: "" });
   const [replanning, setReplanning] = useState(false);
   const [editing, setEditing] = useState<{ id: string; start: string; end: string; force: boolean; reason: string } | null>(null);
+  /** Windows a day replan refused to move, with the reason — reported, never swallowed. */
+  const [skipped, setSkipped] = useState<{ appointmentId: string; vehicleReg: string; reason: string }[]>([]);
+  /**
+   * Links issued before expiry enforcement: readable, unexpiring, unable to
+   * confirm. Surfaced as a list because the only way to end one is revocation.
+   */
+  const legacyLinks = rows.filter((r) => r.shareLink?.legacy);
 
   const load = useCallback(() => (async () => {
     try {
@@ -95,7 +114,12 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
 
   const act = async (id: string, action: "arrive" | "start-loading" | "complete" | "no-show" | "cancel") => {
     try {
-      await transitionTruckAppointment(id, action);
+      // Cancelling a BOOKED window is a window change: the counterparty is told
+      // and the confirmation loop applies. Inside the cut-off it needs a reason.
+      const res = await transitionTruckAppointment(id, action, action === "cancel" ? { force: true, note: "Cancelled by the terminal operator" } : undefined);
+      if (action === "cancel" && res?.change) {
+        showToast(`Window cancelled as version v${res.change.version} — the haulier and driver were notified.`, "success");
+      }
       await load();
     } catch (e) {
       showToast(String((e as Error)?.message ?? e), "error");
@@ -117,6 +141,27 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
     catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
   };
 
+  /**
+   * Kill a legacy link and issue a new one in a single click. A legacy link was
+   * issued before expiry enforcement: it never expires, and the only way to end
+   * it is revocation — so re-issuing without revoking would leave the old one
+   * readable forever.
+   */
+  const reissue = async (r: TruckAppointment) => {
+    try {
+      await revokeTruckShareLink(r.id);
+      const link = await createTruckShareLink(r.id);
+      const url = `${window.location.origin}${link.path}`;
+      try { await navigator.clipboard.writeText(url); } catch { /* clipboard is a convenience, not the point */ }
+      showToast(
+        `Old link revoked and a new one issued${link.expiresAt ? `, expiring ${new Date(link.expiresAt).toLocaleString()}` : ""}. ` +
+        `Send the new link — the old one no longer works. ${url}`,
+        "success",
+      );
+      await load();
+    } catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
+  };
+
   const applyReschedule = async () => {
     if (!editing) return;
     if (!editing.start || !editing.end) { showToast("New window start and end are required.", "error"); return; }
@@ -126,8 +171,17 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
         windowStart: new Date(editing.start).toISOString(),
         windowEnd: new Date(editing.end).toISOString(),
         ...(editing.force ? { force: true, note: editing.reason.trim() } : {}),
-      });
-      showToast(res?.forced ? "Window changed (forced inside cut-off, reason recorded)." : "Window rescheduled.", "success");
+      }, `reschedule:${editing.id}:${editing.start}:${editing.end}`);
+      // The old window is superseded, not overwritten, and the haulier + driver
+      // are told. Whether they have confirmed is on the acknowledgement board.
+      const version = res?.change?.version;
+      showToast(
+        `Window changed (v${version ?? "?"}) — the previous window stays on the record as superseded, ` +
+        `and the haulier${res?.change?.recipients?.some((r) => r.recipientType === "DRIVER" && r.driverId) ? " and the assigned driver were" : " was"} notified. ` +
+        (res?.forced ? "Forced inside the cut-off; the reason is recorded. " : "") +
+        "Confirmations are tracked on the board below.",
+        "success",
+      );
       setEditing(null);
       await load();
     } catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
@@ -140,10 +194,23 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
     }
     setReplanning(true);
     try {
-      const res = await replanTruckDay({ terminalName: replan.terminalName.trim(), date: replan.date, shiftMinutes: shift, reason: replan.reason.trim() });
+      // A day replan moves every BOOKED window at once, so a double submit must
+      // not shift the day twice. The key is derived from the request itself: the
+      // server replays the identical one, and a genuinely different reason is a
+      // genuinely different request.
+      const res = await replanTruckDay(
+        { terminalName: replan.terminalName.trim(), date: replan.date, shiftMinutes: shift, reason: replan.reason.trim() },
+        `replan:${replan.terminalName.trim()}:${replan.date}:${shift}:${replan.reason.trim()}`,
+      );
+      // Each moved window is its own notified change; the skipped ones are named,
+      // because a day that was only partly replanned must not look like a whole day.
+      setSkipped(res.skipped ?? []);
       showToast(res.shifted === 0
-        ? "No BOOKED appointments matched that terminal and day — nothing was moved."
-        : `Replanned: ${res.shifted} window(s) shifted${res.withConflicts ? `, ${res.withConflicts} now overlap another booking — review the board` : ""}.`, res.shifted === 0 ? "info" : "success");
+        ? `No BOOKED windows were moved.${res.skipped?.length ? ` ${res.skipped.length} were refused: ${res.skipped.map((k) => `${k.vehicleReg} (${k.reason})`).join("; ")}` : ""}`
+        : `Replanned: ${res.shifted} window(s) moved, each published as its own notified change` +
+          `${res.withConflicts ? ` · ${res.withConflicts} now overlap another booking — govern them` : ""}` +
+          `${res.skipped?.length ? ` · ${res.skipped.length} NOT moved: ${res.skipped.map((k) => k.vehicleReg).join(", ")}` : ""}.`,
+        res.shifted === 0 ? "info" : "success");
       await load();
     } catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
     finally { setReplanning(false); }
@@ -154,7 +221,9 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
       <p className="mb-3 text-xs text-slate-400">
         Booked gate windows replace arrive-and-queue. Overlapping windows are flagged for the terminal
         operator to govern — never auto-rejected. Wait times are measured from recorded arrival and
-        loading timestamps only.
+        loading timestamps only. Changing a published window creates a new VERSION: the previous window
+        stays on the record as superseded, and the haulier and the assigned driver are notified and
+        tracked on the acknowledgement board below.
         {summary?.changeCutoffHours != null && (
           <> Window changes inside {summary.changeCutoffHours}h of the window start must be forced with a
           recorded reason. Bookings can be shared with the haulier/terminal as a read-only link.</>
@@ -179,6 +248,31 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
           </span>
         </div>
       )}
+
+      {skipped.length > 0 && (
+        <Banner tone="warn" title="Some windows were NOT moved by the day replan">
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {skipped.map((k) => <li key={k.appointmentId}>{k.vehicleReg} — {k.reason}</li>)}
+          </ul>
+          A day that was only partly replanned must not look like a whole day. Handle these individually.
+        </Banner>
+      )}
+
+      {legacyLinks.length > 0 && (
+        <Banner tone="warn" title={`${legacyLinks.length} legacy share link${legacyLinks.length > 1 ? "s" : ""} — no expiry on record`}>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {legacyLinks.map((r) => (
+              <li key={r.id}>{r.vehicleReg} · {r.haulierName} · {r.terminalName}</li>
+            ))}
+          </ul>
+          These links were issued before expiry enforcement. They stay readable until somebody revokes them, and they
+          can no longer be used to confirm a window change. Use <span className="font-bold">Revoke &amp; re-issue</span> on
+          each row: revoking alone ends the link, re-issuing alone would leave the old one alive.
+        </Banner>
+      )}
+
+      {/* "Does that truck know?" — the acknowledgement half of the closed loop. */}
+      <TruckWindowAckBoard canWrite={canWrite} />
 
       {canWrite && (
         <div className="mb-4 grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -214,7 +308,12 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
         </div>
       )}
 
-      {canWrite && (
+      {canWrite && !canChangeWindow && (
+        <Banner tone="warn" title="You can confirm changes but not move windows">
+          {WINDOW_CHANGE_DENIED_HINT}
+        </Banner>
+      )}
+      {canChangeWindow && (
         <div className="mb-4 grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Replan a day">
           <label className="text-[11px] text-slate-400">Replan: terminal
             <input aria-label="Replan terminal" className={`${inputCls} mt-1 w-full`} value={replan.terminalName} onChange={(e) => setReplan({ ...replan, terminalName: e.target.value })} placeholder="Central Terminal" />
@@ -264,6 +363,18 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
                 <tr key={r.id} className="border-t border-white/5">
                   <td className="px-2 py-2 text-xs text-slate-300">
                     {new Date(r.windowStart).toLocaleString()} – {new Date(r.windowEnd).toLocaleTimeString()}
+                    {(r.windowVersion ?? 1) > 1 && (
+                      <span className="mt-0.5 block text-[10px] text-slate-500">window v{r.windowVersion} (changed)</span>
+                    )}
+                    {r.pendingWindowChange && (
+                      <span className="mt-0.5 block">
+                        <Pill tone={r.pendingWindowChange.unacked > 0 ? "warn" : "ok"}>
+                          {r.pendingWindowChange.unacked > 0
+                            ? `v${r.pendingWindowChange.version} change · ${r.pendingWindowChange.unacked} not confirmed`
+                            : `v${r.pendingWindowChange.version} change · confirmed`}
+                        </Pill>
+                      </span>
+                    )}
                   </td>
                   <td className="px-2 py-2">{r.terminalName}</td>
                   <td className="px-2 py-2 text-xs">{r.haulierName} · {r.vehicleReg}</td>
@@ -277,15 +388,61 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
                   <td className="px-2 py-2">
                     {canWrite && (
                       <div className="flex flex-wrap gap-1">
-                        {(NEXT[r.status] ?? []).map((n) => (
-                          <button key={n.action} type="button" onClick={() => void act(r.id, n.action)} className={btnNeutral}>{n.label}</button>
-                        ))}
+                        {(NEXT[r.status] ?? []).map((n) => {
+                          const needsWindowAuthority = n.action === "cancel" && r.status === "BOOKED";
+                          return (
+                            <button
+                              key={n.action}
+                              type="button"
+                              onClick={() => void act(r.id, n.action)}
+                              className={btnNeutral}
+                              disabled={needsWindowAuthority && !canChangeWindow}
+                              title={needsWindowAuthority && !canChangeWindow ? WINDOW_CHANGE_DENIED_HINT : undefined}
+                            >
+                              {n.label}
+                            </button>
+                          );
+                        })}
                         {r.status === "BOOKED" && (
-                          <button type="button" onClick={() => setEditing({ id: r.id, start: r.windowStart.slice(0, 16), end: r.windowEnd.slice(0, 16), force: false, reason: "" })} className={btnNeutral}>Reschedule</button>
+                          <button
+                            type="button"
+                            onClick={() => setEditing({ id: r.id, start: r.windowStart.slice(0, 16), end: r.windowEnd.slice(0, 16), force: false, reason: "" })}
+                            className={btnNeutral}
+                            disabled={!canChangeWindow}
+                            title={canChangeWindow ? "Publish a new window version and notify the haulier and driver" : WINDOW_CHANGE_DENIED_HINT}
+                          >
+                            Reschedule
+                          </button>
+                        )}
+                        {/* Cancelling a BOOKED window publishes a change, so it needs the same authority. */}
+                        {r.status === "BOOKED" && !canChangeWindow && (
+                          <span className="self-center text-[10px] text-slate-500" title={WINDOW_CHANGE_DENIED_HINT}>
+                            Cancelling a booked window also needs the window-change permission
+                          </span>
                         )}
                         {r.shareToken
                           ? <button type="button" onClick={() => void unshare(r)} className={btnNeutral}>Revoke link</button>
                           : <button type="button" onClick={() => void share(r)} className={btnNeutral}>Share link</button>}
+                        {r.shareLink?.legacy && (
+                          <>
+                            <span className="w-full rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-200" title={r.shareLink.warning ?? undefined}>
+                              LEGACY LINK — never expires, cannot confirm
+                            </span>
+                            <button type="button" onClick={() => void reissue(r)} className={btnNeutral}>
+                              Revoke &amp; re-issue
+                            </button>
+                          </>
+                        )}
+                        {r.shareLink?.state === "EXPIRED" && (
+                          <span className="w-full rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-400">
+                            Link expired — re-issue if they still need the window
+                          </span>
+                        )}
+                        {r.shareLink?.state === "VALID" && r.shareLink.expiresAt && (
+                          <span className="w-full text-[10px] text-slate-500">
+                            Link expires {new Date(r.shareLink.expiresAt).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
                     )}
                   </td>

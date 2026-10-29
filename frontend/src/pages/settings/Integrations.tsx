@@ -57,6 +57,12 @@ const EVENT_GROUPS: { label: string; events: string[] }[] = [
       "rail.telemetry.alert_raised", "rail.telemetry.alert_updated",
     ],
   },
+  {
+    label: "Rail — terminal truck gate windows",
+    events: [
+      "rail.truck_window.changed", "rail.truck_window.acknowledged", "rail.truck_window.escalated",
+    ],
+  },
 ];
 const EVENT_OPTIONS = EVENT_GROUPS.flatMap((g) => g.events);
 
