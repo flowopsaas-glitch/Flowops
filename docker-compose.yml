@@ -108,6 +108,26 @@ services:
       # Public URL used in email links (e.g. verify-email, password reset)
       APP_URL: ${APP_URL:-http://localhost:8080}
 
+      # ── Security posture ──────────────────────────────────────────────
+      # RBAC_STRICT makes RolesGuard reject (403) any route that carries no
+      # deliberate access decision (@Roles / @AnyAuthenticated / @Public /
+      # @OwnerOnly). The route inventory is at zero undecided and CI runs the
+      # whole backend suite with this forced to "true", so strict mode is the
+      # supported production posture — see
+      # docs/SECURITY-REVIEW-RBAC-TENANT-2026-10-01.md.
+      #
+      # THIS LINE IS THE ONLY WAY THE VARIABLE REACHES THE CONTAINER. The api
+      # service uses an explicit `environment:` allowlist and no `env_file:`,
+      # so a value set in the host .env but absent here is silently dropped —
+      # that is exactly how production ran non-strict until an operator
+      # hand-edited deploy/docker-compose.vps.yml on 2026-10-25. Do not remove
+      # it, and do not "fix" it host-side again.
+      #
+      # Default is false so a fresh local `docker compose up` cannot 403 a
+      # route that only exists in someone's working tree. Set RBAC_STRICT=true
+      # in .env to run strict anywhere.
+      RBAC_STRICT: ${RBAC_STRICT:-false}
+
       # ── Database + Cache ─────────────────────────────────────────────
       DATABASE_URL: postgresql://${POSTGRES_USER:-flowops}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-flowops}?schema=public
       REDIS_HOST: redis
