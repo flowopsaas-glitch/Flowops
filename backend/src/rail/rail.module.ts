@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { GatewayModule } from '../gateway/gateway.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { PushModule } from '../push/push.module';
 import { RailController } from './rail.controller';
 import { RailService } from './rail.service';
 import { RailHandshakeController } from './rail-handshake.controller';
@@ -27,6 +30,8 @@ import { RailTelemetryController } from './rail-telemetry.controller';
 import { RailTelemetryService } from './rail-telemetry.service';
 import { RailTruckAppointmentsController } from './rail-truck-appointments.controller';
 import { RailTruckAppointmentsService } from './rail-truck-appointments.service';
+import { RailTruckWindowChangesController } from './rail-truck-window-changes.controller';
+import { RailTruckWindowChangesService } from './rail-truck-window-changes.service';
 
 /**
  * Rail / Intermodal Operations.
@@ -48,23 +53,36 @@ import { RailTruckAppointmentsService } from './rail-truck-appointments.service'
  * Wave 4 adds the tariff calculator (GTK + traction energy + Annexure 40 ancillary services + the
  * weighbridge overload penalty, with an idempotent invoice draft) and weighbridge readings, whose
  * overload rule puts a consignment on HOLD_FOR_LOAD_ADJUSTMENT.
+ *
+ * The truck-gate closed loop adds RailTruckWindowChangesService: a published
+ * gate window change becomes a versioned event that supersedes the previous
+ * one, is propagated to the haulier organisation AND the assigned driver over
+ * the rails that already exist (socket.io company room with a transport
+ * receipt, driver web-push, the notification bell, the transactional outbox and
+ * the expiring share link), is acknowledged per recipient, escalates on the
+ * clock, and is measured (change→ack median + P90 with n). GatewayModule,
+ * NotificationsModule and PushModule are imported for that propagation — no new
+ * transport is invented here.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, GatewayModule, NotificationsModule, PushModule],
   controllers: [
     RailController, RailHandshakeController, RailSlotController,
     RailChangeController, RailPossessionController, RailOccurrenceController, RailTariffController, RailWeighbridgeController,
     RailTimetableOwnerController, RailOptimizerController, RailTrainManifestController, RailTelemetryController, RailTruckAppointmentsController,
+    RailTruckWindowChangesController,
   ],
   providers: [
     RailService, RailHandshakeService, RailSlotService,
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
     RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService, RailTruckAppointmentsService,
+    RailTruckWindowChangesService,
   ],
   exports: [
     RailService, RailHandshakeService, RailSlotService,
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
     RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService, RailTruckAppointmentsService,
+    RailTruckWindowChangesService,
   ],
 })
 export class RailModule {}

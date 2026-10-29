@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, Param, Post, Query, Req, UseGuards, UnauthorizedException,
+  Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards, UnauthorizedException,
 } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -8,7 +8,8 @@ import { DriverPortalService } from './driver-portal.service';
 import { AuthService } from '../auth/auth.service';
 import type { DriverMode } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
-import { UserRole } from '@prisma/client';
+import { UserRole, TruckWindowAckSource } from '@prisma/client';
+import { RailTruckWindowChangesService } from '../rail/rail-truck-window-changes.service';
 
 /** Real client IP behind Cloudflare -> nginx -> Docker (see auth.controller). */
 function clientIp(req: any): string | undefined {
@@ -24,6 +25,7 @@ export class DriverPortalController {
   constructor(
     private readonly svc: DriverPortalService,
     private readonly auth: AuthService,
+    private readonly windowChanges: RailTruckWindowChangesService,
   ) {}
 
   // ── Auth (public) ────────────────────────────────────────────────────────────
@@ -241,6 +243,61 @@ export class DriverPortalController {
   @Get('costs/mine')
   myCosts(@Req() req: any) {
     return this.svc.listDriverCosts(req.driver.id);
+  }
+
+  // ── Terminal gate windows (the driver side of the closed loop) ──────────────
+  //
+  // A terminal operator can change a published gate window; the haulier and the
+  // driver must be told quickly. These two endpoints are the driver's half of
+  // that loop. Both are READ + CONFIRM ONLY — a driver session can never move a
+  // window, and the driver identity always comes from the token (req.driver.id),
+  // never from the body, so a driver cannot confirm on another driver's behalf.
+
+  /**
+   * GET /driver-portal/gate-windows — this driver's gate windows with the
+   * current change on each: the NEW window, the old one it supersedes, the
+   * reason, and whether they have already confirmed. Polled by the PWA and
+   * cached offline, so a driver in a notspot still sees the last known window
+   * and can queue a confirmation.
+   */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('gate-windows')
+  gateWindows(@Req() req: any) {
+    return this.windowChanges.driverGateWindows(req.driver.id, req.driver.companyId);
+  }
+
+  /**
+   * POST /driver-portal/gate-windows/:changeId/ack — one-tap confirmation.
+   *
+   * Offline-safe by contract: the PWA queues this in its IndexedDB outbox and
+   * replays it with `X-Idempotency-Key`, so a flush that happens twice produces
+   * one acknowledgement and never moves the original `ackedAt`. A client-
+   * reported `deviceAckedAt` is stored separately and labelled device-reported;
+   * the measurement uses the server-observed time.
+   *
+   * A 409 here means the version was superseded while the driver was offline —
+   * the outbox treats that as permanent and drops it, and the portal refetches
+   * so the driver confirms the window that is actually current.
+   */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('gate-windows/:changeId/ack')
+  ackGateWindow(
+    @Req() req: any,
+    @Param('changeId') changeId: string,
+    @Body() body: { deviceAckedAt?: string; idempotencyKey?: string },
+    @Headers('x-idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.windowChanges.acknowledge({
+      companyId: req.driver.companyId,
+      changeId,
+      source: TruckWindowAckSource.DRIVER_PORTAL,
+      driverId: req.driver.id,
+      actorLabel: req.driver.name ?? null,
+      deviceAckedAt: body?.deviceAckedAt ? new Date(body.deviceAckedAt) : null,
+      idempotencyKey: body?.idempotencyKey ?? idempotencyKey ?? null,
+    });
   }
 
   // ── Dispatch-facing (tenant JWT required — unchanged) ─────────────────────────

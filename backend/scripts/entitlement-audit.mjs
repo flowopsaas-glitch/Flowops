@@ -70,6 +70,7 @@ export const EXPECTED = {
   "rail/rail-telemetry.controller.ts": "rail",
   "rail/rail-weighbridge.controller.ts": "rail",
   "rail/rail-truck-appointments.controller.ts": "rail",
+  "rail/rail-truck-window-changes.controller.ts": "rail",
   // Core features (true on every plan incl. starter) — safe to enforce:
   "waybills/waybills.controller.ts": "waybills",
   "collections/collections.controller.ts": "collections",

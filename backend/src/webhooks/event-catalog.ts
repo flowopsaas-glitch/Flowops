@@ -46,6 +46,13 @@ export const EVENT_CATALOG = [
   // Driver portal — shift duties (mode switching)
   'driver.duty.started',
   'driver.duty.completed',
+  // Rail — terminal truck gate windows: the change → acknowledge closed loop.
+  // `changed` fires when a new window version supersedes the previous one;
+  // `acknowledged` when a recipient confirms; `escalated` when the ladder moves
+  // on the clock without an acknowledgement.
+  'rail.truck_window.changed',
+  'rail.truck_window.acknowledged',
+  'rail.truck_window.escalated',
 ] as const;
 
 export type FlowOpsEvent = (typeof EVENT_CATALOG)[number];

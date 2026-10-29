@@ -162,6 +162,75 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`company:${companyId}`).emit(event, data);
   }
 
+  /**
+   * Emit to a company room AND report what we can honestly prove about it.
+   *
+   * A plain `emit` is fire-and-forget: it tells you nothing about whether a
+   * browser ever saw the event, so a caller that records "notified" on the
+   * strength of an emit is recording a hope. This variant uses Socket.IO's
+   * per-emit acknowledgement with a timeout, which gives a real transport-level
+   * receipt from each client whose callback fired.
+   *
+   * The distinction the callers must keep:
+   *   dispatched       — we handed the event to Socket.IO (always true here)
+   *   connectedClients — sockets in the room at emit time (0 = nobody to tell)
+   *   receipts         — clients that confirmed receipt (this is DELIVERED;
+   *                      dispatched-but-no-receipt is only ever SENT)
+   *
+   * A receipt is transport confirmation from the browser, NOT a human
+   * acknowledging anything — acknowledgement is a separate, recorded act.
+   *
+   * Never throws: realtime is a best-effort accelerator over the pull channels,
+   * and a socket failure must not roll back a window change that is already
+   * committed.
+   */
+  async emitToCompanyWithReceipt(
+    companyId: string,
+    event: string,
+    data: any,
+    timeoutMs = 4000,
+  ): Promise<{ dispatched: boolean; connectedClients: number; receipts: number }> {
+    const room = `company:${companyId}`;
+    let connectedClients = 0;
+    try {
+      connectedClients = (await this.server.in(room).fetchSockets()).length;
+    } catch (err: any) {
+      // A non-memory adapter or a shutdown race can make this unavailable.
+      // Unknown is reported as unknown, not as zero-connected.
+      this.logger.debug(`fetchSockets unavailable for ${room}: ${err?.message ?? err}`);
+      connectedClients = -1;
+    }
+
+    const receipts = await new Promise<number>((resolve) => {
+      let settled = false;
+      const finish = (n: number) => {
+        if (settled) return;
+        settled = true;
+        resolve(n);
+      };
+      // Hard backstop: the Socket.IO callback should always fire (with a
+      // TimeoutError when clients do not respond), but a gateway that is
+      // closing or a server that was never initialised must not hang the
+      // caller forever.
+      const backstop = setTimeout(() => finish(0), timeoutMs + 500);
+      try {
+        this.server
+          .to(room)
+          .timeout(timeoutMs)
+          .emit(event, data, (err: any, responses: any) => {
+            clearTimeout(backstop);
+            finish(Array.isArray(responses) ? responses.length : 0);
+          });
+      } catch (err: any) {
+        clearTimeout(backstop);
+        this.logger.debug(`emit to ${room} failed: ${err?.message ?? err}`);
+        finish(0);
+      }
+    });
+
+    return { dispatched: true, connectedClients, receipts };
+  }
+
   emitWaybillInboxChanged(companyId: string, item: any) {
     this.emitToCompany(companyId, 'waybill-inbox-changed', item);
   }

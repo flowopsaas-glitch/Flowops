@@ -6,6 +6,13 @@ export class BookTruckAppointmentDto {
   @RawString() @IsString() @MinLength(1) @MaxLength(120) haulierName!: string;
   @RawString() @IsString() @MinLength(1) @MaxLength(30) vehicleReg!: string;
   @RawString() @IsOptional() @IsString() @MaxLength(80) driverName?: string;
+  /**
+   * Resolved against the calling tenant: a driver id from another company is
+   * rejected, and the stored `driverName` comes from the resolved Driver row
+   * rather than from a typed label. This link is what makes "notify the
+   * assigned driver" a real recipient instead of a guess.
+   */
+  @RawString() @IsOptional() @IsString() @MaxLength(60) driverId?: string;
   @IsOptional() @IsIn(['DELIVERY', 'COLLECTION']) purpose?: string;
   @IsDateString() windowStart!: string;
   @IsDateString() windowEnd!: string;
