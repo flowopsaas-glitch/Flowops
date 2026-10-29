@@ -106,6 +106,32 @@ export const RAIL_AUDIT_ACTION = {
   CONSIGNMENT_HOLD_CLEARED: 'consignment.hold_cleared',
   TARIFF_CALCULATED: 'tariff_calculation.created',
   TARIFF_INVOICE_DRAFT_CREATED: 'tariff_calculation.invoice_draft_created',
+  // ── Terminal truck gate: appointments + the window-change closed loop ──────
+  //
+  // The appointment layer shipped without any audit trail at all: booking,
+  // arriving, cancelling and rescheduling a gate window left no record of who
+  // did it. Window changes are now versioned events with named recipients, so
+  // every step of the loop is auditable — including the refusals, because a
+  // change the governance rules rejected is exactly the kind of thing an
+  // operator later needs to prove they tried.
+  TRUCK_APPOINTMENT_BOOKED: 'truck_appointment.booked',
+  TRUCK_APPOINTMENT_TRANSITIONED: 'truck_appointment.transitioned',
+  TRUCK_APPOINTMENT_DAY_REPLANNED: 'truck_appointment.day_replanned',
+  TRUCK_SHARE_LINK_ISSUED: 'truck_appointment.share_link_issued',
+  TRUCK_SHARE_LINK_REVOKED: 'truck_appointment.share_link_revoked',
+  /** A published window change (a new version superseding the previous one). */
+  TRUCK_WINDOW_CHANGED: 'truck_window.changed',
+  /** A window change refused by the state machine or the cut-off rule. Audited, never applied. */
+  TRUCK_WINDOW_CHANGE_REJECTED: 'truck_window.change_rejected',
+  /** A previous version moved to SUPERSEDED by a newer change. */
+  TRUCK_WINDOW_SUPERSEDED: 'truck_window.superseded',
+  /** A recipient confirmed the change. Records the credential that produced it. */
+  TRUCK_WINDOW_ACKNOWLEDGED: 'truck_window.acknowledged',
+  /** An acknowledgement refused (superseded version, wrong tenant, not a recipient). */
+  TRUCK_WINDOW_ACK_REJECTED: 'truck_window.ack_rejected',
+  /** The escalation ladder moved on the clock — attributed to the system, not a person. */
+  TRUCK_WINDOW_ESCALATED: 'truck_window.escalated',
+  TRUCK_GATE_POLICY_UPDATED: 'truck_gate_policy.updated',
 } as const;
 export type RailAuditAction = (typeof RAIL_AUDIT_ACTION)[keyof typeof RAIL_AUDIT_ACTION];
 
@@ -125,6 +151,13 @@ export const RAIL_AUDIT_TARGET = {
   OCCURRENCE: 'rail_occurrence_report',
   WEIGHBRIDGE_READING: 'rail_weighbridge_reading',
   TARIFF_CALCULATION: 'rail_tariff_calculation',
+  // Audit target TYPES follow the rail_ vocabulary (pinned by rail-audit.spec):
+  // they name a subject in the audit log, not a table, so they stay consistent
+  // with the other 15 rail targets rather than mirroring the Prisma model names.
+  TRUCK_APPOINTMENT: 'rail_truck_appointment',
+  TRUCK_WINDOW_CHANGE: 'rail_truck_window_change',
+  TRUCK_WINDOW_RECIPIENT: 'rail_truck_window_recipient',
+  TRUCK_GATE_POLICY: 'rail_gate_policy',
 } as const;
 
 /** Build an audit entry attributed to an authenticated tenant user. */
