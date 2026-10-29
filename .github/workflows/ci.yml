@@ -96,6 +96,77 @@ jobs:
       - name: Base compose file is valid
         run: docker compose -f docker-compose.yml config --quiet
 
+      # Regression guard for the RBAC_STRICT production incident: the api
+      # service declares an explicit `environment:` allowlist and no
+      # `env_file:`, so a variable that is missing from that allowlist never
+      # reaches the container no matter what the host .env says. Production ran
+      # NON-strict that way until an operator hand-edited the VPS overlay.
+      #
+      # This renders the REAL merged config with Compose's own interpolator for
+      # all three host states (unset / false / true), for the base file and for
+      # both production overlays, and fails if the api service does not see the
+      # expected value. backend/scripts/compose-env-allowlist.mjs is the
+      # no-Docker equivalent, run by the Backend job's release-safety suite.
+      - name: RBAC_STRICT reaches the api container (unset / false / true)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          read_api_rbac_strict() {
+            # stdin: `docker compose config` output. Prints the api service's
+            # RBAC_STRICT, or __ABSENT__ when the key never reached it.
+            node -e '
+              let s = "";
+              process.stdin.on("data", (d) => { s += d; });
+              process.stdin.on("end", () => {
+                let value;
+                try {
+                  const cfg = JSON.parse(s);
+                  value = cfg?.services?.api?.environment?.RBAC_STRICT;
+                } catch {
+                  // Older Compose without --format json: fall back to the YAML
+                  // rendering. Only the api service carries this key.
+                  const m = s.match(/^\s+RBAC_STRICT:\s*"?([^"\n]*)"?\s*$/m);
+                  value = m ? m[1] : undefined;
+                }
+                process.stdout.write(value === undefined ? "__ABSENT__" : String(value));
+              });
+            '
+          }
+
+          assert_render() {
+            local label="$1" expected="$2" rbac="$3"; shift 3
+            local json_flag="--format=json" actual
+            if ! docker compose "$@" config "$json_flag" >/dev/null 2>&1; then
+              json_flag=""
+            fi
+            if [ "$rbac" = "unset" ]; then
+              actual="$(env -u RBAC_STRICT docker compose "$@" config $json_flag | read_api_rbac_strict)"
+            else
+              actual="$(RBAC_STRICT="$rbac" docker compose "$@" config $json_flag | read_api_rbac_strict)"
+            fi
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::${label}: api RBAC_STRICT rendered to '${actual}', expected '${expected}'"
+              exit 1
+            fi
+            echo "ok  ${label}: api RBAC_STRICT -> '${actual}'"
+          }
+
+          BASE=(-f docker-compose.yml)
+          PROD=(-f docker-compose.yml -f docker-compose.prod.yml)
+          VPS=(-f docker-compose.yml -f deploy/docker-compose.vps.yml)
+
+          for stack in BASE PROD VPS; do
+            files=("${!stack}")
+            assert_render "${stack} host-unset"  "false" unset  "${files[@]}"
+            assert_render "${stack} host-false"  "false" false  "${files[@]}"
+            assert_render "${stack} host-true"   "true"  true   "${files[@]}"
+          done
+
+      - name: Guarded keys are in the api allowlist (no Docker needed)
+        working-directory: backend
+        run: node scripts/compose-env-allowlist.mjs --check
+
       - name: VPS overlay publishes no host ports
         run: |
           chmod +x scripts/check-compose-ports.sh
@@ -172,6 +243,13 @@ jobs:
 
       - name: TypeScript check
         run: npm run typecheck
+
+      # The portal owns the offline half of the truck-window loop: a confirmation
+      # queued in a notspot, and the 409 that comes back when the terminal moved
+      # the window while the driver was offline. That path is tested against the
+      # real IndexedDB outbox, so it gates like the rest of the suite.
+      - name: Tests
+        run: npm run test
 
       - name: Build
         run: npm run build
