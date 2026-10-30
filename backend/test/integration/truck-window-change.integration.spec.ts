@@ -513,8 +513,13 @@ describe('Truck window changes — closed loop (PostgreSQL)', () => {
     })).rejects.toThrow(/not a recipient/i);
     const rejected = await db.prisma.auditLog.findMany({ where: { action: 'truck_window.ack_rejected' } });
     expect(rejected).toHaveLength(1);
-    expect(rejected[0].companyId).toBe(companyId);
-    expect(rejected[0].metadata).toMatchObject({ reason: 'NOT_A_RECIPIENT' });
+    expect(rejected[0]).toMatchObject({
+      action: 'truck_window.ack_rejected',
+      actorType: 'system',
+      targetType: 'rail_truck_window_change',
+      targetId: change.id,
+      metadata: { companyId, reason: 'NOT_A_RECIPIENT', source: 'DRIVER_PORTAL' },
+    });
     expect(await db.prisma.terminalTruckWindowRecipient.count({
       where: { changeId: change.id, ackState: 'ACKNOWLEDGED' },
     })).toBe(0);
