@@ -51,17 +51,29 @@ export class DriverSafetyController {
     return this.svc.seedDefaultZones(u.companyId, country);
   }
 
-  /** POST /safety/zones/report — driver reports a new danger zone from mobile */
+  /**
+   * POST /safety/zones/report — driver reports a new danger zone from mobile.
+   *
+   * WHO the report is about is decided by the session, not by the body: a
+   * driver-role caller reports for the Driver record linked to their own user
+   * account, and a dispatch/manager/admin caller may report on behalf of a
+   * driver in their own tenant. A body `driverId` that does not belong to this
+   * tenant — or, for a driver, that is not theirs — is refused, because the
+   * zone that gets created carries that driver's real name and immediately
+   * alerts everyone who drives into the circle. The acting user is recorded in
+   * the audit log alongside the subject driver.
+   */
   @Roles(
     UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
     UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.DRIVER,
   )
   @Post('zones/report')
-  reportDangerZone(
+  async reportDangerZone(
     @CurrentUser() u: any,
-    @Body() body: { driverId: string; lat: number; lng: number; name?: string; description?: string; riskLevel?: string },
+    @Body() body: { driverId?: string; lat: number; lng: number; name?: string; description?: string; riskLevel?: string },
   ) {
-    return this.svc.reportDangerZone(u.companyId, body.driverId, body);
+    const driver = await this.svc.resolveSubjectDriver(u.companyId, u, body?.driverId ?? null);
+    return this.svc.reportDangerZone(u.companyId, driver.id, body, u);
   }
 
   // ── Alert History ───────────────────────────────────────────────────────
@@ -78,13 +90,22 @@ export class DriverSafetyController {
 
   // ── Manual Check (for testing) ──────────────────────────────────────────
 
-  /** POST /safety/check — manually check a position against safety zones */
+  /**
+   * POST /safety/check — manually check a position against safety zones.
+   *
+   * This route writes a SafetyAlert and pushes it to the named driver's device,
+   * so the driver is resolved from the session exactly as above. `driverName`
+   * is no longer accepted: the name on the alert comes from the driver record
+   * in this tenant, so a caller cannot make dispatch's screen say that somebody
+   * else entered a high-risk zone.
+   */
   @Roles(
     UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
     UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.DRIVER,
   )
   @Post('check')
-  checkPosition(@CurrentUser() u: any, @Body() body: { driverId: string; lat: number; lng: number; speed?: number; driverName?: string }) {
-    return this.svc.checkPosition(body.driverId, u.companyId, body.lat, body.lng, body.speed, body.driverName);
+  async checkPosition(@CurrentUser() u: any, @Body() body: { driverId?: string; lat: number; lng: number; speed?: number }) {
+    const driver = await this.svc.resolveSubjectDriver(u.companyId, u, body?.driverId ?? null);
+    return this.svc.checkPosition(driver.id, u.companyId, body.lat, body.lng, body.speed);
   }
 }
