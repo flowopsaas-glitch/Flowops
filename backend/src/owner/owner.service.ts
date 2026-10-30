@@ -18,6 +18,24 @@ import {
 
 type OwnerActor = { id?: string; email?: string } | null | undefined;
 
+/**
+ * Strip the stored password hash from an ApprovalRequest row.
+ *
+ * `ApprovalRequest.passwordHash` holds the bcrypt hash of the password a
+ * PENDING tenant admin chose at registration; the schema comment on the column
+ * says it is "kept separate so it is never exposed in approval request
+ * listings". `getApprovalRequests()` listed it anyway - for every pending and
+ * rejected signup in the platform - and `rejectRequest()` returned the row it
+ * had just written. The owner console shows fullName/email/phone/company/status
+ * and has no use for the hash; approval itself reads the row straight from
+ * Prisma, so nothing downstream loses it.
+ */
+function withoutApprovalSecrets<T>(row: T): T {
+  if (!row || typeof row !== 'object') return row;
+  const { passwordHash, ...safe } = row as Record<string, unknown>;
+  return safe as T;
+}
+
 @Injectable()
 export class OwnerService {
   private readonly logger = new Logger(OwnerService.name);
@@ -1160,10 +1178,11 @@ export class OwnerService {
   // ── Approval requests ─────────────────────────────────────────────────
 
   async getApprovalRequests(query?: any) {
-    return this.prisma.approvalRequest.findMany({
+    const rows = await this.prisma.approvalRequest.findMany({
       where: query?.status ? { status: query.status } : {},
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(withoutApprovalSecrets);
   }
 
   async approveRequest(requestId: string, actor?: OwnerActor) {
@@ -1237,7 +1256,7 @@ export class OwnerService {
       targetName: updated.company ?? null,
       metadata: { reason: reason ?? null },
     });
-    return updated;
+    return withoutApprovalSecrets(updated);
   }
 
   // ── Plan upgrade requests (in-app, owner-approved) ─────────────────────

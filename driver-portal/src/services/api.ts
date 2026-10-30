@@ -44,9 +44,28 @@ api.interceptors.response.use(
 
     const message =
       error?.response?.data?.message || error?.message || 'Network error';
-    return Promise.reject(
-      new Error(Array.isArray(message) ? message.join(', ') : message),
-    );
+    // The HTTP status and the server's machine-readable code travel WITH the
+    // error. Dropping them here (as this interceptor used to) made every 4xx
+    // look like a network failure to the offline outbox, which then retried a
+    // permanently-rejected write forever — and, worse, blocked the rest of the
+    // FIFO queue behind it. A driver confirming a superseded gate window has to
+    // be told "not confirmed", and that answer only exists in the status/code.
+    const err = new Error(Array.isArray(message) ? message.join(', ') : message) as Error & {
+      status?: number;
+      code?: string;
+      activeVersion?: number | null;
+      isNetworkError?: boolean;
+    };
+    err.status = error?.response?.status;
+    const data = error?.response?.data;
+    if (data && typeof data === 'object') {
+      if (typeof (data as any).code === 'string') err.code = (data as any).code;
+      if (typeof (data as any).activeVersion === 'number') err.activeVersion = (data as any).activeVersion;
+    }
+    // No response at all means the request never got an answer: that is the only
+    // thing this app may call a network error.
+    err.isNetworkError = !error?.response;
+    return Promise.reject(err);
   },
 );
 

@@ -310,7 +310,23 @@ export interface VesselTracking {
 export const trackVessel = async (id: string): Promise<VesselTracking> =>
   unwrap(await api.get(`/forwarding/files/${id}/vessel-tracking`));
 
-// ── SADC corridor intelligence ─────────────────────────────────────────────
+// ── SADC corridor reference data ───────────────────────────────────────────
+//
+// These figures are hand-compiled constants on the server, not measurements:
+// typical wait hours, transit days, cost estimates and reference congestion
+// bands. Nothing observes a border gate. Every response carries `provenance`
+// saying so, and the UI prints that rather than a label of its own.
+
+/** What the server says about the numbers it just sent. */
+export interface ReferenceProvenance {
+  source: "STATIC_REFERENCE";
+  observed: false;
+  measuredByFlowOps: false;
+  /** Null when nobody has recorded a review date - never invented. */
+  compiledAsOf: string | null;
+  /** The sentence to show next to the figures. */
+  basis: string;
+}
 
 export interface BorderPost {
   code: string;
@@ -323,8 +339,10 @@ export interface BorderPost {
   operatingHours: string;
   is24Hour: boolean;
   requiredDocs: string[];
+  /** Typical band for this post, not conditions today. */
   congestionLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   notes: string;
+  provenance?: ReferenceProvenance;
 }
 export interface TradeCorridor {
   code: string;
@@ -340,6 +358,7 @@ export interface TradeCorridor {
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
   keyRisks: string[];
   alternativePort: string;
+  provenance?: ReferenceProvenance;
 }
 export interface WalvisVsDurban {
   walvisBay: { transitDays: number; portWait: number; borderWait: number; totalDays: number; cost: number; risk: string };
@@ -347,6 +366,7 @@ export interface WalvisVsDurban {
   recommendation: string;
   savingsDays: number;
   savingsCost: number;
+  provenance?: ReferenceProvenance;
 }
 
 export const getBorderPosts = async (): Promise<BorderPost[]> => {

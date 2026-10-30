@@ -13,20 +13,45 @@ import Dexie, { type Table } from 'dexie';
 
 export type Job = Record<string, any> & { id: string };
 
+/** A gate window as the driver's portal last saw it (cached for offline use). */
+export type CachedGateWindow = Record<string, any> & { appointmentId: string };
+
+/** What the server said when it permanently refused a queued write. */
+export type MutationRejection = {
+  status?: number;
+  /** The backend's machine-readable code, e.g. SUPERSEDED for a stale window ack. */
+  code?: string | null;
+  message: string;
+  /** For SUPERSEDED: the version that IS current, so the UI can point at it. */
+  activeVersion?: number | null;
+  at: number;
+};
+
 /** A queued, not-yet-confirmed server write. */
 export type PendingMutation = {
   id: string;                 // client-generated uuid — also the idempotency key
-  kind: 'pod' | 'collect' | 'gps';
+  kind: 'pod' | 'collect' | 'gps' | 'window-ack';
   url: string;                // relative API path, e.g. /driver-portal/pod
   body: Record<string, any>;  // JSON payload
   createdAt: number;          // epoch ms — replay in FIFO order
   attempts: number;           // how many times we've tried to send it
   lastError?: string;
+  /**
+   * PENDING  — still to be sent (or being retried after a network failure).
+   * REJECTED — the server gave a permanent "no". This is an ANSWER, not a
+   *            success, and it must stay visible to the driver: a confirmation
+   *            that was refused because the window changed again has to be
+   *            shown as NOT CONFIRMED, never silently dropped from the badge.
+   * Absent on rows written before this field existed; treated as PENDING.
+   */
+  state?: 'PENDING' | 'REJECTED';
+  rejection?: MutationRejection;
 };
 
 class DriverDB extends Dexie {
   jobs!: Table<Job, string>;
   mutations!: Table<PendingMutation, string>;
+  gateWindows!: Table<CachedGateWindow, string>;
   constructor() {
     super('flowops-driver');
     // v1 — jobs cache only.
@@ -35,6 +60,15 @@ class DriverDB extends Dexie {
     this.version(2).stores({
       jobs: 'id, status, type',
       mutations: 'id, kind, createdAt',
+    });
+    // v3 — cache the driver's gate windows so a changed window is still visible
+    // in a notspot, and so a queued confirmation has something to attach to.
+    // `state` on mutations is a plain field, deliberately NOT an index: filtering
+    // a small outbox in memory avoids a migration for legacy rows that predate it.
+    this.version(3).stores({
+      jobs: 'id, status, type',
+      mutations: 'id, kind, createdAt',
+      gateWindows: 'appointmentId',
     });
   }
 }
@@ -82,25 +116,62 @@ export async function queueMutation(
     body,
     createdAt: Date.now(),
     attempts: 0,
+    state: 'PENDING',
   };
   await db.mutations.put(m);
+  await notifyMutationChange();
   return m.id;
 }
 
+const isPending = (m: PendingMutation) => (m.state ?? 'PENDING') === 'PENDING';
+
 export async function getPendingMutations(): Promise<PendingMutation[]> {
   try {
-    return await db.mutations.orderBy('createdAt').toArray();
+    const all = await db.mutations.orderBy('createdAt').toArray();
+    return all.filter(isPending);
+  } catch {
+    return [];
+  }
+}
+
+/** Refused writes, newest first — the driver has to be able to see these. */
+export async function getRejectedMutations(): Promise<PendingMutation[]> {
+  try {
+    const all = await db.mutations.orderBy('createdAt').reverse().toArray();
+    return all.filter((m) => m.state === 'REJECTED');
   } catch {
     return [];
   }
 }
 
 export async function pendingCount(): Promise<number> {
-  try { return await db.mutations.count(); } catch { return 0; }
+  try {
+    const all = await db.mutations.toArray();
+    return all.filter(isPending).length;
+  } catch { return 0; }
 }
 
 export async function removeMutation(id: string): Promise<void> {
-  try { await db.mutations.delete(id); } catch { /* ignore */ }
+  try { await db.mutations.delete(id); await notifyMutationChange(); } catch { /* ignore */ }
+}
+
+/**
+ * Record a permanent refusal. The row is KEPT (not deleted) with the server's
+ * status, code and words attached, so the UI can say exactly why an action did
+ * not take effect — "that window version was superseded" — instead of the
+ * badge quietly going to zero as though the write had succeeded.
+ */
+export async function markRejected(id: string, rejection: MutationRejection): Promise<void> {
+  try {
+    const m = await db.mutations.get(id);
+    if (!m) return;
+    m.state = 'REJECTED';
+    m.rejection = rejection;
+    m.attempts += 1;
+    m.lastError = rejection.message;
+    await db.mutations.put(m);
+    await notifyMutationChange();
+  } catch { /* ignore */ }
 }
 
 export async function markMutationTried(id: string, error?: string): Promise<void> {
@@ -112,4 +183,50 @@ export async function markMutationTried(id: string, error?: string): Promise<voi
       await db.mutations.put(m);
     }
   } catch { /* ignore */ }
+}
+
+/** Is a write for this URL already queued or already refused? (one ack per change) */
+export async function findMutationByUrl(url: string): Promise<PendingMutation | undefined> {
+  try {
+    const all = await db.mutations.toArray();
+    return all.find((m) => m.url === url);
+  } catch { return undefined; }
+}
+
+// ── Gate-window cache ────────────────────────────────────────────────────────
+
+export async function cacheGateWindows(items: CachedGateWindow[]): Promise<void> {
+  try {
+    await db.transaction('rw', db.gateWindows, async () => {
+      await db.gateWindows.clear();
+      if (items.length) await db.gateWindows.bulkPut(items);
+    });
+  } catch { /* cache is best-effort */ }
+}
+
+export async function getCachedGateWindows(): Promise<CachedGateWindow[]> {
+  try { return await db.gateWindows.toArray(); } catch { return []; }
+}
+
+// ── Outbox listeners ─────────────────────────────────────────────────────────
+
+type MutationListener = (pending: number, rejected: number) => void;
+const mutationListeners = new Set<MutationListener>();
+
+async function notifyMutationChange(): Promise<void> {
+  if (!mutationListeners.size) return;
+  const [pending, rejected] = await Promise.all([pendingCount(), getRejectedMutations()]);
+  mutationListeners.forEach((fn) => fn(pending, rejected.length));
+}
+
+/**
+ * Subscribe to outbox state. The pending count drives the "N to sync" badge; the
+ * rejected count drives the "NOT CONFIRMED" banner, because a refusal must be
+ * as visible as a success.
+ */
+export function onMutationsChange(fn: MutationListener): () => void {
+  mutationListeners.add(fn);
+  void notifyMutationChange().then(() => undefined);
+  void Promise.all([pendingCount(), getRejectedMutations()]).then(([p, r]) => fn(p, r.length));
+  return () => mutationListeners.delete(fn);
 }

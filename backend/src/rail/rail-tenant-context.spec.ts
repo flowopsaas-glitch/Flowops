@@ -41,7 +41,7 @@ describe('tenant-context rollout — rail services', () => {
     // The eight transaction-owning services: rail, rail-slot, rail-handshake,
     // rail-possession, rail-timetable, rail-manifest, rail-telemetry (+ any more).
     expect(withTx.length).toBeGreaterThanOrEqual(7);
-    for (const { file, src } of files) {
+    for (const { src } of files) {
       if (/this\.(prisma\.)?withTenant\(|prisma\.withTenant\(/.test(src)) {
         expect(src).toMatch(/withTenant\(companyId/);
       }

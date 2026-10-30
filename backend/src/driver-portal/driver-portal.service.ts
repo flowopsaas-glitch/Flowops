@@ -359,8 +359,11 @@ export class DriverPortalService {
 
     // ── AI SAFETY SUPERVISOR: Check crime hotspots on every GPS update ────
     // Non-blocking — safety alerts fire asynchronously without slowing GPS response.
+    // Identity here already comes from the portal token (`driverId` is the
+    // authenticated driver, `driver.companyId` their own tenant), and
+    // checkPosition resolves the name it writes from that same record.
     void this.safety.checkPosition(
-      driverId, driver.companyId, lat, lng, speed, driver.name,
+      driverId, driver.companyId, lat, lng, speed,
     ).catch((err) => {
       this.logger.warn(`Safety check failed (non-blocking): ${err?.message}`);
     });

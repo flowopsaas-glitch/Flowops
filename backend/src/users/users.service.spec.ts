@@ -102,6 +102,38 @@ describe('UsersService (security)', () => {
   });
 
   // ── create: role validation ───────────────────────────────────────────
+  // ── findOne: credential redaction ────────────────────────────────────────
+  describe('findOne (credential redaction)', () => {
+    it('returns the profile without any credential material', async () => {
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue(
+        makeUser({
+          verifyToken: 'live-verify-token',
+          resetToken: 'live-reset-token',
+          activeSessionId: 'session-abc',
+          notificationPreference: null,
+        }),
+      );
+
+      const res = (await svc.findOne('u1', 'co1')) as Record<string, unknown>;
+
+      // passwordHash was already stripped; resetToken is a working
+      // password-reset credential and verifyToken an email-verification one,
+      // and activeSessionId names the live session. None belong in a response.
+      expect(res).not.toHaveProperty('passwordHash');
+      expect(res).not.toHaveProperty('resetToken');
+      expect(res).not.toHaveProperty('verifyToken');
+      expect(res).not.toHaveProperty('activeSessionId');
+      expect(res.id).toBe('u1');
+      expect(res.email).toBe('a@co.com');
+      expect(res.role).toBe('USER');
+    });
+
+    it('still 404s for a user that is not in the caller company', async () => {
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      await expect(svc.findOne('u1', 'other-co')).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('create', () => {
     it('rejects an invalid role', async () => {
       await expect(svc.create('co1', { email: 'x@co.com', role: 'ROOT' })).rejects.toThrow(BadRequestException);

@@ -42,8 +42,35 @@ test.describe('Department route guards (unauthenticated)', () => {
 
 test.describe('Public counterparty surfaces', () => {
   test('an invalid gate share link fails honestly, not silently', async ({ page }) => {
+    // CI starts only Vite for this browser suite, not the API. Exercise the
+    // frontend against the actual 404 contract rather than guessing whether a
+    // connection failure means a token is invalid. The service's own unit test
+    // separately checks that it returns this error for an unknown token.
+    let requests = 0;
+    await page.route('**/api/v1/rail/truck-appointments/public/definitely-not-a-real-token', async (route) => {
+      const headers = {
+        'access-control-allow-origin': route.request().headers().origin ?? 'http://localhost:5173',
+        'access-control-allow-credentials': 'true',
+        'access-control-allow-methods': 'GET, OPTIONS',
+        'access-control-allow-headers': 'content-type, authorization',
+      };
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers });
+        return;
+      }
+      expect(route.request().method()).toBe('GET');
+      requests++;
+      await route.fulfill({
+        status: 404,
+        headers,
+        contentType: 'application/json',
+        body: JSON.stringify({ statusCode: 404, message: 'Shared appointment not found or the link was revoked', error: 'Not Found' }),
+      });
+    });
     await page.goto('/gate/definitely-not-a-real-token');
-    await expect(page.getByText(/invalid or has been revoked/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Shared appointment not found or the link was revoked')).toBeVisible({ timeout: 15000 });
+    expect(requests).toBeGreaterThan(0);
+    await expect(page).not.toHaveURL(/\/login/);
   });
 
   test('marketing pages render without a login wall', async ({ page }) => {

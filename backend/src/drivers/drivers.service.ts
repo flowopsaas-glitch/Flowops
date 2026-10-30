@@ -5,6 +5,38 @@ import { BillingService } from '../billing/billing.service';
 import { FleetMaintenanceService } from '../fleet-maintenance/fleet-maintenance.service';
 import { LogServiceDto } from '../fleet-maintenance/dto/log-service.dto';
 
+/**
+ * A `Driver` row carries the driver's PORTAL LOGIN CREDENTIAL.
+ *
+ * `driverPin` is a bcrypt hash of the 4-6 digit PIN a driver signs in with
+ * (AuthService verifies it on POST /auth/driver/login) and `ratingToken` is a
+ * bearer capability. A 4-6 digit PIN has at most 10^6 combinations, so cracking
+ * that hash offline is seconds rather than years: serving it is much closer to
+ * serving the PIN than to serving a password hash.
+ *
+ * It was being served. `findAll`/`findOne` answered with the whole row, so
+ * GET /drivers and GET /drivers/:id returned the hash to every role that can
+ * read drivers - ADMIN, COMPANY_ADMIN, MANAGER, DISPATCH and VIEWER - and
+ * `create`/`update`/`remove` returned the row they had just written.
+ *
+ * Nothing needs the value itself: AuthService reads the driver straight from
+ * Prisma when it verifies a PIN, and `setPin`/`resetPin` already answered with
+ * an explicit `{ id, name, phone }` select. The one client that read it only
+ * asked whether it was there, so the redacted row carries a derived `hasPinSet`
+ * boolean and `ratingToken` is dropped outright. Every row-shaped return in this
+ * service now goes through here.
+ */
+export function withoutDriverSecrets<T>(driver: T): T {
+  if (!driver || typeof driver !== 'object') return driver;
+  const { driverPin, ratingToken, ...safe } = driver as Record<string, unknown>;
+  // The drivers screen renders a "PIN SET" / "NO PIN" badge and a Clear button
+  // that were driven by `!!driverPin` - that is, by the presence of the hash
+  // itself. Answer with the derived flag instead: the same shape this repo
+  // already uses for other credentials (SsoConnection -> clientSecretSet,
+  // CustomsEdiCredential -> hasSecret, IntegrationCredential -> secretsSet).
+  return { ...safe, hasPinSet: Boolean(driverPin) } as T;
+}
+
 @Injectable()
 export class DriversService {
   constructor(
@@ -43,13 +75,14 @@ export class DriversService {
     const where: any = { companyId };
     if (query?.status) where.status = query.status;
     if (query?.branchId) where.branchId = query.branchId;
-    return this.prisma.driver.findMany({ where, include: { branch: true }, orderBy: { name: 'asc' } });
+    const rows = await this.prisma.driver.findMany({ where, include: { branch: true }, orderBy: { name: 'asc' } });
+    return rows.map(withoutDriverSecrets);
   }
 
   async findOne(id: string, companyId: string) {
     const driver = await this.prisma.driver.findFirst({ where: { id, companyId } });
     if (!driver) throw new NotFoundException('Driver not found');
-    return driver;
+    return withoutDriverSecrets(driver);
   }
 
   /**
@@ -58,21 +91,22 @@ export class DriversService {
    * using the app in a DRIVER role for testing, not a real field driver).
    */
   async findMine(userId: string, companyId: string) {
-    return this.prisma.driver.findFirst({
+    const driver = await this.prisma.driver.findFirst({
       where: { userId, companyId, isActive: true },
     });
+    return driver ? withoutDriverSecrets(driver) : driver;
   }
 
   async create(companyId: string, dto: any) {
     await this.billing.assertCanCreate(companyId, 'driver');
     const data = await this.normaliseDriverData(dto);
-    return this.prisma.driver.create({ data: { ...data, companyId } as any });
+    return withoutDriverSecrets(await this.prisma.driver.create({ data: { ...data, companyId } as any }));
   }
 
   async update(id: string, companyId: string, dto: any) {
     await this.findOne(id, companyId);
     const data = await this.normaliseDriverData(dto);
-    return this.prisma.driver.update({ where: { id }, data: data as any });
+    return withoutDriverSecrets(await this.prisma.driver.update({ where: { id }, data: data as any }));
   }
 
   async updateLocation(id: string, companyId: string, lat: number, lng: number) {
@@ -87,7 +121,7 @@ export class DriversService {
 
   async remove(id: string, companyId: string) {
     await this.findOne(id, companyId);
-    return this.prisma.driver.update({ where: { id }, data: { isActive: false } });
+    return withoutDriverSecrets(await this.prisma.driver.update({ where: { id }, data: { isActive: false } }));
   }
 
   // ── Fleet maintenance ─────────────────────────────────────────────────────

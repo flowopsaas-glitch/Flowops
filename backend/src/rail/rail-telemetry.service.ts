@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
-import { Prisma, RailAlertStatus, RailDeviceStatus, RailTelemetryAlertKind } from '@prisma/client';
+import { Prisma, RailAlertStatus, RailTelemetryAlertKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
@@ -171,8 +171,16 @@ export class RailTelemetryService {
     return this.ingestPoints(device.companyId, [{ device, points }]);
   }
 
-  /** Bulk ingest on a user session (RAIL_WRITE): each point names its deviceCode. */
-  async ingestBulk(companyId: string, rows: Array<TelemetryPointDto & { deviceCode: string }>, actor: RailActor): Promise<IngestResult> {
+  /**
+   * Bulk ingest on a user session (RAIL_WRITE): each point names its deviceCode.
+   *
+   * `_actor` is the caller's identity, accepted so the route reads the same as
+   * every other write on this controller and so a future audit line has it to
+   * hand. Device-token ingest (`ingestForToken`) attributes to the device; this
+   * path currently writes no audit entry, and the underscore says that plainly
+   * rather than leaving an unused name that looks like an oversight.
+   */
+  async ingestBulk(companyId: string, rows: Array<TelemetryPointDto & { deviceCode: string }>, _actor: RailActor): Promise<IngestResult> {
     await this.assertEntitled(companyId);
     const codes = [...new Set(rows.map((r) => r.deviceCode))];
     const devices = await this.prisma.railDevice.findMany({ where: { companyId, deviceCode: { in: codes } } });

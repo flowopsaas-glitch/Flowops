@@ -258,6 +258,9 @@ model Company {
   railHandoffReadinesses RailHandoffReadiness[]
   railHandoffEvidence RailHandoffEvidence[]
   terminalTruckAppointments TerminalTruckAppointment[]
+  truckWindowChanges    TerminalTruckWindowChange[]
+  truckWindowRecipients TerminalTruckWindowRecipient[]
+  terminalGatePolicies  TerminalGatePolicy[]
   railScheduleImports RailScheduleImport[]
 
   // Process Control (Process Book) + Product master data
@@ -692,6 +695,11 @@ model Driver {
   services        VehicleService[]
   returns         Return[]
   refreshTokens   DriverRefreshToken[]
+
+  // Gate windows assigned to this driver, and the window-change
+  // acknowledgements addressed to them (the driver side of the closed loop).
+  truckAppointments  TerminalTruckAppointment[]
+  truckWindowRecipients TerminalTruckWindowRecipient[]
 
   @@map("drivers")
 }
@@ -6166,7 +6174,13 @@ model TerminalTruckAppointment {
   terminalName  String                 // terminal / yard name (operator-entered)
   haulierName   String                 // haulier company (operator-entered)
   vehicleReg    String
+  // `driverName` is the operator-typed label and stays as the display value.
+  // `driverId` is the resolved link to a Driver row in THIS tenant — it is what
+  // makes "notify the assigned driver" a real recipient instead of a guess, and
+  // what lets the closed loop say DRIVER NOT ASSIGNED when there is none.
   driverName    String?
+  driverId      String?
+  driver        Driver?                @relation(fields: [driverId], references: [id], onDelete: SetNull)
   purpose       String                 @default("DELIVERY") // DELIVERY | COLLECTION
 
   windowStart   DateTime
@@ -6175,14 +6189,32 @@ model TerminalTruckAppointment {
   loadingAt     DateTime?
   completedAt   DateTime?
 
+  // Current window version. 1 = the window as booked; every published window
+  // change increments it and writes a TerminalTruckWindowChange row, so the
+  // appointment's window is never silently overwritten — the superseded values
+  // live on the change history.
+  windowVersion Int                    @default(1)
+
+  // Versioned window-change history + acknowledgement fan-out (newest first).
+  windowChanges    TerminalTruckWindowChange[]
+  windowRecipients TerminalTruckWindowRecipient[]
+
   status        TruckAppointmentStatus @default(BOOKED)
   bookedBy      String?
   note          String?                @db.Text
 
   // Unguessable token for the read-only counterparty (haulier/terminal)
   // shared view. Null = not shared. Revoking sets it back to null.
-  shareToken        String?   @unique
+  //
+  // `shareTokenExpiresAt` is enforced on every token issued from 2026-10-28
+  // onward. Links issued before that have it null: they stay READABLE (so a
+  // link already in a haulier's inbox does not break) but they can no longer be
+  // used to ACKNOWLEDGE a window change — an unauthenticated mutation on a
+  // token with no recorded expiry is exactly what the closed loop must not
+  // allow. The operator rotates the link to restore acknowledgement.
+  shareToken         String?   @unique
   shareTokenIssuedAt DateTime?
+  shareTokenExpiresAt DateTime?
 
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
@@ -6190,5 +6222,295 @@ model TerminalTruckAppointment {
   @@index([companyId, windowStart])
   @@index([companyId, status])
   @@index([consignmentId])
+  @@index([driverId])
   @@map("terminal_truck_appointments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Terminal truck window changes — the closed loop (2026-10-28)
+//
+// Operator rule this implements (validated in conversation by a terminal
+// operator, not a customer endorsement):
+//   "A window can be changed by the terminal operator, but hauliers must be
+//    informed quickly during the transportation flow. Terminal operators are
+//    the guide of the whole process."
+//
+// Before this, `reschedule` / `replan-day` overwrote windowStart/windowEnd in
+// place and appended a text marker to `note`. The old window was gone: nothing
+// could show a haulier what changed, nothing could be acknowledged, and no
+// change→acknowledgement time could be measured. These tables make a window
+// change a versioned EVENT with named recipients and observed delivery states.
+//
+// Honesty rules encoded in the shape:
+//  - one ACTIVE change per appointment, enforced by a unique index on
+//    `activeAppointmentId` (null once superseded, and Postgres does not collide
+//    nulls) — so "never two active windows" is a database property, not a
+//    convention a service has to remember;
+//  - superseded rows keep the old window forever, never overwritten;
+//  - deliveryState only ever holds a state we actually observed. SENT (we
+//    dispatched) is not DELIVERED (the client confirmed receipt) is not
+//    ACKNOWLEDGED (a human confirmed) — those are three different columns;
+//  - a recipient with no channel gets UNAVAILABLE plus a reason
+//    (DRIVER_NOT_ASSIGNED / NO_SHARE_TOKEN / PUSH_NOT_CONFIGURED). We never
+//    invent a recipient to make the fan-out look complete.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// What the terminal operator did to the window.
+enum TruckWindowChangeKind {
+  /// Moved to a new window (single appointment).
+  RESCHEDULED
+  /// Moved by a day replan (every BOOKED window at a terminal on a day).
+  REPLANNED
+  /// The window was cancelled — there is no new window, and the recipient view
+  /// must say so instead of showing a stale time.
+  CANCELLED
+}
+
+/// A change is ACTIVE until a newer version supersedes it.
+enum TruckWindowChangeStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+/// Who the change has to reach. Separate rows, separate acknowledgement states:
+/// a dispatcher confirming is NOT the driver confirming.
+enum TruckWindowRecipientType {
+  HAULIER
+  DRIVER
+}
+
+/// Transport actually used. Only recorded when we really dispatched on it.
+enum TruckWindowChannel {
+  /// socket.io company room (terminal/dispatcher sessions).
+  REALTIME
+  /// Web-push tickle to the driver's device. Payload-less by design: it wakes
+  /// the PWA, which then reads the change. A tickle is a wake-up, not the
+  /// message, so it can only ever justify SENT — never DELIVERED.
+  PUSH
+  /// The expiring/revocable counterparty share link (pull channel).
+  SHARE_LINK
+  /// The driver portal's own gate list (pull channel, polled + offline-cached).
+  DRIVER_PORTAL
+  /// Tenant notification bell.
+  IN_APP
+  /// Transactional outbox → tenant webhook.
+  WEBHOOK
+  /// No channel existed for this recipient.
+  NONE
+}
+
+/// Delivery fidelity, highest observed wins. Never display a state we did not
+/// observe: a socket.io emit with no client receipt is SENT, not DELIVERED.
+enum TruckWindowDeliveryState {
+  /// Recorded, dispatch not attempted yet.
+  QUEUED
+  /// Available on a pull channel the recipient controls (share link). We did
+  /// not push anything, so claiming SENT would be a fabrication.
+  PUBLISHED
+  /// We dispatched on a push channel and the transport accepted it.
+  SENT
+  /// The client confirmed receipt (socket.io ack callback fired).
+  DELIVERED
+  /// Dispatch attempted and rejected/errored.
+  FAILED
+  /// No channel exists for this recipient. `deliveryReason` says which.
+  UNAVAILABLE
+}
+
+/// Acknowledgement is a human act, tracked separately from delivery.
+enum TruckWindowAckState {
+  UNACKED
+  ACKNOWLEDGED
+}
+
+/// Which credential produced the acknowledgement — an ack is only as trustworthy
+/// as the identity behind it.
+enum TruckWindowAckSource {
+  /// Authenticated tenant user (dispatcher / terminal operator).
+  TENANT_USER
+  /// Authenticated driver-portal session (phone + PIN, single active session).
+  DRIVER_PORTAL
+  /// Holder of a valid, unexpired share token.
+  SHARE_TOKEN
+}
+
+/// Escalation ladder for an unacknowledged change. Recomputed from the clock on
+/// read (the rail-handshake pattern), so it is never stale and needs no cron.
+enum TruckWindowEscalation {
+  NONE
+  REMINDER
+  ESCALATED
+}
+
+/// One published window change = one version. The appointment's
+/// windowStart/windowEnd always hold the ACTIVE version's window; every prior
+/// version stays here, visibly SUPERSEDED.
+model TerminalTruckWindowChange {
+  id            String  @id @default(cuid())
+  companyId     String
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  appointmentId String
+  appointment   TerminalTruckAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  /// Per-appointment version number, 1-based and monotonic.
+  version       Int
+
+  changeKind    TruckWindowChangeKind
+  status        TruckWindowChangeStatus @default(ACTIVE)
+
+  /// Set to `appointmentId` while ACTIVE, nulled on supersede. The unique index
+  /// on it is what makes "never two active windows" a database guarantee.
+  activeAppointmentId String? @unique
+
+  /// The window as it was BEFORE this change. Never rewritten.
+  previousWindowStart DateTime
+  previousWindowEnd   DateTime
+  /// The window this change published. Null for CANCELLED — there is no new
+  /// window, and the UI must not render one.
+  newWindowStart DateTime?
+  newWindowEnd   DateTime?
+
+  /// Required by the existing cut-off rule when the change lands inside the
+  /// per-company gate cut-off; optional (but always recorded) otherwise.
+  reason        String?  @db.Text
+  forced        Boolean  @default(false)
+  insideCutoff  Boolean  @default(false)
+  cutoffHours   Int
+
+  /// The appointment's status when the change was made — the context that
+  /// decides whether "the truck already knew" is even a meaningful question.
+  truckStatusAtChange TruckAppointmentStatus
+  /// True when the window had already closed at change time. Recorded, never
+  /// hidden: a change made after the fact is a fact.
+  windowAlreadyClosed Boolean @default(false)
+
+  changedById    String?
+  changedByEmail String?
+  changedByRole  String?
+  changedAt      DateTime @default(now())
+
+  supersededAt DateTime?
+  supersededById String?
+
+  /// Client-supplied duplicate-submit guard. Unique per tenant; a replayed
+  /// submit returns the ORIGINAL change instead of publishing a new version.
+  idempotencyKey String?
+
+  recipients TerminalTruckWindowRecipient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, idempotencyKey])
+  // PostgreSQL truncates the original migration's 65-byte index name to 63
+  // bytes. Map it explicitly so Prisma preserves the already-deployed name.
+  @@index([companyId, appointmentId, version], map: "terminal_truck_window_changes_companyId_appointmentId_version_i")
+  @@index([companyId, status])
+  @@index([companyId, changedAt])
+  @@map("terminal_truck_window_changes")
+}
+
+/// One change, one recipient, one acknowledgement state. The terminal's
+/// "does that truck know?" board reads this table.
+model TerminalTruckWindowRecipient {
+  id            String  @id @default(cuid())
+  companyId     String
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  changeId      String
+  change        TerminalTruckWindowChange @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  appointmentId String
+  appointment   TerminalTruckAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  recipientType TruckWindowRecipientType
+  /// Stable non-null identity for the unique index: `HAULIER` or `DRIVER:<id>`.
+  /// (A plain unique on a nullable driverId would let Postgres accept any number
+  /// of null-keyed rows, which is how duplicate acknowledgements sneak in.)
+  recipientKey  String
+  /// Human label shown on the board — the haulier name, or the driver's name.
+  recipientLabel String
+
+  driverId String?
+  driver   Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  /// Channels actually attempted, in order.
+  deliveryChannels TruckWindowChannel[] @default([])
+  /// Highest-fidelity state OBSERVED across those channels.
+  deliveryState    TruckWindowDeliveryState @default(QUEUED)
+  /// Why there is no delivery, when there is none. Machine-readable so the UI
+  /// can render DRIVER NOT ASSIGNED rather than a blank cell.
+  deliveryReason   String?
+  /// Per-channel breakdown: [{ channel, state, at, reason }]. The headline state
+  /// is a summary; this is the evidence behind it.
+  deliveryDetail   Json?
+  dispatchedAt     DateTime?
+  /// Set ONLY when a client confirmed receipt. Never inferred from a dispatch.
+  deliveredAt      DateTime?
+
+  ackState     TruckWindowAckState @default(UNACKED)
+  /// Server-observed acknowledgement time — the one the KPIs use.
+  ackedAt      DateTime?
+  /// Client-reported time for an ack queued offline (PENDING SYNC on the device)
+  /// and flushed later. Labelled as device-reported wherever it is shown, and
+  /// never used in place of `ackedAt` for measurement.
+  ackDeviceAt  DateTime?
+  ackSource    TruckWindowAckSource?
+  ackedByLabel String?
+  /// Duplicate-ack guard for a replayed offline flush.
+  ackIdempotencyKey String?
+
+  escalation      TruckWindowEscalation @default(NONE)
+  reminderSentAt  DateTime?
+  escalatedAt     DateTime?
+  /// Minutes after the change at which this recipient's ack became overdue,
+  /// frozen from the terminal policy at change time so a later policy edit does
+  /// not retroactively move the goalposts.
+  ackDueMinutes   Int
+  /// When this recipient's acknowledgement clock starts.
+  ///
+  /// NULL means "the moment the change was published", which is true of every
+  /// recipient created with the change — so this column changes nothing about
+  /// the rows that already exist. It is set only for a recipient attached
+  /// LATER: the driver assigned after the window had already moved, who could
+  /// not have been told before they were assigned. The deadline, the escalation
+  /// ladder and the stale-unacked count all run from here, so a late assignment
+  /// never reads as a driver ignoring a change nobody had told them about.
+  ///
+  /// An explicit column rather than an inference from `createdAt`: inferring it
+  /// would make every escalation depend on two clocks agreeing, and a wrong
+  /// `createdAt` would silently stop a ladder from ever climbing.
+  toldAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([changeId, recipientKey])
+  @@index([companyId, ackState])
+  @@index([companyId, appointmentId])
+  @@index([driverId, ackState])
+  @@map("terminal_truck_window_recipients")
+}
+
+/// Per-terminal acknowledgement thresholds. Falls back to documented defaults
+/// when a terminal has no row, so a new terminal is never unconfigurable — but
+/// the defaults are constants in code, not measurements.
+model TerminalGatePolicy {
+  id           String  @id @default(cuid())
+  companyId    String
+  company      Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  terminalName String
+
+  /// Minutes after a change before an unacknowledged recipient counts as stale.
+  ackDueMinutes Int @default(30)
+  /// Minutes after a change before a reminder is due.
+  reminderAfterMinutes Int @default(15)
+  /// Minutes after a change before the terminal + dispatcher see an escalation.
+  escalateAfterMinutes Int @default(45)
+
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, terminalName])
+  @@index([companyId])
+  @@map("terminal_gate_policies")
 }

@@ -3,13 +3,23 @@
 // It runs the queued mutations in FIFO order. Each send carries the mutation's
 // idempotency key so the backend can safely ignore a duplicate if a previous
 // attempt actually reached the server but the response was lost (classic
-// flaky-mobile-network failure mode). On success the mutation is removed; on a
-// 4xx that is NOT a transient/network error we drop it too (replaying a
-// permanently-rejected write forever is pointless), while network/5xx errors
-// are kept for the next flush.
+// flaky-mobile-network failure mode).
+//
+// Three outcomes, and they are NOT the same thing:
+//   2xx        → the write landed. The row is removed.
+//   network/5xx/401 → no answer yet. The row stays PENDING and the run stops,
+//                so the queue is retried in order on the next trigger.
+//   permanent 4xx (400/404/409/422) → the server ANSWERED "no". Replaying it
+//                forever is pointless, so the row stops being pending — but it
+//                is kept as REJECTED with the status, code and message, because
+//                a refusal is information the driver is owed. The case that
+//                matters most: a gate-window confirmation queued offline while
+//                the terminal published a newer window comes back 409
+//                SUPERSEDED. That is NOT a confirmation, and the UI must show
+//                it as such rather than letting the badge go to zero.
 import api from './api';
 import {
-  getPendingMutations, removeMutation, markMutationTried, pendingCount,
+  getPendingMutations, markMutationTried, markRejected, pendingCount, removeMutation,
 } from './offlineDB';
 
 let flushing = false;
@@ -44,20 +54,28 @@ export async function flushOutbox(): Promise<void> {
         await removeMutation(m.id);      // confirmed on the server
         await notify();
       } catch (err: any) {
-        const status = err?.response?.status ?? err?.status;
-        // Permanent client rejection (bad request / not found / conflict-that-
-        // means-already-applied) — stop retrying, but keep 401 (auth refresh
-        // is handled by the api interceptor) and all network/5xx for retry.
+        const status: number | undefined = err?.status ?? err?.response?.status;
+        // Permanent client rejection: the server answered, and the answer was
+        // no. 401 is excluded — the api interceptor already tried a silent
+        // token refresh, and a session that cannot be refreshed must not
+        // silently discard field work.
         const permanent = status === 400 || status === 404 || status === 409 || status === 422;
-        await markMutationTried(m.id, err?.message);
         if (permanent) {
-          await removeMutation(m.id);
+          await markRejected(m.id, {
+            status,
+            code: typeof err?.code === 'string' ? err.code : null,
+            message: err?.message ?? 'Rejected by the server',
+            activeVersion: typeof err?.activeVersion === 'number' ? err.activeVersion : null,
+            at: Date.now(),
+          });
           await notify();
-        } else {
-          // Transient (offline mid-flush, timeout, 5xx). Stop the run; we'll
-          // retry the whole queue on the next trigger.
-          break;
+          // Keep draining: one refused write must not block the rest of the day.
+          continue;
         }
+        // Transient (offline mid-flush, timeout, 5xx, dead session). Stop the
+        // run; the whole queue is retried in order on the next trigger.
+        await markMutationTried(m.id, err?.message);
+        break;
       }
     }
   } finally {

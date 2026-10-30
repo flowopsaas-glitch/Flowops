@@ -27,6 +27,11 @@ export class JwtOwnerStrategy extends PassportStrategy(Strategy, 'jwt-owner') {
     });
 
     if (!owner) throw new UnauthorizedException('Owner account not found');
-    return owner;
+    // The owner console's `req.user` must not carry the account's password
+    // hash: any handler - or any error reporter that dumps the request - would
+    // serve it. Owner login verifies the password against a row it reads from
+    // Prisma itself, so nothing downstream needs the hash here.
+    const { passwordHash, ...safeOwner } = owner;
+    return safeOwner;
   }
 }

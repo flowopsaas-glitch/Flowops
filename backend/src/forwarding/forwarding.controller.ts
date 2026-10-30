@@ -424,43 +424,57 @@ export class ForwardingController {
   // ══════════════════════════════════════════════════════════════════════════════
 
   @Get('sadc/border-posts')
-  @ApiOperation({ summary: 'All SADC border posts with congestion levels and wait times' })
+  @ApiOperation({
+    summary: 'All SADC border posts - reference wait times and congestion bands (static, not live)',
+  })
   sadcBorderPosts() {
     return this.sadcCorridor.getAllBorderPosts();
   }
 
   @Get('sadc/border-posts/:code')
-  @ApiOperation({ summary: 'Specific border post details (wait times, required docs)' })
+  @ApiOperation({
+    summary: 'One border post - reference wait times and required docs (static, not live)',
+  })
   sadcBorderPost(@Param('code') code: string) {
     return this.sadcCorridor.getBorderPost(code);
   }
 
   @Get('sadc/corridors')
-  @ApiOperation({ summary: 'All SADC trade corridors with transit times and costs' })
+  @ApiOperation({
+    summary: 'All SADC trade corridors - reference transit times and costs (static, not live)',
+  })
   sadcCorridors() {
     return this.sadcCorridor.getAllCorridors();
   }
 
   @Get('sadc/corridors/:code')
-  @ApiOperation({ summary: 'Specific corridor details' })
+  @ApiOperation({ summary: 'One corridor - reference details (static, not live)' })
   sadcCorridorByCode(@Param('code') code: string) {
     return this.sadcCorridor.getCorridor(code);
   }
 
   @Get('sadc/corridors/:code/documents')
-  @ApiOperation({ summary: 'Required documents for a specific corridor (per country + per border)' })
+  @ApiOperation({
+    summary:
+      'Documents a corridor typically requires, per country and per border (reference; verify before filing)',
+  })
   sadcCorridorDocs(@Param('code') code: string) {
     return this.sadcCorridor.getRequiredDocuments(code);
   }
 
   @Get('sadc/compare')
-  @ApiOperation({ summary: 'Compare corridors for a destination — find the fastest/cheapest route' })
+  @ApiOperation({
+    summary:
+      'Compare corridors for a destination - ranked on reference figures, not on conditions today',
+  })
   sadcCompare(@Query('origin') origin: string, @Query('destination') destination: string) {
     return this.sadcCorridor.compareCorridors(origin, destination);
   }
 
   @Get('sadc/walvis-vs-durban')
-  @ApiOperation({ summary: 'Walvis Bay SADC Gateway vs Durban — cost, time, risk comparison' })
+  @ApiOperation({
+    summary: 'Walvis Bay SADC Gateway vs Durban - reference cost, time and risk comparison',
+  })
   walvisVsDurban(@Query('destination') destination: string) {
     return this.sadcCorridor.walvisBayVsDurban(destination);
   }

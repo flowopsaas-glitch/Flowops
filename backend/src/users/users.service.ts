@@ -41,7 +41,12 @@ export class UsersService {
       include: { notificationPreference: true },
     });
     if (!user) throw new NotFoundException('User not found');
-    const { passwordHash, ...safe } = user;
+    // Strip every credential the row carries, not only the password hash:
+    // `resetToken` is a working password-reset credential, `verifyToken` an
+    // email-verification one, and `activeSessionId` names the live session.
+    // AuthService.safeUser() - which shapes the /auth/me response - already
+    // removed all four; this endpoint removed one.
+    const { passwordHash, verifyToken, resetToken, activeSessionId, ...safe } = user;
     return safe;
   }
 

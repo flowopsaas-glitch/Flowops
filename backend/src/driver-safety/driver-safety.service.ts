@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { EmailService } from '../email/email.service';
@@ -33,7 +35,70 @@ export class DriverSafetyService {
     private prisma: PrismaService,
     private gateway: EventsGateway,
     private email: EmailService,
+    private audit: AuditService,
   ) {}
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // WHOSE SAFETY EVENT THIS IS
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Resolve the driver a safety action is about, from the SESSION — never from
+   * the request body alone.
+   *
+   * Both HTTP routes on this controller used to take `driverId` from the body
+   * and pass it straight through. `safety_alerts.driverId` is a plain string
+   * with no relation and no tenant check, so any caller holding the DRIVER role
+   * could:
+   *   - write a safety alert naming another driver, and push it to that
+   *     driver's device through `emitToDriver` — including a driver in ANOTHER
+   *     company, because nothing scoped the id;
+   *   - report a danger zone whose name and description carry another
+   *     tenant's driver's real name (`findFirst({ where: { id } })` had no
+   *     companyId), which is a cross-tenant disclosure and a false attribution
+   *     on a zone that immediately alerts every driver who enters the circle.
+   *
+   * The rule now:
+   *   - a DRIVER-role caller acts as the Driver record linked to their own user
+   *     account (`Driver.userId`), and a body id that is not theirs is refused;
+   *   - a supervisory caller (dispatch, manager, admin, warehouse) may act on a
+   *     driver in THEIR OWN tenant — that is the job they are doing — and the
+   *     audit line records that it was done on somebody's behalf;
+   *   - either way the driver must exist in the caller's tenant, and the name
+   *     that lands on the record is the one that was looked up, never one that
+   *     was typed. A typed name is a claim; a looked-up name is a fact.
+   */
+  async resolveSubjectDriver(
+    companyId: string,
+    user: { id?: string | null; role?: string | null } | null | undefined,
+    requestedDriverId?: string | null,
+  ): Promise<{ id: string; name: string }> {
+    if (!user?.id) {
+      throw new ForbiddenException('An authenticated user of this tenant is required to act on a driver');
+    }
+    if (String(user.role) === UserRole.DRIVER) {
+      const mine = await this.prisma.driver.findFirst({
+        where: { userId: user.id, companyId },
+        select: { id: true, name: true },
+      });
+      if (!mine) {
+        throw new ForbiddenException('Your user account is not linked to a driver record in this company');
+      }
+      if (requestedDriverId && requestedDriverId !== mine.id) {
+        throw new ForbiddenException('A driver may only report a hazard or check their own position');
+      }
+      return mine;
+    }
+    if (!requestedDriverId) {
+      throw new BadRequestException('driverId is required when acting on a driver\'s behalf');
+    }
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: requestedDriverId, companyId },
+      select: { id: true, name: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found in your company');
+    return driver;
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // CORE: Check driver position against all active safety zones
@@ -52,8 +117,7 @@ export class DriverSafetyService {
     lat: number,
     lng: number,
     speed?: number,
-    driverName?: string,
-  ): Promise<{ inZone: boolean; alerts: any[] }> {
+  ): Promise<{ inZone: boolean; alerts: any[]; refused?: string }> {
     // Get all active zones for this company
     const zones = await this.prisma.safetyZone.findMany({
       where: { companyId, isActive: true },
@@ -62,6 +126,9 @@ export class DriverSafetyService {
     if (zones.length === 0) return { inZone: false, alerts: [] };
 
     const alerts: any[] = [];
+    // Resolved lazily: the common case is that no zone matches and nothing is
+    // written, so the ordinary 30-second GPS heartbeat pays no extra query.
+    let subject: { id: string; name: string } | null = null;
 
     for (const zone of zones) {
       const distance = this.haversineMetres(lat, lng, zone.lat, zone.lng);
@@ -75,9 +142,28 @@ export class DriverSafetyService {
           continue; // Already alerted recently — skip
         }
 
-        // Trigger alert
+        if (!subject) {
+          // Defence in depth behind `resolveSubjectDriver`: the alert row takes
+          // a plain string and the push goes to whoever that string names, so
+          // the subject is looked up IN THIS TENANT before anything is written
+          // or sent. A driver who is not in this company gets no alert row and
+          // no push — and the refusal is reported, not hidden behind a
+          // reassuring `inZone: false`.
+          subject = await this.prisma.driver.findFirst({
+            where: { id: driverId, companyId },
+            select: { id: true, name: true },
+          });
+          if (!subject) {
+            this.logger.warn(
+              `Safety check refused: driver ${driverId} is not in company ${companyId}`,
+            );
+            return { inZone: false, alerts: [], refused: 'DRIVER_NOT_IN_TENANT' };
+          }
+        }
+
+        // Trigger alert — with the RESOLVED name, never a caller-supplied one.
         const alert = await this.triggerAlert(
-          driverId, companyId, zone, lat, lng, speed, driverName,
+          subject.id, companyId, zone, lat, lng, speed, subject.name,
         );
         alerts.push(alert);
 
@@ -330,8 +416,21 @@ export class DriverSafetyService {
   }
 
   /** Community reporting — drivers flag new dangerous areas from mobile. */
-  async reportDangerZone(companyId: string, driverId: string, dto: { lat: number; lng: number; name?: string; description?: string; riskLevel?: string }) {
-    const driver = await this.prisma.driver.findFirst({ where: { id: driverId }, select: { name: true } });
+  async reportDangerZone(
+    companyId: string,
+    driverId: string,
+    dto: { lat: number; lng: number; name?: string; description?: string; riskLevel?: string },
+    actor?: { id?: string | null; email?: string | null; role?: string | null } | null,
+  ) {
+    // Scoped to the caller's tenant and REQUIRED to exist: this driver's name is
+    // written into the zone's name and description, so an unscoped lookup both
+    // disclosed another company's driver and blamed them for a permanent 500 m
+    // zone that alerts every driver who enters it.
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId },
+      select: { id: true, name: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found in your company');
     const zone = await this.prisma.safetyZone.create({
       data: {
         companyId,
@@ -361,6 +460,43 @@ export class DriverSafetyService {
     }).catch(() => { /* best-effort */ });
 
     this.logger.log(`Community safety zone reported by driver ${driverId}: ${zone.name}`);
+
+    // The zone row itself says nothing about who asked for it, and a
+    // community-reported zone is the one safety record that changes what every
+    // other driver is told — so the request leaves a trace naming the acting
+    // user and whether they were reporting for themselves or on a driver's
+    // behalf. Wrapped like `recordRailAudit`: a hazard report that was accepted
+    // must stay accepted even if the audit table is having a bad day.
+    try {
+      await this.audit.record({
+        action: 'driver_safety.zone_reported',
+        actorType: 'tenant',
+        actorId: actor?.id ?? null,
+        actorEmail: actor?.email ?? null,
+        targetType: 'safety_zone',
+        targetId: zone.id,
+        targetName: zone.name,
+        metadata: {
+          driverId: driver.id,
+          driverName: driver.name,
+          reportedBy: !actor
+            ? 'UNKNOWN'
+            : String(actor.role) === UserRole.DRIVER
+              ? 'DRIVER_SELF'
+              : 'ON_BEHALF',
+          actorRole: actor?.role ? String(actor.role) : null,
+          source: zone.source,
+          radiusM: zone.radiusM,
+          riskLevel: zone.riskLevel,
+          isActive: zone.isActive,
+          lat: dto.lat,
+          lng: dto.lng,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`Audit write failed for driver_safety.zone_reported: ${err}`);
+    }
+
     return zone;
   }
 

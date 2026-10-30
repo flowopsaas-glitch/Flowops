@@ -81,21 +81,51 @@ export class PushService {
   }
 
   /**
-   * Wake a driver's device(s). Best-effort, never throws — a push failure must
-   * never break the job-assignment flow that calls it.
+   * Wake a driver's device(s) and report what actually happened.
+   *
+   * `notifyDriver` (below) is fire-and-forget and returns nothing, which is
+   * right for a job-assignment side effect but useless for an audit trail that
+   * has to say whether a driver was reached. This variant returns the counts so
+   * a caller can record an honest delivery state instead of assuming one:
+   *
+   *   enabled=false            → push is not configured at all (VAPID keys
+   *                              absent). Nothing was sent; that is UNAVAILABLE,
+   *                              not SENT and certainly not DELIVERED.
+   *   subscriptions=0          → the driver has no registered device.
+   *   accepted>0               → the push service took the request: SENT.
+   *   failed>0, accepted=0     → every attempt errored: FAILED.
+   *
+   * A web push is payload-less by design (see the class note): it wakes the
+   * service worker, which then fetches the change. So `accepted` proves the
+   * push service accepted a wake-up — it can never prove the device displayed
+   * anything, and no caller may treat it as delivery.
    */
-  async notifyDriver(driverId: string): Promise<void> {
-    if (!this.enabled) return;
+  async wakeDriver(driverId: string): Promise<{
+    enabled: boolean;
+    subscriptions: number;
+    accepted: number;
+    failed: number;
+    pruned: number;
+    error?: string;
+  }> {
+    const result = { enabled: this.enabled, subscriptions: 0, accepted: 0, failed: 0, pruned: 0 } as {
+      enabled: boolean; subscriptions: number; accepted: number; failed: number; pruned: number; error?: string;
+    };
+    if (!this.enabled) return result;
     try {
       const subs = await this.prisma.driverPushSubscription.findMany({ where: { driverId } });
+      result.subscriptions = subs.length;
       for (const sub of subs) {
         try {
           await this.sendTickle(sub.endpoint);
+          result.accepted += 1;
         } catch (err: any) {
+          result.failed += 1;
           // 404/410 mean the subscription is dead — prune it.
           const code = err?.statusCode;
           if (code === 404 || code === 410) {
             await this.prisma.driverPushSubscription.deleteMany({ where: { endpoint: sub.endpoint } });
+            result.pruned += 1;
             this.logger.log(`Pruned expired push subscription (${code}).`);
           } else {
             this.logger.warn(`Push send failed: ${err?.message ?? err}`);
@@ -103,8 +133,18 @@ export class PushService {
         }
       }
     } catch (err: any) {
-      this.logger.warn(`notifyDriver failed (non-blocking): ${err?.message ?? err}`);
+      result.error = err?.message ?? String(err);
+      this.logger.warn(`wakeDriver failed (non-blocking): ${result.error}`);
     }
+    return result;
+  }
+
+  /**
+   * Wake a driver's device(s). Best-effort, never throws — a push failure must
+   * never break the job-assignment flow that calls it.
+   */
+  async notifyDriver(driverId: string): Promise<void> {
+    await this.wakeDriver(driverId);
   }
 
   // ── VAPID / Web Push protocol (payload-less) ───────────────────────────────

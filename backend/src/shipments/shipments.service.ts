@@ -4,6 +4,7 @@ import { EventsGateway } from '../gateway/events.gateway';
 import { pickAllowed } from '../common/pick-allowed.util';
 import { assertFleetDispatchAllowed } from '../fleet-maintenance/fleet-compliance';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
+import { withoutRatingToken } from '../common/security/waybill-redaction.util';
 
 /** Client-writable Shipment fields (excludes id/companyId/timestamps). */
 const SHIPMENT_FIELDS = [
@@ -261,6 +262,6 @@ export class ShipmentsService {
       riskLevel: updated.riskLevel,
       riskScore: updated.riskScore,
     }));
-    return updated;
+    return withoutRatingToken(updated);
   }
 }

@@ -9,6 +9,7 @@ import {
   normalizeTenantNavPermissions,
   buildRoleDefaultTenantNavPermissions,
 } from '../lib/tenantUserPermissions';
+import { toDriverPinRow, type DriverPinRow, type RawDriverPinRow } from '../lib/driverPinState';
 
 
 type CompanyUser = {
@@ -17,13 +18,6 @@ type CompanyUser = {
   email?: string;
   role?: string;
   permissions?: string[] | Record<string, boolean>;
-};
-type DriverPinRow = {
-  id: string;
-  name: string;
-  phone?: string;
-  vehicleReg?: string;
-  hasPinSet: boolean;
 };
 
 export default function UsersRoles() {
@@ -58,7 +52,9 @@ export default function UsersRoles() {
     try {
       const res = await api.get('/drivers');
       const list = Array.isArray(res) ? res : (res?.data ?? []);
-      setDrivers((list as { id: string | number; name?: string; phone?: string; vehicleReg?: string; driverPin?: string | null }[]).map((d) => ({ id: String(d.id), name: d.name||'Driver', phone: d.phone, vehicleReg: d.vehicleReg, hasPinSet: !!d.driverPin })));
+      // The API sends a derived `hasPinSet` instead of the hashed portal PIN;
+      // the mapping lives in lib/driverPinState so the hash is never held here.
+      setDrivers((list as RawDriverPinRow[]).map(toDriverPinRow));
     } catch (e) { console.error('driver list failed to load', e); }
   })();
 

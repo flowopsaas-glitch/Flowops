@@ -14,6 +14,7 @@ import { assertFleetDispatchAllowed } from '../fleet-maintenance/fleet-complianc
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { AuditService } from '../audit/audit.service';
 import { FileUploadValidator } from '../common/guards/file-upload.guard';
+import { withoutRatingToken } from '../common/security/waybill-redaction.util';
 
 @Injectable()
 export class WaybillsService {
@@ -62,19 +63,21 @@ export class WaybillsService {
       });
       const waybillIds = shipments.map((s) => s.waybillId);
       if (waybillIds.length === 0) return [];
-      return this.prisma.waybill.findMany({
+      const rows = await this.prisma.waybill.findMany({
         where: { id: { in: waybillIds }, status: { in: ACTIVE_STATUSES } },
         orderBy: { updatedAt: 'desc' },
         take: 20,
       });
+      return rows.map(withoutRatingToken);
     }
 
     // Fallback (no driver link yet): return company's active waybills
-    return this.prisma.waybill.findMany({
+    const rows = await this.prisma.waybill.findMany({
       where: { companyId, status: { in: ACTIVE_STATUSES } },
       orderBy: { updatedAt: 'desc' },
       take: 20,
     });
+    return rows.map(withoutRatingToken);
   }
 
   // ── CRUD ──────────────────────────────────────────────────────────────
@@ -99,15 +102,18 @@ export class WaybillsService {
       }),
       this.prisma.waybill.count({ where }),
     ]);
-    return { data: items, total, page, limit };
+    return { data: items.map(withoutRatingToken), total, page, limit };
   }
 
   async findRecent(companyId: string) {
-    return this.prisma.waybill.findMany({
+    const rows = await this.prisma.waybill.findMany({
       where: { companyId },
       orderBy: { updatedAt: 'desc' },
       take: 20,
     });
+    // Served to API-key holders as GET /public/v1/waybills, i.e. to code
+    // outside this repository - the last place a rating token should land.
+    return rows.map(withoutRatingToken);
   }
 
   /**
@@ -180,7 +186,7 @@ export class WaybillsService {
       },
     });
     if (!w) throw new NotFoundException('Waybill not found');
-    return w;
+    return withoutRatingToken(w);
   }
 
   async create(companyId: string, dto: any) {
@@ -193,7 +199,7 @@ export class WaybillsService {
     // ── BOOKING CONFIRMATION — notify recipient their parcel is on the way ──
     void this.notifications.notifyWaybillStatus(waybill);
 
-    return waybill;
+    return withoutRatingToken(waybill);
   }
 
   async update(id: string, companyId: string, dto: any) {
@@ -245,7 +251,7 @@ export class WaybillsService {
         });
       }
     }
-    return updated;
+    return withoutRatingToken(updated);
   }
 
   /**
@@ -537,7 +543,9 @@ export class WaybillsService {
     );
     // Auto-request rating after a short delay would happen via a cron job
     // For now, the dispatcher can trigger it manually via /rate-request
-    return delivered;
+    // The notification fan-out above gets the raw row (it needs the token to
+    // build the rating link); only the response is redacted.
+    return withoutRatingToken(delivered);
   }
 
   /**

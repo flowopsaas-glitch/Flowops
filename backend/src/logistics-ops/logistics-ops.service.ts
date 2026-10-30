@@ -5,6 +5,7 @@ import { DriverComplianceService } from '../common/compliance/driver-compliance.
 import { guardTransition, isLegalTransition } from '../waybills/waybill-status.machine';
 import { WaybillStatus, FailedDeliveryReason } from '@prisma/client';
 import { withCompanyId } from '../common/security/tenant.util';
+import { withoutRatingToken } from '../common/security/waybill-redaction.util';
 
 /** Valid failed-delivery reason codes, mirrored from the Prisma enum for
  *  runtime validation of client-supplied codes. */
@@ -111,7 +112,7 @@ export class LogisticsOpsService {
     });
 
     this.logger.log(`POC captured for ${wb.trackingNumber}: sender=${dto.senderName ?? 'n/a'}`);
-    return updated;
+    return withoutRatingToken(updated);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

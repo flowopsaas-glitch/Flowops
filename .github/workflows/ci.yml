@@ -96,6 +96,96 @@ jobs:
       - name: Base compose file is valid
         run: docker compose -f docker-compose.yml config --quiet
 
+      # Regression guard for the RBAC_STRICT production incident: the api
+      # service declares an explicit `environment:` allowlist and no
+      # `env_file:`, so a variable that is missing from that allowlist never
+      # reaches the container no matter what the host .env says. Production ran
+      # NON-strict that way until an operator hand-edited the VPS overlay.
+      #
+      # This renders the REAL merged config with Compose's own interpolator for
+      # all three host states (unset / false / true), for the base file and for
+      # both production overlays, and fails if the api service does not see the
+      # expected value. backend/scripts/compose-env-allowlist.mjs is the
+      # no-Docker equivalent, run by the Backend job's release-safety suite.
+      - name: RBAC_STRICT reaches the api container (unset / false / true)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          read_api_rbac_strict() {
+            # stdin: `docker compose config` output. Prints the api service's
+            # RBAC_STRICT, or __ABSENT__ when the key never reached it.
+            node -e '
+              let s = "";
+              process.stdin.on("data", (d) => { s += d; });
+              process.stdin.on("end", () => {
+                // Compose renders `environment` as a map in recent releases and
+                // as a list of KEY=VALUE entries in older ones, and only the api
+                // service carries this key — so read every shape rather than fail
+                // the gate on a runner whose Compose predates the map form.
+                const fromEnv = (env) => {
+                  if (!env) return undefined;
+                  if (!Array.isArray(env)) return env.RBAC_STRICT;
+                  for (const e of env) {
+                    if (typeof e === "string") {
+                      if (e.startsWith("RBAC_STRICT=")) return e.slice("RBAC_STRICT=".length);
+                    } else if (e && e.name === "RBAC_STRICT") {
+                      return e.value;
+                    }
+                  }
+                  return undefined;
+                };
+                let value;
+                try {
+                  const cfg = JSON.parse(s);
+                  value = fromEnv(cfg?.services?.api?.environment);
+                } catch {
+                  // Older Compose without --format json: fall back to the YAML
+                  // rendering. Only the api service carries this key.
+                  const m = s.match(/^\s+RBAC_STRICT:\s*"?([^"\n]*)"?\s*$/m);
+                  // Older Compose can also render environment as a KEY=VALUE list.
+                  const found = m || s.match(/^[ \t]*-[ \t]*"?RBAC_STRICT=([^"\r\n]*)"?$/m);
+                  value = found ? found[1] : undefined;
+                }
+                process.stdout.write(value === undefined ? "__ABSENT__" : String(value));
+              });
+            '
+          }
+
+          assert_render() {
+            local label="$1" expected="$2" rbac="$3"; shift 3
+            local json_flag="--format=json" actual
+            if ! docker compose "$@" config "$json_flag" >/dev/null 2>&1; then
+              json_flag=""
+            fi
+            if [ "$rbac" = "unset" ]; then
+              actual="$(env -u RBAC_STRICT docker compose "$@" config $json_flag | read_api_rbac_strict)"
+            else
+              actual="$(RBAC_STRICT="$rbac" docker compose "$@" config $json_flag | read_api_rbac_strict)"
+            fi
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::${label}: api RBAC_STRICT rendered to '${actual}', expected '${expected}'"
+              exit 1
+            fi
+            echo "ok  ${label}: api RBAC_STRICT -> '${actual}'"
+          }
+
+          BASE=(-f docker-compose.yml)
+          PROD=(-f docker-compose.yml -f docker-compose.prod.yml)
+          VPS=(-f docker-compose.yml -f deploy/docker-compose.vps.yml)
+
+          for stack in BASE PROD VPS; do
+            array_ref="${stack}[@]"
+            files=("${!array_ref}")
+            assert_render "${stack} host-unset"  "false" unset  "${files[@]}"
+            assert_render "${stack} host-false"  "false" false  "${files[@]}"
+            assert_render "${stack} host-true"   "true"  true   "${files[@]}"
+          done
+
+      - name: Guarded keys are in the api allowlist (no Docker needed)
+        working-directory: backend
+        run: node scripts/compose-env-allowlist.mjs --check
+
       - name: VPS overlay publishes no host ports
         run: |
           chmod +x scripts/check-compose-ports.sh
@@ -172,6 +262,13 @@ jobs:
 
       - name: TypeScript check
         run: npm run typecheck
+
+      # The portal owns the offline half of the truck-window loop: a confirmation
+      # queued in a notspot, and the 409 that comes back when the terminal moved
+      # the window while the driver was offline. That path is tested against the
+      # real IndexedDB outbox, so it gates like the rest of the suite.
+      - name: Tests
+        run: npm run test
 
       - name: Build
         run: npm run build
@@ -299,10 +396,20 @@ jobs:
             --from-migrations ./prisma/migrations \
             --to-schema-datamodel ./prisma/schema.prisma \
             --shadow-database-url "$SHADOW_URL" \
-            --exit-code
-          status=$?
+            --exit-code 2>&1 | tee /tmp/prisma-migration-diff.log
+          status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
+            # Check annotations are accessible even when runner logs are not.
+            # Redact connection URLs and escape annotation control characters.
+            node -e '
+              const fs = require("fs");
+              const raw = fs.readFileSync("/tmp/prisma-migration-diff.log", "utf8");
+              const safe = raw.slice(0, 30000).replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[database URL redacted]")
+                .replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+              if (safe) console.log(`::error::Prisma drift output: ${safe}`);
+              if (raw.length > 30000) console.log("::warning::Prisma drift output truncated; see job log.");
+            '
             echo "::error::Migration drift guard failed (exit $status). Either prisma/migrations no longer reconstruct prisma/schema.prisma — run 'npx prisma migrate dev' against a disposable database and commit the migration it generates — or the guard itself could not run (shadow database $SHADOW_URL)."
             exit 1
           fi
@@ -332,9 +439,17 @@ jobs:
           retention-days: 7
 
       - name: Unit tests
-        # The github-actions reporter turns failing tests into check
-        # annotations, so failures are visible without downloading job logs.
-        run: npm test -- --reporters=default --reporters=github-actions
+        # Keep failure annotations, and publish observed counts on successful
+        # runs as well (job logs are not reachable from every environment).
+        shell: bash
+        run: |
+          set +e
+          npm test -- --reporters=default --reporters=github-actions --json --outputFile=unit-report.json
+          status=$?
+          node scripts/ci-test-summary.mjs unit-report.json unit
+          summary_status=$?
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          exit "$summary_status"
 
       - name: RBAC coverage (blocking)
         # Every route must carry one deliberate access decision (@Roles,
@@ -389,10 +504,13 @@ jobs:
           set +e
           npm run test:integration -- --json --outputFile integration-report.json 2>&1 | tee integration-tests.log
           status=${PIPESTATUS[0]}
+          node scripts/ci-test-summary.mjs integration-report.json integration
+          summary_status=$?
           if [ "$status" -ne 0 ]; then
             node scripts/ci-annotate-failures.mjs integration-report.json
+            exit "$status"
           fi
-          exit "$status"
+          exit "$summary_status"
 
       - name: Publish integration failure log
         if: failure()

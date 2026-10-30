@@ -79,6 +79,9 @@ What that means in practice:
   ownership-checked writes are unaffected.
 - Ratchet: `RBAC_STRICT=true` is the mechanism that closes the exception — flip it only when
   `rbac:inventory` reports no unroled routes, otherwise real users get locked out.
+  *(Superseded: the inventory reached zero undecided on 2026-10-24, CI was forced strict on
+  2026-10-26, and production was enabled by the operator on 2026-10-25. See the
+  2026-10-28 follow-up at the end of this document — the ratchet is closed.)*
 - Still open, unaffected by this decision: the negative permission tests (below) and the
   deployed-environment cross-tenant rows.
 
@@ -217,3 +220,81 @@ production). Trip Truth work (Slices 1–5) was added under this regime:
 `RBAC_STRICT=true` in the production deployment environment — that flip
 cannot be made from this repository and has deliberately not been
 claimed here.
+
+## Follow-up 2026-10-28 — strict mode is LIVE in production, and now permanent in the repo
+
+The 2026-10-26 entry ended with "the remaining step is the operator's". That step is
+**done**, and this section closes the record — including a defect in *how* it was done.
+
+### What happened
+
+- **2026-10-25 — production enabled by the operator.** `RBAC_STRICT=true` is live in the
+  production api container. Production therefore rejects any route that ships without a
+  deliberate access decision, matching CI.
+- **It was enabled by hand-editing the host.** The value was added as a literal
+  `RBAC_STRICT: "true"` line to `deploy/docker-compose.vps.yml` **on the VPS only**. That
+  file is tracked in this repository, so the host copy diverged from the committed copy and
+  the change was invisible to review, to CI, and to the next clean checkout or rebuild.
+
+### Why the repo could not deliver the value on its own
+
+The `api` service in `docker-compose.yml` declares an **explicit `environment:` allowlist
+and no `env_file:`**. Compose passes only the keys listed there into the container — the
+host `.env` is used to *interpolate* that list, not injected wholesale. `RBAC_STRICT` was
+absent from the allowlist, so:
+
+| Where it was set | Reached the api container? |
+| --- | --- |
+| `backend/.env.example` (commented documentation) | No — not a runtime file for compose |
+| Host `.env` / `deploy/.env.production` | No — no allowlist entry to interpolate into |
+| `.github/workflows/ci.yml` backend job `env:` | No — CI runs Jest on the runner, not in compose |
+| Hand-added line in the host's VPS overlay | Yes — and only there, only until re-cloned |
+
+The observable symptom was a platform that *looked* strict-everywhere (CI green under
+`RBAC_STRICT=true`, inventory at zero undecided) while the deployed api was non-strict.
+This is the general failure mode of the allowlist, not a quirk of this one variable: any
+future security switch added to `.env` alone will silently not arrive.
+
+### The permanent fix (this change)
+
+1. **`docker-compose.yml`** — the api allowlist now carries
+   `RBAC_STRICT: ${RBAC_STRICT:-false}` in a labelled "Security posture" block, with a
+   comment recording that this line is the only route into the container. Default `false`
+   so a fresh local `docker compose up` cannot 403 a route that exists only in someone's
+   working tree; production sets `RBAC_STRICT=true` in its `.env`. The prod and VPS
+   overlays use plain `environment:` maps, which Compose merges key-by-key, so the base
+   entry survives all three invocation styles (`-f docker-compose.yml`, `+prod`, `+vps`).
+2. **`.env.example` and `.env.production.example`** — a real, uncommented `RBAC_STRICT`
+   assignment with the precondition and the allowlist dependency written down.
+3. **`backend/scripts/compose-env-allowlist.mjs`** — a no-Docker guard, run by
+   `npm run compose-env:check` and by `release:safety:test` (Backend job). It asserts the
+   key is in the api allowlist, that `${RBAC_STRICT:-false}` renders to `false`/`false`/
+   `false`/`true` for host states unset/empty/false/true, that **no overlay hardcodes the
+   key** (a host-side literal is what caused this incident) and that no overlay uses
+   `!reset`/`!override` on the api environment (which would discard the whole allowlist),
+   that both env templates document it, and that `RolesGuard` still compares against the
+   literal `'true'` so the compose side and the code side cannot drift apart.
+   `REQUIRED_API_ENV` is a list — the next security switch gets added to it rather than
+   relying on anyone remembering this incident.
+4. **CI `compose` job** — the same three renderings are checked against the *real*
+   interpolator with `docker compose config` for the base file and both production
+   overlays (9 assertions), followed by the no-Docker guard. Docker is not available in
+   every working environment, so both oracles exist and the static one states plainly that
+   it is static.
+
+### Operator action still required (host, not repo)
+
+The hand-added line must come out of the host's `deploy/docker-compose.vps.yml` so the
+tracked file and the deployed file are the same again; the value now arrives from `.env`
+through the base allowlist. Exact steps are in the PR description and in
+`docs/DEPLOY-HANDOVER-RBAC-STRICT-2026-10-28.md`. Until that is done the host overlay
+still overrides the base — same effective value (`true`), but the divergence persists and
+`git pull` will refuse to fast-forward a tracked file with local modifications.
+
+### Status of the option-3 ratchet
+
+**Closed.** Not "pending", not "recommended": production enforces strict mode, CI proves
+the precondition on every run, and the repo now carries the value itself. Remaining
+security work in this document is unaffected and still open — deployed-environment
+negative permission tests (a `VIEWER`/`WAREHOUSE` token against live finance/warehouse
+writes) and the deployed-environment cross-tenant refusal rows.

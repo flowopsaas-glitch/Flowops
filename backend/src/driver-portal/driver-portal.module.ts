@@ -10,9 +10,13 @@ import { GatewayModule } from '../gateway/gateway.module';
 import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
 import { EpodModule } from '../epod/epod.module';
 import { ComplianceModule } from '../common/compliance/compliance.module';
+import { RailModule } from '../rail/rail.module';
 
 @Module({
   imports: [ComplianceModule,
+    // RailModule exports RailTruckWindowChangesService: the driver side of the
+    // terminal gate-window closed loop (read the current window, confirm it).
+    RailModule,
     ConfigModule,
     AuthModule,
     NotificationsModule,

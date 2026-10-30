@@ -10,6 +10,9 @@ import { useGeolocation } from '../hooks/useGeolocation';
 import { cacheJobs, getCachedJobs, queueMutation } from '../services/offlineDB';
 import { onPendingChange, flushOutbox } from '../services/syncEngine';
 import { enablePush, pushSupported, pushPermission } from '../services/push';
+// Gate windows are time-critical and small, so they are NOT lazy-loaded: a
+// changed terminal window has to be on screen before the driver scrolls.
+import GateWindows from '../components/GateWindows';
 
 // Heavy, occasionally-used panels (leaflet maps, zxing camera scanner) are
 // code-split so the dashboard loads fast on mobile data; they fetch on demand.
@@ -200,6 +203,9 @@ export default function Dashboard() {
         <Stat icon={<Package className="w-5 h-5 text-cyan-400" />} value={deliveries.length} label="Deliveries" />
         <Stat icon={<ClipboardList className="w-5 h-5 text-green-400" />} value={delivered} label="Delivered" />
       </div>
+
+      {/* Terminal gate windows: the driver's half of the window-change loop. */}
+      <div className="pb-3"><GateWindows /></div>
 
       {/* Tabs */}
       <div className="px-4 mb-3">

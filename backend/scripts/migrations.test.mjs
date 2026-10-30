@@ -251,3 +251,15 @@ test('lists migration files in the order Prisma applies them', () => {
   );
   f.cleanup();
 });
+
+test('truck window version index retains the actual PostgreSQL-truncated migration name', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const schema = await readFile(new URL('../prisma/schema.prisma', import.meta.url), 'utf8');
+  const sql = await readFile(new URL('../prisma/migrations/20261028120000_truck_window_change_closed_loop/migration.sql', import.meta.url), 'utf8');
+  const migrationName = sql.match(/CREATE INDEX "([^"]+)" ON "terminal_truck_window_changes"\("companyId", "appointmentId", "version"\)/)?.[1];
+  assert.ok(migrationName);
+  const postgresName = Buffer.from(migrationName).subarray(0, 63).toString('utf8');
+  const model = schema.match(/model TerminalTruckWindowChange \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(model);
+  assert.ok(model.includes(`@@index([companyId, appointmentId, version], map: "${postgresName}")`));
+});
