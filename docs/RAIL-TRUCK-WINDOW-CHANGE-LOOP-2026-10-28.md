@@ -423,6 +423,18 @@ routes spread — so a new endpoint cannot re-leak one by accident. The token le
 exactly one response, `POST /rail/truck-appointments/:id/share` (rail WRITE), which creates or
 rotates it for a caller who needs the value in order to send it to the counterparty.
 
+Because that route is now the only door, it is the one that keeps the record. Issuing and
+revoking are audited as `truck_appointment.share_link_issued` and `truck_appointment.share_link_revoked`
+against the person who did it — names that were already in the rail audit vocabulary and had
+never been written. The issue row records the appointment, terminal, haulier, registration, the
+window it grants access to, the expiry, the TTL and **whether it replaced a live link** (rotating
+kills a link a haulier may already be holding). The revoke row records the state the link was in
+when it died, including `LEGACY_NO_EXPIRY`, which is what makes "who ended the immortal link, and
+when" answerable. **The token value is never written to the audit log**: a trail that holds live
+credentials is a second place to steal them from, and `AuditLog` is readable by tenant diagnostics
+endpoints. Both writes are best-effort through `recordRailAudit`, so an audit outage cannot block
+an operator who is trying to kill a link.
+
 Nothing was lost by that. The terminal's truth is the state view (`shareLink`), which is computed
 from the unredacted row before it is stripped, so the badge, the tenant banner, the expiry date
 and one-click **Revoke & re-issue** all still work; the frontend's Revoke/Share choice now comes
