@@ -408,9 +408,27 @@ What the operator sees (`TruckAppointmentsPanel.tsx`):
 - `EXPIRED` links say "Link expired — re-issue if they still need the window"; `VALID` links
   show their expiry date.
 
-Unchanged and worth stating: `GET /rail/truck-appointments` still returns the raw `shareToken`
-to every rail-read role. That is pre-existing behaviour; this change adds the expiry state next
-to it rather than widening who can see it.
+**The token no longer appears in a tenant row response.** `GET /rail/truck-appointments` used to
+spread the appointment row, so every rail-read role — including `VIEWER`, which the authority
+model deliberately keeps read-only — received a live bearer credential: one that reads the
+appointment with no login (`GET public/:token`) and confirms a window change with no login
+(`POST public/:token/ack`). A read-only user who copied it out of a list response could perform a
+mutation the role model refuses them through `POST :id/ack` (rail WRITE). That is a privilege
+bypass, not a leak of a display field.
+
+Every row-shaped response in `RailTruckAppointmentsService` now goes through
+`withoutShareToken()`: the list, the booking response, the transition and assign-driver
+responses, and the tenant-scoped `getOwned()` / `getOne()` read that the cancel and reschedule
+routes spread — so a new endpoint cannot re-leak one by accident. The token leaves the server in
+exactly one response, `POST /rail/truck-appointments/:id/share` (rail WRITE), which creates or
+rotates it for a caller who needs the value in order to send it to the counterparty.
+
+Nothing was lost by that. The terminal's truth is the state view (`shareLink`), which is computed
+from the unredacted row before it is stripped, so the badge, the tenant banner, the expiry date
+and one-click **Revoke & re-issue** all still work; the frontend's Revoke/Share choice now comes
+from `hasShareLink()` — `shareLink.state !== 'ABSENT'` — and both actions are addressed by
+appointment id. Redaction is a view concern: the stored row keeps its token, so a link already
+sitting in a haulier's inbox keeps working.
 
 ---
 
