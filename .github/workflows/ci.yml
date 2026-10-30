@@ -439,9 +439,17 @@ jobs:
           retention-days: 7
 
       - name: Unit tests
-        # The github-actions reporter turns failing tests into check
-        # annotations, so failures are visible without downloading job logs.
-        run: npm test -- --reporters=default --reporters=github-actions
+        # Keep failure annotations, and publish observed counts on successful
+        # runs as well (job logs are not reachable from every environment).
+        shell: bash
+        run: |
+          set +e
+          npm test -- --reporters=default --reporters=github-actions --json --outputFile=unit-report.json
+          status=$?
+          node scripts/ci-test-summary.mjs unit-report.json unit
+          summary_status=$?
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          exit "$summary_status"
 
       - name: RBAC coverage (blocking)
         # Every route must carry one deliberate access decision (@Roles,
@@ -496,10 +504,13 @@ jobs:
           set +e
           npm run test:integration -- --json --outputFile integration-report.json 2>&1 | tee integration-tests.log
           status=${PIPESTATUS[0]}
+          node scripts/ci-test-summary.mjs integration-report.json integration
+          summary_status=$?
           if [ "$status" -ne 0 ]; then
             node scripts/ci-annotate-failures.mjs integration-report.json
+            exit "$status"
           fi
-          exit "$status"
+          exit "$summary_status"
 
       - name: Publish integration failure log
         if: failure()

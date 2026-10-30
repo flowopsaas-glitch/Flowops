@@ -71,6 +71,14 @@ const row = (over: any = {}) => ({
 });
 
 describe('RailTruckAppointmentsService', () => {
+  it('rejects an unknown share token with the public 404 contract', async () => {
+    const { svc } = makeService();
+    await expect(svc.getShared('definitely-not-a-real-token')).rejects.toMatchObject({
+      status: 404,
+      message: 'Shared appointment not found or the link was revoked',
+    });
+  });
+
   it('rejects a window whose end is not after its start', async () => {
     const { svc } = makeService();
     await expect(svc.book('c1', { ...dto, windowEnd: dto.windowStart })).rejects.toThrow('windowEnd must be after windowStart');
