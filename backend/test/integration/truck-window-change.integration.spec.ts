@@ -70,7 +70,8 @@ describe('Truck window changes — closed loop (PostgreSQL)', () => {
   let driverId: string;
   // shareToken is @unique, so every booked appointment needs its own.
   let tokenSeq = 0;
-  const actor: RailActor = { id: 'user-ops', email: 'ops@haulier.example', name: 'Ops', role: UserRole.DISPATCH };
+  const actor: RailActor = { id: 'user-ops', email: 'ops@terminal.example', name: 'Terminal manager', role: UserRole.MANAGER };
+  const dispatcher: RailActor = { id: 'user-dispatch', email: 'dispatch@haulier.example', name: 'Dispatcher', role: UserRole.DISPATCH };
 
   beforeAll(async () => {
     db = await createIntegrationDatabase();
@@ -173,7 +174,7 @@ describe('Truck window changes — closed loop (PostgreSQL)', () => {
       cutoffHours: 2,
       truckStatusAtChange: 'BOOKED',
       changedById: 'user-ops',
-      changedByRole: 'DISPATCH',
+      changedByRole: 'MANAGER',
     });
     expect(stored.previousWindowStart).toBeInstanceOf(Date);
     expect(stored.newWindowStart).toBeInstanceOf(Date);
@@ -222,11 +223,14 @@ describe('Truck window changes — closed loop (PostgreSQL)', () => {
     // Phase-2 posture: no tenant context at all → nothing is visible.
     const strict = await db.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.rls_strict', 'on', true)`;
-      return tx.$queryRaw<Array<{ visible: boolean }>>`
-        SELECT app_tenant_guard(${companyId}) AS visible
+      return tx.$queryRaw<Array<{ guard: boolean | null; visible: boolean }>>`
+        SELECT app_tenant_guard(${companyId}) AS guard,
+               app_tenant_guard(${companyId}) IS TRUE AS visible
       `;
     });
-    expect(strict[0].visible).toBe(false);
+    // SQL's three-valued logic returns NULL here, not false. A row-level
+    // policy admits only TRUE, so NULL still denies access; test both facts.
+    expect(strict[0]).toEqual({ guard: null, visible: false });
   });
 
   // ── The database-level "never two active windows" ──────────────────────────
@@ -295,6 +299,19 @@ describe('Truck window changes — closed loop (PostgreSQL)', () => {
     });
     expect(other.version).toBe(1);
     expect(await db.prisma.terminalTruckWindowChange.count()).toBe(2);
+  });
+
+  it('refuses dispatcher window changes, day replans and policy edits', async () => {
+    const appt = await bookAppointment();
+    await expect(reschedule(appt.id, { actor: dispatcher })).rejects.toThrow(/permission/i);
+    await expect(svc.replanDay(companyId, {
+      terminalName: 'Central Terminal', date: '2099-03-04', shiftMinutes: 60, reason: 'Late train',
+    }, dispatcher)).rejects.toThrow(/permission/i);
+    await expect(svc.upsertGatePolicy(companyId, 'Central Terminal', {
+      ackDueMinutes: 5, reminderAfterMinutes: 2, escalateAfterMinutes: 4,
+    }, dispatcher)).rejects.toThrow(/permission/i);
+    expect(await db.prisma.terminalTruckWindowChange.count()).toBe(0);
+    expect(await db.prisma.terminalGatePolicy.count()).toBe(0);
   });
 
   // ── One atomic commit ──────────────────────────────────────────────────────
