@@ -488,3 +488,48 @@ test('CI compose job: every variable Compose requires is provided, so the render
     assert.match(jobEnv, new RegExp(`^\\s+${name}:\\s*\\S`, 'm'), `compose job env must provide ${name}`);
   }
 });
+
+test('CI compose step passes every stack file and exercises unset, false and true', () => {
+  const workflow = repoFile('.github/workflows/ci.yml');
+  const step = workflow.split('- name: RBAC_STRICT reaches the api container (unset / false / true)')[1]
+    .split('\n      - name:')[0];
+  const shell = step.split('        run: |\n')[1].split('\n')
+    .map((line) => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const dir = mkdtempSync(path.join(tmpdir(), 'compose-step-'));
+  try {
+    const docker = path.join(dir, 'docker');
+    const log = path.join(dir, 'calls');
+    writeFileSync(docker, `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+if (args[0] !== 'compose') process.exit(2);
+const config = args.indexOf('config');
+if (config < 0) process.exit(3);
+const files = [];
+for (let i = 1; i < config; i += 2) {
+  if (args[i] !== '-f' || !args[i + 1] || args[i + 1].startsWith('-')) process.exit(4);
+  files.push(args[i + 1]);
+}
+if (!files.length || files[0] !== 'docker-compose.yml') process.exit(5);
+fs.appendFileSync(process.env.MOCK_CALLS, JSON.stringify({files, value: process.env.RBAC_STRICT ?? 'unset'}) + '\\n');
+console.log(JSON.stringify({services: {api: {environment: {RBAC_STRICT: process.env.RBAC_STRICT || 'false'}}}}));
+`, { mode: 0o755 });
+    const out = execFileSync('bash', ['-euo', 'pipefail', '-c', shell], {
+      encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, MOCK_CALLS: log },
+    });
+    assert.match(out, /VPS host-true/);
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+    // Every render is probed for JSON support, then run with the requested env.
+    assert.equal(calls.length, 18);
+    for (const [offset, files] of [
+      [0, ['docker-compose.yml']],
+      [6, ['docker-compose.yml', 'docker-compose.prod.yml']],
+      [12, ['docker-compose.yml', 'deploy/docker-compose.vps.yml']],
+    ]) {
+      for (let i = 0; i < 6; i++) assert.deepEqual(calls[offset + i].files, files);
+      assert.deepEqual([calls[offset + 1].value, calls[offset + 3].value, calls[offset + 5].value], ['unset', 'false', 'true']);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

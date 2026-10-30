@@ -175,7 +175,8 @@ jobs:
           VPS=(-f docker-compose.yml -f deploy/docker-compose.vps.yml)
 
           for stack in BASE PROD VPS; do
-            files=("${!stack}")
+            array_ref="${stack}[@]"
+            files=("${!array_ref}")
             assert_render "${stack} host-unset"  "false" unset  "${files[@]}"
             assert_render "${stack} host-false"  "false" false  "${files[@]}"
             assert_render "${stack} host-true"   "true"  true   "${files[@]}"
@@ -395,10 +396,20 @@ jobs:
             --from-migrations ./prisma/migrations \
             --to-schema-datamodel ./prisma/schema.prisma \
             --shadow-database-url "$SHADOW_URL" \
-            --exit-code
-          status=$?
+            --exit-code 2>&1 | tee /tmp/prisma-migration-diff.log
+          status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
+            # Check annotations are accessible even when runner logs are not.
+            # Redact connection URLs and escape annotation control characters.
+            node -e '
+              const fs = require("fs");
+              const raw = fs.readFileSync("/tmp/prisma-migration-diff.log", "utf8");
+              const safe = raw.slice(0, 30000).replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[database URL redacted]")
+                .replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+              if (safe) console.log(`::error::Prisma drift output: ${safe}`);
+              if (raw.length > 30000) console.log("::warning::Prisma drift output truncated; see job log.");
+            '
             echo "::error::Migration drift guard failed (exit $status). Either prisma/migrations no longer reconstruct prisma/schema.prisma — run 'npx prisma migrate dev' against a disposable database and commit the migration it generates — or the guard itself could not run (shadow database $SHADOW_URL)."
             exit 1
           fi
