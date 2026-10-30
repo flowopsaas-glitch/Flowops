@@ -49,7 +49,19 @@ export default function SadcCorridors() {
     finally { setComparing(false); }
   };
 
-  const worstBorders = useMemo(
+  /**
+   * What these figures are. Printed from the API's provenance block when it
+   * sends one, so a server-side change to the basis shows up here instead of
+   * leaving a stale sentence in the UI. The fallback is the pre-provenance
+   * wording, for an API that has not been updated yet.
+   */
+  const provenanceNote =
+    borders[0]?.provenance?.basis ??
+    cmp?.provenance?.basis ??
+    "Unverified static reference figures; source and review date are unknown. Not live gate readings.";
+
+  // Ordered by the LONGEST REFERENCE WAIT, not by anything observed today.
+  const bordersByReferenceWait = useMemo(
     () => [...borders].sort((a, b) => b.avgWaitHours - a.avgWaitHours),
     [borders],
   );
@@ -62,12 +74,14 @@ export default function SadcCorridors() {
         <div className="flex items-center gap-3 flex-wrap">
           <BackButton to="/forwarding" />
           <h1 className="text-2xl font-black text-white flex items-center gap-2">
-            <Route className="h-5 w-5 text-cyan-300" /> SADC Corridor Intelligence
+            <Route className="h-5 w-5 text-cyan-300" /> SADC Corridor Reference
           </h1>
         </div>
         <p className="text-sm text-white/50 -mt-2">
-          Border wait times, trade corridors and port routing across Southern Africa.
-          Figures are typical operational averages — use them to plan, not as live gate readings.
+          Border wait times, trade corridors and port routing across Southern Africa.{" "}
+          {/* The label comes from the API's provenance block, so the wording cannot
+              drift from the data it describes; the fallback covers an older API. */}
+          <span data-testid="provenance-note">{provenanceNote}</span>
         </p>
 
         {/* Tabs */}
@@ -125,7 +139,7 @@ export default function SadcCorridors() {
           </div>
         ) : tab === "borders" ? (
           <div className="space-y-2">
-            {worstBorders.map((b) => (
+            {bordersByReferenceWait.map((b) => (
               <div key={b.code} className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -141,7 +155,13 @@ export default function SadcCorridors() {
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${CONGESTION_CLS[b.congestionLevel]}`}>{b.congestionLevel}</span>
+                  <span
+                    title={b.provenance?.basis ?? "Reference band - not a live gate reading"}
+                    className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${CONGESTION_CLS[b.congestionLevel]}`}
+                  >
+                    {b.congestionLevel}
+                  </span>
+                  <div className="text-[9px] font-black text-white/30 mt-0.5">REFERENCE</div>
                   <div className="mt-2 text-xs text-white/70 font-bold">~{b.avgWaitHours}h avg</div>
                   <div className="text-[10px] text-white/35">peak {b.peakWaitHours}h</div>
                 </div>
