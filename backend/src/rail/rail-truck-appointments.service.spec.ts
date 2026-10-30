@@ -1,4 +1,6 @@
+import { UserRole } from '@prisma/client';
 import { RailTruckAppointmentsService } from './rail-truck-appointments.service';
+import { RailActor } from './rail-audit';
 
 /**
  * Terminal truck appointments: booking, the status flow, the counterparty share
@@ -47,8 +49,12 @@ function makeService(rows: any[] = [], drivers: any[] = []) {
       findMany: jest.fn(async () => changes),
     },
   };
-  return { svc: new RailTruckAppointmentsService(prisma), prisma, store, changes };
+  const audit: any = { record: jest.fn(async () => 'audit-1') };
+  return { svc: new RailTruckAppointmentsService(prisma, audit), prisma, store, changes, audit };
 }
+
+/** The operator who issues or kills a counterparty link — rail WRITE. */
+const ACTOR: RailActor = { id: 'u1', email: 'ops@terminal.co.za', name: 'Ops', role: UserRole.MANAGER };
 
 const dto = {
   terminalName: 'Central Terminal', haulierName: 'Haulier Co', vehicleReg: 'ABC 123',
@@ -155,7 +161,7 @@ describe('booking with a resolved driver', () => {
 describe('counterparty share link', () => {
   it('issues an EXPIRING token and the shared view exposes no tenant internals', async () => {
     const { svc } = makeService([row({ note: 'internal note', bookedBy: 'ops@x', driverName: 'D' })]);
-    const link = await svc.createShareLink('c1', 'a1');
+    const link = await svc.createShareLink('c1', 'a1', ACTOR);
     expect(link.path).toBe(`/gate/${link.token}`);
     // The expiry is what makes this link safe to mutate behind: without it a
     // token in an old email is an immortal unauthenticated credential.
@@ -173,7 +179,7 @@ describe('counterparty share link', () => {
     expect(view.link.canAcknowledge).toBe(true);
     expect(view.link.noExpiryOnRecord).toBe(false);
 
-    await svc.revokeShareLink('c1', 'a1');
+    await svc.revokeShareLink('c1', 'a1', ACTOR);
     await expect(svc.getShared(link.token)).rejects.toThrow('not found');
   });
 
@@ -355,7 +361,7 @@ describe('the share token is a capability, so it never leaves in a row', () => {
   it('createShareLink is the one response that returns a token, and revoke clears the record', async () => {
     const { svc, store } = makeService([row()]);
 
-    const issued: any = await svc.createShareLink('c1', 'a1');
+    const issued: any = await svc.createShareLink('c1', 'a1', ACTOR);
 
     expect(typeof issued.token).toBe('string');
     expect(issued.token.length).toBeGreaterThanOrEqual(24);
@@ -363,7 +369,7 @@ describe('the share token is a capability, so it never leaves in a row', () => {
     expect(new Date(issued.expiresAt).getTime()).toBeGreaterThan(Date.now());
     expect(store[0].shareToken).toBe(issued.token);
 
-    await svc.revokeShareLink('c1', 'a1');
+    await svc.revokeShareLink('c1', 'a1', ACTOR);
     expect(store[0].shareToken).toBeNull();
     expect(store[0].shareTokenExpiresAt).toBeNull();
 
@@ -371,5 +377,98 @@ describe('the share token is a capability, so it never leaves in a row', () => {
     const rows: any = await svc.list('c1', undefined, NOW);
     expect(rows[0].shareLink.state).toBe('ABSENT');
     expect(Object.prototype.hasOwnProperty.call(rows[0], 'shareToken')).toBe(false);
+  });
+});
+
+describe('the share link audit trail — who handed out a credential', () => {
+  /**
+   * A share token reads this appointment and confirms a window change with no
+   * login, and `createShareLink` is the one response that returns one. So the
+   * issuance and the revocation are privileged acts and they are recorded: the
+   * action names were already in the rail vocabulary
+   * (`truck_appointment.share_link_issued` / `_revoked`) and were never written.
+   * The token VALUE must never reach the log — an audit trail holding live
+   * credentials is a second place to steal them from.
+   */
+  const entry = (audit: any) => audit.record.mock.calls[0][0];
+
+  it('records who issued the link, for which appointment, and never the token itself', async () => {
+    const { svc, audit } = makeService([row({ vehicleReg: 'ABC 123', haulierName: 'Lapo Logistics' })]);
+
+    const link = await svc.createShareLink('c1', 'a1', ACTOR);
+
+    expect(audit.record).toHaveBeenCalledTimes(1);
+    const e = entry(audit);
+    expect(e.action).toBe('truck_appointment.share_link_issued');
+    expect(e.actorType).toBe('tenant');
+    expect(e.actorId).toBe('u1');
+    expect(e.actorEmail).toBe('ops@terminal.co.za');
+    expect(e.targetType).toBe('rail_truck_appointment');
+    expect(e.targetId).toBe('a1');
+    expect(e.targetName).toBe('ABC 123');
+    expect(e.metadata).toMatchObject({
+      companyId: 'c1',
+      module: 'rail',
+      actorRole: 'MANAGER',
+      appointmentId: 'a1',
+      haulierName: 'Lapo Logistics',
+      rotated: false,
+      ttlDays: 7,
+    });
+    expect(e.metadata.expiresAt).toBe(link.expiresAt);
+    // The credential is not in the audit row, in any field, serialised or not.
+    expect(JSON.stringify(e)).not.toContain(link.token);
+  });
+
+  it('says when issuing replaced a live link, because that kills one a haulier is holding', async () => {
+    const { svc, audit } = makeService([
+      row({ shareToken: 'tok_old_0123456789', shareTokenExpiresAt: new Date(Date.now() + 86_400_000) }),
+    ]);
+
+    await svc.createShareLink('c1', 'a1', ACTOR);
+
+    expect(entry(audit).metadata.rotated).toBe(true);
+    expect(JSON.stringify(entry(audit))).not.toContain('tok_old_0123456789');
+  });
+
+  it('records the state a revoked link was in, so killing an immortal legacy link is attributable', async () => {
+    const { svc, audit } = makeService([
+      row({ shareToken: 'tok_legacy_0123456789', shareTokenIssuedAt: new Date('2026-01-04T06:00:00Z'), shareTokenExpiresAt: null }),
+    ]);
+
+    const result = await svc.revokeShareLink('c1', 'a1', ACTOR);
+
+    expect(result).toEqual({ revoked: true });
+    const e = entry(audit);
+    expect(e.action).toBe('truck_appointment.share_link_revoked');
+    expect(e.actorId).toBe('u1');
+    expect(e.metadata).toMatchObject({
+      appointmentId: 'a1',
+      previousState: 'LEGACY_NO_EXPIRY',
+      previousLegacy: true,
+      previousIssuedAt: '2026-01-04T06:00:00.000Z',
+      previousExpiresAt: null,
+      revoked: true,
+    });
+    expect(JSON.stringify(e)).not.toContain('tok_legacy_0123456789');
+  });
+
+  it('records ABSENT when there was nothing to revoke, rather than pretending a link died', async () => {
+    const { svc, audit } = makeService([row()]);
+
+    await svc.revokeShareLink('c1', 'a1', ACTOR);
+
+    expect(entry(audit).metadata.previousState).toBe('ABSENT');
+    expect(entry(audit).metadata.previousLegacy).toBe(false);
+  });
+
+  it('still issues and still revokes when the audit write fails', async () => {
+    const { svc, audit } = makeService([row()]);
+    audit.record.mockRejectedValue(new Error('audit table unavailable'));
+
+    const link = await svc.createShareLink('c1', 'a1', ACTOR);
+    expect(link.path).toBe(`/gate/${link.token}`);
+
+    await expect(svc.revokeShareLink('c1', 'a1', ACTOR)).resolves.toEqual({ revoked: true });
   });
 });

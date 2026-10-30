@@ -1,12 +1,16 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, recordRailAudit,
+} from './rail-audit';
 import {
   BookTruckAppointmentDto,
   TruckAppointmentTransitionDto,
 } from './dto/rail-truck-appointment.dto';
 import {
-  assessShareToken, findGateConflicts, formatWindow, readGateCutoffHours,
+  assessShareToken, findGateConflicts, formatWindow, readGateCutoffHours, SHARE_TOKEN_TTL_DAYS,
   shareLinkState, shareTokenExpiryFrom, validateGateWindow, withoutShareToken,
 } from './rail-truck-gate.shared';
 
@@ -44,7 +48,12 @@ const FLOW: Record<string, string[]> = {
 
 @Injectable()
 export class RailTruckAppointmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger('RailTruckAppointments');
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * Tenant-scoped read. Returns the row WITHOUT its share token: this is the
@@ -54,12 +63,17 @@ export class RailTruckAppointmentsService {
    * raw row before it is redacted, so the terminal still sees whether a link
    * exists, when it expires and whether it is a legacy one.
    */
-  private async getOwned(companyId: string, id: string) {
+  /** The row as stored. Private: nothing outside this service sees a raw token. */
+  private async findOwned(companyId: string, id: string) {
     const appt = await this.prisma.terminalTruckAppointment.findFirst({
       where: { id, companyId },
     });
     if (!appt) throw new NotFoundException('Truck appointment not found');
-    return withoutShareToken(appt);
+    return appt;
+  }
+
+  private async getOwned(companyId: string, id: string) {
+    return withoutShareToken(await this.findOwned(companyId, id));
   }
 
   /** Tenant-scoped read for callers that must branch on the current status. */
@@ -229,8 +243,25 @@ export class RailTruckAppointmentsService {
 
   // ── Counterparty shared view (haulier / terminal) ──────────────────────
 
-  async createShareLink(companyId: string, id: string) {
-    await this.getOwned(companyId, id);
+  /**
+   * Issue — or rotate — the counterparty link. This is the ONLY response in the
+   * product that carries a share token, so it is also the only place that writes
+   * an audit row for one: a token is a bearer credential that reads this
+   * appointment and confirms a window change with no login, which means "who
+   * handed out a link to this truck's window, when, and did it replace a live
+   * one" has to be answerable afterwards. The action names were already in the
+   * rail vocabulary (`truck_appointment.share_link_issued` / `_revoked`) and were
+   * never written; they are wired up here.
+   *
+   * The token VALUE is never written to the audit log. An audit trail that
+   * contains live credentials is just a second place to steal them from, and
+   * AuditLog is readable by tenant diagnostics endpoints.
+   */
+  async createShareLink(companyId: string, id: string, actor: RailActor) {
+    const appt = await this.findOwned(companyId, id);
+    // Rotating replaces a live credential and kills the link a haulier may
+    // already be holding, so the audit row records that somebody chose to do it.
+    const rotated = Boolean(appt.shareToken);
     const token = randomBytes(24).toString('base64url');
     const issuedAt = new Date();
     const expiresAt = shareTokenExpiryFrom(issuedAt);
@@ -238,15 +269,63 @@ export class RailTruckAppointmentsService {
       where: { id },
       data: { shareToken: token, shareTokenIssuedAt: issuedAt, shareTokenExpiresAt: expiresAt },
     });
+    await recordRailAudit(
+      this.audit,
+      this.logger,
+      railAuditEntry(companyId, actor, RAIL_AUDIT_ACTION.TRUCK_SHARE_LINK_ISSUED, {
+        type: RAIL_AUDIT_TARGET.TRUCK_APPOINTMENT,
+        id: appt.id,
+        name: appt.vehicleReg,
+      }, {
+        appointmentId: appt.id,
+        terminalName: appt.terminalName,
+        haulierName: appt.haulierName,
+        vehicleReg: appt.vehicleReg,
+        windowStart: new Date(appt.windowStart).toISOString(),
+        windowEnd: new Date(appt.windowEnd).toISOString(),
+        rotated,
+        issuedAt: issuedAt.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        ttlDays: SHARE_TOKEN_TTL_DAYS,
+      }),
+    );
     return { token, path: `/gate/${token}`, expiresAt: expiresAt.toISOString() };
   }
 
-  async revokeShareLink(companyId: string, id: string) {
-    await this.getOwned(companyId, id);
+  /**
+   * End the counterparty's access. Revocation is the only control that exists
+   * for a legacy link (no expiry on record, readable until somebody kills it),
+   * so the audit row records the state the link was in when it was revoked —
+   * that is what makes "who ended the immortal link, and when" answerable.
+   */
+  async revokeShareLink(companyId: string, id: string, actor: RailActor) {
+    const appt = await this.findOwned(companyId, id);
+    const previous = shareLinkState(appt);
     await this.prisma.terminalTruckAppointment.update({
       where: { id },
       data: { shareToken: null, shareTokenIssuedAt: null, shareTokenExpiresAt: null },
     });
+    await recordRailAudit(
+      this.audit,
+      this.logger,
+      railAuditEntry(companyId, actor, RAIL_AUDIT_ACTION.TRUCK_SHARE_LINK_REVOKED, {
+        type: RAIL_AUDIT_TARGET.TRUCK_APPOINTMENT,
+        id: appt.id,
+        name: appt.vehicleReg,
+      }, {
+        appointmentId: appt.id,
+        terminalName: appt.terminalName,
+        haulierName: appt.haulierName,
+        vehicleReg: appt.vehicleReg,
+        previousState: previous.state,
+        previousLegacy: previous.legacy,
+        previousIssuedAt: previous.issuedAt,
+        previousExpiresAt: appt.shareTokenExpiresAt
+          ? new Date(appt.shareTokenExpiresAt).toISOString()
+          : null,
+        revoked: true,
+      }),
+    );
     return { revoked: true };
   }
 

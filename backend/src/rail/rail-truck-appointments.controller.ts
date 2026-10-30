@@ -255,14 +255,14 @@ export class RailTruckAppointmentsController {
   @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Create (or rotate) the counterparty share link for an appointment' })
   share(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.appointments.createShareLink(user.companyId, id);
+    return this.appointments.createShareLink(user.companyId, id, user as any);
   }
 
   @Delete(':id/share')
   @Roles(...RAIL_WRITE_ROLES)
   @ApiOperation({ summary: 'Revoke the counterparty share link for an appointment' })
   revokeShare(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.appointments.revokeShareLink(user.companyId, id);
+    return this.appointments.revokeShareLink(user.companyId, id, user as any);
   }
 
   /** Shifts a whole day of BOOKED windows — one notified change per window moved. */
