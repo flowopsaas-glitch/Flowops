@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ackSharedTruckAppointment,
   ackWindowChange,
+  assignTruckDriver,
   createTruckShareLink,
   getSharedTruckAppointment,
   getWindowAckBoard,
+  listAssignableDrivers,
   listTruckAppointments,
   replanTruckDay,
   revokeTruckShareLink,
@@ -185,6 +187,32 @@ describe("reads and link lifecycle", () => {
     expect(apiMock.get).toHaveBeenLastCalledWith("/rail/truck-window-changes/board", {
       params: { terminalName: "Central Terminal" },
     });
+  });
+
+  it("lists only drivers the server would accept, and degrades to [] rather than throwing", async () => {
+    apiMock.get.mockResolvedValue(envelope([
+      { id: "d1", name: "Thabo Mokoena", isActive: true },
+      { id: "d2", name: "Left the company", isActive: false },
+      { id: "d3", name: "No flag at all" },
+    ]));
+
+    // The server refuses an inactive driver with 400, so the picker must not offer one.
+    await expect(listAssignableDrivers()).resolves.toEqual([
+      { id: "d1", name: "Thabo Mokoena", isActive: true },
+      { id: "d3", name: "No flag at all" },
+    ]);
+    expect(apiMock.get).toHaveBeenCalledWith("/drivers");
+
+    apiMock.get.mockResolvedValue(envelope({ message: "unexpected shape" }));
+    await expect(listAssignableDrivers()).resolves.toEqual([]);
+  });
+
+  it("assigns a driver by id, and never by name", async () => {
+    apiMock.post.mockResolvedValue(envelope({ id: "appt_1", driverId: "d1" }));
+
+    await assignTruckDriver("appt_1", "d1");
+
+    expect(apiMock.post).toHaveBeenCalledWith("/rail/truck-appointments/appt_1/assign-driver", { driverId: "d1" });
   });
 
   it("writes the per-terminal acknowledgement thresholds as one upsert", async () => {

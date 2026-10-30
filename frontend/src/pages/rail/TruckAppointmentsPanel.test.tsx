@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import TruckAppointmentsPanel from "./TruckAppointmentsPanel";
 import { WINDOW_CHANGE_DENIED_HINT } from "../../lib/railWindowAuthority";
 import type {
+  DriverAttachment,
   ShareLinkState,
   TruckAppointment,
   TruckAppointmentSummary,
@@ -28,6 +29,7 @@ import type {
 
 const apiMocks = vi.hoisted(() => ({
   listTruckAppointments: vi.fn(),
+  listAssignableDrivers: vi.fn(),
   getTruckAppointmentSummary: vi.fn(),
   bookTruckAppointment: vi.fn(),
   transitionTruckAppointment: vi.fn(),
@@ -75,8 +77,34 @@ function appt(over: Partial<TruckAppointment> = {}): TruckAppointment {
     windowEnd: "2026-10-30T08:00:00.000Z",
     status: "BOOKED",
     windowVersion: 1,
+    // The default row is the real default: a window booked before the driver
+    // was known, so the driver half of the loop is off until somebody assigns
+    // one. Every test below starts from that and says what it means.
+    driverId: null,
+    driverName: null,
     shareToken: null,
     shareLink: null,
+    ...over,
+  };
+}
+
+/**
+ * What the server reports an assignment did to the change that was already open.
+ * The panel's wording is driven by this, so each case below is a real response
+ * shape rather than a message the component invented.
+ */
+function attachment(over: Partial<DriverAttachment> = {}): DriverAttachment {
+  return {
+    attached: true,
+    reason: "ATTACHED",
+    changeId: "chg-1",
+    version: 3,
+    closedRecipientKeys: ["DRIVER:UNASSIGNED"],
+    recipient: {
+      deliveryState: "PUBLISHED", deliveryReason: null, ackState: "UNACKED",
+      toldAt: "2026-10-30T05:00:00.000Z",
+    },
+    message: "Thabo Mokoena was added to the open v3 change and told over the driver portal.",
     ...over,
   };
 }
@@ -125,6 +153,13 @@ beforeEach(() => {
   toastMocks.showToast.mockReset();
   authMocks.user = { role: "MANAGER", email: "ops@terminal.co.za", companyId: "c1" };
   apiMocks.listTruckAppointments.mockResolvedValue([appt()]);
+  apiMocks.listAssignableDrivers.mockResolvedValue([
+    { id: "d1", name: "Thabo Mokoena", isActive: true },
+    { id: "d2", name: "Sipho Dlamini", isActive: true },
+  ]);
+  apiMocks.assignTruckDriver.mockResolvedValue({
+    id: "appt_1", driverId: "d1", driverName: "Thabo Mokoena", driverAttachment: attachment(),
+  });
   apiMocks.getTruckAppointmentSummary.mockResolvedValue(summary);
   apiMocks.transitionTruckAppointment.mockResolvedValue({ id: "appt_1" });
   apiMocks.createTruckShareLink.mockResolvedValue({ token: "tok_new", path: "/gate/tok_new" });
@@ -364,6 +399,234 @@ describe("share links the operator has to be able to see", () => {
 
     fireEvent.click(unshared.getByRole("button", { name: "Share link" }));
     await waitFor(() => expect(apiMocks.createTruckShareLink).toHaveBeenCalledWith("a3"));
+  });
+});
+
+describe("assigning the driver who will actually drive", () => {
+  const picker = async (reg = "ABC 123") => {
+    const r = await rowFor(reg);
+    return within(r).getByLabelText(`Assign a FlowOps driver to ${reg}`);
+  };
+
+  it("offers the tenant's active drivers, and says what an empty choice means", async () => {
+    renderPanel();
+
+    const select = await picker();
+    const options = within(select).getAllByRole("option").map((o) => o.textContent);
+    expect(options).toEqual(["Not assigned — the portal cannot confirm", "Thabo Mokoena", "Sipho Dlamini"]);
+  });
+
+  it("assigning tells the appointment, reloads, and says what it turns on", async () => {
+    renderPanel();
+
+    fireEvent.change(await picker(), { target: { value: "d1" } });
+
+    await waitFor(() => expect(apiMocks.assignTruckDriver).toHaveBeenCalledWith("appt_1", "d1"));
+    const [message, tone] = toastMocks.showToast.mock.calls[0];
+    expect(message).toMatch(/Thabo Mokoena assigned to ABC 123/);
+    // The open change is the thing the terminal needs to hear about.
+    expect(message).toMatch(/added to the open v3 window change/);
+    expect(message).toMatch(/driver portal/);
+    // The haulier's confirmation and the driver's are separate states.
+    expect(message).toMatch(/separately from the haulier's/);
+    // Their deadline runs from the assignment, not from a change published earlier.
+    expect(message).toMatch(/clock started at this assignment/);
+    expect(tone).toBe("success");
+    await waitFor(() => expect(apiMocks.listTruckAppointments).toHaveBeenCalledTimes(2));
+  });
+
+  it("when no change is open it says there was nothing to attach — it does not claim a notification", async () => {
+    apiMocks.assignTruckDriver.mockResolvedValue({
+      id: "appt_1", driverId: "d1", driverName: "Thabo Mokoena",
+      driverAttachment: attachment({
+        attached: false, reason: "NO_ACTIVE_CHANGE", changeId: null, version: null,
+        closedRecipientKeys: [], recipient: null,
+        message: "No window change is open on this appointment. The next one will be addressed to this driver.",
+      }),
+    });
+    renderPanel();
+
+    fireEvent.change(await picker(), { target: { value: "d1" } });
+
+    const [message, tone] = await waitFor(() => {
+      expect(toastMocks.showToast).toHaveBeenCalled();
+      return toastMocks.showToast.mock.calls[0];
+    });
+    expect(message).toMatch(/No window change is open/);
+    expect(message).toMatch(/next one will reach them in the driver portal/);
+    expect(message).not.toMatch(/were added to the open/);
+    expect(tone).toBe("success");
+  });
+
+  it("when the attachment fails, the assignment is still reported and the failure is an error", async () => {
+    // The server DID record the assignment; only the attachment failed. The list
+    // the panel reloads therefore shows the driver, and the row is not rolled
+    // back to look as though nothing happened.
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ driverId: "d1", driverName: "Thabo Mokoena" })]);
+    apiMocks.assignTruckDriver.mockResolvedValue({
+      id: "appt_1", driverId: "d1", driverName: "Thabo Mokoena",
+      driverAttachment: attachment({
+        attached: false, reason: "ATTACH_FAILED", changeId: null, version: null,
+        closedRecipientKeys: [], recipient: null,
+        message: "The driver is assigned, but was not attached to an open window change: connection reset",
+      }),
+    });
+    renderPanel();
+
+    fireEvent.change(await picker(), { target: { value: "d1" } });
+
+    const [message, tone] = await waitFor(() => {
+      expect(toastMocks.showToast).toHaveBeenCalled();
+      return toastMocks.showToast.mock.calls[0];
+    });
+    // Both halves: the driver IS assigned, the change is NOT addressed to them.
+    expect(message).toMatch(/Thabo Mokoena assigned to ABC 123/);
+    expect(message).toMatch(/were NOT attached to an open window change/);
+    expect(message).toMatch(/connection reset/);
+    expect(tone).toBe("error");
+    // The row still shows the assignment: the list was reloaded from the server.
+    expect(await picker()).toHaveValue("d1");
+  });
+
+  it("replacing a driver says who was taken off the change", async () => {
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ driverId: "d1", driverName: "Thabo Mokoena" })]);
+    apiMocks.assignTruckDriver.mockResolvedValue({
+      id: "appt_1", driverId: "d2", driverName: "Sipho Dlamini",
+      driverAttachment: attachment({
+        version: 2, closedRecipientKeys: ["DRIVER:d1"],
+        message: "Sipho Dlamini was added to the open v2 change and told over the driver portal.",
+      }),
+    });
+    renderPanel();
+
+    fireEvent.change(await picker(), { target: { value: "d2" } });
+
+    const message = await waitFor(() => {
+      expect(toastMocks.showToast).toHaveBeenCalled();
+      return toastMocks.showToast.mock.calls[0][0];
+    });
+    expect(message).toMatch(/Sipho Dlamini assigned to ABC 123/);
+    expect(message).toMatch(/previous driver was taken off the change \(DRIVER:d1\)/);
+  });
+
+  it("a driver who had already confirmed is reported as having confirmed", async () => {
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ driverId: "d1", driverName: "Thabo Mokoena" })]);
+    apiMocks.assignTruckDriver.mockResolvedValue({
+      id: "appt_1", driverId: "d1", driverName: "Thabo Mokoena",
+      driverAttachment: attachment({
+        attached: false, reason: "ALREADY_ACKNOWLEDGED", closedRecipientKeys: [], recipient: null,
+        message: "This driver had already confirmed v3.",
+      }),
+    });
+    renderPanel();
+
+    fireEvent.change(await picker(), { target: { value: "d1" } });
+
+    const message = await waitFor(() => {
+      expect(toastMocks.showToast).toHaveBeenCalled();
+      return toastMocks.showToast.mock.calls[0][0];
+    });
+    expect(message).toMatch(/had already confirmed the open v3 window change/);
+  });
+
+  it("a dispatcher may assign a driver — that is not moving a window", async () => {
+    authMocks.user = { role: "DISPATCH", email: "dispatch@haulier.co.za", companyId: "c1" };
+    renderPanel();
+
+    expect(await picker()).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reschedule" })).toBeDisabled();
+  });
+
+  it("choosing not-assigned over an assigned driver explains instead of pretending", async () => {
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ driverId: "d1", driverName: "Thabo Mokoena" })]);
+    renderPanel();
+
+    const select = await picker();
+    expect(select).toHaveValue("d1");
+    fireEvent.change(select, { target: { value: "" } });
+
+    expect(apiMocks.assignTruckDriver).not.toHaveBeenCalled();
+    expect(toastMocks.showToast.mock.calls[0][0]).toMatch(/cannot be unassigned from here/);
+    expect(toastMocks.showToast.mock.calls[0][1]).toBe("info");
+    // Still assigned: the control is driven by the record, not by the click.
+    expect(select).toHaveValue("d1");
+  });
+
+  it("an assigned driver who has gone inactive is still shown as the assigned driver", async () => {
+    apiMocks.listAssignableDrivers.mockResolvedValue([{ id: "d2", name: "Sipho Dlamini", isActive: true }]);
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ driverId: "d1", driverName: "Thabo Mokoena" })]);
+    renderPanel();
+
+    const select = await picker();
+    expect(select).toHaveValue("d1");
+    expect(within(select).getByRole("option", { name: "Thabo Mokoena (not active)" })).toBeInTheDocument();
+  });
+
+  it("when the driver list cannot be read, the picker says so instead of looking empty", async () => {
+    apiMocks.listAssignableDrivers.mockRejectedValue(new Error("forbidden"));
+    renderPanel();
+
+    const select = await picker();
+    expect(select).toBeDisabled();
+    expect(select.closest("label")).toHaveAttribute("title", "Driver list unavailable: forbidden");
+    // The gate board still works — the driver list is an addition, not a dependency.
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("a refused assignment shows the server's words and leaves the row as it was", async () => {
+    apiMocks.assignTruckDriver.mockRejectedValue(new Error("That driver is not an active driver in your company"));
+    renderPanel();
+
+    fireEvent.change(await picker(), { target: { value: "d2" } });
+
+    await waitFor(() =>
+      expect(toastMocks.showToast).toHaveBeenCalledWith("That driver is not an active driver in your company", "error"),
+    );
+    expect((await picker())).toHaveValue("");
+  });
+
+  it("says on the row whether the portal can confirm", async () => {
+    apiMocks.listTruckAppointments.mockResolvedValue([
+      appt({ id: "a1", vehicleReg: "AAA 111", driverId: "d1", driverName: "Thabo Mokoena" }),
+      appt({ id: "a2", vehicleReg: "BBB 222", driverId: null, driverName: "Someone's own driver" }),
+      appt({ id: "a3", vehicleReg: "CCC 333", driverId: null, driverName: null }),
+    ]);
+    renderPanel();
+
+    expect(await screen.findByText(/driver Thabo Mokoena · the portal can confirm/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Someone's own driver is not a FlowOps driver — the portal cannot confirm/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/no FlowOps driver — the portal cannot confirm a change/)).toBeInTheDocument();
+  });
+
+  it("offers no picker once the truck has been dealt with", async () => {
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ status: "COMPLETED" })]);
+    renderPanel();
+
+    await screen.findByRole("table");
+    expect(screen.queryByLabelText("Assign a FlowOps driver to ABC 123")).not.toBeInTheDocument();
+  });
+
+  it("booking can assign the driver in the same submit", async () => {
+    apiMocks.bookTruckAppointment.mockResolvedValue({ id: "appt_9" });
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText("Terminal name"), { target: { value: "Central Terminal" } });
+    fireEvent.change(screen.getByLabelText("Haulier name"), { target: { value: "Lapo Logistics" } });
+    fireEvent.change(screen.getByLabelText("Vehicle registration"), { target: { value: "XYZ 999" } });
+    fireEvent.change(screen.getByLabelText("Window start"), { target: { value: "2026-10-30T10:00" } });
+    fireEvent.change(screen.getByLabelText("Window end"), { target: { value: "2026-10-30T12:00" } });
+    fireEvent.change(screen.getByLabelText("Assigned FlowOps driver"), { target: { value: "d2" } });
+    fireEvent.change(screen.getByLabelText("Driver name"), { target: { value: "Relief driver" } });
+    fireEvent.click(screen.getByRole("button", { name: /Book window/ }));
+
+    await waitFor(() => expect(apiMocks.bookTruckAppointment).toHaveBeenCalledTimes(1));
+    const dto = apiMocks.bookTruckAppointment.mock.calls[0][0];
+    expect(dto.driverId).toBe("d2");
+    // The free-text name is kept as a label; it is not what makes a channel.
+    expect(dto.driverName).toBe("Relief driver");
+    expect(new Date(dto.windowStart).getTime()).toBe(new Date("2026-10-30T10:00").getTime());
   });
 });
 

@@ -53,6 +53,11 @@ const DELIVERY_LABEL: Record<string, string> = {
 /** Machine-readable absence reasons, rendered as words an operator can act on. */
 const REASON_LABEL: Record<string, string> = {
   DRIVER_NOT_ASSIGNED: "DRIVER NOT ASSIGNED",
+  // A closed placeholder: no driver was addressable when the change was
+  // published, and one has since been assigned and is tracked on their own line.
+  DRIVER_ASSIGNED_LATER: "a driver was assigned after this change",
+  // A driver who was replaced before confirming: not who the terminal must ask.
+  DRIVER_REASSIGNED: "replaced by another driver",
   NO_SHARE_TOKEN: "no share link issued",
   SHARE_TOKEN_EXPIRED: "share link expired",
   PUSH_NOT_CONFIGURED: "web push not configured",
@@ -119,7 +124,25 @@ function RecipientLine({ r, canWrite, onAck, acking }: {
       {acked && r.ack.latencyMinutes != null && (
         <span className="text-slate-500">
           after {r.ack.latencyMinutes} min
+          {/* Two readings when they differ: the change is older than the time
+              this recipient had to respond, and only one of those describes
+              how quickly they answered. */}
+          {r.ack.latencyFromToldMinutes != null && r.ack.latencyFromToldMinutes !== r.ack.latencyMinutes
+            ? ` · ${r.ack.latencyFromToldMinutes} min from being told`
+            : ""}
           {r.ack.source ? ` · via ${r.ack.source.replace("_", " ").toLowerCase()}` : ""}
+        </span>
+      )}
+      {/* A recipient attached after the change was published has had less time
+          to respond than the change's age suggests. Their deadline and their
+          place on the ladder run from when they were told, and the board says
+          so instead of showing an age that blames them for the wait. */}
+      {!acked && r.escalation.attachedAfterChange && (
+        <span
+          className="text-slate-500"
+          title={`Attached to this change at ${new Date(r.escalation.toldAt).toLocaleString()}, after it was published. The acknowledgement deadline runs from that moment; the change itself is ${r.escalation.sinceChange} old.`}
+        >
+          told {r.escalation.sinceTold} ago · assigned after the change
         </span>
       )}
       {/* A device-reported time is a claim from a clock we do not control: labelled, never merged. */}
@@ -360,6 +383,17 @@ export default function TruckWindowAckBoard({ canWrite }: { canWrite: boolean })
                   Haulier n={latency?.byRecipientType.HAULIER.n ?? 0} (median {latency?.byRecipientType.HAULIER.medianText ?? "UNKNOWN"}) ·
                   {" "}Driver n={latency?.byRecipientType.DRIVER.n ?? 0} (median {latency?.byRecipientType.DRIVER.medianText ?? "UNKNOWN"})
                 </div>
+                {/* Shown only when it applies: a driver assigned after the
+                    window moved could not have answered before they were told,
+                    so their confirmations are also measured from that moment —
+                    beside the headline figure, never blended into it. */}
+                {(kpis.recipientsAttachedAfterChange ?? 0) > 0 && (
+                  <div className="mt-1 text-[10px] text-slate-400" title={latency?.fromTold?.definition}>
+                    {kpis.recipientsAttachedAfterChange} recipient{kpis.recipientsAttachedAfterChange === 1 ? "" : "s"} assigned after the
+                    change: measured from when they were told, median {latency?.fromTold?.medianText ?? "UNKNOWN"} ·
+                    P90 {latency?.fromTold?.p90Text ?? "UNKNOWN"} · n={latency?.fromTold?.n ?? 0}
+                  </div>
+                )}
               </div>
               <div className="rounded-lg border border-white/10 bg-white/[0.02] p-2">
                 {/* The arrival is the terminal's own log entry, not a GPS fix. The

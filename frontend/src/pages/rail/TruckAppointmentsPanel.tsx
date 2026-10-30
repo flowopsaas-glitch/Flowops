@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Loader2, RefreshCw, Truck } from "lucide-react";
 import {
-  bookTruckAppointment, createTruckShareLink, getTruckAppointmentSummary, listTruckAppointments,
-  replanTruckDay, revokeTruckShareLink, transitionTruckAppointment,
-  type TruckAppointment, type TruckAppointmentSummary,
+  assignTruckDriver, bookTruckAppointment, createTruckShareLink, getTruckAppointmentSummary,
+  listAssignableDrivers, listTruckAppointments, replanTruckDay, revokeTruckShareLink,
+  transitionTruckAppointment,
+  type AssignableDriver, type DriverAttachment, type TruckAppointment, type TruckAppointmentSummary,
 } from "../../api/railTruckAppointmentsApi";
 import { useToast } from "../../components/toast-context";
 import { useAuth } from "../../contexts/auth-context";
@@ -41,7 +42,65 @@ const STATUS_STYLE: Record<string, string> = {
   CANCELLED: "bg-white/5 text-white/40 border-white/10",
 };
 
-const emptyForm = { terminalName: "", haulierName: "", vehicleReg: "", driverName: "", purpose: "DELIVERY", windowStart: "", windowEnd: "" };
+const emptyForm = { terminalName: "", haulierName: "", vehicleReg: "", driverName: "", driverId: "", purpose: "DELIVERY", windowStart: "", windowEnd: "" };
+
+/** Assigning is only possible while the truck has not been dealt with yet. */
+const ASSIGNABLE_STATUSES = ["BOOKED", "ARRIVED"];
+
+/**
+ * What assigning a driver actually turned on, in the server's own terms.
+ *
+ * Assignment is two facts and the second one is conditional: if a window change
+ * was already published, the driver has been attached to it, told over the
+ * portal, and can confirm it; if none was open there was nothing to attach them
+ * to. Saying "they have been notified" in the second case would claim a delivery
+ * that never happened, and saying only "assigned" in the first would hide the
+ * thing the terminal actually needs to know — that the open change now has this
+ * driver on it, with their own clock and their own confirmation.
+ */
+function assignmentMessage(name: string, reg: string, a?: DriverAttachment | null): { message: string; tone: "success" | "error" } {
+  const base = `${name} assigned to ${reg}.`;
+  if (!a) {
+    return {
+      message: `${base} Window changes will reach them in the driver portal, and their confirmation is tracked separately from the haulier's.`,
+      tone: "success",
+    };
+  }
+  // Somebody else was taken off this change to make room: say so, because the
+  // board will show a closed line and the operator should know why.
+  const replaced = a.closedRecipientKeys.filter((k) => k !== "DRIVER:UNASSIGNED");
+  const closedNote = replaced.length
+    ? ` The previous driver was taken off the change (${replaced.join(", ")}).`
+    : "";
+  switch (a.reason) {
+    case "ATTACHED":
+      return {
+        message: `${base} They were added to the open v${a.version} window change and told over the driver portal.`
+          + ` Their confirmation is tracked separately from the haulier's, and their clock started at this assignment, not at the change.${closedNote}`,
+        tone: "success",
+      };
+    case "ALREADY_ACKNOWLEDGED":
+      return { message: `${base} They had already confirmed the open v${a.version} window change.${closedNote}`, tone: "success" };
+    case "ALREADY_A_RECIPIENT":
+      return {
+        message: `${base} They were already on the open v${a.version} window change and still owe a confirmation.${closedNote}`,
+        tone: "success",
+      };
+    case "NO_ACTIVE_CHANGE":
+      return {
+        message: `${base} No window change is open on it, so there was nothing to attach them to — the next one will reach them in the driver portal.`,
+        tone: "success",
+      };
+    case "ATTACH_FAILED":
+      // The driver IS assigned; the attachment is not. Both halves are stated,
+      // because a green tick here would leave the open change addressed to
+      // nobody and the terminal would not know to retry.
+      return { message: `${base} But they were NOT attached to an open window change — ${a.message}`, tone: "error" };
+    default:
+      return { message: `${base} ${a.message}`, tone: "success" };
+  }
+}
+
 
 export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean }) {
   const { showToast } = useToast();
@@ -55,6 +114,14 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
    */
   const canChangeWindow = canWrite && canChangeWindowRole(user?.role);
   const [rows, setRows] = useState<TruckAppointment[]>([]);
+  /**
+   * Active FlowOps drivers in this tenant — the only recipients the driver portal
+   * can reach. A haulier's own driver, typed in as a name, is a label and not a
+   * channel, so the two are kept apart everywhere below.
+   */
+  const [drivers, setDrivers] = useState<AssignableDriver[]>([]);
+  const [driversError, setDriversError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<string | null>(null);
   const [summary, setSummary] = useState<TruckAppointmentSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,6 +140,12 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
   const legacyLinks = rows.filter((r) => r.shareLink?.legacy);
 
   const load = useCallback(() => (async () => {
+    // Best-effort and separate: a role that cannot read the driver list must
+    // still get the gate board, and the picker says why it is empty rather than
+    // looking like there is nobody to assign.
+    listAssignableDrivers()
+      .then((d) => { setDrivers(d); setDriversError(null); })
+      .catch((e) => { setDrivers([]); setDriversError(String((e as Error)?.message ?? e)); });
     try {
       const [list, sum] = await Promise.all([listTruckAppointments(), getTruckAppointmentSummary()]);
       setRows(list); setSummary(sum); setLoadError(null);
@@ -95,6 +168,7 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
         haulierName: form.haulierName.trim(),
         vehicleReg: form.vehicleReg.trim(),
         driverName: form.driverName.trim() || undefined,
+        driverId: form.driverId || undefined,
         purpose: form.purpose,
         windowStart: new Date(form.windowStart).toISOString(),
         windowEnd: new Date(form.windowEnd).toISOString(),
@@ -139,6 +213,36 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
   const unshare = async (r: TruckAppointment) => {
     try { await revokeTruckShareLink(r.id); showToast("Share link revoked.", "success"); await load(); }
     catch (e) { showToast(String((e as Error)?.message ?? e), "error"); }
+  };
+
+  /**
+   * Assign the FlowOps driver who will actually drive this truck.
+   *
+   * This is the switch that turns the driver half of the loop on: without a
+   * driverId the recipient is DRIVER:UNASSIGNED and the board reports DRIVER NOT
+   * ASSIGNED instead of notifying anybody. Unassigning is not offered, because
+   * the API does not support it — picking "not assigned" over an assigned driver
+   * explains that rather than pretending it worked.
+   */
+  const assign = async (r: TruckAppointment, driverId: string) => {
+    if (!driverId) {
+      showToast(
+        "A driver cannot be unassigned from here. Assign the driver who is actually driving; the terminal can reassign at any time.",
+        "info",
+      );
+      return;
+    }
+    setAssigning(r.id);
+    try {
+      const res = await assignTruckDriver(r.id, driverId);
+      const name = drivers.find((d) => d.id === driverId)?.name ?? driverId;
+      const { message, tone } = assignmentMessage(name, r.vehicleReg, res?.driverAttachment);
+      showToast(message, tone);
+      await load();
+    } catch (e) {
+      showToast(String((e as Error)?.message ?? e), "error");
+      await load();
+    } finally { setAssigning(null); }
   };
 
   /**
@@ -285,7 +389,20 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
           <label className="text-[11px] text-slate-400">Vehicle reg
             <input aria-label="Vehicle registration" className={`${inputCls} mt-1 w-full`} value={form.vehicleReg} onChange={(e) => setForm({ ...form, vehicleReg: e.target.value })} placeholder="ABC 123" />
           </label>
-          <label className="text-[11px] text-slate-400">Driver (optional)
+          <label className="text-[11px] text-slate-400">Driver in FlowOps (gets the portal confirmation)
+            <select
+              aria-label="Assigned FlowOps driver"
+              className={`${inputCls} mt-1 w-full`}
+              value={form.driverId}
+              disabled={driversError !== null}
+              title={driversError ? `Driver list unavailable: ${driversError}` : "Only an active FlowOps driver can be notified and can confirm in the portal"}
+              onChange={(e) => setForm({ ...form, driverId: e.target.value })}
+            >
+              <option value="">Not assigned</option>
+              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}</option>)}
+            </select>
+          </label>
+          <label className="text-[11px] text-slate-400">Driver name (haulier's own, optional)
             <input aria-label="Driver name" className={`${inputCls} mt-1 w-full`} value={form.driverName} onChange={(e) => setForm({ ...form, driverName: e.target.value })} />
           </label>
           <label className="text-[11px] text-slate-400">Window start
@@ -377,7 +494,22 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
                     )}
                   </td>
                   <td className="px-2 py-2">{r.terminalName}</td>
-                  <td className="px-2 py-2 text-xs">{r.haulierName} · {r.vehicleReg}</td>
+                  <td className="px-2 py-2 text-xs">{r.haulierName} · {r.vehicleReg}
+                    {r.driverId ? (
+                      <span className="mt-0.5 block text-[10px] text-slate-500">
+                        driver {r.driverName ?? "assigned"} · the portal can confirm
+                      </span>
+                    ) : (
+                      <span
+                        className="mt-0.5 block text-[10px] text-amber-300/80"
+                        title="A window change can only reach a driver who has a FlowOps portal login. A name typed in as free text is a label, not a channel."
+                      >
+                        {r.driverName
+                          ? `${r.driverName} is not a FlowOps driver — the portal cannot confirm`
+                          : "no FlowOps driver — the portal cannot confirm a change"}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-2">
                     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${STATUS_STYLE[r.status] ?? ""}`}>{r.status}</span>
                   </td>
@@ -419,6 +551,29 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
                           <span className="self-center text-[10px] text-slate-500" title={WINDOW_CHANGE_DENIED_HINT}>
                             Cancelling a booked window also needs the window-change permission
                           </span>
+                        )}
+                        {ASSIGNABLE_STATUSES.includes(r.status) && (
+                          <label
+                            className="flex w-full items-center gap-1 text-[10px] text-slate-500"
+                            title={driversError ? `Driver list unavailable: ${driversError}` : undefined}
+                          >
+                            <span className="shrink-0">{r.driverId ? "Driver" : "Assign driver"}</span>
+                            <select
+                              aria-label={`Assign a FlowOps driver to ${r.vehicleReg}`}
+                              className={`${inputCls} w-full py-0.5 text-[11px]`}
+                              value={r.driverId ?? ""}
+                              disabled={assigning === r.id || driversError !== null}
+                              onChange={(e) => void assign(r, e.target.value)}
+                            >
+                              <option value="">Not assigned — the portal cannot confirm</option>
+                              {/* An assigned driver who has since gone inactive is still the
+                                  assigned driver: show them, do not silently look unassigned. */}
+                              {r.driverId && !drivers.some((d) => d.id === r.driverId) && (
+                                <option value={r.driverId}>{r.driverName ?? r.driverId} (not active)</option>
+                              )}
+                              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}</option>)}
+                            </select>
+                          </label>
                         )}
                         {r.shareToken
                           ? <button type="button" onClick={() => void unshare(r)} className={btnNeutral}>Revoke link</button>

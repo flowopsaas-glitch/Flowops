@@ -66,10 +66,16 @@ function recipient(over: Partial<WindowRecipient> & { recipientType: WindowRecip
       dispatchedAt: iso(-25),
       deliveredAt: iso(-25),
     },
-    ack: { state: "UNACKED", ackedAt: null, ackDeviceAt: null, source: null, byLabel: null, latencyMinutes: null },
+    ack: {
+      state: "UNACKED", ackedAt: null, ackDeviceAt: null, source: null, byLabel: null,
+      latencyMinutes: null, latencyFromToldMinutes: null,
+    },
     escalation: {
       stage: "NONE", ackDueMinutes: 30, minutesSinceChange: 25, minutesUntilDue: 5,
       overdue: false, reminderDue: false, escalationDue: false, sinceChange: "25 min",
+      // The default recipient was addressable when the change was published, so
+      // both clocks are the same clock.
+      toldAt: iso(-25), attachedAfterChange: false, minutesSinceTold: 25, sinceTold: "25 min",
     },
     ...over,
   } as WindowRecipient;
@@ -124,6 +130,7 @@ function kpis(over: Partial<WindowKpis> = {}): WindowKpis {
     window: { from: null, to: null },
     changesExamined: 4,
     driverNotAssignedChanges: 1,
+    recipientsAttachedAfterChange: 0,
     source: "terminal_truck_window_changes + terminal_truck_window_recipients (this tenant only)",
     method: "change→ack latency uses server-observed ackedAt minus changedAt; device-reported times are excluded from measurement.",
     ackLatency: {
@@ -132,6 +139,11 @@ function kpis(over: Partial<WindowKpis> = {}): WindowKpis {
       byRecipientType: {
         HAULIER: { medianMinutes: 8, p90Minutes: 20, n: 2, minMinutes: 4, maxMinutes: 20, medianText: "8 min", p90Text: "20 min" },
         DRIVER: { medianMinutes: 40, p90Minutes: 40, n: 1, minMinutes: 40, maxMinutes: 40, medianText: "40 min", p90Text: "40 min" },
+      },
+      // Nobody was attached late in this fixture, so told→ack equals change→ack.
+      fromTold: {
+        medianMinutes: 12, p90Minutes: 40, n: 3, minMinutes: 4, maxMinutes: 40, medianText: "12 min", p90Text: "40 min",
+        definition: "server-observed ackedAt minus the moment this recipient became addressable.",
       },
     },
     ackRate: {
@@ -188,7 +200,7 @@ describe("the board answers \"does that truck know?\"", () => {
       recipients: [
         recipient({
           recipientType: "HAULIER",
-          ack: { state: "ACKNOWLEDGED", ackedAt: iso(-20), ackDeviceAt: null, source: "TENANT_USER", byLabel: "dispatch@haulier.co.za", latencyMinutes: 5 },
+          ack: { state: "ACKNOWLEDGED", ackedAt: iso(-20), ackDeviceAt: null, source: "TENANT_USER", byLabel: "dispatch@haulier.co.za", latencyMinutes: 5, latencyFromToldMinutes: 5 },
         }),
         recipient({ recipientType: "DRIVER" }),
       ],
@@ -217,7 +229,7 @@ describe("the board answers \"does that truck know?\"", () => {
           recipientType: "DRIVER",
           ack: {
             state: "ACKNOWLEDGED", ackedAt: "2026-10-29T04:00:00.000Z", ackDeviceAt: "2026-10-29T01:30:00.000Z",
-            source: "DRIVER_PORTAL", byLabel: "Thabo Mokoena", latencyMinutes: 150,
+            source: "DRIVER_PORTAL", byLabel: "Thabo Mokoena", latencyMinutes: 150, latencyFromToldMinutes: 150,
           },
         }),
       ],
@@ -246,6 +258,7 @@ describe("the board answers \"does that truck know?\"", () => {
           escalation: {
             stage: "NONE", ackDueMinutes: 30, minutesSinceChange: 120, minutesUntilDue: -90,
             overdue: false, reminderDue: false, escalationDue: false, sinceChange: "2 h",
+            toldAt: iso(-120), attachedAfterChange: false, minutesSinceTold: 120, sinceTold: "2 h",
           },
         }),
       ],
@@ -278,6 +291,7 @@ describe("the board answers \"does that truck know?\"", () => {
           escalation: {
             stage: "ESCALATED", ackDueMinutes: 30, minutesSinceChange: 95, minutesUntilDue: -65,
             overdue: true, reminderDue: false, escalationDue: true, sinceChange: "1 h 35 min",
+            toldAt: iso(-95), attachedAfterChange: false, minutesSinceTold: 95, sinceTold: "1 h 35 min",
           },
         }),
         recipient({
@@ -285,6 +299,7 @@ describe("the board answers \"does that truck know?\"", () => {
           escalation: {
             stage: "REMINDER", ackDueMinutes: 30, minutesSinceChange: 40, minutesUntilDue: -10,
             overdue: true, reminderDue: true, escalationDue: false, sinceChange: "40 min",
+            toldAt: iso(-40), attachedAfterChange: false, minutesSinceTold: 40, sinceTold: "40 min",
           },
         }),
       ],
@@ -362,11 +377,16 @@ describe("every figure carries its n, denominator, source and freshness", () => 
         definition: "acknowledged / reachable recipients of this type. A recipient with no channel is excluded, not failed.",
       },
       driverNotAssignedChanges: 2,
+      recipientsAttachedAfterChange: 0,
       ackLatency: {
         medianMinutes: 8, p90Minutes: 8, n: 1, minMinutes: 8, maxMinutes: 8, medianText: "8 min", p90Text: "8 min",
         byRecipientType: {
           HAULIER: { medianMinutes: 8, p90Minutes: 8, n: 1, minMinutes: 8, maxMinutes: 8, medianText: "8 min", p90Text: "8 min" },
           DRIVER: { medianMinutes: null, p90Minutes: null, n: 0, minMinutes: null, maxMinutes: null, medianText: "UNKNOWN", p90Text: "UNKNOWN" },
+        },
+        fromTold: {
+          medianMinutes: 8, p90Minutes: 8, n: 1, minMinutes: 8, maxMinutes: 8, medianText: "8 min", p90Text: "8 min",
+          definition: "server-observed ackedAt minus the moment this recipient became addressable.",
         },
       },
     }));
@@ -564,5 +584,180 @@ describe("confirming from the board", () => {
       "That window version was superseded by a newer change",
       "error",
     ));
+  });
+  // ── A driver attached after the change was published ───────────────────────
+  //
+  // Assignment can happen after a window has already moved. The driver then
+  // becomes a recipient of a change that is older than the moment they were
+  // told, and the board has to show both facts without letting one of them
+  // blame the wrong person.
+
+  it("shows a late-attached driver the time they have had, not the age of the change", async () => {
+    const row = change({
+      recipients: [
+        recipient({
+          recipientType: "HAULIER",
+          escalation: {
+            stage: "ESCALATED", ackDueMinutes: 30, minutesSinceChange: 190, minutesUntilDue: -160,
+            overdue: true, reminderDue: false, escalationDue: true, sinceChange: "3 h 10 min",
+            toldAt: iso(-190), attachedAfterChange: false, minutesSinceTold: 190, sinceTold: "3 h 10 min",
+          },
+        }),
+        recipient({
+          recipientType: "DRIVER",
+          escalation: {
+            stage: "NONE", ackDueMinutes: 30, minutesSinceChange: 190, minutesUntilDue: 20,
+            overdue: false, reminderDue: false, escalationDue: false, sinceChange: "3 h 10 min",
+            toldAt: iso(-10), attachedAfterChange: true, minutesSinceTold: 10, sinceTold: "10 min",
+          },
+        }),
+      ],
+    });
+    apiMocks.getWindowAckBoard.mockResolvedValue(board([row], { unacknowledged: 1, escalated: 1 }));
+    apiMocks.getWindowKpis.mockResolvedValue(kpis());
+    render(<TruckWindowAckBoard canWrite />);
+
+    const list = await screen.findByLabelText("Acknowledgement state for ABC 123");
+    const [haulierLine, driverLine] = within(list).getAllByRole("listitem");
+    expect(within(haulierLine).getByText(/ESCALATED — not confirmed/)).toBeInTheDocument();
+    // The driver has had ten minutes, and the board says so next to a change
+    // that is three hours old.
+    const told = within(driverLine).getByText(/told 10 min ago · assigned after the change/);
+    expect(told).toBeInTheDocument();
+    expect(told.getAttribute("title")).toMatch(/deadline runs from that moment/i);
+    expect(within(driverLine).getByText("Not confirmed yet")).toBeInTheDocument();
+    expect(within(driverLine).queryByText(/ESCALATED/)).not.toBeInTheDocument();
+    expect(within(driverLine).queryByText(/Reminder sent/)).not.toBeInTheDocument();
+  });
+
+  it("a placeholder closed by an assignment says what happened instead of DRIVER NOT ASSIGNED", async () => {
+    const row = change({
+      recipients: [
+        recipient({ recipientType: "HAULIER" }),
+        recipient({
+          recipientType: "DRIVER",
+          recipientLabel: "No driver was assigned when this changed",
+          driverId: null,
+          delivery: {
+            channels: ["NONE"], state: "UNAVAILABLE", reason: "DRIVER_ASSIGNED_LATER",
+            detail: [], dispatchedAt: null, deliveredAt: null,
+          },
+        }),
+        recipient({ recipientType: "DRIVER", id: "rec-driver-2", driverId: "d1" }),
+      ],
+    });
+    apiMocks.getWindowAckBoard.mockResolvedValue(board([row], { unacknowledged: 2, unreachable: 1 }));
+    apiMocks.getWindowKpis.mockResolvedValue(kpis());
+    render(<TruckWindowAckBoard canWrite />);
+
+    const list = await screen.findByLabelText("Acknowledgement state for ABC 123");
+    const closedLine = within(list).getAllByRole("listitem")[1];
+    expect(within(closedLine).getByText("No driver was assigned when this changed")).toBeInTheDocument();
+    expect(within(closedLine).getByText("Unavailable — a driver was assigned after this change")).toBeInTheDocument();
+    // The row that used to read as an open absence no longer does.
+    expect(within(list).queryByText("DRIVER NOT ASSIGNED")).not.toBeInTheDocument();
+    // And the driver who was attached is on their own line, still owed.
+    expect(within(list).getAllByRole("listitem")[2]).toHaveTextContent("Thabo Mokoena");
+  });
+
+  it("a driver who was replaced is shown as replaced, not as somebody who ignored the change", async () => {
+    const row = change({
+      recipients: [
+        recipient({ recipientType: "HAULIER" }),
+        recipient({
+          recipientType: "DRIVER",
+          recipientLabel: "Sipho Dlamini",
+          id: "rec-driver-old",
+          driverId: "d2",
+          delivery: {
+            channels: ["DRIVER_PORTAL"], state: "UNAVAILABLE", reason: "DRIVER_REASSIGNED",
+            detail: [], dispatchedAt: iso(-40), deliveredAt: null,
+          },
+          escalation: {
+            stage: "NONE", ackDueMinutes: 30, minutesSinceChange: 60, minutesUntilDue: -30,
+            overdue: false, reminderDue: false, escalationDue: false, sinceChange: "1 h",
+            toldAt: iso(-60), attachedAfterChange: false, minutesSinceTold: 60, sinceTold: "1 h",
+          },
+        }),
+      ],
+    });
+    apiMocks.getWindowAckBoard.mockResolvedValue(board([row], { unacknowledged: 1, unreachable: 1 }));
+    apiMocks.getWindowKpis.mockResolvedValue(kpis());
+    render(<TruckWindowAckBoard canWrite />);
+
+    const list = await screen.findByLabelText("Acknowledgement state for ABC 123");
+    const replaced = within(list).getAllByRole("listitem")[1];
+    // Their name stays: they are a real person who really was told.
+    expect(within(replaced).getByText("Sipho Dlamini")).toBeInTheDocument();
+    expect(within(replaced).getByText("Unavailable — replaced by another driver")).toBeInTheDocument();
+    expect(within(replaced).getByText("Cannot confirm — not reachable")).toBeInTheDocument();
+    expect(within(replaced).queryByText(/ESCALATED/)).not.toBeInTheDocument();
+  });
+
+  it("reports a late confirmation against both clocks", async () => {
+    const row = change({
+      recipients: [
+        recipient({ recipientType: "HAULIER" }),
+        recipient({
+          recipientType: "DRIVER",
+          ack: {
+            state: "ACKNOWLEDGED", ackedAt: iso(-4), ackDeviceAt: null, source: "DRIVER_PORTAL",
+            byLabel: "Thabo Mokoena", latencyMinutes: 184, latencyFromToldMinutes: 4,
+          },
+          escalation: {
+            stage: "NONE", ackDueMinutes: 30, minutesSinceChange: 190, minutesUntilDue: 0,
+            overdue: false, reminderDue: false, escalationDue: false, sinceChange: "3 h 10 min",
+            toldAt: iso(-10), attachedAfterChange: true, minutesSinceTold: 10, sinceTold: "10 min",
+          },
+        }),
+      ],
+    });
+    apiMocks.getWindowAckBoard.mockResolvedValue(board([row], { acknowledged: 1 }));
+    apiMocks.getWindowKpis.mockResolvedValue(kpis());
+    render(<TruckWindowAckBoard canWrite />);
+
+    const list = await screen.findByLabelText("Acknowledgement state for ABC 123");
+    const driverLine = within(list).getAllByRole("listitem")[1];
+    // 184 minutes after the window moved; 4 minutes after this driver was told.
+    expect(within(driverLine).getByText(/after 184 min · 4 min from being told · via driver portal/)).toBeInTheDocument();
+  });
+
+  it("measures from being told beside the headline figure, only when somebody was attached late", async () => {
+    apiMocks.getWindowAckBoard.mockResolvedValue(board([change()]));
+    apiMocks.getWindowKpis.mockResolvedValue(kpis({
+      recipientsAttachedAfterChange: 1,
+      ackLatency: {
+        medianMinutes: 102, p90Minutes: 184, n: 2, minMinutes: 20, maxMinutes: 184,
+        medianText: "1 h 42 min", p90Text: "3 h 4 min",
+        byRecipientType: {
+          HAULIER: { medianMinutes: 20, p90Minutes: 20, n: 1, minMinutes: 20, maxMinutes: 20, medianText: "20 min", p90Text: "20 min" },
+          DRIVER: { medianMinutes: 184, p90Minutes: 184, n: 1, minMinutes: 184, maxMinutes: 184, medianText: "3 h 4 min", p90Text: "3 h 4 min" },
+        },
+        fromTold: {
+          medianMinutes: 12, p90Minutes: 20, n: 2, minMinutes: 4, maxMinutes: 20,
+          medianText: "12 min", p90Text: "20 min",
+          definition: "server-observed ackedAt minus the moment this recipient became addressable.",
+        },
+      },
+    }));
+    render(<TruckWindowAckBoard canWrite />);
+
+    // The headline is still change→ack, unchanged and unblended.
+    expect(await screen.findByText(/median 1 h 42 min · P90 3 h 4 min/)).toBeInTheDocument();
+    expect(screen.getByText(/Driver n=1 \(median 3 h 4 min\)/)).toBeInTheDocument();
+    // ...with the second reading beside it, labelled and with its own n.
+    const told = screen.getByText(/1 recipient assigned after the change: measured from when they were told/);
+    expect(told).toHaveTextContent("median 12 min");
+    expect(told).toHaveTextContent("n=2");
+    expect(told.getAttribute("title")).toMatch(/became addressable/);
+  });
+
+  it("does not show a told→ack figure when nobody was attached late", async () => {
+    apiMocks.getWindowAckBoard.mockResolvedValue(board([change()]));
+    apiMocks.getWindowKpis.mockResolvedValue(kpis());   // recipientsAttachedAfterChange: 0
+    render(<TruckWindowAckBoard canWrite />);
+
+    expect(await screen.findByText(/median 12 min · P90 40 min/)).toBeInTheDocument();
+    expect(screen.queryByText(/assigned after the change: measured from when they were told/)).not.toBeInTheDocument();
   });
 });

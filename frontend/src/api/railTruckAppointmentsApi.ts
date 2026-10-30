@@ -8,6 +8,13 @@ export interface TruckAppointment {
   terminalName: string;
   haulierName: string;
   vehicleReg: string;
+  /**
+   * A FlowOps driver in this tenant, and the only kind that can receive a portal
+   * confirmation. Null/absent means the board must report DRIVER NOT ASSIGNED
+   * rather than invent a recipient. `driverName` alone is a haulier's own driver
+   * typed in as free text: it is a label, not a notification channel.
+   */
+  driverId?: string | null;
   driverName?: string | null;
   purpose: string;
   windowStart: string;
@@ -88,7 +95,61 @@ function headers(idempotencyKey?: string) {
   return idempotencyKey ? { headers: { "X-Idempotency-Key": idempotencyKey } } : undefined;
 }
 
-export async function assignTruckDriver(id: string, driverId: string): Promise<TruckAppointment> {
+/**
+ * A driver the terminal can assign to a gate window. Only ACTIVE drivers in the
+ * tenant are assignable — the server refuses anything else with 400 — so the
+ * picker filters rather than offering a choice that will be refused.
+ */
+export interface AssignableDriver {
+  id: string;
+  name: string | null;
+  isActive?: boolean | null;
+  status?: string | null;
+}
+
+/**
+ * The tenant's drivers, for assigning one to a truck appointment. Degrades to an
+ * empty list rather than throwing: a role that cannot read drivers must still be
+ * able to read the gate board, and the caller says why the picker is empty.
+ */
+export async function listAssignableDrivers(): Promise<AssignableDriver[]> {
+  const r = await api.get("/drivers");
+  const body = unwrap(r);
+  const rows: AssignableDriver[] = Array.isArray(body) ? body : [];
+  return rows.filter((d) => d && d.id && d.isActive !== false);
+}
+
+/**
+ * What assigning a driver did to the window change that was already open.
+ *
+ * Assignment is two facts: the appointment now records who is driving, and — if
+ * a change was already published — that change now has this driver as a named
+ * recipient who can confirm it. The server reports which of those happened, so
+ * the UI states the outcome instead of assuming that assigning a driver told
+ * them something.
+ */
+export interface DriverAttachment {
+  attached: boolean;
+  reason: "ATTACHED" | "NO_ACTIVE_CHANGE" | "ALREADY_A_RECIPIENT" | "ALREADY_ACKNOWLEDGED" | "ATTACH_FAILED";
+  changeId: string | null;
+  version: number | null;
+  /** Recipients closed out because they are no longer who the terminal must ask. */
+  closedRecipientKeys: string[];
+  recipient: {
+    deliveryState: TruckWindowDeliveryState;
+    deliveryReason: string | null;
+    ackState: "UNACKED" | "ACKNOWLEDGED";
+    /** When this driver's acknowledgement clock started. */
+    toldAt: string;
+  } | null;
+  /** A sentence from the server, safe to show verbatim. */
+  message: string;
+}
+
+export async function assignTruckDriver(
+  id: string,
+  driverId: string,
+): Promise<TruckAppointment & { driverAttachment: DriverAttachment }> {
   const r = await api.post(`/rail/truck-appointments/${id}/assign-driver`, { driverId });
   return unwrap(r);
 }
@@ -229,17 +290,32 @@ export interface WindowRecipient {
     ackDeviceAt: string | null;
     source: "TENANT_USER" | "DRIVER_PORTAL" | "SHARE_TOKEN" | null;
     byLabel: string | null;
+    /** change→ack: the headline measurement, server-observed timestamps only. */
     latencyMinutes: number | null;
+    /**
+     * told→ack. The same as `latencyMinutes` except for a driver attached to the
+     * change after it was published, who could not have confirmed before they
+     * were told. Both are carried so neither has to be blended into the other.
+     */
+    latencyFromToldMinutes: number | null;
   };
   escalation: {
     stage: TruckWindowEscalation;
     ackDueMinutes: number;
+    /** How old the change is. A fact about the change, whatever the recipient. */
     minutesSinceChange: number;
+    /** When THIS recipient's clock started: the change time, or their attachment time. */
+    toldAt: string;
+    /** True for a recipient attached after the change was published (a driver assigned later). */
+    attachedAfterChange: boolean;
+    /** What this recipient has actually had to respond. The deadline runs from here. */
+    minutesSinceTold: number;
     minutesUntilDue: number;
     overdue: boolean;
     reminderDue: boolean;
     escalationDue: boolean;
     sinceChange: string;
+    sinceTold: string;
   };
 }
 
@@ -317,6 +393,8 @@ export interface WindowKpis {
   changesExamined: number;
   /** Changes where no driver was attached — their own count, never a failure. */
   driverNotAssignedChanges: number;
+  /** Recipients attached after their change was published (drivers assigned later). */
+  recipientsAttachedAfterChange: number;
   source: string;
   method: string;
   /**
@@ -332,6 +410,14 @@ export interface WindowKpis {
   };
   ackLatency: AckLatencySummary & {
     byRecipientType: { HAULIER: AckLatencySummary; DRIVER: AckLatencySummary };
+    /**
+     * The same acknowledgements measured from when each recipient became
+     * addressable. Identical to the figures above unless a driver was attached
+     * after the change; shown beside them, with its own n, never merged into
+     * them — one late assignment must not move a number that describes the
+     * terminal's process.
+     */
+    fromTold: AckLatencySummary & { definition: string };
   };
   ackedBeforeArrival: {
     ackedBeforeArrival: number;
