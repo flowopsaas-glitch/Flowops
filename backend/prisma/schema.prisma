@@ -6463,6 +6463,20 @@ model TerminalTruckWindowRecipient {
   /// frozen from the terminal policy at change time so a later policy edit does
   /// not retroactively move the goalposts.
   ackDueMinutes   Int
+  /// When this recipient's acknowledgement clock starts.
+  ///
+  /// NULL means "the moment the change was published", which is true of every
+  /// recipient created with the change — so this column changes nothing about
+  /// the rows that already exist. It is set only for a recipient attached
+  /// LATER: the driver assigned after the window had already moved, who could
+  /// not have been told before they were assigned. The deadline, the escalation
+  /// ladder and the stale-unacked count all run from here, so a late assignment
+  /// never reads as a driver ignoring a change nobody had told them about.
+  ///
+  /// An explicit column rather than an inference from `createdAt`: inferring it
+  /// would make every escalation depend on two clocks agreeing, and a wrong
+  /// `createdAt` would silently stop a ladder from ever climbing.
+  toldAt          DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,0 +1,24 @@
+-- A recipient's acknowledgement clock can start later than the change.
+--
+-- Recipients are resolved when a window change is PUBLISHED. A truck whose
+-- driver is assigned afterwards leaves the open change addressed to
+-- DRIVER:UNASSIGNED: that driver could see the new window in the portal but was
+-- refused as NOT_A_RECIPIENT when they confirmed, and the terminal's board kept
+-- answering "does that truck know?" with DRIVER NOT ASSIGNED. Assigning the
+-- driver now attaches them to the open change as a real recipient.
+--
+-- A recipient attached late cannot have been told before they were attached, so
+-- their deadline, escalation ladder and stale-unacked status are measured from
+-- `toldAt` rather than from the change time. Without it, a driver assigned two
+-- hours after a change is reported as overdue, reminded and escalated for a
+-- change nobody had told them about — the exact false answer the board exists
+-- to prevent.
+--
+-- NULL means "the change time", which is what every existing row means, so this
+-- is additive and needs no backfill. The table already has ENABLE + FORCE ROW
+-- LEVEL SECURITY with the tenant_isolation policy from
+-- 20261028120000_truck_window_change_closed_loop; a new column changes no
+-- policy, and no data is rewritten.
+
+-- AlterTable
+ALTER TABLE "terminal_truck_window_recipients" ADD COLUMN "toldAt" TIMESTAMP(3);
