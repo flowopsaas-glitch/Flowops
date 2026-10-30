@@ -5,6 +5,7 @@ import {
   assignTruckDriver,
   createTruckShareLink,
   getSharedTruckAppointment,
+  hasShareLink,
   getWindowAckBoard,
   listAssignableDrivers,
   listTruckAppointments,
@@ -230,5 +231,29 @@ describe("reads and link lifecycle", () => {
       reminderAfterMinutes: 20,
       escalateAfterMinutes: 60,
     });
+  });
+});
+
+describe("hasShareLink — the row's answer to \"is there a link on record?\"", () => {
+  const link = {
+    state: "VALID" as const,
+    legacy: false,
+    canAcknowledge: true,
+    issuedAt: "2026-10-28T06:00:00.000Z",
+    expiresAt: "2026-11-04T06:00:00.000Z",
+    warning: null,
+  };
+
+  it("is false when nothing was issued, and true for a link in any state on record", () => {
+    // The raw token is no longer part of the row type: it is a bearer credential
+    // and this list is served to read-only roles too, so existence is reported as
+    // state. ABSENT means there is nothing to revoke; a legacy or expired link is
+    // still on record and revoking it is still the operator's action.
+    expect(hasShareLink({ shareLink: null })).toBe(false);
+    expect(hasShareLink({})).toBe(false);
+    expect(hasShareLink({ shareLink: { ...link, state: "ABSENT" } })).toBe(false);
+    expect(hasShareLink({ shareLink: { ...link, state: "VALID" } })).toBe(true);
+    expect(hasShareLink({ shareLink: { ...link, state: "LEGACY_NO_EXPIRY", legacy: true } })).toBe(true);
+    expect(hasShareLink({ shareLink: { ...link, state: "EXPIRED", canAcknowledge: false } })).toBe(true);
   });
 });

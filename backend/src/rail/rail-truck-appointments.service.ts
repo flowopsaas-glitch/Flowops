@@ -7,7 +7,7 @@ import {
 } from './dto/rail-truck-appointment.dto';
 import {
   assessShareToken, findGateConflicts, formatWindow, readGateCutoffHours,
-  shareLinkState, shareTokenExpiryFrom, validateGateWindow,
+  shareLinkState, shareTokenExpiryFrom, validateGateWindow, withoutShareToken,
 } from './rail-truck-gate.shared';
 
 /**
@@ -46,12 +46,20 @@ const FLOW: Record<string, string[]> = {
 export class RailTruckAppointmentsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Tenant-scoped read. Returns the row WITHOUT its share token: this is the
+   * read every row-shaped response in this module is built from, so redacting
+   * here is what makes the token unreachable from the tenant API rather than
+   * absent from one endpoint by luck. `shareLinkState()` is computed from the
+   * raw row before it is redacted, so the terminal still sees whether a link
+   * exists, when it expires and whether it is a legacy one.
+   */
   private async getOwned(companyId: string, id: string) {
     const appt = await this.prisma.terminalTruckAppointment.findFirst({
       where: { id, companyId },
     });
     if (!appt) throw new NotFoundException('Truck appointment not found');
-    return appt;
+    return withoutShareToken(appt);
   }
 
   /** Tenant-scoped read for callers that must branch on the current status. */
@@ -104,7 +112,7 @@ export class RailTruckAppointmentsService {
         bookedBy: user?.id ?? user?.email ?? undefined,
       },
     });
-    return { ...appt, conflicts, waitMinutes: null, lateArrival: null };
+    return { ...withoutShareToken(appt), conflicts, waitMinutes: null, lateArrival: null };
   }
 
   /**
@@ -123,7 +131,7 @@ export class RailTruckAppointmentsService {
       where: { id: appt.id },
       data: { driverId: driver.id, driverName: driver.name },
     });
-    return { ...updated, ...this.metrics(updated) };
+    return { ...withoutShareToken(updated), ...this.metrics(updated) };
   }
 
   async list(companyId: string, filters?: { status?: string; terminalName?: string; from?: string; to?: string }, now: Date = new Date()) {
@@ -143,7 +151,11 @@ export class RailTruckAppointmentsService {
     });
     const versions = await this.activeWindowVersions(companyId, rows.map((r) => r.id));
     return rows.map((r) => ({
-      ...r,
+      // No raw share token in a list served to every rail READ role: the token
+      // is a bearer credential (see `withoutShareToken`). `shareLink` below is
+      // computed from the unredacted row, so the terminal can still see that a
+      // link exists, whether it is legacy, and kill it in one click.
+      ...withoutShareToken(r),
       ...this.metrics(r),
       pendingWindowChange: versions.get(r.id) ?? null,
       // Which counterparty links are legacy (unexpiring, read-only) so the
@@ -324,6 +336,6 @@ export class RailTruckAppointmentsService {
     if (to === 'LOADING' && !appt.loadingAt) data.loadingAt = now;
     if (to === 'COMPLETED' && !appt.completedAt) data.completedAt = now;
     const updated = await this.prisma.terminalTruckAppointment.update({ where: { id }, data });
-    return { ...updated, ...this.metrics(updated) };
+    return { ...withoutShareToken(updated), ...this.metrics(updated) };
   }
 }

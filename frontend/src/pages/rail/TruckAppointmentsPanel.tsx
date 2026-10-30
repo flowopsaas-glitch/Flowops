@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Loader2, RefreshCw, Truck } from "lucide-react";
 import {
   assignTruckDriver, bookTruckAppointment, createTruckShareLink, getTruckAppointmentSummary,
-  listAssignableDrivers, listTruckAppointments, replanTruckDay, revokeTruckShareLink,
+  hasShareLink, listAssignableDrivers, listTruckAppointments, replanTruckDay, revokeTruckShareLink,
   transitionTruckAppointment,
   type AssignableDriver, type DriverAttachment, type TruckAppointment, type TruckAppointmentSummary,
 } from "../../api/railTruckAppointmentsApi";
@@ -575,7 +575,9 @@ export default function TruckAppointmentsPanel({ canWrite }: { canWrite: boolean
                             </select>
                           </label>
                         )}
-                        {r.shareToken
+                        {/* The link's STATE decides this, not a token in the payload: the
+                            server no longer sends one in a row (see hasShareLink). */}
+                        {hasShareLink(r)
                           ? <button type="button" onClick={() => void unshare(r)} className={btnNeutral}>Revoke link</button>
                           : <button type="button" onClick={() => void share(r)} className={btnNeutral}>Share link</button>}
                         {r.shareLink?.legacy && (

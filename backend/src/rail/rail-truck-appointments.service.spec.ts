@@ -261,3 +261,115 @@ describe('list surfaces the pending window change without a second round trip', 
     expect(rows[0].pendingWindowChange).toBeNull();
   });
 });
+
+describe('the share token is a capability, so it never leaves in a row', () => {
+  /**
+   * `GET /rail/truck-appointments` is served to every rail READ role, VIEWER
+   * included, and a share token in that payload is not a display field: it is a
+   * bearer credential that reads the appointment with no login
+   * (`GET public/:token`) and acknowledges a window change with no login
+   * (`POST public/:token/ack`). A read-only user who could copy it out of a list
+   * response could confirm a change the role model says they may not — so the
+   * token is asserted ABSENT from every row-shaped response, and the link's
+   * STATE (which is what the terminal actually needs) is asserted present.
+   */
+  const linked = (over: any = {}) =>
+    row({
+      shareToken: 'tok_live_0123456789abcdef',
+      shareTokenIssuedAt: new Date('2026-10-28T06:00:00Z'),
+      shareTokenExpiresAt: new Date('2026-11-04T06:00:00Z'),
+      ...over,
+    });
+  const NOW = new Date('2026-10-29T00:00:00Z');
+
+  it('list() reports a valid link without handing over the credential', async () => {
+    const { svc, store } = makeService([linked()]);
+
+    const rows: any = await svc.list('c1', undefined, NOW);
+
+    expect(rows).toHaveLength(1);
+    expect(Object.prototype.hasOwnProperty.call(rows[0], 'shareToken')).toBe(false);
+    expect(JSON.stringify(rows[0])).not.toContain('tok_live_0123456789abcdef');
+    // The terminal still sees everything it needs to govern the link.
+    expect(rows[0].shareLink).toMatchObject({
+      state: 'VALID',
+      legacy: false,
+      canAcknowledge: true,
+      issuedAt: '2026-10-28T06:00:00.000Z',
+      expiresAt: '2026-11-04T06:00:00.000Z',
+    });
+    // Redaction is a view concern: the stored record keeps its token, so the
+    // link still works for the haulier holding it.
+    expect(store[0].shareToken).toBe('tok_live_0123456789abcdef');
+  });
+
+  it('list() still flags a legacy link as legacy — the warning is the point, the token is not', async () => {
+    const { svc } = makeService([linked({ shareToken: 'tok_legacy_0123456789', shareTokenExpiresAt: null })]);
+
+    const rows: any = await svc.list('c1', undefined, NOW);
+
+    expect(Object.prototype.hasOwnProperty.call(rows[0], 'shareToken')).toBe(false);
+    expect(rows[0].shareLink.legacy).toBe(true);
+    expect(rows[0].shareLink.canAcknowledge).toBe(false);
+    expect(rows[0].shareLink.warning).toContain('LEGACY LINK');
+  });
+
+  it('getOne() carries no token, so no controller can spread one into a response', async () => {
+    const { svc } = makeService([linked()]);
+
+    const one: any = await svc.getOne('c1', 'a1');
+
+    expect(Object.prototype.hasOwnProperty.call(one, 'shareToken')).toBe(false);
+    expect(one.id).toBe('a1');
+    expect(one.status).toBe('BOOKED');
+  });
+
+  it('a status transition response carries no token', async () => {
+    const { svc } = makeService([linked()]);
+
+    const arrived: any = await svc.transition('c1', 'a1', 'ARRIVED');
+
+    expect(Object.prototype.hasOwnProperty.call(arrived, 'shareToken')).toBe(false);
+    expect(arrived.arrivedAt).toBeInstanceOf(Date);
+  });
+
+  it('assigning a driver response carries no token', async () => {
+    const { svc } = makeService([linked()], [{ id: 'd1', name: 'Driver One', companyId: 'c1', isActive: true }]);
+
+    const updated: any = await svc.assignDriver('c1', 'a1', 'd1');
+
+    expect(Object.prototype.hasOwnProperty.call(updated, 'shareToken')).toBe(false);
+    expect(updated.driverId).toBe('d1');
+    expect(updated.driverName).toBe('Driver One');
+  });
+
+  it('booking carries no token key at all', async () => {
+    const { svc } = makeService();
+
+    const created: any = await svc.book('c1', dto);
+
+    expect(Object.prototype.hasOwnProperty.call(created, 'shareToken')).toBe(false);
+    expect(created.shareLink).toBeUndefined();
+  });
+
+  it('createShareLink is the one response that returns a token, and revoke clears the record', async () => {
+    const { svc, store } = makeService([row()]);
+
+    const issued: any = await svc.createShareLink('c1', 'a1');
+
+    expect(typeof issued.token).toBe('string');
+    expect(issued.token.length).toBeGreaterThanOrEqual(24);
+    expect(issued.path).toBe(`/gate/${issued.token}`);
+    expect(new Date(issued.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(store[0].shareToken).toBe(issued.token);
+
+    await svc.revokeShareLink('c1', 'a1');
+    expect(store[0].shareToken).toBeNull();
+    expect(store[0].shareTokenExpiresAt).toBeNull();
+
+    // A revoked link reads as ABSENT — the counterparty has no view at all.
+    const rows: any = await svc.list('c1', undefined, NOW);
+    expect(rows[0].shareLink.state).toBe('ABSENT');
+    expect(Object.prototype.hasOwnProperty.call(rows[0], 'shareToken')).toBe(false);
+  });
+});

@@ -82,7 +82,9 @@ function appt(over: Partial<TruckAppointment> = {}): TruckAppointment {
     // one. Every test below starts from that and says what it means.
     driverId: null,
     driverName: null,
-    shareToken: null,
+    // No `shareToken` field: the server does not send one in a row any more, so
+    // a fixture carrying one would test against a payload that cannot occur.
+    // The link's state is the row's truth.
     shareLink: null,
     ...over,
   };
@@ -328,7 +330,7 @@ describe("who may move a published window", () => {
 
 describe("share links the operator has to be able to see", () => {
   it("flags a legacy link on its row and across the tenant, with what to do about it", async () => {
-    apiMocks.listTruckAppointments.mockResolvedValue([appt({ shareToken: "tok_legacy", shareLink: legacyLink })]);
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ shareLink: legacyLink })]);
     renderPanel();
 
     const actions = within(await rowFor("ABC 123"));
@@ -342,7 +344,7 @@ describe("share links the operator has to be able to see", () => {
   });
 
   it("re-issuing revokes first and then creates, and says when the new link expires", async () => {
-    apiMocks.listTruckAppointments.mockResolvedValue([appt({ shareToken: "tok_legacy", shareLink: legacyLink })]);
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ shareLink: legacyLink })]);
     apiMocks.createTruckShareLink.mockResolvedValue({
       token: "tok_new",
       path: "/gate/tok_new",
@@ -365,7 +367,7 @@ describe("share links the operator has to be able to see", () => {
   });
 
   it("a failed revocation issues nothing: the old link is not left alive beside a new one", async () => {
-    apiMocks.listTruckAppointments.mockResolvedValue([appt({ shareToken: "tok_legacy", shareLink: legacyLink })]);
+    apiMocks.listTruckAppointments.mockResolvedValue([appt({ shareLink: legacyLink })]);
     apiMocks.revokeTruckShareLink.mockRejectedValue(new Error("revocation refused"));
     renderPanel();
 
@@ -380,11 +382,10 @@ describe("share links the operator has to be able to see", () => {
       appt({
         id: "a1",
         vehicleReg: "AAA 111",
-        shareToken: "t1",
         shareLink: shareLink({ state: "EXPIRED", canAcknowledge: false, expiresAt: "2026-10-20T06:00:00.000Z" }),
       }),
-      appt({ id: "a2", vehicleReg: "BBB 222", shareToken: "t2", shareLink: shareLink({ expiresAt: "2026-11-04T06:00:00.000Z" }) }),
-      appt({ id: "a3", vehicleReg: "CCC 333", shareToken: null, shareLink: null }),
+      appt({ id: "a2", vehicleReg: "BBB 222", shareLink: shareLink({ expiresAt: "2026-11-04T06:00:00.000Z" }) }),
+      appt({ id: "a3", vehicleReg: "CCC 333", shareLink: null }),
     ]);
     renderPanel();
 
@@ -399,6 +400,34 @@ describe("share links the operator has to be able to see", () => {
 
     fireEvent.click(unshared.getByRole("button", { name: "Share link" }));
     await waitFor(() => expect(apiMocks.createTruckShareLink).toHaveBeenCalledWith("a3"));
+  });
+
+  it("the revoke/share choice comes from the link state, not from a token in the payload", async () => {
+    // The server no longer sends `shareToken` in a row. A token is a bearer
+    // credential — it reads the appointment and confirms a window change with no
+    // login — and this list is served to every rail read role including the
+    // read-only one, so the row says whether a link exists by STATE instead.
+    apiMocks.listTruckAppointments.mockResolvedValue([
+      appt({ id: "b1", vehicleReg: "DDD 444", shareLink: shareLink() }),
+      appt({
+        id: "b2",
+        vehicleReg: "EEE 555",
+        shareLink: shareLink({ state: "ABSENT", canAcknowledge: false, issuedAt: null, expiresAt: null }),
+      }),
+    ]);
+    renderPanel();
+
+    const linked = within(await rowFor("DDD 444"));
+    expect(linked.getByRole("button", { name: "Revoke link" })).toBeEnabled();
+    expect(linked.queryByRole("button", { name: "Share link" })).not.toBeInTheDocument();
+
+    const none = within(await rowFor("EEE 555"));
+    expect(none.getByRole("button", { name: "Share link" })).toBeEnabled();
+    expect(none.queryByRole("button", { name: "Revoke link" })).not.toBeInTheDocument();
+
+    // Revoking targets the appointment id: the UI never needed the credential.
+    fireEvent.click(linked.getByRole("button", { name: "Revoke link" }));
+    await waitFor(() => expect(apiMocks.revokeTruckShareLink).toHaveBeenCalledWith("b1"));
   });
 });
 

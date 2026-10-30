@@ -25,11 +25,18 @@ export interface TruckAppointment {
   status: TruckAppointmentStatus;
   consignmentId?: string | null;
   note?: string | null;
-  shareToken?: string | null;
   /**
    * The state of the counterparty link, without making the terminal decode it:
    * a LEGACY link never expires and can only be killed by revocation, so the
    * operator has to be able to see which of their links are in that state.
+   *
+   * The TOKEN itself is deliberately not part of this type. It is a bearer
+   * credential: whoever holds one reads the appointment with no login and can
+   * acknowledge a window change with no login, and this list is served to every
+   * rail read role including the read-only one. The server no longer sends it in
+   * a row; it comes back only from `createTruckShareLink`, for a caller who has
+   * rail write and needs the value to send to the counterparty. Keeping it out of
+   * the type is what stops a UI from growing a dependency on it again.
    */
   shareLink?: ShareLinkState | null;
   /** Current window version. 1 = as booked; every published change increments it. */
@@ -42,6 +49,17 @@ export interface TruckAppointment {
 }
 
 export type ShareLinkValidity = "ABSENT" | "VALID" | "LEGACY_NO_EXPIRY" | "EXPIRED";
+
+/**
+ * Whether a counterparty link exists for this appointment — the only question
+ * the row used to need the raw token for. `ABSENT` (or a row with no link state
+ * at all) means there is nothing to revoke; every other state means a link is
+ * on record, including an expired or legacy one, and revoking it is still the
+ * operator's action.
+ */
+export function hasShareLink(appt: Pick<TruckAppointment, "shareLink">): boolean {
+  return !!appt.shareLink && appt.shareLink.state !== "ABSENT";
+}
 
 export interface ShareLinkState {
   state: ShareLinkValidity;

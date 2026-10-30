@@ -177,6 +177,33 @@ export function shareTokenExpiryFrom(issuedAt: Date, ttlDays = SHARE_TOKEN_TTL_D
 }
 
 /**
+ * A share token is a CAPABILITY, not a display field.
+ *
+ * Whoever holds one can read the appointment without logging in
+ * (`GET public/:token`) and can perform the only unauthenticated mutation in
+ * the product (`POST public/:token/ack` — acknowledging a window change). So a
+ * token sitting in an ordinary tenant response is not extra data: it is a
+ * bearer credential handed to every role that can read that response. The
+ * appointment list is served to the rail READ roles, which include VIEWER —
+ * deliberately read-only, since `POST :id/ack` requires rail WRITE. A VIEWER who
+ * can copy a token out of a list response can confirm a window change through
+ * the public route, which is a privilege bypass rather than a leak of a label.
+ *
+ * The token therefore leaves the server in exactly one place: the response of
+ * `POST :id/share`, which creates or rotates it for a caller who already holds
+ * rail WRITE and needs the value in order to send it to the counterparty.
+ * Every row-shaped tenant response goes through this helper instead, so a new
+ * endpoint cannot re-leak it by spreading an appointment.
+ *
+ * The issued/expiry timestamps stay: they are facts about the link, not the
+ * credential, and `shareLinkState()` already surfaces them to the terminal.
+ */
+export function withoutShareToken<T extends { shareToken?: unknown }>(appt: T): Omit<T, 'shareToken'> {
+  const { shareToken: _shareToken, ...rest } = appt;
+  return rest;
+}
+
+/**
  * Human-readable window text used in notifications, notes and audit metadata.
  * UTC-safe and explicit about the date, because a window that moves across
  * midnight is the case where "14:00 – 16:00" alone is actively misleading.
