@@ -51,6 +51,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         .catch(() => undefined);
     }
 
-    return user;
+    // Strip the credentials before the row becomes `req.user`. Every guard,
+    // interceptor and handler downstream can read it, and any of them can
+    // serialise it into a response, an audit record or a log line. AuthService
+    // and the strategies read what they need straight from Prisma, so nothing
+    // downstream needs these four fields to be there.
+    const { passwordHash, verifyToken, resetToken, activeSessionId, ...safeUser } = user;
+    return safeUser;
   }
 }

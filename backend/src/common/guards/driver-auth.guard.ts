@@ -60,7 +60,13 @@ export class DriverAuthGuard implements CanActivate {
       throw new UnauthorizedException('Your account was signed in on another device');
     }
 
-    req.driver = driver;
+    // `driverPin` is the bcrypt hash of the driver's 4-6 digit portal PIN and
+    // `ratingToken` a bearer capability. Portal handlers read only
+    // id/companyId/name off `req.driver`, and PIN login reads Prisma directly,
+    // so the credential has no reason to ride along on every authenticated
+    // request - where a single careless `return req.driver` would serve it.
+    const { driverPin, ratingToken, ...safeDriver } = driver;
+    req.driver = safeDriver;
     return true;
   }
 }
