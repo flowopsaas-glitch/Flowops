@@ -119,15 +119,33 @@ jobs:
               let s = "";
               process.stdin.on("data", (d) => { s += d; });
               process.stdin.on("end", () => {
+                // Compose renders `environment` as a map in recent releases and
+                // as a list of KEY=VALUE entries in older ones, and only the api
+                // service carries this key — so read every shape rather than fail
+                // the gate on a runner whose Compose predates the map form.
+                const fromEnv = (env) => {
+                  if (!env) return undefined;
+                  if (!Array.isArray(env)) return env.RBAC_STRICT;
+                  for (const e of env) {
+                    if (typeof e === "string") {
+                      if (e.startsWith("RBAC_STRICT=")) return e.slice("RBAC_STRICT=".length);
+                    } else if (e && e.name === "RBAC_STRICT") {
+                      return e.value;
+                    }
+                  }
+                  return undefined;
+                };
                 let value;
                 try {
                   const cfg = JSON.parse(s);
-                  value = cfg?.services?.api?.environment?.RBAC_STRICT;
+                  value = fromEnv(cfg?.services?.api?.environment);
                 } catch {
                   // Older Compose without --format json: fall back to the YAML
                   // rendering. Only the api service carries this key.
                   const m = s.match(/^\s+RBAC_STRICT:\s*"?([^"\n]*)"?\s*$/m);
-                  value = m ? m[1] : undefined;
+                  // Older Compose can also render environment as a KEY=VALUE list.
+                  const found = m || s.match(/^[ \t]*-[ \t]*"?RBAC_STRICT=([^"\r\n]*)"?$/m);
+                  value = found ? found[1] : undefined;
                 }
                 process.stdout.write(value === undefined ? "__ABSENT__" : String(value));
               });

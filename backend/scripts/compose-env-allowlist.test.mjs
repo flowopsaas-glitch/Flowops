@@ -12,6 +12,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -384,3 +385,106 @@ test('the real RolesGuard treats only the literal string "true" as strict', () =
 function repoFile(rel) {
   return readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 }
+
+// ── The CI step that renders the merged config ───────────────────────────────
+//
+// `docker compose config` only runs in CI (no Docker here), so the assertion
+// step in .github/workflows/ci.yml is the one part of this guard that cannot be
+// exercised by the checks above. It embeds a small Node reader that pulls
+// `services.api.environment.RBAC_STRICT` out of whatever Compose printed. These
+// tests lift that reader out of the workflow and run it against every shape
+// Compose has used for `environment` — a map in recent releases, a list of
+// KEY=VALUE entries in older ones, and a list of {name, value} objects — so the
+// gate cannot fail on a runner whose Compose renders it differently, and so
+// renaming or deleting the step fails here first.
+
+function ciRbacReader() {
+  const lines = repoFile('.github/workflows/ci.yml').split('\n');
+  const fn = lines.findIndex((l) => l.includes('read_api_rbac_strict() {'));
+  assert.ok(fn > -1, 'the RBAC_STRICT CI step no longer defines read_api_rbac_strict()');
+  const start = lines.findIndex((l, i) => i > fn && l.trim().endsWith("node -e '"));
+  assert.ok(start > fn, 'the RBAC_STRICT CI step no longer embeds a node reader');
+  const body = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === "'") break;
+    body.push(lines[i]);
+  }
+  assert.ok(body.length > 5, `expected the embedded reader, got ${body.length} lines`);
+  return body.join('\n');
+}
+
+function readRbacStrict(payload) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rbac-reader-'));
+  const file = path.join(dir, 'reader.js');
+  writeFileSync(file, ciRbacReader());
+  try {
+    return execFileSync(process.execPath, [file], { input: payload, encoding: 'utf8' });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const apiEnv = (environment) => JSON.stringify({ services: { api: { environment } } });
+
+test('CI reader: reads RBAC_STRICT from a Compose JSON map environment', () => {
+  assert.equal(readRbacStrict(apiEnv({ RBAC_STRICT: 'false', NODE_ENV: 'production' })), 'false');
+  assert.equal(readRbacStrict(apiEnv({ RBAC_STRICT: 'true' })), 'true');
+});
+
+test('CI reader: reads RBAC_STRICT from a Compose JSON KEY=VALUE list', () => {
+  assert.equal(readRbacStrict(apiEnv(['RBAC_STRICT=true', 'NODE_ENV=production'])), 'true');
+  // An empty value is a value: "" is what `RBAC_STRICT=` renders to, and it is
+  // not the same as the key being missing.
+  assert.equal(readRbacStrict(apiEnv(['RBAC_STRICT='])), '');
+});
+
+test('CI reader: reads RBAC_STRICT from a Compose JSON name/value list', () => {
+  assert.equal(readRbacStrict(apiEnv([{ name: 'RBAC_STRICT', value: 'true' }])), 'true');
+});
+
+test('CI reader: reports __ABSENT__ when the key never reached the api service', () => {
+  // This is the failure the guard exists for: the allowlist dropped the key, so
+  // the container silently runs NON-strict.
+  assert.equal(readRbacStrict(apiEnv({ NODE_ENV: 'production' })), '__ABSENT__');
+  assert.equal(readRbacStrict(JSON.stringify({ services: {} })), '__ABSENT__');
+});
+
+test('CI reader: falls back to the YAML rendering, in map and list shape', () => {
+  assert.equal(
+    readRbacStrict('services:\n  api:\n    environment:\n      RBAC_STRICT: "false"\n'),
+    'false',
+  );
+  assert.equal(
+    readRbacStrict('services:\n  api:\n    environment:\n      RBAC_STRICT: false\n'),
+    'false',
+  );
+  assert.equal(
+    readRbacStrict('services:\n  api:\n    environment:\n      - RBAC_STRICT=true\n'),
+    'true',
+  );
+  assert.equal(
+    readRbacStrict('services:\n  api:\n    environment:\n      NODE_ENV: production\n'),
+    '__ABSENT__',
+  );
+});
+
+test('CI compose job: every variable Compose requires is provided, so the render cannot fail on a missing secret', () => {
+  // `docker compose config` aborts on ${VAR:?message} when VAR is unset. The
+  // workflow's compose job supplies placeholders for exactly those variables;
+  // if a new required variable is added to a compose file without being added
+  // to the job env, the gate would fail for a reason that has nothing to do
+  // with RBAC_STRICT — so pin the pairing here instead.
+  const wf = repoFile('.github/workflows/ci.yml');
+  const required = new Set();
+  for (const rel of ['docker-compose.yml', 'docker-compose.prod.yml', 'deploy/docker-compose.vps.yml']) {
+    if (!existsSync(path.join(REPO_ROOT, rel))) continue;
+    for (const m of repoFile(rel).matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*):\?/g)) required.add(m[1]);
+  }
+  assert.ok(required.size >= 4, `expected the compose files to require secrets, saw ${required.size}`);
+  const jobStart = wf.indexOf('\n  compose:');
+  assert.ok(jobStart > -1, 'the compose job disappeared from ci.yml');
+  const jobEnv = wf.slice(jobStart, wf.indexOf('\n    steps:', jobStart));
+  for (const name of required) {
+    assert.match(jobEnv, new RegExp(`^\\s+${name}:\\s*\\S`, 'm'), `compose job env must provide ${name}`);
+  }
+});
