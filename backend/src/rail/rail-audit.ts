@@ -131,6 +131,15 @@ export const RAIL_AUDIT_ACTION = {
   TRUCK_WINDOW_ACK_REJECTED: 'truck_window.ack_rejected',
   /** The escalation ladder moved on the clock — attributed to the system, not a person. */
   TRUCK_WINDOW_ESCALATED: 'truck_window.escalated',
+  /**
+   * A driver was attached to a change that was already published: they became a
+   * named recipient of an open window version, and whoever they replaced (or
+   * the "no driver was assigned" placeholder) was closed out with a reason.
+   * Attributed to the person who assigned the driver, because "who put that
+   * driver on this truck, and when did the truck get told" is a question a
+   * terminal asks afterwards.
+   */
+  TRUCK_WINDOW_DRIVER_ATTACHED: 'truck_window.driver_attached',
   TRUCK_GATE_POLICY_UPDATED: 'truck_gate_policy.updated',
 } as const;
 export type RailAuditAction = (typeof RAIL_AUDIT_ACTION)[keyof typeof RAIL_AUDIT_ACTION];

@@ -320,7 +320,54 @@ export const DELIVERY_UNAVAILABLE_REASON = {
   PUSH_NOT_CONFIGURED: 'PUSH_NOT_CONFIGURED',
   NO_PUSH_SUBSCRIPTION: 'NO_PUSH_SUBSCRIPTION',
   NO_SOCKET_RECEIPT: 'NO_SOCKET_RECEIPT',
+  /**
+   * No driver was addressable when this change was published, and one has since
+   * been assigned. The row stays UNAVAILABLE — it never had a channel, and that
+   * is worth keeping as the record of what happened — but the reason changes so
+   * the board stops reporting DRIVER NOT ASSIGNED next to the driver who was
+   * just attached to the same change.
+   */
+  DRIVER_ASSIGNED_LATER: 'DRIVER_ASSIGNED_LATER',
+  /**
+   * This driver was replaced before they confirmed. They are no longer the
+   * person the terminal has to ask, so they leave the acknowledgement
+   * denominator instead of ageing into a stale-unacked count against somebody
+   * who is not driving the truck. A confirmation they already gave is kept: it
+   * is a fact, and reassignment does not un-say it.
+   */
+  DRIVER_REASSIGNED: 'DRIVER_REASSIGNED',
 } as const;
+
+/**
+ * When a recipient's acknowledgement clock starts.
+ *
+ * For every recipient created with the change, `toldAt` is NULL and this
+ * returns the change time — so nothing about the existing rows, or the existing
+ * behaviour, moves.
+ *
+ * A recipient attached LATER is different: the driver assigned after the window
+ * had already moved cannot have been told before they were assigned. Measuring
+ * them from the change would report that driver as overdue, reminded and
+ * escalated before anybody had told them anything — the precise false answer
+ * the acknowledgement board exists to prevent. Their clock starts at their own
+ * `toldAt`, and the view says so (`attachedAfterChange`) rather than quietly
+ * relabelling "time since the change".
+ *
+ * The clock never moves earlier than the change: a `toldAt` before `changedAt`
+ * is bad data, and the conservative reading of bad data is the one that still
+ * escalates rather than the one that silently stops.
+ */
+export function ackClockStart(input: {
+  changedAt: Date | string;
+  /** The recipient's own `toldAt`. NULL for everybody created with the change. */
+  toldAt?: Date | string | null;
+}): Date {
+  const changed = new Date(input.changedAt);
+  if (!input.toldAt) return changed;
+  const told = new Date(input.toldAt);
+  if (Number.isNaN(told.getTime())) return changed;
+  return told.getTime() > changed.getTime() ? told : changed;
+}
 
 // ── Measurement ──────────────────────────────────────────────────────────────
 

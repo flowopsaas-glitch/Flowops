@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Headers, Param, Post, Query, UseGuards }
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TruckAppointmentStatus, TruckWindowChangeKind } from '@prisma/client';
 import { RailTruckAppointmentsService } from './rail-truck-appointments.service';
-import { RailTruckWindowChangesService } from './rail-truck-window-changes.service';
+import { DriverAttachmentResult, RailTruckWindowChangesService } from './rail-truck-window-changes.service';
 import {
   BookTruckAppointmentDto,
   ShiftTruckAppointmentsDto,
@@ -97,11 +97,49 @@ export class RailTruckAppointmentsController {
     return this.appointments.book(u.companyId, dto, u);
   }
 
+  /**
+   * Assign the driver, then attach them to the window change that is already
+   * open on this appointment, if there is one.
+   *
+   * Two services, because they own two different facts: the appointment records
+   * who is driving, the change records who has been told. Doing only the first
+   * would leave an open change addressed to DRIVER:UNASSIGNED — that driver
+   * would see the new window in the portal, press confirm, and be refused as
+   * NOT_A_RECIPIENT, while the board kept answering "does that truck know?"
+   * with DRIVER NOT ASSIGNED.
+   *
+   * The attachment is best-effort and its OUTCOME IS RETURNED, never assumed: a
+   * failure after the assignment is reported in the response and the log rather
+   * than rolled back, because the driver is assigned and pretending otherwise
+   * would be worse than saying what did not happen.
+   */
   @Post(':id/assign-driver')
   @Roles(...RAIL_WRITE_ROLES)
-  @ApiOperation({ summary: 'Assign the driver who will run this window (the closed loop then notifies them)' })
-  assignDriver(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: AssignTruckDriverDto) {
-    return this.appointments.assignDriver(u.companyId, id, dto.driverId);
+  @ApiOperation({ summary: 'Assign the driver who will run this window, and attach them to any open window change' })
+  async assignDriver(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: AssignTruckDriverDto) {
+    const appt = await this.appointments.assignDriver(u.companyId, id, dto.driverId);
+    let driverAttachment: DriverAttachmentResult;
+    try {
+      driverAttachment = await this.changes.attachDriverToActiveWindow({
+        companyId: u.companyId,
+        appointmentId: appt.id,
+        // `assignDriver` resolved this driver inside the calling tenant and
+        // stored the resolved name, so both fields are present by construction.
+        driver: { id: String(appt.driverId), name: String(appt.driverName ?? appt.driverId) },
+        actor: u as any,
+      });
+    } catch (err: any) {
+      driverAttachment = {
+        attached: false,
+        reason: 'ATTACH_FAILED',
+        changeId: null,
+        version: null,
+        closedRecipientKeys: [],
+        recipient: null,
+        message: `The driver is assigned, but was not attached to an open window change: ${err?.message ?? err}`,
+      };
+    }
+    return { ...appt, driverAttachment };
   }
 
   @Post(':id/arrive')

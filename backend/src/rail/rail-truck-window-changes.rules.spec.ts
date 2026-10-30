@@ -1,5 +1,5 @@
 import {
-  assessAcknowledgement, assessEscalation, assessWindowChange, bestDeliveryState,
+  ackClockStart, assessAcknowledgement, assessEscalation, assessWindowChange, bestDeliveryState,
   DEFAULT_GATE_ACK_POLICY, DELIVERY_FIDELITY, DELIVERY_UNAVAILABLE_REASON, formatDurationMinutes,
   median, nextVersion, percentile, resolveAckPolicy, summariseAckedBeforeArrival, summariseAckRate,
   summariseAckLatency, WindowChangeInput,
@@ -374,8 +374,9 @@ describe('delivery-state fidelity', () => {
 
   it('names every reason a recipient can be unreachable, so the UI never renders an empty cell', () => {
     expect(Object.values(DELIVERY_UNAVAILABLE_REASON).sort()).toEqual([
-      'DRIVER_NOT_ASSIGNED', 'NO_PUSH_SUBSCRIPTION', 'NO_SHARE_TOKEN',
-      'NO_SOCKET_RECEIPT', 'PUSH_NOT_CONFIGURED', 'SHARE_TOKEN_EXPIRED',
+      'DRIVER_ASSIGNED_LATER', 'DRIVER_NOT_ASSIGNED', 'DRIVER_REASSIGNED',
+      'NO_PUSH_SUBSCRIPTION', 'NO_SHARE_TOKEN', 'NO_SOCKET_RECEIPT',
+      'PUSH_NOT_CONFIGURED', 'SHARE_TOKEN_EXPIRED',
     ]);
   });
 });
@@ -620,5 +621,54 @@ describe('summariseAckRate', () => {
     ]);
     expect(out.percent).toBe(33.3);
     expect(out.percentText).toBe('33.3%');
+  });
+});
+
+// ── When a recipient's acknowledgement clock starts ──────────────────────────
+
+describe('ackClockStart', () => {
+  const CHANGED = T('2026-10-30T02:00:00Z');
+
+  it('is the change time for every recipient created with the change (toldAt null)', () => {
+    expect(ackClockStart({ changedAt: CHANGED, toldAt: null })).toEqual(CHANGED);
+    expect(ackClockStart({ changedAt: CHANGED })).toEqual(CHANGED);
+    expect(ackClockStart({ changedAt: CHANGED.toISOString(), toldAt: undefined })).toEqual(CHANGED);
+  });
+
+  it('is the attachment time for a recipient attached after the change', () => {
+    const told = T('2026-10-30T05:00:00Z');
+    expect(ackClockStart({ changedAt: CHANGED, toldAt: told })).toEqual(told);
+    expect(ackClockStart({ changedAt: CHANGED, toldAt: told.toISOString() })).toEqual(told);
+  });
+
+  it('never moves earlier than the change: bad data escalates rather than going quiet', () => {
+    // A toldAt before the change cannot happen through this service. If it is
+    // ever in the table, the reading that still escalates is the safe one — a
+    // ladder that silently stopped climbing is the failure this feature exists
+    // to prevent.
+    expect(ackClockStart({ changedAt: CHANGED, toldAt: T('2026-10-30T01:00:00Z') })).toEqual(CHANGED);
+  });
+
+  it('falls back to the change time on an unparseable toldAt', () => {
+    expect(ackClockStart({ changedAt: CHANGED, toldAt: 'not a date' })).toEqual(CHANGED);
+  });
+
+  it('is the clock the ladder uses, so a driver attached late is not overdue on arrival', () => {
+    const told = T('2026-10-30T05:00:00Z');
+    const read = T('2026-10-30T05:10:00Z');
+    const policy = resolveAckPolicy(null);
+    const late = assessEscalation({
+      changedAt: ackClockStart({ changedAt: CHANGED, toldAt: told }), now: read,
+      ackState: 'UNACKED', ...policy,
+    });
+    const onTime = assessEscalation({ changedAt: CHANGED, now: read, ackState: 'UNACKED', ...policy });
+
+    expect(late.minutesSinceChange).toBe(10);
+    expect(late.overdue).toBe(false);
+    expect(late.stage).toBe('NONE');
+    // The same read of a recipient who was addressable all along.
+    expect(onTime.minutesSinceChange).toBe(190);
+    expect(onTime.overdue).toBe(true);
+    expect(onTime.stage).toBe('ESCALATED');
   });
 });

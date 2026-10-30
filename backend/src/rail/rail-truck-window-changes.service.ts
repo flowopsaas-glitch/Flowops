@@ -15,7 +15,7 @@ import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, railSystemAuditEntry, recordRailAudit,
 } from './rail-audit';
 import {
-  assessAcknowledgement, assessEscalation, assessWindowChange, bestDeliveryState,
+  ackClockStart, assessAcknowledgement, assessEscalation, assessWindowChange, bestDeliveryState,
   DELIVERY_UNAVAILABLE_REASON, formatDurationMinutes, nextVersion, resolveAckPolicy,
   summariseAckedBeforeArrival, summariseAckLatency, summariseAckRate,
 } from './rail-truck-window-changes.rules';
@@ -104,19 +104,69 @@ export interface RecipientView {
     ackDeviceAt: string | null;
     source: TruckWindowAckSource | null;
     byLabel: string | null;
+    /** change→ack, in minutes: the headline measurement, server-observed only. */
     latencyMinutes: number | null;
+    /**
+     * told→ack, in minutes. Identical to `latencyMinutes` for everybody who was
+     * addressable when the change was published; shorter for a driver attached
+     * afterwards, who could not have confirmed before they were told. Both are
+     * reported so neither has to be blended into the other.
+     */
+    latencyFromToldMinutes: number | null;
   };
   escalation: {
     stage: TruckWindowEscalation;
     ackDueMinutes: number;
+    /** How old the change is. A fact about the change, whatever the recipient. */
     minutesSinceChange: number;
+    /**
+     * When THIS recipient's clock started: the change time for everybody who
+     * existed at publication, the attachment time for a driver assigned later.
+     * The deadline and the ladder run from here, never from a moment the
+     * recipient could not have been told.
+     */
+    toldAt: string;
+    /** True when the recipient was attached after the change was published. */
+    attachedAfterChange: boolean;
+    minutesSinceTold: number;
     minutesUntilDue: number;
     overdue: boolean;
     reminderDue: boolean;
     escalationDue: boolean;
     /** Human text, already rounded honestly (never "0 min" for a sub-minute gap). */
     sinceChange: string;
+    sinceTold: string;
   };
+}
+
+/**
+ * What attaching a driver to an open change actually did. Machine-readable, so
+ * the UI states the outcome instead of guessing at one: "assigned" and "the
+ * open change now has this driver as a named recipient" are different facts.
+ */
+export interface DriverAttachmentResult {
+  /** True only when a recipient row was created for this driver. */
+  attached: boolean;
+  /**
+   * `ATTACH_FAILED` is only produced by the caller: the assignment succeeded and
+   * the attachment did not, which the operator has to be told rather than shown
+   * a green tick.
+   */
+  reason: 'ATTACHED' | 'NO_ACTIVE_CHANGE' | 'ALREADY_A_RECIPIENT' | 'ALREADY_ACKNOWLEDGED' | 'ATTACH_FAILED';
+  changeId: string | null;
+  version: number | null;
+  /** Recipient keys closed out because they are no longer who the terminal must ask. */
+  closedRecipientKeys: string[];
+  /** The new recipient's OBSERVED state, when one was created. */
+  recipient: {
+    deliveryState: TruckWindowDeliveryState;
+    deliveryReason: string | null;
+    ackState: 'UNACKED' | 'ACKNOWLEDGED';
+    /** When this driver's acknowledgement clock started. */
+    toldAt: string;
+  } | null;
+  /** A sentence the UI can show verbatim. Never claims a delivery it did not observe. */
+  message: string;
 }
 
 export interface WindowChangeView {
@@ -424,6 +474,257 @@ export class RailTruckWindowChangesService {
     return this.publishWindowChange({ ...opts, kind: TruckWindowChangeKind.CANCELLED });
   }
 
+  // ── Attaching a driver to a change that is already open ────────────────────
+
+  /**
+   * Attach the assigned driver to the ACTIVE window change, if there is one.
+   *
+   * Why this exists: recipients are resolved when a change is PUBLISHED. A
+   * truck whose driver was assigned afterwards would leave the open change
+   * addressed to `DRIVER:UNASSIGNED` — that driver would see the new window in
+   * the portal, press confirm, and be refused as NOT_A_RECIPIENT, while the
+   * board kept answering "does that truck know?" with DRIVER NOT ASSIGNED.
+   * Assigning the driver is therefore part of propagation, not a separate idea.
+   *
+   * The same honesty rules as publication apply:
+   *  - the driver must be the one this appointment actually carries, resolved
+   *    inside this tenant (the caller checked the tenant; this checks the link,
+   *    and refuses rather than address somebody who is not driving this truck);
+   *  - delivery states come from what the channels did — the portal is a pull
+   *    channel, so PUBLISHED; a push tickle the service accepted is SENT and
+   *    never DELIVERED;
+   *  - the acknowledgement clock starts when this driver became addressable
+   *    (`ackClockStart`), not when the change happened, so a driver assigned
+   *    late is not reported as having ignored a change nobody had told them
+   *    about;
+   *  - a driver who already confirmed keeps that confirmation — it is an
+   *    observed fact, and reassignment does not un-say it;
+   *  - the row that said "no driver was assigned" is closed with a reason that
+   *    says a driver was assigned later. It is never deleted and never
+   *    rewritten into a delivery that did not happen.
+   *
+   * Called AFTER the assignment itself committed, best-effort by contract: a
+   * failure here is reported to the caller (and to the operator) rather than
+   * undoing an assignment the terminal made.
+   */
+  async attachDriverToActiveWindow(opts: {
+    companyId: string;
+    appointmentId: string;
+    driver: { id: string; name: string };
+    actor?: GateActor;
+    now?: Date;
+  }): Promise<DriverAttachmentResult> {
+    const now = opts.now ?? new Date();
+    const { companyId, driver } = opts;
+    const appt = await this.ownedAppointment(companyId, opts.appointmentId);
+    if (appt.driverId !== driver.id) {
+      throw new ConflictException({
+        code: 'DRIVER_NOT_ASSIGNED_TO_APPOINTMENT',
+        message: 'That driver is not the driver assigned to this appointment',
+      });
+    }
+
+    const change = await this.prisma.terminalTruckWindowChange.findFirst({
+      where: { companyId, appointmentId: appt.id, status: 'ACTIVE' },
+      include: { recipients: true },
+    });
+    if (!change) {
+      return {
+        attached: false,
+        reason: 'NO_ACTIVE_CHANGE',
+        changeId: null,
+        version: null,
+        closedRecipientKeys: [],
+        recipient: null,
+        message: 'No window change is open on this appointment. The next one will be addressed to this driver.',
+      };
+    }
+
+    const recipientKey = `DRIVER:${driver.id}`;
+    const existing = change.recipients.find((r: any) => r.recipientKey === recipientKey);
+    if (existing) {
+      // Already addressed. Nothing is created and the original delivery
+      // evidence is left exactly as it was observed; whoever this driver
+      // replaced is still closed out, so the board cannot show two live drivers.
+      const closedRecipientKeys: string[] = await this.prisma.withTenant(companyId, (tx) =>
+        this.closeStaleDriverRecipients(tx, { companyId, changeId: change.id, keepDriverId: driver.id, now }),
+      );
+      const acknowledged = existing.ackState === 'ACKNOWLEDGED';
+      return {
+        attached: false,
+        reason: acknowledged ? 'ALREADY_ACKNOWLEDGED' : 'ALREADY_A_RECIPIENT',
+        changeId: change.id,
+        version: change.version,
+        closedRecipientKeys,
+        recipient: null,
+        message: acknowledged
+          ? `This driver had already confirmed v${change.version}.`
+          : `This driver was already a recipient of v${change.version}; their portal list still carries it.`,
+      };
+    }
+
+    const gatePolicy = resolveAckPolicy(
+      await this.prisma.terminalGatePolicy.findFirst({
+        where: { companyId, terminalName: { equals: appt.terminalName, mode: 'insensitive' } },
+      }),
+    );
+
+    // One tenant-scoped transaction: the new recipient and the closing of the
+    // placeholder or previous driver it replaces are one fact, and the
+    // recipients table is FORCE ROW LEVEL SECURITY.
+    const created = await this.prisma.withTenant(companyId, async (tx) => {
+      const row = await tx.terminalTruckWindowRecipient.upsert({
+        where: { changeId_recipientKey: { changeId: change.id, recipientKey } },
+        create: {
+          companyId,
+          changeId: change.id,
+          appointmentId: appt.id,
+          recipientType: TruckWindowRecipientType.DRIVER,
+          recipientKey,
+          recipientLabel: driver.name,
+          driverId: driver.id,
+          deliveryState: TruckWindowDeliveryState.QUEUED,
+          ackState: 'UNACKED',
+          // Frozen from this terminal's policy, exactly as at publication.
+          ackDueMinutes: gatePolicy.ackDueMinutes,
+          // This driver's clock starts now, not when the change was published:
+          // they could not have confirmed a change before they were assigned.
+          toldAt: now,
+        },
+        // A concurrent assign is a duplicate submit, not a second recipient: the
+        // unique index decides, and the row that already exists is the truth.
+        update: {},
+      });
+      const closedRecipientKeys = await this.closeStaleDriverRecipients(tx, {
+        companyId, changeId: change.id, keepDriverId: driver.id, now,
+      });
+      return { row, closedRecipientKeys };
+    });
+
+    // Propagate AFTER commit, best-effort, over the same rails publication uses.
+    await this.propagateDriver({ companyId, driverRow: created.row, driver, now });
+
+    // Read back what the channels actually did, rather than reporting the
+    // QUEUED state the row was born with.
+    const delivered = await this.prisma.terminalTruckWindowRecipient.findFirst({
+      where: { id: created.row.id, companyId },
+    });
+    const recipientState = {
+      deliveryState: (delivered?.deliveryState ?? created.row.deliveryState) as TruckWindowDeliveryState,
+      deliveryReason: delivered?.deliveryReason ?? null,
+      ackState: (delivered?.ackState ?? created.row.ackState) as 'UNACKED' | 'ACKNOWLEDGED',
+      toldAt: new Date(created.row.toldAt ?? now).toISOString(),
+    };
+
+    const metadata = {
+      appointmentId: appt.id,
+      vehicleReg: appt.vehicleReg,
+      terminalName: appt.terminalName,
+      changeId: change.id,
+      version: change.version,
+      driverId: driver.id,
+      driverName: driver.name,
+      closedRecipientKeys: created.closedRecipientKeys,
+      ackDueMinutes: gatePolicy.ackDueMinutes,
+      attachedAt: now.toISOString(),
+    };
+    await recordRailAudit(
+      this.audit, this.logger,
+      opts.actor
+        ? railAuditEntry(companyId, opts.actor, RAIL_AUDIT_ACTION.TRUCK_WINDOW_DRIVER_ATTACHED,
+          { type: RAIL_AUDIT_TARGET.TRUCK_WINDOW_RECIPIENT, id: created.row.id, name: driver.name }, metadata)
+        : railSystemAuditEntry(companyId, RAIL_AUDIT_ACTION.TRUCK_WINDOW_DRIVER_ATTACHED,
+          { type: RAIL_AUDIT_TARGET.TRUCK_WINDOW_RECIPIENT, id: created.row.id, name: driver.name }, metadata),
+    );
+
+    // The board's rows changed, so tell the tenant's sessions — the same event
+    // the board already listens for, with a field saying what moved. Best-effort.
+    try {
+      this.gateway.emitToCompany(companyId, 'truck-window-changed', {
+        appointmentId: appt.id,
+        changeId: change.id,
+        version: change.version,
+        event: 'driver-attached',
+        driverId: driver.id,
+        terminalName: appt.terminalName,
+        vehicleReg: appt.vehicleReg,
+        at: now,
+      });
+    } catch (err: any) {
+      this.logger.debug(`driver-attached realtime notify failed: ${err?.message ?? err}`);
+    }
+
+    return {
+      attached: true,
+      reason: 'ATTACHED',
+      changeId: change.id,
+      version: change.version,
+      closedRecipientKeys: created.closedRecipientKeys,
+      recipient: recipientState,
+      message: `${driver.name} was added to the open v${change.version} change and told over the driver portal.`,
+    };
+  }
+
+  /**
+   * Close out the driver recipients an assignment replaces.
+   *
+   * Both kinds stay as rows, because both are history:
+   *  - `DRIVER:UNASSIGNED`, the placeholder written when nobody was assigned.
+   *    It remains UNAVAILABLE (it never had a channel — that is a fact worth
+   *    keeping) with a reason saying a driver was assigned later, so the board
+   *    stops answering with DRIVER NOT ASSIGNED while a driver is tracked.
+   *  - a previous driver who had not confirmed. They are no longer the person
+   *    the terminal has to ask, so they leave the acknowledgement denominator
+   *    instead of ageing into a stale count against somebody who is not driving
+   *    the truck. A confirmation they already gave is left untouched.
+   *
+   * Returns the keys it actually closed, for the audit line and the response.
+   */
+  private async closeStaleDriverRecipients(
+    db: any,
+    params: { companyId: string; changeId: string; keepDriverId: string; now: Date },
+  ): Promise<string[]> {
+    const { companyId, changeId, keepDriverId, now } = params;
+    const rows = await db.terminalTruckWindowRecipient.findMany({
+      where: { companyId, changeId, recipientType: TruckWindowRecipientType.DRIVER },
+    });
+    const closed: string[] = [];
+    for (const r of rows) {
+      if (r.recipientKey === `DRIVER:${keepDriverId}`) continue;
+      const reason = r.recipientKey === 'DRIVER:UNASSIGNED'
+        ? DELIVERY_UNAVAILABLE_REASON.DRIVER_ASSIGNED_LATER
+        : DELIVERY_UNAVAILABLE_REASON.DRIVER_REASSIGNED;
+      // A confirmation already given is a fact; so is a row already closed.
+      if (r.ackState === 'ACKNOWLEDGED') continue;
+      if (r.deliveryState === TruckWindowDeliveryState.UNAVAILABLE && r.deliveryReason === reason) continue;
+      const history = Array.isArray(r.deliveryDetail) ? (r.deliveryDetail as ChannelOutcome[]) : [];
+      await db.terminalTruckWindowRecipient.updateMany({
+        where: { id: r.id, companyId },
+        data: {
+          deliveryState: TruckWindowDeliveryState.UNAVAILABLE,
+          deliveryReason: reason,
+          // The placeholder's label is a display string, and leaving it reading
+          // "DRIVER NOT ASSIGNED" beside the driver who was just attached would
+          // contradict the row underneath it. A replaced driver keeps their own
+          // name: they are a real person who really was told.
+          ...(r.recipientKey === 'DRIVER:UNASSIGNED'
+            ? { recipientLabel: 'No driver was assigned when this changed' }
+            : {}),
+          // Appended, not replaced: what was attempted before stays readable.
+          deliveryDetail: [...history, {
+            channel: TruckWindowChannel.NONE,
+            state: TruckWindowDeliveryState.UNAVAILABLE,
+            at: now.toISOString(),
+            reason,
+            detail: { note: `Closed at ${now.toISOString()} because DRIVER:${keepDriverId} is the assigned driver.` },
+          }] as any,
+        },
+      });
+      closed.push(r.recipientKey as string);
+    }
+    return closed;
+  }
+
   // ── Propagation over the rails that already exist ──────────────────────────
 
   private async propagate(params: {
@@ -525,54 +826,72 @@ export class RailTruckWindowChangesService {
 
     // ── DRIVER ───────────────────────────────────────────────────────────────
     if (driverRow) {
-      const outcomes: ChannelOutcome[] = [];
+      await this.propagateDriver({ companyId, driverRow, driver, now });
+    }
+  }
 
-      if (!driver) {
-        // No assigned driver: state the absence. Never fabricate a recipient.
-        outcomes.push({
-          channel: TruckWindowChannel.NONE, state: TruckWindowDeliveryState.UNAVAILABLE, at: null,
-          reason: DELIVERY_UNAVAILABLE_REASON.DRIVER_NOT_ASSIGNED,
-        });
-      } else {
-        // The driver portal's own gate list is a pull channel the driver
-        // controls (polled, and cached offline) — PUBLISHED, not SENT.
-        outcomes.push({ channel: TruckWindowChannel.DRIVER_PORTAL, state: TruckWindowDeliveryState.PUBLISHED, at: now.toISOString() });
+  /**
+   * The driver half of propagation, on its own.
+   *
+   * Split out so a driver attached to a change AFTER it was published is told
+   * over exactly the same rails, with exactly the same honesty about what was
+   * observed, as a driver who was assigned before it. One implementation of
+   * "what did the channels actually do", not two that can drift apart.
+   */
+  private async propagateDriver(params: {
+    companyId: string;
+    driverRow: any;
+    driver: { id: string; name: string } | null;
+    now: Date;
+  }): Promise<void> {
+    const { companyId, driverRow, driver, now } = params;
+    const outcomes: ChannelOutcome[] = [];
 
-        try {
-          const wake = await this.push.wakeDriver(driver.id);
-          if (!wake.enabled) {
-            outcomes.push({
-              channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.UNAVAILABLE, at: null,
-              reason: DELIVERY_UNAVAILABLE_REASON.PUSH_NOT_CONFIGURED,
-            });
-          } else if (wake.subscriptions === 0) {
-            outcomes.push({
-              channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.UNAVAILABLE, at: null,
-              reason: DELIVERY_UNAVAILABLE_REASON.NO_PUSH_SUBSCRIPTION,
-            });
-          } else if (wake.accepted > 0) {
-            // A payload-less tickle the push service accepted. That proves the
-            // service took the wake-up — NOT that a device displayed anything.
-            outcomes.push({
-              channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.SENT, at: now.toISOString(),
-              detail: { subscriptions: wake.subscriptions, accepted: wake.accepted, failed: wake.failed, payloadless: true },
-            });
-          } else {
-            outcomes.push({
-              channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.FAILED, at: null,
-              reason: 'PUSH_SEND_FAILED', detail: { subscriptions: wake.subscriptions, failed: wake.failed },
-            });
-          }
-        } catch (err: any) {
+    if (!driver) {
+      // No assigned driver: state the absence. Never fabricate a recipient.
+      outcomes.push({
+        channel: TruckWindowChannel.NONE, state: TruckWindowDeliveryState.UNAVAILABLE, at: null,
+        reason: DELIVERY_UNAVAILABLE_REASON.DRIVER_NOT_ASSIGNED,
+      });
+    } else {
+      // The driver portal's own gate list is a pull channel the driver
+      // controls (polled, and cached offline) — PUBLISHED, not SENT.
+      outcomes.push({ channel: TruckWindowChannel.DRIVER_PORTAL, state: TruckWindowDeliveryState.PUBLISHED, at: now.toISOString() });
+
+      try {
+        const wake = await this.push.wakeDriver(driver.id);
+        if (!wake.enabled) {
+          outcomes.push({
+            channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.UNAVAILABLE, at: null,
+            reason: DELIVERY_UNAVAILABLE_REASON.PUSH_NOT_CONFIGURED,
+          });
+        } else if (wake.subscriptions === 0) {
+          outcomes.push({
+            channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.UNAVAILABLE, at: null,
+            reason: DELIVERY_UNAVAILABLE_REASON.NO_PUSH_SUBSCRIPTION,
+          });
+        } else if (wake.accepted > 0) {
+          // A payload-less tickle the push service accepted. That proves the
+          // service took the wake-up — NOT that a device displayed anything.
+          outcomes.push({
+            channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.SENT, at: now.toISOString(),
+            detail: { subscriptions: wake.subscriptions, accepted: wake.accepted, failed: wake.failed, payloadless: true },
+          });
+        } else {
           outcomes.push({
             channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.FAILED, at: null,
-            reason: 'PUSH_ERROR', detail: { message: err?.message ?? String(err) },
+            reason: 'PUSH_SEND_FAILED', detail: { subscriptions: wake.subscriptions, failed: wake.failed },
           });
         }
+      } catch (err: any) {
+        outcomes.push({
+          channel: TruckWindowChannel.PUSH, state: TruckWindowDeliveryState.FAILED, at: null,
+          reason: 'PUSH_ERROR', detail: { message: err?.message ?? String(err) },
+        });
       }
-
-      await this.applyDelivery(companyId, driverRow.id, outcomes, now);
     }
+
+    await this.applyDelivery(companyId, driverRow.id, outcomes, now);
   }
 
   /**
@@ -1085,7 +1404,9 @@ export class RailTruckWindowChangesService {
         // be noise pointing at nobody. It is reported as UNAVAILABLE instead.
         if (r.deliveryState === TruckWindowDeliveryState.UNAVAILABLE) continue;
         const assessed = assessEscalation({
-          changedAt: change.changedAt,
+          // This recipient's own clock: the change time for a recipient created
+          // with the change, the attachment time for a driver added later.
+          changedAt: ackClockStart({ changedAt: change.changedAt, toldAt: r.toldAt ?? null }),
           now,
           ackState: r.ackState,
           // ackDueMinutes is frozen on the row at change time.
@@ -1172,6 +1493,12 @@ export class RailTruckWindowChangesService {
     // measurement, and mixing the two would make the number indefensible.
     const allSamples: { minutes: number }[] = [];
     const byType: Record<string, { minutes: number }[]> = { HAULIER: [], DRIVER: [] };
+    // told→ack, for the same acknowledgements. Identical to the samples above
+    // except for recipients attached after the change was published (a driver
+    // assigned later), who could not have confirmed before they were told.
+    // Reported beside the headline figure rather than blended into it.
+    const toldSamples: { minutes: number }[] = [];
+    let recipientsAttachedAfterChange = 0;
     const earliestAckPerChange: { ackedAt: Date | null; arrivedAt: Date | null; reachable: boolean }[] = [];
     // Ack-rate inputs, split by recipient type: a dispatcher confirming for the
     // haulier organisation is not the driver confirming, and merging them would
@@ -1197,11 +1524,15 @@ export class RailTruckWindowChangesService {
           reachable,
           notAssigned,
         });
+        const toldAt = ackClockStart({ changedAt: c.changedAt, toldAt: r.toldAt ?? null });
+        if (toldAt.getTime() > new Date(c.changedAt).getTime()) recipientsAttachedAfterChange += 1;
         if (r.ackState !== 'ACKNOWLEDGED' || !r.ackedAt) continue;
         const minutes = (new Date(r.ackedAt).getTime() - new Date(c.changedAt).getTime()) / 60_000;
         if (!Number.isFinite(minutes)) continue;
         allSamples.push({ minutes });
         (byType[r.recipientType] ??= []).push({ minutes });
+        const toldMinutes = (new Date(r.ackedAt).getTime() - toldAt.getTime()) / 60_000;
+        if (Number.isFinite(toldMinutes)) toldSamples.push({ minutes: toldMinutes });
         if (!earliest || new Date(r.ackedAt) < earliest) earliest = new Date(r.ackedAt);
       }
       if (notAssignedHere) driverNotAssignedChanges += 1;
@@ -1213,6 +1544,7 @@ export class RailTruckWindowChangesService {
     }
 
     const latency = summariseAckLatency(allSamples);
+    const latencyFromTold = summariseAckLatency(toldSamples);
     const haulierLatency = summariseAckLatency(byType.HAULIER ?? []);
     const driverLatency = summariseAckLatency(byType.DRIVER ?? []);
     const beforeArrival = summariseAckedBeforeArrival(earliestAckPerChange);
@@ -1228,7 +1560,10 @@ export class RailTruckWindowChangesService {
       for (const r of c.recipients) {
         if (r.deliveryState === TruckWindowDeliveryState.UNAVAILABLE) { unreachableRecipients += 1; continue; }
         if (r.ackState === 'ACKNOWLEDGED') continue;
-        const minutes = (now.getTime() - new Date(c.changedAt).getTime()) / 60_000;
+        // Measured from when THIS recipient could have been told: a driver
+        // attached to an old change is not stale the instant they are assigned.
+        const toldAt = ackClockStart({ changedAt: c.changedAt, toldAt: r.toldAt ?? null });
+        const minutes = (now.getTime() - toldAt.getTime()) / 60_000;
         if (minutes >= (r.ackDueMinutes ?? 30)) staleUnacked += 1;
       }
     }
@@ -1243,6 +1578,8 @@ export class RailTruckWindowChangesService {
       /** Changes where no driver was attached — their own count, never a failure. */
       driverNotAssignedChanges,
       source: 'terminal_truck_window_changes + terminal_truck_window_recipients (this tenant only)',
+      /** Recipients attached after their change was published (drivers assigned later). */
+      recipientsAttachedAfterChange,
       method: 'change→ack latency uses server-observed ackedAt minus changedAt; device-reported times are excluded from measurement. '
         + 'Acknowledgement rates count only recipients that had a deliverable channel; unreachable recipients (including DRIVER NOT ASSIGNED) are excluded from the denominator and reported separately.',
       ackRate: {
@@ -1257,6 +1594,20 @@ export class RailTruckWindowChangesService {
         byRecipientType: {
           HAULIER: { ...haulierLatency, medianText: formatDurationMinutes(haulierLatency.medianMinutes), p90Text: formatDurationMinutes(haulierLatency.p90Minutes) },
           DRIVER: { ...driverLatency, medianText: formatDurationMinutes(driverLatency.medianMinutes), p90Text: formatDurationMinutes(driverLatency.p90Minutes) },
+        },
+        /**
+         * The same acknowledgements measured from when each recipient could
+         * first have been told. Equal to the figures above for everybody who
+         * was addressable at publication; shorter for a driver attached later.
+         * Both are shown, each with its own n, because blending them would let
+         * one late assignment move a number that describes the terminal's
+         * process.
+         */
+        fromTold: {
+          ...latencyFromTold,
+          medianText: formatDurationMinutes(latencyFromTold.medianMinutes),
+          p90Text: formatDurationMinutes(latencyFromTold.p90Minutes),
+          definition: 'server-observed ackedAt minus the moment this recipient became addressable: the change time, or the attachment time for a driver assigned later.',
         },
       },
       ackedBeforeArrival: {
@@ -1579,14 +1930,27 @@ export class RailTruckWindowChangesService {
     const isActive = change.status === 'ACTIVE';
     const recipients: RecipientView[] = (change.recipients ?? []).map((r: any) => {
       const ackedAt = r.ackedAt ? new Date(r.ackedAt) : null;
+      const changedAt = new Date(change.changedAt);
+      const toldAt = ackClockStart({ changedAt, toldAt: r.toldAt ?? null });
+      const attachedAfterChange = toldAt.getTime() > changedAt.getTime();
       const latencyMinutes = ackedAt
-        ? Math.round(((ackedAt.getTime() - new Date(change.changedAt).getTime()) / 60_000) * 10) / 10
+        ? Math.round(((ackedAt.getTime() - changedAt.getTime()) / 60_000) * 10) / 10
+        : null;
+      const latencyFromToldMinutes = ackedAt
+        ? Math.round(((ackedAt.getTime() - toldAt.getTime()) / 60_000) * 10) / 10
         : null;
       // Minutes since the change, floored at 0: a client clock ahead of the
       // server must not produce a negative "time since change".
       const minutesSinceChange = Math.max(
         0,
-        Math.floor((now.getTime() - new Date(change.changedAt).getTime()) / 60_000),
+        Math.floor((now.getTime() - changedAt.getTime()) / 60_000),
+      );
+      // What this recipient has actually had to respond: the deadline and the
+      // ladder run from here, so a driver attached two hours after a change is
+      // not reported as having ignored it for two hours.
+      const minutesSinceTold = Math.max(
+        0,
+        Math.floor((now.getTime() - toldAt.getTime()) / 60_000),
       );
       const ackDueMinutes = typeof r.ackDueMinutes === 'number' ? r.ackDueMinutes : 30;
       const reachable = r.deliveryState !== TruckWindowDeliveryState.UNAVAILABLE;
@@ -1612,6 +1976,7 @@ export class RailTruckWindowChangesService {
           source: r.ackSource ?? null,
           byLabel: r.ackedByLabel ?? null,
           latencyMinutes,
+          latencyFromToldMinutes,
         },
         escalation: {
           // The PERSISTED stage is the truth. `refreshEscalation` runs before
@@ -1622,11 +1987,15 @@ export class RailTruckWindowChangesService {
           stage: r.escalation,
           ackDueMinutes,
           minutesSinceChange,
-          minutesUntilDue: ackDueMinutes - minutesSinceChange,
-          overdue: stillOwed && minutesSinceChange >= ackDueMinutes,
+          toldAt: toldAt.toISOString(),
+          attachedAfterChange,
+          minutesSinceTold,
+          minutesUntilDue: ackDueMinutes - minutesSinceTold,
+          overdue: stillOwed && minutesSinceTold >= ackDueMinutes,
           reminderDue: stillOwed && r.escalation !== TruckWindowEscalation.NONE,
           escalationDue: stillOwed && r.escalation === TruckWindowEscalation.ESCALATED,
           sinceChange: formatDurationMinutes(minutesSinceChange),
+          sinceTold: formatDurationMinutes(minutesSinceTold),
         },
       };
     });

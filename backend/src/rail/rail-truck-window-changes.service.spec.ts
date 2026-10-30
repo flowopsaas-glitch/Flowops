@@ -127,6 +127,18 @@ function withIncludes(row: Row, include: any, db: Db): Row {
   return out;
 }
 
+/**
+ * Prisma addresses a `@@unique` compound through a synthetic `where` key named
+ * after its columns. The row matcher cannot understand those keys, so they are
+ * resolved here — honouring them is what makes a duplicate submit a replay in a
+ * test instead of a second row the real database would have refused.
+ */
+const COMPOSITE_UNIQUE: Record<string, string[]> = {
+  companyId_terminalName: ['companyId', 'terminalName'],
+  companyId_idempotencyKey: ['companyId', 'idempotencyKey'],
+  changeId_recipientKey: ['changeId', 'recipientKey'],
+};
+
 /** Column defaults the schema declares, so a fresh row looks like Postgres'. */
 const DEFAULTS: Record<string, Row> = {
   recipients: {
@@ -134,6 +146,10 @@ const DEFAULTS: Record<string, Row> = {
     deliveryDetail: [], deliveryReason: null, dispatchedAt: null, deliveredAt: null,
     ackedAt: null, ackDeviceAt: null, ackSource: null, ackedByLabel: null, ackIdempotencyKey: null,
     reminderSentAt: null, escalatedAt: null, driverId: null,
+    // NULL is the schema default and it means "this recipient's clock is the
+    // change time" — the double has to carry that, or a test could pass on a
+    // column the real database would have filled in differently.
+    toldAt: null,
   },
   changes: {
     status: 'ACTIVE', activeAppointmentId: null, supersededAt: null, supersededById: null,
@@ -195,9 +211,10 @@ function table(db: Db, key: keyof Db, idPrefix: string, seq: { n: number }) {
     }),
     upsert: jest.fn(async ({ where, create, update }: any) => {
       await roundTrip();
-      const composite = where?.companyId_terminalName;
-      const existing = rows().find((r) => (composite
-        ? r.companyId === composite.companyId && r.terminalName === composite.terminalName
+      const [compositeKey] = Object.keys(where ?? {});
+      const compositeFields = COMPOSITE_UNIQUE[compositeKey];
+      const existing = rows().find((r) => (compositeFields
+        ? compositeFields.every((f) => looseEqual(r[f], where[compositeKey][f]))
         : matches(r, where, db)));
       if (existing) { Object.assign(existing, update, { updatedAt: new Date() }); return existing; }
       const row = build(create);
@@ -1961,5 +1978,390 @@ describe('tenant context on every write (RLS phase-2 ready)', () => {
     expect(h.prisma.withTenant.mock.calls).toHaveLength(1);
     expect(h.prisma.withTenant.mock.calls[0][0]).toBe('c1');
     expect(h.db.policies[0].companyId).toBe('c1');
+  });
+});
+
+// ── A driver assigned after the window moved ─────────────────────────────────
+
+describe('a driver assigned after the window moved', () => {
+  // Recipients are resolved when a change is PUBLISHED. A terminal that finds
+  // out who is driving afterwards must not leave the open change addressed to
+  // DRIVER:UNASSIGNED: that driver would see the new window in the portal,
+  // press confirm, and be refused as NOT_A_RECIPIENT, while the board kept
+  // answering "does that truck know?" with DRIVER NOT ASSIGNED. These cases pin
+  // the attachment down — including what it must NOT do to history that was
+  // already recorded.
+
+  /** A fixed instant, so a test can put the clock exactly where it means to. */
+  const at = (iso: string) => new Date(iso);
+
+  const DRIVER = { id: 'd9', name: 'Thabo Mokoena' };
+  const OTHER = { id: 'd8', name: 'Sipho Dlamini' };
+
+  /** Publish a change with nobody assigned to drive it. */
+  async function publishedUnassigned(h: Harness, over: Record<string, any> = {}) {
+    h.db.appointments.push(appointment());
+    return publish(h, over);
+  }
+
+  /** Put the driver on the appointment, as `assignDriver` would have. */
+  function assigned(h: Harness, driver = DRIVER) {
+    h.db.appointments[0].driverId = driver.id;
+    h.db.appointments[0].driverName = driver.name;
+  }
+
+  const attach = (h: Harness, driver = DRIVER, over: Record<string, any> = {}) =>
+    h.svc.attachDriverToActiveWindow({ companyId: 'c1', appointmentId: 'a1', driver, actor: ACTOR, ...over });
+
+  const recipientRow = (h: Harness, key: string) => h.db.recipients.find((r) => r.recipientKey === key);
+
+  it('makes the assigned driver a named recipient of the open change', async () => {
+    const h = makeHarness();
+    const change = await publishedUnassigned(h);
+    assigned(h);
+
+    const res = await attach(h);
+
+    expect(res).toMatchObject({
+      attached: true, reason: 'ATTACHED', changeId: change.id, version: 1,
+      closedRecipientKeys: ['DRIVER:UNASSIGNED'],
+    });
+    expect(recipientRow(h, 'DRIVER:d9')).toMatchObject({
+      changeId: change.id, appointmentId: 'a1', recipientType: 'DRIVER',
+      recipientLabel: 'Thabo Mokoena', driverId: 'd9', ackState: 'UNACKED',
+      // Frozen from the same terminal policy publication uses (30 = default).
+      ackDueMinutes: 30,
+    });
+    // Their clock starts at the assignment: this is the column that keeps a
+    // late-assigned driver from being reported as having ignored the change.
+    expect(recipientRow(h, 'DRIVER:d9')!.toldAt).toBeInstanceOf(Date);
+    // The haulier's own row is untouched by somebody else's assignment.
+    expect(recipientRow(h, 'HAULIER')!.deliveryReason).toBeNull();
+  });
+
+  it('refuses to address a driver this appointment does not carry', async () => {
+    const h = makeHarness();
+    await publishedUnassigned(h);
+    assigned(h, OTHER);
+
+    await expect(attach(h, DRIVER)).rejects.toThrow(/not the driver assigned to this appointment/);
+    expect(recipientRow(h, 'DRIVER:d9')).toBeUndefined();
+    expect(h.audits.some((a) => a.action === 'truck_window.driver_attached')).toBe(false);
+  });
+
+  it('refuses an appointment belonging to another tenant', async () => {
+    const h = makeHarness();
+    await publishedUnassigned(h);
+    assigned(h);
+
+    await expect(h.svc.attachDriverToActiveWindow({
+      companyId: 'OTHER', appointmentId: 'a1', driver: DRIVER, actor: ACTOR,
+    })).rejects.toThrow(/not found/);
+    expect(h.db.recipients.filter((r) => r.recipientKey === 'DRIVER:d9')).toHaveLength(0);
+  });
+
+  it('invents nothing when no change is open', async () => {
+    const h = makeHarness();
+    h.db.appointments.push(appointment({ driverId: DRIVER.id, driverName: DRIVER.name }));
+
+    const res = await attach(h);
+
+    expect(res).toMatchObject({
+      attached: false, reason: 'NO_ACTIVE_CHANGE', changeId: null, version: null,
+      closedRecipientKeys: [], recipient: null,
+    });
+    expect(res.message).toMatch(/next one will be addressed to this driver/);
+    expect(h.db.recipients).toHaveLength(0);
+    expect(h.push.wakeDriver).not.toHaveBeenCalled();
+    expect(h.audits.some((a) => a.action === 'truck_window.driver_attached')).toBe(false);
+  });
+
+  it('closes the DRIVER NOT ASSIGNED placeholder with a reason that says what happened, and keeps the row', async () => {
+    const h = makeHarness();
+    const change = await publishedUnassigned(h);
+    assigned(h);
+    const before = { ...recipientRow(h, 'DRIVER:UNASSIGNED')! };
+
+    await attach(h);
+
+    const placeholder = recipientRow(h, 'DRIVER:UNASSIGNED')!;
+    // Never had a channel, so it stays UNAVAILABLE — but the board must not
+    // keep reading it as "no driver is assigned".
+    expect(placeholder.deliveryState).toBe('UNAVAILABLE');
+    expect(placeholder.deliveryReason).toBe('DRIVER_ASSIGNED_LATER');
+    expect(placeholder.recipientLabel).toBe('No driver was assigned when this changed');
+    // History is appended to, not rewritten: what was attempted at publication
+    // is still readable, and the row was not deleted.
+    expect(placeholder.deliveryDetail.length).toBeGreaterThan(before.deliveryDetail.length);
+    expect(placeholder.deliveryDetail[0]).toEqual(before.deliveryDetail[0]);
+    expect(placeholder.createdAt).toEqual(before.createdAt);
+    expect(h.db.recipients.filter((r) => r.changeId === change.id)).toHaveLength(3);
+  });
+
+  it('lets the attached driver confirm — the refusal before the attachment is the bug being closed', async () => {
+    const h = makeHarness();
+    const change = await publishedUnassigned(h);
+    assigned(h);
+
+    await expect(h.svc.acknowledge({
+      companyId: 'c1', changeId: change.id, source: TruckWindowAckSource.DRIVER_PORTAL, driverId: DRIVER.id,
+    })).rejects.toThrow(/not a recipient of this window change/);
+    expect(h.audits.some((a) => a.action === 'truck_window.ack_rejected' && a.metadata.reason === 'NOT_A_RECIPIENT')).toBe(true);
+
+    await attach(h);
+
+    const ack = await h.svc.acknowledge({
+      companyId: 'c1', changeId: change.id, source: TruckWindowAckSource.DRIVER_PORTAL, driverId: DRIVER.id,
+    });
+    expect(ack.recipient.ack.state).toBe('ACKNOWLEDGED');
+    expect(ack.recipient.recipientLabel).toBe('Thabo Mokoena');
+    expect(ack.recipient.driverId).toBe('d9');
+  });
+
+  it('tells the driver over the same rails, and claims only what was observed', async () => {
+    const h = makeHarness({ pushEnabled: true, pushSubscriptions: 2, pushAccepted: 2 });
+    await publishedUnassigned(h);
+    assigned(h);
+
+    const res = await attach(h);
+
+    expect(h.push.wakeDriver).toHaveBeenCalledWith('d9');
+    // A payload-less tickle the push service accepted is SENT — never DELIVERED.
+    expect(res.recipient!.deliveryState).toBe('SENT');
+    expect(res.recipient!.ackState).toBe('UNACKED');
+    const row = recipientRow(h, 'DRIVER:d9')!;
+    expect(row.deliveryChannels).toEqual(['DRIVER_PORTAL', 'PUSH']);
+    expect(row.deliveredAt).toBeNull();
+    expect(row.dispatchedAt).toBeInstanceOf(Date);
+  });
+
+  it('reports the portal pull channel as PUBLISHED when there is no push to send', async () => {
+    const h = makeHarness();
+    await publishedUnassigned(h);
+    assigned(h);
+
+    const res = await attach(h);
+
+    expect(res.recipient!.deliveryState).toBe('PUBLISHED');
+    const row = recipientRow(h, 'DRIVER:d9')!;
+    // PUBLISHED is a delivery on a pull channel, so no absence-reason is shown.
+    expect(row.deliveryReason).toBeNull();
+    expect((row.deliveryDetail as Row[]).find((d) => d.channel === 'PUSH'))
+      .toMatchObject({ state: 'UNAVAILABLE', reason: 'PUSH_NOT_CONFIGURED' });
+    expect(res.message).toMatch(/driver portal/);
+  });
+
+  it('a second assign is a replay: one recipient, and the first delivery evidence untouched', async () => {
+    const h = makeHarness();
+    await publishedUnassigned(h);
+    assigned(h);
+    await attach(h);
+    const row = recipientRow(h, 'DRIVER:d9')!;
+    const evidence = { channels: [...row.deliveryChannels], detail: row.deliveryDetail, dispatchedAt: row.dispatchedAt };
+
+    const second = await attach(h);
+
+    expect(second.attached).toBe(false);
+    expect(second.reason).toBe('ALREADY_A_RECIPIENT');
+    expect(second.version).toBe(1);
+    expect(second.recipient).toBeNull();
+    expect(h.db.recipients.filter((r) => r.recipientKey === 'DRIVER:d9')).toHaveLength(1);
+    // Nothing is re-dispatched and nothing observed earlier is rewritten.
+    expect(h.push.wakeDriver).toHaveBeenCalledTimes(1);
+    expect(row.deliveryChannels).toEqual(evidence.channels);
+    expect(row.deliveryDetail).toEqual(evidence.detail);
+    expect(row.dispatchedAt).toEqual(evidence.dispatchedAt);
+  });
+
+  it('re-assigning closes a previous driver who had not confirmed, and says so on the row', async () => {
+    const h = makeHarness();
+    await publishedUnassigned(h);
+    assigned(h);
+    await attach(h);
+    h.db.appointments[0].driverId = OTHER.id;
+    h.db.appointments[0].driverName = OTHER.name;
+
+    const res = await attach(h, OTHER);
+
+    expect(res).toMatchObject({ attached: true, reason: 'ATTACHED', closedRecipientKeys: ['DRIVER:d9'] });
+    const previous = recipientRow(h, 'DRIVER:d9')!;
+    expect(previous.deliveryState).toBe('UNAVAILABLE');
+    expect(previous.deliveryReason).toBe('DRIVER_REASSIGNED');
+    expect(previous.ackState).toBe('UNACKED');
+    expect(recipientRow(h, 'DRIVER:d8')!.ackState).toBe('UNACKED');
+
+    // The terminal is not left with two drivers it appears to be waiting on.
+    const k = await h.svc.kpis('c1', {});
+    expect(k.ackRate.DRIVER.denominator).toBe(1);
+    expect(k.ackRate.DRIVER.unreachable).toBe(2);   // the placeholder and the replaced driver
+  });
+
+  it('re-assigning keeps a confirmation the previous driver already gave', async () => {
+    const h = makeHarness();
+    const change = await publishedUnassigned(h);
+    assigned(h);
+    await attach(h);
+    await h.svc.acknowledge({
+      companyId: 'c1', changeId: change.id, source: TruckWindowAckSource.DRIVER_PORTAL, driverId: DRIVER.id,
+    });
+    const confirmed = { ...recipientRow(h, 'DRIVER:d9')! };
+    h.db.appointments[0].driverId = OTHER.id;
+
+    const res = await attach(h, OTHER);
+
+    // A recorded confirmation is a fact about a real person: reassignment does
+    // not un-say it, and it is not rewritten into an unreachable row.
+    expect(res.closedRecipientKeys).toEqual([]);
+    const row = recipientRow(h, 'DRIVER:d9')!;
+    expect(row.ackState).toBe('ACKNOWLEDGED');
+    expect(row.ackedAt).toEqual(confirmed.ackedAt);
+    expect(row.deliveryState).toBe(confirmed.deliveryState);
+    expect(row.deliveryReason).toBeNull();
+    // The new driver still owes their own confirmation.
+    expect(recipientRow(h, 'DRIVER:d8')!.ackState).toBe('UNACKED');
+    const board = await h.svc.ackBoard('c1', {});
+    const drivers = board.rows.find((r: any) => r.id === change.id)!.recipients
+      .filter((r: any) => r.recipientType === 'DRIVER');
+    // Three driver rows, because three things happened: nobody was assigned at
+    // publication, Thabo was assigned and confirmed, Sipho replaced him. The
+    // placeholder no longer reads "DRIVER NOT ASSIGNED" beside a named driver.
+    expect(drivers.map((r: any) => r.recipientLabel).sort()).toEqual([
+      'No driver was assigned when this changed', 'Sipho Dlamini', 'Thabo Mokoena',
+    ]);
+    expect(board.counts.acknowledged).toBe(1);
+  });
+
+  it("starts the attached driver's clock at the assignment, so a late driver is not blamed for the wait", async () => {
+    const h = makeHarness();
+    const changeAt = at('2026-10-30T02:00:00Z');
+    const change = await publishedUnassigned(h, { now: changeAt });
+    assigned(h);
+    await attach(h, DRIVER, { now: at('2026-10-30T05:00:00Z') });
+
+    const board = await h.svc.ackBoard('c1', {}, at('2026-10-30T05:10:00Z'));
+    const row = board.rows.find((r: any) => r.id === change.id)!;
+    const haulier = row.recipients.find((r: any) => r.recipientType === 'HAULIER')!;
+    const driver = row.recipients.find((r: any) => r.driverId === 'd9')!;
+    const placeholder = row.recipients.find((r: any) => r.recipientKey === 'DRIVER:UNASSIGNED'
+      || r.recipientLabel === 'No driver was assigned when this changed')!;
+
+    // The change is three hours and ten minutes old for everybody: that stays a
+    // fact on every row.
+    expect(haulier.escalation.minutesSinceChange).toBe(190);
+    expect(driver.escalation.minutesSinceChange).toBe(190);
+    // What each has had to respond is different.
+    expect(haulier.escalation.minutesSinceTold).toBe(190);
+    expect(haulier.escalation.attachedAfterChange).toBe(false);
+    expect(haulier.escalation.overdue).toBe(true);
+    expect(haulier.escalation.stage).toBe('ESCALATED');
+    expect(driver.escalation.attachedAfterChange).toBe(true);
+    expect(driver.escalation.minutesSinceTold).toBe(10);
+    expect(driver.escalation.minutesUntilDue).toBe(20);
+    expect(driver.escalation.overdue).toBe(false);
+    expect(driver.escalation.stage).toBe('NONE');
+    expect(driver.escalation.sinceTold).toMatch(/10/);
+    // The closed placeholder is not escalated: there is nobody to escalate to.
+    expect(placeholder.escalation.stage).toBe('NONE');
+  });
+
+  it('keeps a just-attached driver out of the stale count and out of the not-assigned count', async () => {
+    const h = makeHarness();
+    await publishedUnassigned(h, { now: at('2026-10-30T02:00:00Z') });
+    assigned(h);
+
+    const beforeAttach = await h.svc.kpis('c1', {}, at('2026-10-30T05:10:00Z'));
+    expect(beforeAttach.driverNotAssignedChanges).toBe(1);
+    expect(beforeAttach.recipientsAttachedAfterChange).toBe(0);
+
+    await attach(h, DRIVER, { now: at('2026-10-30T05:00:00Z') });
+    const k = await h.svc.kpis('c1', {}, at('2026-10-30T05:10:00Z'));
+
+    // One stale change: the haulier, who has had 190 minutes. The driver, told
+    // ten minutes ago, is not stale and is not counted as unassigned either.
+    expect(k.staleUnackedChanges).toBe(1);
+    expect(k.driverNotAssignedChanges).toBe(0);
+    expect(k.recipientsAttachedAfterChange).toBe(1);
+    expect(k.unreachableRecipients).toBe(1);
+    expect(k.ackRate.DRIVER.denominator).toBe(1);
+    expect(k.ackRate.DRIVER.driverNotAssigned).toBe(0);
+  });
+
+  it('reports both latency readings when the driver was told later than the change', async () => {
+    const h = makeHarness();
+    const change = await publishedUnassigned(h, { now: at('2026-10-30T02:00:00Z') });
+    await h.svc.acknowledge({
+      companyId: 'c1', changeId: change.id, source: TruckWindowAckSource.TENANT_USER, now: at('2026-10-30T02:20:00Z'),
+    });
+    assigned(h);
+    await attach(h, DRIVER, { now: at('2026-10-30T05:00:00Z') });
+    await h.svc.acknowledge({
+      companyId: 'c1', changeId: change.id, source: TruckWindowAckSource.DRIVER_PORTAL,
+      driverId: DRIVER.id, now: at('2026-10-30T05:04:00Z'),
+    });
+
+    const k = await h.svc.kpis('c1', {}, at('2026-10-30T06:00:00Z'));
+
+    // The headline figure is unchanged and still change→ack: the driver's
+    // confirmation landed 184 minutes after the window moved.
+    expect(k.ackLatency.byRecipientType.DRIVER.medianMinutes).toBe(184);
+    expect(k.ackLatency.byRecipientType.HAULIER.medianMinutes).toBe(20);
+    expect(k.ackLatency.n).toBe(2);
+    // Beside it, not blended into it: measured from when each was told.
+    expect(k.ackLatency.fromTold.n).toBe(2);
+    expect(k.ackLatency.fromTold.medianMinutes).toBe(12);   // (4 + 20) / 2
+    expect(k.ackLatency.fromTold.definition).toMatch(/became addressable/);
+    expect(k.recipientsAttachedAfterChange).toBe(1);
+  });
+
+  it('attaches to the ACTIVE version only, and leaves a superseded version as it was recorded', async () => {
+    const h = makeHarness();
+    h.db.appointments.push(appointment());
+    const v1 = await publish(h);
+    const v2 = await publish(h, { newWindowStart: hours(8), newWindowEnd: hours(9) });
+    assigned(h);
+
+    const res = await attach(h);
+
+    expect(res.changeId).toBe(v2.id);
+    expect(res.version).toBe(2);
+    const v1Placeholder = h.db.recipients.find((r) => r.changeId === v1.id && r.recipientKey === 'DRIVER:UNASSIGNED')!;
+    // History is not tidied up: v1 really was published with nobody assigned.
+    expect(v1Placeholder.deliveryReason).toBe('DRIVER_NOT_ASSIGNED');
+    expect(v1Placeholder.deliveryState).toBe('UNAVAILABLE');
+    expect(h.db.recipients.filter((r) => r.changeId === v1.id && r.recipientKey === 'DRIVER:d9')).toHaveLength(0);
+  });
+
+  it('is audited against the person who assigned the driver, and the board is told', async () => {
+    const h = makeHarness();
+    const change = await publishedUnassigned(h);
+    assigned(h);
+
+    await attach(h);
+
+    const entry = h.audits.find((a) => a.action === 'truck_window.driver_attached');
+    expect(entry).toBeDefined();
+    expect(entry!.actorId).toBe('u1');
+    expect(entry!.targetType).toBe('rail_truck_window_recipient');
+    expect(entry!.metadata).toMatchObject({
+      appointmentId: 'a1', vehicleReg: 'ABC 123', changeId: change.id, version: 1,
+      driverId: 'd9', driverName: 'Thabo Mokoena', closedRecipientKeys: ['DRIVER:UNASSIGNED'],
+      ackDueMinutes: 30,
+    });
+    // The same event the board already listens for, saying what moved.
+    expect(h.gateway.emitToCompany).toHaveBeenCalledWith('c1', 'truck-window-changed', expect.objectContaining({
+      changeId: change.id, version: 1, event: 'driver-attached', driverId: 'd9',
+    }));
+  });
+
+  it('runs its writes inside the tenant context, like every other recipient write', async () => {
+    const h = makeHarness();
+    await publishedUnassigned(h);
+    assigned(h);
+
+    const before = h.prisma.withTenant.mock.calls.length;
+    await attach(h);
+
+    expect(h.prisma.withTenant.mock.calls.length).toBeGreaterThan(before);
+    expect(h.prisma.withTenant.mock.calls.every((c: any[]) => c[0] === 'c1')).toBe(true);
   });
 });
