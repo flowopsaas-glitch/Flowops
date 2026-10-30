@@ -6402,7 +6402,9 @@ model TerminalTruckWindowChange {
   updatedAt DateTime @updatedAt
 
   @@unique([companyId, idempotencyKey])
-  @@index([companyId, appointmentId, version])
+  // PostgreSQL truncates the original migration's 65-byte index name to 63
+  // bytes. Map it explicitly so Prisma preserves the already-deployed name.
+  @@index([companyId, appointmentId, version], map: "terminal_truck_window_changes_companyId_appointmentId_version_i")
   @@index([companyId, status])
   @@index([companyId, changedAt])
   @@map("terminal_truck_window_changes")
