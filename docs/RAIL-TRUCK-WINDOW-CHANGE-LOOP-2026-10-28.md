@@ -11,7 +11,9 @@ Companion documents:
 
 Code map: `backend/src/rail/rail-truck-window-changes.{service,controller}.ts`,
 `rail-truck-window-changes.rules.ts`, `rail-truck-gate.shared.ts`, `rail-roles.ts`,
+`rail-truck-appointments.{service,controller}.ts` (assignment and the share link),
 `backend/prisma/migrations/20261028120000_truck_window_change_closed_loop/`,
+`backend/prisma/migrations/20261030120000_truck_window_recipient_told_at/`,
 `frontend/src/pages/rail/TruckWindowAckBoard.tsx`, `frontend/src/pages/rail/TruckAppointmentsPanel.tsx`,
 `frontend/src/pages/GateAppointmentPage.tsx`, `frontend/src/lib/railWindowAuthority.ts`,
 `driver-portal/src/components/GateWindows.tsx`, `driver-portal/src/services/windowAck.ts`.
@@ -135,6 +137,13 @@ All three new tables get `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY
 `tenant_isolation` policy using `app_tenant_guard("companyId")`, matching the existing
 `20261012210000_rls_tenant_isolation` / `20261021120000_truck_appointments` pattern.
 
+Migration `20261030120000_truck_window_recipient_told_at` adds one nullable column,
+`terminal_truck_window_recipients.toldAt` (§3.1, §5): when that recipient's acknowledgement
+clock starts. NULL means "the change time", which is what every existing row means, so it is
+additive and needs no backfill, no new policy and no rewrite. It is an explicit column rather
+than an inference from `createdAt` because inferring it would make every escalation depend on
+two clocks agreeing, and a wrong `createdAt` would silently stop a ladder from ever climbing.
+
 Idempotency: `@@unique([companyId, idempotencyKey])`. A replayed key returns the ORIGINAL
 change and publishes no second version; without a key a second submit is a genuine second
 version (never silently deduped); the same key in another tenant is a different key. The day
@@ -196,6 +205,50 @@ Delivery fidelity is ordered and never optimistic:
 observed. **SENT is not DELIVERED is not ACKNOWLEDGED**, and no UI displays a state that was
 not observed.
 
+### 3.1 A driver assigned after the change was published
+
+Recipients are resolved at publication, and a terminal often learns who is driving later than
+it books the window. Left alone, that leaves the open change addressed to `DRIVER:UNASSIGNED`:
+the driver sees the new window in the portal, presses confirm, and is refused as
+`NOT_A_RECIPIENT`, while the board keeps answering "does that truck know?" with **DRIVER NOT
+ASSIGNED**. So assigning a driver is treated as part of propagation, not as a separate idea.
+
+`POST /rail/truck-appointments/:id/assign-driver` (rail-write roles — this is not a window move,
+so a dispatcher may do it) assigns the driver and then calls
+`RailTruckWindowChangesService.attachDriverToActiveWindow`, which:
+
+- refuses unless the appointment actually carries that driver (a recipient row for somebody who
+  is not driving this truck would be a fabricated recipient);
+- creates `DRIVER:<id>` on the **ACTIVE** change only — a SUPERSEDED version is history and is
+  never reopened;
+- propagates over the same driver rails as publication, through the same `propagateDriver`
+  implementation, so a late-attached driver is told exactly what an early one is told, and the
+  states mean the same thing (`DRIVER_PORTAL` → PUBLISHED, an accepted push tickle → SENT, never
+  DELIVERED);
+- closes out whoever the assignment replaces, keeping both rows as history:
+  `DRIVER:UNASSIGNED` stays `UNAVAILABLE` with reason `DRIVER_ASSIGNED_LATER` and is relabelled
+  "No driver was assigned when this changed" (it never had a channel — that is worth keeping —
+  but the board must not read it as an open absence beside a named driver), and a previous
+  driver who had **not** confirmed becomes `UNAVAILABLE / DRIVER_REASSIGNED`, leaving the
+  acknowledgement denominator instead of ageing into a stale count against somebody who is not
+  driving the truck. A confirmation a previous driver **already gave is left untouched**: it is
+  an observed fact, and reassignment does not un-say it — the board then shows one driver who
+  confirmed and one who still owes it;
+- is idempotent: the `@@unique([changeId, recipientKey])` index plus an upsert mean a double
+  submit is a replay, not a second recipient, and the original delivery evidence is not
+  rewritten;
+- is audited as `truck_window.driver_attached` against the person who assigned the driver
+  (change, version, driver, the recipient keys it closed, the frozen `ackDueMinutes`), and tells
+  the tenant's sessions over the `truck-window-changed` event the board already listens for,
+  with `event: 'driver-attached'`.
+
+The response carries `driverAttachment { attached, reason, changeId, version,
+closedRecipientKeys, recipient, message }` with `reason` one of `ATTACHED`, `NO_ACTIVE_CHANGE`,
+`ALREADY_A_RECIPIENT`, `ALREADY_ACKNOWLEDGED`, `ATTACH_FAILED`. The attachment runs **after** the
+assignment committed and is best-effort: if it fails, the driver is still assigned, the failure
+is returned and shown as an error, and nothing pretends otherwise. The panel words its toast
+from that `reason` rather than assuming a notification went out.
+
 ---
 
 ## 4. Quiet hours: an urgent change at night is not deferred
@@ -252,6 +305,20 @@ pattern `rail-handshake.service.ts` already uses. Reminder and escalation are wr
 recipients are never escalated — nobody can confirm a notification that was never deliverable —
 and a superseded version's recipients are not open items.
 
+**Whose clock the ladder runs on.** A recipient attached after publication (§3.1) cannot have
+been told before they were attached, so their deadline, their ladder stage and their
+stale-unacked status are measured from `terminal_truck_window_recipients.toldAt` — NULL for
+everybody created with the change, which means "the change time", so nothing about existing
+behaviour moves. Measuring a late-attached driver from the change instead would report them as
+overdue, reminded and escalated for a change nobody had told them about: the precise false
+answer the board exists to prevent. `ackClockStart()` is the single implementation, used by the
+ladder, the view and the KPIs, and it never returns a moment earlier than the change (bad data
+escalates rather than going quiet). Every recipient view carries both readings —
+`minutesSinceChange` (how old the change is, a fact for everybody) and `minutesSinceTold` (what
+this recipient has had to respond) — plus `attachedAfterChange`, and the UI labels a
+late-attached line "told 10 min ago · assigned after the change" instead of showing an age that
+blames the driver for the wait.
+
 The board (`GET /rail/truck-window-changes/board`) answers "does that truck know?" per truck:
 one line per recipient with separate states, the new window, the superseded window struck
 through, the reason, time since change, and counts. **Counts are recipients, not changes**, and
@@ -301,7 +368,9 @@ current version".
 |---|---|---|
 | `ackLatency.medianMinutes`, `.p90Minutes` | change → confirmation, from **server-observed** `ackedAt − changedAt` only, nearest-rank percentile | confirmed recipients only; device-reported times excluded; split `byRecipientType` (`HAULIER`, `DRIVER`), each with its own `n` |
 | `ackedBeforeArrival.percent` | changes confirmed before the truck arrived | **terminal-recorded arrival**: `terminalTruckAppointments.arrivedAt`, logged by the terminal operator at gate check-in — *not* GPS and *not* a geofence. Denominator = changes with a terminal-recorded arrival; `excludedNoArrival` and `excludedUnreachable` are reported, never silently dropped |
-| `staleUnackedChanges` | reachable recipients past their frozen `ackDueMinutes` who have not confirmed | unreachable recipients excluded from the blame |
+| `ackLatency.fromTold` | the **same acknowledgements** measured from when each recipient became addressable (`ackedAt − toldAt`), with its own `n` and `definition` | identical to the headline figures unless a driver was attached after the change; shown **beside** them, never blended into them, and only printed in the UI when `recipientsAttachedAfterChange > 0` |
+| `recipientsAttachedAfterChange` | recipients attached after their change was published | its own count |
+| `staleUnackedChanges` | reachable recipients past their frozen `ackDueMinutes` who have not confirmed, measured from **their own** clock (§5) | unreachable recipients excluded from the blame; a driver attached ten minutes ago is not stale because the change is three hours old |
 | `unreachableRecipients` | recipients with no deliverable channel | its own count |
 | `driverNotAssignedChanges` | changes with no driver assigned | its own count — **not** a failure and **not** in any denominator |
 | `ackRate.HAULIER`, `ackRate.DRIVER` | `acknowledged / denominator`, denominator = **reachable** recipients of that type only | each carries `acknowledged`, `notAcknowledged`, `unreachable`, `driverNotAssigned`, `percent` (`null` → `percentText: 'UNKNOWN'`), plus a `definition` string |
@@ -358,6 +427,10 @@ to it rather than widening who can see it.
 | Duplicate ack | *idempotency* | "a duplicate acknowledgement returns the original and does NOT move ackedAt" |
 | Duplicate publish / replan | *idempotency*, *day replan* | "a replayed idempotency key returns the ORIGINAL change…", "a double-submitted replan cannot publish two versions for the same truck" |
 | Cancellation of a BOOKED window | *window-change state machine* | "cancelling a BOOKED window is a versioned change with NO new window", "…a closed window still needs the cut-off reason" |
+| Driver assigned AFTER the change was published | service spec, *a driver assigned after the window moved* (17 tests) | "makes the assigned driver a named recipient of the open change", "lets the attached driver confirm — the refusal before the attachment is the bug being closed", "refuses to address a driver this appointment does not carry", "refuses an appointment belonging to another tenant", "attaches to the ACTIVE version only, and leaves a superseded version as it was recorded" |
+| Late attachment must not rewrite history | *a driver assigned after the window moved* | "closes the DRIVER NOT ASSIGNED placeholder with a reason that says what happened, and keeps the row", "re-assigning keeps a confirmation the previous driver already gave", "a second assign is a replay: one recipient, and the first delivery evidence untouched" |
+| Late attachment must not blame the driver | rules spec *ackClockStart* (5 tests) + service spec | "starts the attached driver's clock at the assignment, so a late driver is not blamed for the wait", "keeps a just-attached driver out of the stale count and out of the not-assigned count", "reports both latency readings when the driver was told later than the change" |
+| Assignment reporting, and its failure | `rail-truck-appointments.controller.spec.ts` (4 tests) + `TruckAppointmentsPanel.test.tsx` | "keeps the assignment when the attachment fails, and says so in the server's own words"; panel: "when the attachment fails, the assignment is still reported and the failure is an error", "when no change is open it says there was nothing to attach — it does not claim a notification" |
 | Migration + RLS | `scripts/verify-migrations.mjs`, `rail-rls` spec, `rail-truck-window-changes.service.spec.ts` → *tenant context on every write (RLS phase-2 ready)* | plus the CI integration spec against a real PostgreSQL |
 
 ---
@@ -372,7 +445,15 @@ to it rather than widening who can see it.
   on the operator issuing a link.
 - **`driverId` is new.** Existing appointments have no driver assigned, so until they are
   assigned their driver recipient is `DRIVER:UNASSIGNED` and they are counted separately, not
-  as failures.
+  as failures. The terminal can now assign one from the truck-appointments panel (a select per
+  row, plus the booking form), and assigning one attaches them to the change that is already
+  open (§3.1). What is still true: **a driver cannot be unassigned** — the API has no such
+  operation — so the panel explains that instead of offering a control that would silently do
+  nothing, and the only drivers offered are the tenant's ACTIVE ones, because that is what the
+  server accepts.
+- **Attaching a driver does not retroactively notify.** It addresses the ACTIVE change and
+  propagates over the driver rails; it does not re-send anything about superseded versions, and
+  it does not create a change where none was published.
 - **`emitToDriver` is dead code** and stays dead; the driver path is the portal poll plus a
   payload-less push tickle. A push wake is not a delivery guarantee, which is why the delivery
   state says `PUBLISHED`/`SENT` and not `DELIVERED`.
