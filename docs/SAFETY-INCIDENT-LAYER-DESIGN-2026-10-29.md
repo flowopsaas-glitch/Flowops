@@ -39,17 +39,43 @@ enters that circle. There is:
 - no abuse handling — no rate limit, no dedupe, no consequence for a report that turns out to
   be wrong, and no record of who rejected one;
 - no entry in the tenant `AuditLog`. The module calls the `SafetyAlert` row its "audit record"
-  (`driver-safety.service.ts:107`), which records that an alert fired — not who created a zone,
+  (the `1. Create audit record` comment inside `triggerAlert()`), which records that an alert
+  fired — not who created a zone,
   on whose authority, or who later rejected it. A report that becomes a permanent zone leaves no
   trail at all;
 - identity taken from the request body: `POST /driver-safety/zones/report` and
-  `POST /driver-safety/check` both accept `driverId` in the body, so a caller can report or be
-  positioned as any driver in the tenant.
+  `POST /driver-safety/check` both accepted `driverId` in the body, so a caller could report — or
+  be positioned — as any driver, including one in another tenant. `safety_alerts.driverId` is a
+  plain string with no relation and no tenant check, `reportDangerZone()` resolved the driver
+  with `findFirst({ where: { id } })` (no `companyId`) and wrote that driver's real name into the
+  zone's `name` and `description`, and `checkPosition()` stored a caller-typed `driverName` and
+  pushed the alert to whatever id it was given. That is a cross-tenant disclosure and a false
+  attribution on a record that immediately alerts other drivers.
 
-That last point is a security defect in the current code, independent of WP4. It is recorded
-here because the incident layer cannot be built on an identity the client chooses. **Recommended
-for immediate, separate fix: take the driver identity from the authenticated session/device
-token, as `driver-portal` already does.**
+**Status of that last point: fixed on this branch, 2026-10-30** (`backend/src/driver-safety/`,
+19 tests in `driver-safety.spec.ts`), because it was a security defect in shipping code and does
+not need WP4 approval. What changed:
+
+- `resolveSubjectDriver(companyId, user, requestedDriverId)` resolves the subject from the
+  session. A `DRIVER`-role caller acts as the Driver record linked to their own user account
+  (`Driver.userId`) and a body id that is not theirs is refused 403; a supervisory role
+  (ADMIN / COMPANY_ADMIN / MANAGER / DISPATCH / WAREHOUSE) may act on a driver **in their own
+  tenant**, which is the job they are doing; the subject must exist in that tenant or the call
+  fails 404 and nothing is written.
+- `checkPosition()` dropped its `driverName` parameter — the name on the alert and on the
+  dispatch push is looked up, not typed — and refuses (`refused: 'DRIVER_NOT_IN_TENANT'`, no
+  alert row, no push) if the id it is given is not a driver in that company. The lookup is lazy,
+  so the ordinary 30 s heartbeat with no zone matched costs no extra query.
+- `reportDangerZone()` scopes its driver lookup to the caller's tenant, refuses an unknown or
+  foreign id, and writes a `driver_safety.zone_reported` audit entry naming the acting user
+  (`actorType: 'tenant'`), the subject driver, and whether this was `DRIVER_SELF` or `ON_BEHALF`.
+  The write is best-effort, like `recordRailAudit`: a report that was accepted stays accepted if
+  the audit table is unavailable.
+
+What is **not** fixed, because it is WP4 and still gated on approval: a report still creates a
+permanent, ACTIVE, notifying zone in one tap, with no verification, no expiry and no abuse
+handling. Those are §2–§7 below and decision items 1 and 2 in §11. The identity half is now
+sound enough to build on — the incident layer will not have to trust a client-chosen driver.
 
 The design principle that follows: **a report is a claim; a zone is an assertion.** Only a
 verified assertion may alert drivers.
@@ -335,8 +361,11 @@ Ordered, each with the reason it is a decision and not a detail:
    tap alerts every driver in the tenant. If the answer is "fix that first", it is a small
    separate change (a report creates an incident for dispatch, not a zone) and it should land
    before the rest.
-3. **The identity defect (§1)** — `driverId` from the request body on `/driver-safety/zones/report`
-   and `/driver-safety/check`. Recommended as an immediate separate fix, independent of WP4.
+3. ~~**The identity defect (§1)**~~ — **resolved 2026-10-30 on this branch**, independent of WP4:
+   identity now comes from the session, both driver lookups are tenant-scoped, a caller-typed
+   driver name is no longer accepted, and a zone report is audited against the acting user. No
+   decision is needed on this item; decision 2 above still governs whether one tap may keep
+   creating a permanent notifying zone.
 4. **Verification policy (§4)**: is dispatch-confirm alone acceptable, or must a `CRITICAL`
    incident have a second source before drivers are alerted? The answer changes the UI and the
    time-to-alert.
