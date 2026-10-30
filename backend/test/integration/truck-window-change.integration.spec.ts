@@ -501,7 +501,23 @@ describe('Truck window changes — closed loop (PostgreSQL)', () => {
       where: { changeId: change.id, ackState: 'ACKNOWLEDGED' },
     });
     expect(unacked).toBe(0);
-    expect(await db.prisma.auditLog.count({ where: { action: 'truck_window.ack_rejected' } })).toBe(1);
+    // The foreign tenant lookup fails before recipient evaluation; it must not
+    // attribute a rejected-recipient audit to a change that tenant cannot see.
+    expect(await db.prisma.auditLog.count({ where: { action: 'truck_window.ack_rejected' } })).toBe(0);
+
+    // A wrong driver on an owned change reaches recipient evaluation and is
+    // rejected and audited, without acknowledging the actual recipient.
+    await expect(svc.acknowledge({
+      companyId, changeId: change.id, source: TruckWindowAckSource.DRIVER_PORTAL,
+      driverId: 'another-driver',
+    })).rejects.toThrow(/not a recipient/i);
+    const rejected = await db.prisma.auditLog.findMany({ where: { action: 'truck_window.ack_rejected' } });
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].companyId).toBe(companyId);
+    expect(rejected[0].metadata).toMatchObject({ reason: 'NOT_A_RECIPIENT' });
+    expect(await db.prisma.terminalTruckWindowRecipient.count({
+      where: { changeId: change.id, ackState: 'ACKNOWLEDGED' },
+    })).toBe(0);
   });
 
   it('refuses an acknowledgement of a superseded version, in the database as well as in the service', async () => {
@@ -591,7 +607,7 @@ describe('Truck window changes — closed loop (PostgreSQL)', () => {
   it('stores a per-terminal acknowledgement threshold and freezes it onto changes already in flight', async () => {
     const appt = await bookAppointment();
     await svc.upsertGatePolicy(companyId, 'Central Terminal', {
-      ackDueMinutes: 5, reminderAfterMinutes: 2, escalateAfterMinutes: 4,
+      ackDueMinutes: 5, reminderAfterMinutes: 2, escalateAfterMinutes: 6,
     }, actor);
 
     const change = await reschedule(appt.id);
