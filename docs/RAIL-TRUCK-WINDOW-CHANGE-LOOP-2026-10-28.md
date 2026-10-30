@@ -468,11 +468,20 @@ sitting in a haulier's inbox keeps working.
 ## 10. Known limitations
 
 - **Legacy links are immortal until revoked** (§8). There is no batch-expiry job; the operator
-  has to see them and kill them.
+  has to see them and kill them, one appointment at a time.
+  **Decision, 2026-10-30 (operator): leave it that way.** Neither a backfilled expiry (which would
+  turn a link that cannot confirm into one that can, until it expired) nor a tenant-wide bulk
+  revoke (which would cut off hauliers mid-window) is wanted. Per-appointment **Revoke &
+  re-issue**, the row badge, the tenant banner and the audited issuance/revocation in §8 are the
+  whole control set, and they are deliberate rather than a gap somebody forgot to close.
 - **No haulier contact record.** `haulierName` is free text, so the haulier channel is the
   share link plus the tenant's own socket. An external haulier with no link and no login is
   reported `UNAVAILABLE / NO_SHARE_TOKEN` — honest, but it means the loop's haulier half depends
   on the operator issuing a link.
+  **Decision, 2026-10-30 (operator): leave it that way.** No contact fields on the appointment and
+  no tenant-level haulier model, so no new PII to store and no channel to keep honest about. The
+  recipient stays `UNAVAILABLE` with its reason when there is no link, and that state is counted
+  separately rather than folded into an acknowledgement rate.
 - **`driverId` is new.** Existing appointments have no driver assigned, so until they are
   assigned their driver recipient is `DRIVER:UNASSIGNED` and they are counted separately, not
   as failures. The terminal can now assign one from the truck-appointments panel (a select per
