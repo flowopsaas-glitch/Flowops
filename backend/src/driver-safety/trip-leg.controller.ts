@@ -148,4 +148,68 @@ export class TripLegController {
   ) {
     return this.svc.updateTripStatus(u.companyId, tripId, body.status);
   }
+
+  /** POST /trip-legs/trips/:tripId/hs-origin — set HS code + origin status */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH,
+  )
+  @Post('trips/:tripId/hs-origin')
+  setHsOrigin(
+    @CurrentUser() u: any,
+    @Param('tripId') tripId: string,
+    @Body() body: {
+      hsCode?: string;
+      originStatus?: 'PREFERENTIAL' | 'NON_PREFERENTIAL' | 'UNKNOWN';
+      certificateOfOriginRef?: string;
+    },
+  ) {
+    return this.svc.setHsOrigin(u.companyId, tripId, {
+      hsCode: body.hsCode ?? undefined,
+      originStatus: body.originStatus ?? undefined,
+      certificateOfOriginRef: body.certificateOfOriginRef ?? undefined,
+      capturedBy: u.id,
+    });
+  }
+
+  /** POST /trip-legs/trips/:tripId/duty/estimate — set ESTIMATED duty from a named reference */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH,
+  )
+  @Post('trips/:tripId/duty/estimate')
+  setDutyEstimate(
+    @CurrentUser() u: any,
+    @Param('tripId') tripId: string,
+    @Body() body: {
+      duty: number;
+      estimateSource: string;
+      estimateVersion: string;
+    },
+  ) {
+    return this.svc.setDutyEstimate(u.companyId, tripId, {
+      duty: body.duty,
+      estimateSource: body.estimateSource,
+      estimateVersion: body.estimateVersion,
+      capturedBy: u.id,
+    });
+  }
+
+  /** POST /trip-legs/trips/:tripId/duty/actual — set ACTUAL duty from a declaration */
+  @Roles(
+    UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH,
+  )
+  @Post('trips/:tripId/duty/actual')
+  setDutyActual(
+    @CurrentUser() u: any,
+    @Param('tripId') tripId: string,
+    @Body() body: {
+      duty: number;
+      declarationRef: string;
+    },
+  ) {
+    return this.svc.setDutyActual(u.companyId, tripId, {
+      duty: body.duty,
+      declarationRef: body.declarationRef,
+      capturedBy: u.id,
+    });
+  }
 }

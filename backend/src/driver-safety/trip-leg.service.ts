@@ -330,6 +330,209 @@ export class TripLegService {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
+  // STAGE 5: HS CODE, ORIGIN STATUS, DUTY ESTIMATED vs ACTUAL
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * HS code format validation: 6 to 10 digits. Validated against format only,
+   * never against a tariff database we do not have.
+   */
+  private validateHsCode(hsCode: string): boolean {
+    return /^\d{6,10}$/.test(hsCode);
+  }
+
+  /**
+   * Set HS code + origin status on a trip.
+   * HS code is format-validated only. Origin status defaults to UNKNOWN and
+   * is never guessed — UNKNOWN renders as UNKNOWN.
+   */
+  async setHsOrigin(
+    companyId: string,
+    tripId: string,
+    data: {
+      hsCode?: string;
+      originStatus?: 'PREFERENTIAL' | 'NON_PREFERENTIAL' | 'UNKNOWN';
+      certificateOfOriginRef?: string;
+      capturedBy: string;
+    },
+  ) {
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: tripId, companyId },
+    });
+    if (!trip) throw new NotFoundException('Trip not found');
+
+    const updateData: any = {};
+    if (data.hsCode !== undefined) {
+      if (data.hsCode && !this.validateHsCode(data.hsCode)) {
+        throw new BadRequestException(
+          'hsCode must be 6 to 10 digits (format-validated only)',
+        );
+      }
+      updateData.hsCode = data.hsCode ?? null;
+    }
+    if (data.originStatus !== undefined) {
+      updateData.originStatus = data.originStatus;
+    }
+    if (data.certificateOfOriginRef !== undefined) {
+      updateData.certificateOfOriginRef = data.certificateOfOriginRef ?? null;
+    }
+
+    const tripUpdated = await this.prisma.trip.update({
+      where: { id: tripId },
+      data: updateData,
+    });
+
+    await this.audit.record({
+      actorId: data.capturedBy,
+      actorType: 'tenant',
+      action: 'trip.hs_origin_set',
+      targetId: tripId,
+      targetType: 'trip',
+      metadata: {
+        hsCode: data.hsCode,
+        originStatus: data.originStatus,
+        certificateOfOriginRef: data.certificateOfOriginRef,
+      },
+    });
+
+    return tripUpdated;
+  }
+
+  /**
+   * Set ESTIMATED duty from a named, versioned reference (e.g. AfCFTA
+   * e-Tariff Book). Rendered ESTIMATED — never blended with ACTUAL.
+   */
+  async setDutyEstimate(
+    companyId: string,
+    tripId: string,
+    data: {
+      duty: number;
+      estimateSource: string;
+      estimateVersion: string;
+      capturedBy: string;
+    },
+  ) {
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: tripId, companyId },
+    });
+    if (!trip) throw new NotFoundException('Trip not found');
+
+    const tripUpdated = await this.prisma.trip.update({
+      where: { id: tripId },
+      data: {
+        dutyEstimated: data.duty,
+        estimateSource: data.estimateSource,
+        estimateVersion: data.estimateVersion,
+        estimatedAt: new Date(),
+      },
+    });
+
+    await this.audit.record({
+      actorId: data.capturedBy,
+      actorType: 'tenant',
+      action: 'trip.duty_estimate_set',
+      targetId: tripId,
+      targetType: 'trip',
+      metadata: {
+        dutyEstimated: data.duty,
+        estimateSource: data.estimateSource,
+        estimateVersion: data.estimateVersion,
+        provenance: 'ESTIMATED',
+      },
+    });
+
+    return tripUpdated;
+  }
+
+  /**
+   * Set ACTUAL duty keyed in from a customs declaration. Rendered ACTUAL —
+   * never blended with ESTIMATED. declarationRef is mandatory.
+   */
+  async setDutyActual(
+    companyId: string,
+    tripId: string,
+    data: {
+      duty: number;
+      declarationRef: string;
+      capturedBy: string;
+    },
+  ) {
+    if (!data.declarationRef) {
+      throw new BadRequestException('declarationRef is required for ACTUAL duty');
+    }
+
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: tripId, companyId },
+    });
+    if (!trip) throw new NotFoundException('Trip not found');
+
+    const tripUpdated = await this.prisma.trip.update({
+      where: { id: tripId },
+      data: {
+        dutyActual: data.duty,
+        declarationRef: data.declarationRef,
+        capturedBy: data.capturedBy,
+        capturedAt: new Date(),
+      },
+    });
+
+    await this.audit.record({
+      actorId: data.capturedBy,
+      actorType: 'tenant',
+      action: 'trip.duty_actual_set',
+      targetId: tripId,
+      targetType: 'trip',
+      metadata: {
+        dutyActual: data.duty,
+        declarationRef: data.declarationRef,
+        provenance: 'ACTUAL',
+      },
+    });
+
+    return tripUpdated;
+  }
+
+  /**
+   * Get the duty summary for a trip: ESTIMATED vs ACTUAL side by side with
+   * variance. Never blended, never averaged, no combined duty field.
+   * Where only an estimate exists, actual reads NOT CAPTURED.
+   */
+  getDutySummary(trip: any) {
+    const estimated = trip.dutyEstimated != null
+      ? { value: trip.dutyEstimated, source: trip.estimateSource, version: trip.estimateVersion, at: trip.estimatedAt }
+      : null;
+    const actual = trip.dutyActual != null
+      ? { value: trip.dutyActual, declarationRef: trip.declarationRef, capturedBy: trip.capturedBy, at: trip.capturedAt }
+      : null;
+
+    let variance: number | null = null;
+    let varianceLabel: string | null = null;
+    if (estimated && actual) {
+      variance = actual.value - estimated.value;
+      varianceLabel = variance >= 0 ? `+${variance}` : `${variance}`;
+    }
+
+    return {
+      tripId: trip.id,
+      reference: trip.reference,
+      hsCode: trip.hsCode,
+      originStatus: trip.originStatus,
+      certificateOfOriginRef: trip.certificateOfOriginRef,
+      estimated,
+      actual,
+      variance,
+      varianceLabel,
+      // Honest labels: where only one side exists, the other is NOT CAPTURED
+      estimatedLabel: estimated ? `ESTIMATED (${estimated.source} v${estimated.version})` : 'NOT CAPTURED',
+      actualLabel: actual ? 'ACTUAL (declaration)' : 'NOT CAPTURED',
+      // Never blended: no combined duty field exists
+      hasBoth: Boolean(estimated && actual),
+      hasEstimateOnly: Boolean(estimated && !actual),
+      hasActualOnly: Boolean(actual && !estimated),
+    };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
   // TRIP TOTAL WITH PROVENANCE
   // ════════════════════════════════════════════════════════════════════════════
 
@@ -376,6 +579,7 @@ export class TripLegService {
         provenance: tripProvenance,
         isFullyMeasured: tripProvenance === 'MEASURED',
       },
+      dutySummary: this.getDutySummary(trip),
     };
   }
 

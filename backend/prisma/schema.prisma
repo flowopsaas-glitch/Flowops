@@ -6946,6 +6946,23 @@ model Trip {
   actualEnd    DateTime?
   status      TripStatus @default(PLANNED)
 
+  // ── WP3 Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ─────
+  // Additive columns on the Trip — no new table. HS code is validated against
+  // a format only (never against a tariff database we do not have). Origin
+  // status defaults to UNKNOWN and is rendered as UNKNOWN — never a guess,
+  // because it decides whether a preferential rate is even arguable.
+  hsCode               String?       // HS code (6–10 digits), format-validated only
+  originStatus         OriginStatus  @default(UNKNOWN)
+  certificateOfOriginRef String?     // reference to the certificate of origin document
+  dutyEstimated        Float?        // ESTIMATED duty — from a named, versioned reference
+  estimateSource       String?       // e.g. "AfCFTA e-Tariff Book"
+  estimateVersion      String?       // reference version, recorded per estimate
+  estimatedAt          DateTime?     // when the estimate was computed
+  dutyActual           Float?        // ACTUAL duty — keyed in from a declaration
+  declarationRef       String?       // declaration reference for the actual duty
+  capturedBy           String?       // user who keyed in the actual duty
+  capturedAt           DateTime?     // when the actual duty was captured
+
   legs        TripLeg[]
 
   createdAt DateTime @default(now())
@@ -6955,6 +6972,21 @@ model Trip {
   @@index([driverId, createdAt])
   @@index([companyId, createdAt])
   @@map("trips")
+}
+
+/// Duty provenance: ESTIMATED (from a named reference) vs ACTUAL (keyed in
+/// from a declaration). Never blended, never averaged, never a combined field.
+enum TripDutyProvenance {
+  ESTIMATED   // computed from a named, versioned reference (AfCFTA e-Tariff Book)
+  ACTUAL      // keyed in from a customs declaration
+}
+
+/// Origin status: preferential / non-preferential / unknown. UNKNOWN renders
+/// as unknown — never a guess.
+enum OriginStatus {
+  PREFERENTIAL      // goods qualify for a preferential rate
+  NON_PREFERENTIAL  // goods do not qualify
+  UNKNOWN           // not determined — the honest default
 }
 
 /// One leg of a trip with an explicit provenance label.

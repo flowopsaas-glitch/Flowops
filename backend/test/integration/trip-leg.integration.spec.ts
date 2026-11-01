@@ -13,7 +13,7 @@
  * Run with: npm run test:integration
  */
 
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { TripLegService } from '../../src/driver-safety/trip-leg.service';
 import { createIntegrationDatabase, type IntegrationDatabase } from './support/prisma-client';
@@ -379,5 +379,165 @@ describe('TripLegService (PostgreSQL)', () => {
 
     const evilTrips = await service.getTrips(evil);
     expect(evilTrips).toHaveLength(0);
+  });
+
+  // ── Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ───────────
+
+  it('sets HS code + origin status on a trip', async () => {
+    const { companyId } = await seedTenant(prisma, 'Cross-Border Hauliers');
+    const trip = await service.createTrip(companyId, {
+      reference: 'T-2026-0001',
+      origin: 'Johannesburg',
+      destination: 'Harare',
+    });
+
+    const updated = await service.setHsOrigin(companyId, trip.id, {
+      hsCode: '300490',
+      originStatus: 'PREFERENTIAL',
+      certificateOfOriginRef: 'CO-2026-001',
+      capturedBy: 'u-dispatch',
+    });
+
+    expect(updated.hsCode).toBe('300490');
+    expect(updated.originStatus).toBe('PREFERENTIAL');
+    expect(updated.certificateOfOriginRef).toBe('CO-2026-001');
+
+    // Confirm duty summary includes HS/origin
+    const fullTrip = await service.getTrip(companyId, trip.id);
+    expect(fullTrip.dutySummary.hsCode).toBe('300490');
+    expect(fullTrip.dutySummary.originStatus).toBe('PREFERENTIAL');
+  });
+
+  it('rejects an invalid HS code (not 6-10 digits)', async () => {
+    const { companyId } = await seedTenant(prisma, 'Cross-Border Hauliers');
+    const trip = await service.createTrip(companyId, {
+      reference: 'T-2026-0001',
+    });
+
+    await expect(
+      service.setHsOrigin(companyId, trip.id, {
+        hsCode: '123',
+        capturedBy: 'u-dispatch',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('sets ESTIMATED duty from a named, versioned reference', async () => {
+    const { companyId } = await seedTenant(prisma, 'Cross-Border Hauliers');
+    const trip = await service.createTrip(companyId, {
+      reference: 'T-2026-0001',
+    });
+
+    const updated = await service.setDutyEstimate(companyId, trip.id, {
+      duty: 450,
+      estimateSource: 'AfCFTA e-Tariff Book',
+      estimateVersion: '2026.11',
+      capturedBy: 'u-dispatch',
+    });
+
+    expect(updated.dutyEstimated).toBe(450);
+    expect(updated.estimateSource).toBe('AfCFTA e-Tariff Book');
+    expect(updated.estimateVersion).toBe('2026.11');
+    expect(updated.estimatedAt).not.toBeNull();
+  });
+
+  it('sets ACTUAL duty from a declaration', async () => {
+    const { companyId } = await seedTenant(prisma, 'Cross-Border Hauliers');
+    const trip = await service.createTrip(companyId, {
+      reference: 'T-2026-0001',
+    });
+
+    const updated = await service.setDutyActual(companyId, trip.id, {
+      duty: 480,
+      declarationRef: 'DEC-2026-001',
+      capturedBy: 'u-dispatch',
+    });
+
+    expect(updated.dutyActual).toBe(480);
+    expect(updated.declarationRef).toBe('DEC-2026-001');
+    expect(updated.capturedBy).toBe('u-dispatch');
+    expect(updated.capturedAt).not.toBeNull();
+  });
+
+  it('rejects ACTUAL duty without a declarationRef', async () => {
+    const { companyId } = await seedTenant(prisma, 'Cross-Border Hauliers');
+    const trip = await service.createTrip(companyId, {
+      reference: 'T-2026-0001',
+    });
+
+    await expect(
+      service.setDutyActual(companyId, trip.id, {
+        duty: 480,
+        declarationRef: '',
+        capturedBy: 'u-dispatch',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('returns ESTIMATED vs ACTUAL side by side with variance', async () => {
+    const { companyId } = await seedTenant(prisma, 'Cross-Border Hauliers');
+    const trip = await service.createTrip(companyId, {
+      reference: 'T-2026-0001',
+    });
+
+    await service.setDutyEstimate(companyId, trip.id, {
+      duty: 450,
+      estimateSource: 'AfCFTA e-Tariff Book',
+      estimateVersion: '2026.11',
+      capturedBy: 'u-dispatch',
+    });
+    await service.setDutyActual(companyId, trip.id, {
+      duty: 480,
+      declarationRef: 'DEC-2026-001',
+      capturedBy: 'u-dispatch',
+    });
+
+    const fullTrip = await service.getTrip(companyId, trip.id);
+    const summary = fullTrip.dutySummary;
+
+    expect(summary.estimated.value).toBe(450);
+    expect(summary.actual.value).toBe(480);
+    expect(summary.variance).toBe(30);
+    expect(summary.varianceLabel).toBe('+30');
+    expect(summary.hasBoth).toBe(true);
+  });
+
+  it('returns NOT CAPTURED for actual when only estimate exists', async () => {
+    const { companyId } = await seedTenant(prisma, 'Cross-Border Hauliers');
+    const trip = await service.createTrip(companyId, {
+      reference: 'T-2026-0001',
+    });
+
+    await service.setDutyEstimate(companyId, trip.id, {
+      duty: 450,
+      estimateSource: 'AfCFTA e-Tariff Book',
+      estimateVersion: '2026.11',
+      capturedBy: 'u-dispatch',
+    });
+
+    const fullTrip = await service.getTrip(companyId, trip.id);
+    const summary = fullTrip.dutySummary;
+
+    expect(summary.estimated.value).toBe(450);
+    expect(summary.actual).toBeNull();
+    expect(summary.actualLabel).toBe('NOT CAPTURED');
+    expect(summary.variance).toBeNull();
+  });
+
+  // ── Stage 5: cross-tenant isolation for HS/duty ──────────────────────────
+
+  it('does not leak HS/duty updates across tenants', async () => {
+    const { companyId: acme } = await seedTenant(prisma, 'Acme Logistics');
+    const { companyId: evil } = await seedTenant(prisma, 'Evil Co');
+    const trip = await service.createTrip(acme, {
+      reference: 'T-2026-0001',
+    });
+
+    // Evil Co cannot update Acme's trip
+    await expect(
+      service.setHsOrigin(evil, trip.id, {
+        hsCode: '300490', capturedBy: 'u-evil',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

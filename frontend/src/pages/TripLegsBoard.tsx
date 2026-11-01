@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   MapPin, Truck, Clock, ShieldAlert, Plus, RefreshCw, Route,
-  AlertTriangle, ChevronRight, type LucideIcon,
+  AlertTriangle, ChevronRight, FileText, type LucideIcon,
 } from "lucide-react";
 import * as wp3 from "../api/wp3Api";
 import BackButton from "../components/BackButton";
@@ -261,6 +261,16 @@ function TripDetail({
   const [declaredMinutes, setDeclaredMinutes] = useState("");
   const [declaredNote, setDeclaredNote] = useState("");
   const [creatingLeg, setCreatingLeg] = useState(false);
+  /* ── WP3 Stage 5 local state (HS / origin / duty) ── */
+  const [hsCode, setHsCode] = useState(trip.hsCode ?? "");
+  const [originStatus, setOriginStatus] = useState<"PREFERENTIAL" | "NON_PREFERENTIAL" | "UNKNOWN">(trip.originStatus ?? "UNKNOWN");
+  const [certificateOfOriginRef, setCertificateOfOriginRef] = useState(trip.certificateOfOriginRef ?? "");
+  const [dutyEstimate, setDutyEstimate] = useState("");
+  const [estimateSource, setEstimateSource] = useState(trip.dutySummary?.estimated?.source ?? "");
+  const [estimateVersion, setEstimateVersion] = useState(trip.dutySummary?.estimated?.version ?? "");
+  const [dutyActual, setDutyActual] = useState("");
+  const [declarationRef, setDeclarationRef] = useState(trip.dutySummary?.actual?.declarationRef ?? "");
+  const [saving, setSaving] = useState(false);
 
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-6 animate-in fade-in slide-in-from-right-2 duration-300">
@@ -445,8 +455,6 @@ function TripDetail({
                   setCreatingLeg(false);
                 } catch (err) {
                   setCreatingLeg(false);
-                  // Error surfaced via page-level handler isn't available here;
-                  // console is acceptable for a UI spike.
                   console.error(err);
                 }
               }}
@@ -454,6 +462,223 @@ function TripDetail({
               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/30 rounded text-xs text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add leg
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* HS code, origin status, duty ESTIMATED vs ACTUAL */}
+      <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-3">
+        <h3 className="text-xs font-semibold text-cyan-300 mb-3 flex items-center gap-2">
+          <FileText className="h-3 w-3" /> HS code, origin & duty (Stage 5)
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] uppercase tracking-wider text-slate-400">HS code</label>
+            <input
+              type="text"
+              value={hsCode}
+              onChange={(e) => setHsCode(e.target.value)}
+              placeholder="e.g. 300490 (6–10 digits)"
+              className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+              maxLength={10}
+            />
+            <p className="text-[10px] text-slate-500">
+              Format-validated only (6–10 digits) — never checked against a
+              tariff database we do not have.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] uppercase tracking-wider text-slate-400">Origin status</label>
+            <select
+              value={originStatus}
+              onChange={(e) => setOriginStatus(e.target.value as any)}
+              className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+            >
+              <option value="UNKNOWN">UNKNOWN (default — never a guess)</option>
+              <option value="PREFERENTIAL">PREFERENTIAL</option>
+              <option value="NON_PREFERENTIAL">NON_PREFERENTIAL</option>
+            </select>
+            <p className="text-[10px] text-slate-500">
+              Defaults to UNKNOWN. Decides whether a preferential rate is even
+              arguable.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] uppercase tracking-wider text-slate-400">Certificate of origin ref</label>
+            <input
+              type="text"
+              value={certificateOfOriginRef}
+              onChange={(e) => setCertificateOfOriginRef(e.target.value)}
+              placeholder="e.g. CO-2026-001"
+              className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await wp3.wp3SetHsOrigin(trip.id, {
+                    hsCode: hsCode || undefined,
+                    originStatus,
+                    certificateOfOriginRef: certificateOfOriginRef || undefined,
+                  });
+                  const full = await wp3.wp3GetTrip(trip.id);
+                  // Refresh via re-open handled by parent
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Save failed.");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving}
+              className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 border border-slate-400/30 rounded text-xs text-white disabled:opacity-50"
+            >
+              Save HS / origin
+            </button>
+          </div>
+        </div>
+
+        {/* Duty ESTIMATED vs ACTUAL side by side */}
+        <div className="mt-4 pt-4 border-t border-slate-700/30">
+          <h4 className="text-[10px] uppercase tracking-wider font-semibold text-cyan-300 mb-2">
+            Duty — ESTIMATED vs ACTUAL (never blended)
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+              <div className="text-[10px] uppercase tracking-wider text-emerald-300 font-semibold mb-1">
+                ESTIMATED
+              </div>
+              <div className="text-sm font-mono text-emerald-300">
+                {trip.dutySummary?.estimated?.value != null
+                  ? trip.dutySummary.estimated.value
+                  : "—"}
+              </div>
+              <div className="text-[10px] text-emerald-200 mt-1">
+                {trip.dutySummary?.estimated?.source ?? "NOT CAPTURED"}
+              </div>
+              <div className="text-[10px] text-emerald-200">
+                v{trip.dutySummary?.estimated?.version ?? "—"}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
+              <div className="text-[10px] uppercase tracking-wider text-amber-300 font-semibold mb-1">
+                ACTUAL
+              </div>
+              <div className="text-sm font-mono text-amber-300">
+                {trip.dutySummary?.actual?.value != null
+                  ? trip.dutySummary.actual.value
+                  : "—"}
+              </div>
+              <div className="text-[10px] text-amber-200 mt-1">
+                {trip.dutySummary?.actual?.declarationRef ?? "NOT CAPTURED"}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 p-2 rounded-lg border border-slate-700 bg-slate-900/30">
+            <div className="flex justify-between items-baseline">
+              <span className="text-xs font-semibold text-slate-300">Variance</span>
+              <span className="text-sm font-mono text-slate-200">
+                {trip.dutySummary?.varianceLabel ?? "—"}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {trip.dutySummary?.hasBoth
+                ? "Actual minus estimated. No combined duty field exists."
+                : trip.dutySummary?.hasEstimateOnly
+                  ? "Only an estimate exists — actual is NOT CAPTURED."
+                  : trip.dutySummary?.hasActualOnly
+                    ? "Only an actual exists — estimate is NOT CAPTURED."
+                    : "Neither estimate nor actual captured."}
+            </p>
+          </div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] uppercase tracking-wider text-slate-400">Duty estimate</label>
+              <input
+                type="number"
+                value={dutyEstimate}
+                onChange={(e) => setDutyEstimate(e.target.value)}
+                placeholder="e.g. 450"
+                className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+              />
+              <input
+                type="text"
+                value={estimateSource}
+                onChange={(e) => setEstimateSource(e.target.value)}
+                placeholder="e.g. AfCFTA e-Tariff Book"
+                className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+              />
+              <input
+                type="text"
+                value={estimateVersion}
+                onChange={(e) => setEstimateVersion(e.target.value)}
+                placeholder="e.g. 2026.11"
+                className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] uppercase tracking-wider text-slate-400">Duty actual</label>
+              <input
+                type="number"
+                value={dutyActual}
+                onChange={(e) => setDutyActual(e.target.value)}
+                placeholder="e.g. 480"
+                className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+              />
+              <input
+                type="text"
+                value={declarationRef}
+                onChange={(e) => setDeclarationRef(e.target.value)}
+                placeholder="Declaration ref (mandatory)"
+                className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1.5 focus:ring-1 focus:ring-cyan-500"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await wp3.wp3SetDutyEstimate(trip.id, {
+                    duty: Number(dutyEstimate),
+                    estimateSource,
+                    estimateVersion,
+                  });
+                  setDutyEstimate(""); setEstimateSource(""); setEstimateVersion("");
+                  const full = await wp3.wp3GetTrip(trip.id);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Estimate failed.");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={!dutyEstimate || !estimateSource || !estimateVersion || saving}
+              className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/30 rounded text-xs text-white disabled:opacity-50"
+            >
+              Save ESTIMATED
+            </button>
+            <button
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await wp3.wp3SetDutyActual(trip.id, {
+                    duty: Number(dutyActual),
+                    declarationRef,
+                  });
+                  setDutyActual(""); setDeclarationRef("");
+                  const full = await wp3.wp3GetTrip(trip.id);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Actual failed.");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={!dutyActual || !declarationRef || saving}
+              className="flex-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 border border-amber-500/30 rounded text-xs text-white disabled:opacity-50"
+            >
+              Save ACTUAL
             </button>
           </div>
         </div>
