@@ -166,23 +166,8 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    // Insert driver-originated messages directly (bypassing service to test the query independently)
-    await prisma.driverChatMessage.create({
-      data: {
-        driverId: driver.id,
-        companyId,
-        senderType: 'driver',
-        message: 'Hello dispatch',
-      },
-    });
-    await prisma.driverChatMessage.create({
-      data: {
-        driverId: driver.id,
-        companyId,
-        senderType: 'driver',
-        message: 'Running late',
-      },
-    });
+    await service.sendMessage(driver.id, companyId, 'Hello dispatch', 'driver');
+    await service.sendMessage(driver.id, companyId, 'Running late', 'driver');
 
     const conversations = await service.getDriverConversations(companyId);
 
