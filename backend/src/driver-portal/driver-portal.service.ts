@@ -942,6 +942,13 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
+    // Controlled RLS diagnostic: capture session-level settings on THIS connection
+    const [appCompanyId, appRlsStrict] = await this.prisma.$queryRawUnsafe<Array<{ v: string }>>(
+      `SELECT current_setting('app.company_id', true) AS v
+       UNION ALL
+       SELECT current_setting('app.rls_strict', true) AS v`
+    );
+
     const drivers = await this.prisma.driver.findMany({
       where: { companyId, isActive: true },
       select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
@@ -955,7 +962,14 @@ export class DriverPortalService {
         where: { driverId: d.id },
         orderBy: { createdAt: 'desc' },
       });
-      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+      return {
+        ...d,
+        unreadCount: unread,
+        lastMessage: last?.message,
+        lastMessageAt: last?.createdAt,
+        diagAppCompanyId: appCompanyId?.v,
+        diagAppRlsStrict: appRlsStrict?.v,
+      };
     }));
 
     return convos.sort((a, b) => {
