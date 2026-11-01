@@ -10,6 +10,5 @@ export const CollectionStatus = { PENDING: 'PENDING', ASSIGNED: 'ASSIGNED', IN_P
 export const TripCostType = { FUEL: 'FUEL', TOLL: 'TOLL', OTHER: 'OTHER' };
 export type DriverMode = string;
 export type UserRole = string;
-export namespace Prisma { export type TransactionClient = any; }
-export const Prisma = {};
+export type PrismaTransactionClient = any;
 export default PrismaClient;
