@@ -948,10 +948,13 @@ export class DriverPortalService {
     });
 
     const convos = await Promise.all(drivers.map(async d => {
-      // Temporary diagnostic: only driverId filter, no senderType or readAt
-      const unread = await this.prisma.driverChatMessage.count({
-        where: { driverId: d.id },
-      });
+      // Temporary diagnostic: raw SQL count to bypass any Prisma Client issue
+      const unreadResult = await this.prisma.$queryRaw<Array<{ cnt: bigint }>>`
+        SELECT count(*)::bigint AS cnt
+        FROM "driver_chat_messages"
+        WHERE "driverId" = ${d.id}
+      `;
+      const unread = Number(unreadResult[0]?.cnt ?? 0);
       const last = await this.prisma.driverChatMessage.findFirst({
         where: { driverId: d.id },
         orderBy: { createdAt: 'desc' },
