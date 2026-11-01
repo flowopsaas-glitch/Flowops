@@ -942,10 +942,8 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
-    // Diagnostic: count by companyId instead of driverId
-    const companyCount = await this.prisma.driverChatMessage.count({
-      where: { companyId, senderType: 'driver', readAt: null },
-    });
+    // Diagnostic: count ALL rows with no where clause
+    const totalCount = await this.prisma.driverChatMessage.count({});
 
     const drivers = await this.prisma.driver.findMany({
       where: { companyId, isActive: true },
@@ -953,13 +951,13 @@ export class DriverPortalService {
     });
 
     const convos = await Promise.all(drivers.map(async d => {
-      // Diagnostic: count by companyId (not driverId)
-      const unread = companyCount;
+      // Diagnostic: use totalCount for all drivers
+      const unread = totalCount;
       const last = await this.prisma.driverChatMessage.findFirst({
         where: { driverId: d.id },
         orderBy: { createdAt: 'desc' },
       });
-      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+      return { ...d, unreadCount: unread, totalCount, lastMessage: last?.message, lastMessageAt: last?.createdAt };
     }));
 
     return convos.sort((a, b) => {
