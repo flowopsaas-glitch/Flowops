@@ -166,8 +166,8 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    await service.dispatchSend(driver.id, companyId, 'Hello dispatch', '550e8400-e29b-41d4-a716-446655440000');
-    await service.dispatchSend(driver.id, companyId, 'Running late', '550e8400-e29b-41d4-a716-446655440001');
+    await service.sendMessage(driver.id, companyId, 'Hello dispatch', 'driver');
+    await service.sendMessage(driver.id, companyId, 'Running late', 'driver');
 
     const conversations = await service.getDriverConversations(companyId);
 
