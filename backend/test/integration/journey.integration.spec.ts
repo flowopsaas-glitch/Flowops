@@ -215,7 +215,7 @@ describe('JourneyService (PostgreSQL)', () => {
     expect(second.id).toBe(first.id);
     expect(second.message).toBe('Running late');
     const count = await prisma.journeyUpdate.count({
-      where: { journeyId, driverId, clientMessageId: '550e8400-e29b-41d4-a716-446655440001' },
+      where: { journeyId: journey.id, driverId: driver.id, clientMessageId: '550e8400-e29b-41d4-a716-446655440001' },
     });
     expect(count).toBe(1);
   });
