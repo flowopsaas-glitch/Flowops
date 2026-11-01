@@ -415,89 +415,153 @@ export class DriverSafetyService {
     return { seeded: true, count: result.count, country: countryCode };
   }
 
-  /** Community reporting — drivers flag new dangerous areas from mobile. */
+  /** Community reporting — drivers flag new dangerous areas from mobile.
+   *
+   * WP4 claim/zone split: a one-tap report now creates a SafetyIncident
+   * (status REPORTED) — a claim visible to dispatch only. It does NOT create
+   * a SafetyZone, so other drivers are NOT alerted until a named human
+   * verifies the incident. This prevents a single tap from becoming a
+   * permanent, notifying zone that alerts every driver in the tenant.
+   */
   async reportDangerZone(
     companyId: string,
     driverId: string,
     dto: { lat: number; lng: number; name?: string; description?: string; riskLevel?: string },
     actor?: { id?: string | null; email?: string | null; role?: string | null } | null,
   ) {
-    // Scoped to the caller's tenant and REQUIRED to exist: this driver's name is
-    // written into the zone's name and description, so an unscoped lookup both
-    // disclosed another company's driver and blamed them for a permanent 500 m
-    // zone that alerts every driver who enters it.
+    // Scoped to the caller's tenant and REQUIRED to exist.
     const driver = await this.prisma.driver.findFirst({
       where: { id: driverId, companyId },
       select: { id: true, name: true },
     });
     if (!driver) throw new NotFoundException('Driver not found in your company');
-    const zone = await this.prisma.safetyZone.create({
+
+    const userId = actor?.id ?? null;
+    const userRole = actor?.role ?? null;
+
+    // Determine reportedByDriverId (driver self-report) or reportedByUserId (dispatch/admin)
+    let reportedByDriverId: string | null = null;
+    let reportedByUserId: string | null = null;
+
+    if (String(userRole) === 'DRIVER') {
+      reportedByDriverId = driver.id;
+    } else {
+      reportedByUserId = userId;
+    }
+
+    if (!reportedByDriverId && !reportedByUserId) {
+      throw new ForbiddenException('Unable to identify the reporter in this tenant');
+    }
+
+    // ── Rate limit: 6 reports per driver per rolling hour ──
+    const reporterId = reportedByDriverId ?? reportedByUserId!;
+    const windowStart = new Date(Date.now() - 60 * 60 * 1000);
+    const recentCount = await this.prisma.safetyIncident.count({
+      where: {
+        companyId,
+        reportedAt: { gte: windowStart },
+        OR: [
+          { reportedByDriverId: reporterId },
+          ...(reportedByUserId ? [{ reportedByUserId: reporterId }] : []),
+        ],
+      },
+    });
+    if (recentCount >= 6) {
+      throw new BadRequestException(
+        'Rate limit reached: 6 reports per hour. Try again later.',
+      );
+    }
+
+    // ── Dedupe: same reporter, same geohash6, same type within 10 min ──
+    const geohash6 = this.geohash6(dto.lat, dto.lng);
+    const dedupeStart = new Date(Date.now() - 10 * 60 * 1000);
+    const existing = await this.prisma.safetyIncident.findFirst({
+      where: {
+        companyId,
+        type: (dto.riskLevel as any) ?? 'OTHER',
+        reportedAt: { gte: dedupeStart },
+        OR: [
+          { reportedByDriverId },
+          ...(reportedByUserId ? [{ reportedByUserId }] : []),
+        ],
+        ...(geohash6 ? { geohash6 } : {}),
+      },
+      orderBy: { reportedAt: 'desc' },
+    });
+
+    if (existing) {
+      const updated = await this.prisma.safetyIncident.update({
+        where: { id: existing.id },
+        data: { updatedAt: new Date() },
+      });
+      await this.audit.record({
+        action: 'safety_incident.dedupe',
+        actorType: 'tenant',
+        actorId: userId,
+        actorEmail: actor?.email ?? null,
+        targetType: 'safety_incident',
+        targetId: existing.id,
+        metadata: { type: dto.riskLevel, geohash6 },
+      });
+      return { ...updated, action: 'deduplicated' };
+    }
+
+    // ── Create the incident (claim), NOT a zone (assertion) ──
+    const incident = await this.prisma.safetyIncident.create({
       data: {
         companyId,
-        name: dto.name ?? `Reported by ${driver?.name ?? 'driver'} — ${new Date().toLocaleDateString()}`,
-        description: dto.description ?? `Community-reported danger zone. Reported by driver ${driver?.name ?? driverId}.`,
-        lat: dto.lat,
-        lng: dto.lng,
-        radiusM: 500, // Default 500m for driver-reported zones
-        riskLevel: (dto.riskLevel as any) ?? 'MEDIUM',
-        source: 'COMMUNITY',
-        alertMessage: this.getDefaultAlertMessage(dto.riskLevel ?? 'MEDIUM', dto.name ?? 'Reported danger zone'),
-        notifyDriver: true,
-        notifyDispatch: true,
-        notifyAdmin: true,
-        isActive: true,
+        type: (dto.riskLevel as any) ?? 'OTHER',
+        severity: 'MEDIUM',
+        status: 'REPORTED',
+        reportedByDriverId,
+        reportedByUserId,
+        reportLat: dto.lat,
+        reportLng: dto.lng,
+        reportAccuracyM: null,
+        locationSource: 'DEVICE_GPS',
+        geohash6,
+        narrative: dto.name ?? dto.description ?? null,
+        idempotencyKey: `report:${driverId}:${(dto.riskLevel as any) ?? 'OTHER'}:${geohash6}:${Math.floor(Date.now() / 60000)}`,
       },
     });
 
-    // Notify admin about the new community report
+    // Notify dispatch about the new incident (bell row, not a driver alert)
     await this.prisma.notification.create({
       data: {
         companyId,
-        title: '🚨 New danger zone reported by driver',
-        body: `${driver?.name ?? 'A driver'} flagged a dangerous area at GPS ${dto.lat.toFixed(4)}, ${dto.lng.toFixed(4)}${dto.name ? ` (${dto.name})` : ''}. Review in Safety Zones.`,
-        type: 'SAFETY_ALERT',
+        title: '🚨 New safety incident reported',
+        body: `${driver.name} reported ${dto.riskLevel ?? 'OTHER'} at GPS ${dto.lat.toFixed(4)}, ${dto.lng.toFixed(4)}. Review in Safety Incidents.`,
+        type: 'SAFETY_INCIDENT',
       },
     }).catch(() => { /* best-effort */ });
 
-    this.logger.log(`Community safety zone reported by driver ${driverId}: ${zone.name}`);
+    this.logger.log(`Safety incident reported by driver ${driverId}: ${incident.id}`);
 
-    // The zone row itself says nothing about who asked for it, and a
-    // community-reported zone is the one safety record that changes what every
-    // other driver is told — so the request leaves a trace naming the acting
-    // user and whether they were reporting for themselves or on a driver's
-    // behalf. Wrapped like `recordRailAudit`: a hazard report that was accepted
-    // must stay accepted even if the audit table is having a bad day.
+    // Audit trace naming the acting user
     try {
       await this.audit.record({
-        action: 'driver_safety.zone_reported',
+        action: 'safety_incident.reported',
         actorType: 'tenant',
-        actorId: actor?.id ?? null,
+        actorId: userId,
         actorEmail: actor?.email ?? null,
-        targetType: 'safety_zone',
-        targetId: zone.id,
-        targetName: zone.name,
+        targetType: 'safety_incident',
+        targetId: incident.id,
         metadata: {
           driverId: driver.id,
           driverName: driver.name,
-          reportedBy: !actor
-            ? 'UNKNOWN'
-            : String(actor.role) === UserRole.DRIVER
-              ? 'DRIVER_SELF'
-              : 'ON_BEHALF',
+          type: dto.riskLevel,
+          reportedBy: String(userRole) === 'DRIVER' ? 'DRIVER_SELF' : 'ON_BEHALF',
           actorRole: actor?.role ? String(actor.role) : null,
-          source: zone.source,
-          radiusM: zone.radiusM,
-          riskLevel: zone.riskLevel,
-          isActive: zone.isActive,
+          source: 'COMMUNITY',
           lat: dto.lat,
           lng: dto.lng,
         },
       });
     } catch (err) {
-      this.logger.warn(`Audit write failed for driver_safety.zone_reported: ${err}`);
+      this.logger.warn(`Audit write failed for safety_incident.reported: ${err}`);
     }
 
-    return zone;
+    return { ...incident, action: 'reported' };
   }
 
   private getZonesForCountry(code: string): typeof SAFETY_ZONES_ZA {
@@ -540,5 +604,14 @@ export class DriverSafetyService {
       Math.sin(dLat / 2) ** 2 +
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  /** Simple geohash-ish: ~1 km precision grouping for corroboration/dedupe. */
+  private geohash6(lat: number, lng: number): string {
+    const latChar = String.fromCharCode(65 + Math.floor((lat + 90) / 30));
+    const lngChar = String.fromCharCode(65 + Math.floor((lng + 180) / 60));
+    const lat2 = Math.floor(lat * 100) % 100;
+    const lng2 = Math.floor(lng * 100) % 100;
+    return `${latChar}${lngChar}${String(lat2).padStart(2, '0')}${String(lng2).padStart(2, '0')}`;
   }
 }

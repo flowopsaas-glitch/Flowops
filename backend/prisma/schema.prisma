@@ -3760,8 +3760,15 @@ model SafetyZone {
   notifyAdmin  Boolean @default(true)
 
   // Source / metadata
-  source    String?             // "SAPS_STATS" | "MANUAL" | "AI_DETECTED" | "COMMUNITY"
+  source    String?             // "SAPS_STATS" | "MANUAL" | "AI_DETECTED" | "COMMUNITY" | "VERIFIED_INCIDENT"
   isActive  Boolean @default(true)
+
+  // ── WP4: expiry and incident provenance ─────────────────────────────────
+  // expiresAt — null means permanent (correct for seeded reference zones).
+  // incidentId — which SafetyIncident produced this assertion (nullable).
+  expiresAt   DateTime?
+  incidentId  String?
+  incident    SafetyIncident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3770,6 +3777,7 @@ model SafetyZone {
 
   @@index([companyId, isActive])
   @@index([lat, lng])
+  @@index([incidentId])
   @@map("safety_zones")
 }
 
@@ -3802,6 +3810,9 @@ model SafetyAlert {
   acknowledgedAt DateTime?
   exitedZoneAt   DateTime? // when driver left the zone
 
+  // Position retention: lat/lng nulled after 180 days on closed alerts
+  positionNulledAt DateTime?
+
   // Audit
   metadata  Json?   // any extra context (waybill being delivered, etc.)
 
@@ -3811,6 +3822,171 @@ model SafetyAlert {
   @@index([driverId, createdAt])
   @@index([zoneId])
   @@map("safety_alerts")
+}
+
+/// ── WP4: Safety Incident Layer ───────────────────────────────────────────────
+/// A report is a claim; a zone is an assertion. Only a verified assertion may
+/// alert drivers. Two records, not one.
+///
+/// SafetyIncident — the claim, with a full lifecycle: REPORTED → CORROBORATED
+/// → VERIFIED | REJECTED | EXPIRED | WITHDRAWN.
+/// SafetyZone — the assertion drivers are alerted by, created ONLY on
+/// verification, with expiresAt and incidentId provenance.
+enum SafetyIncidentType {
+  ROAD_CLOSED
+  ACCIDENT
+  HIJACKING_ATTEMPT
+  ROBBERY
+  WEATHER
+  STRIKE_PROTEST
+  VEHICLE_HAZARD
+  OTHER
+}
+
+enum SafetyIncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SafetyIncidentStatus {
+  REPORTED      // claim filed, dispatch only, not yet alerting drivers
+  CORROBORATED  // second source matched — raises priority, still not verified
+  VERIFIED      // a named human verified — a SafetyZone was created
+  REJECTED      // rejected with a reason and a named rejecter
+  EXPIRED       // TTL passed, zone deactivated, record survives
+  WITHDRAWN     // reporting driver withdrew before verification
+}
+
+enum SafetyIncidentVerificationMethod {
+  DISPATCH_CONFIRM    // named human in the tenant confirmed it
+  SECOND_SOURCE       // two drivers independently matched (corroboration → verify)
+  AUTHORITY_NOTIFIED  // dispatch recorded contacting SAPS/traffic/emergency
+}
+
+model SafetyIncident {
+  id                 String                     @id @default(cuid())
+  companyId          String
+  company            Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // ── The claim ──────────────────────────────────────────────────────────
+  type               SafetyIncidentType
+  severity           SafetyIncidentSeverity @default(MEDIUM)   // set by verifier, not reporter
+  status             SafetyIncidentStatus @default(REPORTED)
+
+  // Exactly one of reportedByDriverId / reportedByUserId is set
+  reportedByDriverId String?
+  reportedByDriver   Driver? @relation(fields: [reportedByDriverId], references: [id], onDelete: SetNull)
+  reportedByUserId   String?   // dispatch or admin user id
+  reportedByUser     User?     @relation(fields: [reportedByUserId], references: [id], onDelete: SetNull)
+
+  reportedAt         DateTime @default(now())
+  reportLat          Float
+  reportLng          Float
+  reportAccuracyM    Int?     // device GPS accuracy — a 900 m fix cannot corroborate a 300 m zone
+  locationSource     String   // DEVICE_GPS | MAP_PIN | LAST_KNOWN
+  geohash6           String?  // corroboration grouping without storing a second coordinate set
+
+  narrative          String?  // optional, ≤ 280 chars, never required
+
+  // ── Corroboration ──────────────────────────────────────────────────────
+  corroborations     SafetyCorroboration[]
+
+  // ── Verification ───────────────────────────────────────────────────────
+  verifiedByUserId   String?
+  verifiedByUser     User? @relation(fields: [verifiedByUserId], references: [id], onDelete: SetNull)
+  verifiedAt         DateTime?
+  verificationMethod SafetyIncidentVerificationMethod?
+
+  // ── Rejection ──────────────────────────────────────────────────────────
+  rejectedByUserId   String?
+  rejectedByUser     User? @relation(fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  rejectedAt         DateTime?
+  rejectionReason    String?   // enum + free text: NOT_THERE | ALREADY_CLEARED | DUPLICATE | MISCLASSIFIED | NOT_CREDIBLE | OTHER
+
+  // ── Withdrawal ─────────────────────────────────────────────────────────
+  withdrawnAt        DateTime?
+  withdrawnByUserId  String?
+
+  // ── Zone provenance ────────────────────────────────────────────────────
+  // The SafetyZone created ONLY on verification — nullable until verified.
+  zoneId             String?
+  zone               SafetyZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  // ── Broadcast tracking ─────────────────────────────────────────────────
+  broadcastCount     Int      @default(0)
+  lastBroadcastAt    DateTime?
+
+  // ── Timestamps ─────────────────────────────────────────────────────────
+  expiresAt          DateTime?   // TTL — null means permanent (only for seeded zones)
+  expiredAt          DateTime?   // when the sweep actually closed it
+
+  idempotencyKey     String      // offline flush / double tap protection
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, type])
+  @@index([geohash6])
+  @@unique([companyId, idempotencyKey])
+  @@map("safety_incidents")
+}
+
+/// A second driver's report matched to an incident — corroboration, not
+/// verification. Two drivers can both be wrong; this raises priority, a human
+/// verifies.
+model SafetyCorroboration {
+  id            String @id @default(cuid())
+  companyId     String
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  incidentId    String
+  incident      SafetyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  driverId      String
+  driver        Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  distanceM     Int      // metres from the incident's report location
+  reportedAt    DateTime @default(now())
+
+  @@index([companyId])
+  @@index([incidentId])
+  @@unique([incidentId, driverId])
+  @@map("safety_corroborations")
+}
+
+/// Per-company incident broadcast policy — radius/TTL overrides frozen onto
+/// each incident at verification time (same pattern as TerminalGatePolicy).
+model IncidentBroadcastPolicy {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  incidentType   String   // e.g. "HIJACKING_ATTEMPT" — null = applies to all types
+  defaultRadiusM Int      @default(1000)
+  capRadiusM     Int      @default(5000)
+  defaultTtlHours Int     @default(3)
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, incidentType])
+  @@index([companyId, isActive])
+  @@map("incident_broadcast_policies")
+}
+
+/// Retention sweep state — tracks when positions were nulled, per sweep run.
+model SafetyRetentionSweep {
+  id             String   @id @default(cuid())
+  companyId      String
+  sweepType      String   // INCIDENT_REPORT_LOCATION (90d) | ALERT_POSITION (180d)
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  rowsNulled     Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([companyId])
+  @@index([sweepType])
+  @@map("safety_retention_sweeps")
 }
 
 

@@ -7,6 +7,8 @@ import { TripLegService } from './trip-leg.service';
 import { TripLegController } from './trip-leg.controller';
 import { TripDocumentPackService } from './trip-document-pack.service';
 import { TripDocumentPackController } from './trip-document-pack.controller';
+import { SafetyIncidentService } from './safety-incident.service';
+import { SafetyIncidentController } from './safety-incident.controller';
 import { GatewayModule } from '../gateway/gateway.module';
 import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -18,18 +20,21 @@ import { NotificationsModule } from '../notifications/notifications.module';
     BorderDwellController,
     TripLegController,
     TripDocumentPackController,
+    SafetyIncidentController,
   ],
   providers: [
     DriverSafetyService,
     BorderDwellService,
     TripLegService,
     TripDocumentPackService,
+    SafetyIncidentService,
   ],
   exports: [
     DriverSafetyService,
     BorderDwellService,
     TripLegService,
     TripDocumentPackService,
+    SafetyIncidentService,
   ],
 })
 export class DriverSafetyModule {}
