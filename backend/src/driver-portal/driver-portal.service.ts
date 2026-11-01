@@ -949,7 +949,7 @@ export class DriverPortalService {
 
     const convos = await Promise.all(drivers.map(async d => {
       const unread = await this.prisma.driverChatMessage.count({
-        where: { driverId: d.id },
+        where: { driverId: d.id, senderType: 'driver', readAt: null },
       });
       const last = await this.prisma.driverChatMessage.findFirst({
         where: { driverId: d.id },
