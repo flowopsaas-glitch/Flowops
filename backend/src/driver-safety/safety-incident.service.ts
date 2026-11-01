@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EventsGateway } from '../gateway/events.gateway';
@@ -823,3 +824,34 @@ export class SafetyIncidentService {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // CRON SWEEPS (ScheduleModule.forRoot() is registered in AppModule)
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /** Every 5 minutes: expire incidents past their TTL and deactivate zones. */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async sweepExpiredIncidentsCron() {
+    try {
+      const result = await this.sweepExpiredIncidents();
+      if (result.expiredCount > 0) {
+        this.logger.log(`Expiry sweep: ${result.expiredCount} incident(s) expired`);
+      }
+    } catch (err) {
+      this.logger.warn(`Expiry sweep failed: ${err?.message}`);
+    }
+  }
+
+  /** Daily at 02:00: null report locations (90d) and alert positions (180d). */
+  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  async sweepRetentionCron() {
+    try {
+      const result = await this.sweepRetention();
+      this.logger.log(
+        `Retention sweep: ${result.incidentLocationsNulled} incident location(s) ` +
+        `nulled, ${result.alertPositionsNulled} alert position(s) nulled`,
+      );
+    } catch (err) {
+      this.logger.warn(`Retention sweep failed: ${err?.message}`);
+    }
+  }
