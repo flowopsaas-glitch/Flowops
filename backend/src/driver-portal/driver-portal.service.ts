@@ -942,17 +942,24 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
-    // Establish tenant context for RLS (defence-in-depth: policies already
-    // step aside when app.company_id is unset and rls_strict is off, but set
-    // it explicitly to be safe)
-    await this.prisma.$executeRawUnsafe(
-      "SELECT set_config('app.company_id', \$1, true)", companyId
-    );
-
     const drivers = await this.prisma.driver.findMany({
       where: { companyId, isActive: true },
       select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
     });
+
+    // Diagnostic: fresh PrismaClient to test instance isolation
+    const { PrismaClient } = require('@prisma/client');
+    const freshPrisma = new PrismaClient({
+      datasources: { db: { url: process.env.DATABASE_URL } },
+    });
+    try {
+      const freshCount = await freshPrisma.driverChatMessage.count({
+        where: { driverId: drivers[0]?.id, senderType: 'driver', readAt: null },
+      });
+      console.log('FRESH PRISMA COUNT:', freshCount);
+    } finally {
+      await freshPrisma.$disconnect();
+    }
 
     const convos = await Promise.all(drivers.map(async d => {
       const unread = await this.prisma.driverChatMessage.count({
