@@ -101,3 +101,22 @@ ALTER TABLE "journey_updates" ADD CONSTRAINT "journey_updates_driverId_fkey" FOR
 
 -- AddForeignKey
 ALTER TABLE "journey_updates" ADD CONSTRAINT "journey_updates_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Row-Level Security: tenant isolation for Journey tables
+ALTER TABLE "journeys" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "journeys" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation" ON "journeys"
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
+
+ALTER TABLE "journey_stages" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "journey_stages" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation" ON "journey_stages"
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
+
+ALTER TABLE "journey_updates" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "journey_updates" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation" ON "journey_updates"
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
