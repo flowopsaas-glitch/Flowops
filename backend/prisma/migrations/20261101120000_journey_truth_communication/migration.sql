@@ -5,7 +5,7 @@ CREATE TYPE "JourneyStatus" AS ENUM ('PLANNED', 'IN_TRANSIT', 'COMPLETED', 'CANC
 CREATE TYPE "JourneyStageType" AS ENUM ('PICKUP', 'BORDER', 'TRANSIT', 'DELIVERY', 'OTHER');
 CREATE TYPE "JourneyStageStatus" AS ENUM ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'SKIPPED');
 CREATE TYPE "JourneyUpdateType" AS ENUM ('DELAY', 'VEHICLE_ISSUE', 'ROAD_OBSTRUCTION', 'SAFETY_CONCERN', 'STATUS_CHANGE');
-CREATE TYPE "JourneyUpdateStatus" AS ENUM ('PENDING', 'RECEIVED', 'ACKNOWLEDGED', 'RESOLVED');
+CREATE TYPE "JourneyUpdateStatus" AS ENUM ('PENDING', 'RECEIVED', 'ACKNOWLEDGED', 'RESOLVED', 'REJECTED');
 
 CREATE TABLE "journeys" (
   "id" TEXT NOT NULL,
@@ -23,13 +23,13 @@ CREATE TABLE "journeys" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journeys_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "Journey_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
-  CONSTRAINT "Journey_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL
+  CONSTRAINT "journeys_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
+  CONSTRAINT "journeys_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL
 );
 
-CREATE INDEX "Journey_companyId_status_idx" ON "journeys"("companyId", "status");
-CREATE INDEX "Journey_driverId_createdAt_idx" ON "journeys"("driverId", "createdAt");
-CREATE INDEX "Journey_companyId_createdAt_idx" ON "journeys"("companyId", "createdAt");
+CREATE INDEX "journeys_companyId_status_idx" ON "journeys"("companyId", "status");
+CREATE INDEX "journeys_driverId_createdAt_idx" ON "journeys"("driverId", "createdAt");
+CREATE INDEX "journeys_companyId_createdAt_idx" ON "journeys"("companyId", "createdAt");
 
 CREATE TABLE "journey_stages" (
   "id" TEXT NOT NULL,
@@ -47,13 +47,13 @@ CREATE TABLE "journey_stages" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journey_stages_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "JourneyStage_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE,
-  CONSTRAINT "JourneyStage_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
-  CONSTRAINT "JourneyStage_journeyId_stageNumber_key" UNIQUE ("journeyId", "stageNumber")
+  CONSTRAINT "journey_stages_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE,
+  CONSTRAINT "journey_stages_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
+  CONSTRAINT "journey_stages_journeyId_stageNumber_key" UNIQUE ("journeyId", "stageNumber")
 );
 
-CREATE INDEX "JourneyStage_journeyId_stageNumber_idx" ON "journey_stages"("journeyId", "stageNumber");
-CREATE INDEX "JourneyStage_companyId_status_idx" ON "journey_stages"("companyId", "status");
+CREATE INDEX "journey_stages_journeyId_stageNumber_idx" ON "journey_stages"("journeyId", "stageNumber");
+CREATE INDEX "journey_stages_companyId_status_idx" ON "journey_stages"("companyId", "status");
 
 CREATE TABLE "journey_updates" (
   "id" TEXT NOT NULL,
@@ -74,14 +74,14 @@ CREATE TABLE "journey_updates" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journey_updates_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "JourneyUpdate_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE,
-  CONSTRAINT "JourneyUpdate_stageId_fkey" FOREIGN KEY ("stageId") REFERENCES "journey_stages"("id") ON DELETE SET NULL,
-  CONSTRAINT "JourneyUpdate_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE CASCADE,
-  CONSTRAINT "JourneyUpdate_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
-  CONSTRAINT "JourneyUpdate_companyId_driverId_clientMessageId_key" UNIQUE ("companyId", "driverId", "clientMessageId")
+  CONSTRAINT "journey_updates_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE,
+  CONSTRAINT "journey_updates_stageId_fkey" FOREIGN KEY ("stageId") REFERENCES "journey_stages"("id") ON DELETE SET NULL,
+  CONSTRAINT "journey_updates_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE CASCADE,
+  CONSTRAINT "journey_updates_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
+  CONSTRAINT "journey_updates_companyId_driverId_clientMessageId_key" UNIQUE ("companyId", "driverId", "clientMessageId")
 );
 
-CREATE INDEX "JourneyUpdate_journeyId_createdAt_idx" ON "journey_updates"("journeyId", "createdAt");
-CREATE INDEX "JourneyUpdate_stageId_createdAt_idx" ON "journey_updates"("stageId", "createdAt");
-CREATE INDEX "JourneyUpdate_companyId_status_idx" ON "journey_updates"("companyId", "status");
-CREATE INDEX "JourneyUpdate_driverId_createdAt_idx" ON "journey_updates"("driverId", "createdAt");
+CREATE INDEX "journey_updates_journeyId_createdAt_idx" ON "journey_updates"("journeyId", "createdAt");
+CREATE INDEX "journey_updates_stageId_createdAt_idx" ON "journey_updates"("stageId", "createdAt");
+CREATE INDEX "journey_updates_companyId_status_idx" ON "journey_updates"("companyId", "status");
+CREATE INDEX "journey_updates_driverId_createdAt_idx" ON "journey_updates"("driverId", "createdAt");
