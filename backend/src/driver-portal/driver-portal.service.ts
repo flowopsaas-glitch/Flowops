@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { DriverSafetyService } from '../driver-safety/driver-safety.service';
+import { BorderDwellService } from '../driver-safety/border-dwell.service';
 import { EpodService } from '../epod/epod.service';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { AuditService } from '../audit/audit.service';
@@ -36,6 +37,7 @@ export class DriverPortalService {
     private notifications: NotificationsService,
     private gateway: EventsGateway,
     private safety: DriverSafetyService,
+    private borderDwell: BorderDwellService,
     private epod: EpodService,
     private compliance: DriverComplianceService,
     private audit: AuditService,
@@ -367,6 +369,14 @@ export class DriverPortalService {
       driverId, driver.companyId, lat, lng, speed,
     ).catch((err) => {
       this.logger.warn(`Safety check failed (non-blocking): ${err?.message}`);
+    });
+
+    // ── WP3: Cross-border dwell measurement on every GPS update ──
+    // Non-blocking — session lifecycle fires asynchronously without slowing GPS response.
+    void this.borderDwell.checkBorderGeofences(
+      driverId, driver.companyId, lat, lng, speed,
+    ).catch((err) => {
+      this.logger.warn(`Border dwell check failed (non-blocking): ${err?.message}`);
     });
 
     return driver;

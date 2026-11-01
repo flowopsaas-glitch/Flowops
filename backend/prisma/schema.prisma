@@ -6658,3 +6658,90 @@ model TerminalGatePolicy {
   @@index([companyId])
   @@map("terminal_gate_policies")
 }
+
+/// ── WP3: Cross-border dwell measurement ───────────────────────────────────────
+/// Border post reference data — official crossing identity, hand-compiled reference.
+/// These are the named crossing points where dwell can be measured.
+/// Provenance: every figure is STATIC_REFERENCE until measured by FlowOps.
+model BorderPost {
+  id                 String   @id @default(cuid())
+  companyId          String
+  code               String   // "BEIT_BRIDGE", "CHIRUNDU", "LEBOMBO"
+  name               String   // "Beitbridge Border Post"
+  countries          String   // "ZA,ZW" — comma-separated ISO codes for both sides
+  lat                Float
+  lng                Float
+  is24Hour           Boolean  @default(false)
+  referenceAvgWaitHours Float?   // reference only, not measured by FlowOps
+  referenceCongestion   String?    // reference only
+  referenceCompiledAsOf  DateTime?  // null = not recorded
+
+  geofences     BorderGeofence[]
+  dwellSessions BorderDwellSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("border_posts")
+}
+
+/// Border geofence — measurement boundary at a border post.
+/// Separate from SafetyZone: a measurement boundary is not a danger zone,
+/// and driver-reported safety zones must never enter dwell statistics.
+model BorderGeofence {
+  id          String   @id @default(cuid())
+  companyId   String
+  postId      String
+  post        BorderPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  code        String   // "BEIT_BRIDGE_ZA", "BEIT_BRIDGE_ZW", "CHIRUNDU"
+  name        String   // "Beitbridge Border (SA side)"
+  lat         Float
+  lng         Float
+  radiusM     Int      @default(1000) // radius in metres
+  side        String   // "EXPORT" | "IMPORT" | "TRANSIT" | "BOTH"
+  isActive    Boolean  @default(true)
+  provenance  String   // "SEED" | "OPERATOR_REVIEW" | "SURVEYED"
+
+  dwellSessions BorderDwellSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, isActive])
+  @@index([postId])
+  @@map("border_geofences")
+}
+
+/// Border dwell session — one visit to a border geofence.
+/// Entry and exit derived from GPS fixes, not a track.
+/// Two timestamps per crossing, tied to driver/vehicle/post — not a breadcrumb store.
+model BorderDwellSession {
+  id                String   @id @default(cuid())
+  companyId         String
+  postId            String
+  post              BorderPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  geofenceId        String
+  geofence          BorderGeofence @relation(fields: [geofenceId], references: [id], onDelete: Cascade)
+  driverId          String?    // nullable: dwell survives a driver change mid-trip
+  vehicleReg        String?
+  enteredAt         DateTime?    // first observed inside fix (entry bounded, not exact)
+  enteredFromFixAt  DateTime?    // actual fix timestamp that first placed driver inside
+  exitedAt          DateTime?    // last observed outside fix bounds exit
+  exitedFromFixAt   DateTime?    // actual fix timestamp that first placed driver outside
+  state             String   // "CLOSED" | "OPEN" | "GAPPED"
+  sampleCount       Int      @default(0)
+  precisionSeconds  Int?     // observed entry/exit uncertainty bound in seconds
+  gapLargestSeconds Int?     // largest gap between consecutive samples inside session
+  direction         String?  // "INBOUND" | "OUTBOUND" | "TRANSIT"
+  source            String   // "GPS_PORTAL"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, state])
+  @@index([postId, state])
+  @@index([driverId])
+  @@map("border_dwell_sessions")
+}
