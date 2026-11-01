@@ -942,76 +942,30 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
-    // Single raw SQL query joining drivers to their chat messages, bypassing
-    // any Prisma Client path that may silently drop driverId-filtered rows.
-    const rows = await this.prisma.\$queryRaw<Array<{
-      id: string;
-      name: string;
-      vehicleReg: string | null;
-      status: string;
-      lastSeen: Date | null;
-      unreadCount: bigint;
-      lastMessage: string | null;
-      lastMessageAt: Date | null;
-    }>>\`
-      SELECT
-        d.id,
-        d.name,
-        d."vehicleReg" AS vehicleReg,
-        d.status,
-        d."lastSeen" AS lastSeen,
-        COUNT(cm.id) FILTER (WHERE cm."senderType" = 'driver' AND cm."readAt" IS NULL)::bigint AS unreadCount,
-        (SELECT cm2."message"
-           FROM "driver_chat_messages" cm2
-          WHERE cm2."driverId" = d.id
-          ORDER BY cm2."createdAt" DESC
-          LIMIT 1) AS lastMessage,
-        MAX(cm."createdAt") AS lastMessageAt
-      FROM "drivers" d
-      LEFT JOIN "driver_chat_messages" cm ON cm."driverId" = d.id
-      WHERE d."companyId" = \${companyId} AND d."isActive" = true
-      GROUP BY d.id, d.name, d."vehicleReg", d.status, d."lastSeen"
-      ORDER BY unreadCount DESC, lastMessageAt DESC NULLS LAST
-    \`;
-
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      vehicleReg: r.vehicleReg,
-      status: r.status,
-      lastSeen: r.lastSeen,
-      unreadCount: Number(r.unreadCount),
-      lastMessage: r.lastMessage,
-      lastMessageAt: r.lastMessageAt,
-    }));
-  }
-
-  /** Dispatch sends a message to a specific driver, scoped to the tenant. Idempotent via clientMessageId. */
-  async dispatchSend(driverId: string, companyId: string, message: string, clientMessageId?: unknown) {
-    if (!message || !message.trim()) throw new BadRequestException('Message is required');
-    if (message.length > 4000) throw new BadRequestException('Message is too long');
-
-    const driver = await this.prisma.driver.findFirst({
-      where: { id: driverId, companyId, isActive: true },
-      select: { id: true },
+    // Diagnostic: count by companyId instead of driverId
+    const companyCount = await this.prisma.driverChatMessage.count({
+      where: { companyId, senderType: 'driver', readAt: null },
     });
-    if (!driver) throw new NotFoundException('Driver not found');
 
-    const key = chatMessageKey(clientMessageId);
-    const payload = { message: message.trim(), senderType: 'dispatch' };
-    try {
-      return await this.prisma.driverChatMessage.create({
-        data: { driverId: driver.id, companyId, ...payload, ...(key ? { clientMessageId: key } : {}) },
+    const drivers = await this.prisma.driver.findMany({
+      where: { companyId, isActive: true },
+      select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
+    });
+
+    const convos = await Promise.all(drivers.map(async d => {
+      // Diagnostic: count by companyId (not driverId)
+      const unread = companyCount;
+      const last = await this.prisma.driverChatMessage.findFirst({
+        where: { driverId: d.id },
+        orderBy: { createdAt: 'desc' },
       });
-    } catch (error) {
-      // The database unique index is the concurrency barrier. A lost response can
-      // be retried with the same UUID; an identical retry returns the original.
-      if (!key || (error as { code?: string })?.code !== 'P2002') throw error;
-      const existing = await this.prisma.driverChatMessage.findFirst({
-        where: { driverId: driver.id, companyId, clientMessageId: key },
-      });
-      if (!existing) throw error;
-      return verifyChatRetry(existing, payload);
-    }
+      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+    }));
+
+    return convos.sort((a, b) => {
+      if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
+      if (a.lastMessageAt && b.lastMessageAt) return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
+      return 0;
+    });
   }
 }
