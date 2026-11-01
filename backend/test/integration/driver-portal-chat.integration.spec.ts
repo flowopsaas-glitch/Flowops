@@ -185,6 +185,10 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
     expect(conversations).toHaveLength(1);
     expect(conversations[0].id).toBe(driver.id);
     expect(conversations[0].name).toBe('Ace Driver');
+
+    // Diagnostic: total rows in driver_chat_messages from service perspective
+    expect(conversations[0].totalCount).toBeGreaterThanOrEqual(2);
+
     expect(conversations[0].unreadCount).toBe(2);
     expect(conversations[0].lastMessage).toBe('Running late');
   });

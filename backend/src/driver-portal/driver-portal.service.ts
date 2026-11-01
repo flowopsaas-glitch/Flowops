@@ -947,17 +947,19 @@ export class DriverPortalService {
       select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
     });
 
+    // Diagnostic: count ALL rows with no where clause
+    const totalCount = await this.prisma.driverChatMessage.count({});
+
     const convos = await Promise.all(drivers.map(async d => {
-      // Diagnostic: raw SQL unsafe with string interpolation for driverId
-      const unreadResult = await this.prisma.$queryRawUnsafe<Array<{ cnt: string }>>(
-        "SELECT count(*)::bigint AS cnt FROM "driver_chat_messages" WHERE "driverId" = '".concat(d.id).concat("')"
-      );
-      const unread = Number(unreadResult[0]?.cnt ?? 0);
+      // Diagnostic: count ALL messages for this driver (no filters)
+      const unread = await this.prisma.driverChatMessage.count({
+        where: { driverId: d.id },
+      });
       const last = await this.prisma.driverChatMessage.findFirst({
         where: { driverId: d.id },
         orderBy: { createdAt: 'desc' },
       });
-      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+      return { ...d, unreadCount: unread, totalCount, lastMessage: last?.message, lastMessageAt: last?.createdAt };
     }));
 
     return convos.sort((a, b) => {
