@@ -948,9 +948,9 @@ export class DriverPortalService {
     });
 
     const convos = await Promise.all(drivers.map(async d => {
-      // Temporary diagnostic: use findMany + length instead of count()
+      // Temporary diagnostic: no readAt filter
       const messages = await this.prisma.driverChatMessage.findMany({
-        where: { driverId: d.id, senderType: 'driver', readAt: null },
+        where: { driverId: d.id, senderType: 'driver' },
         select: { id: true },
       });
       const unread = messages.length;
