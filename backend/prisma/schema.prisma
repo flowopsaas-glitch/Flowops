@@ -2077,13 +2077,17 @@ model DriverChatMessage {
   companyId      String
   company        Company   @relation("CompanyDriverChats", fields: [companyId], references: [id], onDelete: Cascade)
   /// 'driver' | 'dispatch'
+  /// Optional idempotency key for driver-originated messages.
+  clientMessageId String?
   senderType     String
   message        String
   attachmentUrl  String?
   attachmentType String?   // 'image' | 'document'
   readAt         DateTime? // null = unread
+  deliveredAt    DateTime? // null = not yet delivered to the recipient's device
   createdAt      DateTime  @default(now())
 
+  @@unique([companyId, driverId, clientMessageId])
   @@index([driverId, createdAt])
   @@index([companyId, createdAt])
   @@map("driver_chat_messages")
