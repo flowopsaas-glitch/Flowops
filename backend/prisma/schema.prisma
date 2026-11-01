@@ -6834,3 +6834,57 @@ enum TripLegProvenance {
   DECLARED   // keyed in by a dispatcher/operator
   REFERENCE  // from static corridor table — planning only, never summed
 }
+
+/// ── WP3 Stage 3: Cross-border document pack + expiry alerts ─────────────────
+/// Per-trip document pack. Each document is captured by a dispatcher or the
+/// driver in the portal, with the actor recorded. The pack records what the
+/// operator holds — it does not file anything with any authority.
+/// Statuses: HELD (in hand), MISSING (not yet obtained), EXPIRED (past expiry),
+/// NOT_APPLICABLE (not required for this corridor/country).
+model TripDocumentPack {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tripId      String
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  documentType String  // e.g. "Carnet de Passage", "TIR Carnet", "COMESA Certificate of Origin"
+  status      DocumentPackStatus @default(HELD)
+  issuedAt    DateTime?
+  expiresAt   DateTime?
+  capturedBy  String?   // userId of dispatcher/driver who captured it
+  evidenceRef String?   // reference to uploaded evidence (waybill scan, photo, etc.)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([tripId])
+  @@index([companyId, status])
+  @@index([expiresAt])
+  @@map("trip_document_pack")
+}
+
+enum DocumentPackStatus {
+  HELD            // document is in hand
+  MISSING         // not yet obtained
+  EXPIRED         // past expiry date
+  NOT_APPLICABLE  // not required for this corridor/country
+}
+
+/// Per-company expiry alert thresholds (days before expiry).
+/// Defaults: 30 / 14 / 3 days. Configurable downwards only per company.
+model DocumentExpiryThreshold {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documentType   String?  // null = applies to all document types
+  thresholdDays  Int      @default(30) // days before expiry to alert
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, documentType])
+  @@index([companyId, isActive])
+  @@map("document_expiry_thresholds")
+}
