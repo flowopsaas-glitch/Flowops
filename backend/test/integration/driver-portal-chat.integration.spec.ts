@@ -173,7 +173,6 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
         companyId,
         senderType: 'driver',
         message: 'Hello dispatch',
-        readAt: null,
       },
     });
     await prisma.driverChatMessage.create({
@@ -182,7 +181,6 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
         companyId,
         senderType: 'driver',
         message: 'Running late',
-        readAt: null,
       },
     });
 
