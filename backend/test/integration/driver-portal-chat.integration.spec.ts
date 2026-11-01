@@ -61,13 +61,13 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    const result = await service.dispatchSend(driver.id, companyId, 'Running 10 min late', 'key-1');
+    const result = await service.dispatchSend(driver.id, companyId, 'Running 10 min late', '550e8400-e29b-41d4-a716-446655440000');
 
     expect(result.driverId).toBe(driver.id);
     expect(result.companyId).toBe(companyId);
     expect(result.senderType).toBe('dispatch');
     expect(result.message).toBe('Running 10 min late');
-    expect(result.clientMessageId).toBe('key-1');
+    expect(result.clientMessageId).toBe('550e8400-e29b-41d4-a716-446655440000');
     expect(result.deliveredAt).toBeNull();
     expect(result.readAt).toBeNull();
   });
@@ -78,14 +78,14 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    const first = await service.dispatchSend(driver.id, companyId, 'Hello', 'key-1');
-    const second = await service.dispatchSend(driver.id, companyId, 'Hello', 'key-1');
+    const first = await service.dispatchSend(driver.id, companyId, 'Hello', '550e8400-e29b-41d4-a716-446655440000');
+    const second = await service.dispatchSend(driver.id, companyId, 'Hello', '550e8400-e29b-41d4-a716-446655440000');
 
     expect(second.id).toBe(first.id);
     expect(second.message).toBe('Hello');
     // Only one row in the database despite two calls.
     const count = await prisma.driverChatMessage.count({
-      where: { driverId: driver.id, companyId, clientMessageId: 'key-1' },
+      where: { driverId: driver.id, companyId, clientMessageId: '550e8400-e29b-41d4-a716-446655440000' },
     });
     expect(count).toBe(1);
   });
@@ -96,9 +96,9 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    await service.dispatchSend(driver.id, companyId, 'Hello', 'key-1');
+    await service.dispatchSend(driver.id, companyId, 'Hello', '550e8400-e29b-41d4-a716-446655440000');
     await expect(
-      service.dispatchSend(driver.id, companyId, 'Goodbye', 'key-1'),
+      service.dispatchSend(driver.id, companyId, 'Goodbye', '550e8400-e29b-41d4-a716-446655440000'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -109,7 +109,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
     });
 
     await expect(
-      service.dispatchSend(driver.id, 'other-company', 'Hello', 'key-1'),
+      service.dispatchSend(driver.id, 'other-company', 'Hello', '550e8400-e29b-41d4-a716-446655440000'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -119,7 +119,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    const sent = await service.dispatchSend(driver.id, companyId, 'Ping', 'key-1');
+    const sent = await service.dispatchSend(driver.id, companyId, 'Ping', '550e8400-e29b-41d4-a716-446655440000');
     await service.markAsDelivered(driver.id, companyId, [sent.id]);
 
     const refreshed = await prisma.driverChatMessage.findUnique({ where: { id: sent.id } });
@@ -134,7 +134,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    const sent = await service.dispatchSend(driver.id, companyId, 'Ping', 'key-1');
+    const sent = await service.dispatchSend(driver.id, companyId, 'Ping', '550e8400-e29b-41d4-a716-446655440000');
     const result = await service.markAsDelivered(driver.id, otherCompanyId, [sent.id]);
 
     expect(result.marked).toBe(0);
@@ -148,8 +148,8 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    await service.dispatchSend(driver.id, companyId, 'One', 'key-1');
-    await service.dispatchSend(driver.id, companyId, 'Two', 'key-2');
+    await service.dispatchSend(driver.id, companyId, 'One', '550e8400-e29b-41d4-a716-446655440000');
+    await service.dispatchSend(driver.id, companyId, 'Two', '550e8400-e29b-41d4-a716-446655440001');
 
     const result = await service.markRead(driver.id);
 
@@ -166,8 +166,8 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    await service.dispatchSend(driver.id, companyId, 'Hello dispatch', 'key-1');
-    await service.dispatchSend(driver.id, companyId, 'Running late', 'key-2');
+    await service.dispatchSend(driver.id, companyId, 'Hello dispatch', '550e8400-e29b-41d4-a716-446655440000');
+    await service.dispatchSend(driver.id, companyId, 'Running late', '550e8400-e29b-41d4-a716-446655440001');
 
     const conversations = await service.getDriverConversations(companyId);
 
@@ -199,13 +199,13 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId: companyA, isActive: true },
     });
 
-    await service.dispatchSend(driver.id, companyA, 'Secret', 'key-1');
+    await service.dispatchSend(driver.id, companyA, 'Secret', '550e8400-e29b-41d4-a716-446655440000');
 
     const conversations = await service.getDriverConversations(companyB);
     expect(conversations).toHaveLength(0);
 
     await expect(
-      service.dispatchSend(driver.id, companyB, 'Should fail', 'key-2'),
+      service.dispatchSend(driver.id, companyB, 'Should fail', '550e8400-e29b-41d4-a716-446655440001'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
