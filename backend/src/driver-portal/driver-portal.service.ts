@@ -942,40 +942,34 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
-    // Controlled RLS diagnostic: capture session-level settings on THIS connection
-    const [appCompanyId, appRlsStrict] = await this.prisma.$queryRawUnsafe<Array<{ v: string }>>(
-      `SELECT current_setting('app.company_id', true) AS v
-       UNION ALL
-       SELECT current_setting('app.rls_strict', true) AS v`
-    );
+    return await this.prisma.$transaction(async tx => {
+      // Establish tenant context inside the transaction so every query in this
+      // scope sees the same RLS-filtered rows regardless of which pooled
+      // connection Prisma assigns.  `set_config(..., true)` is SET LOCAL: it
+      // lasts only for this transaction and is rolled back automatically.
+      await tx.$executeRaw`SELECT set_config('app.company_id', ${companyId}, true)`;
 
-    const drivers = await this.prisma.driver.findMany({
-      where: { companyId, isActive: true },
-      select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
-    });
-
-    const convos = await Promise.all(drivers.map(async d => {
-      const unread = await this.prisma.driverChatMessage.count({
-        where: { driverId: d.id, senderType: 'driver', readAt: null },
+      const drivers = await tx.driver.findMany({
+        where: { companyId, isActive: true },
+        select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
       });
-      const last = await this.prisma.driverChatMessage.findFirst({
-        where: { driverId: d.id },
-        orderBy: { createdAt: 'desc' },
-      });
-      return {
-        ...d,
-        unreadCount: unread,
-        lastMessage: last?.message,
-        lastMessageAt: last?.createdAt,
-        diagAppCompanyId: appCompanyId?.v,
-        diagAppRlsStrict: appRlsStrict?.v,
-      };
-    }));
 
-    return convos.sort((a, b) => {
-      if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
-      if (a.lastMessageAt && b.lastMessageAt) return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
-      return 0;
+      const convos = await Promise.all(drivers.map(async d => {
+        const unread = await tx.driverChatMessage.count({
+          where: { driverId: d.id, senderType: 'driver', readAt: null },
+        });
+        const last = await tx.driverChatMessage.findFirst({
+          where: { driverId: d.id },
+          orderBy: { createdAt: 'desc' },
+        });
+        return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+      }));
+
+      return convos.sort((a, b) => {
+        if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
+        if (a.lastMessageAt && b.lastMessageAt) return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
+        return 0;
+      });
     });
   }
 }

@@ -180,21 +180,11 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
     });
     expect(directCount).toBe(2);
 
-    // Capture session-level RLS settings from the test's own connection
-    const [testCompanyId, testRlsStrict] = await prisma.$queryRawUnsafe<Array<{ v: string }>>(
-      `SELECT current_setting('app.company_id', true) AS v
-       UNION ALL
-       SELECT current_setting('app.rls_strict', true) AS v`
-    );
-
     const conversations = await service.getDriverConversations(companyId);
 
     expect(conversations).toHaveLength(1);
     expect(conversations[0].id).toBe(driver.id);
     expect(conversations[0].name).toBe('Ace Driver');
-    // Session settings observed from each side
-    expect(conversations[0].diagAppCompanyId).toBe(testCompanyId?.v);
-    expect(conversations[0].diagAppRlsStrict).toBe(testRlsStrict?.v);
     expect(conversations[0].unreadCount).toBe(2);
     expect(conversations[0].lastMessage).toBe('Running late');
   });
