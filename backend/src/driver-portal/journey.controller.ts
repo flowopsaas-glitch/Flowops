@@ -1,6 +1,6 @@
 import {
   BadRequestException,
-  Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards, UnauthorizedException,
+  Body, Controller, Get, Param, Post, Query, Req, UseGuards,
 } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
