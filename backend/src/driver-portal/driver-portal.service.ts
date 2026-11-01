@@ -942,39 +942,23 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
-    // Get distinct driver IDs that have messages, then find those drivers
-    const messageDriverStats = await this.prisma.driverChatMessage.groupBy({
-      by: ['driverId'],
-      where: { companyId },
-      _count: { id: true },
-      _max: { createdAt: true },
-    });
-    const driverIds = messageDriverStats.map(m => m.driverId);
-
     const drivers = await this.prisma.driver.findMany({
-      where: { id: { in: driverIds }, companyId, isActive: true },
+      where: { companyId, isActive: true },
       select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
     });
 
-    const unreadCounts = await this.prisma.driverChatMessage.groupBy({
-      by: ['driverId'],
-      where: { companyId, senderType: 'driver', readAt: null },
-      _count: { id: true },
-    });
-    const unreadMap = new Map<string, number>();
-    for (const uc of unreadCounts) {
-      unreadMap.set(uc.driverId, uc._count.id);
-    }
-
-    const convos = drivers.map(d => {
-      const stat = messageDriverStats.find(m => m.driverId === d.id);
-      const unread = unreadMap.get(d.id) ?? 0;
-      const lastMsg = stat ? await this.prisma.driverChatMessage.findFirst({
-        where: { driverId: d.id, createdAt: stat._max.createdAt ?? undefined },
-        select: { message: true },
-      }) : null;
-      return { ...d, unreadCount: unread, lastMessage: lastMsg?.message ?? null, lastMessageAt: stat?._max.createdAt ?? null };
-    });
+    const convos = await Promise.all(drivers.map(async d => {
+      // Diagnostic: raw SQL unsafe with string interpolation for driverId
+      const unreadResult = await this.prisma.$queryRawUnsafe<Array<{ cnt: string }>>(
+        "SELECT count(*)::bigint AS cnt FROM "driver_chat_messages" WHERE "driverId" = '".concat(d.id).concat("')"
+      );
+      const unread = Number(unreadResult[0]?.cnt ?? 0);
+      const last = await this.prisma.driverChatMessage.findFirst({
+        where: { driverId: d.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+    }));
 
     return convos.sort((a, b) => {
       if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
