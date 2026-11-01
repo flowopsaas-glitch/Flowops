@@ -942,8 +942,17 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
+    // Get distinct driver IDs that have messages, then find those drivers
+    const messageDriverStats = await this.prisma.driverChatMessage.groupBy({
+      by: ['driverId'],
+      where: { companyId },
+      _count: { id: true },
+      _max: { createdAt: true },
+    });
+    const driverIds = messageDriverStats.map(m => m.driverId);
+
     const drivers = await this.prisma.driver.findMany({
-      where: { companyId, isActive: true },
+      where: { id: { in: driverIds }, companyId, isActive: true },
       select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
     });
 
@@ -957,24 +966,14 @@ export class DriverPortalService {
       unreadMap.set(uc.driverId, uc._count.id);
     }
 
-    const lastMessages = await this.prisma.driverChatMessage.groupBy({
-      by: ['driverId'],
-      where: { companyId },
-      _max: { createdAt: true },
-    });
-    const lastMap = new Map<string, Date | null>();
-    for (const lm of lastMessages) {
-      lastMap.set(lm.driverId, lm._max.createdAt ?? null);
-    }
-
     const convos = drivers.map(d => {
+      const stat = messageDriverStats.find(m => m.driverId === d.id);
       const unread = unreadMap.get(d.id) ?? 0;
-      const last = lastMap.get(d.id) ?? null;
-      const lastMsg = last ? await this.prisma.driverChatMessage.findFirst({
-        where: { driverId: d.id, createdAt: last },
+      const lastMsg = stat ? await this.prisma.driverChatMessage.findFirst({
+        where: { driverId: d.id, createdAt: stat._max.createdAt ?? undefined },
         select: { message: true },
       }) : null;
-      return { ...d, unreadCount: unread, lastMessage: lastMsg?.message ?? null, lastMessageAt: last };
+      return { ...d, unreadCount: unread, lastMessage: lastMsg?.message ?? null, lastMessageAt: stat?._max.createdAt ?? null };
     });
 
     return convos.sort((a, b) => {
