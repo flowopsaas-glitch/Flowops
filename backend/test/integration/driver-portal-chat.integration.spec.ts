@@ -166,8 +166,13 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
       data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
-    await service.sendMessage(driver.id, companyId, 'Hello dispatch', 'driver');
-    await service.sendMessage(driver.id, companyId, 'Running late', 'driver');
+    // Create messages directly via Prisma to isolate from sendMessage
+    await prisma.driverChatMessage.create({
+      data: { driverId: driver.id, companyId, message: 'Hello dispatch', senderType: 'driver' },
+    });
+    await prisma.driverChatMessage.create({
+      data: { driverId: driver.id, companyId, message: 'Running late', senderType: 'driver' },
+    });
 
     // Prove messages exist in the database before testing the service
     const directCount = await prisma.driverChatMessage.count({
