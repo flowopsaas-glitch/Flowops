@@ -942,60 +942,48 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
-    const drivers = await this.prisma.driver.findMany({
-      where: { companyId, isActive: true },
-      select: {
-        id: true,
-        name: true,
-        vehicleReg: true,
-        status: true,
-        lastSeen: true,
-        _count: {
-          select: {
-            chatMessages: {
-              where: { senderType: 'driver', readAt: null },
-            },
-          },
-        },
-      },
-    });
+    // Single raw SQL query joining drivers to their chat messages, bypassing
+    // any Prisma Client path that may silently drop driverId-filtered rows.
+    const rows = await this.prisma.\$queryRaw<Array<{
+      id: string;
+      name: string;
+      vehicleReg: string | null;
+      status: string;
+      lastSeen: Date | null;
+      unreadCount: bigint;
+      lastMessage: string | null;
+      lastMessageAt: Date | null;
+    }>>\`
+      SELECT
+        d.id,
+        d.name,
+        d."vehicleReg" AS vehicleReg,
+        d.status,
+        d."lastSeen" AS lastSeen,
+        COUNT(cm.id) FILTER (WHERE cm."senderType" = 'driver' AND cm."readAt" IS NULL)::bigint AS unreadCount,
+        (SELECT cm2."message"
+           FROM "driver_chat_messages" cm2
+          WHERE cm2."driverId" = d.id
+          ORDER BY cm2."createdAt" DESC
+          LIMIT 1) AS lastMessage,
+        MAX(cm."createdAt") AS lastMessageAt
+      FROM "drivers" d
+      LEFT JOIN "driver_chat_messages" cm ON cm."driverId" = d.id
+      WHERE d."companyId" = \${companyId} AND d."isActive" = true
+      GROUP BY d.id, d.name, d."vehicleReg", d.status, d."lastSeen"
+      ORDER BY unreadCount DESC, lastMessageAt DESC NULLS LAST
+    \`;
 
-    // Last message per driver via a single grouped query
-    const lastMessages = await this.prisma.driverChatMessage.groupBy({
-      by: ['driverId'],
-      where: { companyId },
-      _max: { createdAt: true },
-    });
-    const lastMap = new Map<string, Date | null>();
-    for (const lm of lastMessages) {
-      lastMap.set(lm.driverId, lm._max.createdAt ?? null);
-    }
-
-    const convos = drivers.map(d => {
-      const unread = (d as { _count?: { chatMessages: number } })._count?.chatMessages ?? 0;
-      const last = lastMap.get(d.id) ?? null;
-      const lastMsg = last ? this.prisma.driverChatMessage.findFirst({
-        where: { driverId: d.id, createdAt: last },
-        select: { message: true },
-      }) : null;
-      return { ...d, unreadCount: unread, lastMessage: lastMsg ? undefined : null, lastMessageAt: last };
-    });
-
-    // Resolve lastMessage (async) after building the list
-    const resolved = await Promise.all(convos.map(async c => {
-      if (!c.lastMessageAt) return { ...c, lastMessage: null };
-      const lm = await this.prisma.driverChatMessage.findFirst({
-        where: { driverId: c.id, createdAt: c.lastMessageAt },
-        select: { message: true },
-      });
-      return { ...c, lastMessage: lm?.message ?? null };
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      vehicleReg: r.vehicleReg,
+      status: r.status,
+      lastSeen: r.lastSeen,
+      unreadCount: Number(r.unreadCount),
+      lastMessage: r.lastMessage,
+      lastMessageAt: r.lastMessageAt,
     }));
-
-    return resolved.sort((a, b) => {
-      if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
-      if (a.lastMessageAt && b.lastMessageAt) return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
-      return 0;
-    });
   }
 
   /** Dispatch sends a message to a specific driver, scoped to the tenant. Idempotent via clientMessageId. */
