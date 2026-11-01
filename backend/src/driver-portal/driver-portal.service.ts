@@ -942,24 +942,27 @@ export class DriverPortalService {
 
   /** Dispatch-side: list drivers with their most recent message + unread count */
   async getDriverConversations(companyId: string) {
+    // Establish tenant context for RLS (defence-in-depth: policies already
+    // step aside when app.company_id is unset and rls_strict is off, but set
+    // it explicitly to be safe)
+    await this.prisma.$executeRawUnsafe(
+      "SELECT set_config('app.company_id', \$1, true)", companyId
+    );
+
     const drivers = await this.prisma.driver.findMany({
       where: { companyId, isActive: true },
       select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
     });
 
-    // Diagnostic: count ALL rows with no where clause
-    const totalCount = await this.prisma.driverChatMessage.count({});
-
     const convos = await Promise.all(drivers.map(async d => {
-      // Diagnostic: count ALL messages for this driver (no filters)
       const unread = await this.prisma.driverChatMessage.count({
-        where: { driverId: d.id },
+        where: { driverId: d.id, senderType: 'driver', readAt: null },
       });
       const last = await this.prisma.driverChatMessage.findFirst({
         where: { driverId: d.id },
         orderBy: { createdAt: 'desc' },
       });
-      return { ...d, unreadCount: unread, totalCount, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
     }));
 
     return convos.sort((a, b) => {
