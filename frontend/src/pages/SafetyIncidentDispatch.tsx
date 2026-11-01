@@ -16,7 +16,7 @@ const STATUS_CLS: Record<string, string> = {
 };
 
 const TYPE_ICON: Record<string, LucideIcon> = {
-  HIJACKING_ATTEMPT: Warnings,
+  HIJACKING_ATTEMPT: AlertTriangle,
   ROBBERY: AlertTriangle,
   ACCIDENT: Phone,
   ROAD_CLOSED: ChevronRight,
@@ -169,7 +169,11 @@ export default function SafetyIncidentDispatch() {
 
         {/* Filter */}
         <div className="flex gap-2">
-          {[["all", "All"], ["reported", "Reported"], ["corroborated", "Corroborated"]] as [string, string][]}.map(([key, label]) => (
+{([
+  ["all", "All"],
+  ["reported", "Reported"],
+  ["corroborated", "Corroborated"],
+] as [string, string][]).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setFilter(key as any)}

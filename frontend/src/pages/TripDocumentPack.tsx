@@ -90,7 +90,9 @@ export default function TripDocumentPack() {
 
   const handleStatusChange = async (doc: wp3.TripDocument, status: string) => {
     try {
-      await wp3.wp3UpdateDocument(doc.id, { status });
+      await wp3.wp3UpdateDocument(doc.id, {
+        status: status as "HELD" | "MISSING" | "EXPIRED" | "NOT_APPLICABLE",
+      });
       await loadDocs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed.");

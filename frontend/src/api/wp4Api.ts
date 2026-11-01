@@ -105,8 +105,7 @@ export const wp4ListIncidents = async (opts?: { status?: string; limit?: number 
 };
 
 export const wp4GetIncident = async (incidentId: string): Promise<SafetyIncident> => {
-  return api.get<SafetyIncident>(`/safety-incidents/${incidentId}`);
-};
+  return (await api.get<SafetyIncident>(`/safety-incidents/${incidentId}`)).data;};
 
 export const wp4VerifyIncident = async (incidentId: string, dto: {
   verificationMethod: 'DISPATCH_CONFIRM' | 'SECOND_SOURCE' | 'AUTHORITY_NOTIFIED';

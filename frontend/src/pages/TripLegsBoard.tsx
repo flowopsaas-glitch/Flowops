@@ -212,6 +212,7 @@ export default function TripLegsBoard() {
             onDerive={() => handleDerive(selected.id)}
             onStatus={handleStatus}
             onClose={() => setSelected(null)}
+            onError={setError}
           />
         )}
 
@@ -221,11 +222,11 @@ export default function TripLegsBoard() {
             <ShieldAlert className="h-3 w-3" /> Provenance — how each leg's duration is known
           </h3>
           <div className="flex items-center gap-4 text-xs text-slate-300 space-y-2 md:space-y-0 md:flex-row">
-            {[
+            {([
               ["MEASURED", "Measured — derived from a CLOSED dwell session. Entry and exit are bounded by GPS fixes, never exact."],
               ["DECLARED", "Declared — keyed in by a dispatcher. Not a measurement."],
               ["REFERENCE", "Reference — from the static corridor table. Planning only, never summed into a measured total."],
-            ] as [string, string][]}.map(([key, desc]) => (
+            ] as [string, string][]).map(([key, desc]) => (
               <div key={key} className="flex items-center gap-2">
                 <span className={`px-2 py-0.5 rounded border ${PROV_CLS[key]}`}>{key}</span>
                 <span>{desc}</span>
@@ -250,12 +251,14 @@ function TripDetail({
   onDerive,
   onStatus,
   onClose,
+  onError,
 }: {
   trip: wp3.TripWithLegs;
   deriving: boolean;
   onDerive: () => void;
   onStatus: (id: string, status: string) => void;
   onClose: () => void;
+  onError: (message: string) => void;
 }) {
   const [newKind, setNewKind] = useState<"BORDER" | "CLEARING" | "BOND" | "EMPTY_RETURN">("BORDER");
   const [declaredMinutes, setDeclaredMinutes] = useState("");
@@ -361,8 +364,10 @@ function TripDetail({
                     </td>
                     <td className="py-2.5">
                       {leg.post ? (
-                        <div className="font-mono text-slate-200">{leg.post.code}</div>
-                        <div className="text-[10px] text-slate-500">{leg.post.name}</div>
+                        <>
+                          <div className="font-mono text-slate-200">{leg.post.code}</div>
+                          <div className="text-[10px] text-slate-500">{leg.post.name}</div>
+                        </>
                       ) : (
                         <span className="text-slate-500">—</span>
                       )}
@@ -527,7 +532,7 @@ function TripDetail({
                   const full = await wp3.wp3GetTrip(trip.id);
                   // Refresh via re-open handled by parent
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : "Save failed.");
+                  onError(err instanceof Error ? err.message : "Save failed.");
                 } finally {
                   setSaving(false);
                 }
@@ -649,7 +654,7 @@ function TripDetail({
                   setDutyEstimate(""); setEstimateSource(""); setEstimateVersion("");
                   const full = await wp3.wp3GetTrip(trip.id);
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : "Estimate failed.");
+                  onError(err instanceof Error ? err.message : "Estimate failed.");
                 } finally {
                   setSaving(false);
                 }
@@ -670,7 +675,7 @@ function TripDetail({
                   setDutyActual(""); setDeclarationRef("");
                   const full = await wp3.wp3GetTrip(trip.id);
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : "Actual failed.");
+                  onError(err instanceof Error ? err.message : "Actual failed.");
                 } finally {
                   setSaving(false);
                 }

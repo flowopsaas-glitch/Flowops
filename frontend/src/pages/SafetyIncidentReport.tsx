@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   MapPin, AlertTriangle, ShieldAlert, Send, Clock, X, Phone,
-  ChevronLeft, Activity, Warnings, type LucideIcon,
+  ChevronLeft, Activity, type LucideIcon,
 } from "lucide-react";
 import * as wp4 from "../api/wp4Api";
 import BackButton from "../components/BackButton";
@@ -12,13 +12,13 @@ const INCIDENT_TYPES: Array<{
   icon: LucideIcon;
   color: string;
 }> = [
-  { value: 'HIJACKING_ATTEMPT', label: 'Hijacking attempt', icon: Warnings, color: 'text-rose-400' },
+  { value: 'HIJACKING_ATTEMPT', label: 'Hijacking attempt', icon: AlertTriangle, color: 'text-rose-400' },
   { value: 'ROBBERY', label: 'Robbery', icon: AlertTriangle, color: 'text-rose-400' },
   { value: 'ACCIDENT', label: 'Accident', icon: Activity, color: 'text-amber-400' },
   { value: 'ROAD_CLOSED', label: 'Road closed', icon: ChevronLeft, color: 'text-amber-400' },
   { value: 'VEHICLE_HAZARD', label: 'Vehicle hazard', icon: Phone, color: 'text-amber-400' },
   { value: 'STRIKE_PROTEST', label: 'Strike / protest', icon: Activity, color: 'text-orange-400' },
-  { value: 'WEATHER', label: 'Weather hazard', icon: Warnings, color: 'text-blue-400' },
+  { value: 'WEATHER', label: 'Weather hazard', icon: AlertTriangle, color: 'text-blue-400' },
   { value: 'OTHER', label: 'Other', icon: AlertTriangle, color: 'text-slate-400' },
 ];
 

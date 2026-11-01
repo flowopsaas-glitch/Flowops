@@ -45,7 +45,7 @@ export default function BorderDwellBoard() {
       try {
         const p = await wp3.wp3ListBorderPosts();
         if (alive) setPosts(p);
-        await loadAggregates(p.map((x) => x.id), alive);
+        await loadAggregates(p.map((x) => x.id), () => alive);
       } catch (err) {
         if (alive)
           setError(
@@ -195,7 +195,11 @@ export default function BorderDwellBoard() {
 
                   {/* Completeness split */}
                   <div className="grid grid-cols-3 gap-2">
-                    {[STATE_LABEL.CLOSED, STATE_LABEL.OPEN, STATE_LABEL.GAPPED] as StateKey[]}.map(
+                    {([
+                      STATE_LABEL.CLOSED,
+                      STATE_LABEL.OPEN,
+                      STATE_LABEL.GAPPED,
+                    ] as StateKey[]).map(
                       (key) => {
                         const count = key === "CLOSED" ? closed : key === "OPEN" ? open : gapped;
                         return (
@@ -210,7 +214,7 @@ export default function BorderDwellBoard() {
                           </div>
                         );
                       },
-                    )
+                    )}
                   </div>
 
                   {/* Reference baseline (never blended with measured) */}

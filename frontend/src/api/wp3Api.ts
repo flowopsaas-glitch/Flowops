@@ -242,8 +242,7 @@ export const wp3ListBorderPosts = async (): Promise<BorderPost[]> => {
 };
 
 export const wp3GetBorderPost = async (postId: string): Promise<BorderPost> => {
-  return api.get<BorderPost>(`/border-dwell/posts/${postId}`);
-};
+  return (await api.get<BorderPost>(`/border-dwell/posts/${postId}`)).data;};
 
 export const wp3GetDwellAggregates = async (
   postId: string,
@@ -253,8 +252,7 @@ export const wp3GetDwellAggregates = async (
   if (opts?.from) qs.set("from", opts.from);
   if (opts?.to) qs.set("to", opts.to);
   if (opts?.threshold !== undefined) qs.set("threshold", String(opts.threshold));
-  return api.get<DwellAggregates>(`/border-dwell/posts/${postId}/aggregates?${qs}`);
-};
+  return (await api.get<DwellAggregates>(`/border-dwell/posts/${postId}/aggregates?${qs}`)).data;};
 
 export const wp3ListDwellSessions = async (
   opts?: { postId?: string; state?: string; limit?: number },
@@ -289,8 +287,7 @@ export const wp3CreateTrip = async (dto: {
   plannedStart?: string;
   plannedEnd?: string;
 }): Promise<Trip> => {
-  return api.post<Trip>("/trip-legs/trips", dto);
-};
+  return (await api.post<Trip>("/trip-legs/trips", dto)).data;};
 
 export const wp3ListTrips = async (opts?: {
   status?: string;
@@ -304,8 +301,7 @@ export const wp3ListTrips = async (opts?: {
 };
 
 export const wp3GetTrip = async (tripId: string): Promise<TripWithLegs> => {
-  return api.get<TripWithLegs>(`/trip-legs/trips/${tripId}`);
-};
+  return (await api.get<TripWithLegs>(`/trip-legs/trips/${tripId}`)).data;};
 
 export const wp3DeriveBorderLegs = async (tripId: string): Promise<TripLeg[]> => {
   const r = await api.post<TripLeg[]>(`/trip-legs/trips/${tripId}/derive-border-legs`);
@@ -320,8 +316,7 @@ export const wp3CreateDeclaredLeg = async (tripId: string, dto: {
   confidenceNote?: string;
   notes?: string;
 }): Promise<TripLeg> => {
-  return api.post<TripLeg>(`/trip-legs/trips/${tripId}/legs/declared`, dto);
-};
+  return (await api.post<TripLeg>(`/trip-legs/trips/${tripId}/legs/declared`, dto)).data;};
 
 export const wp3CreateReferenceLeg = async (tripId: string, dto: {
   kind: "LINEHAUL" | "BORDER" | "CLEARING" | "BOND" | "EMPTY_RETURN";
@@ -330,15 +325,13 @@ export const wp3CreateReferenceLeg = async (tripId: string, dto: {
   source?: string;
   notes?: string;
 }): Promise<TripLeg> => {
-  return api.post<TripLeg>(`/trip-legs/trips/${tripId}/legs/reference`, dto);
-};
+  return (await api.post<TripLeg>(`/trip-legs/trips/${tripId}/legs/reference`, dto)).data;};
 
 export const wp3UpdateTripStatus = async (
   tripId: string,
   status: string,
 ): Promise<Trip> => {
-  return api.patch<Trip>(`/trip-legs/trips/${tripId}/status`, { status });
-};
+  return (await api.patch<Trip>(`/trip-legs/trips/${tripId}/status`, { status })).data;};
 
 // ── WP3 Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ─────
 
@@ -347,23 +340,20 @@ export const wp3SetHsOrigin = async (tripId: string, dto: {
   originStatus?: "PREFERENTIAL" | "NON_PREFERENTIAL" | "UNKNOWN";
   certificateOfOriginRef?: string;
 }): Promise<Trip> => {
-  return api.post<Trip>(`/trip-legs/trips/${tripId}/hs-origin`, dto);
-};
+  return (await api.post<Trip>(`/trip-legs/trips/${tripId}/hs-origin`, dto)).data;};
 
 export const wp3SetDutyEstimate = async (tripId: string, dto: {
   duty: number;
   estimateSource: string;
   estimateVersion: string;
 }): Promise<Trip> => {
-  return api.post<Trip>(`/trip-legs/trips/${tripId}/duty/estimate`, dto);
-};
+  return (await api.post<Trip>(`/trip-legs/trips/${tripId}/duty/estimate`, dto)).data;};
 
 export const wp3SetDutyActual = async (tripId: string, dto: {
   duty: number;
   declarationRef: string;
 }): Promise<Trip> => {
-  return api.post<Trip>(`/trip-legs/trips/${tripId}/duty/actual`, dto);
-};
+  return (await api.post<Trip>(`/trip-legs/trips/${tripId}/duty/actual`, dto)).data;};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TRIP DOCUMENTS
@@ -381,8 +371,7 @@ export const wp3ListDocuments = async (opts?: {
 };
 
 export const wp3GetDocument = async (docId: string): Promise<TripDocument> => {
-  return api.get<TripDocument>(`/trip-documents/${docId}`);
-};
+  return (await api.get<TripDocument>(`/trip-documents/${docId}`)).data;};
 
 export const wp3CreateDocument = async (dto: {
   tripId: string;
@@ -392,8 +381,7 @@ export const wp3CreateDocument = async (dto: {
   expiresAt?: string;
   evidenceRef?: string;
 }): Promise<TripDocument> => {
-  return api.post<TripDocument>("/trip-documents", dto);
-};
+  return (await api.post<TripDocument>("/trip-documents", dto)).data;};
 
 export const wp3UpdateDocument = async (docId: string, dto: {
   status?: "HELD" | "MISSING" | "EXPIRED" | "NOT_APPLICABLE";
@@ -401,8 +389,7 @@ export const wp3UpdateDocument = async (docId: string, dto: {
   expiresAt?: string;
   evidenceRef?: string;
 }): Promise<TripDocument> => {
-  return api.patch<TripDocument>(`/trip-documents/${docId}`, dto);
-};
+  return (await api.patch<TripDocument>(`/trip-documents/${docId}`, dto)).data;};
 
 export const wp3GetThresholds = async (): Promise<DocumentThreshold[]> => {
   const r = await api.get<DocumentThreshold[]>("/trip-documents/thresholds");
@@ -413,12 +400,10 @@ export const wp3SetThreshold = async (dto: {
   documentType?: string;
   thresholdDays: number;
 }): Promise<DocumentThreshold> => {
-  return api.post<DocumentThreshold>("/trip-documents/thresholds", dto);
-};
+  return (await api.post<DocumentThreshold>("/trip-documents/thresholds", dto)).data;};
 
 export const wp3SweepExpiryAlerts = async (): Promise<{
   docsChecked: number;
   expiredMarked: number;
 }> => {
-  return api.post<{ docsChecked: number; expiredMarked: number }>("/trip-documents/sweep", {});
-};
+  return (await api.post<{ docsChecked: number; expiredMarked: number }>("/trip-documents/sweep", {})).data;};
