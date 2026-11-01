@@ -278,6 +278,11 @@ model Company {
   digitalPayments       DigitalPayment[]
   deliveryIntelligenceStats DeliveryIntelligenceStat[]
 
+  // Journey truth + communication
+  journeys          Journey[]
+  journeyStages     JourneyStage[]
+  journeyUpdates    JourneyUpdate[]
+
   @@map("companies")
 }
 
@@ -700,6 +705,10 @@ model Driver {
   // acknowledgements addressed to them (the driver side of the closed loop).
   truckAppointments  TerminalTruckAppointment[]
   truckWindowRecipients TerminalTruckWindowRecipient[]
+
+  // Journey truth + communication
+  journeys       Journey[]
+  journeyUpdates JourneyUpdate[]
 
   @@map("drivers")
 }
