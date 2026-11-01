@@ -81,6 +81,8 @@ const SafetyZones = lazy(() => import("./pages/SafetyZones"));
 const BorderDwellBoard = lazy(() => import("./pages/BorderDwellBoard"));
 const TripLegsBoard = lazy(() => import("./pages/TripLegsBoard"));
 const TripDocumentPack = lazy(() => import("./pages/TripDocumentPack"));
+const SafetyIncidentReport = lazy(() => import("./pages/SafetyIncidentReport"));
+const SafetyIncidentDispatch = lazy(() => import("./pages/SafetyIncidentDispatch"));
 const WarehouseManagement = lazy(() => import("./pages/WarehouseManagement"));
 const WmsCrossDocking = lazy(() => import("./pages/wms/CrossDocking"));
 const ProcessBookPage = lazy(() => import("./pages/ProcessBookPage"));
@@ -377,6 +379,8 @@ export default function App() {
               <Route path="/border-dwell" element={<BorderDwellBoard />} />
               <Route path="/trip-legs" element={<TripLegsBoard />} />
               <Route path="/trip-documents" element={<TripDocumentPack />} />
+              <Route path="/safety-incidents/report" element={<SafetyIncidentReport />} />
+              <Route path="/safety-incidents/dispatch" element={<SafetyIncidentDispatch />} />
               <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
               <Route path="/wms/cross-dock" element={<RequireFeature feature="warehouseManagement" name="Cross-Docking"><WmsCrossDocking /></RequireFeature>} />
               <Route path="/wms/waves" element={<RequireFeature feature="warehouseManagement" name="Wave Planning"><WmsWavePlanning /></RequireFeature>} />

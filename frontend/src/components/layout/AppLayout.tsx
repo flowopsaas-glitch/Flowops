@@ -445,6 +445,8 @@ export default function AppLayout() {
     { section: "AI", label: "Border Dwell",             desc: "Cross-border dwell & corridor visibility (WP3)", to: "/border-dwell", icon: MapPin },
     { section: "AI", label: "Trip Legs",                desc: "Trip corridor split with provenance labels (WP3)", to: "/trip-legs", icon: Route },
     { section: "AI", label: "Trip Documents",           desc: "Cross-border document pack + expiry alerts (WP3)", to: "/trip-documents", icon: FileText },
+    { section: "AI", label: "Report incident",          desc: "One-tap safety incident report (WP4)", to: "/safety-incidents/report", icon: AlertTriangle },
+    { section: "AI", label: "Incident dispatch",        desc: "Verify / reject safety incidents (WP4)", to: "/safety-incidents/dispatch", icon: ShieldAlert },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
 
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },
