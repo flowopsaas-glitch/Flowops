@@ -172,7 +172,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
     const conversations = await service.getDriverConversations(companyId);
 
     expect(conversations).toHaveLength(1);
-    expect(conversations[0].driverId).toBe(driver.id);
+    expect(conversations[0].id).toBe(driver.id);
     expect(conversations[0].name).toBe('Ace Driver');
     expect(conversations[0].unreadCount).toBe(2);
     expect(conversations[0].lastMessage).toBe('Running late');
