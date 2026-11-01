@@ -198,10 +198,10 @@ export class DriverPortalController {
   @Post('chat/send')
   sendMessage(
     @Req() req: any,
-    @Body() body: { message: string; attachmentUrl?: string; attachmentType?: string },
+    @Body() body: { message: string; attachmentUrl?: string; attachmentType?: string; clientMessageId?: unknown },
   ) {
     return this.svc.sendMessage(
-      req.driver.id, req.driver.companyId, body.message, 'driver', body.attachmentUrl, body.attachmentType,
+      req.driver.id, req.driver.companyId, body.message, 'driver', body.attachmentUrl, body.attachmentType, body.clientMessageId,
     );
   }
 
@@ -211,6 +211,17 @@ export class DriverPortalController {
   @Post('chat/read')
   markRead(@Req() req: any) {
     return this.svc.markRead(req.driver.id);
+  }
+
+  /** POST /driver-portal/chat/delivered — mark dispatch→driver messages delivered. */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('chat/delivered')
+  markDelivered(
+    @Req() req: any,
+    @Body() body: { messageIds: string[] },
+  ) {
+    return this.svc.markAsDelivered(req.driver.id, req.driver.companyId, body?.messageIds);
   }
 
   /** POST /driver-portal/chat/typing — driver typing indicator. */
@@ -328,8 +339,8 @@ export class DriverPortalController {
   dispatchSend(
     @Param('driverId') driverId: string,
     @CurrentUser() u: any,
-    @Body() body: { message: string },
+    @Body() body: { message: string; clientMessageId?: unknown },
   ) {
-    return this.svc.dispatchSend(driverId, u.companyId, body.message);
+    return this.svc.dispatchSend(driverId, u.companyId, body.message, body.clientMessageId);
   }
 }
