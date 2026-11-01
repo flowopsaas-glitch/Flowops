@@ -947,20 +947,35 @@ export class DriverPortalService {
       select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
     });
 
-    const convos = await Promise.all(drivers.map(async d => {
-      // Temporary diagnostic: raw SQL count to bypass any Prisma Client issue
-      const unreadResult = await this.prisma.$queryRaw<Array<{ cnt: bigint }>>`
-        SELECT count(*)::bigint AS cnt
-        FROM "driver_chat_messages"
-        WHERE "driverId" = ${d.id}
-      `;
-      const unread = Number(unreadResult[0]?.cnt ?? 0);
-      const last = await this.prisma.driverChatMessage.findFirst({
-        where: { driverId: d.id },
-        orderBy: { createdAt: 'desc' },
-      });
-      return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
-    }));
+    const unreadCounts = await this.prisma.driverChatMessage.groupBy({
+      by: ['driverId'],
+      where: { companyId, senderType: 'driver', readAt: null },
+      _count: { id: true },
+    });
+    const unreadMap = new Map<string, number>();
+    for (const uc of unreadCounts) {
+      unreadMap.set(uc.driverId, uc._count.id);
+    }
+
+    const lastMessages = await this.prisma.driverChatMessage.groupBy({
+      by: ['driverId'],
+      where: { companyId },
+      _max: { createdAt: true },
+    });
+    const lastMap = new Map<string, Date | null>();
+    for (const lm of lastMessages) {
+      lastMap.set(lm.driverId, lm._max.createdAt ?? null);
+    }
+
+    const convos = drivers.map(d => {
+      const unread = unreadMap.get(d.id) ?? 0;
+      const last = lastMap.get(d.id) ?? null;
+      const lastMsg = last ? await this.prisma.driverChatMessage.findFirst({
+        where: { driverId: d.id, createdAt: last },
+        select: { message: true },
+      }) : null;
+      return { ...d, unreadCount: unread, lastMessage: lastMsg?.message ?? null, lastMessageAt: last };
+    });
 
     return convos.sort((a, b) => {
       if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
