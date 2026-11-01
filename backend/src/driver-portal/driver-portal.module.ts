@@ -3,6 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DriverPortalController } from './driver-portal.controller';
 import { DriverPortalService } from './driver-portal.service';
+import { JourneyController } from './journey.controller';
+import { JourneyService } from './journey.service';
 import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -11,6 +13,7 @@ import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
 import { EpodModule } from '../epod/epod.module';
 import { ComplianceModule } from '../common/compliance/compliance.module';
 import { RailModule } from '../rail/rail.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [ComplianceModule,
@@ -23,6 +26,7 @@ import { RailModule } from '../rail/rail.module';
     GatewayModule,
     DriverSafetyModule,
     EpodModule,
+    AuditModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (cfg: ConfigService) => ({
@@ -32,7 +36,7 @@ import { RailModule } from '../rail/rail.module';
       inject: [ConfigService],
     }),
   ],
-  controllers: [DriverPortalController],
-  providers: [DriverPortalService, DriverAuthGuard],
+  controllers: [DriverPortalController, JourneyController],
+  providers: [DriverPortalService, JourneyService, DriverAuthGuard],
 })
 export class DriverPortalModule {}

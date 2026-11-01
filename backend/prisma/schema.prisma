@@ -2093,6 +2093,135 @@ model DriverChatMessage {
   @@map("driver_chat_messages")
 }
 
+// ─── Journey: end-to-end journey truth + communication ─────────────────────
+// A Journey is a tenant-scoped container of ordered planned stages. A driver
+// assigned to a journey sends updates against stages; the dispatcher receives,
+// acknowledges, assigns and resolves. Times are labelled by provenance:
+// deviceOccurredAt (driver-claimed) vs serverReceivedAt (server-observed).
+// Corrections append; they never silently overwrite history.
+// Design reference: docs/FLOWOPS-END-TO-END-JOURNEY-DESIGN-2026-10-31.md §3-4
+
+model Journey {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId    String?
+  driver      Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  reference   String   // customer-facing journey reference (e.g. J-2026-0001)
+  status      JourneyStatus @default(PLANNED)
+  origin      String?
+  destination String?
+  plannedStart DateTime?
+  plannedEnd   DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  stages      JourneyStage[]
+  updates     JourneyUpdate[]
+
+  @@index([companyId, status])
+  @@index([driverId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("journeys")
+}
+
+model JourneyStage {
+  id           String   @id @default(cuid())
+  journeyId    String
+  journey      Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stageNumber  Int      // 1-based order within the journey
+  type         JourneyStageType // PICKUP | BORDER | TRANSIT | DELIVERY | ...
+  locationName String?
+  locationRef  String?  // crossing / terminal / depot reference (source-pending until verified)
+  plannedAt    DateTime?
+  actualAt     DateTime?
+  status       JourneyStageStatus @default(PLANNED)
+  notes        String?
+
+  updates      JourneyUpdate[]
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([journeyId, stageNumber])
+  @@index([companyId, status])
+  @@unique([journeyId, stageNumber])
+  @@map("journey_stages")
+}
+
+model JourneyUpdate {
+  id                 String   @id @default(cuid())
+  journeyId          String
+  journey            Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  stageId            String?
+  stage              JourneyStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  driverId           String
+  driver             Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  companyId          String
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// 'delay' | 'vehicle_issue' | 'road_obstruction' | 'safety_concern' | 'status_change'
+  type               JourneyUpdateType
+  message            String
+  /// Idempotency key for driver-originated updates (UUID v4)
+  clientMessageId    String?
+  /// Device-claimed occurrence time (labelled device-reported)
+  deviceOccurredAt   DateTime?
+  /// Server-observed receipt time (authoritative for ordering)
+  serverReceivedAt   DateTime  @default(now())
+  status             JourneyUpdateStatus @default(PENDING)
+  acknowledgedAt     DateTime?
+  acknowledgedBy     String?   // userId of dispatcher who acknowledged
+  resolutionNote     String?
+
+  @@unique([companyId, driverId, clientMessageId])
+  @@index([journeyId, createdAt])
+  @@index([stageId, createdAt])
+  @@index([companyId, status])
+  @@index([driverId, createdAt])
+  @@map("journey_updates")
+}
+
+enum JourneyStatus {
+  PLANNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum JourneyStageType {
+  PICKUP
+  BORDER
+  TRANSIT
+  DELIVERY
+  OTHER
+}
+
+enum JourneyStageStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum JourneyUpdateType {
+  DELAY
+  VEHICLE_ISSUE
+  ROAD_OBSTRUCTION
+  SAFETY_CONCERN
+  STATUS_CHANGE
+}
+
+enum JourneyUpdateStatus {
+  PENDING    // sent by driver, not yet seen by dispatch
+  RECEIVED   // dispatch has seen it
+  ACKNOWLEDGED // dispatch has acknowledged
+  RESOLVED   // dispatcher resolved it
+  REJECTED   // dispatcher rejected / disputed
+}
 
 // ─── Returns Management ────────────────────────────────────────────────────
 // Full RMA lifecycle: a customer/agent logs a return against an original
