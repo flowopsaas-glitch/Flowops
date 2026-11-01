@@ -78,6 +78,9 @@ const LogisticsAnalytics = lazy(() => import("./pages/LogisticsAnalytics"));
 const CommercialAnalytics = lazy(() => import("./pages/CommercialAnalytics"));
 const FleetIntelligence = lazy(() => import("./pages/FleetIntelligence"));
 const SafetyZones = lazy(() => import("./pages/SafetyZones"));
+const BorderDwellBoard = lazy(() => import("./pages/BorderDwellBoard"));
+const TripLegsBoard = lazy(() => import("./pages/TripLegsBoard"));
+const TripDocumentPack = lazy(() => import("./pages/TripDocumentPack"));
 const WarehouseManagement = lazy(() => import("./pages/WarehouseManagement"));
 const WmsCrossDocking = lazy(() => import("./pages/wms/CrossDocking"));
 const ProcessBookPage = lazy(() => import("./pages/ProcessBookPage"));
@@ -371,6 +374,9 @@ export default function App() {
               <Route path="/commercial-analytics" element={<RequireFeature feature="commercialAnalytics" name="Commercial Analytics"><CommercialAnalytics /></RequireFeature>} />
               <Route path="/fleet-intelligence" element={<FleetIntelligence />} />
               <Route path="/safety-zones" element={<SafetyZones />} />
+              <Route path="/border-dwell" element={<BorderDwellBoard />} />
+              <Route path="/trip-legs" element={<TripLegsBoard />} />
+              <Route path="/trip-documents" element={<TripDocumentPack />} />
               <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
               <Route path="/wms/cross-dock" element={<RequireFeature feature="warehouseManagement" name="Cross-Docking"><WmsCrossDocking /></RequireFeature>} />
               <Route path="/wms/waves" element={<RequireFeature feature="warehouseManagement" name="Wave Planning"><WmsWavePlanning /></RequireFeature>} />

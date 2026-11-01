@@ -9,9 +9,10 @@ import { TripDocumentPackService } from './trip-document-pack.service';
 import { TripDocumentPackController } from './trip-document-pack.controller';
 import { GatewayModule } from '../gateway/gateway.module';
 import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [GatewayModule, EmailModule],
+  imports: [GatewayModule, EmailModule, NotificationsModule],
   controllers: [
     DriverSafetyController,
     BorderDwellController,
