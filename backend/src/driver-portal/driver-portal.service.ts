@@ -949,12 +949,30 @@ export class DriverPortalService {
       // lasts only for this transaction and is rolled back automatically.
       await tx.$executeRaw`SELECT set_config('app.company_id', ${companyId}, true)`;
 
+      // Diagnostics: verify session settings and raw visibility inside this
+      // transaction, on this connection.  RLS is in permissive phase-1 mode
+      // (ALTER DATABASE ... SET app.rls_strict = 'on' is commented out in the
+      // migration), so app.company_id should not filter anything out — yet
+      // the service-side count() returns 0 while the test-side count() returns 2.
+      const [[{ v: actualCompanyId }]] = await tx.$queryRawUnsafe<[{ v: string }]](
+        `SELECT current_setting('app.company_id', true) AS v`
+      );
+      const [[{ v: rlsStrict }]] = await tx.$queryRawUnsafe<[{ v: string }]](
+        `SELECT current_setting('app.rls_strict', true) AS v`
+      );
+      const [[{ total: totalMsgs }]] = await tx.$queryRawUnsafe<[{ total: bigint }]](
+        `SELECT count(*)::bigint AS total FROM "driver_chat_messages"`
+      );
+
       const drivers = await tx.driver.findMany({
         where: { companyId, isActive: true },
         select: { id: true, name: true, vehicleReg: true, status: true, lastSeen: true },
       });
 
       const convos = await Promise.all(drivers.map(async d => {
+        const [[{ total: rawForDriver }]] = await tx.$queryRawUnsafe<[{ total: bigint }]](
+          `SELECT count(*)::bigint AS total FROM "driver_chat_messages" WHERE "driverId" = ${d.id}`,
+        );
         const unread = await tx.driverChatMessage.count({
           where: { driverId: d.id, senderType: 'driver', readAt: null },
         });
@@ -962,7 +980,16 @@ export class DriverPortalService {
           where: { driverId: d.id },
           orderBy: { createdAt: 'desc' },
         });
-        return { ...d, unreadCount: unread, lastMessage: last?.message, lastMessageAt: last?.createdAt };
+        return {
+          ...d,
+          unreadCount: unread,
+          lastMessage: last?.message,
+          lastMessageAt: last?.createdAt,
+          diagActualCompanyId: actualCompanyId,
+          diagRlsStrict: rlsStrict,
+          diagTotalMsgs: Number(totalMsgs),
+          diagRawForDriver: Number(rawForDriver),
+        };
       }));
 
       return convos.sort((a, b) => {
