@@ -58,7 +58,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('dispatchSend creates a tenant-scoped message with a clientMessageId', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     const result = await service.dispatchSend(driver.id, companyId, 'Running 10 min late', 'key-1');
@@ -75,7 +75,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('dispatchSend is idempotent: same key returns the existing message', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     const first = await service.dispatchSend(driver.id, companyId, 'Hello', 'key-1');
@@ -93,7 +93,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('dispatchSend rejects a different message with the same key (409)', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     await service.dispatchSend(driver.id, companyId, 'Hello', 'key-1');
@@ -105,7 +105,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('dispatchSend is tenant-scoped: unknown company throws NotFound', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     await expect(
@@ -116,7 +116,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('markAsDelivered sets deliveredAt on dispatch→driver messages only', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     const sent = await service.dispatchSend(driver.id, companyId, 'Ping', 'key-1');
@@ -131,7 +131,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const { companyId: otherCompanyId } = await seedTenant(prisma, 'Other Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     const sent = await service.dispatchSend(driver.id, companyId, 'Ping', 'key-1');
@@ -145,7 +145,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('markRead bulk-marks unread dispatch messages for a driver', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     await service.dispatchSend(driver.id, companyId, 'One', 'key-1');
@@ -163,7 +163,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('getDriverConversations returns drivers with unread count and last message', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     await service.dispatchSend(driver.id, companyId, 'Hello dispatch', 'key-1');
@@ -181,7 +181,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
   it('sendMessage from driver is stored with senderType=driver', async () => {
     const { companyId } = await seedTenant(prisma, 'Chat Co');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId, isActive: true },
     });
 
     const result = await service.sendMessage(driver.id, companyId, 'At the border', 'driver');
@@ -196,7 +196,7 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
     const { companyId: companyA } = await seedTenant(prisma, 'Co A');
     const { companyId: companyB } = await seedTenant(prisma, 'Co B');
     const driver = await prisma.driver.create({
-      data: { name: 'Ace Driver', companyId: companyA, isActive: true },
+      data: { name: 'Ace Driver', phone: '+27 82 000 0000', companyId: companyA, isActive: true },
     });
 
     await service.dispatchSend(driver.id, companyA, 'Secret', 'key-1');
