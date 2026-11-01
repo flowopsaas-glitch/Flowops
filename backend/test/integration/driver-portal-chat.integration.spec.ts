@@ -169,7 +169,19 @@ describe('DriverPortalService chat (PostgreSQL)', () => {
     await service.sendMessage(driver.id, companyId, 'Hello dispatch', 'driver');
     await service.sendMessage(driver.id, companyId, 'Running late', 'driver');
 
+    // Temporary diagnostics
+    const directCount = await prisma.driverChatMessage.count({
+      where: { driverId: driver.id },
+    });
+    const directCountFiltered = await prisma.driverChatMessage.count({
+      where: { driverId: driver.id, senderType: 'driver', readAt: null },
+    });
+    // eslint-disable-next-line no-console
+    console.log(`DIAG: driver.id=${driver.id}, companyId=${companyId}, directCount=${directCount}, directCountFiltered=${directCountFiltered}`);
+
     const conversations = await service.getDriverConversations(companyId);
+    // eslint-disable-next-line no-console
+    console.log(`DIAG: conversations.length=${conversations.length}`, conversations.length > 0 ? `unreadCount=${conversations[0].unreadCount}, id=${conversations[0].id}` : 'no conversations');
 
     expect(conversations).toHaveLength(1);
     expect(conversations[0].id).toBe(driver.id);
