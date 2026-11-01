@@ -6736,6 +6736,9 @@ model BorderDwellSession {
   direction         String?  // "INBOUND" | "OUTBOUND" | "TRANSIT"
   source            String   // "GPS_PORTAL"
 
+  // Back-relation: trip legs derived from this dwell session
+  tripLegs          TripLeg[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -6744,4 +6747,90 @@ model BorderDwellSession {
   @@index([postId, state])
   @@index([driverId])
   @@map("border_dwell_sessions")
+}
+
+/// ── WP3 Stage 4: Trip corridor split with provenance labels ───────────────────
+/// A Trip is a cross-border movement (terminal → rail operator → haulier →
+/// forwarder) split into legs. Each leg carries a provenance label so a trip
+/// total is MEASURED only when every leg is MEASURED — REFERENCE legs are
+/// planning-only and never summed into a measured total.
+model Trip {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reference   String   // customer-facing trip reference (e.g. T-2026-0001)
+  driverId    String?
+  driver      Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  vehicleReg  String?
+  origin      String?
+  destination String?
+  plannedStart DateTime?
+  plannedEnd   DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  status      TripStatus @default(PLANNED)
+
+  legs        TripLeg[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([driverId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("trips")
+}
+
+/// One leg of a trip with an explicit provenance label.
+/// BORDER legs are MEASURED from a CLOSED dwell session, DECLARED when a
+/// dispatcher keys in a duration, or absent for GAPPED/OPEN sessions (which
+/// produce a MEASURED leg with durationMinutes = null + confidenceNote).
+/// REFERENCE legs come from the static corridor table — planning only.
+model TripLeg {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tripId         String
+  trip           Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  kind           TripLegKind // LINEHAUL | BORDER | CLEARING | BOND | EMPTY_RETURN
+  postId         String?    // border post for BORDER legs
+  post           BorderPost? @relation(fields: [postId], references: [id], onDelete: SetNull)
+  dwellSessionId String?    // source dwelling session for MEASURED BORDER legs
+  dwellSession   BorderDwellSession? @relation(fields: [dwellSessionId], references: [id], onDelete: SetNull)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  durationMinutes Int?      // derived from startedAt/endedAt, or null when unknown
+  provenance     TripLegProvenance @default(REFERENCE) // MEASURED | DECLARED | REFERENCE
+  source         String?    // crossing-session id | actor | reference-table code
+  confidenceNote String?    // e.g. "GAPPED session — dwell at post unknown"
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, kind])
+  @@index([companyId, kind])
+  @@index([postId])
+  @@map("trip_legs")
+}
+
+enum TripStatus {
+  PLANNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum TripLegKind {
+  LINEHAUL
+  BORDER
+  CLEARING
+  BOND
+  EMPTY_RETURN
+}
+
+enum TripLegProvenance {
+  MEASURED   // derived from observed dwell session
+  DECLARED   // keyed in by a dispatcher/operator
+  REFERENCE  // from static corridor table — planning only, never summed
 }
