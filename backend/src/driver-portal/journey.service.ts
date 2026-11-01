@@ -71,6 +71,7 @@ export class JourneyService {
     const journey = await this.prisma.journey.create({
       data: {
         reference: data.reference.trim(),
+        company: { connect: { id: companyId } },
         ...(data.driverId ? { driver: { connect: { id: data.driverId } } } : {}),
         origin: data.origin ?? null,
         destination: data.destination ?? null,
@@ -117,6 +118,7 @@ export class JourneyService {
     const stage = await this.prisma.journeyStage.create({
       data: {
         journey: { connect: { id: journeyId } },
+        company: { connect: { id: companyId } },
         stageNumber: data.stageNumber,
         type: data.type,
         locationName: data.locationName ?? null,
