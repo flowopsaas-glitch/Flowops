@@ -22,14 +22,18 @@ CREATE TABLE "journeys" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
 
-  CONSTRAINT "journeys_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "journeys_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
-  CONSTRAINT "journeys_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL
+  CONSTRAINT "journeys_pkey" PRIMARY KEY ("id")
 );
 
 CREATE INDEX "journeys_companyId_status_idx" ON "journeys"("companyId", "status");
 CREATE INDEX "journeys_driverId_createdAt_idx" ON "journeys"("driverId", "createdAt");
 CREATE INDEX "journeys_companyId_createdAt_idx" ON "journeys"("companyId", "createdAt");
+
+-- AddForeignKey
+ALTER TABLE "journeys" ADD CONSTRAINT "journeys_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "journeys" ADD CONSTRAINT "journeys_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 CREATE TABLE "journey_stages" (
   "id" TEXT NOT NULL,
@@ -47,13 +51,17 @@ CREATE TABLE "journey_stages" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journey_stages_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "journey_stages_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE,
-  CONSTRAINT "journey_stages_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
   CONSTRAINT "journey_stages_journeyId_stageNumber_key" UNIQUE ("journeyId", "stageNumber")
 );
 
 CREATE INDEX "journey_stages_journeyId_stageNumber_idx" ON "journey_stages"("journeyId", "stageNumber");
 CREATE INDEX "journey_stages_companyId_status_idx" ON "journey_stages"("companyId", "status");
+
+-- AddForeignKey
+ALTER TABLE "journey_stages" ADD CONSTRAINT "journey_stages_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "journey_stages" ADD CONSTRAINT "journey_stages_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 CREATE TABLE "journey_updates" (
   "id" TEXT NOT NULL,
@@ -74,10 +82,6 @@ CREATE TABLE "journey_updates" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journey_updates_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "journey_updates_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE,
-  CONSTRAINT "journey_updates_stageId_fkey" FOREIGN KEY ("stageId") REFERENCES "journey_stages"("id") ON DELETE SET NULL,
-  CONSTRAINT "journey_updates_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE CASCADE,
-  CONSTRAINT "journey_updates_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE,
   CONSTRAINT "journey_updates_companyId_driverId_clientMessageId_key" UNIQUE ("companyId", "driverId", "clientMessageId")
 );
 
@@ -85,3 +89,15 @@ CREATE INDEX "journey_updates_journeyId_createdAt_idx" ON "journey_updates"("jou
 CREATE INDEX "journey_updates_stageId_createdAt_idx" ON "journey_updates"("stageId", "createdAt");
 CREATE INDEX "journey_updates_companyId_status_idx" ON "journey_updates"("companyId", "status");
 CREATE INDEX "journey_updates_driverId_createdAt_idx" ON "journey_updates"("driverId", "createdAt");
+
+-- AddForeignKey
+ALTER TABLE "journey_updates" ADD CONSTRAINT "journey_updates_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "journey_updates" ADD CONSTRAINT "journey_updates_stageId_fkey" FOREIGN KEY ("stageId") REFERENCES "journey_stages"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "journey_updates" ADD CONSTRAINT "journey_updates_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "journey_updates" ADD CONSTRAINT "journey_updates_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
