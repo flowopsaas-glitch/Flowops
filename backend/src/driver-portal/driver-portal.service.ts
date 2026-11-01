@@ -948,9 +948,12 @@ export class DriverPortalService {
     });
 
     const convos = await Promise.all(drivers.map(async d => {
-      const unread = await this.prisma.driverChatMessage.count({
+      // Temporary diagnostic: use findMany + length instead of count()
+      const messages = await this.prisma.driverChatMessage.findMany({
         where: { driverId: d.id, senderType: 'driver', readAt: null },
+        select: { id: true },
       });
+      const unread = messages.length;
       const last = await this.prisma.driverChatMessage.findFirst({
         where: { driverId: d.id },
         orderBy: { createdAt: 'desc' },
