@@ -2182,6 +2182,7 @@ model JourneyUpdate {
   /// Server-observed receipt time (authoritative for ordering)
   serverReceivedAt   DateTime  @default(now())
   createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   status             JourneyUpdateStatus @default(PENDING)
   acknowledgedAt     DateTime?
   acknowledgedBy     String?   // userId of dispatcher who acknowledged
