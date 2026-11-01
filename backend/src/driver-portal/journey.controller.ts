@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards, UnauthorizedException,
 } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
@@ -6,7 +7,8 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { DriverAuthGuard } from '../common/guards/driver-auth.guard';
 import { JourneyService } from './journey.service';
 import { Roles } from '../common/decorators/roles.decorator';
-import { UserRole } from '@prisma/client';
+import { UserRole, JourneyUpdateType } from '@prisma/client';
+import { chatMessageKey } from './chat-idempotency';
 
 /**
  * Journey truth + communication endpoints (WP2 slice).
@@ -38,14 +40,20 @@ export class JourneyController {
       stageId?: string;
     },
   ) {
+    const type = body.type as JourneyUpdateType;
+    if (!Object.values(JourneyUpdateType).includes(type)) {
+      throw new BadRequestException('Invalid update type');
+    }
+    const clientMessageId = chatMessageKey(body.clientMessageId);
+
     return this.svc.sendUpdate(
       req.driver.id,
       req.driver.companyId,
       journeyId,
       {
-        type: body.type,
+        type,
         message: body.message,
-        clientMessageId: body.clientMessageId,
+        clientMessageId,
         deviceOccurredAt: body.deviceOccurredAt ? new Date(body.deviceOccurredAt) : undefined,
         stageId: body.stageId,
       },

@@ -71,7 +71,7 @@ export class JourneyService {
     const journey = await this.prisma.journey.create({
       data: {
         reference: data.reference.trim(),
-        driverId: data.driverId ?? null,
+        ...(data.driverId ? { driver: { connect: { id: data.driverId } } } : {}),
         origin: data.origin ?? null,
         destination: data.destination ?? null,
         plannedStart: data.plannedStart ?? null,
@@ -116,7 +116,7 @@ export class JourneyService {
 
     const stage = await this.prisma.journeyStage.create({
       data: {
-        journeyId,
+        journey: { connect: { id: journeyId } },
         stageNumber: data.stageNumber,
         type: data.type,
         locationName: data.locationName ?? null,
@@ -297,16 +297,10 @@ export class JourneyService {
         },
       });
       if (!existing) throw error;
-      return verifyChatRetry(
-        {
-          type: existing.type,
-          message: existing.message,
-          clientMessageId: existing.clientMessageId,
-          deviceOccurredAt: existing.deviceOccurredAt,
-          stageId: existing.stageId,
-        },
-        payload,
-      );
+      if (existing.message !== payload.message) {
+        throw new ConflictException('clientMessageId was already used for a different message');
+      }
+      return existing;
     }
   }
 
@@ -417,7 +411,7 @@ export class JourneyService {
   ) {
     const journey = await this.prisma.journey.findFirst({
       where: { id: journeyId, companyId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, actualStart: true },
     });
     if (!journey) throw new NotFoundException('Journey not found');
 

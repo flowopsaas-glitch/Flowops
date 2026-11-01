@@ -887,6 +887,33 @@ export class DriverPortalService {
     }
   }
 
+  /** Dispatch→driver send. Tenant-scoped: driver must belong to the company. Idempotent via clientMessageId. */
+  async dispatchSend(driverId: string, companyId: string, message: string, clientMessageId?: unknown) {
+    if (!message || !message.trim()) throw new BadRequestException('Message is required');
+    if (message.length > 4000) throw new BadRequestException('Message is too long');
+
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!driver) throw new NotFoundException('Driver not found in this company');
+
+    const key = chatMessageKey(clientMessageId);
+    const payload = { message: message.trim(), senderType: 'dispatch' as const };
+    try {
+      return await this.prisma.driverChatMessage.create({
+        data: { driverId, companyId, ...payload, ...(key ? { clientMessageId: key } : {}) },
+      });
+    } catch (error) {
+      if (!key || (error as { code?: string })?.code !== 'P2002') throw error;
+      const existing = await this.prisma.driverChatMessage.findFirst({
+        where: { driverId, companyId, clientMessageId: key },
+      });
+      if (!existing) throw error;
+      return verifyChatRetry(existing, payload);
+    }
+  }
+
   async markRead(id: string) {
     // The driver portal frontend passes the driverId (not a messageId) to this
     // endpoint. Detect which case we're in: if the id matches a driver record,
