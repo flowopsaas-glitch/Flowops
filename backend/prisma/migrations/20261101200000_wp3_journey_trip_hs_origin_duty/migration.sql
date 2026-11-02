@@ -246,46 +246,54 @@ ALTER TABLE "trips" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "trips" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "trips_tenant_isolation" ON "trips"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
 
 ALTER TABLE "trip_legs" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "trip_legs" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "trip_legs_tenant_isolation" ON "trip_legs"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
 
 ALTER TABLE "border_posts" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "border_posts" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "border_posts_tenant_isolation" ON "border_posts"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
 
 ALTER TABLE "border_geofences" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "border_geofences" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "border_geofences_tenant_isolation" ON "border_geofences"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
 
 ALTER TABLE "border_dwell_sessions" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "border_dwell_sessions" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "border_dwell_sessions_tenant_isolation" ON "border_dwell_sessions"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
 
 ALTER TABLE "journeys" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "journeys" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "journeys_tenant_isolation" ON "journeys"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
 
 ALTER TABLE "journey_stages" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "journey_stages" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "journey_stages_tenant_isolation" ON "journey_stages"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
 
 ALTER TABLE "journey_updates" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "journey_updates" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "journey_updates_tenant_isolation" ON "journey_updates"
   FOR ALL TO PUBLIC
-  USING ("companyId" = app_tenant_guard('companyId'));
+  USING (app_tenant_guard("companyId"))
+  WITH CHECK (app_tenant_guard("companyId"));
