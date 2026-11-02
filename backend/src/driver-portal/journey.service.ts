@@ -14,7 +14,7 @@ import {
   JourneyUpdateType,
   JourneyStageType,
 } from '@prisma/client';
-import { chatMessageKey, verifyChatRetry } from './chat-idempotency';
+import { chatMessageKey } from './chat-idempotency';
 
 type UpdatePayload = {
   type: JourneyUpdateType;

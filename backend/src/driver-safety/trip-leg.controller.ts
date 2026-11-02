@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, Param, Post, Patch, Query, UseGuards,
+  Body, Controller, Get, Param, Post, Patch, Query,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { TripLegService } from './trip-leg.service';
