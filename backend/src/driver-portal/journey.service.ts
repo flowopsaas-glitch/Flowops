@@ -14,7 +14,7 @@ import {
   JourneyUpdateType,
   JourneyStageType,
 } from '@prisma/client';
-import { chatMessageKey, verifyChatRetry } from './chat-idempotency';
+import { chatMessageKey } from './chat-idempotency';
 
 type UpdatePayload = {
   type: JourneyUpdateType;
@@ -292,7 +292,7 @@ export class JourneyService {
       // Database unique index is the concurrency barrier for idempotent retries.
       if (!key || (error as { code?: string })?.code !== 'P2002') throw error;
       const existing = await this.prisma.journeyUpdate.findFirst({
-        where: { journeyId, driverId, companyId, clientMessageId: key },
+        where: { journeyId, companyId, clientMessageId: key },
         include: {
           stage: { select: { id: true, stageNumber: true, type: true, locationName: true } },
         },
