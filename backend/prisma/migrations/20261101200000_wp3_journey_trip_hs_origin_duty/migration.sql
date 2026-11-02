@@ -17,7 +17,7 @@ CREATE TYPE "JourneyStageType" AS ENUM ('BORDER', 'CLEARING', 'BOND', 'EMPTY_RET
 -- ════════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE "journeys" (
-  "id"            TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"            TEXT NOT NULL,
   "companyId"     TEXT NOT NULL,
   "driverId"      TEXT,
   "reference"     TEXT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE "journeys" (
   "destination"   TEXT,
   "plannedStart"  TIMESTAMP(3),
   "plannedEnd"    TIMESTAMP(3),
-  "status"        "JourneyStatus" NOT NULL DEFAULT 'PLANNED',
+  "status"        "JourneyStatus" NOT NULL,
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"     TIMESTAMP(3) NOT NULL,
 
@@ -39,7 +39,7 @@ CREATE INDEX "journeys_driverId_createdAt_idx" ON "journeys"("driverId", "create
 CREATE INDEX "journeys_companyId_status_idx" ON "journeys"("companyId", "status");
 
 CREATE TABLE "journey_stages" (
-  "id"            TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"            TEXT NOT NULL,
   "companyId"     TEXT NOT NULL,
   "journeyId"     TEXT NOT NULL,
   "stageNumber"   INTEGER NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE "journey_stages" (
   "locationName"  TEXT,
   "locationRef"   TEXT,
   "plannedAt"     TIMESTAMP(3),
-  "status"        "JourneyStageStatus" NOT NULL DEFAULT 'PLANNED',
+  "status"        "JourneyStageStatus" NOT NULL,
   "notes"         TEXT,
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"     TIMESTAMP(3) NOT NULL,
@@ -62,7 +62,7 @@ CREATE INDEX "journey_stages_journeyId_stageNumber_idx" ON "journey_stages"("jou
 CREATE UNIQUE INDEX "journey_stages_journeyId_stageNumber_key" ON "journey_stages"("journeyId", "stageNumber");
 
 CREATE TABLE "journey_updates" (
-  "id"                 TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"                 TEXT NOT NULL,
   "companyId"          TEXT NOT NULL,
   "journeyId"          TEXT NOT NULL,
   "stageId"            TEXT,
@@ -71,7 +71,7 @@ CREATE TABLE "journey_updates" (
   "clientMessageId"    TEXT,
   "deviceOccurredAt"   TIMESTAMP(3),
   "serverReceivedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "status"             "JourneyUpdateStatus" NOT NULL DEFAULT 'PENDING',
+  "status"             "JourneyUpdateStatus" NOT NULL,
   "createdAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"          TIMESTAMP(3) NOT NULL,
 
@@ -91,7 +91,7 @@ CREATE INDEX "journey_updates_clientMessageId_idx" ON "journey_updates"("clientM
 -- ════════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE "border_posts" (
-  "id"         TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"         TEXT NOT NULL,
   "companyId"  TEXT NOT NULL,
   "code"       TEXT NOT NULL,
   "name"       TEXT NOT NULL,
@@ -110,7 +110,7 @@ CREATE INDEX "border_posts_companyId_idx" ON "border_posts"("companyId");
 CREATE UNIQUE INDEX "border_posts_companyId_code_key" ON "border_posts"("companyId", "code");
 
 CREATE TABLE "border_geofences" (
-  "id"         TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"         TEXT NOT NULL,
   "companyId"  TEXT NOT NULL,
   "postId"     TEXT NOT NULL,
   "code"       TEXT NOT NULL,
@@ -133,7 +133,7 @@ CREATE INDEX "border_geofences_companyId_idx" ON "border_geofences"("companyId")
 CREATE INDEX "border_geofences_postId_idx" ON "border_geofences"("postId");
 
 CREATE TABLE "border_dwell_sessions" (
-  "id"                 TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"                 TEXT NOT NULL,
   "companyId"          TEXT NOT NULL,
   "postId"             TEXT NOT NULL,
   "geofenceId"         TEXT NOT NULL,
@@ -146,8 +146,8 @@ CREATE TABLE "border_dwell_sessions" (
   "sampleCount"        INTEGER NOT NULL DEFAULT 0,
   "precisionSeconds"   INTEGER,
   "gapLargestSeconds"  INTEGER,
-  "direction"          TEXT,
-  "source"             TEXT,
+  "direction"          TEXT NOT NULL,
+  "source"             TEXT NOT NULL,
   "createdAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"          TIMESTAMP(3) NOT NULL,
 
@@ -173,7 +173,7 @@ CREATE TYPE "OriginStatus" AS ENUM ('PREFERENTIAL', 'NON_PREFERENTIAL', 'UNKNOWN
 CREATE TYPE "TripDutyProvenance" AS ENUM ('ESTIMATED', 'ACTUAL');
 
 CREATE TABLE "trips" (
-  "id"                   TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"                   TEXT NOT NULL,
   "companyId"            TEXT NOT NULL,
   "driverId"             TEXT,
   "reference"            TEXT NOT NULL,
@@ -183,10 +183,10 @@ CREATE TABLE "trips" (
   "plannedEnd"           TIMESTAMP(3),
   "actualStart"          TIMESTAMP(3),
   "actualEnd"            TIMESTAMP(3),
-  "status"               TEXT NOT NULL DEFAULT 'PLANNED',
+  "status"               TEXT NOT NULL,
   -- ── WP3 Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ─────
   "hsCode"               TEXT,
-  "originStatus"         "OriginStatus" NOT NULL DEFAULT 'UNKNOWN',
+  "originStatus"         "OriginStatus" NOT NULL,
   "certificateOfOriginRef" TEXT,
   "dutyEstimated"        DOUBLE PRECISION,
   "estimateSource"       TEXT,
@@ -207,10 +207,9 @@ CREATE TABLE "trips" (
 CREATE INDEX "trips_companyId_idx" ON "trips"("companyId");
 CREATE INDEX "trips_driverId_createdAt_idx" ON "trips"("driverId", "createdAt");
 CREATE INDEX "trips_companyId_status_idx" ON "trips"("companyId", "status");
-CREATE INDEX "trips_originStatus_idx" ON "trips"("originStatus");
 
 CREATE TABLE "trip_legs" (
-  "id"             TEXT NOT NULL DEFAULT gen_random_uuid(),
+  "id"             TEXT NOT NULL,
   "companyId"      TEXT NOT NULL,
   "tripId"         TEXT NOT NULL,
   "kind"           "TripLegKind" NOT NULL,
