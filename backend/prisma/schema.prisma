@@ -278,6 +278,16 @@ model Company {
   digitalPayments       DigitalPayment[]
   deliveryIntelligenceStats DeliveryIntelligenceStat[]
 
+  // WP3: Journey truth + corridor split
+  journeys           Journey[]
+  journeyStages      JourneyStage[]
+  journeyUpdates     JourneyUpdate[]
+  borderPosts        BorderPost[]
+  borderGeofences    BorderGeofence[]
+  borderDwellSessions BorderDwellSession[]
+  trips              Trip[]
+  tripLegs           TripLeg[]
+
   @@map("companies")
 }
 
@@ -654,6 +664,11 @@ model Driver {
   // Optional link to a User account — enables role-scoped job delivery
   userId    String? @unique
   user      User?   @relation(fields: [userId], references: [id])
+
+  // WP3: Journey truth + corridor split
+  journeys            Journey[]
+  trips               Trip[]
+  borderDwellSessions BorderDwellSession[]
 
   // Fleet / vehicle maintenance
   currentKm       Int?       // current odometer reading
@@ -6665,6 +6680,11 @@ model BorderPost {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // WP3: Border dwell + trip legs
+  geofences        BorderGeofence[]
+  borderDwellSessions BorderDwellSession[]
+  tripLegs         TripLeg[]
+
   @@index([companyId])
   @@unique([companyId, code])
   @@map("border_posts")
@@ -6687,6 +6707,9 @@ model BorderGeofence {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // WP3: Border dwell sessions
+  borderDwellSessions BorderDwellSession[]
+
   @@index([companyId])
   @@index([postId])
   @@map("border_geofences")
@@ -6702,6 +6725,10 @@ model BorderDwellSession {
   geofence       BorderGeofence @relation(fields: [geofenceId], references: [id], onDelete: Cascade)
   driverId       String?
   driver         Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  // WP3: trip legs
+  tripLegs TripLeg[]
+
   state          String   // CLOSED | GAPPED | OPEN
   enteredAt      DateTime
   enteredFromFixAt DateTime?
