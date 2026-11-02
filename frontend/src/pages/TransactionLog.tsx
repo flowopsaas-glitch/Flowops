@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Table, TableBody, TableCell, TableHead, TableRow, TableContainer,
-  Badge, Search, Filter, AlertTriangle, Clock, Truck, FileText, RefreshCw,
-  Menu, MoreHorizontal, Edit3, Trash2,
-} from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableRow, Badge } from "@/components/ui";
+import { Search, AlertTriangle, Truck, FileText, RefreshCw, Edit3, Plus } from "lucide-react";
 import { api } from "../api/client";
 
 type TransactionRecord = {
@@ -67,8 +64,8 @@ export default function TransactionLog() {
 
   useEffect(() => {
     let alive = true;
-    api.get<{ data: TransactionRecord[] }>("/audit/transactions")
-      .then((r) => { if (alive) setRecords(r.data?.data ?? r.data ?? []); })
+    api.get<TransactionRecord[]>("/audit/transactions")
+      .then((r) => { if (alive) setRecords(r.data ?? []); })
       .catch((e) => { if (alive) setError(e.message ?? "Failed to load transaction log"); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -167,7 +164,7 @@ export default function TransactionLog() {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <TableContainer className="bg-white/5 border border-white/10 rounded-xl">
+        <div className="bg-white/5 border border-white/10 rounded-xl">
           <Table>
             <TableHead>
               <TableRow className="text-xs text-white/50 border-b border-white/10">
@@ -231,7 +228,7 @@ export default function TransactionLog() {
               )}
             </TableBody>
           </Table>
-        </TableContainer>
+        </div>
       </div>
 
       {loading && (

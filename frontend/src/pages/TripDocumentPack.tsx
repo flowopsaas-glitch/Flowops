@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Table, TableBody, TableCell, TableHead, TableRow, TableContainer,
-  Badge, Search, Filter, FileText, Clock, Truck, Upload, CheckCircle,
-  AlertTriangle, RefreshCw,
-} from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableRow, Badge } from "@/components/ui";
+import { Search, FileText, Upload, CheckCircle, AlertTriangle, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
 
 type TripDocument = {
@@ -43,8 +40,8 @@ export default function TripDocumentPack() {
 
   useEffect(() => {
     let alive = true;
-    api.get<{ data: TripDocument[] }>("/trip-documents")
-      .then((r) => { if (alive) setDocuments(r.data?.data ?? r.data ?? []); })
+    api.get<TripDocument[]>("/trip-documents")
+      .then((r) => { if (alive) setDocuments(r.data ?? []); })
       .catch((e) => { if (alive) setError(e.message ?? "Failed to load documents"); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -128,7 +125,7 @@ export default function TripDocumentPack() {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <TableContainer className="bg-white/5 border border-white/10 rounded-xl">
+        <div className="bg-white/5 border border-white/10 rounded-xl">
           <Table>
             <TableHead>
               <TableRow className="text-xs text-white/50 border-b border-white/10">
@@ -192,7 +189,7 @@ export default function TripDocumentPack() {
               )}
             </TableBody>
           </Table>
-        </TableContainer>
+        </div>
       </div>
 
       {loading && (

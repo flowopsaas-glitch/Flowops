@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
-  AlertTriangle, ShieldAlert, MapPin, Clock, Send, FileText, Plus,
-  X, ChevronLeft, ArrowLeft,
+  AlertTriangle, ShieldAlert, MapPin, Send, FileText, Plus,
+  ArrowLeft, Truck,
 } from "lucide-react";
 import { api } from "../api/client";
 
@@ -190,7 +190,7 @@ export default function SafetyIncidentReport() {
               className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               value={narrative}
               onChange={(e) => setNarrative(e.target.value)}
-              maxLength="280"
+              maxLength={280}
             />
             <p className="text-[10px] text-white/40 mt-1">{narrative.length}/280 characters</p>
           </div>

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Table, TableBody, TableCell, TableHead, TableRow, TableContainer,
-  Badge, Alert, Search, Clock, Truck, MapPin, RefreshCw,
-} from "lucide-react";
+  Table, TableBody, TableCell, TableHead, TableRow, Alert,
+} from "@/components/ui";
+import { Badge, Search, Clock, Truck, MapPin, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
 
 type DwellSession = {
@@ -48,8 +48,8 @@ export default function BorderDwellBoard() {
 
   useEffect(() => {
     let alive = true;
-    api.get<{ data: DwellSession[] }>("/border-dwell/sessions")
-      .then((r) => { if (alive) setSessions(r.data?.data ?? r.data ?? []); })
+    api.get<DwellSession[]>("/border-dwell/sessions")
+      .then((r) => { if (alive) setSessions(r.data ?? []); })
       .catch((e) => { if (alive) setError(e.message ?? "Failed to load dwell sessions"); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -129,7 +129,7 @@ export default function BorderDwellBoard() {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <TableContainer className="bg-white/5 border border-white/10 rounded-xl">
+        <div className="bg-white/5 border border-white/10 rounded-xl">
           <Table>
             <TableHead>
               <TableRow className="text-xs text-white/50 border-b border-white/10">
@@ -204,7 +204,7 @@ export default function BorderDwellBoard() {
               )}
             </TableBody>
           </Table>
-        </TableContainer>
+        </div>
       </div>
 
       {loading && (

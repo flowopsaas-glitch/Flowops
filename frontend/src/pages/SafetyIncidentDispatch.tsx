@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Table, TableBody, TableCell, TableHead, TableRow, TableContainer,
-  Badge, Search, Filter, AlertTriangle, ShieldAlert, Clock, MapPin,
-  RefreshCw, Plus, Users, FileText,
-} from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableRow, Alert } from "@/components/ui";
+import { Badge, Search, AlertTriangle, ShieldAlert, Clock, MapPin,
+  RefreshCw, Plus, Users, FileText } from "lucide-react";
 import { api } from "../api/client";
 
 type SafetyIncident = {
@@ -59,8 +57,8 @@ export default function SafetyIncidentDispatch() {
 
   useEffect(() => {
     let alive = true;
-    api.get<{ data: SafetyIncident[] }>("/safety-incidents")
-      .then((r) => { if (alive) setIncidents(r.data?.data ?? r.data ?? []); })
+    api.get<SafetyIncident[]>("/safety-incidents")
+      .then((r) => { if (alive) setIncidents(r.data ?? []); })
       .catch((e) => { if (alive) setError(e.message ?? "Failed to load incidents"); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -152,7 +150,7 @@ export default function SafetyIncidentDispatch() {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <TableContainer className="bg-white/5 border border-white/10 rounded-xl">
+        <div className="bg-white/5 border border-white/10 rounded-xl">
           <Table>
             <TableHead>
               <TableRow className="text-xs text-white/50 border-b border-white/10">
@@ -214,7 +212,7 @@ export default function SafetyIncidentDispatch() {
               )}
             </TableBody>
           </Table>
-        </TableContainer>
+        </div>
       </div>
 
       {loading && (
