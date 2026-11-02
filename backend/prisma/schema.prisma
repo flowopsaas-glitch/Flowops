@@ -278,6 +278,16 @@ model Company {
   digitalPayments       DigitalPayment[]
   deliveryIntelligenceStats DeliveryIntelligenceStat[]
 
+  // WP3: Journey truth + corridor split
+  journeys           Journey[]
+  journeyStages      JourneyStage[]
+  journeyUpdates     JourneyUpdate[]
+  borderPosts        BorderPost[]
+  borderGeofences    BorderGeofence[]
+  borderDwellSessions BorderDwellSession[]
+  trips              Trip[]
+  tripLegs           TripLeg[]
+
   @@map("companies")
 }
 
@@ -654,6 +664,11 @@ model Driver {
   // Optional link to a User account — enables role-scoped job delivery
   userId    String? @unique
   user      User?   @relation(fields: [userId], references: [id])
+
+  // WP3: Journey truth + corridor split
+  journeys            Journey[]
+  trips               Trip[]
+  borderDwellSessions BorderDwellSession[]
 
   // Fleet / vehicle maintenance
   currentKm       Int?       // current odometer reading
@@ -6513,4 +6528,293 @@ model TerminalGatePolicy {
   @@unique([companyId, terminalName])
   @@index([companyId])
   @@map("terminal_gate_policies")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// WP2: Journey truth + communication (tenant-scoped)
+// ════════════════════════════════════════════════════════════════════════════════
+
+enum JourneyStatus {
+  PLANNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum JourneyStageStatus {
+  PLANNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum JourneyUpdateStatus {
+  PENDING
+  ACKNOWLEDGED
+  ASSIGNED
+  RESOLVED
+  REJECTED
+}
+
+enum JourneyUpdateType {
+  ETA_CHANGE
+  DELAY_REPORT
+  INCIDENT_REPORT
+  PROOF_OF_DELIVERY
+  GENERAL_NOTE
+}
+
+enum JourneyStageType {
+  BORDER
+  CLEARING
+  BOND
+  EMPTY_RETURN
+  LINEHAUL
+}
+
+model Journey {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId     String?
+  driver       Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  reference    String
+  origin       String?
+  destination  String?
+  plannedStart DateTime?
+  plannedEnd   DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  status       JourneyStatus @default(PLANNED)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  stages       JourneyStage[]
+  updates      JourneyUpdate[]
+
+  @@index([companyId])
+  @@index([driverId, createdAt])
+  @@index([companyId, status])
+  @@map("journeys")
+}
+
+model JourneyStage {
+  id           String            @id @default(cuid())
+  companyId    String
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journeyId    String
+  journey      Journey           @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  stageNumber  Int
+  type         JourneyStageType
+  locationName String?
+  locationRef  String?
+  plannedAt    DateTime?
+  status       JourneyStageStatus @default(PLANNED)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  updates      JourneyUpdate[]
+
+  @@index([companyId])
+  @@index([journeyId, stageNumber])
+  @@unique([journeyId, stageNumber])
+  @@map("journey_stages")
+}
+
+model JourneyUpdate {
+  id             String              @id @default(cuid())
+  companyId      String
+  company        Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journeyId      String
+  journey        Journey           @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  stageId        String?
+  stage          JourneyStage?       @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  type           JourneyUpdateType
+  message        String
+  clientMessageId String?
+  deviceOccurredAt DateTime?
+  serverReceivedAt DateTime @default(now())
+  status         JourneyUpdateStatus @default(PENDING)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([journeyId])
+  @@index([stageId])
+  @@index([clientMessageId])
+  @@map("journey_updates")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// WP3: Trip corridor split + HS code / origin / duty (Stage 4 + Stage 5)
+// ════════════════════════════════════════════════════════════════════════════════
+
+enum TripLegKind {
+  LINEHAUL
+  BORDER
+  CLEARING
+  BOND
+  EMPTY_RETURN
+}
+
+enum OriginStatus {
+  PREFERENTIAL
+  NON_PREFERENTIAL
+  UNKNOWN
+}
+
+enum TripDutyProvenance {
+  ESTIMATED
+  ACTUAL
+}
+
+model BorderPost {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code         String
+  name         String
+  countries    String   // e.g. "ZA,ZW"
+  lat          Float
+  lng          Float
+  is24Hour     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // WP3: Border dwell + trip legs
+  geofences        BorderGeofence[]
+  borderDwellSessions BorderDwellSession[]
+  tripLegs         TripLeg[]
+
+  @@index([companyId])
+  @@unique([companyId, code])
+  @@map("border_posts")
+}
+
+model BorderGeofence {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  postId       String
+  post         BorderPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  code         String
+  name         String
+  lat          Float
+  lng          Float
+  radiusM      Int
+  side         String   // EXPORT | IMPORT | BOTH
+  isActive     Boolean  @default(true)
+  provenance   String   @default("SEED")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // WP3: Border dwell sessions
+  borderDwellSessions BorderDwellSession[]
+
+  @@index([companyId])
+  @@index([postId])
+  @@map("border_geofences")
+}
+
+model BorderDwellSession {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  postId         String
+  post           BorderPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  geofenceId     String
+  geofence       BorderGeofence @relation(fields: [geofenceId], references: [id], onDelete: Cascade)
+  driverId       String?
+  driver         Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  // WP3: trip legs
+  tripLegs TripLeg[]
+
+  state          String   // CLOSED | GAPPED | OPEN
+  enteredAt      DateTime
+  enteredFromFixAt DateTime?
+  exitedAt       DateTime?
+  exitedFromFixAt  DateTime?
+  sampleCount    Int      @default(0)
+  precisionSeconds Int?
+  gapLargestSeconds Int?
+  direction      String   // INBOUND | OUTBOUND
+  source         String   // GPS_PORTAL | MANUAL
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([postId])
+  @@index([geofenceId])
+  @@index([driverId])
+  @@index([state])
+  @@map("border_dwell_sessions")
+}
+
+model Trip {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId     String?
+  driver       Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  reference    String
+  origin       String?
+  destination  String?
+  plannedStart DateTime?
+  plannedEnd   DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  status       String   // PLANNED | IN_TRANSIT | COMPLETED | CANCELLED
+
+  // ── WP3 Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ─────
+  hsCode               String?
+  originStatus         OriginStatus @default(UNKNOWN)
+  certificateOfOriginRef String?
+  dutyEstimated        Float?
+  estimateSource       String?
+  estimateVersion      String?
+  estimatedAt          DateTime?
+  dutyActual           Float?
+  declarationRef       String?
+  capturedBy           String?
+  capturedAt           DateTime?
+
+  legs        TripLeg[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([driverId, createdAt])
+  @@index([companyId, status])
+  @@map("trips")
+}
+
+model TripLeg {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tripId         String
+  trip           Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  kind           TripLegKind
+  postId         String?
+  post           BorderPost? @relation(fields: [postId], references: [id], onDelete: SetNull)
+  dwellSessionId String?
+  dwellSession   BorderDwellSession? @relation(fields: [dwellSessionId], references: [id], onDelete: SetNull)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  durationMinutes Int?
+  provenance     String   // MEASURED | DECLARED | REFERENCE
+  source         String?
+  confidenceNote String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([tripId])
+  @@index([postId])
+  @@index([dwellSessionId])
+  @@map("trip_legs")
 }

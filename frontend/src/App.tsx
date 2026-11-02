@@ -38,6 +38,7 @@ const FinanceDashboard = lazy(() => import("./pages/FinanceDashboard"));
 const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const ProofPayments = lazy(() => import("./pages/ProofPayments"));
 const FleetDutyBoard = lazy(() => import("./pages/FleetDutyBoard"));
+const TripLegsBoard = lazy(() => import("./pages/TripLegsBoard"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 // Surfaces the tenant's shareable customer booking-portal + public tracking links.
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
@@ -371,6 +372,7 @@ export default function App() {
               <Route path="/commercial-analytics" element={<RequireFeature feature="commercialAnalytics" name="Commercial Analytics"><CommercialAnalytics /></RequireFeature>} />
               <Route path="/fleet-intelligence" element={<FleetIntelligence />} />
               <Route path="/safety-zones" element={<SafetyZones />} />
+              <Route path="/trip-legs" element={<TripLegsBoard />} />
               <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
               <Route path="/wms/cross-dock" element={<RequireFeature feature="warehouseManagement" name="Cross-Docking"><WmsCrossDocking /></RequireFeature>} />
               <Route path="/wms/waves" element={<RequireFeature feature="warehouseManagement" name="Wave Planning"><WmsWavePlanning /></RequireFeature>} />
