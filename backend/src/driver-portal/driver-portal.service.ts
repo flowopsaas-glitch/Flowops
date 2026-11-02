@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { DriverSafetyService } from '../driver-safety/driver-safety.service';
+import { BorderDwellService } from '../driver-safety/border-dwell.service';
 import { EpodService } from '../epod/epod.service';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { AuditService } from '../audit/audit.service';
@@ -19,6 +20,7 @@ import {
 } from './driver-mode.rules';
 import { CollectionStatus, TripCostType, type DriverMode } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import { chatMessageKey, verifyChatRetry } from './chat-idempotency';
 
 const CONFIRMABLE_COLLECTION_STATUSES: CollectionStatus[] = [
   CollectionStatus.PENDING,
@@ -35,6 +37,7 @@ export class DriverPortalService {
     private notifications: NotificationsService,
     private gateway: EventsGateway,
     private safety: DriverSafetyService,
+    private borderDwell: BorderDwellService,
     private epod: EpodService,
     private compliance: DriverComplianceService,
     private audit: AuditService,
@@ -366,6 +369,14 @@ export class DriverPortalService {
       driverId, driver.companyId, lat, lng, speed,
     ).catch((err) => {
       this.logger.warn(`Safety check failed (non-blocking): ${err?.message}`);
+    });
+
+    // ── WP3: Cross-border dwell measurement on every GPS update ──
+    // Non-blocking — session lifecycle fires asynchronously without slowing GPS response.
+    void this.borderDwell.checkBorderGeofences(
+      driverId, driver.companyId, lat, lng, speed,
+    ).catch((err) => {
+      this.logger.warn(`Border dwell check failed (non-blocking): ${err?.message}`);
     });
 
     return driver;
@@ -840,11 +851,12 @@ export class DriverPortalService {
   async getMessages(driverId: string, limit = 50, skip = 0) {
     const msgs = await this.prisma.driverChatMessage.findMany({
       where: { driverId },
-      orderBy: { createdAt: 'asc' },
-      take: limit,
-      skip,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: Math.min(Math.max(Number.isInteger(limit) ? limit : 50, 1), 100),
+      skip: Math.max(Number.isInteger(skip) ? skip : 0, 0),
     });
-    return msgs;
+    // Fetch the newest page, but render each page chronologically.
+    return msgs.reverse();
   }
 
   /**
@@ -853,18 +865,63 @@ export class DriverPortalService {
    * without this scope a tenant could read another tenant's driver chat).
    */
   async getMessagesForCompany(driverId: string, companyId: string, limit = 50, skip = 0) {
-    return this.prisma.driverChatMessage.findMany({
+    const msgs = await this.prisma.driverChatMessage.findMany({
       where: { driverId, companyId },
-      orderBy: { createdAt: 'asc' },
-      take: limit,
-      skip,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: Math.min(Math.max(Number.isInteger(limit) ? limit : 50, 1), 100),
+      skip: Math.max(Number.isInteger(skip) ? skip : 0, 0),
     });
+    return msgs.reverse();
   }
 
-  async sendMessage(driverId: string, companyId: string, message: string, senderType = 'driver', attachmentUrl?: string, attachmentType?: string) {
-    return this.prisma.driverChatMessage.create({
-      data: { driverId, companyId, message, senderType, attachmentUrl, attachmentType },
+  async sendMessage(driverId: string, companyId: string, message: string, senderType = 'driver', attachmentUrl?: string, attachmentType?: string, clientMessageId?: unknown) {
+    if (!message || !message.trim()) throw new BadRequestException('Message is required');
+    if (message.length > 4000) throw new BadRequestException('Message is too long');
+    if (senderType !== 'driver' && senderType !== 'dispatch') throw new BadRequestException('Invalid senderType');
+    const key = chatMessageKey(clientMessageId);
+    const payload = { message: message.trim(), senderType, attachmentUrl, attachmentType };
+    try {
+      return await this.prisma.driverChatMessage.create({
+        data: { driverId, companyId, ...payload, ...(key ? { clientMessageId: key } : {}) },
+      });
+    } catch (error) {
+      // The database unique index is the concurrency barrier, including across
+      // app instances. A lost response can be retried with the same UUID.
+      if (!key || (error as { code?: string })?.code !== 'P2002') throw error;
+      const existing = await this.prisma.driverChatMessage.findFirst({
+        where: { driverId, companyId, clientMessageId: key },
+      });
+      // Do not mask a different unique constraint failure.
+      if (!existing) throw error;
+      return verifyChatRetry(existing, payload);
+    }
+  }
+
+  /** Dispatch→driver send. Tenant-scoped: driver must belong to the company. Idempotent via clientMessageId. */
+  async dispatchSend(driverId: string, companyId: string, message: string, clientMessageId?: unknown) {
+    if (!message || !message.trim()) throw new BadRequestException('Message is required');
+    if (message.length > 4000) throw new BadRequestException('Message is too long');
+
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, companyId, isActive: true },
+      select: { id: true },
     });
+    if (!driver) throw new NotFoundException('Driver not found in this company');
+
+    const key = chatMessageKey(clientMessageId);
+    const payload = { message: message.trim(), senderType: 'dispatch' as const };
+    try {
+      return await this.prisma.driverChatMessage.create({
+        data: { driverId, companyId, ...payload, ...(key ? { clientMessageId: key } : {}) },
+      });
+    } catch (error) {
+      if (!key || (error as { code?: string })?.code !== 'P2002') throw error;
+      const existing = await this.prisma.driverChatMessage.findFirst({
+        where: { driverId, companyId, clientMessageId: key },
+      });
+      if (!existing) throw error;
+      return verifyChatRetry(existing, payload);
+    }
   }
 
   async markRead(id: string) {
@@ -884,6 +941,24 @@ export class DriverPortalService {
       where: { id },
       data: { readAt: new Date() },
     });
+  }
+
+  /** Mark dispatch→driver messages as delivered (deliveredAt set). Tenant-scoped. */
+  async markAsDelivered(driverId: string, companyId: string, messageIds: string[]) {
+    if (!Array.isArray(messageIds) || messageIds.length === 0) return { ok: true, marked: 0 };
+    const validIds = messageIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (validIds.length === 0) return { ok: true, marked: 0 };
+    const result = await this.prisma.driverChatMessage.updateMany({
+      where: {
+        id: { in: validIds },
+        driverId,
+        companyId,
+        senderType: 'dispatch',
+        deliveredAt: null,
+      },
+      data: { deliveredAt: new Date() },
+    });
+    return { ok: true, marked: result.count };
   }
 
   /** Typing state kept in-memory (ephemeral — no DB write needed) */
@@ -924,19 +999,6 @@ export class DriverPortalService {
       if (a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
       if (a.lastMessageAt && b.lastMessageAt) return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
       return 0;
-    });
-  }
-
-  /** Dispatch sends a message to a specific driver, scoped to the tenant. */
-  async dispatchSend(driverId: string, companyId: string, message: string) {
-    const driver = await this.prisma.driver.findFirst({
-      where: { id: driverId, companyId, isActive: true },
-      select: { id: true },
-    });
-    if (!driver) throw new NotFoundException('Driver not found');
-
-    return this.prisma.driverChatMessage.create({
-      data: { driverId: driver.id, companyId, message, senderType: 'dispatch' },
     });
   }
 }

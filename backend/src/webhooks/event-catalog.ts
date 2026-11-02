@@ -53,6 +53,9 @@ export const EVENT_CATALOG = [
   'rail.truck_window.changed',
   'rail.truck_window.acknowledged',
   'rail.truck_window.escalated',
+  // WP3 — cross-border document pack expiry alerts
+  'trip.document.expiring_soon',
+  'trip.document.expired',
 ] as const;
 
 export type FlowOpsEvent = (typeof EVENT_CATALOG)[number];

@@ -278,6 +278,11 @@ model Company {
   digitalPayments       DigitalPayment[]
   deliveryIntelligenceStats DeliveryIntelligenceStat[]
 
+  // Journey truth + communication
+  journeys          Journey[]
+  journeyStages     JourneyStage[]
+  journeyUpdates    JourneyUpdate[]
+
   @@map("companies")
 }
 
@@ -700,6 +705,10 @@ model Driver {
   // acknowledgements addressed to them (the driver side of the closed loop).
   truckAppointments  TerminalTruckAppointment[]
   truckWindowRecipients TerminalTruckWindowRecipient[]
+
+  // Journey truth + communication
+  journeys       Journey[]
+  journeyUpdates JourneyUpdate[]
 
   @@map("drivers")
 }
@@ -2077,18 +2086,153 @@ model DriverChatMessage {
   companyId      String
   company        Company   @relation("CompanyDriverChats", fields: [companyId], references: [id], onDelete: Cascade)
   /// 'driver' | 'dispatch'
+  /// Optional idempotency key for driver-originated messages.
+  clientMessageId String?
   senderType     String
   message        String
   attachmentUrl  String?
   attachmentType String?   // 'image' | 'document'
   readAt         DateTime? // null = unread
+  deliveredAt    DateTime? // null = not yet delivered to the recipient's device
   createdAt      DateTime  @default(now())
 
+  @@unique([companyId, driverId, clientMessageId])
   @@index([driverId, createdAt])
   @@index([companyId, createdAt])
   @@map("driver_chat_messages")
 }
 
+// ─── Journey: end-to-end journey truth + communication ─────────────────────
+// A Journey is a tenant-scoped container of ordered planned stages. A driver
+// assigned to a journey sends updates against stages; the dispatcher receives,
+// acknowledges, assigns and resolves. Times are labelled by provenance:
+// deviceOccurredAt (driver-claimed) vs serverReceivedAt (server-observed).
+// Corrections append; they never silently overwrite history.
+// Design reference: docs/FLOWOPS-END-TO-END-JOURNEY-DESIGN-2026-10-31.md §3-4
+
+model Journey {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId    String?
+  driver      Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  reference   String   // customer-facing journey reference (e.g. J-2026-0001)
+  status      JourneyStatus @default(PLANNED)
+  origin      String?
+  destination String?
+  plannedStart DateTime?
+  plannedEnd   DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  stages      JourneyStage[]
+  updates     JourneyUpdate[]
+
+  @@index([companyId, status])
+  @@index([driverId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("journeys")
+}
+
+model JourneyStage {
+  id           String   @id @default(cuid())
+  journeyId    String
+  journey      Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stageNumber  Int      // 1-based order within the journey
+  type         JourneyStageType // PICKUP | BORDER | TRANSIT | DELIVERY | ...
+  locationName String?
+  locationRef  String?  // crossing / terminal / depot reference (source-pending until verified)
+  plannedAt    DateTime?
+  actualAt     DateTime?
+  status       JourneyStageStatus @default(PLANNED)
+  notes        String?
+
+  updates      JourneyUpdate[]
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([journeyId, stageNumber])
+  @@index([companyId, status])
+  @@unique([journeyId, stageNumber])
+  @@map("journey_stages")
+}
+
+model JourneyUpdate {
+  id                 String   @id @default(cuid())
+  journeyId          String
+  journey            Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  stageId            String?
+  stage              JourneyStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  driverId           String
+  driver             Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  companyId          String
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// 'delay' | 'vehicle_issue' | 'road_obstruction' | 'safety_concern' | 'status_change'
+  type               JourneyUpdateType
+  message            String
+  /// Idempotency key for driver-originated updates (UUID v4)
+  clientMessageId    String?
+  /// Device-claimed occurrence time (labelled device-reported)
+  deviceOccurredAt   DateTime?
+  /// Server-observed receipt time (authoritative for ordering)
+  serverReceivedAt   DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  status             JourneyUpdateStatus @default(PENDING)
+  acknowledgedAt     DateTime?
+  acknowledgedBy     String?   // userId of dispatcher who acknowledged
+  resolutionNote     String?
+
+  @@unique([companyId, driverId, clientMessageId])
+  @@index([journeyId, createdAt])
+  @@index([stageId, createdAt])
+  @@index([companyId, status])
+  @@index([driverId, createdAt])
+  @@map("journey_updates")
+}
+
+enum JourneyStatus {
+  PLANNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum JourneyStageType {
+  PICKUP
+  BORDER
+  TRANSIT
+  DELIVERY
+  OTHER
+}
+
+enum JourneyStageStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum JourneyUpdateType {
+  DELAY
+  VEHICLE_ISSUE
+  ROAD_OBSTRUCTION
+  SAFETY_CONCERN
+  STATUS_CHANGE
+}
+
+enum JourneyUpdateStatus {
+  PENDING    // sent by driver, not yet seen by dispatch
+  RECEIVED   // dispatch has seen it
+  ACKNOWLEDGED // dispatch has acknowledged
+  RESOLVED   // dispatcher resolved it
+  REJECTED   // dispatcher rejected / disputed
+}
 
 // ─── Returns Management ────────────────────────────────────────────────────
 // Full RMA lifecycle: a customer/agent logs a return against an original
@@ -3616,8 +3760,15 @@ model SafetyZone {
   notifyAdmin  Boolean @default(true)
 
   // Source / metadata
-  source    String?             // "SAPS_STATS" | "MANUAL" | "AI_DETECTED" | "COMMUNITY"
+  source    String?             // "SAPS_STATS" | "MANUAL" | "AI_DETECTED" | "COMMUNITY" | "VERIFIED_INCIDENT"
   isActive  Boolean @default(true)
+
+  // ── WP4: expiry and incident provenance ─────────────────────────────────
+  // expiresAt — null means permanent (correct for seeded reference zones).
+  // incidentId — which SafetyIncident produced this assertion (nullable).
+  expiresAt   DateTime?
+  incidentId  String?
+  incident    SafetyIncident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3626,6 +3777,7 @@ model SafetyZone {
 
   @@index([companyId, isActive])
   @@index([lat, lng])
+  @@index([incidentId])
   @@map("safety_zones")
 }
 
@@ -3658,6 +3810,9 @@ model SafetyAlert {
   acknowledgedAt DateTime?
   exitedZoneAt   DateTime? // when driver left the zone
 
+  // Position retention: lat/lng nulled after 180 days on closed alerts
+  positionNulledAt DateTime?
+
   // Audit
   metadata  Json?   // any extra context (waybill being delivered, etc.)
 
@@ -3667,6 +3822,171 @@ model SafetyAlert {
   @@index([driverId, createdAt])
   @@index([zoneId])
   @@map("safety_alerts")
+}
+
+/// ── WP4: Safety Incident Layer ───────────────────────────────────────────────
+/// A report is a claim; a zone is an assertion. Only a verified assertion may
+/// alert drivers. Two records, not one.
+///
+/// SafetyIncident — the claim, with a full lifecycle: REPORTED → CORROBORATED
+/// → VERIFIED | REJECTED | EXPIRED | WITHDRAWN.
+/// SafetyZone — the assertion drivers are alerted by, created ONLY on
+/// verification, with expiresAt and incidentId provenance.
+enum SafetyIncidentType {
+  ROAD_CLOSED
+  ACCIDENT
+  HIJACKING_ATTEMPT
+  ROBBERY
+  WEATHER
+  STRIKE_PROTEST
+  VEHICLE_HAZARD
+  OTHER
+}
+
+enum SafetyIncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SafetyIncidentStatus {
+  REPORTED      // claim filed, dispatch only, not yet alerting drivers
+  CORROBORATED  // second source matched — raises priority, still not verified
+  VERIFIED      // a named human verified — a SafetyZone was created
+  REJECTED      // rejected with a reason and a named rejecter
+  EXPIRED       // TTL passed, zone deactivated, record survives
+  WITHDRAWN     // reporting driver withdrew before verification
+}
+
+enum SafetyIncidentVerificationMethod {
+  DISPATCH_CONFIRM    // named human in the tenant confirmed it
+  SECOND_SOURCE       // two drivers independently matched (corroboration → verify)
+  AUTHORITY_NOTIFIED  // dispatch recorded contacting SAPS/traffic/emergency
+}
+
+model SafetyIncident {
+  id                 String                     @id @default(cuid())
+  companyId          String
+  company            Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // ── The claim ──────────────────────────────────────────────────────────
+  type               SafetyIncidentType
+  severity           SafetyIncidentSeverity @default(MEDIUM)   // set by verifier, not reporter
+  status             SafetyIncidentStatus @default(REPORTED)
+
+  // Exactly one of reportedByDriverId / reportedByUserId is set
+  reportedByDriverId String?
+  reportedByDriver   Driver? @relation(fields: [reportedByDriverId], references: [id], onDelete: SetNull)
+  reportedByUserId   String?   // dispatch or admin user id
+  reportedByUser     User?     @relation(fields: [reportedByUserId], references: [id], onDelete: SetNull)
+
+  reportedAt         DateTime @default(now())
+  reportLat          Float
+  reportLng          Float
+  reportAccuracyM    Int?     // device GPS accuracy — a 900 m fix cannot corroborate a 300 m zone
+  locationSource     String   // DEVICE_GPS | MAP_PIN | LAST_KNOWN
+  geohash6           String?  // corroboration grouping without storing a second coordinate set
+
+  narrative          String?  // optional, ≤ 280 chars, never required
+
+  // ── Corroboration ──────────────────────────────────────────────────────
+  corroborations     SafetyCorroboration[]
+
+  // ── Verification ───────────────────────────────────────────────────────
+  verifiedByUserId   String?
+  verifiedByUser     User? @relation(fields: [verifiedByUserId], references: [id], onDelete: SetNull)
+  verifiedAt         DateTime?
+  verificationMethod SafetyIncidentVerificationMethod?
+
+  // ── Rejection ──────────────────────────────────────────────────────────
+  rejectedByUserId   String?
+  rejectedByUser     User? @relation(fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  rejectedAt         DateTime?
+  rejectionReason    String?   // enum + free text: NOT_THERE | ALREADY_CLEARED | DUPLICATE | MISCLASSIFIED | NOT_CREDIBLE | OTHER
+
+  // ── Withdrawal ─────────────────────────────────────────────────────────
+  withdrawnAt        DateTime?
+  withdrawnByUserId  String?
+
+  // ── Zone provenance ────────────────────────────────────────────────────
+  // The SafetyZone created ONLY on verification — nullable until verified.
+  zoneId             String?
+  zone               SafetyZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  // ── Broadcast tracking ─────────────────────────────────────────────────
+  broadcastCount     Int      @default(0)
+  lastBroadcastAt    DateTime?
+
+  // ── Timestamps ─────────────────────────────────────────────────────────
+  expiresAt          DateTime?   // TTL — null means permanent (only for seeded zones)
+  expiredAt          DateTime?   // when the sweep actually closed it
+
+  idempotencyKey     String      // offline flush / double tap protection
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, type])
+  @@index([geohash6])
+  @@unique([companyId, idempotencyKey])
+  @@map("safety_incidents")
+}
+
+/// A second driver's report matched to an incident — corroboration, not
+/// verification. Two drivers can both be wrong; this raises priority, a human
+/// verifies.
+model SafetyCorroboration {
+  id            String @id @default(cuid())
+  companyId     String
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  incidentId    String
+  incident      SafetyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  driverId      String
+  driver        Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  distanceM     Int      // metres from the incident's report location
+  reportedAt    DateTime @default(now())
+
+  @@index([companyId])
+  @@index([incidentId])
+  @@unique([incidentId, driverId])
+  @@map("safety_corroborations")
+}
+
+/// Per-company incident broadcast policy — radius/TTL overrides frozen onto
+/// each incident at verification time (same pattern as TerminalGatePolicy).
+model IncidentBroadcastPolicy {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  incidentType   String   // e.g. "HIJACKING_ATTEMPT" — null = applies to all types
+  defaultRadiusM Int      @default(1000)
+  capRadiusM     Int      @default(5000)
+  defaultTtlHours Int     @default(3)
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, incidentType])
+  @@index([companyId, isActive])
+  @@map("incident_broadcast_policies")
+}
+
+/// Retention sweep state — tracks when positions were nulled, per sweep run.
+model SafetyRetentionSweep {
+  id             String   @id @default(cuid())
+  companyId      String
+  sweepType      String   // INCIDENT_REPORT_LOCATION (90d) | ALERT_POSITION (180d)
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  rowsNulled     Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([companyId])
+  @@index([sweepType])
+  @@map("safety_retention_sweeps")
 }
 
 
@@ -6513,4 +6833,266 @@ model TerminalGatePolicy {
   @@unique([companyId, terminalName])
   @@index([companyId])
   @@map("terminal_gate_policies")
+}
+
+/// ── WP3: Cross-border dwell measurement ───────────────────────────────────────
+/// Border post reference data — official crossing identity, hand-compiled reference.
+/// These are the named crossing points where dwell can be measured.
+/// Provenance: every figure is STATIC_REFERENCE until measured by FlowOps.
+model BorderPost {
+  id                 String   @id @default(cuid())
+  companyId          String
+  code               String   // "BEIT_BRIDGE", "CHIRUNDU", "LEBOMBO"
+  name               String   // "Beitbridge Border Post"
+  countries          String   // "ZA,ZW" — comma-separated ISO codes for both sides
+  lat                Float
+  lng                Float
+  is24Hour           Boolean  @default(false)
+  referenceAvgWaitHours Float?   // reference only, not measured by FlowOps
+  referenceCongestion   String?    // reference only
+  referenceCompiledAsOf  DateTime?  // null = not recorded
+
+  geofences     BorderGeofence[]
+  dwellSessions BorderDwellSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("border_posts")
+}
+
+/// Border geofence — measurement boundary at a border post.
+/// Separate from SafetyZone: a measurement boundary is not a danger zone,
+/// and driver-reported safety zones must never enter dwell statistics.
+model BorderGeofence {
+  id          String   @id @default(cuid())
+  companyId   String
+  postId      String
+  post        BorderPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  code        String   // "BEIT_BRIDGE_ZA", "BEIT_BRIDGE_ZW", "CHIRUNDU"
+  name        String   // "Beitbridge Border (SA side)"
+  lat         Float
+  lng         Float
+  radiusM     Int      @default(1000) // radius in metres
+  side        String   // "EXPORT" | "IMPORT" | "TRANSIT" | "BOTH"
+  isActive    Boolean  @default(true)
+  provenance  String   // "SEED" | "OPERATOR_REVIEW" | "SURVEYED"
+
+  dwellSessions BorderDwellSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, isActive])
+  @@index([postId])
+  @@map("border_geofences")
+}
+
+/// Border dwell session — one visit to a border geofence.
+/// Entry and exit derived from GPS fixes, not a track.
+/// Two timestamps per crossing, tied to driver/vehicle/post — not a breadcrumb store.
+model BorderDwellSession {
+  id                String   @id @default(cuid())
+  companyId         String
+  postId            String
+  post              BorderPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  geofenceId        String
+  geofence          BorderGeofence @relation(fields: [geofenceId], references: [id], onDelete: Cascade)
+  driverId          String?    // nullable: dwell survives a driver change mid-trip
+  vehicleReg        String?
+  enteredAt         DateTime?    // first observed inside fix (entry bounded, not exact)
+  enteredFromFixAt  DateTime?    // actual fix timestamp that first placed driver inside
+  exitedAt          DateTime?    // last observed outside fix bounds exit
+  exitedFromFixAt   DateTime?    // actual fix timestamp that first placed driver outside
+  state             String   // "CLOSED" | "OPEN" | "GAPPED"
+  sampleCount       Int      @default(0)
+  precisionSeconds  Int?     // observed entry/exit uncertainty bound in seconds
+  gapLargestSeconds Int?     // largest gap between consecutive samples inside session
+  direction         String?  // "INBOUND" | "OUTBOUND" | "TRANSIT"
+  source            String   // "GPS_PORTAL"
+
+  // Back-relation: trip legs derived from this dwell session
+  tripLegs          TripLeg[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, state])
+  @@index([postId, state])
+  @@index([driverId])
+  @@map("border_dwell_sessions")
+}
+
+/// ── WP3 Stage 4: Trip corridor split with provenance labels ───────────────────
+/// A Trip is a cross-border movement (terminal → rail operator → haulier →
+/// forwarder) split into legs. Each leg carries a provenance label so a trip
+/// total is MEASURED only when every leg is MEASURED — REFERENCE legs are
+/// planning-only and never summed into a measured total.
+model Trip {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reference   String   // customer-facing trip reference (e.g. T-2026-0001)
+  driverId    String?
+  driver      Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  vehicleReg  String?
+  origin      String?
+  destination String?
+  plannedStart DateTime?
+  plannedEnd   DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  status      TripStatus @default(PLANNED)
+
+  // ── WP3 Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ─────
+  // Additive columns on the Trip — no new table. HS code is validated against
+  // a format only (never against a tariff database we do not have). Origin
+  // status defaults to UNKNOWN and is rendered as UNKNOWN — never a guess,
+  // because it decides whether a preferential rate is even arguable.
+  hsCode               String?       // HS code (6–10 digits), format-validated only
+  originStatus         OriginStatus  @default(UNKNOWN)
+  certificateOfOriginRef String?     // reference to the certificate of origin document
+  dutyEstimated        Float?        // ESTIMATED duty — from a named, versioned reference
+  estimateSource       String?       // e.g. "AfCFTA e-Tariff Book"
+  estimateVersion      String?       // reference version, recorded per estimate
+  estimatedAt          DateTime?     // when the estimate was computed
+  dutyActual           Float?        // ACTUAL duty — keyed in from a declaration
+  declarationRef       String?       // declaration reference for the actual duty
+  capturedBy           String?       // user who keyed in the actual duty
+  capturedAt           DateTime?     // when the actual duty was captured
+
+  legs        TripLeg[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([driverId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("trips")
+}
+
+/// Duty provenance: ESTIMATED (from a named reference) vs ACTUAL (keyed in
+/// from a declaration). Never blended, never averaged, never a combined field.
+enum TripDutyProvenance {
+  ESTIMATED   // computed from a named, versioned reference (AfCFTA e-Tariff Book)
+  ACTUAL      // keyed in from a customs declaration
+}
+
+/// Origin status: preferential / non-preferential / unknown. UNKNOWN renders
+/// as unknown — never a guess.
+enum OriginStatus {
+  PREFERENTIAL      // goods qualify for a preferential rate
+  NON_PREFERENTIAL  // goods do not qualify
+  UNKNOWN           // not determined — the honest default
+}
+
+/// One leg of a trip with an explicit provenance label.
+/// BORDER legs are MEASURED from a CLOSED dwell session, DECLARED when a
+/// dispatcher keys in a duration, or absent for GAPPED/OPEN sessions (which
+/// produce a MEASURED leg with durationMinutes = null + confidenceNote).
+/// REFERENCE legs come from the static corridor table — planning only.
+model TripLeg {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tripId         String
+  trip           Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  kind           TripLegKind // LINEHAUL | BORDER | CLEARING | BOND | EMPTY_RETURN
+  postId         String?    // border post for BORDER legs
+  post           BorderPost? @relation(fields: [postId], references: [id], onDelete: SetNull)
+  dwellSessionId String?    // source dwelling session for MEASURED BORDER legs
+  dwellSession   BorderDwellSession? @relation(fields: [dwellSessionId], references: [id], onDelete: SetNull)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  durationMinutes Int?      // derived from startedAt/endedAt, or null when unknown
+  provenance     TripLegProvenance @default(REFERENCE) // MEASURED | DECLARED | REFERENCE
+  source         String?    // crossing-session id | actor | reference-table code
+  confidenceNote String?    // e.g. "GAPPED session — dwell at post unknown"
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, kind])
+  @@index([companyId, kind])
+  @@index([postId])
+  @@map("trip_legs")
+}
+
+enum TripStatus {
+  PLANNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum TripLegKind {
+  LINEHAUL
+  BORDER
+  CLEARING
+  BOND
+  EMPTY_RETURN
+}
+
+enum TripLegProvenance {
+  MEASURED   // derived from observed dwell session
+  DECLARED   // keyed in by a dispatcher/operator
+  REFERENCE  // from static corridor table — planning only, never summed
+}
+
+/// ── WP3 Stage 3: Cross-border document pack + expiry alerts ─────────────────
+/// Per-trip document pack. Each document is captured by a dispatcher or the
+/// driver in the portal, with the actor recorded. The pack records what the
+/// operator holds — it does not file anything with any authority.
+/// Statuses: HELD (in hand), MISSING (not yet obtained), EXPIRED (past expiry),
+/// NOT_APPLICABLE (not required for this corridor/country).
+model TripDocumentPack {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tripId      String
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  documentType String  // e.g. "Carnet de Passage", "TIR Carnet", "COMESA Certificate of Origin"
+  status      DocumentPackStatus @default(HELD)
+  issuedAt    DateTime?
+  expiresAt   DateTime?
+  capturedBy  String?   // userId of dispatcher/driver who captured it
+  evidenceRef String?   // reference to uploaded evidence (waybill scan, photo, etc.)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([tripId])
+  @@index([companyId, status])
+  @@index([expiresAt])
+  @@map("trip_document_pack")
+}
+
+enum DocumentPackStatus {
+  HELD            // document is in hand
+  MISSING         // not yet obtained
+  EXPIRED         // past expiry date
+  NOT_APPLICABLE  // not required for this corridor/country
+}
+
+/// Per-company expiry alert thresholds (days before expiry).
+/// Defaults: 30 / 14 / 3 days. Configurable downwards only per company.
+model DocumentExpiryThreshold {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documentType   String?  // null = applies to all document types
+  thresholdDays  Int      @default(30) // days before expiry to alert
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, documentType])
+  @@index([companyId, isActive])
+  @@map("document_expiry_thresholds")
 }

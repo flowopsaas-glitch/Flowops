@@ -1,0 +1,8 @@
+{
+  "rootDir": ".",
+  "testRegex": "src/driver-portal/.*\\.spec\\.ts$",
+  "transform": { "^.+\\.(t|j)s$": ["ts-jest", { "isolatedModules": true }] },
+  "moduleFileExtensions": ["ts", "js", "json"],
+  "moduleNameMapper": { "^@prisma/client$": "<rootDir>/test/support/mock-prisma-client.ts" },
+  "testEnvironment": "node"
+}

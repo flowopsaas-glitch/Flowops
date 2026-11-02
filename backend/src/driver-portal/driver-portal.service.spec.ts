@@ -53,6 +53,7 @@ describe("DriverPortalService", () => {
       driver: { findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
       driverChatMessage: {
         findMany: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
@@ -243,6 +244,25 @@ describe("DriverPortalService", () => {
       );
     });
 
+    it("returns the latest page in chronological order for both sides", async () => {
+      const newest = { id: "new" };
+      const oldest = { id: "old" };
+      prisma.driverChatMessage.findMany.mockResolvedValueOnce([newest, oldest]);
+      expect(await service.getMessages("driver-1", 50, 0)).toEqual([oldest, newest]);
+      expect(prisma.driverChatMessage.findMany).toHaveBeenLastCalledWith({
+        where: { driverId: "driver-1" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 50, skip: 0,
+      });
+      prisma.driverChatMessage.findMany.mockResolvedValueOnce([newest, oldest]);
+      expect(await service.getMessagesForCompany("driver-1", "company-1", 500, -1)).toEqual([oldest, newest]);
+      expect(prisma.driverChatMessage.findMany).toHaveBeenLastCalledWith({
+        where: { driverId: "driver-1", companyId: "company-1" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 100, skip: 0,
+      });
+    });
+
     it("sendMessage pins the session company onto the row", async () => {
       prisma.driverChatMessage.create.mockResolvedValue({ id: "m1" });
       await service.sendMessage("driver-1", "company-1", "ETA 10 min");
@@ -253,6 +273,88 @@ describe("DriverPortalService", () => {
           message: "ETA 10 min",
         }),
       });
+    });
+
+    it("returns the existing tenant-scoped message on an identical concurrent retry", async () => {
+      const key = "0c8575cb-5f06-43e7-8a32-78124ccab528";
+      const existing = { id: "m1", message: "ETA 10 min", senderType: "driver", attachmentUrl: null, attachmentType: null };
+      prisma.driverChatMessage.create.mockRejectedValue({ code: "P2002" });
+      prisma.driverChatMessage.findFirst.mockResolvedValue(existing);
+      await expect(service.sendMessage("driver-1", "company-1", "ETA 10 min", "driver", undefined, undefined, key.toUpperCase())).resolves.toBe(existing);
+      expect(prisma.driverChatMessage.findFirst).toHaveBeenCalledWith({ where: { driverId: "driver-1", companyId: "company-1", clientMessageId: key } });
+      await expect(service.sendMessage("driver-1", "company-1", "Different", "driver", undefined, undefined, key)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("does not mask unrelated unique constraint failures", async () => {
+      const failure = { code: "P2002" };
+      prisma.driverChatMessage.create.mockRejectedValue(failure);
+      prisma.driverChatMessage.findFirst.mockResolvedValue(null);
+      await expect(service.sendMessage("driver-1", "company-1", "Hi", "driver", undefined, undefined, "0c8575cb-5f06-43e7-8a32-78124ccab528")).rejects.toBe(failure);
+    });
+
+    it("rejects empty or overlong messages", async () => {
+      await expect(service.sendMessage("driver-1", "company-1", "   ", "driver")).rejects.toThrow(BadRequestException);
+      await expect(service.sendMessage("driver-1", "company-1", "x".repeat(4001), "driver")).rejects.toThrow(BadRequestException);
+      expect(prisma.driverChatMessage.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects an invalid senderType", async () => {
+      await expect(service.sendMessage("driver-1", "company-1", "Hi", "system" as any)).rejects.toThrow(BadRequestException);
+      expect(prisma.driverChatMessage.create).not.toHaveBeenCalled();
+    });
+
+    it("dispatchSend trims the message, rejects empty, and scopes to the tenant's driver", async () => {
+      prisma.driver.findFirst.mockResolvedValue(null);
+      prisma.driverChatMessage.create.mockResolvedValue({ id: "m1" });
+
+      await expect(service.dispatchSend("driver-1", "company-1", "   ")).rejects.toThrow(BadRequestException);
+      await expect(service.dispatchSend("driver-999", "company-1", "hi")).rejects.toThrow(NotFoundException);
+      prisma.driver.findFirst.mockResolvedValueOnce({ id: "driver-1" });
+      await expect(service.dispatchSend("driver-1", "company-1", "  hi  ")).resolves.toEqual({ id: "m1" });
+      expect(prisma.driver.findFirst).toHaveBeenLastCalledWith({
+        where: { id: "driver-1", companyId: "company-1", isActive: true },
+        select: { id: true },
+      });
+      expect(prisma.driverChatMessage.create).toHaveBeenLastCalledWith({
+        data: { driverId: "driver-1", companyId: "company-1", message: "hi", senderType: "dispatch" },
+      });
+    });
+
+    it("dispatchSend returns the existing message on an identical idempotent retry", async () => {
+      const key = "0c8575cb-5f06-43e7-8a32-78124ccab528";
+      const existing = { id: "m1", message: "ETA 10 min", senderType: "dispatch", attachmentUrl: null, attachmentType: null };
+      prisma.driver.findFirst.mockResolvedValueOnce({ id: "driver-1" });
+      prisma.driverChatMessage.create.mockRejectedValueOnce({ code: "P2002" });
+      prisma.driverChatMessage.create.mockRejectedValueOnce({ code: "P2002" });
+      prisma.driverChatMessage.findFirst.mockResolvedValue(existing);
+      await expect(service.dispatchSend("driver-1", "company-1", "ETA 10 min", key)).resolves.toBe(existing);
+      expect(prisma.driverChatMessage.findFirst).toHaveBeenCalledWith({
+        where: { driverId: "driver-1", companyId: "company-1", clientMessageId: key },
+      });
+      // A different message with the same key is a conflict, not a silent duplicate.
+      prisma.driver.findFirst.mockResolvedValueOnce({ id: "driver-1" });
+      await expect(service.dispatchSend("driver-1", "company-1", "Different", key)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("markAsDelivered marks only tenant-scoped dispatch messages as delivered", async () => {
+      prisma.driverChatMessage.updateMany.mockResolvedValue({ count: 2 });
+      await expect(service.markAsDelivered("driver-1", "company-1", ["m1", "m2", "m3"])).resolves.toEqual({ ok: true, marked: 2 });
+      expect(prisma.driverChatMessage.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ["m1", "m2", "m3"] },
+          driverId: "driver-1",
+          companyId: "company-1",
+          senderType: "dispatch",
+          deliveredAt: null,
+        },
+        data: { deliveredAt: expect.any(Date) },
+      });
+    });
+
+    it("markAsDelivered ignores empty or invalid id lists", async () => {
+      await expect(service.markAsDelivered("driver-1", "company-1", [])).resolves.toEqual({ ok: true, marked: 0 });
+      await expect(service.markAsDelivered("driver-1", "company-1", ["", 123, null as any])).resolves.toEqual({ ok: true, marked: 0 });
+      expect(prisma.driverChatMessage.updateMany).not.toHaveBeenCalled();
     });
 
     it("markRead with a driverId bulk-marks only that driver's unread dispatch messages", async () => {
