@@ -382,20 +382,23 @@ export class JourneyService {
   ) {
     const journey = await this.prisma.journey.findFirst({
       where: { id: journeyId, companyId },
-      select: { id: true },
+      select: {
+        id: true,
+        driver: { select: { id: true, name: true } },
+      },
     });
     if (!journey) throw new NotFoundException('Journey not found');
 
-    return this.prisma.journeyUpdate.findMany({
+    const updates = await this.prisma.journeyUpdate.findMany({
       where: { journeyId, companyId },
       include: {
-        driver: { select: { id: true, name: true } },
         stage: { select: { id: true, stageNumber: true, type: true, locationName: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 100),
       skip: Math.max(skip, 0),
     });
+    return updates.map((update) => ({ ...update, driver: journey.driver }));
   }
 
   // ── Journey status transitions (office) ──────────────────────────────────
@@ -407,7 +410,7 @@ export class JourneyService {
   ) {
     const journey = await this.prisma.journey.findFirst({
       where: { id: journeyId, companyId },
-      select: { id: true, status: true, actualStart: true },
+      select: { id: true, status: true, actualStart: true, actualEnd: true },
     });
     if (!journey) throw new NotFoundException('Journey not found');
 
@@ -415,7 +418,7 @@ export class JourneyService {
     if (status === JourneyStatus.IN_TRANSIT && !journey.actualStart) {
       data.actualStart = new Date();
     }
-    if (status === JourneyStatus.COMPLETED) {
+    if (status === JourneyStatus.COMPLETED && !journey.actualEnd) {
       data.actualEnd = new Date();
     }
 

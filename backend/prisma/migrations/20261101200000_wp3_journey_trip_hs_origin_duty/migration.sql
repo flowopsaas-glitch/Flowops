@@ -25,6 +25,8 @@ CREATE TABLE "journeys" (
   "destination"   TEXT,
   "plannedStart"  TIMESTAMP(3),
   "plannedEnd"    TIMESTAMP(3),
+  "actualStart"   TIMESTAMP(3),
+  "actualEnd"     TIMESTAMP(3),
   "status"        "JourneyStatus" NOT NULL DEFAULT 'PLANNED',
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"     TIMESTAMP(3) NOT NULL,
