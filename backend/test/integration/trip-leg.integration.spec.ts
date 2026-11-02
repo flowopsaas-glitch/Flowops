@@ -44,7 +44,7 @@ describe('TripLegService (PostgreSQL)', () => {
 
   // ── Seed helpers ─────────────────────────────────────────────────────────
 
-  async seedPost(companyId: string, overrides: Partial<{ code: string; name: string; lat: number; lng: number }> = {}) {
+  async function seedPost(companyId: string, overrides: Partial<{ code: string; name: string; lat: number; lng: number }> = {}) {
     return prisma.borderPost.create({
       data: {
         companyId,
@@ -58,7 +58,7 @@ describe('TripLegService (PostgreSQL)', () => {
     });
   }
 
-  async seedGeofence(companyId: string, postId: string, overrides: Partial<{ code: string; lat: number; lng: number; radiusM: number; side: string }> = {}) {
+  async function seedGeofence(companyId: string, postId: string, overrides: Partial<{ code: string; lat: number; lng: number; radiusM: number; side: string }> = {}) {
     return prisma.borderGeofence.create({
       data: {
         companyId,
@@ -75,7 +75,7 @@ describe('TripLegService (PostgreSQL)', () => {
     });
   }
 
-  async seedDriver(companyId: string) {
+  async function seedDriver(companyId: string) {
     return prisma.driver.create({
       data: {
         name: 'Thabo Mokoena',
@@ -87,7 +87,7 @@ describe('TripLegService (PostgreSQL)', () => {
     });
   }
 
-  async seedSession(
+  async function seedSession(
     companyId: string,
     postId: string,
     geofenceId: string,
