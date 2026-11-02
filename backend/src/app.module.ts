@@ -82,6 +82,7 @@ import { ProductMasterModule } from './product-master/product-master.module';
 import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence.module';
 import { FleetMaintenanceModule } from './fleet-maintenance/fleet-maintenance.module';
 import { DriverSafetyModule } from './driver-safety/driver-safety.module';
+import { TripLegModule } from './driver-safety/trip-leg.module';
 import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
 import { CarbonModule } from './carbon/carbon.module';
 import { RouteOptimizationModule } from './route-optimization/route-optimization.module';
@@ -180,6 +181,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
     FleetIntelligenceModule,
     FleetMaintenanceModule,
     DriverSafetyModule,
+    TripLegModule,
     LogisticsOpsModule,
     CarbonModule,
 
