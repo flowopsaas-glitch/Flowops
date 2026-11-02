@@ -465,7 +465,7 @@ describe('TripLegService', () => {
 
       expect(result.dutyActual).toBe(480);
       expect(prisma.trip.update).toHaveBeenCalledWith({
-        where: { id: 'trip-1' },
+        where: { id: 'trip-1', companyId: COMPANY },
         data: expect.objectContaining({
           dutyActual: 480,
           declarationRef: 'DEC-2026-001',
