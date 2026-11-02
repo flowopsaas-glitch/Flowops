@@ -30,8 +30,8 @@ CREATE TABLE "journeys" (
   "updatedAt"     TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journeys_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "journeys_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "journeys_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+  CONSTRAINT "journeys_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE
+  CONSTRAINT "journeys_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL
 );
 
 CREATE INDEX "journeys_companyId_idx" ON "journeys"("companyId");
@@ -53,7 +53,7 @@ CREATE TABLE "journey_stages" (
   "updatedAt"     TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journey_stages_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "journey_stages_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "journey_stages_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE
   CONSTRAINT "journey_stages_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE
 );
 
@@ -76,9 +76,9 @@ CREATE TABLE "journey_updates" (
   "updatedAt"          TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "journey_updates_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "journey_updates_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "journey_updates_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "journey_updates_stageId_fkey" FOREIGN KEY ("stageId") REFERENCES "journey_stages"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+  CONSTRAINT "journey_updates_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE
+  CONSTRAINT "journey_updates_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE
+  CONSTRAINT "journey_updates_stageId_fkey" FOREIGN KEY ("stageId") REFERENCES "journey_stages"("id") ON DELETE SET NULL
 );
 
 CREATE INDEX "journey_updates_companyId_idx" ON "journey_updates"("companyId");
@@ -125,7 +125,7 @@ CREATE TABLE "border_geofences" (
   "updatedAt"  TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "border_geofences_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "border_geofences_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "border_geofences_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE
   CONSTRAINT "border_geofences_postId_fkey" FOREIGN KEY ("postId") REFERENCES "border_posts"("id") ON DELETE CASCADE
 );
 
@@ -152,10 +152,10 @@ CREATE TABLE "border_dwell_sessions" (
   "updatedAt"          TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "border_dwell_sessions_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "border_dwell_sessions_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "border_dwell_sessions_postId_fkey" FOREIGN KEY ("postId") REFERENCES "border_posts"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "border_dwell_sessions_geofenceId_fkey" FOREIGN KEY ("geofenceId") REFERENCES "border_geofences"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "border_dwell_sessions_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+  CONSTRAINT "border_dwell_sessions_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE
+  CONSTRAINT "border_dwell_sessions_postId_fkey" FOREIGN KEY ("postId") REFERENCES "border_posts"("id") ON DELETE CASCADE
+  CONSTRAINT "border_dwell_sessions_geofenceId_fkey" FOREIGN KEY ("geofenceId") REFERENCES "border_geofences"("id") ON DELETE CASCADE
+  CONSTRAINT "border_dwell_sessions_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL
 );
 
 CREATE INDEX "border_dwell_sessions_companyId_idx" ON "border_dwell_sessions"("companyId");
@@ -200,8 +200,8 @@ CREATE TABLE "trips" (
   "updatedAt"            TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "trips_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "trips_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "trips_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+  CONSTRAINT "trips_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE
+  CONSTRAINT "trips_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE SET NULL
 );
 
 CREATE INDEX "trips_companyId_idx" ON "trips"("companyId");
@@ -226,10 +226,10 @@ CREATE TABLE "trip_legs" (
   "updatedAt"      TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "trip_legs_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "trip_legs_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "trip_legs_tripId_fkey" FOREIGN KEY ("tripId") REFERENCES "trips"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "trip_legs_postId_fkey" FOREIGN KEY ("postId") REFERENCES "border_posts"("id") ON DELETE SET NULL ON UPDATE NO ACTION,
-  CONSTRAINT "trip_legs_dwellSessionId_fkey" FOREIGN KEY ("dwellSessionId") REFERENCES "border_dwell_sessions"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+  CONSTRAINT "trip_legs_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE
+  CONSTRAINT "trip_legs_tripId_fkey" FOREIGN KEY ("tripId") REFERENCES "trips"("id") ON DELETE CASCADE
+  CONSTRAINT "trip_legs_postId_fkey" FOREIGN KEY ("postId") REFERENCES "border_posts"("id") ON DELETE SET NULL ,
+  CONSTRAINT "trip_legs_dwellSessionId_fkey" FOREIGN KEY ("dwellSessionId") REFERENCES "border_dwell_sessions"("id") ON DELETE SET NULL
 );
 
 CREATE INDEX "trip_legs_companyId_idx" ON "trip_legs"("companyId");
