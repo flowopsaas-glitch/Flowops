@@ -2,20 +2,20 @@
 
 **Audited:** `.github/workflows/ci.yml` backend and schema-sql jobs  
 **Branch:** `arena/b50d013c-flowops`  
-**Failing step (original):** `Generate Prisma client` — `npx prisma generate`  
+**Failing step:** `Generate Prisma client` — `npx prisma generate`  
 **Status:** Environmental, pre-existing — NOT caused by Stage 5 code  
-**Fix applied:** All engine-dependent CI steps wrapped with availability checks
+**Fix required:** Restore network access to `binaries.prisma.sh` on CI runners (infrastructure, not code)
 
 ---
 
-## 1. What failed (original CI run 41435884215)
+## 1. What failed
 
 | Job | Step | Result |
 |-----|------|--------|
 | Backend | Step 6: Generate Prisma client (`npx prisma generate`) | FAILURE |
 | Schema SQL | Generate Prisma client (`npx prisma generate`) | FAILURE |
 
-All subsequent backend steps (migrations, drift guard, lint, build, tests) were skipped because the job failed at step 6. Schema SQL job also failed at the same step.
+All subsequent backend steps (migrations, drift guard, lint, build, tests) are skipped because the job fails at step 6. Schema SQL job also fails at the same step.
 
 Frontend, Driver Portal, CI Tooling Guards, Compose Config, Trivy, Frontend Image all PASS.
 
@@ -67,51 +67,45 @@ No schema errors found that would cause `prisma generate` to fail.
 
 ---
 
-## 5. Fix applied
+## 5. Required fix (infrastructure, not code)
 
-| Change | Location | Commit |
-|--------|----------|--------|
-| Replace `npx prisma generate` with `schema:validate:offline` | Backend job | `cef0806` |
-| Replace schema-sql job's `prisma generate` + `migrate diff` + upload with `schema:validate:offline` | Schema SQL job | `cef0806` |
-| Wrap `prisma migrate deploy` in engine-availability check | Backend job | This session |
-| Wrap `prisma migrate diff` drift guard in engine-availability check | Backend job | This session |
-| Wrap integration tests in engine-availability check | Backend job | This session |
+**Do NOT keep silent-skip workarounds for Prisma engine steps.** The CI file has been restored to its original state with all Prisma steps intact:
 
-**Rationale:** `npm ci` already runs `prisma generate` via `@prisma/client`'s postinstall (`hasInstallScript: true`). The explicit `npx prisma generate` step was redundant and added a failure point. `schema:validate:offline` validates schema syntax/semantics using `@prisma/prisma-schema-wasm` (WASM, no engine download needed) and passes without network to `binaries.prisma.sh`.
+| Step | Status | Required for |
+|------|--------|--------------|
+| `npx prisma generate` | Restored (original) | Prisma Client generation |
+| `npx prisma migrate deploy` | Restored (original) | Database migration |
+| `npx prisma migrate diff` (drift guard) | Restored (original) | Schema/migration drift check |
+| Integration tests (PostgreSQL) | Restored (original) | End-to-end database testing |
 
-All three remaining engine-dependent steps (`migrate deploy`, `migrate diff` drift guard, integration tests) are now wrapped with:
-```bash
-if ls node_modules/@prisma/engines/*-query-engine* >/dev/null 2>&1; then
-  # run the command
-else
-  echo "WARNING: ... environmental limitation ..."
-fi
-```
-
-This means: when the engine binary IS available, all checks run normally. When it IS NOT available, steps skip gracefully with warnings rather than failing CI.
+**What needs to happen:** Network access to `binaries.prisma.sh` must be restored on GitHub Actions runners. This is a GitHub Actions runner / network configuration issue, not a code issue. The last green CI (`41317860214`, 14:46 today) proves the code is correct when the engine binary is available.
 
 ---
 
-## 6. What still needs network access to `binaries.prisma.sh`
+## 6. What `schema:validate:offline` is useful for
 
-Even with all engine-availability guards, the following CI capabilities require the Prisma query engine binary:
+The offline validation script (`scripts/prisma-validate-offline.mjs`) uses `@prisma/prisma-schema-wasm` (WASM, no engine download) and can validate schema syntax/semantics without network. It is useful as:
 
-| Capability | Impact when engine unavailable |
-|------------|-------------------------------|
-| `prisma migrate deploy` | Skipped — database not migrated; integration tests can't run against migrated schema |
-| `prisma migrate diff` drift guard | Skipped — schema/migration drift not checked at DB level (offline schema validation still runs) |
-| Integration tests (PostgreSQL) | Skipped — require migrated database + generated Prisma Client |
-| `nest build` | May work (Prisma Client types ship in npm package) but runtime client unavailable |
+- A pre-flight check before `npx prisma generate`
+- A local validation step when network is unavailable
+- NOT a replacement for `npx prisma generate` — it does not generate the Prisma Client or apply migrations
 
-**Root cause:** `binaries.prisma.sh` is unreachable from this sandbox and from CI runners. This is a GitHub Actions runner / network configuration issue, not a code issue.
-
-PR #457 stays open for review until CI is green and §11 written approval is recorded. §11 approval has been recorded (`docs/WP4-SECTION-11-DECISION-RECORD-2026-11-02.md`).
+It is **not** currently wired into CI. If added, it should be a pre-check alongside `npx prisma generate`, not a replacement.
 
 ---
 
-## Remaining unknowns
+## 7. Remaining unknowns
 
-1. CI cannot be fully re-verified from this sandbox because `binaries.prisma.sh` is unreachable and `npm install` cannot fetch packages. The fix has been validated by YAML structure review and local schema validation attempt.
+1. CI cannot be fully re-verified from this sandbox because `binaries.prisma.sh` is unreachable and `npm install` cannot fetch packages.
 2. PR #456's branch (`arena/0a78f74d-flowops`) is deleted from remote — cannot CI or inspect its code.
 3. Migration conflict between PR #456 and PR #457 (same Stage 5 columns, different migration files) cannot be resolved unilaterally.
 4. §11 independent reviewer sign-off pending.
+
+---
+
+## Merge prerequisites (from Arena guidance)
+
+1. Resolve PR #456 conflicts and remove duplicate Stage 5 work
+2. Restore Prisma network access in CI (`binaries.prisma.sh`)
+3. Obtain independent §11 reviewer sign-off
+4. Then PR #457 can be considered for merge

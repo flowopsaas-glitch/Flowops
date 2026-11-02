@@ -336,8 +336,8 @@ jobs:
 
       - run: npm ci
 
-      - name: Validate Prisma schema (offline)
-        run: npm run schema:validate:offline
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       # An empty prisma/migrations makes `migrate deploy` exit 0 having done
       # nothing, so a job that is supposed to prepare a database reports success
@@ -366,35 +366,16 @@ jobs:
       # Deploy-only: no `|| npx prisma migrate dev` fallback. A failed deploy is
       # a broken migration and must fail the job — `migrate dev` would generate
       # and apply SQL in CI and hide it. (Enforced by release-startup.test.mjs.)
-      #
-      # NOTE: `npx prisma migrate deploy` requires the Prisma query engine
-      # binary from binaries.prisma.sh. If the engine is unavailable
-      # (environmental limitation — binaries.prisma.sh unreachable from this
-      # sandbox), skip with a warning rather than failing CI. Schema validity
-      # is already covered by `schema:validate:offline` earlier in this job.
       - name: Run migrations
-        shell: bash
-        run: |
-          if ls node_modules/@prisma/engines/*-query-engine* >/dev/null 2>&1; then
-            npx prisma migrate deploy
-          else
-            echo "WARNING: Prisma query engine binary not found — skipping prisma migrate deploy"
-            echo "This is an environmental limitation (binaries.prisma.sh unreachable), not a code issue."
-          fi
+        run: npx prisma migrate deploy
 
       # The integration database is now prepared by the migrations above. This
       # guard proves the migrations really do reconstruct prisma/schema.prisma,
       # so a missing or incomplete migration cannot hide behind the test suite.
-      #
-      # NOTE: `npx prisma migrate diff` requires the Prisma query engine
-      # binary from binaries.prisma.sh. If the engine is unavailable
-      # (environmental limitation), skip with a warning — schema validity has
-      # already been covered by `schema:validate:offline` earlier in this job.
       - name: Verify migrations match the schema (drift guard)
         shell: bash
         run: |
-          if ls node_modules/@prisma/engines/*-query-engine* >/dev/null 2>&1; then
-            SHADOW_URL="${DATABASE_URL%/*}/flowops_shadow_test"
+          SHADOW_URL="${DATABASE_URL%/*}/flowops_shadow_test"
           node -e "
             const { Client } = require('pg');
             const url = new URL(process.env.DATABASE_URL);
@@ -431,11 +412,6 @@ jobs:
             '
             echo "::error::Migration drift guard failed (exit $status). Either prisma/migrations no longer reconstruct prisma/schema.prisma — run 'npx prisma migrate dev' against a disposable database and commit the migration it generates — or the guard itself could not run (shadow database $SHADOW_URL)."
             exit 1
-          fi
-          else
-            echo "WARNING: Prisma query engine binary not found — skipping drift guard"
-            echo "Schema already validated offline earlier in this job (schema:validate:offline)."
-            echo "This is an environmental limitation (binaries.prisma.sh unreachable), not a code issue."
           fi
 
       - name: Lint
@@ -522,24 +498,14 @@ jobs:
       # are reachable through the API. So a failing run explains itself twice:
       # as annotations (see scripts/ci-annotate-failures.mjs) and as the raw
       # log on the ci/integration-log scratch branch.
-      #
-      # NOTE: Integration tests require the Prisma query engine binary and a
-      # migrated database (prisma migrate deploy). If the engine is unavailable
-      # (environmental limitation), skip integration tests with a warning.
       - name: Integration tests (PostgreSQL)
         shell: bash
         run: |
-          if ls node_modules/@prisma/engines/*-query-engine* >/dev/null 2>&1; then
-            set +e
-            npm run test:integration -- --json --outputFile integration-report.json 2>&1 | tee integration-tests.log
-            status=${PIPESTATUS[0]}
-            node scripts/ci-test-summary.mjs integration-report.json integration
-            summary_status=$?
-          else
-            echo "WARNING: Prisma query engine binary not found — skipping integration tests"
-            echo "Integration tests require prisma migrate deploy + generated Prisma Client."
-            echo "This is an environmental limitation (binaries.prisma.sh unreachable), not a code issue."
-          fi
+          set +e
+          npm run test:integration -- --json --outputFile integration-report.json 2>&1 | tee integration-tests.log
+          status=${PIPESTATUS[0]}
+          node scripts/ci-test-summary.mjs integration-report.json integration
+          summary_status=$?
           if [ "$status" -ne 0 ]; then
             node scripts/ci-annotate-failures.mjs integration-report.json
             exit "$status"
@@ -595,17 +561,47 @@ jobs:
 
       - run: npm ci
 
-      - name: Validate Prisma schema (offline)
-        run: npm run schema:validate:offline
+      - name: Generate Prisma client
+        run: npx prisma generate
 
-      # NOTE: `npx prisma generate` and `npx prisma migrate diff` (schema SQL
-      # generation) require the Prisma query engine binary, which is downloaded
-      # from binaries.prisma.sh. That host is unreachable from this environment
-      # (confirmed: npx prisma generate and npx prisma validate both time out).
-      # The failure is environmental and pre-existing — it occurs on main as
-      # well and is not caused by any code change. Schema validation below uses
-      # @prisma/prisma-schema-wasm (WASM, no engine download) and passes
-      # without network access to binaries.prisma.sh.
+      - name: Generate schema SQL from empty database
+        run: |
+          mkdir -p ../schema-sql
+          npx prisma migrate diff \
+            --from-empty \
+            --to-schema-datamodel prisma/schema.prisma \
+            --script > ../schema-sql/schema.sql
+          echo "----- first lines -----"
+          head -20 ../schema-sql/schema.sql
+          echo "----- statement count -----"
+          grep -c ';' ../schema-sql/schema.sql || true
+
+      - name: Upload schema SQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-sql
+          path: schema-sql/schema.sql
+          retention-days: 30
+
+      # Artifacts live on blob storage that agent sandboxes and some locked-down
+      # networks cannot reach, so the same file is also published to a throwaway
+      # branch where a plain `git fetch` can read it. Force-pushed every run; it
+      # only ever contains generated SQL and is never merged.
+      - name: Publish SQL to scratch branch
+        working-directory: ${{ github.workspace }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --detach
+          git checkout -B ci/schema-sql
+          mkdir -p backend/prisma/schema-sql
+          # the step runs from the workspace root, where the generator wrote it
+          cp schema-sql/schema.sql backend/prisma/schema-sql/schema.sql
+          git add -f backend/prisma/schema-sql/schema.sql
+          git commit -m "chore(ci): generated schema SQL from ${GITHUB_SHA}"
+          git push --force origin ci/schema-sql
 
   e2e:
     name: E2E Tests
