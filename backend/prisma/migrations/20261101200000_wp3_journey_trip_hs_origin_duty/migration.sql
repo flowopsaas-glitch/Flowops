@@ -183,7 +183,7 @@ CREATE TABLE "trips" (
   "plannedEnd"           TIMESTAMP(3),
   "actualStart"          TIMESTAMP(3),
   "actualEnd"            TIMESTAMP(3),
-  "status"               TEXT NOT NULL DEFAULT 'PLANNED',
+  "status"               TEXT NOT NULL,
   -- ── WP3 Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ─────
   "hsCode"               TEXT,
   "originStatus"         "OriginStatus" NOT NULL DEFAULT 'UNKNOWN',
