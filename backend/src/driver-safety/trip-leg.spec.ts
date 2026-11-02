@@ -375,7 +375,7 @@ describe('TripLegService', () => {
       expect(result.hsCode).toBe('300490');
       expect(result.originStatus).toBe('PREFERENTIAL');
       expect(prisma.trip.update).toHaveBeenCalledWith({
-        where: { id: 'trip-1' },
+        where: { id: 'trip-1', companyId: COMPANY },
         data: expect.objectContaining({
           hsCode: '300490',
           originStatus: 'PREFERENTIAL',
@@ -430,7 +430,7 @@ describe('TripLegService', () => {
 
       expect(result.dutyEstimated).toBe(450);
       expect(prisma.trip.update).toHaveBeenCalledWith({
-        where: { id: 'trip-1' },
+        where: { id: 'trip-1', companyId: COMPANY },
         data: expect.objectContaining({
           dutyEstimated: 450,
           estimateSource: 'AfCFTA e-Tariff Book',
