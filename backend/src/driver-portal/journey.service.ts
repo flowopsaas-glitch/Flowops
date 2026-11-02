@@ -261,7 +261,6 @@ export class JourneyService {
       const update = await this.prisma.journeyUpdate.create({
         data: {
           journeyId,
-          driverId,
           companyId,
           type: payload.type,
           message: payload.message,
