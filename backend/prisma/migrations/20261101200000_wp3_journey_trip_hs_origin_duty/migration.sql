@@ -25,7 +25,7 @@ CREATE TABLE "journeys" (
   "destination"   TEXT,
   "plannedStart"  TIMESTAMP(3),
   "plannedEnd"    TIMESTAMP(3),
-  "status"        "JourneyStatus" NOT NULL,
+  "status"        "JourneyStatus" NOT NULL DEFAULT 'PLANNED',
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"     TIMESTAMP(3) NOT NULL,
 
@@ -47,7 +47,7 @@ CREATE TABLE "journey_stages" (
   "locationName"  TEXT,
   "locationRef"   TEXT,
   "plannedAt"     TIMESTAMP(3),
-  "status"        "JourneyStageStatus" NOT NULL,
+  "status"        "JourneyStageStatus" NOT NULL DEFAULT 'PLANNED',
   "notes"         TEXT,
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"     TIMESTAMP(3) NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE "journey_updates" (
   "clientMessageId"    TEXT,
   "deviceOccurredAt"   TIMESTAMP(3),
   "serverReceivedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "status"             "JourneyUpdateStatus" NOT NULL,
+  "status"             "JourneyUpdateStatus" NOT NULL DEFAULT 'PENDING',
   "createdAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"          TIMESTAMP(3) NOT NULL,
 
@@ -186,7 +186,7 @@ CREATE TABLE "trips" (
   "status"               TEXT NOT NULL,
   -- ── WP3 Stage 5: HS code, origin status, duty ESTIMATED vs ACTUAL ─────
   "hsCode"               TEXT,
-  "originStatus"         "OriginStatus" NOT NULL,
+  "originStatus"         "OriginStatus" NOT NULL DEFAULT 'UNKNOWN',
   "certificateOfOriginRef" TEXT,
   "dutyEstimated"        DOUBLE PRECISION,
   "estimateSource"       TEXT,
