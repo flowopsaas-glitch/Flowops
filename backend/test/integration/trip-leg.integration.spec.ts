@@ -224,7 +224,7 @@ describe('TripLegService (PostgreSQL)', () => {
       driverId: driver.id,
     });
 
-    const session = await seedSession(companyId, post.id, geofence.id, {
+    await seedSession(companyId, post.id, geofence.id, {
       driverId: driver.id,
       state: 'CLOSED',
       enteredAt: new Date('2026-11-01T09:00:00Z'),

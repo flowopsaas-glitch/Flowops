@@ -65,6 +65,7 @@ CREATE TABLE "journey_updates" (
   "id"                 TEXT NOT NULL,
   "companyId"          TEXT NOT NULL,
   "journeyId"          TEXT NOT NULL,
+  "driverId"           TEXT NOT NULL,
   "stageId"            TEXT,
   "type"               "JourneyUpdateType" NOT NULL,
   "message"            TEXT NOT NULL,
@@ -78,6 +79,7 @@ CREATE TABLE "journey_updates" (
   CONSTRAINT "journey_updates_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "journey_updates_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "journey_updates_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "journeys"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "journey_updates_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "drivers"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "journey_updates_stageId_fkey" FOREIGN KEY ("stageId") REFERENCES "journey_stages"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 

@@ -18,7 +18,6 @@ describe('TripLegService', () => {
   let audit: any;
 
   const COMPANY = 'C-ACME';
-  const OTHER_COMPANY = 'C-EVIL';
 
   beforeEach(() => {
     prisma = {

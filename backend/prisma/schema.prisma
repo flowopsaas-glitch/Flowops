@@ -6625,7 +6625,9 @@ model JourneyUpdate {
   companyId      String
   company        Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   journeyId      String
-  journey        Journey             @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  journey        Journey           @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  driverId       String
+  driver         Driver            @relation(fields: [driverId], references: [id], onDelete: Cascade)
   stageId        String?
   stage          JourneyStage?       @relation(fields: [stageId], references: [id], onDelete: SetNull)
   type           JourneyUpdateType
