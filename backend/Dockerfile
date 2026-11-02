@@ -14,6 +14,8 @@ COPY src ./src
 COPY prisma ./prisma
 
 # Generate Prisma client + build
+# Increase Node.js heap for the NestJS TypeScript compilation on memory-constrained hosts (2GB VPS).
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npx prisma generate
 RUN npm run build
 
