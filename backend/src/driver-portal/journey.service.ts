@@ -322,8 +322,6 @@ export class JourneyService {
       where: { id: updateId },
       data: {
         status: JourneyUpdateStatus.ACKNOWLEDGED,
-        acknowledgedAt: new Date(),
-        acknowledgedBy,
       },
       include: {
         stage: { select: { id: true, stageNumber: true, type: true, locationName: true } },
@@ -358,9 +356,6 @@ export class JourneyService {
       where: { id: updateId },
       data: {
         status: JourneyUpdateStatus.RESOLVED,
-        acknowledgedAt: new Date(),
-        acknowledgedBy: resolvedBy,
-        resolutionNote: resolutionNote ?? null,
       },
       include: {
         stage: { select: { id: true, stageNumber: true, type: true, locationName: true } },
