@@ -2,7 +2,8 @@
 
 **Date:** 2026-10-10 · **Round:** 68 · **Status:** surveyed + consolidated into product
 **Source file:** `sources/Annexure 33 Capacity Statement (2).xlsm`
-**SHA-256:** `2d3f591515a339b57fb17e695796dcbe2cc7522ce39c4c329dcb70f325a3515b` (166,356 bytes)
+**SHA-256 (superseded 2026-07-03 revision):** `2d3f591515a339b57fb17e695796dcbe2cc7522ce39c4c329dcb70f325a3515b` (166,356 bytes)
+**SHA-256 (live revision, 2026-10-23):** `d0505e84faa324f07cad03768c07c5a4fc35e9413556c863d3d15ac6b4364c80` (174,170 bytes)
 **Manifest ID:** V4-06 (see `docs/TRIM-SOURCE-RETRIEVAL-MANIFEST-2026-10-04.md` §4)
 
 ## 1. What the file is
@@ -39,11 +40,14 @@ Train Paths Unused &amp; Recovered from TOCs | TOC 1 Allocated Train Paths … T
 
 ## 4. Findings & flags
 
-- **E-33B-01 · sparse allocation cells (genuine source state, preserved).** The TSR / MA /
-  infra-recovery / unused-from-TOC and TOC 1–15 allocation columns are populated for
-  **FY26/27 only** (184 of 207 rows carry any allocation/loss value). FY27/28–FY30/31 rows
-  carry `Theoretical Daily Capacity` alone. Never filled in; the UI shows the empties and
-  flags them.
+- **E-33B-01 · sparse allocation cells — RETIRED 2026-11-03.** In the 2026-07-03 revision the
+  TSR / MA / infra-recovery / unused-from-TOC and TOC 1–15 allocation columns were populated for
+  FY26/27 only (184 of 207 rows carried an allocation/loss value), with FY27/28–FY30/31 rows
+  carrying `Theoretical Daily Capacity` alone. **The 2026-10-23 revision populates them for all
+  five fiscal years** (184 of 207 rows carrying an allocation/loss value in each FY, uniformly), so the flag no longer describes the
+  source and has been removed from the UI. It is kept on record here and in the audit trail
+  (`docs/RAIL-SOURCE-AUDIT-2026-11-03.md` §7) because the earlier ingest reported it as genuine
+  source state — that reporting was accurate for the file it described.
 - **Period discipline.** FY26/27 and FY27/28 fall inside the Network Statement V4 governing
   period (in-force). FY28/29–FY30/31 are forward projections inside the workbook. Every figure
   in the UI is labelled with its FY; values are never substituted across periods.
@@ -75,7 +79,7 @@ delivered snapshot's own constraint cells were empty.
 | Artifact | Path | Content |
 |---|---|---|
 | Data module | `frontend/src/data/railCapacityData.ts` | 1,035 Capacity_DB rows verbatim + FY/route lists + workbook snapshot + formulas |
-| Product page | `frontend/src/pages/RailCapacity.tsx` | `/rail/slots` — FY×route selector, section table (raw + derived), totals, bottleneck, E-33B-01 flag, formula panel, as-delivered snapshot card |
+| Product page | `frontend/src/pages/RailCapacity.tsx` | `/rail/slots` — FY×route selector, section table (raw + derived), totals, bottleneck, full-allocation confirmation (E-33B-01 retired), formula panel, as-delivered snapshot card |
 | Manifest | `docs/TRIM-SOURCE-RETRIEVAL-MANIFEST-2026-10-04.md` §4 | V4-06 row added |
 
 Verification (round 68): `tsc --noEmit` EXIT 0 · `vite build` EXIT 0 · vitest suite passes.

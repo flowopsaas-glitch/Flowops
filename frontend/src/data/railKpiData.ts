@@ -925,7 +925,7 @@ export const corridors: CorridorKpis[] = [
         "label": "Traction Substation Availability",
         "baseline": "0.73",
         "target": "0.9",
-        "comment": "All 4 responsible depots (Vereeniging, Hiedelberg, Ladysmith &amp; Durban) need to restore their substation. They are all performing below 90%"
+        "comment": "All 4 responsible depots (Vereeniging, Hiedelberg, Ladysmith & Durban) need to restore their substation. They are all performing below 90%"
       }
     ],
     "corpusMatch": {

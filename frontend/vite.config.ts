@@ -91,11 +91,23 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 5173,
     strictPort: true,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: 5173,
-    },
+    // Dev-server only (never affects the production build). When the dev server is reached through a
+    // tunnel or a hosted preview, set VITE_DEV_ALLOWED_HOSTS to a comma-separated list of the extra
+    // hostnames to accept, or to "*" to accept any. Left unset, Vite keeps its default protection.
+    allowedHosts: (() => {
+      const raw = process.env.VITE_DEV_ALLOWED_HOSTS?.trim();
+      if (!raw) return undefined;
+      return raw === '*' ? true : raw.split(',').map((h) => h.trim()).filter(Boolean);
+    })(),
+    // Behind a tunnel the browser must open the HMR socket at its own origin, not at localhost, so
+    // only pin an explicit host for plain local development.
+    hmr: process.env.VITE_DEV_ALLOWED_HOSTS
+      ? true
+      : {
+          protocol: 'ws',
+          host: 'localhost',
+          port: 5173,
+        },
     proxy: {
       // Backend (NestJS) listens on PORT=3000 by default (see backend/.env.example).
       // Override for local dev with VITE_DEV_API_PROXY if your backend runs elsewhere.

@@ -62,6 +62,10 @@ export const wantedSources = [
   "Full Publication Notice (V4-11)",
   "✅ DELIVERED — Annexure 20a (Cancel/Re-Schedule Process v4) + 20b (Cancellation reasons v1.3) → /rail/cancellations (round 71)",
   "✅ DELIVERED — Annexure 28 Handshake v2.5 + 29a application form + 29b capacity statement + 35 dispute resolution + V4 Publication Notice → /rail/access (round 72)",
-  "V3 structural set remainder: 32 (ad-hoc slot application), 19a/19b/19c (POSMOR/TWR)",
+  "✅ DELIVERED — Annexure 32 (ad-hoc slot application) → /rail/access (round 73)",
+  "✅ DELIVERED — Annexure 36 Emergency Response Plan (73 pp, 013-TFR-COR-HFES-15007 v4) → /rail/emergency (round 74)",
+  "✅ DELIVERED — Annexure 15 Rail Access Agreement (95 pp, 49 clauses, Annexures A-J) → /rail/agreement (round 74)",
+  "Annexure 36 §8.1 annexures (Crisis Communication Strategy, S.O.A.R, RIC 48-hour report, ICS, PRASA/Gautrain plans) — named by the plan, not supplied",
+  "V3 structural set remainder: 19a/19b/19c (POSMOR/TWR)",
   "Operational actuals (SPRINT OTD, realised transit, TSR logs) → variance Actual leg",
 ];

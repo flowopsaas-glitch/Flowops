@@ -8,7 +8,7 @@ import {
   Layers, ScanLine, Wallet, Gauge, Wrench, Moon, Sun, BarChart2, BarChart3, Activity, Box, Globe, Building2,
   AlertTriangle, Zap, Bot, ShieldCheck, Ship, Train, Handshake, RotateCcw, Calculator, Crown, LifeBuoy, PackageCheck,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Lock, ArrowUpRight, PieChart, Brain,
-  BookOpen, Boxes, Database,
+  BookOpen, Boxes, Database, MapPin,
 } from "lucide-react";
 
 // ✅ FIXED: Went up two folders (../../) to correctly reach src/lib and src/assets
@@ -31,7 +31,7 @@ type NavItem = {
   desc: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  section: "CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN";
+  section: "CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN" | "TRANSACTIONS";
   /** Gate visibility/access against the tenant nav-permission matrix. Items
    *  without a key are always visible (e.g. operational pages without a
    *  dedicated permission flag). */
@@ -162,8 +162,8 @@ function SidebarContent(props: {
   collapsed?: boolean;
   ent?: Entitlements | null;
 }) {
-  const sections: ("CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN")[] =
-    ["CORE", "OPS", "RAIL", "COMMUNICATIONS", "BILLING", "INSIGHTS", "AI", "ADMIN"];
+  const sections: ("CORE" | "OPS" | "RAIL" | "COMMUNICATIONS" | "BILLING" | "INSIGHTS" | "AI" | "ADMIN" | "TRANSACTIONS")[] =
+    ["CORE", "OPS", "RAIL", "COMMUNICATIONS", "BILLING", "INSIGHTS", "AI", "TRANSACTIONS", "ADMIN"];
   const { collapsed } = props;
 
   // Accordion: which sections are open. Default open; a section is folded only
@@ -403,14 +403,23 @@ export default function AppLayout() {
     { section: "RAIL", label: "Occurrence & Policy", desc: "Annexure 41 RSR reporting · Annexure 42 collaboration", to: "/rail/occurrence", icon: ShieldAlert, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Cancellations", desc: "Annexure 20a/20b process & reason attribution", to: "/rail/cancellations", icon: RotateCcw, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Access & Disputes", desc: "Annexure 28/29a/29b/35 processes & timelines", to: "/rail/access", icon: Route, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Access Agreement", desc: "Annexure 15 — clauses, conditions precedent, readiness", to: "/rail/agreement", icon: FileText, perm: "rail", entitlement: "rail" },
+    { section: "RAIL", label: "Emergency Response", desc: "Annexure 36 — activation levels, tribunals, hazmat", to: "/rail/emergency", icon: LifeBuoy, perm: "rail", entitlement: "rail" },
     { section: "RAIL", label: "Daily Handshake", desc: "TOC↔IM deviation reconciliation & disputes (Enterprise)", to: "/rail/handshake", icon: Handshake, perm: "railHandshake", entitlement: "rail" },
     { section: "RAIL", label: "Network Sources", desc: "Provenance, coverage & preserved anomalies", to: "/rail/sources", icon: Database, perm: "rail", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
+    { section: "OPS", label: "Border Dwell", desc: "Border dwell sessions & dwell monitoring", to: "/border-dwell", icon: MapPin },
+    { section: "OPS", label: "Safety Incident Dispatch", desc: "Review & verify safety incidents", to: "/safety-incident-dispatch", icon: ShieldAlert },
+    { section: "OPS", label: "Safety Incident Report", desc: "Report a new safety incident", to: "/safety-incident-report", icon: AlertTriangle },
+    { section: "OPS", label: "Trip Document Pack", desc: "HS code, origin & duty records", to: "/trip-document-pack", icon: FileText },
 
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
     { section: "COMMUNICATIONS", label: "Client Queries", desc: "Customer questions & tickets", to: "/communications/client-queries", icon: MessageCircle, perm: "clientQueries" },
+    { section: "TRANSACTIONS", label: "Transaction Log", desc: "Audit trail of all waybill & trip changes", to: "/transactions", icon: FileText },
+    { section: "TRANSACTIONS", label: "Waybill Transactions", desc: "Waybill state change history", to: "/transactions/waybills", icon: ClipboardList },
+    { section: "TRANSACTIONS", label: "Trip Transactions", desc: "Trip state change history", to: "/transactions/trips", icon: Truck },
 
     { section: "BILLING", label: "Finance Home", desc: "Revenue, AR aging, clients", to: "/finance", icon: BarChart2, perm: "invoices" },
     { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
@@ -493,7 +502,7 @@ export default function AppLayout() {
     [nav, perms, isTenantAdmin, isAuthenticated, features],
   );
 
-  const grouped = useMemo(() => ({
+    const grouped = useMemo(() => ({
     CORE: visibleNav.filter(i => i.section === "CORE"),
     OPS: visibleNav.filter(i => i.section === "OPS"),
     RAIL: visibleNav.filter(i => i.section === "RAIL"),
@@ -501,6 +510,7 @@ export default function AppLayout() {
     BILLING: visibleNav.filter(i => i.section === "BILLING"),
     INSIGHTS: visibleNav.filter(i => i.section === "INSIGHTS"),
     AI: visibleNav.filter(i => i.section === "AI"),
+    TRANSACTIONS: visibleNav.filter(i => i.section === "TRANSACTIONS"),
     ADMIN: visibleNav.filter(i => i.section === "ADMIN"),
   }), [visibleNav]);
 

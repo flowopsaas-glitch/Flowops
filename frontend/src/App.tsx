@@ -39,6 +39,11 @@ const InvoiceDraftsPage = lazy(() => import("./pages/InvoiceDrafts"));
 const ProofPayments = lazy(() => import("./pages/ProofPayments"));
 const FleetDutyBoard = lazy(() => import("./pages/FleetDutyBoard"));
 const TripLegsBoard = lazy(() => import("./pages/TripLegsBoard"));
+const BorderDwellBoard = lazy(() => import("./pages/BorderDwellBoard"));
+const SafetyIncidentDispatch = lazy(() => import("./pages/SafetyIncidentDispatch"));
+const SafetyIncidentReport = lazy(() => import("./pages/SafetyIncidentReport"));
+const TripDocumentPack = lazy(() => import("./pages/TripDocumentPack"));
+const TransactionLog = lazy(() => import("./pages/TransactionLog"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 // Surfaces the tenant's shareable customer booking-portal + public tracking links.
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
@@ -69,6 +74,8 @@ const RailOccurrence = lazy(() => import("./pages/RailOccurrence"));
 const RailStatement = lazy(() => import("./pages/RailStatement"));
 const RailCancellation = lazy(() => import("./pages/RailCancellation"));
 const RailAccess = lazy(() => import("./pages/RailAccess"));
+const RailEmergency = lazy(() => import("./pages/RailEmergency"));
+const RailAgreement = lazy(() => import("./pages/RailAgreement"));
 const RailSources = lazy(() => import("./pages/RailSources"));
 const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const SadcCorridorsPage = lazy(() => import("./pages/forwarding/SadcCorridors"));
@@ -345,6 +352,8 @@ export default function App() {
               <Route path="/rail/statement" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailStatement /></RequireFeature></RequirePermission>} />
               <Route path="/rail/cancellations" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailCancellation /></RequireFeature></RequirePermission>} />
               <Route path="/rail/access" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailAccess /></RequireFeature></RequirePermission>} />
+              <Route path="/rail/emergency" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailEmergency /></RequireFeature></RequirePermission>} />
+              <Route path="/rail/agreement" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailAgreement /></RequireFeature></RequirePermission>} />
               <Route path="/rail/sources" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailSources /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/sadc-corridors" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><SadcCorridorsPage /></RequireFeature></RequirePermission>} />
@@ -373,6 +382,13 @@ export default function App() {
               <Route path="/fleet-intelligence" element={<FleetIntelligence />} />
               <Route path="/safety-zones" element={<SafetyZones />} />
               <Route path="/trip-legs" element={<TripLegsBoard />} />
+              <Route path="/border-dwell" element={<BorderDwellBoard />} />
+              <Route path="/safety-incident-dispatch" element={<SafetyIncidentDispatch />} />
+              <Route path="/safety-incident-report" element={<SafetyIncidentReport />} />
+              <Route path="/trip-document-pack" element={<TripDocumentPack />} />
+              <Route path="/transactions" element={<TransactionLog />} />
+              <Route path="/transactions/waybills" element={<TransactionLog />} />
+              <Route path="/transactions/trips" element={<TransactionLog />} />
               <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
               <Route path="/wms/cross-dock" element={<RequireFeature feature="warehouseManagement" name="Cross-Docking"><WmsCrossDocking /></RequireFeature>} />
               <Route path="/wms/waves" element={<RequireFeature feature="warehouseManagement" name="Wave Planning"><WmsWavePlanning /></RequireFeature>} />
