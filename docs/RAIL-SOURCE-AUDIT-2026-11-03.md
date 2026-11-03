@@ -46,7 +46,7 @@ named by the register but was never supplied, and cannot be reconstructed (see �
 | 22 | `Annexure_33a_NS_ver_4 (3).zip` | `d529fd46…` | corpus (672 files) | `/rail/timetable` | ingested |
 | 23 | `Release of Final NS V4_18 September 2026_Final (1).pdf` | `de8c5065…` | `railAccessData.ts` | `/rail/access` | ingested |
 | 24 | `TRIM Network Statement 18 September 2026 (1).pdf` | `6e7ad24b…` | `railStatementData.ts` | `/rail/statement` | ingested |
-| 25 | `annexure33a-full-raw.tsv` | `e3b0c442…` (**0 bytes**) | — | — | **removed this round** |
+| 25 | `annexure33a-full-raw.tsv` | `e3b0c442…` (**0 bytes**) | — | — | **removed this round** (see §6 for the two later re-uploads) |
 
 ---
 
@@ -178,9 +178,11 @@ targets only, so every KPI variance view remains *planned* versus *target*, neve
 cd frontend
 ./node_modules/.bin/tsc --project tsconfig.app.json --noEmit   # EXIT 0
 npm run lint                                                    # EXIT 0 — 0 errors, 33 warnings (pre-existing class)
-npx vitest run                                                  # 62 files, 996/996 pass
-npm run build                                                   # built in 26.4 s, PWA precache 201 entries
+npx vitest run                                                  # 63 files, 1,007/1,007 pass
+npm run build                                                   # ok, PWA precache 201 entries
 ```
+
+(Re-run after §6: 63 files, 1,007/1,007 pass — the extra 11 are `RailAnnexure33Verification.test.ts`.)
 
 New test file `src/pages/RailAnnexure15And36.test.tsx` (15 tests) asserts the guardrails rather than
 just the render: the Access Seeker placeholder is shown as a placeholder, the unexecuted-form warning
@@ -189,3 +191,78 @@ controlled tariff source, all three activation levels carry distinct codes, the 
 covers A–E, and — as a regression guard on Finding 2 — **every Annexure C rate is asserted equal to
 the corresponding NS V4 Table 17 row**. If either document is re-issued with different numbers, that
 test fails.
+
+---
+
+## 6. Verification round — re-uploaded Annexure 33 pair (2026-11-03, later)
+
+The user re-uploaded two files through the GitHub web interface at repo root:
+
+- `Annexure 33 Capacity Statement (2).xlsm`
+- `Annexure 33_Network Register June 2026 F (2).pdf` (note the `(2)` suffix; `sources/` holds `(1)`)
+
+### 6.1 Both files are byte-identical duplicates
+
+| Uploaded at root | SHA-256 | Matches |
+|---|---|---|
+| `Annexure 33 Capacity Statement (2).xlsm` | `2d3f591515a339b57fb17e695796dcbe2cc7522ce39c4c329dcb70f325a3515b` | `sources/Annexure 33 Capacity Statement (2).xlsm` — identical |
+| `Annexure 33_Network Register June 2026 F (2).pdf` | `1e2842cbf88c9382a18c604240a79cee985e85f7966fd90a081cdb12b68c9fa0` | `sources/Annexure 33_Network Register June 2026 F (1).pdf` — identical |
+
+Neither is a new revision. The `(2)` on the register is the browser's download-dedupe suffix, not a
+document version — the PDF itself is still Network Register **v0.3, 26 June 2026**. Both root copies
+were removed, following the round-72 precedent (a re-uploaded Annexure 15 was deduped against
+`sources/` rather than copied); the controlled originals in `sources/` are untouched and their hashes
+still match the values stamped in `railCapacityData.ts` and `railRegisterData.ts`.
+
+### 6.2 Content re-verified against the built data
+
+**Capacity Statement (33b)** — full field-by-field comparison of all **1,035** `Capacity_DB` rows
+against `railCapacityData.ts`: 12 key/identity fields plus 20 numeric fields per row
+(theoretical daily capacity, TSR loss, MA loss, infra recovery, unused/recovered, and all 15
+TOC allocation columns).
+
+- **0 numeric mismatches** across 20,700 numeric cells.
+- Row count matches exactly: the workbook's `Capacity_DB` sheet has 1,416 `<row>` elements, of which
+  1,036 carry values — 1 header + **1,035 data rows**, which is what the module declares.
+- Sheet inventory matches: `Capacity Statement`, `Capacity_DB`, `Lists`; capacity factor 0.65;
+  five fiscal years FY26/27–FY30/31; 10 routes.
+
+**Network Register (33)** — 8 pages, `Annexure 33 – Network Register (June 2026_v0.3)`, dated
+June 26 2026, "Applicable for the 2026/27 timetable" — all confirmed in the re-uploaded text.
+The E-33REG-01 anomaly is present exactly as recorded: route 9 and route 10 both print
+"General Freight: Musina - Pyramid South/Hoedspruit", and
+"General Freight: Vereeniging/Danskraal to East London" appears **zero** times in the register
+(though it exists in the 33b `Capacity_DB` with 195 rows).
+
+### 6.3 Two defects found and fixed
+
+**Defect 1 — the workbook's XML escaping leaked to the screen (132 strings).**
+The `.xlsm` shared strings store the coal export route as
+`General Freight &amp; Export Coal: Lephalale to Richards Bay`. That is an XML-escaping artifact of
+the file, not authored text, and `railCapacityData.ts` had preserved it verbatim. Two consequences:
+
+- The Slots & Capacity route dropdown rendered the literal characters `&amp;`, because React prints
+  a JS string as-is — no entity decoding happens.
+- Row `key` fields had been hand-normalised to `&` while `route` fields kept `&amp;`, so a row's key
+  no longer equalled `fy|route|order`.
+
+Both are now decoded to `&`. The decision follows E-AMP-01 (the 33a corpus keeps the extract's
+decoded `&`) and is corroborated by the Network Register, which prints the same route with a plain
+`&`. The module header records the reasoning so a future re-import does not silently reintroduce it.
+The same artifact was fixed in one user-visible comment string in `railKpiData.ts`.
+
+**Defect 2 — main's history had been replaced by an orphan commit.**
+The web-interface upload (commit `5bdb81a`, "Add files via upload") arrived as a **root commit with
+no parent**, and its tree is `aef4f92`'s tree plus the two duplicate files — i.e. all prior history
+(`aef4f92` and everything before it) is no longer an ancestor of `main`. This branch was rebased onto
+`5bdb81a` so the pull request keeps a shared ancestor and can merge normally. Nothing in the file
+trees was lost: the only content difference between `aef4f92` and `5bdb81a` is the two duplicates
+removed in §6.1.
+
+### 6.4 Regression guard
+
+`frontend/src/pages/RailAnnexure33Verification.test.ts` (11 tests) locks in the properties this
+round actually checked: 1,035 rows, 10 routes × 5 FYs, unique keys, `key === fy|route|order` for
+every row, every dropdown route resolving to real rows and vice-versa, 15 TOC columns per row, no
+`&amp;` in any rendered string, the coal route spelled as the register spells it, the register's
+declared identity, and the E-33REG-01 anomaly reproduced rather than corrected.
