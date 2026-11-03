@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import RailCapacity from "./RailCapacity";
 import { capacityDb, capacityFYs, capacityRoutes } from "../data/railCapacityData";
+import { routeHeadroom } from "../data/railCapacityAnalysis";
 
 /**
  * Behavioural tests for `/rail/slots` against the 2026-10-23 revision of the Capacity Statement.
@@ -56,16 +57,49 @@ describe("Slots & Capacity page — 2026-10-23 revision", () => {
     }
   });
 
+  it("shows route ceilings per route, tightest first, and never presents a section sum as capacity", () => {
+    mount();
+    const table = screen.getByRole("table", { name: "Route ceiling" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(capacityRoutes.length);
+
+    const expected = routeHeadroom("FY26/27");
+    // Tightest route must lead, and the row must carry the bottleneck section rather than a total.
+    expect(within(rows[0]).getByText(expected[0].route)).toBeInTheDocument();
+    expect(within(rows[0]).getByText(expected[0].bottleneckSections.join(" · "))).toBeInTheDocument();
+
+    expect(screen.getByText(/not route capacity/i)).toBeInTheDocument();
+    expect(screen.getByText(/narrowest\s+section/i)).toBeInTheDocument();
+  });
+
+  it("states that the five years are a restatement, not a forecast", () => {
+    mount();
+    expect(screen.getByText(/TOC allocation is identical in all five years/i)).toBeInTheDocument();
+    expect(screen.getByText(/Theoretical capacity changes on 3 sections/i)).toBeInTheDocument();
+  });
+
+  it("moves the network view with the selected fiscal year", () => {
+    mount();
+    const fySelect = screen.getByLabelText(/Financial year/i) as HTMLSelectElement;
+    fireEvent.change(fySelect, { target: { value: "FY30/31" } });
+
+    const table = screen.getByRole("table", { name: "Route ceiling" });
+    const expected = routeHeadroom("FY30/31");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByText(expected[0].route)).toBeInTheDocument();
+    expect(screen.getByText(/FY30\/31 · tightest first/)).toBeInTheDocument();
+  });
+
   it("keeps every route selectable and shows the revised East London sections", () => {
     mount();
-    const routeSelect = screen.getByLabelText(/Route/i) as HTMLSelectElement;
+    const routeSelect = screen.getByLabelText(/^Route$/i) as HTMLSelectElement;
     expect([...routeSelect.options].map((o) => o.value)).toEqual(capacityRoutes);
 
     const eastLondon = capacityRoutes.find((r) => r.includes("Vereeniging/Danskraal"));
     expect(eastLondon).toBeDefined();
     fireEvent.change(routeSelect, { target: { value: eastLondon } });
 
-    const table = screen.getByRole("table");
+    const table = screen.getByRole("table", { name: "Section capacity" });
     expect(within(table).getByText(/BETHLEHEM \(E\) - ARLINGTON \(E\)/)).toBeInTheDocument();
     expect(within(table).getByText(/GUNHILL SOUTH \(I\) - KROONSTAD \(E\)/)).toBeInTheDocument();
   });

@@ -494,3 +494,99 @@ npm run lint                               0 errors, 33 warnings
 npx vitest run                             65 files, 1,037/1,037 pass
 npm run build                              ok, PWA precache 202 entries
 ```
+
+## 9. Capacity ceilings — the sum was wrong as a capacity measure (2026-11-03, later again)
+
+`/rail/slots` has always shown per-section rows with a stat row at the top that **adds them**. That
+addition is arithmetically correct and operationally meaningless: a train path occupies one slot on
+every section it traverses, so a route's ceiling is its **narrowest** section, not the total of all
+of them. The Johannesburg–Durban route has 41 sections; the page's "Theoretical daily (sum)" of 2,077
+reads as if the corridor could pass 2,077 trains a day when its ceiling is a fraction of a percent of
+that.
+
+The sum is still shown — it is a real property of the deliverable, and hiding it would be its own
+distortion — but it now carries a note saying what it is not, and a new panel derives the figure that
+matters.
+
+### 9.1 Route ceiling
+
+`frontend/src/data/railCapacityAnalysis.ts` reduces each route/FY to its bottleneck section:
+
+```
+ceiling          = min(theoreticalDaily) over open sections
+practical/day    = round(0.65 x ceiling)
+weekly ceiling   = practical/day x 7
+allocated        = sum(tocAllocated TOC 1..15) on that bottleneck section only
+spare            = weekly ceiling - allocated
+utilisation      = allocated / weekly ceiling
+```
+
+Allocation is deliberately **not** summed across sections. Allocations recorded on different sections
+describe different traffic over the same line; adding them would double-count every path that runs
+more than one section, which is nearly all of them. The panel says so.
+
+Sections whose depot reads `(Line Closed)` are excluded from the ceiling and counted in the row
+caption — a theoretical figure on a closed line cannot be sold. One such section exists in the
+workbook (`KAAPMUIDEN (E) - BARBERTON (I)`, Eastern Mainline).
+
+### 9.2 What the five years actually contain
+
+The 2026-10-23 revision populates TSR / maintenance / infrastructure-recovery / unused / fifteen TOC
+columns for all five fiscal years. Computed comparison against FY26/27 (`fyConsistency`):
+
+| Compared with FY26/27 | Sections differing |
+|---|---:|
+| TOC allocation (all 15 columns) | **0** |
+| TSR / MA / infrastructure recovery / unused from TOCs | **0** |
+| Theoretical daily capacity | **3** |
+
+The three capacity cells are all on Johannesburg–Durban, all applying from FY27/28 onward:
+
+- `CHAILEY (E) - KRANSKOP (I)` — 14 → 15
+- `DONNYBROOK (E) - FRANKLIN (I)` — 15 → 16
+- `FRANKLIN (E) - MATATIELE (I)` — 12 → 13
+
+**Consequence:** FY27/28–FY30/31 allocation is a restatement of FY26/27, not a committed allocation
+plan. The page states this in words generated from the same computation, so the claim cannot drift
+from the data. It matters commercially: four of the five years look like a forecast and are not one.
+
+### 9.3 Position the panel produces (FY26/27, tightest first)
+
+The table below was printed by `routeHeadroom("FY26/27")`, not written out by hand.
+
+| Route | Ceiling/day | Weekly ceiling | Allocated wk | Spare wk | Utilisation |
+|---|---:|---:|---:|---:|---:|
+| Manganese | 11 | 49 | 42 | 7 | 86% |
+| Eastern Mainline: Rayton to Komatipoort/Richards Bay | 13 | 56 | 44 | 12 | 79% |
+| Ore | 12 | 56 | 43 | 13 | 77% |
+| Magnetite | 14 | 63 | 31 | 32 | 49% |
+| GF & Export Coal: Lephalale–Richards Bay | 7 | 35 | 9 | 26 | 26% |
+| GF: Vereeniging/Danskraal–East London | 8 | 35 | 8 | 27 | 23% |
+| GF: Mafikeng–Beaconsfield/Potchefstroom | 6 | 28 | 3 | 25 | 11% |
+| GF: Johannesburg–Cape Town | 21 | 98 | 9 | 89 | 9% |
+| GF: Musina–Pyramid South/Hoedspruit | 13 | 56 | 3 | 53 | 5% |
+| GF: Johannesburg–Durban | 11 | 49 | 0 | 49 | 0% |
+
+Three things follow that the summed figures concealed:
+
+1. **The tight routes are the bulk corridors, not the big ones.** Manganese (86%), the Eastern
+   Mainline (79%) and Ore (77%) are the only routes above 70%. The General Freight corridors — the
+   ones with the most sections and the largest sums — have the most headroom.
+2. **Section count is not capacity.** Johannesburg–Durban's 41 sections reduce to 11 trains a day at
+   its binding section; Mafikeng's 17 sections reduce to 6. Conversely Johannesburg–Cape Town's 30
+   sections still clear 21 a day.
+3. **Zero allocation at the binding section does not mean an idle corridor.** Johannesburg–Durban
+   shows 0% because nothing is allocated on `FRANKLIN (E) - MATATIELE (I)` specifically, while other
+   sections of the same route carry allocations. The honest reading is that the recorded allocation
+   is section-specific, which is precisely why the panel refuses to total it.
+
+### 9.4 Verification
+
+```
+tsc --project tsconfig.app.json --noEmit   0
+npx vitest run                             see §10
+```
+
+`railCapacityAnalysis.test.ts` (10 tests) proves the ceiling is the minimum over open sections, that
+it is never larger than the summed figure, that allocation never exceeds the ceiling, and pins the
+three-cell year-on-year finding so a future revision cannot silently invalidate the page copy.
