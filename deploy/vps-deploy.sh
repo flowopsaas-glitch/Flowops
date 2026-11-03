@@ -198,6 +198,17 @@ ok "No container publishes a port on 0.0.0.0"
 HEALTH=$($COMPOSE exec -T api sh -c 'wget -qO- http://localhost:3000/health 2>/dev/null || true')
 echo "api /health -> ${HEALTH:-<no response>}"
 
+# A healthy container is not proof that the browser is being served *this* build: nginx answers
+# /healthz from a static file that never changes, so a frontend-only change that was not rebuilt
+# deploys "successfully" and serves the previous bundle. Prove it by checking the routes in
+# frontend/src/App.tsx against the entry chunk the container is actually serving.
+if [[ "${SKIP_POST_DEPLOY_CHECK:-0}" != "1" && -x "$SCRIPT_DIR/post-deploy-check.sh" ]]; then
+  log "Checking that the deployed bundle is this build"
+  if ! "$SCRIPT_DIR/post-deploy-check.sh"; then
+    die "The stack is up but the frontend is not serving this checkout's routes. Nothing was rolled back — rebuild and re-run."
+  fi
+fi
+
 cat <<'EOF'
 
 ──────────────────────────────────────────────────────────────────────
@@ -212,6 +223,8 @@ Deploy complete.
 
 Next:
   • Confirm Cloudflare ingress maps app.flowop.work -> http://frontend:80
+  • Prove the running frontend is serving this build:
+      ./deploy/post-deploy-check.sh        # every route in App.tsx vs the served bundle
   • Debug the frontend from the host with:
       docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
         exec frontend curl -fsS localhost:80/healthz
