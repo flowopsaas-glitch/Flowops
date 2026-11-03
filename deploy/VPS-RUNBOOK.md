@@ -126,6 +126,22 @@ deploy`, applies the plan-limit preflight, and checks health. **Always rebuilds
 the frontend image**, so SPA changes actually ship (a baked-in stale `dist` was
 a recurring dev gotcha).
 
+### Checking that the deploy actually shipped
+
+A container reports healthy as soon as nginx answers `/healthz`, and that file never changes — so a
+frontend-only merge can deploy "successfully" while the browser is still being served the previous
+bundle. `vps-deploy.sh` therefore ends with a bundle check, and the same check can be run on its own:
+
+```bash
+./deploy/post-deploy-check.sh          # every route in App.tsx vs the bundle being served
+./deploy/vps-deploy.sh                 # runs it automatically (SKIP_POST_DEPLOY_CHECK=1 to bypass)
+```
+
+It reads the route paths out of `frontend/src/App.tsx`, fetches the entry chunk the running frontend
+is actually serving, and fails if any route is missing. Exit code 0 means the deployed bundle is the
+one built from this checkout. Route paths survive minification, so this is a real equality check on
+the artifact — not a guess from timestamps.
+
 The script's migration invocation is not a replacement for an approved
 production release procedure. Before applying a migration to an existing
 database, take and verify a backup, rehearse against a clone, and follow the
