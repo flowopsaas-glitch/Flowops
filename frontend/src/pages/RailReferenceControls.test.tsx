@@ -12,6 +12,8 @@ import RailInvestment from "./RailInvestment";
 import RailKpis from "./RailKpis";
 import RailRegister from "./RailRegister";
 import RailSources from "./RailSources";
+import RailEmergency from "./RailEmergency";
+import RailAgreement from "./RailAgreement";
 
 const mount = (node: ReactNode) => render(<MemoryRouter>{node}</MemoryRouter>);
 const referencePages = [
@@ -25,6 +27,8 @@ const referencePages = [
   { name: "Network sources", Page: RailSources },
   { name: "Network statement", Page: RailStatement },
   { name: "Tariffs & charges", Page: RailTariffs },
+  { name: "Emergency response", Page: RailEmergency },
+  { name: "Access agreement", Page: RailAgreement },
 ];
 
 afterEach(cleanup);

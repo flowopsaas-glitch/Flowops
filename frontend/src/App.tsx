@@ -74,6 +74,8 @@ const RailOccurrence = lazy(() => import("./pages/RailOccurrence"));
 const RailStatement = lazy(() => import("./pages/RailStatement"));
 const RailCancellation = lazy(() => import("./pages/RailCancellation"));
 const RailAccess = lazy(() => import("./pages/RailAccess"));
+const RailEmergency = lazy(() => import("./pages/RailEmergency"));
+const RailAgreement = lazy(() => import("./pages/RailAgreement"));
 const RailSources = lazy(() => import("./pages/RailSources"));
 const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const SadcCorridorsPage = lazy(() => import("./pages/forwarding/SadcCorridors"));
@@ -350,6 +352,8 @@ export default function App() {
               <Route path="/rail/statement" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailStatement /></RequireFeature></RequirePermission>} />
               <Route path="/rail/cancellations" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailCancellation /></RequireFeature></RequirePermission>} />
               <Route path="/rail/access" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailAccess /></RequireFeature></RequirePermission>} />
+              <Route path="/rail/emergency" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailEmergency /></RequireFeature></RequirePermission>} />
+              <Route path="/rail/agreement" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailAgreement /></RequireFeature></RequirePermission>} />
               <Route path="/rail/sources" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailSources /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/sadc-corridors" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><SadcCorridorsPage /></RequireFeature></RequirePermission>} />
