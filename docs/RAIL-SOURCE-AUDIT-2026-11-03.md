@@ -526,8 +526,14 @@ describe different traffic over the same line; adding them would double-count ev
 more than one section, which is nearly all of them. The panel says so.
 
 Sections whose depot reads `(Line Closed)` are excluded from the ceiling and counted in the row
-caption — a theoretical figure on a closed line cannot be sold. One such section exists in the
-workbook (`KAAPMUIDEN (E) - BARBERTON (I)`, Eastern Mainline).
+caption — a theoretical figure on a closed line cannot be sold. There are **18** such rows in each
+fiscal year (the old Noupoort–East London alignment, the Natal branches, and the Mafikeng–Vermaas
+line among them), and every one of them carries zero allocation.
+
+The exclusion is a judgement, so its effect is measured rather than assumed: on **every route in
+every one of the five years, the binding section is an open one**, so excluding the closed sections
+changes no ceiling. `railCapacityAnalysis.test.ts` asserts exactly that, and will fail if a future
+revision makes a closed section the binding one — at which point the page copy has to change.
 
 ### 9.2 What the five years actually contain
 
@@ -587,6 +593,7 @@ tsc --project tsconfig.app.json --noEmit   0
 npx vitest run                             see §10
 ```
 
-`railCapacityAnalysis.test.ts` (10 tests) proves the ceiling is the minimum over open sections, that
-it is never larger than the summed figure, that allocation never exceeds the ceiling, and pins the
-three-cell year-on-year finding so a future revision cannot silently invalidate the page copy.
+`railCapacityAnalysis.test.ts` (11 tests) proves the ceiling is the minimum over open sections, that
+it is never larger than the summed figure, that allocation never exceeds the ceiling, that closed
+sections bind no ceiling, and pins the three-cell year-on-year finding so a future revision cannot
+silently invalidate the page copy.

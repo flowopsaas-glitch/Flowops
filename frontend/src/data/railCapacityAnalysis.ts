@@ -45,6 +45,10 @@ export interface RouteHeadroom {
   utilisationPct: number;
   /** Sum of every section's theoretical daily capacity — shown only to contrast with the ceiling. */
   summedTheoreticalDaily: number;
+  /** Minimum over *all* sections, closed ones included — the ceiling if closures were disregarded. */
+  allSectionsCeiling: number;
+  /** True when counting the closed sections would lower the ceiling (it does not, in this file). */
+  closedSectionsBind: boolean;
 }
 
 const byOrder = (a: CapacityRow, b: CapacityRow) => Number(a.order) - Number(b.order) || a.key.localeCompare(b.key);
@@ -93,6 +97,8 @@ export function routeHeadroom(fy: string, rows: CapacityRow[] = capacityDb): Rou
       bottleneckSpare,
       utilisationPct: routeWeeklyPractical === 0 ? 0 : Math.round((bottleneckAllocated / routeWeeklyPractical) * 100),
       summedTheoreticalDaily: all.reduce((sum, r) => sum + num(r.theoreticalDaily), 0),
+      allSectionsCeiling: Math.min(...all.map((r) => num(r.theoreticalDaily))),
+      closedSectionsBind: Math.min(...all.map((r) => num(r.theoreticalDaily))) < minTheoretical,
     });
   }
 

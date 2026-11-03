@@ -233,6 +233,9 @@ export default function RailCapacity() {
             among open sections, times the workbook&apos;s capacity factor ({capacitySource.capacityFactor}),
             times seven. Allocation is shown for that bottleneck section only — allocations recorded
             on other sections are not summed, because they describe different traffic over the same line.
+            Sections whose depot reads &quot;(Line Closed)&quot; carry a theoretical figure that cannot be
+            sold and are excluded; on every route in every year the binding section is an open one, so
+            the exclusion lowers no ceiling.
           </p>
         </header>
         <div className="overflow-x-auto">

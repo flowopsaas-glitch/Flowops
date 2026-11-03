@@ -60,6 +60,17 @@ describe("route headroom", () => {
     expect(r.bottleneckSections).not.toContain(closed[0].section);
   });
 
+  it("proves that excluding closed lines changes no route ceiling", () => {
+    // The exclusion is a judgement, so its effect must be visible rather than assumed. If a future
+    // revision makes a closed section the binding one, the page copy has to say so — this fails.
+    for (const fy of capacityFYs) {
+      for (const r of routeHeadroom(fy)) {
+        expect(r.closedSectionsBind, `${r.route} ${fy}: a closed section now binds the ceiling`).toBe(false);
+        expect(r.allSectionsCeiling).toBe(r.bottleneckTheoreticalDaily);
+      }
+    }
+  });
+
   it("reads allocation as a weekly figure consistent with the weekly ceiling", () => {
     const row = capacityDb.find((r) => r.fy === "FY26/27")!;
     expect(sectionAllocated(row)).toBe(row.tocAllocated.reduce<number>((s, v) => s + num(v), 0));
