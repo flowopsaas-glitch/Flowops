@@ -10,6 +10,7 @@ import {
   workbookSnapshot,
   type CapacityRow,
 } from "../data/railCapacityData";
+import { fyConsistencyStatement, routeHeadroom } from "../data/railCapacityAnalysis";
 
 /**
  * Slots & Capacity page — built round 68 from Annexure 33 Capacity Statement (2).xlsm (V4-06);
@@ -62,6 +63,10 @@ export default function RailCapacity() {
     const minTheo = Math.min(...derived.map(({ d }) => d.theo));
     return derived.filter(({ d }) => d.theo === minTheo).map(({ r }) => r.section || "(blank section)");
   }, [derived]);
+
+  const headroom = useMemo(() => routeHeadroom(fy), [fy]);
+  const tightest = headroom[0] ?? null;
+  const yearlyStatement = useMemo(() => fyConsistencyStatement(), []);
 
   const hasAllocations = derived.some(
     ({ r }) => num(r.lostTSR) !== 0 || num(r.lostMA) !== 0 || r.tocAllocated.some((t) => num(t) !== 0),
@@ -140,6 +145,13 @@ export default function RailCapacity() {
         ))}
       </div>
 
+      <p className="text-[11px] text-slate-500">
+        The &quot;(sum)&quot; figures add the section rows. That is arithmetic, not route capacity, and the
+        allocation totals add the same way. A train path occupies a slot on every section it
+        traverses, so the ceiling is the narrowest section (see the network panel below), not the
+        total of them.
+      </p>
+
       {bottleneck && bottleneck.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           <b>Bottleneck section(s) (derived: minimum theoretical daily capacity on this route/FY):</b>{" "}
@@ -155,7 +167,7 @@ export default function RailCapacity() {
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="min-w-full text-left text-xs">
+        <table aria-label="Section capacity" className="min-w-full text-left text-xs">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-2 py-2">#</th>
@@ -209,6 +221,89 @@ export default function RailCapacity() {
           </tbody>
         </table>
       </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <header className="border-b border-slate-200 px-3 py-2">
+          <h2 className="text-sm font-semibold text-slate-800">
+            Route ceiling across the network
+            <span className="ml-2 text-[11px] font-normal text-slate-500">{fy} · tightest first</span>
+          </h2>
+          <p className="mt-0.5 max-w-4xl text-[11px] text-slate-600">
+            Each route is reduced to the section that binds it: minimum theoretical daily capacity
+            among open sections, times the workbook&apos;s capacity factor ({capacitySource.capacityFactor}),
+            times seven. Allocation is shown for that bottleneck section only — allocations recorded
+            on other sections are not summed, because they describe different traffic over the same line.
+            Sections whose depot reads &quot;(Line Closed)&quot; carry a theoretical figure that cannot be
+            sold and are excluded; on every route in every year the binding section is an open one, so
+            the exclusion lowers no ceiling.
+          </p>
+        </header>
+        <div className="overflow-x-auto">
+          <table aria-label="Route ceiling" className="min-w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-2">Route</th>
+                <th className="px-3 py-2">Bottleneck section</th>
+                <th className="px-3 py-2 text-right">Theo/day</th>
+                <th className="px-3 py-2 text-right">Practical/day</th>
+                <th className="px-3 py-2 text-right">Weekly ceiling</th>
+                <th className="px-3 py-2 text-right">Allocated wk</th>
+                <th className="px-3 py-2 text-right">Spare wk</th>
+                <th className="px-3 py-2 text-right">Utilisation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {headroom.map((h) => (
+                <tr key={h.route} className="border-b border-slate-100 last:border-0">
+                  <td className="px-3 py-1.5 font-medium text-slate-800">
+                    {h.route}
+                    <span className="ml-2 text-[10px] font-normal text-slate-400">
+                      {h.sections} open {h.sections === 1 ? "section" : "sections"}
+                      {h.closedSections.length > 0 && (
+                        <> · {h.closedSections.length} closed excluded</>
+                      )}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-slate-600">
+                    {h.bottleneckSections.join(" · ")}
+                    <span className="ml-2 text-[10px] text-slate-400">{h.bottleneckDepot}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{h.bottleneckTheoreticalDaily}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{h.routePracticalDaily}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{h.routeWeeklyPractical}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{h.bottleneckAllocated}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{h.bottleneckSpare}</td>
+                  <td className="px-3 py-1.5 text-right">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
+                        h.utilisationPct >= 70
+                          ? "bg-rose-100 text-rose-800"
+                          : h.utilisationPct >= 40
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      {h.utilisationPct}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="space-y-1 border-t border-slate-200 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
+          {tightest && (
+            <p>
+              <b className="text-slate-800">Tightest route in {fy}:</b> {tightest.route} —{" "}
+              {tightest.utilisationPct}% of its weekly ceiling already allocated on{" "}
+              {tightest.bottleneckSections.join(" · ")}, leaving {tightest.bottleneckSpare} paths a week.
+            </p>
+          )}
+          <p>
+            <b className="text-slate-800">What the five years actually contain:</b> {yearlyStatement}
+          </p>
+        </div>
+      </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
