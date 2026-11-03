@@ -31,11 +31,22 @@ const critLabel: Record<Criticality, string> = {
   reference: "Reference",
 };
 
-function Stat({ label, value, tone }: { label: string; value: number | string; tone?: string }) {
+function Stat({
+  label,
+  value,
+  tone,
+  note,
+}: {
+  label: string;
+  value: number | string;
+  tone?: string;
+  note?: string;
+}) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
       <p className={`mt-0.5 text-xl font-semibold tabular-nums ${tone ?? "text-slate-900"}`}>{value}</p>
+      {note && <p className="mt-0.5 text-[10px] leading-tight text-slate-500">{note}</p>}
     </div>
   );
 }
@@ -63,6 +74,7 @@ export default function RailCoverage() {
     return g;
   }, [capability, onlyMissing, onlyBlockers]);
 
+  const derivedBlockers = derivedGaps.filter((g) => g.criticality === "blocker").length;
   const pct = Math.round((coverageSummary.delivered / coverageSummary.total) * 100);
   const showingAsk = capability === "all" && !onlyMissing && !onlyBlockers;
 
@@ -85,11 +97,24 @@ export default function RailCoverage() {
         authoritative — where a source is superseded, excerpted or unexecuted, the row says so.
       </ReferenceNotice>
 
+      <p className="text-[11px] text-slate-500">
+        The six totals are annexure-level and reconcile with each other: {coverageSummary.blockers}{" "}
+        blocking + {coverageSummary.outstandingImportant} important +{" "}
+        {coverageSummary.outstandingReference} reference = {coverageSummary.outstanding}{" "}
+        outstanding. A further {derivedBlockers} blocking gaps sit outside the register, so{" "}
+        {coverageSummary.blockers + derivedBlockers} sources in total block a workflow.
+      </p>
+
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Annexures in register" value={coverageSummary.total} />
         <Stat label="Delivered" value={coverageSummary.delivered} tone="text-emerald-700" />
         <Stat label="Outstanding" value={coverageSummary.outstanding} tone="text-slate-900" />
-        <Stat label="Blocking gaps" value={coverageSummary.blockers} tone="text-rose-700" />
+        <Stat
+          label="Blocking gaps"
+          value={coverageSummary.blockers}
+          tone="text-rose-700"
+          note={`+${derivedBlockers} outside the register`}
+        />
         <Stat label="Important gaps" value={coverageSummary.outstandingImportant} tone="text-amber-700" />
         <Stat label="Reference gaps" value={coverageSummary.outstandingReference} tone="text-slate-500" />
       </div>
@@ -170,6 +195,11 @@ export default function RailCoverage() {
               <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-800">
                 {gaps.length}
               </span>
+              {derivedBlockers > 0 && (
+                <span className="ml-1.5 text-[11px] font-normal text-slate-500">
+                  {derivedBlockers} of them blocking
+                </span>
+              )}
             </h2>
             <p className="mt-0.5 text-[11px] text-slate-600">
               A delivered annexure can still be incomplete. These are missing pieces of, or inputs

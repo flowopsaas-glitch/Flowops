@@ -36,6 +36,42 @@ describe("coverage data integrity", () => {
     ).toBe(coverageSummary.outstanding);
   });
 
+  it("counts blocking gaps across both axes without losing the register arithmetic", () => {
+    const derivedBlockers = derivedGaps.filter((g) => g.criticality === "blocker");
+    // The register triage must reconcile: blockers + important + reference === outstanding.
+    expect(
+      coverageSummary.blockers +
+        coverageSummary.outstandingImportant +
+        coverageSummary.outstandingReference,
+    ).toBe(coverageSummary.outstanding);
+    // Blocking sources are more numerous than blocking annexures, because some gaps sit
+    // outside the register entirely — a register-only count understates the risk.
+    expect(derivedBlockers.length).toBeGreaterThan(0);
+    const totalBlocking = coverageSummary.blockers + derivedBlockers.length;
+    expect(totalBlocking).toBeGreaterThan(coverageSummary.blockers);
+    const expected = [
+      "6", "24", "19A", "19B", "19C", "37", "38", "39",
+    ].sort();
+    expect(
+      coverageRows
+        .filter((r) => !r.delivered && r.criticality === "blocker")
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(expected);
+  });
+
+  it("states the full blocking count, including gaps outside the register", () => {
+    mount();
+    const derivedBlockers = derivedGaps.filter((g) => g.criticality === "blocker").length;
+    const total = coverageSummary.blockers + derivedBlockers;
+    expect(
+      screen.getByText(new RegExp(`${total} sources in total block a workflow`)),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(`\\+${derivedBlockers} outside the register`)),
+    ).toBeInTheDocument();
+  });
+
   it("says something concrete about every annexure, delivered or not", () => {
     for (const r of coverageRows) {
       expect(r.effect.length, `${r.id} has no effect text`).toBeGreaterThan(30);

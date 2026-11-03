@@ -435,27 +435,46 @@ Titles, chapters and delivered state are **not** duplicated — they are joined 
 
 ### 8.2 Position at time of writing
 
+Every figure below is produced by `coverageSummary` in `railCoverageData.ts` — the same values the
+page renders — not transcribed by hand.
+
 | | Count |
 |---|---:|
 | Annexures in register | 49 |
 | Delivered | 20 |
 | Outstanding | 29 |
-| — of which blocking | 6 |
-| — of which important | 20 |
-| — of which reference | 3 |
+| — of which blocking | 8 |
+| — of which important | 12 |
+| — of which reference | 9 |
 
-Plus **5 derived gaps** that the register's own ticks hide: the Annexure 33 appended data file
+The three criticality counts **reconcile with the outstanding total** (8 + 12 + 9 = 29), and the page
+prints that identity next to the stat cards so the arithmetic is visible rather than implied. The
+register-scoped totals are kept separate from the outside-register gaps for exactly this reason: a
+card that mixed the two would stop adding up.
+
+**Blocking annexures — 8:** 6, 24, 19A, 19B, 19C, 37, 38, 39. Named plainly:
+
+| Id | What it blocks |
+|---|---|
+| 6 | The N1/N2 line-classification layer — the last structural dimension of the network model |
+| 19A / 19B / 19C | The safe-working rulebook — nothing driver-facing can be authored without it |
+| 24 | Interface Management Agreement — occurrence cost cannot be attributed with authority |
+| 37 / 38 / 39 | The monthly order, weekly train-path order, and the handshake dispute-resolution route |
+
+**Plus 5 derived gaps** that the register's own ticks hide: the Annexure 33 appended data file
 (section slots + N1/N2 line class), Annexure 36's ten §8.1 sub-annexures, executed operator
 agreements, operational actuals, and the ancillary/marshalling rates deferred to a future volume.
+Two of those five are `blocker` class — the appended 33 file and the executed agreements — so the
+true count of sources that block a workflow is **10, not 8**. The "Blocking gaps" card therefore
+carries `+2 outside the register` and the page states the total in words beneath the row; the
+derived-gap section header states how many of its entries block.
 
-The six blocking gaps are annexures **6, 19A, 19B, 19C, 24, 37, 38, 39** — that is eight rows
-because 6 shares its artefact with the 33 appended file, and 19A/19B/19C are one rulebook. Named
-plainly: the N1/N2 classification layer, the safe-working rulebook, the interface-management cost
-allocation, and the monthly/weekly order cycle with its dispute closure.
+Neither number is allowed to drift: `RailCoverage.test.tsx` pins both the reconciliation identity
+and the literal blocker id set, and renders the sentence that names the 10.
 
 ### 8.3 Guardrails encoded in tests
 
-`frontend/src/pages/RailCoverage.test.tsx` (14 tests) asserts, among others:
+`frontend/src/pages/RailCoverage.test.tsx` (16 tests) asserts, among others:
 
 - every register id has a coverage row **and** no coverage metadata is orphaned — a new annexure
   cannot be added without deciding what it blocks;
@@ -463,13 +482,15 @@ allocation, and the monthly/weekly order cycle with its dispute closure.
   document that has never been seen;
 - no undelivered annexure claims a route, and every claimed route starts `/rail`;
 - the five derived gaps are present, including the one that sits behind the delivered tick on
-  Annexure 33.
+  Annexure 33;
+- the blocker id set is pinned literally, and the page names the total blocking count
+  (register + outside) — so the prose and the panel cannot disagree.
 
 ### 8.4 Verification
 
 ```
 tsc --project tsconfig.app.json --noEmit   0
 npm run lint                               0 errors, 33 warnings
-npx vitest run                             65 files, 1,035/1,035 pass
+npx vitest run                             65 files, 1,037/1,037 pass
 npm run build                              ok, PWA precache 202 entries
 ```
