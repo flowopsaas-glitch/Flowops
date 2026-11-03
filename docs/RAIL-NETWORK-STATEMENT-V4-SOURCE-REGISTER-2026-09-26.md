@@ -705,14 +705,25 @@ Krugersdorp, Port Elizabeth, Witbank, Nelspruit — so depot is a joinable entit
 
 ### 11.5 Capacity changes between financial years
 
-Sections carry the same name but different theoretical capacity across FYs (for example on the
-Johannesburg–Durban route, DONNYBROOK–FRANKLIN 15 → 16, FRANKLIN–MATATIELE 12 → 13,
-BETHLEHEM–ARLINGTON 19 → 24, ARLINGTON–GUNHILL 27 → 21, GUNHILL SOUTH–KROONSTAD 12 → 22, and
-CHAILEY–KRANSKOP 14 → 15 between FY26/27 and FY27/28). These are **workbook** financial years, not
-V4's operating periods (§11.0). This is direct source evidence for the requirement the workstream
-already carries: **capacity is versioned by financial year**, and a rule without an effective period
-would be wrong. It is not evidence that V4's 2026/27–2027/28 rules changed — and a workbook FY change
-must not be read as a V4 rule change.
+Sections carry the same name but different theoretical capacity across FYs. As at the
+**2026-10-23 revision** of the workbook, exactly three sections move, all on the
+Johannesburg–Durban route, all stepping once from FY26/27 into FY27/28 and holding flat thereafter:
+DONNYBROOK (E)–FRANKLIN (I) 15 → 16, FRANKLIN (E)–MATATIELE (I) 12 → 13, and
+CHAILEY (E)–KRANSKOP (I) 14 → 15.
+
+> **Corrected 2026-11-03.** An earlier version of this section listed six such sections, including
+> BETHLEHEM–ARLINGTON 19 → 24, ARLINGTON–GUNHILL 27 → 21 and GUNHILL SOUTH–KROONSTAD 12 → 22, and
+> attributed all of them to the Johannesburg–Durban route. Both details were wrong: those three
+> sections belong to the **Vereeniging/Danskraal–East London** route, and the 2026-10-23 revision
+> reverted FY27/28–FY30/31 to the FY26/27 value (19 / 27 / 12), so they no longer vary at all. See
+> `docs/RAIL-SOURCE-AUDIT-2026-11-03.md` §7.3.
+
+These are **workbook** financial years, not V4's operating periods (§11.0). This is direct source
+evidence for the requirement the workstream already carries: **capacity is versioned by financial
+year**, and a rule without an effective period would be wrong. It is not evidence that V4's
+2026/27–2027/28 rules changed — and a workbook FY change must not be read as a V4 rule change. Note
+that the FY-varying set is small and has *shrunk* between revisions, so no rule may assume a section
+varies by FY; variation must be read from the data.
 
 ### 11.6 Exceptions and open questions — for `RailSourceException` review
 

@@ -12,7 +12,9 @@ import {
 } from "../data/railCapacityData";
 
 /**
- * Slots & Capacity page — built round 68 from Annexure 33 Capacity Statement (2).xlsm (V4-06).
+ * Slots & Capacity page — built round 68 from Annexure 33 Capacity Statement (2).xlsm (V4-06);
+ * rebuilt 2026-11-03 against the 2026-10-23 revision (4), which populates allocation data for all
+ * five fiscal years and revises twelve theoretical-capacity cells on the East London route.
  * Raw Capacity_DB columns shown as-is; derived measures recomputed with the workbook's own
  * formula pattern and labelled "derived" everywhere (formulas panel at the bottom).
  * Period discipline: figures are always labelled with their FY — never substituted across periods.
@@ -147,10 +149,8 @@ export default function RailCapacity() {
 
       {!hasAllocations && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-          <b>E-33B-01 · source sparse cells.</b> In the delivered workbook, TSR / MA / infrastructure-recovery /
-          unused-from-TOC and TOC 1–15 allocation columns are populated for <b>FY26/27 only</b>. For{" "}
-          <b>{fy}</b> the Capacity_DB rows carry Theoretical Daily Capacity alone — shown as delivered, never
-          filled in or substituted from other periods.
+          <b>No allocation data for {fy} in this revision.</b> The Capacity_DB rows carry Theoretical Daily
+          Capacity alone. Shown as delivered — never filled in or substituted from another period.
         </div>
       )}
 
@@ -223,8 +223,9 @@ export default function RailCapacity() {
           <p className="mt-2 text-[11px] text-slate-500">
             The practical-daily formula was verified against all sampled rows of the workbook&apos;s own
             &quot;Capacity Statement&quot; view (Capacity Factor {workbookSnapshot.capacityFactor}). Bottleneck
-            marking is derived (minimum theoretical daily capacity) — the delivered snapshot&apos;s
-            &quot;Constraint Indicator&quot; and &quot;Bottleneck Section(s)&quot; cells were empty in the file.
+            marking is derived (minimum theoretical daily capacity). In the 2026-10-23 revision the
+            workbook now fills its own &quot;Bottleneck Section(s)&quot; cell for the saved selection; the
+            &quot;Constraint Indicator&quot; column is still blank in the file.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -239,6 +240,10 @@ export default function RailCapacity() {
           <p className="mt-2 text-[11px] text-slate-500">
             {workbookSnapshot.note} The snapshot holds {workbookSnapshot.rows.length} section rows for its saved
             selection; use the selectors above to browse the full Capacity_DB (all routes × all FYs).
+          </p>
+          <p className="mt-2 text-[11px] text-teal-700">
+            Allocation columns (TSR / MA / infrastructure recovery / unused-from-TOC / TOC 1–15) are populated for
+            all five fiscal years in the 2026-10-23 revision, retiring the former E-33B-01 sparse-cell caveat.
           </p>
         </div>
       </div>

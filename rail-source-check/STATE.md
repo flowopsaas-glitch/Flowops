@@ -2314,8 +2314,8 @@ Annexure 36 Emergency Response Plan (V3-30, 73 p — period caveat E-ANX36-01).
 - `frontend/src/data/railCapacityData.ts` — Capacity_DB verbatim + workbook snapshot + formulas.
 - `frontend/src/data/railAncillaryData.ts` — full catalogue verbatim + rates-status.
 - `frontend/src/pages/RailCapacity.tsx` → **`/rail/slots`** Slots & Capacity: FY×route selector,
-  section table (raw + derived-labelled), totals, derived bottleneck, E-33B-01 flag,
-  derived-formula panel, as-delivered snapshot card. Period discipline: every figure FY-labelled.
+  section table (raw + derived-labelled), totals, derived bottleneck, E-33B-01 flag
+  (retired 2026-11-03), derived-formula panel, as-delivered snapshot card. Period discipline: every figure FY-labelled.
 - `frontend/src/pages/RailTariffs.tsx` → **`/rail/tariffs`** Tariffs & Charges: tier filter +
   search, group cards, UOM badges ("TBD in source — preserved"), E-TARIFF-01 banner on every
   line ("Rate: not in catalogue"), anomaly policy footer.
@@ -2327,7 +2327,8 @@ Annexure 36 Emergency Response Plan (V3-30, 73 p — period caveat E-ANX36-01).
   `docs/RAIL-NS-V4-ANX15-ANX36-INTAKE-2026-10-10.md`.
 
 **New flags:** E-33B-01 (Capacity_DB allocation columns populated for FY26/27 only — preserved,
-never filled) · E-ANX36-01 (Anx 36 is V3 — period label on any use) · E-TARIFF-01 scoped
+never filled) — **RETIRED 2026-11-03**: the 2026-10-23 revision of the workbook populates all five
+FYs; see Round 75 and `docs/RAIL-SOURCE-AUDIT-2026-11-03.md` §7 · E-ANX36-01 (Anx 36 is V3 — period label on any use) · E-TARIFF-01 scoped
 (catalogue defines services+UOM only; rates must arrive as a separate approved schedule).
 
 **Corpus unchanged this round** (no 33a-row work): §4 baseline still **672 files / 251,678 rows /
@@ -2510,3 +2511,69 @@ Playwright browsers unavailable. Not platform defects.
 
 **Visibility note:** rounds 65–74 live on this branch behind PR #448 (open) — a deployed tenant
 platform on `main` shows none of it until merge + deploy.
+
+## Round 75 — two further Annexure 33 uploads: one duplicate, one genuine revision (2026-11-03)
+
+### 75.1 First pair — both duplicates
+
+`Annexure 33 Capacity Statement (2).xlsm` and `Annexure 33_Network Register June 2026 F (2).pdf`
+arrived via the GitHub web uploader as an **orphan root commit** (`5bdb81a`, no parent). Both were
+byte-identical to the copies already in `sources/`, so nothing was ingested. Two real defects were
+found and fixed:
+
+1. **XML-escaping artifact reached the screen.** The xlsm's shared strings store the coal route as
+   `General Freight &amp; Export Coal: …`; React renders JS strings literally, so `&amp;` appeared in
+   the Slots & Capacity route dropdown. It had also desynced row `key`s from `fy|route|order`.
+   132 occurrences in `railCapacityData.ts` + 1 in `railKpiData.ts` decoded to `&`, justified by
+   E-AMP-01 and by the Network Register printing the same route with a plain `&`.
+2. **`main`'s history had been replaced.** `5bdb81a` is a root commit whose tree is `aef4f92`'s tree
+   plus the two duplicates. Branch rebased onto it so the PR keeps a shared ancestor; nothing lost —
+   the only tree difference was the two duplicate files, now removed.
+
+Regression guard: `frontend/src/pages/RailAnnexure33Verification.test.ts` (11 tests).
+
+### 75.2 Second pair — one duplicate, one real revision
+
+`d18d8b7` (parent `5bdb81a` — a **normal child commit**, so the orphan problem stays fixed) added:
+
+| Upload | SHA-256 | Disposition |
+|---|---|---|
+| `Annexure 33a_NS ver.4 (4).xlsx` | `93b4d449…` | byte-identical duplicate (3rd copy) → discarded |
+| `Annexure 33 Capacity Statement (4).xlsm` | `d0505e84…` | **genuine later revision** → live source |
+
+The workbook was revised in place 2026-10-23 by Asheena Mathura (was 2026-07-03, Thabo Manamela):
+same 3 sheets, same 23 parts, same 1,035 `Capacity_DB` rows, no renames, `Lists` untouched.
+
+**What changed.** +15,836 populated `Capacity_DB` cells, −0, all in the allocation block (H–Z): the
+superseded revision carried TSR / MA / infra-recovery / unused / TOC 1–15 for FY26/27 only, the live
+one carries all five FYs (FY27/28–FY30/31 gained 3,933 cells each; FY26/27's 104 additions are all
+zero, so FY26/27 is numerically unchanged; 184 of 207 rows carry an allocation/loss value in every FY). **Twelve**
+theoretical-capacity cells revised, all on *General Freight: Vereeniging/Danskraal to East London*,
+identically across FY27/28–FY30/31: BETHLEHEM (E)–ARLINGTON (E) 24→**19**, ARLINGTON (I)–GUNHILL (I)
+21→**27**, GUNHILL SOUTH (I)–KROONSTAD (E) 22→**12**. These restore the FY26/27 values, i.e. the
+revision *reverses* the step-up the old file showed. Sheet-1 differences are saved dropdown state
+(`FY29/30`→`FY26/27`, spare 49→35) plus a now-populated `Bottleneck Section(s)` cell
+(`CATO RIDGE (E) - BOOTH (I)`), not data.
+
+**Consequences.**
+- **E-33B-01 retired** — it described the superseded file accurately, so the record stays and the
+  retirement is dated; the UI now confirms completeness per FY instead of flagging sparseness.
+- **`docs/RAIL-NETWORK-STATEMENT-V4-SOURCE-REGISTER-2026-09-26.md` §11.5 was wrong twice** and is
+  rewritten: it attributed BETHLEHEM–ARLINGTON / ARLINGTON–GUNHILL / GUNHILL SOUTH–KROONSTAD to the
+  *Johannesburg–Durban* route (they are East London), and those three no longer vary by FY at all.
+  Live truth: exactly **3 of 207** sections vary across FYs (down from 6), all Johannesburg–Durban —
+  DONNYBROOK (E)–FRANKLIN (I) 15→16, FRANKLIN (E)–MATATIELE (I) 12→13, CHAILEY (E)–KRANSKOP (I) 14→15.
+  The workstream conclusion survives (capacity *is* FY-versioned), but no rule may assume a section
+  varies — variation must be read from the data.
+- `railCapacityData.ts` **regenerated, not hand-patched**, by the new `scripts/regenerate-rail-capacity.py`
+  (emits exact cell values, decodes `&amp;`, rebuilds the sheet-1 grid, records `revision`/`supersedes`).
+
+**Verification.** Module compared cell-for-cell against `sheet2.xml` via `sharedStrings.xml`:
+**11,385 field comparisons + 15,525 TOC values, 0 mismatches**. Module diff vs the superseded
+projection is exactly 12 `theoreticalDaily`, 684 TOC arrays, 516 TSR/MA/recovery/unused, 0 rows
+added/removed. Gates: `tsc` 0 · vitest **1,020/1,020** (64 files; verification suite 11→17, plus new `RailCapacity.test.tsx` at 7) · eslint 0 errors/33 warnings · `vite build` ok.
+
+---
+
+**Visibility note (unchanged):** rounds 65–75 live on this branch behind an open PR — a deployed
+tenant platform on `main` shows none of it until merge + deploy.

@@ -34,7 +34,7 @@ named by the register but was never supplied, and cannot be reconstructed (see �
 | 10 | `Annexure 29a Network Access Application Form.pdf` | `9b53984b…` | `railAccessData.ts` | `/rail/access` | ingested |
 | 11 | `Annexure 29b - Network Capacity Statement_Final (Ver2) (1).pdf` | `9fdfa56d…` | `railAccessData.ts` | `/rail/access` | ingested (period-caveated) |
 | 12 | `Annexure 32_Ad_Hoc_TOC_Slot_Requests_Process_v1.5 (1).pdf` | `65cd5142…` | `railAccessData.ts` | `/rail/access` | ingested |
-| 13 | `Annexure 33 Capacity Statement (2).xlsm` | `2d3f5915…` | `railCapacityData.ts` | `/rail/slots` | ingested (1,035 rows) |
+| 13 | `Annexure 33 Capacity Statement (4).xlsm` | `d0505e84…` | `railCapacityData.ts` | `/rail/slots` | ingested (1,035 rows) — **revised 2026-10-23, see §7** |
 | 14 | `Annexure 33_Network Register June 2026 F (1).pdf` | `1e2842cb…` | `railRegisterData.ts` | `/rail/register` | ingested |
 | 15 | `Annexure 33a_NS ver.4 (2).xlsx` | `93b4d449…` | `railSourceData.ts` + corpus | `/rail/timetable` | ingested |
 | 16 | `Annexure 35_TRIM Dispute Resolution Process.pdf` | `fdc47f46…` | `railAccessData.ts` | `/rail/access` | ingested |
@@ -178,7 +178,7 @@ targets only, so every KPI variance view remains *planned* versus *target*, neve
 cd frontend
 ./node_modules/.bin/tsc --project tsconfig.app.json --noEmit   # EXIT 0
 npm run lint                                                    # EXIT 0 — 0 errors, 33 warnings (pre-existing class)
-npx vitest run                                                  # 63 files, 1,007/1,007 pass
+npx vitest run                                                  # 63 files, 1,007/1,007 pass (after §7: 64 files, 1,020)
 npm run build                                                   # ok, PWA precache 201 entries
 ```
 
@@ -261,8 +261,152 @@ removed in §6.1.
 
 ### 6.4 Regression guard
 
-`frontend/src/pages/RailAnnexure33Verification.test.ts` (11 tests) locks in the properties this
-round actually checked: 1,035 rows, 10 routes × 5 FYs, unique keys, `key === fy|route|order` for
+`frontend/src/pages/RailAnnexure33Verification.test.ts` (11 tests at §6; 17 after §7) locks in the
+properties this round actually checked: 1,035 rows, 10 routes × 5 FYs, unique keys, `key === fy|route|order` for
 every row, every dropdown route resolving to real rows and vice-versa, 15 TOC columns per row, no
 `&amp;` in any rendered string, the coal route spelled as the register spells it, the register's
 declared identity, and the E-33REG-01 anomaly reproduced rather than corrected.
+
+## 7. Revision record — Annexure 33 Capacity Statement `(4)` (2026-11-03, later again)
+
+A second web-interface upload arrived on the same day (main `d18d8b7`, whose parent is `5bdb81a` —
+so this upload is a **normal child commit** and the §6.3 Defect 2 orphan-history problem stays fixed).
+It carried two root-level files.
+
+### 7.1 Disposition of the two files
+
+| Uploaded file | Size | SHA-256 | Disposition |
+|---|---:|---|---|
+| `Annexure 33a_NS ver.4 (4).xlsx` | 15,258,573 B | `93b4d449…` | **byte-identical duplicate** of `sources/Annexure 33a_NS ver.4 (2).xlsx` → discarded from the working tree, nothing ingested |
+| `Annexure 33 Capacity Statement (4).xlsm` | 174,170 B | `d0505e84faa324f07cad03768c07c5a4fc35e9413556c863d3d15ac6b4364c80` | **genuine later revision** → now the live source, `sources/Annexure 33 Capacity Statement (4).xlsm` |
+
+Both files were compared at the byte level before anything was read. The `.xlsx` is the third
+identical copy of that corpus file to be re-uploaded, which is why the dedupe step runs first.
+
+The workbook is the same artefact, revised in place: same three sheets (`Capacity Statement`,
+`Capacity_DB`, `Lists`), same 23 package parts, **no rows added or removed** (1,035 `Capacity_DB`
+data rows before and after), no route, section or depot renamed, `Lists` untouched.
+
+| | Superseded | Live |
+|---|---|---|
+| SHA-256 | `2d3f5915…` | `d0505e84…` |
+| Modified | 2026-07-03T07:54:48Z | **2026-10-23T07:50:17Z** |
+| Last modified by | Thabo Manamela | **Asheena Mathura** |
+| Both created | 2026-05-12T03:21:50Z | ← unchanged |
+
+### 7.2 What the revision actually changes
+
+**Allocation columns are now populated for all five fiscal years.** `Capacity_DB` gains 15,836
+populated cells and loses none, entirely in the allocation block (columns H–Z: TSR, MA,
+infrastructure recovery, unused-from-TOC, and TOC 1–15). The superseded revision carried data for
+FY26/27 only; the live one carries all five:
+
+| Fiscal year | Added cells |
+|---|---:|
+| FY26/27 | 104 (all literal `0`, rows 812–852 and 1017–1020 — no semantic change) |
+| FY27/28 | 3,933 |
+| FY28/29 | 3,933 |
+| FY29/30 | 3,933 |
+| FY30/31 | 3,933 |
+
+The FY26/27 additions are worth stating plainly: they are zeros, so FY26/27's numbers are
+unchanged by the revision. The other four FYs gain real allocations — 207 section rows each, of
+which **184 carry an allocation/loss value, in every one of the five FYs**. That is the same 184 the
+original survey counted for FY26/27: the revision brought the other four years up to exactly that
+coverage, and no further. The remaining 23 rows per FY carry theoretical capacity with nothing
+allocated against them, which is a genuine operational state rather than missing data.
+
+**Twelve theoretical-capacity cells are revised, and they are the only numeric revisions.**
+All twelve sit on *General Freight: Vereeniging/Danskraal to East London*, repeating identically
+across FY27/28, FY28/29, FY29/30 and FY30/31:
+
+| Order | Section | Superseded | Live |
+|---|---|---|---:|
+| 37 | BETHLEHEM (E) – ARLINGTON (E) | 24 | **19** |
+| 38 | ARLINGTON (I) – GUNHILL (I) | 21 | **27** |
+| 39 | GUNHILL SOUTH (I) – KROONSTAD (E) | 22 | **12** |
+
+These are the *FY26/27 values*, restored. The revision therefore **reverses** the FY26/27→FY27/28
+step-up that the superseded revision showed on this route. FY26/27 itself is numerically unchanged
+in all 207 of its rows.
+
+**The only other cells that differ are the workbook's saved dropdown state**, not data: sheet 1
+records `FY29/30 → FY26/27` and Route Spare Capacity `49 → 35` because whoever last saved the file
+had different selectors open. §6 already established these must not be reported as revisions; the
+same rule applies here.
+
+### 7.3 Consequence — one earlier finding was wrong, and is corrected
+
+`docs/RAIL-NETWORK-STATEMENT-V4-SOURCE-REGISTER-2026-09-26.md` §11.5 cited six sections whose
+theoretical capacity changes between FY26/27 and FY27/28 "on the Johannesburg–Durban route". Two
+separate errors:
+
+1. **Wrong route.** BETHLEHEM–ARLINGTON, ARLINGTON–GUNHILL and GUNHILL SOUTH–KROONSTAD are on the
+   *Vereeniging/Danskraal–East London* route, not Johannesburg–Durban. Only DONNYBROOK–FRANKLIN,
+   FRANKLIN–MATATIELE and CHAILEY–KRANSKOP are Johannesburg–Durban.
+2. **Wrong premise, as of this revision.** All three East London sections are now flat across all
+   five FYs, so they no longer vary at all.
+
+The section has been rewritten against the live workbook: exactly **three** sections vary across
+fiscal years (3 of 207, down from 6), all on Johannesburg–Durban, all stepping once into FY27/28:
+
+`DONNYBROOK (E)–FRANKLIN (I)` 15 → 16 · `FRANKLIN (E)–MATATIELE (I)` 12 → 13 ·
+`CHAILEY (E)–KRANSKOP (I)` 14 → 15.
+
+The workstream conclusion is unchanged and in fact reinforced — capacity *is* versioned by
+financial year, so a rule without an effective period would be wrong — but no rule may now assume a
+given section varies by FY. Variation has to be read from the data, and the set of varying sections
+*shrank* between two revisions of the same workbook.
+
+### 7.4 Code changes
+
+| File | Change |
+|---|---|
+| `sources/Annexure 33 Capacity Statement (4).xlsm` | added (live source); `(2)` retained on disk as the superseded revision |
+| `scripts/regenerate-rail-capacity.py` | **new** — regenerates `railCapacityData.ts` from a workbook instead of hand-editing 1,035 rows; emits exact cell values, decodes the `&amp;` artifact, and rebuilds the sheet-1 snapshot grid |
+| `frontend/src/data/railCapacityData.ts` | regenerated from `(4)`: new hash + `revision`/`supersedes` provenance block, allocation data for all 5 FYs, the 12 revised values, sheet-1 snapshot rebuilt (`selectedFY` FY26/27, `routeSpareCapacity` 35, and the `Bottleneck Section(s)` cell now populated — `CATO RIDGE (E) - BOOTH (I)` — where the superseded file left it empty) |
+| `frontend/src/pages/RailCapacity.tsx` | **E-33B-01 banner retired**; an FY now shows a confirmation that its allocation columns are complete, naming the retired caveat and the revision that retired it. Snapshot prose corrected: the workbook's own bottleneck cell is no longer empty, though its `Constraint Indicator` column still is |
+| `frontend/src/pages/RailAnnexure33Verification.test.ts` | 11 → **17** tests: hash/provenance, all-five-FY allocation coverage (pinned to 184/207), the 12 revised values, exactly-three-varying-sections (with the East London route asserted flat), snapshot shape, no `&amp;` in the snapshot grid |
+| `frontend/src/pages/RailCapacity.test.tsx` | **new, 7 render tests**: retired banner can no longer appear, every FY selectable and none allocation-starved, 184/207 coverage per FY, revised East London sections render, workbook bottleneck cell shown, no `&amp;` anywhere in the DOM |
+| `docs/RAIL-NETWORK-STATEMENT-V4-SOURCE-REGISTER-2026-09-26.md` | §11.5 rewritten, with the two errors recorded inline (§7.3) |
+| `docs/RAIL-ANNEXURE-33B-CAPACITY-SURVEY-2026-10-10.md` | **E-33B-01 retired**, both hashes recorded, page description updated |
+| `docs/RAIL-UI-PAGES-AND-PANELS-2026-10-10.md` | page row updated |
+
+The E-33B-01 flag is retired rather than deleted: the earlier report was *correct for the file it
+described*, so the record stays and the retirement is dated. Deleting it would leave a reviewer
+unable to tell whether the flag was wrong or simply superseded.
+
+### 7.5 Re-verification
+
+Regeneration was verified **against the workbook, not against the previous module**: all 1,035 rows
+and their 11 columns (11,385 field comparisons, 15,525 TOC values) were compared cell-for-cell with
+`xl/worksheets/sheet2.xml` read through `xl/sharedStrings.xml`. **0 mismatches.**
+
+The module diff vs the superseded projection is exactly the expected set:
+
+| Measure | Count |
+|---|---:|
+| Rows added / removed | 0 / 0 |
+| `theoreticalDaily` changes | 12 (the table in §7.2, nothing else) |
+| TOC allocation arrays changed | 684 (4 FYs × 171 rows) |
+| TSR/MA/recovery/unused cells changed | 516 |
+
+Gates on the regenerated build:
+
+```
+tsc --project tsconfig.app.json --noEmit                    # 0 errors
+vitest run                                                  # 64 files, 1,020/1,020 pass
+npm run lint                                                # 0 errors / 33 warnings
+npm run build                                               # ok, 201 precache entries
+```
+
+`RailAnnexure33Verification.test.ts` is 17 tests; a new `RailCapacity.test.tsx` adds 7 render-level
+tests so the page's behaviour is pinned as well as the data's.
+
+### 7.6 Regression guard
+
+The 6 new tests pin the *delta*, not just the shape: the live hash, the retained superseded hash,
+allocation coverage on every FY, the three revised values across four FYs, and the fact that only
+three sections vary and that none of them is on the East London route. A future re-import of the
+older revision — or a silent hand-edit of the module — trips these tests rather than quietly
+changing what the product shows.
