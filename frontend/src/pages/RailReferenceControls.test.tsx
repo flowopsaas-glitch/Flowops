@@ -14,6 +14,7 @@ import RailRegister from "./RailRegister";
 import RailSources from "./RailSources";
 import RailEmergency from "./RailEmergency";
 import RailAgreement from "./RailAgreement";
+import RailCoverage from "./RailCoverage";
 
 const mount = (node: ReactNode) => render(<MemoryRouter>{node}</MemoryRouter>);
 const referencePages = [
@@ -29,6 +30,7 @@ const referencePages = [
   { name: "Tariffs & charges", Page: RailTariffs },
   { name: "Emergency response", Page: RailEmergency },
   { name: "Access agreement", Page: RailAgreement },
+  { name: "Coverage & gaps", Page: RailCoverage },
 ];
 
 afterEach(cleanup);

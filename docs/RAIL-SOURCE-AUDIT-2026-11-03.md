@@ -410,3 +410,66 @@ allocation coverage on every FY, the three revised values across four FYs, and t
 three sections vary and that none of them is on the East London route. A future re-import of the
 older revision — or a silent hand-edit of the module — trips these tests rather than quietly
 changing what the product shows.
+
+---
+
+## 8. Coverage & gaps surface (`/rail/coverage`, 2026-11-03)
+
+The register answers "do we have this annexure?". It does not answer "what can't we build without
+it?", which is what actually drives the work. This round adds that second axis as a product surface
+rather than another markdown file.
+
+### 8.1 What the page derives
+
+`frontend/src/data/railCoverageData.ts` attaches three pieces of metadata to every one of the 49
+annexures:
+
+| Axis | Values | Purpose |
+|---|---|---|
+| Capability | Network reference · Capacity & allocation · Access & contracting · Train operations · Safety & occurrences · Commercial | which part of the product the source feeds |
+| Criticality | `blocker` · `important` · `reference` | `blocker` is reserved for sources without which an operating workflow cannot be modelled correctly |
+| Effect | free text | delivered: what it unblocks · outstanding: what stays blocked |
+
+Titles, chapters and delivered state are **not** duplicated — they are joined at runtime from
+`annexureRegister`, so flipping `have: true` there updates this page with no second list to maintain.
+
+### 8.2 Position at time of writing
+
+| | Count |
+|---|---:|
+| Annexures in register | 49 |
+| Delivered | 20 |
+| Outstanding | 29 |
+| — of which blocking | 6 |
+| — of which important | 20 |
+| — of which reference | 3 |
+
+Plus **5 derived gaps** that the register's own ticks hide: the Annexure 33 appended data file
+(section slots + N1/N2 line class), Annexure 36's ten §8.1 sub-annexures, executed operator
+agreements, operational actuals, and the ancillary/marshalling rates deferred to a future volume.
+
+The six blocking gaps are annexures **6, 19A, 19B, 19C, 24, 37, 38, 39** — that is eight rows
+because 6 shares its artefact with the 33 appended file, and 19A/19B/19C are one rulebook. Named
+plainly: the N1/N2 classification layer, the safe-working rulebook, the interface-management cost
+allocation, and the monthly/weekly order cycle with its dispute closure.
+
+### 8.3 Guardrails encoded in tests
+
+`frontend/src/pages/RailCoverage.test.tsx` (14 tests) asserts, among others:
+
+- every register id has a coverage row **and** no coverage metadata is orphaned — a new annexure
+  cannot be added without deciding what it blocks;
+- every outstanding row's text begins `"Unavailable."`, so prose cannot drift into describing a
+  document that has never been seen;
+- no undelivered annexure claims a route, and every claimed route starts `/rail`;
+- the five derived gaps are present, including the one that sits behind the delivered tick on
+  Annexure 33.
+
+### 8.4 Verification
+
+```
+tsc --project tsconfig.app.json --noEmit   0
+npm run lint                               0 errors, 33 warnings
+npx vitest run                             65 files, 1,035/1,035 pass
+npm run build                              ok, PWA precache 202 entries
+```
