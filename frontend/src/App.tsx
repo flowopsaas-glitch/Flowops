@@ -44,6 +44,7 @@ const SafetyIncidentDispatch = lazy(() => import("./pages/SafetyIncidentDispatch
 const SafetyIncidentReport = lazy(() => import("./pages/SafetyIncidentReport"));
 const TripDocumentPack = lazy(() => import("./pages/TripDocumentPack"));
 const TransactionLog = lazy(() => import("./pages/TransactionLog"));
+const TripsNotRecorded = lazy(() => import("./pages/TripsNotRecorded"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 // Surfaces the tenant's shareable customer booking-portal + public tracking links.
 const ClientPortalLinks = lazy(() => import("./pages/billing/ClientPortalLinks"));
@@ -388,9 +389,32 @@ export default function App() {
               <Route path="/safety-incident-dispatch" element={<SafetyIncidentDispatch />} />
               <Route path="/safety-incident-report" element={<SafetyIncidentReport />} />
               <Route path="/trip-document-pack" element={<TripDocumentPack />} />
-              <Route path="/transactions" element={<TransactionLog />} />
-              <Route path="/transactions/waybills" element={<TransactionLog />} />
-              <Route path="/transactions/trips" element={<TransactionLog />} />
+              <Route
+                path="/transactions"
+                element={
+                  <RequirePermission perm="transactionLog">
+                    <TransactionLog />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/transactions/waybills"
+                element={
+                  <RequirePermission perm="transactionLog">
+                    <TransactionLog kind="waybill" />
+                  </RequirePermission>
+                }
+              />
+              {/* Kept for existing links. Trips are not event-sourced, so this
+                  page states the gap instead of showing a reconstructed list. */}
+              <Route
+                path="/transactions/trips"
+                element={
+                  <RequirePermission perm="transactionLog">
+                    <TripsNotRecorded />
+                  </RequirePermission>
+                }
+              />
               <Route path="/wms" element={<RequireFeature feature="warehouseManagement" name="Warehouse Management"><WarehouseManagement /></RequireFeature>} />
               <Route path="/wms/cross-dock" element={<RequireFeature feature="warehouseManagement" name="Cross-Docking"><WmsCrossDocking /></RequireFeature>} />
               <Route path="/wms/waves" element={<RequireFeature feature="warehouseManagement" name="Wave Planning"><WmsWavePlanning /></RequireFeature>} />

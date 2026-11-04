@@ -418,9 +418,16 @@ export default function AppLayout() {
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
     { section: "COMMUNICATIONS", label: "Client Queries", desc: "Customer questions & tickets", to: "/communications/client-queries", icon: MessageCircle, perm: "clientQueries" },
-    { section: "TRANSACTIONS", label: "Transaction Log", desc: "Audit trail of all waybill & trip changes", to: "/transactions", icon: FileText },
-    { section: "TRANSACTIONS", label: "Waybill Transactions", desc: "Waybill state change history", to: "/transactions/waybills", icon: ClipboardList },
-    { section: "TRANSACTIONS", label: "Trip Transactions", desc: "Trip state change history", to: "/transactions/trips", icon: Truck },
+    // The event trail. Both entries are gated on `transactionLog`, which the
+    // role matrix grants to the same roles the API accepts (ADMIN,
+    // COMPANY_ADMIN, MANAGER, DISPATCH, WAREHOUSE).
+    //
+    // "Trip Transactions" used to sit here. Trips are not event-sourced — they
+    // carry a current status, not a history — so that entry promised a record
+    // the database does not hold and was removed. /transactions/trips still
+    // resolves, and explains the gap, for anyone holding an old link.
+    { section: "TRANSACTIONS", label: "Transaction Log", desc: "Every recorded waybill & rail event", to: "/transactions", icon: FileText, perm: "transactionLog" },
+    { section: "TRANSACTIONS", label: "Waybill Transactions", desc: "Waybill movement & status events", to: "/transactions/waybills", icon: ClipboardList, perm: "transactionLog" },
 
     { section: "BILLING", label: "Finance Home", desc: "Revenue, AR aging, clients", to: "/finance", icon: BarChart2, perm: "invoices" },
     { section: "BILLING", label: "Rate Cards", desc: "Commercial pricing", to: "/rate-cards", icon: CreditCard, perm: "rateCards" },
