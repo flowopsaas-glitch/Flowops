@@ -52,6 +52,8 @@ describe('evaluateDriverCompliance — blocking rules', () => {
     ['SERVICE_OVERDUE', { nextServiceDate: days(-2) }],
     ['SERVICE_KM_EXCEEDED', { currentKm: 130_000 }],
     ['CRITICAL_SAFETY_ALERT', { criticalSafetyAlerts: 2 }],
+    // Unknown, not zero: a check that could not run must never read as safe.
+    ['SAFETY_ALERT_CHECK_UNAVAILABLE', { criticalSafetyAlerts: null }],
   ])('blocks with %s', (code, overrides) => {
     const result = evaluateDriverCompliance(driver(overrides), { now: NOW });
     expect(result.compliant).toBe(false);

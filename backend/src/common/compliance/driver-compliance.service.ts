@@ -80,30 +80,43 @@ export class DriverComplianceService {
     if (!driver) throw new NotFoundException('Driver not found');
 
     // Unresolved CRITICAL safety alerts are part of the snapshot: a driver with
-    // an open critical alert must not be dispatched. Counted in the DB, tenant
-    // scoped, and tolerant of the model being absent in older schemas.
-    let criticalSafetyAlerts = 0;
-    try {
-      const safetyAlert = (this.prisma as any).safetyAlert;
-      if (safetyAlert?.count) {
-        criticalSafetyAlerts = await safetyAlert.count({
-          where: {
-            companyId,
-            driverId: driver.id,
-            riskLevel: 'CRITICAL',
-            acknowledged: false,
-          },
-        });
-      }
-    } catch (err: any) {
-      // A missing/renamed model must not silently certify a driver as safe —
-      // log loudly and treat the count as unknown (the policy blocks on > 0).
-      this.logger.warn(`Safety-alert check unavailable for ${driverId}: ${err?.message ?? err}`);
-    }
+    // an open critical alert must not be dispatched. One query, tenant scoped,
+    // shared with the fleet report so the two can never disagree.
+    const counts = await this.criticalAlertCounts(companyId, [driverId]);
+    const criticalSafetyAlerts = counts ? counts.get(driverId) ?? 0 : null;
 
     // `driverId` is the public shape of the snapshot; the row's `id` is the
     // same value, so callers never have to remember which to read.
     return { ...driver, driverId: driver.id, criticalSafetyAlerts };
+  }
+
+  /**
+   * Unresolved CRITICAL safety alerts per driver, in one grouped query.
+   *
+   * Returns `null` — not an empty map — when the check could not run, because
+   * "we could not check" and "there are none" must not collapse into the same
+   * answer. The policy blocks on `null`.
+   */
+  private async criticalAlertCounts(
+    companyId: string,
+    driverIds: string[],
+  ): Promise<Map<string, number> | null> {
+    if (!driverIds.length) return new Map();
+    try {
+      const safetyAlert = (this.prisma as any).safetyAlert;
+      // Older schemas may not carry the model at all; that is unavailability,
+      // not a clean record.
+      if (!safetyAlert?.groupBy) return null;
+      const rows: Array<{ driverId: string; _count?: { _all?: number } }> = await safetyAlert.groupBy({
+        by: ['driverId'],
+        where: { companyId, driverId: { in: driverIds }, riskLevel: 'CRITICAL', acknowledged: false },
+        _count: { _all: true },
+      });
+      return new Map(rows.map((row) => [row.driverId, row._count?._all ?? 0]));
+    } catch (err: any) {
+      this.logger.warn(`Safety-alert check unavailable for company ${companyId}: ${err?.message ?? err}`);
+      return null;
+    }
   }
 
   /** Evaluate without throwing — for filtering candidate lists. */
@@ -201,8 +214,17 @@ export class DriverComplianceService {
     });
 
     const policy = this.policy();
+    // One grouped query for the whole page. Per-driver counts here would be an
+    // N+1 on a 200-row list, and a page that silently omitted the check would
+    // report every driver as clear — which is how a fleet report certifies a
+    // driver nobody looked at.
+    const alertCounts = await this.criticalAlertCounts(companyId, drivers.map((d) => d.id));
     const rows = drivers.map((driver) => {
-      const snapshot: DriverComplianceSnapshot = { ...driver, driverId: driver.id };
+      const snapshot: DriverComplianceSnapshot = {
+        ...driver,
+        driverId: driver.id,
+        criticalSafetyAlerts: alertCounts ? alertCounts.get(driver.id) ?? 0 : null,
+      };
       const compliance = this.evaluateSnapshot(snapshot, policy);
       return {
         driverId: driver.id,

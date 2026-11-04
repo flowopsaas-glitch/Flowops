@@ -56,8 +56,11 @@ export interface DriverComplianceSnapshot {
   nextServiceKm?: number | null;
   complianceHold?: boolean | null;
   complianceHoldReason?: string | null;
-  /** Unresolved CRITICAL safety alerts on this driver (see SafetyAlert). */
-  criticalSafetyAlerts?: number;
+  /**
+   * Unresolved CRITICAL safety alerts on this driver (see SafetyAlert).
+   * `null` means the check could not be read — unknown, which blocks.
+   */
+  criticalSafetyAlerts?: number | null;
 }
 
 export interface DriverComplianceOptions {
@@ -266,7 +269,17 @@ export function evaluateDriverCompliance(
   }
 
   // 8. Unresolved critical safety alerts (crime-hotspot / driving incidents).
-  if ((snapshot.criticalSafetyAlerts ?? 0) > 0) {
+  //
+  //    A count that could not be read is not a zero. "We could not check" is the
+  //    one answer that must never render as "safe": it certifies the driver on
+  //    the strength of a failed query.
+  if (snapshot.criticalSafetyAlerts == null) {
+    blockers.push({
+      code: 'SAFETY_ALERT_CHECK_UNAVAILABLE',
+      severity: 'BLOCK',
+      message: 'Safety-alert history could not be read; dispatch is blocked until it can be',
+    });
+  } else if (snapshot.criticalSafetyAlerts > 0) {
     blockers.push({
       code: 'CRITICAL_SAFETY_ALERT',
       severity: 'BLOCK',
