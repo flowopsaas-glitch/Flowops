@@ -10,6 +10,7 @@ import OwnerLayout from "./components/layout/OwnerLayout";
 import OwnerRoute from "./components/owner/OwnerRoute";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import RequirePermission from "./components/auth/RequirePermission";
+import Claims from "./pages/Claims";
 import RequireFeature from "./components/auth/RequireFeature";
 import RootRoute from "./components/auth/RootRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -394,6 +395,14 @@ export default function App() {
                 element={
                   <RequirePermission perm="transactionLog">
                     <TransactionLog />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/claims"
+                element={
+                  <RequirePermission perm="claims">
+                    <Claims />
                   </RequirePermission>
                 }
               />
