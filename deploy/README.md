@@ -101,7 +101,7 @@ To assert the merged config publishes nothing (same check `vps-deploy.sh` runs):
 | `.env.production` | Template — copy to project root as `.env` |
 | `cloudflared/config.yml` | Tunnel routing config — copy to `/etc/cloudflared/` |
 | `setup-vps.sh` | One-shot VPS provisioning script |
-| `host-patch.sh` | OS patching: audit, apply, verify, remember. See VPS-RUNBOOK §G |
+| `host-patch.sh` | OS patching: audit, apply, verify, remember. See VPS-RUNBOOK §H |
 | `systemd/flowops-host-*` | Daily audit timer + monthly patch window |
 | `apt/52flowops-unattended-upgrades.conf` | Security-only automatic updates, never auto-reboot |
 

@@ -444,7 +444,74 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
 df -h /
 ```
 
-### F. Reboot survival (already configured — just verify)
+### F. Pinned cloudflared + healthchecks (F-5 / F-9 — incident 2026-09-28)
+
+`deploy/docker-compose.vps.yml` pins `cloudflare/cloudflared:2026.9.3` (F-5 —
+`:latest` had left the box silently running an outdated `2026.6.1`) and adds
+healthchecks (F-9):
+
+- `cloudflared` — `["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]`.
+  Exec-form is **required**: the official image is distroless (no shell, no
+  wget/curl). The probe reads the `/ready` endpoint of the metrics server from
+  `command:` and exits 0 only with ≥1 live Cloudflare edge connection.
+- `postgres-backup` — healthy = a **validated** dump exists fresher than 6h40m
+  (dump cycle is 6h + slack). Catches a dead dump loop or empty volume.
+
+While the release gate holds the branch
+(`docs/POST-MERGE-CI-VERIFICATION-2026-09-27.md`), do **NOT** `git pull` /
+`vps-deploy.sh` on the VPS — they deploy app code. Apply only this delta with a
+temporary overlay; it touches exactly two containers:
+
+```bash
+cat > /root/flowops-f5-f9.yml <<'EOF'
+# TEMPORARY overlay (F-5/F-9, 2026-09-28). Remove once gate step 12 deploys
+# the canonical deploy/docker-compose.vps.yml from arena/01a0e43b-flowops.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+  postgres-backup:
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'flowops_*.sql.gz' -mmin -400 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
+EOF
+cd /root/FlowOps
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  -f /root/flowops-f5-f9.yml up -d --no-deps cloudflared postgres-backup
+```
+
+**Blast radius:** recreates ONLY `cloudflared` + `postgres-backup`. The single
+tunnel agent reconnects — expect a brief (seconds) site blip, then 200s resume;
+`postgres-backup` takes a fresh dump immediately on restart. No other container
+is touched. Never "smooth over" the blip by starting the host systemd unit —
+exactly one tunnel agent (invariant 3).
+
+**Rollback** (back to `:latest`, no healthchecks):
+```bash
+cd /root/FlowOps
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  up -d --no-deps cloudflared postgres-backup
+sudo rm -f /root/flowops-f5-f9.yml
+```
+
+**Verify** (both should read `healthy` within ~1 min; `cloudflared` only flips
+healthy with a live edge connection):
+```bash
+docker inspect flowops-cloudflared-1 --format 'cloudflared image={{.Config.Image}} health={{.State.Health.Status}}'
+docker inspect flowops-postgres-backup-1 --format 'postgres-backup health={{.State.Health.Status}}'
+```
+At gate step 12, deploy the branch normally and delete `/root/flowops-f5-f9.yml`
+— the canonical compose file carries the same pin + healthchecks.
+
+### G. Reboot survival (already configured — just verify)
 
 All services use `restart: always` in `deploy/docker-compose.vps.yml`, so the
 stack comes back after a reboot. Confirm Docker itself starts on boot:
@@ -453,7 +520,7 @@ sudo systemctl enable docker
 docker ps            # after a test reboot, all flowops-* containers should be Up
 ```
 
-### G. OS patching — `deploy/host-patch.sh` (added 2026-11-04)
+### H. OS patching — `deploy/host-patch.sh` (added 2026-11-04)
 
 The host login on 2026-11-04 read `35 updates can be applied immediately. / 5 of
 these updates are standard security updates. / *** System restart required ***`.
@@ -538,73 +605,6 @@ MIN_FREE_MB=1024        MIN_DUMP_BYTES=10240
 The audit is intentionally quiet: three security updates published an hour before
 it runs are unattended-upgrades working, so it says so and exits 0. It only fails
 once the backlog has *age* — which is the number that predicts an incident.
-
-### F. Pinned cloudflared + healthchecks (F-5 / F-9 — incident 2026-09-28)
-
-`deploy/docker-compose.vps.yml` pins `cloudflare/cloudflared:2026.9.3` (F-5 —
-`:latest` had left the box silently running an outdated `2026.6.1`) and adds
-healthchecks (F-9):
-
-- `cloudflared` — `["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]`.
-  Exec-form is **required**: the official image is distroless (no shell, no
-  wget/curl). The probe reads the `/ready` endpoint of the metrics server from
-  `command:` and exits 0 only with ≥1 live Cloudflare edge connection.
-- `postgres-backup` — healthy = a **validated** dump exists fresher than 6h40m
-  (dump cycle is 6h + slack). Catches a dead dump loop or empty volume.
-
-While the release gate holds the branch
-(`docs/POST-MERGE-CI-VERIFICATION-2026-09-27.md`), do **NOT** `git pull` /
-`vps-deploy.sh` on the VPS — they deploy app code. Apply only this delta with a
-temporary overlay; it touches exactly two containers:
-
-```bash
-cat > /root/flowops-f5-f9.yml <<'EOF'
-# TEMPORARY overlay (F-5/F-9, 2026-09-28). Remove once gate step 12 deploys
-# the canonical deploy/docker-compose.vps.yml from arena/01a0e43b-flowops.
-services:
-  cloudflared:
-    image: cloudflare/cloudflared:2026.9.3
-    healthcheck:
-      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-  postgres-backup:
-    healthcheck:
-      test: ["CMD-SHELL", "find /backups -name 'flowops_*.sql.gz' -mmin -400 | grep -q ."]
-      interval: 5m
-      timeout: 10s
-      retries: 3
-      start_period: 5m
-EOF
-cd /root/FlowOps
-docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
-  -f /root/flowops-f5-f9.yml up -d --no-deps cloudflared postgres-backup
-```
-
-**Blast radius:** recreates ONLY `cloudflared` + `postgres-backup`. The single
-tunnel agent reconnects — expect a brief (seconds) site blip, then 200s resume;
-`postgres-backup` takes a fresh dump immediately on restart. No other container
-is touched. Never "smooth over" the blip by starting the host systemd unit —
-exactly one tunnel agent (invariant 3).
-
-**Rollback** (back to `:latest`, no healthchecks):
-```bash
-cd /root/FlowOps
-docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
-  up -d --no-deps cloudflared postgres-backup
-sudo rm -f /root/flowops-f5-f9.yml
-```
-
-**Verify** (both should read `healthy` within ~1 min; `cloudflared` only flips
-healthy with a live edge connection):
-```bash
-docker inspect flowops-cloudflared-1 --format 'cloudflared image={{.Config.Image}} health={{.State.Health.Status}}'
-docker inspect flowops-postgres-backup-1 --format 'postgres-backup health={{.State.Health.Status}}'
-```
-At gate step 12, deploy the branch normally and delete `/root/flowops-f5-f9.yml`
-— the canonical compose file carries the same pin + healthchecks.
 
 ### Intermittent Cloudflare 502s
 
