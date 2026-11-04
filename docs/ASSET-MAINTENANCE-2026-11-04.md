@@ -196,13 +196,26 @@ to work.
 | Suite | Count | What it pins |
 |---|---|---|
 | `backend/src/maintenance/maintenance.rules.spec.ts` | 48 | three-valued warranty, downtime nulls, availability basis, comeback rules, meter integrity, verdict thresholds |
-| `backend/src/maintenance/maintenance.service.spec.ts` | 33 | tenancy 404s, idempotency, number allocation, auto-linking, `lifetime` refusal, cancel-clears-downtime, unit page maths |
+| `backend/src/maintenance/maintenance.service.spec.ts` | 34 | tenancy 404s, idempotency, number allocation, auto-linking, `lifetime` refusal, cancel-clears-downtime, planned ≠ lost, unit page maths |
+| `backend/src/maintenance/dto/maintenance.dto.spec.ts` | 8 | query-string coercion (`"false"` must not become `true`), required fields, `lifetime` rejected at the edge |
 | `frontend/src/lib/maintenance.test.ts` | 17 | what the screen may claim: no clean 100%, no invented cost/hour, "not recorded" ≠ "expired" |
-| `frontend/src/pages/Maintenance.test.tsx` | 12 | headline, findings, planned ≠ zero downtime, no delete, capture flow |
+| `frontend/src/pages/Maintenance.test.tsx` | 13 | headline, findings, planned ≠ zero downtime, no delete, event trail, capture flow |
 
-The service specs use a fake Prisma that resolves `include` **and** `select`
-relations — a fake that only understood `include` let a query silently return
-nothing while the test passed.
+Totals: **90 backend** in the module, **30 frontend**; full suites 2851 and 1166.
+
+Three notes on the tests themselves, because each one is a defect that a
+green suite would otherwise have hidden:
+
+- The service specs use a fake Prisma that resolves `include` **and** `select`
+  relations. A fake that only understood `include` let a query silently return
+  nothing while the test passed — the assertion was on a value that came from
+  the fixture, not from the query.
+- The `comebacksOnly` DTO test exists because `@Type(() => Boolean)` coerces
+  the string `"false"` to `true`: an unchecked filter returns *fewer* rows and
+  looks like an empty queue rather than a bug.
+- The page tests wait for settled text rather than the first paint. The headline
+  element exists while loading, so asserting on it immediately raced the fetch —
+  and chasing that flake is how the green-all-clear-before-data bug surfaced.
 
 ## 8. Next, if it earns it
 
