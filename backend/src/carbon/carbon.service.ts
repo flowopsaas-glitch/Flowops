@@ -45,6 +45,12 @@ const EMISSION_FACTORS: Record<string, number> = {
 // Vehicle type mapping from FlowOps vehicle types
 const VEHICLE_MAP: Record<string, string> = {
   'motorcycle': 'MOTORCYCLE',
+  // `Driver.vehicleType` defaults to "motorbike" in the schema, and a driver
+  // created through the API without a type gets exactly that string. It was
+  // missing here, so those drivers fell through to DEFAULT — the average diesel
+  // van — and every shipment they touched reported 2.2x its real emissions in
+  // fleet and client ESG reporting.
+  'motorbike': 'MOTORCYCLE',
   'bike': 'MOTORCYCLE',
   'scooter': 'MOTORCYCLE',
   'van': 'VAN_DIESEL',
@@ -106,7 +112,12 @@ export class CarbonService {
    */
   calculateShipment(distanceKm: number, vehicleType?: string, weightKg?: number): CarbonCalculation {
     const mapped = VEHICLE_MAP[(vehicleType || '').toLowerCase()] || 'DEFAULT';
-    const factor = EMISSION_FACTORS[mapped] || EMISSION_FACTORS['DEFAULT'];
+    // `??`, never `||`: BICYCLE has a factor of 0, which is falsy. With `||` a
+    // zero-emission delivery fell through to DEFAULT (average diesel van), so a
+    // bicycle courier's shipments were reported at ~0.249 kg CO2/km — the
+    // platform contradicting the very claim that makes bicycle last-mile worth
+    // selling.
+    const factor = EMISSION_FACTORS[mapped] ?? EMISSION_FACTORS['DEFAULT'];
 
     // Weight-based adjustment: heavier loads = more fuel
     // Base factor assumes average load; adjust ±20% based on weight
@@ -199,7 +210,8 @@ export class CarbonService {
 
       const vType = wb.shipments?.[0]?.driver?.vehicleType || 'van';
       const mapped = VEHICLE_MAP[vType.toLowerCase()] || 'DEFAULT';
-      const factor = EMISSION_FACTORS[mapped] || EMISSION_FACTORS['DEFAULT'];
+      // `??` for the same reason as calculateShipment: a bicycle factor is 0.
+      const factor = EMISSION_FACTORS[mapped] ?? EMISSION_FACTORS['DEFAULT'];
       const co2 = dist * factor;
 
       totalCo2 += co2;

@@ -7,6 +7,7 @@ export type TenantNavPermissionKey =
   | "notifications"
   | "collections"
   | "returns"
+  | "transactionLog"
   | "podDeliveries"
   | "driverDispatch"
   | "fleetDuty"
@@ -40,6 +41,7 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   notifications: "Notifications",
   collections: "Collections",
   returns: "Returns (RMA)",
+  transactionLog: "Transaction Log",
   podDeliveries: "POD / Deliveries",
   driverDispatch: "Driver Dispatch",
   fleetDuty: "Fleet Duty Board",
@@ -74,6 +76,7 @@ export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [
   "notifications",
   "collections",
   "returns",
+  "transactionLog",
   "podDeliveries",
   "driverDispatch",
   "whatsapp",
@@ -105,6 +108,7 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     notifications: true,
     collections: true,
     returns: true,
+    transactionLog: true,
     podDeliveries: true,
     driverDispatch: true,
     fleetDuty: true,
@@ -153,6 +157,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       notifications: true,
       collections: true,
       returns: true,
+      transactionLog: true,
       podDeliveries: true,
       driverDispatch: true,
       fleetDuty: true,
@@ -192,6 +197,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       notifications: true,
       collections: false,
       returns: true,
+      transactionLog: true,
       podDeliveries: true,
       driverDispatch: false,
       fleetDuty: false,
@@ -229,6 +235,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       notifications: true,
       collections: true,
       returns: false,
+      transactionLog: false,
       podDeliveries: true,
       driverDispatch: false,
       fleetDuty: false,
@@ -272,6 +279,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       notifications: true,
       collections: true,
       returns: true,
+      transactionLog: true,
       podDeliveries: true,
       driverDispatch: true,
       fleetDuty: true,
@@ -307,6 +315,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     notifications: true,
     collections: false,
     returns: false,
+    transactionLog: false,
     podDeliveries: true,
     driverDispatch: false,
     fleetDuty: false,
@@ -345,6 +354,7 @@ function buildViewerPermissions(): TenantNavPermissions {
     notifications: true,
     collections: false,
     returns: false,
+    transactionLog: false,
     podDeliveries: false,
     driverDispatch: false,
     fleetDuty: false,

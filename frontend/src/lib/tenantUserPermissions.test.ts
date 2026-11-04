@@ -82,6 +82,43 @@ describe('buildRoleDefaultTenantNavPermissions', () => {
   });
 });
 
+describe('transactionLog — matches the roles the API accepts', () => {
+  /**
+   * The audit trail controller is @Roles(ADMIN, COMPANY_ADMIN, MANAGER,
+   * DISPATCH, WAREHOUSE). The nav matrix has to agree in BOTH directions: a
+   * role granted the key but rejected by the API gets a visible link that
+   * 403s, and a role denied the key but accepted by the API can never reach a
+   * page it is entitled to. Neither failure is visible in a unit test of one
+   * layer alone, so it is asserted here.
+   */
+  const API_ROLES = ['ADMIN', 'COMPANY_ADMIN', 'MANAGER', 'DISPATCH', 'WAREHOUSE'];
+  const API_DENIED = ['DRIVER', 'VIEWER'];
+
+  it('grants it to every role the API accepts', () => {
+    for (const role of API_ROLES) {
+      expect(buildRoleDefaultTenantNavPermissions(role).transactionLog, role).toBe(true);
+    }
+  });
+
+  it('denies it to every role the API rejects', () => {
+    for (const role of API_DENIED) {
+      expect(buildRoleDefaultTenantNavPermissions(role).transactionLog, role).toBe(false);
+    }
+  });
+
+  it('is denied to an unknown role rather than defaulting open', () => {
+    expect(buildRoleDefaultTenantNavPermissions('SOMETHING_ELSE').transactionLog).toBe(false);
+    expect(buildRoleDefaultTenantNavPermissions(undefined).transactionLog).toBe(false);
+  });
+
+  it('is a real nav key with a label, so it can be overridden per user', () => {
+    expect(ALL_TENANT_NAV_PERMISSION_KEYS).toContain('transactionLog');
+    expect(TENANT_NAV_PERMISSION_LABELS.transactionLog).toBe('Transaction Log');
+    const normalized = normalizeTenantNavPermissions({ transactionLog: false }, 'MANAGER');
+    expect(normalized.transactionLog).toBe(false);
+  });
+});
+
 describe('normalizeTenantNavPermissions', () => {
   it('returns the role default when incoming is not an object', () => {
     const base = buildRoleDefaultTenantNavPermissions('MANAGER');
