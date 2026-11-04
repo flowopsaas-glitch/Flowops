@@ -6,6 +6,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
+import { PublicHealthController } from './common/health/public-health.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -236,7 +237,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
     KpiModule,
     GatewayModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, PublicHealthController],
   providers: [
     // API Shield — first line of defence (injection, XSS, bot detection)
     { provide: APP_GUARD, useClass: ApiShieldGuard },

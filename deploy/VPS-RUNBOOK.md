@@ -142,6 +142,35 @@ is actually serving, and fails if any route is missing. Exit code 0 means the de
 one built from this checkout. Route paths survive minification, so this is a real equality check on
 the artifact — not a guess from timestamps.
 
+It also checks the API through the same proxy the browser uses, because there are two health
+endpoints and only one of them is reachable from outside:
+
+| URL | Reached from | Purpose |
+|---|---|---|
+| `api:3000/health` (no prefix) | inside the compose network only | Docker `HEALTHCHECK`, compose healthcheck, deploy script, CI |
+| `<domain>/api/v1/health` | the internet, through nginx | uptime monitors, external status pages |
+
+nginx proxies only `/api/` and `/socket.io/`, so `/health` is invisible through the tunnel. And its
+SPA fallback (`try_files $uri $uri/ /index.html`) means **`https://<domain>/health` returns
+index.html with a 200** — a monitor pointed there reports the site healthy forever, including while
+the API is down. Always monitor `/api/v1/health`, which answers `200` when ready and `503` when the
+database is unreachable.
+
+Verifying from the host:
+
+```bash
+# the bundle the world is served — must match what post-deploy-check reported
+curl -fsS https://app.flowop.work/ | grep -oE '/assets/index-[^"]+\.js'
+
+# a deep link, straight into the SPA (not a Cloudflare 404)
+curl -sS -o /dev/null -w '%{http_code}\n' https://app.flowop.work/rail/coverage   # expect 200
+
+# the API through the ingress — expect {"status":"ok","db":"connected","ts":"…"}
+curl -fsS https://app.flowop.work/api/v1/health
+```
+
+If the asset hash differs from the deploy output, Cloudflare is serving cached HTML — purge it.
+
 The script's migration invocation is not a replacement for an approved
 production release procedure. Before applying a migration to an existing
 database, take and verify a backup, rehearse against a clone, and follow the

@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { PrismaService } from './prisma/prisma.service';
 import { AuthService } from './auth/auth.service';
 import { HealthSentinelService } from './common/guards/health-sentinel.service';
 
@@ -10,32 +9,31 @@ import { Public } from './common/decorators/public.decorator';
 @SkipThrottle() // health/diagnostics — must not be rate-limited (Docker/PM2 probes)
 export class AppController {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly authService: AuthService,
     private readonly healthSentinel: HealthSentinelService,
   ) {}
 
   /**
-   * GET /health
-   * @Public — no JWT required so Docker/ALB health checks work without auth.
+   * GET /health — INTERNAL probe, not reachable through the ingress.
    *
-   * Used by Docker HEALTHCHECK, ALB target-group health checks, and
-   * the frontend's status page. Returns HTTP 200 when the server + DB
-   * are ready; 503 if the DB is unreachable.
+   * nginx proxies only `/api/` and `/socket.io/`, so this path answers inside
+   * the compose network (Docker HEALTHCHECK, compose healthcheck, deploy
+   * scripts, CI) and nowhere else. The public equivalent is
+   * GET /api/v1/health (PublicHealthController).
+   *
+   * Always returns HTTP 200: this shape is consumed by shell probes that read
+   * the body (`wget -qO- … || true`), and flipping it to 503 on a transient DB
+   * blip would mark the container unhealthy and stall `depends_on:
+   * service_healthy` on the next boot. The public route *does* signal 503,
+   * because a monitor there only reads the status code.
    */
   @Public()
   @Get('health')
   async health() {
-    try {
-      const sentinel = this.healthSentinel.getStatus();
-      if (!sentinel.healthy) {
-        return { status: 'degraded', issues: sentinel.issues, ts: new Date().toISOString() };
-      }
-      await this.prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', db: 'connected', uptime: Math.round(process.uptime()), ts: new Date().toISOString() };
-    } catch {
-      return { status: 'degraded', db: 'unreachable', ts: new Date().toISOString() };
-    }
+    const probe = await this.healthSentinel.probe();
+    return probe.status === 'ok'
+      ? { status: 'ok', db: probe.db, uptime: probe.uptime, ts: probe.ts }
+      : { status: 'degraded', db: probe.db, uptime: probe.uptime, issues: probe.issues, ts: probe.ts };
   }
 
   /**

@@ -7,6 +7,7 @@ import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { GLOBAL_PREFIX_EXCLUDE } from './common/health/health-routes';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { initSentry } from './common/sentry';
@@ -99,7 +100,15 @@ async function bootstrap() {
 
   // ── API versioning prefix ─────────────────────────────────────────────
   app.setGlobalPrefix('api/v1', {
-    exclude: ['/health', '/api/v1/whatsapp/webhook', '/api/v1/paystack/webhook'],
+    // `/health` is the INTERNAL probe: Docker HEALTHCHECK, compose healthcheck,
+    // the deploy script and CI all call it on the container's own root, so it
+    // must stay un-prefixed. `/api/v1/health` is the PUBLIC one — nginx proxies
+    // only `/api/`, so it is the only health URL that survives the tunnel. Both
+    // delegate to HealthSentinelService.probe(), so they cannot disagree.
+    //
+    // The list lives in common/health/health-routes.ts so a test can boot a real
+    // app with these exact values and prove the paths resolve.
+    exclude: [...GLOBAL_PREFIX_EXCLUDE],
   });
 
   // ── Swagger (dev only) ────────────────────────────────────────────────
