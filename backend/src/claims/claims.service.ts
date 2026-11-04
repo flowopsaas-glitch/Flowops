@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { Claim, ClaimEvent, ClaimStatus } from '@prisma/client';
+import type { Claim, ClaimEvent, ClaimStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   canTransition,
@@ -35,6 +35,17 @@ export interface ClaimActor {
 export type ClaimWithEvents = Claim & { events: ClaimEvent[] };
 
 const MAX_NUMBER_ATTEMPTS = 5;
+
+/**
+ * A Json column takes `Prisma.InputJsonValue`, which does not admit `unknown` at
+ * any depth — and a DTO's evidence map is exactly `Record<string, unknown>`. The
+ * round-trip gives a plain JSON value *and* the defensive copy worth having here:
+ * the caller's object cannot be mutated back through the row we stored.
+ * `undefined` members drop out, which is what "not supplied" should mean.
+ */
+function asJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 /**
  * Claims & liability.
@@ -100,7 +111,7 @@ export class ClaimsService {
               summary: dto.summary,
               description: dto.description ?? null,
               incidentAt: dto.incidentAt ? new Date(dto.incidentAt) : null,
-              evidence: dto.evidence ?? undefined,
+              evidence: dto.evidence ? asJson(dto.evidence) : undefined,
               respondBy: dto.respondBy ? new Date(dto.respondBy) : null,
               raisedById: actor?.id ?? null,
               raisedByName: actor?.name ?? null,
@@ -452,7 +463,7 @@ export class ClaimsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.claim.update({
         where: { id: claim.id },
-        data: { evidence: { ...existing, refs: merged } },
+        data: { evidence: asJson({ ...existing, refs: merged }) },
       });
       await tx.claimEvent.create({
         data: {
