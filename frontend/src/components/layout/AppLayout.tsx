@@ -387,6 +387,10 @@ export default function AppLayout() {
     { section: "OPS", label: "Returns / RMA", desc: "Collect, inspect, refund, restock", to: "/returns", icon: RotateCcw, perm: "returns", entitlement: "returns" },
     { section: "OPS", label: "POD / Deliveries", desc: "Proof of delivery", to: "/pod-deliveries", icon: ClipboardCheck, perm: "podDeliveries" },
     { section: "OPS", label: "Driver Dispatch", desc: "Live route execution", to: "/driver-dispatch", icon: Route, perm: "driverDispatch" },
+    // Compliance is read by everyone who dispatches and by finance; evidence is
+    // recorded by operational roles and a hold is a supervisory act (see the
+    // page, which hides what the API would refuse).
+    { section: "OPS", label: "Driver Compliance", desc: "Who may be dispatched, and the evidence behind it", to: "/compliance/drivers", icon: ShieldCheck, perm: "driverCompliance" },
     { section: "OPS", label: "Route Optimizer", desc: "AI stop sequencing", to: "/routes", icon: Route, perm: "driverDispatch", entitlement: "routeOptimization" },
     { section: "OPS", label: "Fleet Maintenance", desc: "Vehicle service tracker", to: "/fleet", icon: Wrench, perm: "driverDispatch" },
     { section: "OPS", label: "ESG & Carbon", desc: "Fleet emissions & compliance", to: "/esg", icon: Activity, perm: "driverDispatch" },

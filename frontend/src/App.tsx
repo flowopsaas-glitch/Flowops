@@ -11,6 +11,7 @@ import OwnerRoute from "./components/owner/OwnerRoute";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import RequirePermission from "./components/auth/RequirePermission";
 import Claims from "./pages/Claims";
+import DriverCompliance from "./pages/DriverCompliance";
 import RequireFeature from "./components/auth/RequireFeature";
 import RootRoute from "./components/auth/RootRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -403,6 +404,14 @@ export default function App() {
                 element={
                   <RequirePermission perm="claims">
                     <Claims />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/compliance/drivers"
+                element={
+                  <RequirePermission perm="driverCompliance">
+                    <DriverCompliance />
                   </RequirePermission>
                 }
               />
