@@ -6951,3 +6951,310 @@ model ClaimEvent {
   @@index([companyId, createdAt])
   @@map("claim_events")
 }
+
+// ─── Asset maintenance & warranty ──────────────────────────────────────────
+//
+// Maintenance used to hang off `Driver` (see VehicleService above): a service
+// record needed a *person* to attach to. That is wrong for the equipment this
+// platform is asked to account for — a reach stacker, an RTG, a genset, a
+// trailer — none of which has a driver, and all of which carry the cost of
+// standing still. So the register below is the axis: an asset is maintained,
+// a job card is the record of it, and a warranty is a window on that record.
+//
+// Three deliberate omissions, because each would be a lie the schema could
+// tell without anyone noticing:
+//
+//  * **No `warranty: lifetime`.** `warrantyTermDays` is an integer. A term is
+//    a number of days or it is absent; there is no value that means "forever".
+//    A lifetime promise cannot be priced, and a database is not the place to
+//    convert a verbal one into a written obligation.
+//  * **No `downtimeMinutes` on a planned job.** It is derived for breakdowns
+//    and always absent for planned work: planned unavailability is not lost
+//    availability, and adding the two together is how an availability figure
+//    gets flattered.
+//  * **No delete path.** `MaintenanceJob` has no `@@map` on a soft-delete
+//    column and no `deletedAt`; cancellation is a status with a reason. A job
+//    card is evidence, and evidence that can be removed is not evidence.
+
+enum AssetClass {
+  REACH_STACKER
+  RTG
+  RMG
+  FORKLIFT
+  TRACTOR
+  TRUCK
+  TRAILER
+  GENSET
+  CRANE
+  PUMP
+  OTHER
+}
+
+/// What the meter counts. Terminals count engine hours, hauliers count
+/// kilometres; recording the wrong one silently destroys every
+/// cost-per-unit-of-work figure downstream.
+enum AssetMeterType {
+  HOURS
+  KM
+}
+
+enum AssetStatus {
+  IN_SERVICE
+  DOWN
+  UNDER_REPAIR
+  RETIRED
+}
+
+enum MaintenanceJobType {
+  BREAKDOWN
+  PLANNED
+  INSPECTION
+  RECALL
+}
+
+enum MaintenanceJobStatus {
+  REPORTED
+  IN_PROGRESS
+  COMPLETED
+  SIGNED_OFF
+  CANCELLED
+}
+
+enum MaintenanceCostKind {
+  PART
+  LABOUR
+  OUTSIDE_SERVICE
+  TRAVEL
+  CONSUMABLE
+}
+
+enum MaintenanceEventType {
+  CREATED
+  STATUS_CHANGED
+  METER_RECORDED
+  COST_ADDED
+  NOTE_ADDED
+  COMEBACK_LINKED
+  WARRANTY_SET
+}
+
+model MaintenanceAsset {
+  id        String @id @default(cuid())
+  companyId String
+
+  /// The operator's own unit number — "RS-014", "TRL-2201". Unique per tenant,
+  /// because it is what a workshop, a job card and a phone call all refer to.
+  assetCode String
+  name      String?
+  assetClass AssetClass
+  make      String?
+  model     String?
+  serialNumber String?
+
+  /// Whose contract the unit serves. A self-employed contractor maintaining
+  /// equipment for a terminal operator is maintaining *someone else's* assets,
+  /// and the supplier's name is the axis they are judged on at renewal.
+  custodian String?
+  site      String?
+
+  meterType  AssetMeterType @default(HOURS)
+  /// Last accepted reading. Only ever moves forward — see MaintenanceMeterReading.
+  meterReading Float @default(0)
+  meterReadAt  DateTime?
+
+  status        AssetStatus @default(IN_SERVICE)
+  commissionedAt DateTime?
+  retiredAt     DateTime?
+  notes         String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs          MaintenanceJob[]
+  meterReadings MaintenanceMeterReading[]
+
+  @@unique([companyId, assetCode])
+  @@index([companyId, status])
+  @@index([companyId, assetClass])
+  @@map("maintenance_assets")
+}
+
+/// Append-only meter spine.
+///
+/// `MaintenanceAsset.meterReading` is the current value; these are the readings
+/// that produced it. Kept separately because a meter that moves backwards is
+/// either a replaced instrument or a fabricated history, and both need to be
+/// visible rather than overwritten.
+model MaintenanceMeterReading {
+  id        String @id @default(cuid())
+  companyId String
+  assetId   String
+  asset     MaintenanceAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  reading Float
+  /// JOB | MANUAL | IMPORT — how the reading arrived.
+  source  String  @default("MANUAL")
+  /// Set when the reading was captured as part of a job card.
+  jobId   String?
+  recordedByName String?
+
+  readAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([assetId, readAt])
+  @@index([companyId, readAt])
+  @@map("maintenance_meter_readings")
+}
+
+/// The controlled fault vocabulary, per tenant.
+///
+/// Free-text job cards cannot be grouped, which is why a contractor's folder of
+/// cards never shows them the pattern they are sitting on. Repeat-failure
+/// analysis is only possible because these codes exist.
+model MaintenanceFaultCode {
+  id        String @id @default(cuid())
+  companyId String
+
+  code   String
+  label  String
+  /// What to look at first — carried onto the job card so the next technician
+  /// is not starting from zero.
+  guidance String? @db.Text
+  active   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs MaintenanceJob[]
+
+  @@unique([companyId, code])
+  @@index([companyId, active])
+  @@map("maintenance_fault_codes")
+}
+
+model MaintenanceJob {
+  id        String @id @default(cuid())
+  companyId String
+
+  assetId String
+  /// Restrict, not Cascade: a unit with job cards on it cannot be deleted out
+  /// from under its own history.
+  asset   MaintenanceAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  /// MJ-YYYY-#### per company.
+  jobNumber String
+
+  /// Client-generated, so a double tap in a yard on a bad connection produces
+  /// one card rather than two. Unique per company; null when the caller did not
+  /// supply one (Postgres allows many nulls).
+  idempotencyKey String?
+
+  type   MaintenanceJobType
+  status MaintenanceJobStatus @default(REPORTED)
+
+  reportedAt     DateTime @default(now())
+  reportedByName String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  /// Sign-off is the custodian's acceptance, a separate act from the
+  /// technician marking the work complete. Both are recorded; neither is
+  /// inferred from the other.
+  signedOffAt DateTime?
+  signedOffBy String?
+
+  faultCodeId String?
+  faultCode   MaintenanceFaultCode? @relation(fields: [faultCodeId], references: [id], onDelete: Restrict)
+  /// What was observed, in the reporter's words. Kept even when a fault code is
+  /// supplied: the code groups, the sentence explains.
+  faultDescription String @db.Text
+  workPerformed    String? @db.Text
+
+  /// Derived from reportedAt → completedAt for breakdowns and recalls, and
+  /// null for planned work and inspections. Never typed in.
+  downtimeMinutes Int?
+  /// Meter at the time of the job — the clock that makes cost and failure
+  /// comparable across units and across years.
+  meterAtJob Float?
+
+  /// The previous job this one repeats. Set automatically when the same fault
+  /// recurs on the same unit, so a comeback is a link rather than a memory.
+  priorJobId String?
+  priorJob   MaintenanceJob?  @relation("MaintenanceJobLineage", fields: [priorJobId], references: [id], onDelete: SetNull)
+  comebacks  MaintenanceJob[] @relation("MaintenanceJobLineage")
+
+  /// The term this job carried, in days. Null means "none recorded" — never
+  /// "no warranty", which is why the warranty position is three-valued.
+  warrantyTermDays  Int?
+  /// warrantyTermDays after completedAt. Set once, at completion.
+  warrantyExpiresAt DateTime?
+
+  labourHours  Float?
+  providerName String?
+  invoiceRef   String?
+  currency     String @default("ZAR")
+
+  cancelledReason String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  costs  MaintenanceJobCost[]
+  events MaintenanceJobEvent[]
+
+  @@unique([companyId, jobNumber])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, status])
+  @@index([companyId, reportedAt])
+  @@index([assetId, reportedAt])
+  @@index([companyId, warrantyExpiresAt])
+  @@index([faultCodeId])
+  @@index([priorJobId])
+  @@map("maintenance_jobs")
+}
+
+/// Parts and labour as rows, not a blob: a rollup cannot group a sentence.
+model MaintenanceJobCost {
+  id        String @id @default(cuid())
+  companyId String
+  jobId     String
+  job       MaintenanceJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  kind        MaintenanceCostKind
+  description String
+  quantity    Float  @default(1)
+  unitCost    Float
+  /// quantity × unitCost, rounded to cents by the service.
+  amount      Float
+  currency    String @default("ZAR")
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([companyId, kind])
+  @@map("maintenance_job_costs")
+}
+
+/// Append-only, like ClaimEvent: nothing updates or deletes one of these, so a
+/// job card's history cannot be rewritten after the fact.
+model MaintenanceJobEvent {
+  id        String @id @default(cuid())
+  jobId     String
+  job       MaintenanceJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  companyId String
+
+  type       MaintenanceEventType
+  fromStatus MaintenanceJobStatus?
+  toStatus   MaintenanceJobStatus?
+
+  actorId   String?
+  actorName String?
+  description String @db.Text
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("maintenance_job_events")
+}

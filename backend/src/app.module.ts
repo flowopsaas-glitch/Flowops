@@ -52,6 +52,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ApiModule } from './api/api.module';
 import { AuditModule } from './audit/audit.module';
 import { ClaimsModule } from './claims/claims.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
 import { DriverPortalModule } from './driver-portal/driver-portal.module';
 import { PushModule } from './push/push.module';
 import { AlertingModule } from './alerting/alerting.module';
@@ -162,6 +163,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
     // Platform audit trail (global)
     AuditModule,
     ClaimsModule,
+    MaintenanceModule,
 
     // Owner alerting engine (global)
     AlertingModule,

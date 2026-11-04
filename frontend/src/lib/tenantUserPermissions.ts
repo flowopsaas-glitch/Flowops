@@ -9,6 +9,7 @@ export type TenantNavPermissionKey =
   | "returns"
   | "transactionLog"
   | "claims"
+  | "maintenance"
   | "driverCompliance"
   | "podDeliveries"
   | "driverDispatch"
@@ -45,6 +46,7 @@ export const TENANT_NAV_PERMISSION_LABELS: Record<TenantNavPermissionKey, string
   returns: "Returns (RMA)",
   transactionLog: "Transaction Log",
   claims: "Claims & Liability",
+  maintenance: "Asset Maintenance",
   driverCompliance: "Driver Compliance",
   podDeliveries: "POD / Deliveries",
   driverDispatch: "Driver Dispatch",
@@ -82,6 +84,7 @@ export const ALL_TENANT_NAV_PERMISSION_KEYS: TenantNavPermissionKey[] = [
   "returns",
   "transactionLog",
   "claims",
+  "maintenance",
   "driverCompliance",
   "podDeliveries",
   "driverDispatch",
@@ -116,6 +119,7 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
     returns: true,
     transactionLog: true,
     claims: true,
+    maintenance: true,
     driverCompliance: true,
     podDeliveries: true,
     driverDispatch: true,
@@ -167,6 +171,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: true,
       transactionLog: true,
       claims: true,
+      maintenance: true,
       driverCompliance: true,
       podDeliveries: true,
       driverDispatch: true,
@@ -209,6 +214,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: true,
       transactionLog: true,
       claims: true,
+      maintenance: true,
       driverCompliance: false,
       podDeliveries: true,
       driverDispatch: false,
@@ -249,6 +255,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: false,
       transactionLog: false,
       claims: false,
+      maintenance: false,
       driverCompliance: false,
       podDeliveries: true,
       driverDispatch: false,
@@ -295,6 +302,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
       returns: true,
       transactionLog: true,
       claims: true,
+      maintenance: true,
       driverCompliance: true,
       podDeliveries: true,
       driverDispatch: true,
@@ -333,6 +341,7 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     returns: false,
     transactionLog: false,
     claims: false,
+    maintenance: false,
     driverCompliance: false,
     podDeliveries: true,
     driverDispatch: false,
@@ -374,6 +383,7 @@ function buildViewerPermissions(): TenantNavPermissions {
     returns: false,
     transactionLog: false,
     claims: true,
+    maintenance: true,
     driverCompliance: true,
     podDeliveries: false,
     driverDispatch: false,
