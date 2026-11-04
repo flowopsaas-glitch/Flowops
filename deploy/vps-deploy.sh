@@ -117,6 +117,16 @@ grep -q '^VITE_API_URL=/api/v1' .env \
 for k in POSTGRES_PASSWORD JWT_SECRET OWNER_SEED_EMAIL OWNER_SEED_PASSWORD CORS_ORIGINS; do
   grep -q "^${k}=" .env || die "Missing ${k} in .env"
 done
+
+# RBAC_STRICT must be TRUE, not merely present — this one is a security posture,
+# not a preference. The base allowlist defaults it to false so a laptop can run
+# loose, which means production is strict ONLY if .env says so. It was previously
+# made strict by hand-editing deploy/docker-compose.vps.yml on the host: invisible
+# to a clean checkout, lost on `git checkout`, and impossible to commit because
+# backend/scripts/compose-env-allowlist.mjs fails the build for exactly that.
+# Failing here — before the stack moves — is the whole point of a pre-flight.
+grep -q '^RBAC_STRICT=true$' .env \
+  || die "RBAC_STRICT must be \"true\" in .env (found: $(grep '^RBAC_STRICT' .env || echo \"not set\")).\n       Non-strict production silently allows routes that carry no access decision.\n       Fix:  sed -i 's/^#*RBAC_STRICT=.*/RBAC_STRICT=true/' .env   (or append it)\n       Do NOT hardcode it in deploy/docker-compose.vps.yml — CI rejects that."
 ok "Pre-flight checks passed"
 
 # ── 1. Pull latest source ────────────────────────────────────────────────────
@@ -197,6 +207,15 @@ fi
 ok "No container publishes a port on 0.0.0.0"
 HEALTH=$($COMPOSE exec -T api sh -c 'wget -qO- http://localhost:3000/health 2>/dev/null || true')
 echo "api /health -> ${HEALTH:-<no response>}"
+
+# The pre-flight read the file; this reads the CONTAINER. A value in .env that
+# never reaches the process is the failure mode that started all of this, so the
+# deploy proves the running api, not the config it was rendered from.
+RBAC_LIVE="$($COMPOSE exec -T api printenv RBAC_STRICT 2>/dev/null | tr -d '\r\n')"
+if [[ "$RBAC_LIVE" != "true" ]]; then
+  die "The api container reports RBAC_STRICT='${RBAC_LIVE:-<unset>}' but .env says true.\n       The value did not reach the process — the stack is UP but not strict.\n       Check that docker-compose.yml still carries RBAC_STRICT in the api\n       environment allowlist, and re-run: docker compose ... up -d --force-recreate api"
+fi
+ok "api container is running with RBAC_STRICT=true"
 
 # A healthy container is not proof that the browser is being served *this* build: nginx answers
 # /healthz from a static file that never changes, so a frontend-only change that was not rebuilt

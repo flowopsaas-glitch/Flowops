@@ -95,7 +95,11 @@ cp .env.production.example .env
 #   MUST set: POSTGRES_PASSWORD, JWT_SECRET, JWT_REFRESH_SECRET,
 #             OWNER_SEED_EMAIL, OWNER_SEED_PASSWORD,
 #             CORS_ORIGINS + APP_URL + API_PUBLIC_URL (your domain),
-#             GROQ_API_KEY (unlocks all AI features)
+#             GROQ_API_KEY (unlocks all AI features),
+#             RBAC_STRICT=true   <- deploy refuses to run without this; production
+#                                   runs non-strict otherwise. Set it HERE and never
+#                                   in deploy/docker-compose.vps.yml (CI rejects it).
+#                                   See docs/DEPLOY-HANDOVER-RBAC-STRICT-2026-10-28.md
 #   Optional: OTP_HMAC_SECRET=$(openssl rand -hex 32) for an independent OTP hash key;
 #             if omitted/blank, the API derives a domain-separated key from JWT_SECRET.
 #   For a NON-flowop.work domain also set VITE_CANONICAL_HOSTS=<your-domain>
