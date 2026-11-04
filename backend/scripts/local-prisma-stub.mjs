@@ -268,11 +268,79 @@ const enumDecls = Object.entries(enums)
   })
   .join('\n\n');
 
-const modelKeys = models.map((m) => `  ${m.charAt(0).toLowerCase() + m.slice(1)}: PrismaDelegate;`).join('\n');
+const modelKeys = models
+  .map((m) => `  ${m.charAt(0).toLowerCase() + m.slice(1)}: PrismaDelegate<${m}>;`)
+  .join('\n');
 
-// Row types. Real Prisma emits a full interface per model; anything is enough
-// here to satisfy `import { Waybill } from '@prisma/client'`.
-const modelTypes = models.map((m) => `export type ${m} = PrismaRow;`).join('\n');
+/*
+ * Row shapes.
+ *
+ * `any` was not good enough: `{ ...withoutShareToken(row), ...metrics }` where
+ * `row` is `any` resolves to just `metrics`, because spreading `any` contributes
+ * nothing — which turned a correct controller into four type errors. An
+ * interface per model restores the field names, so a spread behaves the way it
+ * would with the real client.
+ *
+ * No index signature, deliberately: `Omit<T, K>` is built on `keyof T`, and an
+ * index signature makes `keyof T` just `string | number`, so `Omit` would drop
+ * every named field and a spread of the result would carry nothing. Real Prisma
+ * types have exact keys for the same reason.
+ *
+ * The cost is that a `select`-narrowed result still types as the full row (the
+ * stub cannot see the selection). That is looser than the real client, never
+ * tighter, so it cannot invent an error that a real build would not also report.
+ * Field-level correctness is checked against the schema by
+ * scripts/check-prisma-query-keys.mjs.
+ */
+const SCALAR_TS = {
+  String: 'string',
+  Int: 'number',
+  BigInt: 'number',
+  Float: 'number',
+  Decimal: 'number',
+  Boolean: 'boolean',
+  DateTime: 'Date',
+  Json: 'any',
+  Bytes: 'Uint8Array',
+};
+
+/** A relation, rather than a scalar or an enum. */
+const isRelation = (field) => !SCALAR_TS[field.type] && !enums[field.type];
+
+const tsTypeOf = (field) => {
+  // An enum member map is truthy but not a type name: the field's type is the
+  // enum's NAME, which is emitted alongside it.
+  const base = SCALAR_TS[field.type] ?? (enums[field.type] ? field.type : 'any');
+  if (field.isList) return `${base}[]`;
+  return field.isRequired ? base : `${base} | null`;
+};
+
+/**
+ * One row line.
+ *
+ * Relations are optional: `create()`/`update()` return scalars only unless the
+ * caller asked for an `include`, so a required relation field would make every
+ * correct prisma call that returns a row fail to compile. `_count` is the same
+ * story — Prisma adds it only when selected — but every model can carry one, so
+ * each interface gets the field.
+ */
+const fieldLine = (field) => {
+  if (isRelation(field)) {
+    // A to-many relation is `any[]`, a to-one is optional. The stub cannot model
+    // `GetPayload<{ include }>`, so it cannot tell an included row from a bare
+    // one; typing to-many as required is the same latitude the old `any`
+    // delegate gave, and every to-many relation the code reads is `include`d.
+    return field.isList ? `  ${field.name}: any[];` : `  ${field.name}?: any;`;
+  }
+  return `  ${field.name}: ${tsTypeOf(field)};`;
+};
+
+const modelTypes = datamodel
+  .map(({ name, fields }) => {
+    const rows = [...fields.map(fieldLine), '  _count?: Record<string, number>;'].join('\n');
+    return `export interface ${name} {\n${rows}\n}`;
+  })
+  .join('\n\n');
 
 const srcDir = join(here, '..', 'src');
 const prismaTypeNames = collectPrismaTypeNames(srcDir);
@@ -310,22 +378,22 @@ const dts = `// GENERATED LOCALLY by scripts/local-prisma-stub.mjs — do not ed
  */
 export type PrismaRow = any;
 
-export interface PrismaDelegate {
-  findMany(args?: any): Promise<PrismaRow[]>;
-  findFirst(args?: any): Promise<PrismaRow | null>;
-  findFirstOrThrow(args?: any): Promise<PrismaRow>;
-  findUnique(args?: any): Promise<PrismaRow | null>;
-  findUniqueOrThrow(args?: any): Promise<PrismaRow>;
-  create(args?: any): Promise<PrismaRow>;
+export interface PrismaDelegate<Row = any> {
+  findMany(args?: any): Promise<Row[]>;
+  findFirst(args?: any): Promise<Row | null>;
+  findFirstOrThrow(args?: any): Promise<Row>;
+  findUnique(args?: any): Promise<Row | null>;
+  findUniqueOrThrow(args?: any): Promise<Row>;
+  create(args?: any): Promise<Row>;
   createMany(args?: any): Promise<{ count: number }>;
-  update(args?: any): Promise<PrismaRow>;
+  update(args?: any): Promise<Row>;
   updateMany(args?: any): Promise<{ count: number }>;
-  upsert(args?: any): Promise<PrismaRow>;
-  delete(args?: any): Promise<PrismaRow>;
+  upsert(args?: any): Promise<Row>;
+  delete(args?: any): Promise<Row>;
   deleteMany(args?: any): Promise<{ count: number }>;
   count(args?: any): Promise<number>;
-  aggregate(args?: any): Promise<PrismaRow>;
-  groupBy(args?: any): Promise<PrismaRow[]>;
+  aggregate(args?: any): Promise<any>;
+  groupBy(args?: any): Promise<any[]>;
 }
 
 ${enumDecls}
