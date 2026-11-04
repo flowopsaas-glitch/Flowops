@@ -55,6 +55,36 @@ function parseModels(schema) {
 }
 
 /**
+ * `Prisma.dmmf.datamodel.models` — the schema as data.
+ *
+ * Real Prisma exposes the datamodel at runtime, and specs use it to check their
+ * own writes against the schema rather than against a hand-copied field list
+ * (see rail-tariff.service.spec.ts). Only `name` and `fields[].name` are
+ * supplied; that is the whole of what the codebase reads.
+ */
+function parseDatamodel(schema) {
+  const models = [];
+  for (const match of schema.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
+    const [, name, body] = match;
+    const fields = [];
+    for (const raw of body.split('\n')) {
+      const line = raw.replace(/\/\/.*$/, '').trim();
+      if (!line || line.startsWith('@@')) continue;
+      const field = /^([A-Za-z_]\w*)\s+(\S+)/.exec(line);
+      if (!field) continue;
+      fields.push({
+        name: field[1],
+        type: field[2].replace(/[?[\]]/g, ''),
+        isRequired: !field[2].includes('?'),
+        isList: field[2].includes('['),
+      });
+    }
+    models.push({ name, fields });
+  }
+  return models;
+}
+
+/**
  * `Prisma.*` type names the codebase references (`Prisma.RailSlotApplicationWhereInput`, …).
  *
  * Real Prisma generates one per model and per operation; reproducing that set is
@@ -83,6 +113,7 @@ function collectPrismaTypeNames(dir) {
 const schema = readFileSync(schemaPath, 'utf8');
 const enums = parseEnums(schema);
 const models = parseModels(schema);
+const datamodel = parseDatamodel(schema);
 
 const client = `// GENERATED LOCALLY by scripts/local-prisma-stub.mjs — do not edit, do not commit.
 // Stand-in for the generated Prisma client: real enum names, no query semantics.
@@ -128,9 +159,58 @@ for (const model of ${JSON.stringify(models)}) {
   PrismaClient.prototype[key] = delegate;
 }
 
-const Prisma = { ...enums };
+const dmmf = { datamodel: { models: ${JSON.stringify(datamodel)} } };
 
-module.exports = { PrismaClient, Prisma, ...enums, default: { PrismaClient, Prisma } };
+/**
+ * Real Prisma throws this for constraint violations and callers branch on
+ * instanceof and .code (rail-timetable.service.ts). Without it the branch
+ * itself throws, which reads as a bug in the caller.
+ */
+class PrismaClientKnownRequestError extends Error {
+  constructor(message, options) {
+    super(message);
+    const { code, clientVersion, meta, batchRequestIdx } = options || {};
+    this.code = code;
+    this.clientVersion = clientVersion;
+    this.meta = meta;
+    this.batchRequestIdx = batchRequestIdx;
+    this.name = 'PrismaClientKnownRequestError';
+  }
+}
+
+class PrismaClientValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PrismaClientValidationError';
+  }
+}
+
+class PrismaClientInitializationError extends Error {
+  constructor(message, clientVersion) {
+    super(message);
+    this.clientVersion = clientVersion;
+    this.name = 'PrismaClientInitializationError';
+  }
+}
+
+const Prisma = {
+  ...enums,
+  dmmf,
+  PrismaClientKnownRequestError,
+  PrismaClientValidationError,
+  PrismaClientInitializationError,
+};
+
+module.exports = {
+  PrismaClient,
+  Prisma,
+  ...enums,
+  dmmf,
+  PrismaClientKnownRequestError,
+  PrismaClientValidationError,
+  PrismaClientInitializationError,
+  default: { PrismaClient, Prisma },
+};
 `;
 
 /*
@@ -228,6 +308,17 @@ ${modelKeys}
 }
 
 export declare const Prisma: Record<string, any>;
+
+export declare class PrismaClientKnownRequestError extends Error {
+  readonly code: string;
+  readonly clientVersion?: string;
+  readonly meta?: any;
+  constructor(message: string, options?: any);
+}
+export declare class PrismaClientValidationError extends Error {}
+export declare class PrismaClientInitializationError extends Error {}
+export declare const dmmf: any;
+
 export default PrismaClient;
 `;
 

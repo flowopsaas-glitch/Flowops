@@ -64,8 +64,25 @@ function parseModels(schema) {
   return models;
 }
 
+/**
+ * Json columns hold free-form documents, so the keys inside their value are
+ * application data, not schema fields — `metadata: { added: [...] }` is not a
+ * mistyped `metadata.added` column.
+ */
+function parseJsonFields(schema) {
+  const json = new Set();
+  for (const match of schema.matchAll(/^model\s+\w+\s*\{([\s\S]*?)^\}/gm)) {
+    for (const raw of match[1].split('\n')) {
+      const field = /^\s*([A-Za-z_]\w*)\s+Json\??/.exec(raw);
+      if (field) json.add(field[1]);
+    }
+  }
+  return json;
+}
+
 const schema = readFileSync(join(backend, 'prisma', 'schema.prisma'), 'utf8');
 const models = parseModels(schema);
+const jsonFields = parseJsonFields(schema);
 const lowerModel = (name) => name.charAt(0).toLowerCase() + name.slice(1);
 const modelByKey = new Map([...models.keys()].map((n) => [lowerModel(n), n]));
 
@@ -116,13 +133,27 @@ for (const relPath of targets) {
       console.log(`${relPath}:${i + 1}: where.${assign[1]} is not a field of ${model}`);
     }
 
+    // Where a Json column is given an object literal, everything nested inside
+    // it is opaque payload.
+    const jsonValueAt = (() => {
+      for (const m of line.matchAll(/([A-Za-z_]\w*)\s*:\s*\{/g)) {
+        // Index of the opening brace itself, which is where a nested key match starts.
+        if (jsonFields.has(m[1])) return m.index + m[0].length - 1;
+      }
+      return Number.POSITIVE_INFINITY;
+    })();
+
     // Object-literal keys: `{ someField: ... }`
     for (const key of line.matchAll(/(?:^|[{,]\s*)([A-Za-z_]\w*)\s*:(\s*)(.*)$/g)) {
       const name = key[1];
+      // Inside a Json column's value: free-form, so nothing to check.
+      if (key.index >= jsonValueAt) continue;
       // Stop at the first argument/entry delimiter: the value of interest ends
       // there, and what follows (`, nextParam: Type`, `): ReturnType`) is a
       // different declaration.
-      const value = key[3].split(/[,;)]/)[0].trim();
+      // A defaulted parameter (`query: ListClaimsQuery = {}`) is a declaration;
+      // drop the default before deciding whether this is a type.
+      const value = key[3].split(/[,;)]/)[0].split('=')[0].trim();
       if (OPERATORS.has(name) || allFields.has(name)) continue;
       if (/^[A-Z]/.test(name)) continue;
       // `{ query: TrailQuery }` and `(a: RawEvent, b: RawEvent)` are type
