@@ -101,6 +101,9 @@ To assert the merged config publishes nothing (same check `vps-deploy.sh` runs):
 | `.env.production` | Template — copy to project root as `.env` |
 | `cloudflared/config.yml` | Tunnel routing config — copy to `/etc/cloudflared/` |
 | `setup-vps.sh` | One-shot VPS provisioning script |
+| `host-patch.sh` | OS patching: audit, apply, verify, remember. See VPS-RUNBOOK §H |
+| `systemd/flowops-host-*` | Daily audit timer + monthly patch window |
+| `apt/52flowops-unattended-upgrades.conf` | Security-only automatic updates, never auto-reboot |
 
 ## Memory Budget (2GB)
 
@@ -141,6 +144,11 @@ gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U flowops flowop
 
 # Check resource usage
 docker stats --no-stream
+
+# OS patching — is the host current, and is a reboot owed?
+sudo flowops-host-patch --check     # exit 10 = something needs attention
+sudo flowops-host-patch --full      # backup -> upgrade -> verify (no reboot)
+sudo flowops-host-patch --dry-run   # show what would change
 ```
 
 ## Updating

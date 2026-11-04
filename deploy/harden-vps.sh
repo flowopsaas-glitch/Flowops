@@ -81,6 +81,13 @@ systemctl restart sshd
 echo "  ✓ SSH hardened (key-only, 3 max attempts, 30s grace)"
 
 # ── 4. Automatic Security Updates ────────────────────────────────────────────
+# This script is designed to be piped over SSH (`bash -s < harden-vps.sh`), so it
+# cannot read sibling files and the config has to be inline. The canonical copy
+# lives in deploy/apt/52flowops-unattended-upgrades.conf and is what
+# `deploy/host-patch.sh --install` writes; the two are kept in step by
+# deploy/host-patch.test.sh, which fails if they disagree on the settings that
+# matter. Writing the SAME path (52-) from both is deliberate: one file, one
+# owner, no precedence puzzle against Ubuntu's 50- defaults.
 echo "[4/5] Enabling automatic security updates..."
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
@@ -88,16 +95,21 @@ APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
 
-cat > /etc/apt/apt.conf.d/50unattended-upgrades <<'EOF'
+cat > /etc/apt/apt.conf.d/52flowops-unattended-upgrades.conf <<'EOF'
 Unattended-Upgrade::Allowed-Origins {
-    "${distro_id}:${distro_codename}-security";
-    "${distro_id}ESMApps:${distro_codename}-apps-security";
+        "${distro_id}:${distro_codename}";
+        "${distro_id}:${distro_codename}-security";
+        "${distro_id}ESMApps:${distro_codename}-apps-security";
+        "${distro_id}ESM:${distro_codename}-infra-security";
 };
 Unattended-Upgrade::AutoFixInterruptedDpkg "true";
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "false";
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::SyslogEnable "true";
+Unattended-Upgrade::MinimalSteps "true";
 EOF
-echo "  ✓ Automatic security updates enabled (daily)"
+echo "  ✓ Automatic security updates enabled (daily, security pockets only, no auto-reboot)"
 
 # ── 5. Kernel Hardening ──────────────────────────────────────────────────────
 echo "[5/5] Applying kernel security parameters..."

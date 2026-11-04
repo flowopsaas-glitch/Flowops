@@ -1,0 +1,18 @@
+// FlowOps — enable the apt periodic timers that unattended-upgrades rides on.
+//
+// Without this file unattended-upgrades is installed, configured, running as a
+// service, and doing nothing: APT::Periodic::Unattended-Upgrade is the switch
+// that makes apt-daily-upgrade.service actually call it. This is the single most
+// common reason a host reports "5 security updates" while its owner believes
+// automatic updates are on.
+//
+// Installed to /etc/apt/apt.conf.d/20auto-upgrades by deploy/host-patch.sh
+// --install. Ubuntu ships this file; rewriting it here means the value is stated
+// rather than inherited from an image default.
+
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+
+// Clear the downloaded .debs weekly. The kernel-cleaning in
+// 52flowops-unattended-upgrades.conf handles /boot; this handles /var/cache/apt.
+APT::Periodic::AutocleanInterval "7";

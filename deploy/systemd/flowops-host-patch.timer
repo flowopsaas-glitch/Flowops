@@ -1,0 +1,16 @@
+[Unit]
+Description=FlowOps host patch — monthly full-upgrade window
+Documentation=file:/root/FlowOps/deploy/VPS-RUNBOOK.md
+
+[Timer]
+# First of the month, 03:30 local. Two deliberate choices:
+#   * the first of the month rather than "every 30 days" — an operator can
+#     remember it, and a missed month is visible rather than drifting quietly;
+#   * 03:30, after the 02:15 off-box backup and before the 06:30 audit, so the
+#     audit reports the outcome of this run rather than the state before it.
+OnCalendar=*-*-01 03:30:00
+Persistent=true
+Unit=flowops-host-patch.service
+
+[Install]
+WantedBy=timers.target

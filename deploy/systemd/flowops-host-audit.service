@@ -1,0 +1,23 @@
+[Unit]
+Description=FlowOps host audit (patch backlog age, disk, stack health)
+Documentation=file:/root/FlowOps/deploy/VPS-RUNBOOK.md
+# Docker is needed for the stack-health section; the audit still runs and
+# reports "cannot inspect the stack" if the daemon is down.
+After=docker.service
+
+[Service]
+Type=oneshot
+# --check changes nothing but /var/lib/flowops/patch-state, which is how the
+# backlog age is tracked. Exit 10 means "attention recommended" and is NOT in
+# SuccessExitStatus: `systemctl --failed` naming this unit is the alert, and it
+# clears itself on the first clean run.
+ExecStart=/usr/local/bin/flowops-host-patch --check
+Nice=10
+IOSchedulingClass=idle
+
+# Read-only reporting should not be able to take the box down with it.
+MemoryMax=256M
+TimeoutStartSec=120
+
+# Never leave a dirty state across runs.
+PrivateTmp=true

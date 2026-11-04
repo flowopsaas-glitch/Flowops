@@ -1,0 +1,32 @@
+[Unit]
+Description=FlowOps host patch — monthly maintenance window (full upgrade)
+Documentation=file:/root/FlowOps/deploy/VPS-RUNBOOK.md
+# Never patch a host whose stack is already broken: the health gate afterwards
+# would then be unattributable ("was it the patch or was it already like that?").
+After=docker.service network-online.target
+Wants=network-online.target
+# Type=oneshot already serialises this unit: systemd will not start a second
+# instance of a unit that is still running, so a slow month cannot overlap the
+# next one and fight itself for the dpkg lock.
+
+[Service]
+Type=oneshot
+# --full applies everything, never removes a package, dumps the database first,
+# and verifies the stack afterwards. It does NOT reboot: whether to restart the
+# host is an operator decision, surfaced by the daily audit. To opt into an
+# automatic reboot at the end of a passing run, set FLOWOPS_PATCH_REBOOT=1 in
+# /etc/default/flowops-host-patch — the script reboots only after the stack
+# health gate passes.
+ExecStart=/usr/local/bin/flowops-host-patch --full
+# Patching at a lower CPU class keeps the API responsive during a big unpack.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+# A kernel upgrade downloads ~100 MB and unpacks it; two hours is generous and
+# still bounds a pathological run.
+TimeoutStartSec=7200
+# Do not let the kernel's OOM killer pick apt mid-transaction.
+MemoryMax=2G
+
+PrivateTmp=true
