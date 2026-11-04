@@ -66,6 +66,56 @@ const VEHICLE_MAP: Record<string, string> = {
   'e-bike': 'E_BIKE',
 };
 
+/**
+ * The same map keyed by a normalised form, so "Medium Truck", "medium_truck"
+ * and "medium-truck" cannot produce three different answers.
+ *
+ * The driver form posts free text and `Driver.vehicleType` is a plain string
+ * with a default of "motorbike", so variation in spelling is a certainty, not
+ * an edge case.
+ */
+const NORMALISED_VEHICLE_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(VEHICLE_MAP).map(([key, value]) => [key.replace(/[_\s]+/g, '-'), value]),
+);
+
+export interface VehicleResolution {
+  /** EMISSION_FACTORS key actually used. */
+  key: string;
+  factor: number;
+  /**
+   * Whether a recorded vehicle type was understood. `false` means the number
+   * rests on the average-diesel-van assumption — which is a different statement
+   * from "this is a van", and the report says so.
+   */
+  recognised: boolean;
+  /** The value as recorded, trimmed. `null` when nothing was recorded. */
+  input: string | null;
+}
+
+/**
+ * Resolve a recorded vehicle type to an emission factor.
+ *
+ * Unknown values still resolve — a report that refuses to run is not more
+ * honest, it is just less useful — but they resolve *visibly*: `recognised` is
+ * false and `emissionAssumption` explains the substitution, so an operator can
+ * see that "Isuzu FVR 850" is being counted as an average diesel van and go and
+ * fix the master data.
+ */
+export function resolveVehicle(vehicleType?: string | null): VehicleResolution {
+  const input = typeof vehicleType === 'string' && vehicleType.trim() ? vehicleType.trim() : null;
+  if (!input) {
+    return { key: 'DEFAULT', factor: EMISSION_FACTORS['DEFAULT'], recognised: false, input: null };
+  }
+
+  const lower = input.toLowerCase();
+  const direct = VEHICLE_MAP[lower];
+  const normalised = direct ?? NORMALISED_VEHICLE_MAP[lower.replace(/[_\s]+/g, '-')];
+  if (normalised) {
+    return { key: normalised, factor: EMISSION_FACTORS[normalised] ?? EMISSION_FACTORS['DEFAULT'], recognised: true, input };
+  }
+  return { key: 'DEFAULT', factor: EMISSION_FACTORS['DEFAULT'], recognised: false, input };
+}
+
 // Carbon offset price (USD per tonne CO2 — Gold Standard average)
 const OFFSET_PRICE_USD_PER_TONNE = 15.0;
 const USD_TO_ZAR = 18.5;
@@ -80,11 +130,25 @@ export interface CarbonCalculation {
   co2Tonnes: number;
   offsetCostZar: number;
   methodology: string;
+  /** False when the recorded vehicle type was not understood and a van was assumed. */
+  vehicleTypeRecognised: boolean;
+  /** Plain-language statement of the substitution, or null when nothing was assumed. */
+  emissionAssumption: string | null;
 }
 
 export interface FleetCarbonReport {
   period: string;
+  /** Waybills in scope for the period, whether or not their distance was known. */
   totalShipments: number;
+  /** Waybills whose distance could be measured — the population the figures cover. */
+  measuredShipments: number;
+  /**
+   * Waybills with no usable coordinates. They are excluded from every distance
+   * and emission figure rather than charged at an assumed distance: a fleet's
+   * total that quietly contains invented kilometres is worse than one that
+   * states what it could not measure.
+   */
+  distanceNotMeasured: number;
   totalDistanceKm: number;
   totalCo2Kg: number;
   totalCo2Tonnes: number;
@@ -92,6 +156,8 @@ export interface FleetCarbonReport {
   avgCo2PerKm: number;
   offsetCostZar: number;
   byVehicleType: Record<string, { shipments: number; co2Kg: number; distanceKm: number }>;
+  /** Vehicle types recorded on drivers that matched no known type. */
+  unrecognisedVehicleTypes: string[];
   byMonth: Array<{ month: string; co2Kg: number; shipments: number }>;
   reductionVsLastPeriod?: number;
   equivalents: {
@@ -111,13 +177,14 @@ export class CarbonService {
    * Calculate CO2 for a single shipment.
    */
   calculateShipment(distanceKm: number, vehicleType?: string, weightKg?: number): CarbonCalculation {
-    const mapped = VEHICLE_MAP[(vehicleType || '').toLowerCase()] || 'DEFAULT';
+    const resolved = resolveVehicle(vehicleType);
+    const mapped = resolved.key;
     // `??`, never `||`: BICYCLE has a factor of 0, which is falsy. With `||` a
     // zero-emission delivery fell through to DEFAULT (average diesel van), so a
     // bicycle courier's shipments were reported at ~0.249 kg CO2/km — the
     // platform contradicting the very claim that makes bicycle last-mile worth
     // selling.
-    const factor = EMISSION_FACTORS[mapped] ?? EMISSION_FACTORS['DEFAULT'];
+    const factor = resolved.factor;
 
     // Weight-based adjustment: heavier loads = more fuel
     // Base factor assumes average load; adjust ±20% based on weight
@@ -140,6 +207,12 @@ export class CarbonService {
       co2Tonnes,
       offsetCostZar,
       methodology: 'DEFRA 2024 + SA grid factor (Eskom). Well-to-wheel emissions.',
+      vehicleTypeRecognised: resolved.recognised,
+      emissionAssumption: resolved.recognised
+        ? null
+        : resolved.input
+          ? `"${resolved.input}" is not a recognised vehicle type — counted as an average diesel van.`
+          : 'No vehicle type recorded — counted as an average diesel van.',
     };
   }
 
@@ -196,36 +269,54 @@ export class CarbonService {
 
     let totalCo2 = 0;
     let totalDist = 0;
+    let measuredShipments = 0;
+    let distanceNotMeasured = 0;
     const byVehicle: Record<string, { shipments: number; co2Kg: number; distanceKm: number }> = {};
     const byMonth: Record<string, { co2Kg: number; shipments: number }> = {};
+    /** Recorded vehicle types that fell back to the average-van factor. */
+    const unrecognised = new Set<string>();
 
     for (const wb of waybills) {
-      let dist = 10;
-      if (wb.senderLat && wb.senderLng && wb.recipientLat && wb.recipientLng) {
-        dist = GeocodingService.haversineKm(
-          wb.senderLat, wb.senderLng,
-          wb.recipientLat, wb.recipientLng,
-        ) * 1.3;
-      }
+      // One resolver for both paths. The fleet report used to carry its own copy
+      // of the mapping, which is how the bicycle and "motorbike" defects had to
+      // be fixed twice; a divergence here would mean a shipment's figure and the
+      // fleet total disagree.
+      const resolved = resolveVehicle(wb.shipments?.[0]?.driver?.vehicleType);
+      const mapped = resolved.key;
+      if (!resolved.recognised && resolved.input) unrecognised.add(resolved.input);
 
-      const vType = wb.shipments?.[0]?.driver?.vehicleType || 'van';
-      const mapped = VEHICLE_MAP[vType.toLowerCase()] || 'DEFAULT';
-      // `??` for the same reason as calculateShipment: a bicycle factor is 0.
-      const factor = EMISSION_FACTORS[mapped] ?? EMISSION_FACTORS['DEFAULT'];
-      const co2 = dist * factor;
-
-      totalCo2 += co2;
-      totalDist += dist;
-
+      // Counts stay in scope terms: every waybill in the period is one shipment,
+      // and it appears under its vehicle and its month even when its distance is
+      // unknown. Only the distance and CO2 sums narrow to what was measured.
       if (!byVehicle[mapped]) byVehicle[mapped] = { shipments: 0, co2Kg: 0, distanceKm: 0 };
       byVehicle[mapped].shipments++;
-      byVehicle[mapped].co2Kg += co2;
-      byVehicle[mapped].distanceKm += dist;
 
       const monthKey = wb.createdAt.toISOString().slice(0, 7);
       if (!byMonth[monthKey]) byMonth[monthKey] = { co2Kg: 0, shipments: 0 };
-      byMonth[monthKey].co2Kg += co2;
       byMonth[monthKey].shipments++;
+
+      // No route, no kilometres. The report used to charge a flat 10 km here,
+      // which put invented distance into the fleet total and every figure
+      // derived from it (cost per km, the loaded/empty split, the offsets).
+      const hasRoute = wb.senderLat != null && wb.senderLng != null
+        && wb.recipientLat != null && wb.recipientLng != null;
+      if (!hasRoute) {
+        distanceNotMeasured += 1;
+        continue;
+      }
+
+      const dist = GeocodingService.haversineKm(
+        wb.senderLat as number, wb.senderLng as number,
+        wb.recipientLat as number, wb.recipientLng as number,
+      ) * 1.3;
+      const co2 = dist * resolved.factor;
+
+      totalCo2 += co2;
+      totalDist += dist;
+      measuredShipments += 1;
+      byVehicle[mapped].co2Kg += co2;
+      byVehicle[mapped].distanceKm += dist;
+      byMonth[monthKey].co2Kg += co2;
     }
 
     const totalTonnes = totalCo2 / 1000;
@@ -234,10 +325,15 @@ export class CarbonService {
     return {
       period: `Last ${days} days`,
       totalShipments: waybills.length,
+      measuredShipments,
+      distanceNotMeasured,
       totalDistanceKm: Math.round(totalDist * 100) / 100,
       totalCo2Kg: Math.round(totalCo2 * 100) / 100,
       totalCo2Tonnes: Math.round(totalTonnes * 10000) / 10000,
-      avgCo2PerShipment: waybills.length > 0 ? Math.round((totalCo2 / waybills.length) * 100) / 100 : 0,
+      // Divided by what was measured, not by what was in scope: folding
+      // unmeasured shipments into the denominator would understate every
+      // shipment that was measured.
+      avgCo2PerShipment: measuredShipments > 0 ? Math.round((totalCo2 / measuredShipments) * 100) / 100 : 0,
       avgCo2PerKm: totalDist > 0 ? Math.round((totalCo2 / totalDist) * 10000) / 10000 : 0,
       offsetCostZar: offsetCost,
       byVehicleType: Object.fromEntries(
@@ -247,6 +343,12 @@ export class CarbonService {
           distanceKm: Math.round(v.distanceKm * 100) / 100,
         }]),
       ),
+      /**
+       * Recorded vehicle types that were not understood and were costed as an
+       * average diesel van. Surfaced so the master data can be fixed, rather
+       * than leaving a fleet's totals resting on a substitution nobody can see.
+       */
+      unrecognisedVehicleTypes: [...unrecognised].sort(),
       byMonth: Object.entries(byMonth).map(([month, data]) => ({
         month,
         co2Kg: Math.round(data.co2Kg * 100) / 100,

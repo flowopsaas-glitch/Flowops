@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { odometerSpan, type OdometerReading } from './odometer';
 import { CommercialAnalyticsService } from './commercial-analytics.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -619,7 +620,7 @@ export class TripTruthService {
       this.prisma.driver.findMany({ where: { companyId }, select: { id: true } }),
       this.prisma.tripCostEntry.findMany({
         where: { companyId, occurredAt: { gte: start, lt: end }, odometerKm: { not: null } },
-        select: { driverId: true, odometerKm: true },
+        select: { driverId: true, odometerKm: true, occurredAt: true },
       }),
     ]);
     const companyDriverIds = companyDrivers.map((d) => d.id);
@@ -627,20 +628,24 @@ export class TripTruthService {
     const services = companyDriverIds.length
       ? await this.prisma.vehicleService.findMany({
           where: { driverId: { in: companyDriverIds }, servicedAt: { gte: start, lt: end } },
-          select: { driverId: true, cost: true, kmAtService: true },
+          select: { driverId: true, cost: true, kmAtService: true, servicedAt: true },
         })
       : [];
 
     // Odometer evidence per driver: fuel-entry readings + service readings.
-    const readingsByDriver = new Map<string, number[]>();
-    const addReading = (driverId: string, km: number | null) => {
+    //
+    // Kept with their timestamps: a span is only meaningful in order, and the
+    // readings are chained rather than min/maxed — see `odometerSpan` for why a
+    // driver with two vehicles made max−min unsafe.
+    const readingsByDriver = new Map<string, OdometerReading[]>();
+    const addReading = (driverId: string, km: number | null, at: Date | null, source: string) => {
       if (km == null) return;
       const list = readingsByDriver.get(driverId) ?? [];
-      list.push(km);
+      list.push({ km, at, source });
       readingsByDriver.set(driverId, list);
     };
-    for (const r of readings) addReading(r.driverId, r.odometerKm);
-    for (const s of services) addReading(s.driverId, s.kmAtService);
+    for (const r of readings) addReading(r.driverId, r.odometerKm, r.occurredAt, 'cost');
+    for (const s of services) addReading(s.driverId, s.kmAtService, s.servicedAt, 'service');
 
     const serviceByDriver = new Map<string, { cost: number; events: number }>();
     for (const s of services) {
@@ -721,15 +726,15 @@ export class TripTruthService {
       const loadedKm = acc.tripsWithDistance > 0 ? round1(acc.loadedKm) : null;
 
       const readingsList = readingsByDriver.get(acc.driverId) ?? [];
-      const span =
-        readingsList.length >= 2
-          ? Math.max(...readingsList) - Math.min(...readingsList)
-          : null;
+      const evidence = odometerSpan(readingsList);
+      const span = evidence.km;
       let km: {
         status: 'MEASURED' | 'PARTIAL' | 'NOT_MEASURED';
         loadedKm: number | null;
         odometerSpanKm: number | null;
         readings: number;
+        /** Readings left out of the chain — rollback or an implausible jump. */
+        readingsExcluded: number;
         emptyKm: number | null;
         emptyPct: number | null;
         note: string;
@@ -737,28 +742,33 @@ export class TripTruthService {
       if (span === null || span <= 0) {
         km = {
           status: 'NOT_MEASURED', loadedKm, odometerSpanKm: null,
-          readings: readingsList.length, emptyKm: null, emptyPct: null,
+          readings: evidence.readings, readingsExcluded: evidence.excluded,
+          emptyKm: null, emptyPct: null,
           note: 'No odometer span this period — log the odometer with fuel entries and empty km becomes measurable.',
         };
       } else if (loadedKm === null) {
         km = {
           status: 'PARTIAL', loadedKm: null, odometerSpanKm: span,
-          readings: readingsList.length, emptyKm: null, emptyPct: null,
+          readings: evidence.readings, readingsExcluded: evidence.excluded,
+          emptyKm: null, emptyPct: null,
           note: 'Loaded km unknown — delivered trips lack sender/recipient coordinates, so empty km is not shown.',
         };
       } else if (span < loadedKm) {
         km = {
           status: 'PARTIAL', loadedKm, odometerSpanKm: span,
-          readings: readingsList.length, emptyKm: null, emptyPct: null,
+          readings: evidence.readings, readingsExcluded: evidence.excluded,
+          emptyKm: null, emptyPct: null,
           note: `Odometer span (${span} km) is below loaded distance (${loadedKm} km) — readings are incomplete, so empty km is not shown rather than guessed.`,
         };
       } else {
         const emptyKm = round1(span - loadedKm);
         km = {
           status: 'MEASURED', loadedKm, odometerSpanKm: span,
-          readings: readingsList.length, emptyKm,
+          readings: evidence.readings, readingsExcluded: evidence.excluded, emptyKm,
           emptyPct: round1((emptyKm / span) * 100),
-          note: 'Empty km is an upper bound: loaded distance is straight-line, real road distance is longer.',
+          note:
+            'Empty km is an upper bound: loaded distance is straight-line, real road distance is longer.' +
+            (evidence.excluded > 0 ? ` ${evidence.note}` : ''),
         };
       }
 

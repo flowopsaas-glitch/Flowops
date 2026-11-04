@@ -47,7 +47,10 @@ function makeHarness(overrides: { drivers?: Row[]; companyId?: string } = {}) {
         return { ...row };
       }),
     },
-    safetyAlert: { count: jest.fn(async () => 0) },
+    safetyAlert: {
+      // Grouped count for a page of drivers — the only shape the service uses.
+      groupBy: jest.fn(async (_args: Row) => [] as Row[]),
+    },
   };
 
   const audit = { record: jest.fn(async () => 'audit-1') };
@@ -238,5 +241,54 @@ describe('DriverComplianceService.policy', () => {
       if (previous === undefined) delete process.env.DRIVER_REQUIRE_DOCUMENTS;
       else process.env.DRIVER_REQUIRE_DOCUMENTS = previous;
     }
+  });
+});
+
+describe('DriverComplianceService — the safety-alert count is evidence, not a default', () => {
+  /**
+   * A driver with an unresolved CRITICAL alert must not be dispatched, and a
+   * check that could not run must not be reported as a clean record. The old
+   * code caught the error and left the count at 0 — a failed query *certified*
+   * the driver.
+   */
+  it('blocks a driver with unresolved critical alerts', async () => {
+    const { svc, prisma } = makeHarness();
+    prisma.safetyAlert.groupBy.mockResolvedValueOnce([
+      { driverId: 'drv-1', _count: { _all: 2 } },
+    ]);
+
+    const report = await svc.fleetReport('co-1');
+    const row = report.drivers.find((d) => d.driverId === 'drv-1')!;
+    expect(row.blockerCodes).toContain('CRITICAL_SAFETY_ALERT');
+    expect(row.dispatchable).toBe(false);
+  });
+
+  it('counts alerts for the whole page in one query, not per driver', async () => {
+    const { svc, prisma } = makeHarness();
+    await svc.fleetReport('co-1');
+    expect(prisma.safetyAlert.groupBy).toHaveBeenCalledTimes(1);
+    expect(prisma.safetyAlert.groupBy.mock.calls[0][0].where.driverId.in).toEqual(['drv-1', 'drv-2']);
+  });
+
+  it('treats an unreadable safety check as blocking, not as a clear record', async () => {
+    const { svc, prisma } = makeHarness();
+    prisma.safetyAlert.groupBy.mockRejectedValueOnce(new Error('relation does not exist'));
+
+    const report = await svc.fleetReport('co-1');
+    expect(report.drivers.every((d) => d.blockerCodes.includes('SAFETY_ALERT_CHECK_UNAVAILABLE'))).toBe(true);
+    expect(report.summary.dispatchable).toBe(0);
+  });
+
+  it('reports the count as unknown — not zero — on the single-driver snapshot', async () => {
+    const { svc, prisma } = makeHarness();
+    // Persistent: both the snapshot read and the evaluate read must fail, which
+    // is the state the operator is actually in when the relation is missing.
+    prisma.safetyAlert.groupBy.mockRejectedValue(new Error('timeout'));
+
+    const snapshot = await svc.snapshot('drv-1', 'co-1');
+    expect(snapshot.criticalSafetyAlerts).toBeNull();
+    const compliance = await svc.evaluate('drv-1', 'co-1');
+    expect(compliance.dispatchable).toBe(false);
+    expect(compliance.blockers.map((b) => b.code)).toContain('SAFETY_ALERT_CHECK_UNAVAILABLE');
   });
 });

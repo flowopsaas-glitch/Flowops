@@ -1,4 +1,10 @@
-import { CarbonService } from './carbon.service';
+import { CarbonService, resolveVehicle } from './carbon.service';
+import { GeocodingService } from '../geocoding/geocoding.service';
+
+/** A real route, so the fleet fixtures measure something rather than invent it. */
+const JHB = { lat: -26.2041, lng: 28.0473 };
+const PTA = { lat: -25.7479, lng: 28.2293 };
+const JHB_PTA_KM = GeocodingService.haversineKm(JHB.lat, JHB.lng, PTA.lat, PTA.lng) * 1.3;
 
 /**
  * The carbon module had no tests, which is how a one-word gap in its lookup
@@ -86,10 +92,10 @@ describe('CarbonService.getFleetReport — the same zero-factor trap, second cod
         vehicleTypes.map((vehicleType, i) => ({
           id: `wb-${i}`,
           weight: null,
-          senderLat: null,
-          senderLng: null,
-          recipientLat: null,
-          recipientLng: null,
+          senderLat: JHB.lat,
+          senderLng: JHB.lng,
+          recipientLat: PTA.lat,
+          recipientLng: PTA.lng,
           createdAt: new Date('2026-11-01T08:00:00.000Z'),
           shipments: [{ driver: { vehicleType } }],
         })),
@@ -112,5 +118,179 @@ describe('CarbonService.getFleetReport — the same zero-factor trap, second cod
     expect(report.byVehicleType.BICYCLE.shipments).toBe(1);
     expect(report.byVehicleType.TRUCK_SMALL_DIESEL.shipments).toBe(1);
     expect(report.totalCo2Kg).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * `Driver.vehicleType` is free text with a schema default, so the platform's own
+ * form and an imported spreadsheet can disagree on spelling for years without
+ * anyone noticing — as long as the report still produces a number.
+ */
+describe('resolveVehicle — spelling is not a vehicle type', () => {
+  it.each([
+    ['truck', 'TRUCK_SMALL_DIESEL'],
+    ['Truck', 'TRUCK_SMALL_DIESEL'],
+    ['TRUCK', 'TRUCK_SMALL_DIESEL'],
+    ['medium truck', 'TRUCK_MEDIUM_DIESEL'],
+    ['Medium_Truck', 'TRUCK_MEDIUM_DIESEL'],
+    ['medium-truck', 'TRUCK_MEDIUM_DIESEL'],
+    ['  large truck  ', 'TRUCK_LARGE_DIESEL'],
+    ['E_BIKE', 'E_BIKE'],
+    ['e bike', 'E_BIKE'],
+  ])('resolves %s to %s', (input, expected) => {
+    const resolved = resolveVehicle(input);
+    expect(resolved.key).toBe(expected);
+    expect(resolved.recognised).toBe(true);
+  });
+
+  it('marks an unrecognised type as unrecognised instead of pretending it is a van', () => {
+    const resolved = resolveVehicle('Isuzu FVR 850');
+    expect(resolved.key).toBe('DEFAULT');
+    expect(resolved.recognised).toBe(false);
+    expect(resolved.input).toBe('Isuzu FVR 850');
+  });
+
+  it('distinguishes "nothing recorded" from "something unrecognised"', () => {
+    expect(resolveVehicle(undefined).input).toBeNull();
+    expect(resolveVehicle('').input).toBeNull();
+    expect(resolveVehicle('   ').input).toBeNull();
+    expect(resolveVehicle('hovercraft').input).toBe('hovercraft');
+  });
+
+  it('keeps the zero-emission factor for a bicycle, which is falsy', () => {
+    expect(resolveVehicle('bicycle').factor).toBe(0);
+    expect(resolveVehicle('bicycle').recognised).toBe(true);
+  });
+});
+
+describe('CarbonService.calculateShipment — the assumption is stated', () => {
+  it('says nothing when the type was understood', () => {
+    const result = svc.calculateShipment(10, 'bakkie');
+    expect(result.vehicleTypeRecognised).toBe(true);
+    expect(result.emissionAssumption).toBeNull();
+  });
+
+  it('names the unrecognised value it substituted', () => {
+    const result = svc.calculateShipment(10, 'Isuzu FVR 850');
+    expect(result.vehicleTypeRecognised).toBe(false);
+    expect(result.emissionAssumption).toContain('Isuzu FVR 850');
+    expect(result.emissionAssumption).toContain('average diesel van');
+  });
+
+  it('says when nothing was recorded at all', () => {
+    const result = svc.calculateShipment(10);
+    expect(result.vehicleTypeRecognised).toBe(false);
+    expect(result.emissionAssumption).toContain('No vehicle type recorded');
+  });
+});
+
+describe('FleetCarbonReport — one mapping, so the totals cannot disagree', () => {
+  const fleetOf = (vehicleTypes: Array<string | null>) => ({
+    waybill: {
+      findMany: async () =>
+        vehicleTypes.map((vehicleType, i) => ({
+          id: `wb-${i}`,
+          weight: null,
+          senderLat: JHB.lat,
+          senderLng: JHB.lng,
+          recipientLat: PTA.lat,
+          recipientLng: PTA.lng,
+          createdAt: new Date('2026-11-01T08:00:00.000Z'),
+          shipments: [{ driver: { vehicleType } }],
+        })),
+    },
+  });
+
+  it('matches the per-shipment figure for the same vehicle', async () => {
+    const report = await new CarbonService(fleetOf(['Medium Truck']) as never).getFleetReport('A');
+    const perShipment = svc.calculateShipment(JHB_PTA_KM, 'medium_truck');
+    expect(Object.keys(report.byVehicleType)).toEqual([perShipment.vehicleType]);
+    expect(report.totalCo2Kg).toBeCloseTo(perShipment.co2Kg, 2);
+  });
+
+  it('lists the recorded values it could not understand', async () => {
+    const report = await new CarbonService(fleetOf(['Isuzu FVR 850', 'hovercraft', 'truck']) as never).getFleetReport('A');
+    expect(report.unrecognisedVehicleTypes).toEqual(['Isuzu FVR 850', 'hovercraft']);
+  });
+
+  it('lists nothing when every driver type is understood', async () => {
+    const report = await new CarbonService(fleetOf(['bicycle', 'bakkie']) as never).getFleetReport('A');
+    expect(report.unrecognisedVehicleTypes).toEqual([]);
+  });
+});
+
+describe('CarbonService.getFleetReport — distance it cannot measure stays unmeasured', () => {
+  /**
+   * The report used to charge a flat 10 km to any waybill without coordinates.
+   * Ten assumed kilometres is small only until it is multiplied by a fleet, an
+   * emission factor and a year — and it makes the total unfalsifiable, because
+   * nothing downstream can tell a measured kilometre from an assumed one.
+   */
+  const waybills = (rows: Array<{ vehicleType: string | null; hasRoute: boolean }>) => ({
+    waybill: {
+      findMany: async () =>
+        rows.map((row, i) => ({
+          id: `wb-${i}`,
+          weight: null,
+          senderLat: row.hasRoute ? JHB.lat : null,
+          senderLng: row.hasRoute ? JHB.lng : null,
+          recipientLat: row.hasRoute ? PTA.lat : null,
+          recipientLng: row.hasRoute ? PTA.lng : null,
+          createdAt: new Date('2026-11-01T08:00:00.000Z'),
+          shipments: [{ driver: { vehicleType: row.vehicleType } }],
+        })),
+    },
+  });
+
+  const report = (rows: Array<{ vehicleType: string | null; hasRoute: boolean }>) =>
+    new CarbonService(waybills(rows) as never).getFleetReport('A');
+
+  it('reports no distance and no emissions rather than assume ten kilometres', async () => {
+    const measured = await report([{ vehicleType: 'truck', hasRoute: false }]);
+    expect(measured.totalDistanceKm).toBe(0);
+    expect(measured.totalCo2Kg).toBe(0);
+    expect(measured.offsetCostZar).toBe(0);
+  });
+
+  it('says how many waybills it could not measure', async () => {
+    const result = await report([{ vehicleType: 'truck', hasRoute: false }]);
+    expect(result.distanceNotMeasured).toBe(1);
+    expect(result.measuredShipments).toBe(0);
+    expect(result.totalShipments).toBe(1);
+  });
+
+  it('totals only the waybills that had a route', async () => {
+    const result = await report([
+      { vehicleType: 'truck', hasRoute: true },
+      { vehicleType: 'truck', hasRoute: false },
+    ]);
+    expect(result.totalShipments).toBe(2);
+    expect(result.measuredShipments).toBe(1);
+    expect(result.distanceNotMeasured).toBe(1);
+    expect(result.totalDistanceKm).toBeCloseTo(Math.round(JHB_PTA_KM * 100) / 100, 2);
+  });
+
+  it('divides per-shipment emissions by the shipments it measured', async () => {
+    const mixed = await report([
+      { vehicleType: 'truck', hasRoute: true },
+      { vehicleType: 'truck', hasRoute: false },
+    ]);
+    const single = await report([{ vehicleType: 'truck', hasRoute: true }]);
+    // Same denominator as the one-waybill report: the unmeasured shipment must
+    // not drag the average down.
+    expect(mixed.avgCo2PerShipment).toBe(single.avgCo2PerShipment);
+  });
+
+  it('keeps an unmeasured shipment in its vehicle and month counts', async () => {
+    const result = await report([
+      { vehicleType: 'truck', hasRoute: true },
+      { vehicleType: 'truck', hasRoute: false },
+    ]);
+    expect(result.byVehicleType.TRUCK_SMALL_DIESEL.shipments).toBe(2);
+    expect(result.byMonth[0].shipments).toBe(2);
+    // ...while the sums beside those counts stay measured-only.
+    expect(result.byVehicleType.TRUCK_SMALL_DIESEL.distanceKm).toBeCloseTo(
+      Math.round(JHB_PTA_KM * 100) / 100, 2,
+    );
   });
 });

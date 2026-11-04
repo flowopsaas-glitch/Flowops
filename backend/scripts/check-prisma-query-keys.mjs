@@ -64,8 +64,25 @@ function parseModels(schema) {
   return models;
 }
 
+/**
+ * Json columns hold free-form documents, so the keys inside their value are
+ * application data, not schema fields — `metadata: { added: [...] }` is not a
+ * mistyped `metadata.added` column.
+ */
+function parseJsonFields(schema) {
+  const json = new Set();
+  for (const match of schema.matchAll(/^model\s+\w+\s*\{([\s\S]*?)^\}/gm)) {
+    for (const raw of match[1].split('\n')) {
+      const field = /^\s*([A-Za-z_]\w*)\s+Json\??/.exec(raw);
+      if (field) json.add(field[1]);
+    }
+  }
+  return json;
+}
+
 const schema = readFileSync(join(backend, 'prisma', 'schema.prisma'), 'utf8');
 const models = parseModels(schema);
+const jsonFields = parseJsonFields(schema);
 const lowerModel = (name) => name.charAt(0).toLowerCase() + name.slice(1);
 const modelByKey = new Map([...models.keys()].map((n) => [lowerModel(n), n]));
 
@@ -75,9 +92,50 @@ for (const fields of models.values()) for (const f of fields) allFields.add(f);
 let problems = 0;
 let checked = 0;
 
+/**
+ * Line numbers that fall inside a `this.prisma.<model>.<op>(...)` argument.
+ *
+ * Without this the checker inspected every object literal in a method that
+ * happened to contain a query, so response builders (`{ id, km, readings }`)
+ * were reported as mistyped columns. Only the query's own argument is a query.
+ * A small scanner skips string and template literals so a `)` inside a message
+ * cannot close the call early.
+ */
+function prismaArgumentLines(source) {
+  const inside = new Set();
+  const lineOf = (index) => source.slice(0, index).split('\n').length;
+
+  for (const match of source.matchAll(/this\.prisma\.\w+\.\w+\(/g)) {
+    let index = match.index + match[0].length;
+    let depth = 1;
+    let quote = null;
+    let escaped = false;
+    while (index < source.length && depth > 0) {
+      const char = source[index];
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === quote) quote = null;
+      } else if (char === '"' || char === "'" || char === '`') {
+        quote = char;
+      } else if (char === '(') {
+        depth += 1;
+      } else if (char === ')') {
+        depth -= 1;
+      }
+      index += 1;
+    }
+    const from = lineOf(match.index);
+    const to = lineOf(index);
+    for (let line = from; line <= to; line += 1) inside.add(line);
+  }
+  return inside;
+}
+
 for (const relPath of targets) {
   const source = readFileSync(join(backend, relPath), 'utf8');
   const lines = source.split('\n');
+  const queryLines = prismaArgumentLines(source);
 
   // Split into methods so `where` assignments can be tied to a model.
   const methodStarts = [];
@@ -116,13 +174,29 @@ for (const relPath of targets) {
       console.log(`${relPath}:${i + 1}: where.${assign[1]} is not a field of ${model}`);
     }
 
-    // Object-literal keys: `{ someField: ... }`
+    // Where a Json column is given an object literal, everything nested inside
+    // it is opaque payload.
+    const jsonValueAt = (() => {
+      for (const m of line.matchAll(/([A-Za-z_]\w*)\s*:\s*\{/g)) {
+        // Index of the opening brace itself, which is where a nested key match starts.
+        if (jsonFields.has(m[1])) return m.index + m[0].length - 1;
+      }
+      return Number.POSITIVE_INFINITY;
+    })();
+
+    // Object-literal keys, but only inside a query argument. (`return` here is
+    // `continue` for a forEach callback.)
+    if (!queryLines.has(i + 1)) return;
     for (const key of line.matchAll(/(?:^|[{,]\s*)([A-Za-z_]\w*)\s*:(\s*)(.*)$/g)) {
       const name = key[1];
+      // Inside a Json column's value: free-form, so nothing to check.
+      if (key.index >= jsonValueAt) continue;
       // Stop at the first argument/entry delimiter: the value of interest ends
       // there, and what follows (`, nextParam: Type`, `): ReturnType`) is a
       // different declaration.
-      const value = key[3].split(/[,;)]/)[0].trim();
+      // A defaulted parameter (`query: ListClaimsQuery = {}`) is a declaration;
+      // drop the default before deciding whether this is a type.
+      const value = key[3].split(/[,;)]/)[0].split('=')[0].trim();
       if (OPERATORS.has(name) || allFields.has(name)) continue;
       if (/^[A-Z]/.test(name)) continue;
       // `{ query: TrailQuery }` and `(a: RawEvent, b: RawEvent)` are type

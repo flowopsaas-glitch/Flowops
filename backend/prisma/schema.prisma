@@ -6818,3 +6818,136 @@ model TripLeg {
   @@index([dwellSessionId])
   @@map("trip_legs")
 }
+
+// ── Claims & liability ──────────────────────────────────────────────────────
+// A claim is the record that something went wrong with a shipment and that the
+// operator may owe money for it. It is the one domain a freight operator is
+// asked about in every client review and every insurance conversation, and
+// until now the platform had nowhere to put it.
+//
+// Two deliberate choices in this schema:
+//
+//  1. **Ids, not relations.** `waybillId`, `invoiceId` and `creditNoteId` are
+//     plain columns. A claim is evidence: it must survive a waybill being
+//     deleted, and it must not silently vanish because a relation cascaded.
+//  2. **No assumed liability.** `ClaimLiability` starts at UNASSESSED and there
+//     is no default cap anywhere. An operator's liability basis is a commercial
+//     and legal decision (in South Africa, typically the agreed trading terms or
+//     the insurer's policy), so the platform records what a human states and
+//     refuses to approve until they state it.
+//
+// `ClaimEvent` is append-only, like `tracking_events` and
+// `rail_consignment_events`: nothing in the service updates or deletes a row, so
+// a claim's history cannot be rewritten after the fact.
+
+enum ClaimType {
+  DAMAGE
+  LOSS
+  SHORTAGE
+  DELAY
+  THEFT
+}
+
+enum ClaimStatus {
+  OPEN
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SETTLED
+  WITHDRAWN
+}
+
+enum ClaimLiability {
+  UNASSESSED
+  CARRIER
+  INSURER
+  CLIENT
+  THIRD_PARTY
+}
+
+enum ClaimEventType {
+  CREATED
+  STATUS_CHANGED
+  NOTE_ADDED
+  EVIDENCE_ADDED
+  SETTLED
+}
+
+model Claim {
+  id        String  @id @default(cuid())
+  /// CLM-YYYY-#### per company. Unique with companyId.
+  number    String
+  companyId String
+
+  waybillId       String
+  /// Copied at creation so the claim still reads correctly if the waybill moves.
+  waybillNumber   String?
+  clientName      String?
+  clientEmail     String?
+  invoiceId       String?
+  creditNoteId    String?
+  creditNoteNumber String?
+
+  type     ClaimType
+  status   ClaimStatus    @default(OPEN)
+  liability ClaimLiability @default(UNASSESSED)
+  /// How the liability position was reached ("trading terms cl. 12", "SASRIA cover").
+  liabilityBasis String?
+  /// Operator-set cap for this claim, in `currency`. Null means "not stated" —
+  /// never "no cap" and never zero.
+  liabilityCap   Float?
+
+  claimedAmount  Float
+  /// Set only by an approval. Always <= claimedAmount.
+  approvedAmount Float?
+  currency       String @default("ZAR")
+
+  summary     String
+  description String? @db.Text
+  incidentAt  DateTime?
+  /// Photo/manifest/ePOD refs. Keys only in the UI; values belong to storage.
+  evidence    Json?
+  metadata    Json?
+
+  rejectionReason String?
+  raisedById      String?
+  raisedByName    String?
+  assessedById    String?
+  approvedById    String?
+  /// Service clock, set at creation from the company's response window.
+  respondBy       DateTime?
+  settledAt       DateTime?
+  closedAt        DateTime?
+
+  events    ClaimEvent[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([number, companyId])
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([waybillId])
+  @@map("claims")
+}
+
+model ClaimEvent {
+  id        String @id @default(cuid())
+  claimId   String
+  claim     Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  companyId String
+
+  type       ClaimEventType
+  fromStatus ClaimStatus?
+  toStatus   ClaimStatus?
+
+  actorId   String?
+  actorName String?
+  description String @db.Text
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([claimId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("claim_events")
+}

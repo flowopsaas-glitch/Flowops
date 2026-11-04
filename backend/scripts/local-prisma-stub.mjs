@@ -55,6 +55,36 @@ function parseModels(schema) {
 }
 
 /**
+ * `Prisma.dmmf.datamodel.models` — the schema as data.
+ *
+ * Real Prisma exposes the datamodel at runtime, and specs use it to check their
+ * own writes against the schema rather than against a hand-copied field list
+ * (see rail-tariff.service.spec.ts). Only `name` and `fields[].name` are
+ * supplied; that is the whole of what the codebase reads.
+ */
+function parseDatamodel(schema) {
+  const models = [];
+  for (const match of schema.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
+    const [, name, body] = match;
+    const fields = [];
+    for (const raw of body.split('\n')) {
+      const line = raw.replace(/\/\/.*$/, '').trim();
+      if (!line || line.startsWith('@@')) continue;
+      const field = /^([A-Za-z_]\w*)\s+(\S+)/.exec(line);
+      if (!field) continue;
+      fields.push({
+        name: field[1],
+        type: field[2].replace(/[?[\]]/g, ''),
+        isRequired: !field[2].includes('?'),
+        isList: field[2].includes('['),
+      });
+    }
+    models.push({ name, fields });
+  }
+  return models;
+}
+
+/**
  * `Prisma.*` type names the codebase references (`Prisma.RailSlotApplicationWhereInput`, …).
  *
  * Real Prisma generates one per model and per operation; reproducing that set is
@@ -80,9 +110,43 @@ function collectPrismaTypeNames(dir) {
   return [...names].sort();
 }
 
+/**
+ * Type names imported from '@prisma/client' that are neither a model nor an
+ * enum — `CustomsDeclaration`, `WaybillStatusType`, and so on. Real Prisma
+ * emits them; this stub has to as well, or `npm run build` reports missing
+ * exports in files that are perfectly correct.
+ */
+function collectClientTypeImports(dir, known) {
+  const names = new Set();
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+        walk(full);
+        continue;
+      }
+      if (!/\.ts$/.test(entry.name)) continue;
+      const text = readFileSync(full, 'utf8');
+      for (const match of text.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"]@prisma\/client['"]/g)) {
+        for (const raw of match[1].split(',')) {
+          // `{ type Foo }` and `{ Foo as Bar }` both occur in this codebase.
+          const parts = raw.trim().split(/\s+as\s+/);
+          const name = parts[parts.length - 1].trim().replace(/^(?:type|typeof)\s+/, '');
+          if (!name || known.has(name) || names.has(name)) continue;
+          names.add(name);
+        }
+      }
+    }
+  };
+  walk(dir);
+  return [...names].sort();
+}
+
 const schema = readFileSync(schemaPath, 'utf8');
 const enums = parseEnums(schema);
 const models = parseModels(schema);
+const datamodel = parseDatamodel(schema);
 
 const client = `// GENERATED LOCALLY by scripts/local-prisma-stub.mjs — do not edit, do not commit.
 // Stand-in for the generated Prisma client: real enum names, no query semantics.
@@ -128,9 +192,58 @@ for (const model of ${JSON.stringify(models)}) {
   PrismaClient.prototype[key] = delegate;
 }
 
-const Prisma = { ...enums };
+const dmmf = { datamodel: { models: ${JSON.stringify(datamodel)} } };
 
-module.exports = { PrismaClient, Prisma, ...enums, default: { PrismaClient, Prisma } };
+/**
+ * Real Prisma throws this for constraint violations and callers branch on
+ * instanceof and .code (rail-timetable.service.ts). Without it the branch
+ * itself throws, which reads as a bug in the caller.
+ */
+class PrismaClientKnownRequestError extends Error {
+  constructor(message, options) {
+    super(message);
+    const { code, clientVersion, meta, batchRequestIdx } = options || {};
+    this.code = code;
+    this.clientVersion = clientVersion;
+    this.meta = meta;
+    this.batchRequestIdx = batchRequestIdx;
+    this.name = 'PrismaClientKnownRequestError';
+  }
+}
+
+class PrismaClientValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PrismaClientValidationError';
+  }
+}
+
+class PrismaClientInitializationError extends Error {
+  constructor(message, clientVersion) {
+    super(message);
+    this.clientVersion = clientVersion;
+    this.name = 'PrismaClientInitializationError';
+  }
+}
+
+const Prisma = {
+  ...enums,
+  dmmf,
+  PrismaClientKnownRequestError,
+  PrismaClientValidationError,
+  PrismaClientInitializationError,
+};
+
+module.exports = {
+  PrismaClient,
+  Prisma,
+  ...enums,
+  dmmf,
+  PrismaClientKnownRequestError,
+  PrismaClientValidationError,
+  PrismaClientInitializationError,
+  default: { PrismaClient, Prisma },
+};
 `;
 
 /*
@@ -155,16 +268,99 @@ const enumDecls = Object.entries(enums)
   })
   .join('\n\n');
 
-const modelKeys = models.map((m) => `  ${m.charAt(0).toLowerCase() + m.slice(1)}: PrismaDelegate;`).join('\n');
+const modelKeys = models
+  .map((m) => `  ${m.charAt(0).toLowerCase() + m.slice(1)}: PrismaDelegate<${m}>;`)
+  .join('\n');
 
-// Row types. Real Prisma emits a full interface per model; anything is enough
-// here to satisfy `import { Waybill } from '@prisma/client'`.
-const modelTypes = models.map((m) => `export type ${m} = PrismaRow;`).join('\n');
+/*
+ * Row shapes.
+ *
+ * `any` was not good enough: `{ ...withoutShareToken(row), ...metrics }` where
+ * `row` is `any` resolves to just `metrics`, because spreading `any` contributes
+ * nothing — which turned a correct controller into four type errors. An
+ * interface per model restores the field names, so a spread behaves the way it
+ * would with the real client.
+ *
+ * No index signature, deliberately: `Omit<T, K>` is built on `keyof T`, and an
+ * index signature makes `keyof T` just `string | number`, so `Omit` would drop
+ * every named field and a spread of the result would carry nothing. Real Prisma
+ * types have exact keys for the same reason.
+ *
+ * The cost is that a `select`-narrowed result still types as the full row (the
+ * stub cannot see the selection). That is looser than the real client, never
+ * tighter, so it cannot invent an error that a real build would not also report.
+ * Field-level correctness is checked against the schema by
+ * scripts/check-prisma-query-keys.mjs.
+ */
+const SCALAR_TS = {
+  String: 'string',
+  Int: 'number',
+  BigInt: 'number',
+  Float: 'number',
+  Decimal: 'number',
+  Boolean: 'boolean',
+  DateTime: 'Date',
+  Json: 'any',
+  Bytes: 'Uint8Array',
+};
 
-const prismaTypeNames = collectPrismaTypeNames(join(here, '..', 'src'));
+/** A relation, rather than a scalar or an enum. */
+const isRelation = (field) => !SCALAR_TS[field.type] && !enums[field.type];
+
+const tsTypeOf = (field) => {
+  // An enum member map is truthy but not a type name: the field's type is the
+  // enum's NAME, which is emitted alongside it.
+  const base = SCALAR_TS[field.type] ?? (enums[field.type] ? field.type : 'any');
+  if (field.isList) return `${base}[]`;
+  return field.isRequired ? base : `${base} | null`;
+};
+
+/**
+ * One row line.
+ *
+ * Relations are optional: `create()`/`update()` return scalars only unless the
+ * caller asked for an `include`, so a required relation field would make every
+ * correct prisma call that returns a row fail to compile. `_count` is the same
+ * story — Prisma adds it only when selected — but every model can carry one, so
+ * each interface gets the field.
+ */
+const fieldLine = (field) => {
+  if (isRelation(field)) {
+    // A to-many relation is `any[]`, a to-one is optional. The stub cannot model
+    // `GetPayload<{ include }>`, so it cannot tell an included row from a bare
+    // one; typing to-many as required is the same latitude the old `any`
+    // delegate gave, and every to-many relation the code reads is `include`d.
+    return field.isList ? `  ${field.name}: any[];` : `  ${field.name}?: any;`;
+  }
+  return `  ${field.name}: ${tsTypeOf(field)};`;
+};
+
+const modelTypes = datamodel
+  .map(({ name, fields }) => {
+    const rows = [...fields.map(fieldLine), '  _count?: Record<string, number>;'].join('\n');
+    return `export interface ${name} {\n${rows}\n}`;
+  })
+  .join('\n\n');
+
+const srcDir = join(here, '..', 'src');
+const prismaTypeNames = collectPrismaTypeNames(srcDir);
+const knownExports = new Set([
+  ...models,
+  ...Object.keys(enums),
+  'PrismaClient',
+  'Prisma',
+  'PrismaClientKnownRequestError',
+  'PrismaClientValidationError',
+  'PrismaClientInitializationError',
+  'dmmf',
+]);
+const clientTypeImports = collectClientTypeImports(srcDir, knownExports);
 const prismaTypes = prismaTypeNames
   .map((name) => `  type ${name}<T = any, U = any, V = any> = any;`)
   .join('\n');
+
+// Types the codebase imports that the schema does not describe one-to-one.
+const namedTypeExports = clientTypeImports.map((name) => `export type ${name} = any;`).join('\n');
 
 const dts = `// GENERATED LOCALLY by scripts/local-prisma-stub.mjs — do not edit, do not commit.
 /* eslint-disable */
@@ -182,27 +378,29 @@ const dts = `// GENERATED LOCALLY by scripts/local-prisma-stub.mjs — do not ed
  */
 export type PrismaRow = any;
 
-export interface PrismaDelegate {
-  findMany(args?: any): Promise<PrismaRow[]>;
-  findFirst(args?: any): Promise<PrismaRow | null>;
-  findFirstOrThrow(args?: any): Promise<PrismaRow>;
-  findUnique(args?: any): Promise<PrismaRow | null>;
-  findUniqueOrThrow(args?: any): Promise<PrismaRow>;
-  create(args?: any): Promise<PrismaRow>;
+export interface PrismaDelegate<Row = any> {
+  findMany(args?: any): Promise<Row[]>;
+  findFirst(args?: any): Promise<Row | null>;
+  findFirstOrThrow(args?: any): Promise<Row>;
+  findUnique(args?: any): Promise<Row | null>;
+  findUniqueOrThrow(args?: any): Promise<Row>;
+  create(args?: any): Promise<Row>;
   createMany(args?: any): Promise<{ count: number }>;
-  update(args?: any): Promise<PrismaRow>;
+  update(args?: any): Promise<Row>;
   updateMany(args?: any): Promise<{ count: number }>;
-  upsert(args?: any): Promise<PrismaRow>;
-  delete(args?: any): Promise<PrismaRow>;
+  upsert(args?: any): Promise<Row>;
+  delete(args?: any): Promise<Row>;
   deleteMany(args?: any): Promise<{ count: number }>;
   count(args?: any): Promise<number>;
-  aggregate(args?: any): Promise<PrismaRow>;
-  groupBy(args?: any): Promise<PrismaRow[]>;
+  aggregate(args?: any): Promise<any>;
+  groupBy(args?: any): Promise<any[]>;
 }
 
 ${enumDecls}
 
 ${modelTypes}
+
+${namedTypeExports}
 
 export declare namespace Prisma {
   type TransactionClient = PrismaClient;
@@ -228,6 +426,17 @@ ${modelKeys}
 }
 
 export declare const Prisma: Record<string, any>;
+
+export declare class PrismaClientKnownRequestError extends Error {
+  readonly code: string;
+  readonly clientVersion?: string;
+  readonly meta?: any;
+  constructor(message: string, options?: any);
+}
+export declare class PrismaClientValidationError extends Error {}
+export declare class PrismaClientInitializationError extends Error {}
+export declare const dmmf: any;
+
 export default PrismaClient;
 `;
 
