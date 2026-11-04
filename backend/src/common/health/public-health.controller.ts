@@ -29,7 +29,7 @@ import { Public } from '../decorators/public.decorator';
  * it tells an attacker when the process last restarted.
  */
 @ApiTags('Health')
-@Controller('health') // global prefix makes this /api/v1/health — no exclude entry needed
+@Controller('api/v1/health') // full path + an exclude entry — see health-routes.ts for why
 @SkipThrottle() // monitoring must never be rate-limited out
 export class PublicHealthController {
   constructor(private readonly healthSentinel: HealthSentinelService) {}
