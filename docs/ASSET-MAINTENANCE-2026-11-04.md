@@ -184,7 +184,26 @@ produced it (`MAINTENANCE_THRESHOLDS`):
 | `availabilityWarnPercent` | 95 | below this, the fleet's availability is a conversation |
 | `comebackWarnPercent` | 15 | share of completed work that repeats earlier work |
 | `stalledJobHours` | 48 | a card nobody has started is not "in progress" |
-| `longDownHours` | 72 | a unit down this long is contractual, not mechanical |
+| `longDownMultiple` | 1.5 | a unit is a contract exposure past 1.5× its class's expected repair time |
+
+**Expected repair time is per class, not a flat limit.** A terminal operator
+gave us their own timings — five days for an RTG, three for a straddle carrier
+— and against the flat 72-hour limit this module originally shipped with, every
+RTG repair was flagged for its last two days and every straddle repair was
+flagged the moment it was finished. An alarm that fires on correct work trains
+the operator to ignore the panel, so the limit became a multiple of the
+expectation:
+
+| Class | Expected repair | Flags at |
+|---|---|---|
+| RTG | 120 h (5 days) | 180 h (7.5 days) |
+| Straddle carrier | 72 h (3 days) | 108 h (4.5 days) |
+| everything else | 48 h (default) | 72 h — unchanged from before |
+
+Only the two classes with real data are encoded. A guessed expectation would
+be a guessed alarm, and `dto/vocabulary-drift.spec.ts` keeps the DTO lists equal
+to the schema so a class cannot exist in the database but be unregisterable
+through the API.
 
 Findings are sentences with a number and a unit — "RS-014 has been out of
 service for 168 hours" — never a bare count. Retired units are excluded from
@@ -195,13 +214,14 @@ to work.
 
 | Suite | Count | What it pins |
 |---|---|---|
-| `backend/src/maintenance/maintenance.rules.spec.ts` | 48 | three-valued warranty, downtime nulls, availability basis, comeback rules, meter integrity, verdict thresholds |
+| `backend/src/maintenance/maintenance.rules.spec.ts` | 54 | three-valued warranty, downtime nulls, availability basis, comeback rules, meter integrity, verdict thresholds, class-aware long-down |
 | `backend/src/maintenance/maintenance.service.spec.ts` | 34 | tenancy 404s, idempotency, number allocation, auto-linking, `lifetime` refusal, cancel-clears-downtime, planned ≠ lost, unit page maths |
 | `backend/src/maintenance/dto/maintenance.dto.spec.ts` | 8 | query-string coercion (`"false"` must not become `true`), required fields, `lifetime` rejected at the edge |
-| `frontend/src/lib/maintenance.test.ts` | 17 | what the screen may claim: no clean 100%, no invented cost/hour, "not recorded" ≠ "expired" |
+| `backend/src/maintenance/dto/vocabulary-drift.spec.ts` | 7 | the DTO vocabularies equal the Prisma enums, in order — a class the schema accepts must be registerable |
+| `frontend/src/lib/maintenance.test.ts` | 20 | what the screen may claim: no clean 100%, no invented cost/hour, "not recorded" ≠ "expired"; every class has a label |
 | `frontend/src/pages/Maintenance.test.tsx` | 13 | headline, findings, planned ≠ zero downtime, no delete, event trail, capture flow |
 
-Totals: **90 backend** in the module, **30 frontend**; full suites 2851 and 1166.
+Totals: **103 backend** in the module, **33 frontend**.
 
 Three notes on the tests themselves, because each one is a defect that a
 green suite would otherwise have hidden:

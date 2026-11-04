@@ -1,4 +1,5 @@
 import type {
+  AssetClass,
   AssetStatus,
   MaintenanceCostKind,
   MaintenanceJobStatus,
@@ -546,9 +547,71 @@ export const MAINTENANCE_THRESHOLDS = {
   comebackWarnPercent: 15,
   /** A breakdown nobody has touched for this long is not "in progress". */
   stalledJobHours: 48,
-  /** A unit down this long is a written-off contract, not a repair. */
-  longDownHours: 72,
+  /**
+   * How far past a class's expected repair time a unit has to run before it
+   * stops being a repair and becomes a contract exposure.
+   *
+   * A fixed number of hours cannot express this. When the first terminal
+   * operator gave us their timings — five days for an RTG, three for a
+   * straddle carrier — the previous flat threshold of 72 hours turned every
+   * single RTG repair into an alarm for its last two days, and every straddle
+   * repair into one the moment it was finished. An alarm that fires on correct
+   * work is worse than no alarm: it trains the operator to ignore the panel.
+   */
+  longDownMultiple: 1.5,
 } as const;
+
+/**
+ * How long a repair is *expected* to take, in hours, by class.
+ *
+ * Only two entries, and that is deliberate: these are the timings a terminal
+ * operator gave from their own job cards. Every other class falls to the
+ * default rather than to a number invented here — a guessed expectation is a
+ * guessed alarm, and the whole point of this module is that figures carry
+ * evidence.
+ */
+export const EXPECTED_REPAIR_HOURS: Partial<Record<AssetClass, number>> = {
+  RTG: 120,
+  STRADDLE_CARRIER: 72,
+};
+
+/**
+ * The fallback: 48 hours, which reproduces the old 72-hour flag exactly
+ * (48 × 1.5). Classes nobody has measured keep the behaviour they had before.
+ */
+export const DEFAULT_EXPECTED_REPAIR_HOURS = 48;
+
+export function expectedRepairHours(assetClass: AssetClass | null | undefined): number {
+  if (assetClass && EXPECTED_REPAIR_HOURS[assetClass]) {
+    return EXPECTED_REPAIR_HOURS[assetClass] as number;
+  }
+  return DEFAULT_EXPECTED_REPAIR_HOURS;
+}
+
+/** The point at which a unit has been down long enough to be a contract problem. */
+export function longDownLimitHours(assetClass: AssetClass | null | undefined): number {
+  return Math.round(expectedRepairHours(assetClass) * MAINTENANCE_THRESHOLDS.longDownMultiple);
+}
+
+const ASSET_CLASS_LABELS: Record<string, string> = {
+  REACH_STACKER: 'Reach stacker',
+  RTG: 'RTG',
+  RMG: 'RMG',
+  STRADDLE_CARRIER: 'Straddle carrier',
+  FORKLIFT: 'Forklift',
+  TRACTOR: 'Tractor',
+  TRUCK: 'Truck',
+  HAULER: 'Hauler',
+  TRAILER: 'Trailer',
+  GENSET: 'Genset',
+  CRANE: 'Crane',
+  PUMP: 'Pump',
+  OTHER: 'Unit',
+};
+
+export function assetClassLabel(assetClass: AssetClass | null | undefined): string {
+  return (assetClass && ASSET_CLASS_LABELS[assetClass]) || 'Unit';
+}
 
 export type FindingSeverity = 'attention' | 'info';
 
@@ -581,6 +644,8 @@ export interface VerdictAsset {
   assetCode: string;
   name?: string | null;
   status: AssetStatus;
+  /** Drives the expected repair time, and therefore the long-down limit. */
+  assetClass?: AssetClass | null;
 }
 
 export interface VerdictJob {
@@ -688,11 +753,13 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
       .sort((a, b) => a.getTime() - b.getTime())[0];
     const hours = openForAsset ? Math.floor((now.getTime() - openForAsset.getTime()) / 3600000) : null;
     const name = asset.name ? `${asset.assetCode} (${asset.name})` : asset.assetCode;
-    if (hours !== null && hours >= MAINTENANCE_THRESHOLDS.longDownHours) {
+    const expected = expectedRepairHours(asset.assetClass ?? null);
+    const limit = longDownLimitHours(asset.assetClass ?? null);
+    if (hours !== null && hours >= limit) {
       findings.push({
         code: `long_down:${asset.id}`,
         severity: 'attention',
-        message: `${name} has been out of service for ${hours} hours. At this age it is a contractual problem, not a repair.`,
+        message: `${name} has been out of service for ${hours} hours. A ${assetClassLabel(asset.assetClass ?? null).toLowerCase()} repair is expected to take about ${expected} hours; past ${limit} this is a contract exposure, not a repair.`,
       });
     }
   }

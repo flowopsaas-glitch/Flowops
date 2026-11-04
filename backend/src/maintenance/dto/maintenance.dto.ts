@@ -18,9 +18,14 @@ export const ASSET_CLASSES = [
   'REACH_STACKER',
   'RTG',
   'RMG',
+  // Terminal plant a container operator actually holds. Added after the first
+  // real fleet was described: 60 straddle carriers and 40 haulers had nowhere
+  // to go but OTHER, which would have merged them into one meaningless class.
+  'STRADDLE_CARRIER',
   'FORKLIFT',
   'TRACTOR',
   'TRUCK',
+  'HAULER',
   'TRAILER',
   'GENSET',
   'CRANE',

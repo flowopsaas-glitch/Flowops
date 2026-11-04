@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ASSET_CLASSES,
+  ASSET_CLASS_LABELS,
   allowedJobActions,
   fleetHeadline,
   formatDuration,
@@ -80,6 +82,28 @@ describe("warranty is three-valued on screen", () => {
   it("does not claim a warranty on a cancelled card or an open one", () => {
     expect(warrantyPositionOf(job({ status: "CANCELLED" }))).toBe("UNKNOWN");
     expect(warrantyPositionOf(job({ status: "REPORTED", completedAt: null }))).toBe("UNKNOWN");
+  });
+});
+
+describe("the register can name the plant a terminal actually runs", () => {
+  it("has classes for straddle carriers, haulers and RTGs", () => {
+    expect(ASSET_CLASSES).toContain("STRADDLE_CARRIER");
+    expect(ASSET_CLASSES).toContain("HAULER");
+    expect(ASSET_CLASSES).toContain("RTG");
+  });
+
+  it("gives every class a label — a blank one is a dropdown that lies", () => {
+    for (const value of ASSET_CLASSES) {
+      expect(ASSET_CLASS_LABELS[value]?.trim()).toBeTruthy();
+    }
+  });
+
+  it("does not hide a whole fleet behind OTHER", () => {
+    // 100 of one operator's 122 machines were straddles and haulers; with only
+    // OTHER available they would have collapsed into a single meaningless class
+    // and every per-class figure would have been fiction.
+    expect(ASSET_CLASS_LABELS.STRADDLE_CARRIER).toBe("Straddle carrier");
+    expect(ASSET_CLASS_LABELS.HAULER).toBe("Hauler");
   });
 });
 

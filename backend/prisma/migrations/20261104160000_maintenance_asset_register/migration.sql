@@ -32,7 +32,7 @@
 --    updates or deletes a row, so a job card's history cannot be rewritten.
 
 -- CreateEnum
-CREATE TYPE "AssetClass" AS ENUM ('REACH_STACKER', 'RTG', 'RMG', 'FORKLIFT', 'TRACTOR', 'TRUCK', 'TRAILER', 'GENSET', 'CRANE', 'PUMP', 'OTHER');
+CREATE TYPE "AssetClass" AS ENUM ('REACH_STACKER', 'RTG', 'RMG', 'STRADDLE_CARRIER', 'FORKLIFT', 'TRACTOR', 'TRUCK', 'HAULER', 'TRAILER', 'GENSET', 'CRANE', 'PUMP', 'OTHER');
 
 -- CreateEnum
 CREATE TYPE "AssetMeterType" AS ENUM ('HOURS', 'KM');

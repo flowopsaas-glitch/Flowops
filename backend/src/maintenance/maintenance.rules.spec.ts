@@ -1,4 +1,5 @@
 import {
+  DEFAULT_EXPECTED_REPAIR_HOURS,
   MAX_WARRANTY_TERM_DAYS,
   availability,
   canTransition,
@@ -7,9 +8,11 @@ import {
   costAmount,
   costPerOperatingUnit,
   downtimeMinutes,
+  expectedRepairHours,
   faultPattern,
   findComeback,
   isWarrantyComeback,
+  longDownLimitHours,
   maintenanceVerdict,
   nextJobNumber,
   overlapMinutes,
@@ -429,7 +432,7 @@ describe('the fleet verdict', () => {
     expect(verdict.status).toBe('ok');
   });
 
-  it('names a unit that has been down too long, with its age', () => {
+  it('names a unit that has been down too long, with its age and the expectation behind it', () => {
     const verdict = maintenanceVerdict({
       assets,
       jobs: [
@@ -447,7 +450,82 @@ describe('the fleet verdict', () => {
     expect(verdict.status).toBe('attention');
     const finding = verdict.findings.find((f) => f.code === 'long_down:a2');
     expect(finding?.message).toContain('168 hours');
-    expect(finding?.message).toMatch(/contractual problem/i);
+    // The finding states the expectation it judged against, so an operator can
+    // disagree with the number rather than with the alarm.
+    expect(finding?.message).toMatch(/expected to take about 48 hours/i);
+    expect(finding?.message).toMatch(/past 72/i);
+  });
+
+  /**
+   * The thresholds a terminal operator gave us, turned into a test.
+   *
+   * A five-day RTG repair is correct work. A flat 72-hour limit used to flag
+   * every one of them for its last two days — and every three-day straddle
+   * repair the moment it was finished. An alarm that fires on correct work is
+   * how operators learn to ignore the panel.
+   */
+  describe('long-down is judged against the class, not a flat limit', () => {
+    const fleet = [
+      { id: 'rtg-1', assetCode: 'RTG-07', name: null, status: 'DOWN' as const, assetClass: 'RTG' as const },
+      { id: 'sc-1', assetCode: 'SC-33', name: null, status: 'DOWN' as const, assetClass: 'STRADDLE_CARRIER' as const },
+    ];
+
+    const downFor = (assetId: string, hours: number) => ({
+      id: `job-${assetId}`,
+      assetId,
+      type: 'BREAKDOWN' as const,
+      status: 'IN_PROGRESS' as const,
+      reportedAt: new Date(now.getTime() - hours * 3600000),
+    });
+
+    it('does not flag an RTG on day 5 — that is the repair done properly', () => {
+      const verdict = maintenanceVerdict({ assets: fleet, jobs: [downFor('rtg-1', 120)], windowDays: 30, now });
+      expect(verdict.findings.some((f) => f.code === 'long_down:rtg-1')).toBe(false);
+    });
+
+    it('does not flag a straddle carrier on day 3', () => {
+      const verdict = maintenanceVerdict({ assets: fleet, jobs: [downFor('sc-1', 72)], windowDays: 30, now });
+      expect(verdict.findings.some((f) => f.code === 'long_down:sc-1')).toBe(false);
+    });
+
+    it('flags an RTG at 8 days, past 1.5× the five-day expectation', () => {
+      const verdict = maintenanceVerdict({ assets: fleet, jobs: [downFor('rtg-1', 192)], windowDays: 30, now });
+      const finding = verdict.findings.find((f) => f.code === 'long_down:rtg-1');
+      expect(finding).toBeTruthy();
+      expect(finding?.message).toMatch(/expected to take about 120 hours/i);
+      expect(finding?.message).toMatch(/past 180/i);
+    });
+
+    it('flags a straddle carrier at 5 days, which is already past its limit', () => {
+      const verdict = maintenanceVerdict({ assets: fleet, jobs: [downFor('sc-1', 120)], windowDays: 30, now });
+      expect(verdict.findings.some((f) => f.code === 'long_down:sc-1')).toBe(true);
+    });
+
+    it('keeps the old 72-hour behaviour for a class nobody has measured', () => {
+      const unknownClass = [{ id: 'a1', assetCode: 'GEN-1', name: null, status: 'DOWN' as const }];
+      // Only the long-down finding is under test here: 71 hours down on a
+      // single unit is 90% availability, so the verdict legitimately has other
+      // things to say about it.
+      expect(
+        maintenanceVerdict({ assets: unknownClass, jobs: [downFor('a1', 71)], windowDays: 30, now }).findings.some(
+          (f) => f.code === 'long_down:a1',
+        ),
+      ).toBe(false);
+      expect(
+        maintenanceVerdict({ assets: unknownClass, jobs: [downFor('a1', 73)], windowDays: 30, now }).findings.some(
+          (f) => f.code === 'long_down:a1',
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it('reports the expected repair time it used, per class', () => {
+    expect(expectedRepairHours('RTG')).toBe(120);
+    expect(expectedRepairHours('STRADDLE_CARRIER')).toBe(72);
+    expect(expectedRepairHours('HAULER')).toBe(DEFAULT_EXPECTED_REPAIR_HOURS);
+    expect(expectedRepairHours(null)).toBe(DEFAULT_EXPECTED_REPAIR_HOURS);
+    expect(longDownLimitHours('RTG')).toBe(180);
+    expect(longDownLimitHours('STRADDLE_CARRIER')).toBe(108);
   });
 
   it('names cards nobody has started', () => {
