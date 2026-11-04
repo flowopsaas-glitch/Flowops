@@ -1,0 +1,17 @@
+[Unit]
+Description=FlowOps host audit — daily patch-backlog check
+Documentation=file:/root/FlowOps/deploy/VPS-RUNBOOK.md
+
+[Timer]
+# Daily. The audit is cheap (a few apt list calls) and its value is entirely in
+# being frequent: a backlog that is noticed on day 3 is a maintenance task; the
+# same backlog on day 60 is an incident.
+OnCalendar=*-*-* 06:30:00
+# Spread it — the host also runs a 6-hourly database dump at :00.
+RandomizedDelaySec=15m
+# Catch up after downtime instead of silently skipping the day.
+Persistent=true
+Unit=flowops-host-audit.service
+
+[Install]
+WantedBy=timers.target

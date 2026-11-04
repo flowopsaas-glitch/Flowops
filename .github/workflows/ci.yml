@@ -65,6 +65,16 @@ jobs:
           chmod +x scripts/ghcr-publish-preflight.sh scripts/ghcr-publish-preflight.test.sh
           ./scripts/ghcr-publish-preflight.test.sh
 
+      # Host patching. This script runs as root on the production VPS, so its
+      # refusals (no verified backup, half-configured dpkg, no disk, held apt
+      # lock) and its scopes (--security must never perform a full upgrade) are
+      # pinned here, with every privileged command stubbed. Nothing in this job
+      # touches apt, Docker or the network.
+      - name: Host patch logic (mocked apt/dpkg/docker)
+        run: |
+          chmod +x deploy/host-patch.sh deploy/host-patch.test.sh
+          ./deploy/host-patch.test.sh
+
       # GitHub validates the YAML of a workflow but not the bash inside a
       # `run:` block. A syntax error there is invisible until a whole run is
       # spent discovering it — and on a private repo those runs are billed.

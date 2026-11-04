@@ -453,6 +453,92 @@ sudo systemctl enable docker
 docker ps            # after a test reboot, all flowops-* containers should be Up
 ```
 
+### G. OS patching — `deploy/host-patch.sh` (added 2026-11-04)
+
+The host login on 2026-11-04 read `35 updates can be applied immediately. / 5 of
+these updates are standard security updates. / *** System restart required ***`.
+That is not an emergency; it is a slope. This section is the whole policy, and
+the timers enforce it.
+
+**Install once.** Idempotent, safe to re-run.
+
+```bash
+cd ~/FlowOps
+sudo ./deploy/host-patch.sh --install
+```
+
+That writes `/usr/local/bin/flowops-host-patch`, the two systemd timers, the
+security-only apt config (`/etc/apt/apt.conf.d/52flowops-unattended-upgrades.conf`
+plus `20auto-upgrades`) and `/etc/default/flowops-host-patch` with the thresholds
+spelled out. It does **not** patch anything.
+
+**What runs by itself afterwards**
+
+| When | What | Does it change the host? |
+|---|---|---|
+| Daily, ~06:30 | `flowops-host-audit` → `--check` | No. Records backlog age, reports. |
+| Daily, ~06:00 (apt) | unattended-upgrades | **Security pockets only.** Never reboots. |
+| 1st of the month, 03:30 | `flowops-host-patch` → `--full` | Yes: backup, upgrade, verify. No reboot. |
+
+**The alert is `systemctl --failed`.** `flowops-host-audit` exits 10 when it wants
+attention, and that is deliberately not in `SuccessExitStatus`: a failed unit is
+the reminder, and the first clean run clears it. Check it whenever you are on the
+box; `journalctl -u flowops-host-audit -n 40` says why.
+
+**Manual run, the normal case**
+
+```bash
+sudo flowops-host-patch --check     # what is pending, how old, is a reboot owed
+sudo flowops-host-patch --full      # backup -> upgrade -> verify
+sudo reboot                         # only if the check says one is required
+sudo flowops-host-patch --check     # confirm clean after the reboot
+```
+
+**What it refuses to do, and why that matters.** Each of these aborts *before*
+apt is asked to change anything:
+
+- no verified database dump → it will not start. A 20-byte dump that restores
+  nothing is worse than none, because it reads as protection.
+- `dpkg --audit` non-empty → it stops and tells you `dpkg --configure -a`.
+  Patching on top of a half-configured dpkg is how a broken package becomes an
+  unbootable host.
+- less than `MIN_FREE_MB` (1 GB) free → a kernel update writes a new initramfs
+  and a half-written one is not recoverable.
+- another apt process holding the lock (`unattended-upgrades` mid-run) → it says
+  so instead of queueing behind it and timing out.
+- `--reboot` with a degraded stack → it does **not** reboot. Fix the stack first,
+  or the next boot's failure is unattributable.
+
+**Reboot policy.** A kernel or libc fix installs and waits. Nothing reboots this
+host unattended by default. To opt in — after you have watched one supervised
+`--full` run — set `FLOWOPS_PATCH_REBOOT=1` in
+`/etc/default/flowops-host-patch`; the monthly run will then reboot, but only
+after the stack health gate passes.
+
+**Docker is not covered by unattended-upgrades, deliberately.** `docker-ce` comes
+from Docker's repo, which has no `-security` pocket, so apt's automatic path
+cannot reach it. It is also the package whose update restarts the daemon and, for
+a few seconds, every container. It is handled by the monthly `--full` in a window
+with verification — not at 03:00 on a Tuesday by surprise.
+
+**Do not patch and deploy in the same breath.** Patch → verify → reboot → verify,
+then deploy. If something is wrong afterwards, you want to know which of the two
+changed the box.
+
+**Thresholds** live in `/etc/default/flowops-host-patch` and are read on every run:
+
+```
+SECURITY_WARN_DAYS=7    SECURITY_FAIL_DAYS=30
+TOTAL_WARN=40           TOTAL_FAIL=80
+REBOOT_WARN_DAYS=14     REBOOT_FAIL_DAYS=45
+DISK_WARN_PCT=85        DISK_FAIL_PCT=92
+MIN_FREE_MB=1024        MIN_DUMP_BYTES=10240
+```
+
+The audit is intentionally quiet: three security updates published an hour before
+it runs are unattended-upgrades working, so it says so and exits 0. It only fails
+once the backlog has *age* — which is the number that predicts an incident.
+
 ### F. Pinned cloudflared + healthchecks (F-5 / F-9 — incident 2026-09-28)
 
 `deploy/docker-compose.vps.yml` pins `cloudflare/cloudflared:2026.9.3` (F-5 —
