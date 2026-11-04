@@ -853,3 +853,167 @@ describe('the fleet verdict', () => {
     expect(summary.findings.some((f) => f.code === 'warranty')).toBe(true);
   });
 });
+
+/**
+ * The supplier's warranty is not a clock you can leave running.
+ *
+ * The operator who described his fleet keeps 30 months of cover alive with one
+ * labour-only service a year. The service either finds that service and says
+ * so, or it reports cover that has quietly stopped standing — and the second is
+ * the failure this whole module exists to prevent.
+ */
+describe('a warranty kept alive by a service', () => {
+  const thirtyMonths = 913;
+
+  const covered = (overrides: Record<string, any> = {}) =>
+    asset({
+      assetClass: 'RTG',
+      warrantySupplier: 'Kalmar',
+      warrantyStartAt: new Date('2026-01-01T00:00:00.000Z'),
+      warrantyTermDays: thirtyMonths,
+      warrantyServiceIntervalDays: 365,
+      ...overrides,
+    });
+
+  it('reports cover as unproven when the annual service is missing', async () => {
+    const { prisma } = makePrisma({
+      assets: [covered()],
+      jobs: [
+        job({
+          id: 'job-1',
+          type: 'PLANNED',
+          status: 'COMPLETED',
+          reportedAt: new Date('2026-09-29T06:00:00.000Z'),
+          completedAt: new Date('2026-09-29T09:00:00.000Z'),
+        }),
+      ],
+    });
+    const service = new MaintenanceService(prisma);
+
+    // 2028-01-15: term runs to 2028-07-02, last service 2026-09-29, so the
+    // service that would have kept the cover was due 2027-09-29 + 30 days.
+    jest.useFakeTimers().setSystemTime(new Date('2028-01-15T00:00:00.000Z'));
+    try {
+      const detail = await service.getAsset(COMPANY, 'asset-1');
+      expect(detail.warranty.state).toBe('SERVICE_OVERDUE');
+      expect(detail.warranty.daysOverdue).toBeGreaterThan(0);
+      expect(detail.warranty.expiresAt?.toISOString()).toBe('2028-07-02T00:00:00.000Z');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not let a breakdown reset the service clock', async () => {
+    const { prisma } = makePrisma({
+      assets: [covered()],
+      jobs: [
+        job({
+          id: 'job-1',
+          type: 'PLANNED',
+          status: 'COMPLETED',
+          reportedAt: new Date('2026-09-29T06:00:00.000Z'),
+          completedAt: new Date('2026-09-29T09:00:00.000Z'),
+        }),
+        // A repair six months later is the machine failing, not the operator
+        // attending to it — and it must not be read as compliance.
+        job({
+          id: 'job-2',
+          type: 'BREAKDOWN',
+          status: 'SIGNED_OFF',
+          reportedAt: new Date('2027-03-01T06:00:00.000Z'),
+          completedAt: new Date('2027-03-02T06:00:00.000Z'),
+        }),
+      ],
+    });
+    const service = new MaintenanceService(prisma);
+
+    jest.useFakeTimers().setSystemTime(new Date('2028-01-15T00:00:00.000Z'));
+    try {
+      const detail = await service.getAsset(COMPANY, 'asset-1');
+      expect(detail.warranty.state).toBe('SERVICE_OVERDUE');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('carries the standing onto the fleet list, so cover is visible without opening a unit', async () => {
+    const { prisma } = makePrisma({ assets: [covered()], jobs: [] });
+    const service = new MaintenanceService(prisma);
+
+    jest.useFakeTimers().setSystemTime(new Date('2027-06-01T00:00:00.000Z'));
+    try {
+      const list = await service.listAssets(COMPANY, {});
+      expect(list).toHaveLength(1);
+      expect(list[0].warranty.state).toBe('SERVICE_OVERDUE');
+      expect(list[0].warranty.neverServiced).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('raises the condition in the fleet verdict, naming the unit', async () => {
+    const { prisma } = makePrisma({ assets: [covered()], jobs: [] });
+    const service = new MaintenanceService(prisma);
+
+    jest.useFakeTimers().setSystemTime(new Date('2028-01-15T00:00:00.000Z'));
+    try {
+      const summary = await service.summary(COMPANY, { windowDays: 30 });
+      expect(summary.metrics.unitsInTerm).toBe(1);
+      expect(summary.metrics.unitsServiceOverdue).toBe(1);
+      const finding = summary.findings.find((f) => f.code === 'warranty_condition');
+      expect(finding?.message).toContain('RS-014');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not raise the condition for a unit whose term has ended', async () => {
+    const { prisma } = makePrisma({ assets: [covered()], jobs: [] });
+    const service = new MaintenanceService(prisma);
+
+    jest.useFakeTimers().setSystemTime(new Date('2029-01-01T00:00:00.000Z'));
+    try {
+      const summary = await service.summary(COMPANY, { windowDays: 30 });
+      expect(summary.metrics.unitsInTerm).toBe(0);
+      expect(summary.metrics.unitsServiceOverdue).toBe(0);
+      expect(summary.findings.find((f) => f.code === 'warranty_condition')).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('the class rollup', () => {
+  it('separates the classes a terminal actually runs', async () => {
+    const { prisma } = makePrisma({
+      assets: [
+        asset({ id: 'asset-r', assetCode: 'RTG-01', assetClass: 'RTG' }),
+        asset({ id: 'asset-s', assetCode: 'SC-01', assetClass: 'STRADDLE_CARRIER', status: 'DOWN' }),
+        asset({ id: 'asset-h', assetCode: 'HL-01', assetClass: 'HAULER' }),
+      ],
+      jobs: [job({ id: 'job-1', assetId: 'asset-s', status: 'IN_PROGRESS', reportedAt: new Date(Date.now() - 86400000) })],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const summary = await service.summary(COMPANY, { windowDays: 30 });
+    expect(summary.byClass).toHaveLength(3);
+    expect(summary.byClass[0].assetClass).toBe('STRADDLE_CARRIER');
+    expect(summary.byClass[0].unitsDown).toBe(1);
+    expect(summary.byClass.find((row) => row.assetClass === 'RTG')?.longDownLimitHours).toBe(180);
+  });
+
+  it('leaves retired units out of the classes as well as the headline', async () => {
+    const { prisma } = makePrisma({
+      assets: [
+        asset({ id: 'asset-r', assetCode: 'RTG-01', assetClass: 'RTG' }),
+        asset({ id: 'asset-x', assetCode: 'RTG-99', assetClass: 'RTG', status: 'RETIRED' }),
+      ],
+      jobs: [],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const summary = await service.summary(COMPANY, { windowDays: 30 });
+    expect(summary.byClass).toHaveLength(1);
+    expect(summary.byClass[0].units).toBe(1);
+  });
+});

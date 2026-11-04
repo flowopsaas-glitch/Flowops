@@ -3,6 +3,7 @@ import {
   ASSET_CLASSES,
   ASSET_CLASS_LABELS,
   allowedJobActions,
+  warrantyStandingText,
   fleetHeadline,
   formatDuration,
   formatMeter,
@@ -188,7 +189,10 @@ describe("the headline", () => {
       downtimeHours: 30,
       comebackSharePercent: 9.1,
       warrantyExposure: 0,
+      unitsInTerm: 0,
+      unitsServiceOverdue: 0,
     },
+    byClass: [],
     assetsByStatus: { IN_SERVICE: 6 },
     windowDays: 30,
     windowStart: "2026-10-05T00:00:00.000Z",
@@ -207,5 +211,48 @@ describe("the headline", () => {
 
   it("says it is loading when there is no summary yet", () => {
     expect(fleetHeadline(null)).toMatch(/Loading/);
+  });
+});
+
+describe("a warranty that can lapse without expiring", () => {
+  const standing = (overrides: Record<string, unknown> = {}) => ({
+    state: "IN_WARRANTY" as const,
+    expiresAt: "2028-07-02T00:00:00.000Z",
+    serviceDueAt: "2027-09-29T00:00:00.000Z",
+    serviceGraceEndsAt: "2027-10-29T00:00:00.000Z",
+    daysOverdue: 0,
+    daysSinceService: 400,
+    neverServiced: false,
+    ...overrides,
+  });
+
+  it("gives a live term a date to act on, not just a status", () => {
+    expect(warrantyStandingText(standing())).toMatch(/In warranty to/);
+    expect(warrantyStandingText(standing())).toMatch(/service due by/);
+  });
+
+  it("says whose decision a lapsed condition is — the supplier's, not the page's", () => {
+    const text = warrantyStandingText(
+      standing({ state: "SERVICE_OVERDUE", daysOverdue: 14 }),
+    );
+    expect(text).toMatch(/Service overdue by 14 days/);
+    expect(text).toMatch(/supplier's discretion/);
+    expect(text).not.toMatch(/void/i);
+  });
+
+  it("reads an overdue service as a warning rather than as good news", () => {
+    expect(warrantyTone("SERVICE_OVERDUE")).toBe("warning");
+    expect(warrantyTone("IN_WARRANTY")).toBe("success");
+  });
+
+  it("still refuses to guess a term nobody recorded", () => {
+    expect(warrantyStandingText(null)).toBe("Warranty not recorded");
+    expect(warrantyStandingText(standing({ state: "UNKNOWN" }))).toBe("Warranty not recorded");
+  });
+
+  it("shows a plain term with no service condition as a plain date", () => {
+    const text = warrantyStandingText(standing({ serviceDueAt: null }));
+    expect(text).toMatch(/In warranty to/);
+    expect(text).not.toMatch(/service due/);
   });
 });

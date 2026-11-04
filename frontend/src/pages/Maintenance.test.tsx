@@ -49,7 +49,39 @@ function summary(overrides: Row = {}): Row {
       downtimeHours: 30,
       comebackSharePercent: 9.1,
       warrantyExposure: 0,
+      unitsInTerm: 0,
+      unitsServiceOverdue: 0,
     },
+    byClass: [
+      {
+        assetClass: "RTG",
+        label: "RTG",
+        units: 4,
+        byStatus: { IN_SERVICE: 4 },
+        unitsDown: 0,
+        openJobs: 1,
+        jobsCompleted: 6,
+        downtimeHours: 12,
+        availabilityPercent: 99.4,
+        longestDownHours: null,
+        expectedRepairHours: 120,
+        longDownLimitHours: 180,
+      },
+      {
+        assetClass: "STRADDLE_CARRIER",
+        label: "Straddle carrier",
+        units: 2,
+        byStatus: { IN_SERVICE: 1, DOWN: 1 },
+        unitsDown: 1,
+        openJobs: 1,
+        jobsCompleted: 5,
+        downtimeHours: 96,
+        availabilityPercent: 88.1,
+        longestDownHours: 240,
+        expectedRepairHours: 72,
+        longDownLimitHours: 108,
+      },
+    ],
     assetsByStatus: { IN_SERVICE: 6 },
     windowDays: 30,
     windowStart: "2026-10-05T00:00:00.000Z",
@@ -212,6 +244,24 @@ describe("Maintenance — the fleet position is stated, not implied", () => {
     expect(
       await screen.findByText(/contractual problem, not a repair/i),
     ).toBeTruthy();
+  });
+
+  it("groups the fleet by class, worst first, and states each class's own limit", async () => {
+    h.summary = summary();
+    render(<MaintenancePage />);
+
+    const straddles = await screen.findByTestId("class-STRADDLE_CARRIER");
+    expect(screen.getByTestId("fleet-headline")).toHaveTextContent("Availability");
+    expect(straddles).toHaveTextContent("88.1%");
+    expect(straddles).toHaveTextContent("1 down");
+    // The limit is stated on the card: an operator should not have to find out
+    // from an alarm that a three-day straddle repair is inside its allowance.
+    expect(straddles).toHaveTextContent("72 h expected repair");
+    expect(straddles).toHaveTextContent("flags past 108 h");
+
+    const rtg = screen.getByTestId("class-RTG");
+    expect(rtg).toHaveTextContent("99.4%");
+    expect(rtg).toHaveTextContent("flags past 180 h");
   });
 
   it("shows an empty register as a next step, not as 0% availability", async () => {

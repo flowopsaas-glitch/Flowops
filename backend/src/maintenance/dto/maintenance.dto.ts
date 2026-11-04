@@ -13,6 +13,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_WARRANTY_TERM_DAYS } from '../maintenance.rules';
 
 export const ASSET_CLASSES = [
   'REACH_STACKER',
@@ -117,6 +118,46 @@ export class CreateAssetDto {
   @IsISO8601()
   commissionedAt?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Supplier carrying the machine warranty — Kalmar, Terex, whoever holds the contract. Named, because a failed claim needs an addressee.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  warrantySupplier?: string;
+
+  @ApiPropertyOptional({
+    description: 'When the supplier term began — delivery or commissioning, not the day it was typed in.',
+  })
+  @IsOptional()
+  @IsISO8601()
+  warrantyStartAt?: string;
+
+  @ApiPropertyOptional({
+    example: 913,
+    description:
+      'The term in days — 30 months is 913. Blank means "not recorded", which is a different fact from "no warranty".',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_WARRANTY_TERM_DAYS)
+  warrantyTermDays?: number;
+
+  @ApiPropertyOptional({
+    example: 365,
+    description:
+      'How often the term must be serviced to stay alive, in days. The annual labour-only service on a 30-month term is 365.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1825)
+  warrantyServiceIntervalDays?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -168,6 +209,33 @@ export class UpdateAssetDto {
   @IsString()
   @MaxLength(4000)
   notes?: string;
+
+  @ApiPropertyOptional({ description: 'Supplier carrying the machine warranty.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  warrantySupplier?: string | null;
+
+  @ApiPropertyOptional({ description: 'When the supplier term began. Null clears it.' })
+  @IsOptional()
+  @IsISO8601()
+  warrantyStartAt?: string | null;
+
+  @ApiPropertyOptional({ description: 'Term in days. Null clears it — and clearing is not the same as zero.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_WARRANTY_TERM_DAYS)
+  warrantyTermDays?: number | null;
+
+  @ApiPropertyOptional({ description: 'Service interval that keeps the term alive, in days. Null clears it.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1825)
+  warrantyServiceIntervalDays?: number | null;
 }
 
 export class RecordMeterDto {

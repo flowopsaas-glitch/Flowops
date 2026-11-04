@@ -17,9 +17,11 @@ import type {
  *     the one typing it.
  *  2. **Availability** — from downtime against a stated period. Always carries
  *     its basis, and returns `null` rather than 100% when there is no basis.
- *  3. **Warranty position** — three-valued: IN, OUT, or **UNKNOWN**. A job with
- *     no term recorded is not "out of warranty"; treating it as such is how a
- *     business ends up re-doing its own work for free and calling it goodwill.
+ *  3. **Warranty position** — a job's warranty is IN, OUT or **UNKNOWN**. A job
+ *     with no term recorded is not "out of warranty"; treating it as such is
+ *     how a business ends up re-doing its own work for free and calling it
+ *     goodwill. A unit's *supplier* warranty adds a fourth answer, because a
+ *     term can stay live and stop standing — see `assetWarrantyStanding`.
  *  4. **Comeback** — a job that repeats an earlier fault on the same unit. It is
  *     a link between two records, detected from data, so a repeat failure is
  *     visible even when the person who caused it is the person writing the card.
@@ -199,7 +201,11 @@ export function warrantyExpiry(
  * own rework is chargeable, which is exactly the judgement a database should
  * not make.
  */
-export type WarrantyPosition = 'IN_WARRANTY' | 'OUT_OF_WARRANTY' | 'UNKNOWN';
+export type WarrantyPosition =
+  | 'IN_WARRANTY'
+  | 'SERVICE_OVERDUE'
+  | 'OUT_OF_WARRANTY'
+  | 'UNKNOWN';
 
 export interface WarrantyBearingJob {
   status: MaintenanceJobStatus;
@@ -233,11 +239,162 @@ export function warrantyLabel(position: WarrantyPosition): string {
   switch (position) {
     case 'IN_WARRANTY':
       return 'In warranty';
+    case 'SERVICE_OVERDUE':
+      return 'Service overdue — cover unproven';
     case 'OUT_OF_WARRANTY':
       return 'Out of warranty';
     default:
       return 'Warranty not recorded';
   }
+}
+
+// ── The warranty on the machine ─────────────────────────────────────────────
+
+/**
+ * A term is not the same thing as a clock, and treating it as one is how a
+ * contractor discovers on the day of a claim that the cover lapsed a year ago.
+ *
+ * A terminal operator described his fleet: 30 months on the fuel tanks,
+ * extending to the engine, the injection sets and the injection pumps — and
+ * kept alive by **one labour-only service a year, one to three hours**. That is
+ * the ordinary shape of an OEM warranty: the term is the promise, and a
+ * condition is what keeps the promise standing. Miss the service and the
+ * supplier is entitled to refuse the claim, without the term ever expiring.
+ *
+ * A record that only counts days would say IN_WARRANTY on a machine that has
+ * not been touched in three years. It would be wrong on the day it mattered
+ * most.
+ */
+export const WARRANTY_SERVICE_GRACE_DAYS = 30;
+
+/**
+ * Work that keeps a warranty standing.
+ *
+ * The condition is attendance at a service, so what counts is the planned
+ * service and the inspection — not a breakdown (the machine failing is not the
+ * operator maintaining it) and not a recall (the supplier's action, not the
+ * operator's compliance).
+ *
+ * It happens to equal the planned-work set today, and it is named separately
+ * anyway: these two ideas can part company — a breakdown visit that also
+ * carries out the service would keep the warranty alive without becoming
+ * planned availability.
+ */
+export function keepsWarrantyAlive(type: MaintenanceJobType): boolean {
+  return isPlannedWork(type);
+}
+
+export interface AssetWarrantyTerms {
+  /** When the supplier's term began — delivery or commissioning. */
+  warrantyStartAt?: Date | string | null;
+  /** The term in days. Absent means nobody wrote it down; it is not "none". */
+  warrantyTermDays?: number | null;
+  /** How often the term must be serviced to stay alive, in days. */
+  warrantyServiceIntervalDays?: number | null;
+  /** Completion of the most recent service-type job on this unit, if any. */
+  lastServiceAt?: Date | string | null;
+}
+
+export interface WarrantyStanding {
+  state: WarrantyPosition;
+  /** End of the term. Null when there is no term to end. */
+  expiresAt: Date | null;
+  /** The date the supplier expects the service to be on record. */
+  serviceDueAt: Date | null;
+  /** Past this, the condition has been missed — the date a claim starts to fail. */
+  serviceGraceEndsAt: Date | null;
+  /** Whole days the service is late, past the grace. 0 when it is not late. */
+  daysOverdue: number;
+  /** Days since the last recorded service; null when there has never been one. */
+  daysSinceService: number | null;
+  /** True when a term exists but no service has ever been recorded against it. */
+  neverServiced: boolean;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function addDays(from: Date, days: number): Date {
+  return new Date(from.getTime() + days * DAY_MS);
+}
+
+function wholeDaysBetween(from: Date, to: Date): number {
+  return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
+}
+
+/**
+ * Where a unit stands against the supplier's warranty, condition included.
+ *
+ * The four answers, in the order they are decided:
+ *
+ *  1. **UNKNOWN** — no start date or no term on the record. Not "out of
+ *     warranty": an unwritten promise is not an expired one, and the cost of
+ *     guessing wrong is a rework the operator redoes for free.
+ *  2. **OUT_OF_WARRANTY** — the term has run out. Nothing the operator does now
+ *     brings it back.
+ *  3. **SERVICE_OVERDUE** — the term is live, but the service that keeps it
+ *     live is not on record. Deliberately *not* called "void": whether a claim
+ *     is honoured is the supplier's decision, and this record does not get to
+ *     make it. What it can say is that the evidence is missing, which is the
+ *     thing the operator can still fix.
+ *  4. **IN_WARRANTY** — live term, condition satisfied.
+ */
+export function assetWarrantyStanding(terms: AssetWarrantyTerms, at: Date = new Date()): WarrantyStanding {
+  const none: WarrantyStanding = {
+    state: 'UNKNOWN',
+    expiresAt: null,
+    serviceDueAt: null,
+    serviceGraceEndsAt: null,
+    daysOverdue: 0,
+    daysSinceService: null,
+    neverServiced: false,
+  };
+
+  const start = asDate(terms.warrantyStartAt);
+  const term = terms.warrantyTermDays;
+  if (!start || term === null || term === undefined || !Number.isFinite(term) || term <= 0) {
+    return none;
+  }
+
+  const expiresAt = addDays(start, term);
+  const lastService = asDate(terms.lastServiceAt);
+  const interval = terms.warrantyServiceIntervalDays;
+  const hasCondition = typeof interval === 'number' && Number.isFinite(interval) && interval > 0;
+
+  let serviceDueAt: Date | null = null;
+  let serviceGraceEndsAt: Date | null = null;
+  let daysOverdue = 0;
+
+  if (hasCondition) {
+    // The clock starts at the later of delivery and the last service: a service
+    // carried out before delivery does not buy an extra year.
+    const anchor = lastService && lastService.getTime() > start.getTime() ? lastService : start;
+    serviceDueAt = addDays(anchor, interval as number);
+    serviceGraceEndsAt = addDays(serviceDueAt, WARRANTY_SERVICE_GRACE_DAYS);
+    if (at.getTime() > serviceGraceEndsAt.getTime()) {
+      daysOverdue = wholeDaysBetween(serviceGraceEndsAt, at);
+    }
+  }
+
+  const daysSinceService = lastService ? Math.max(0, wholeDaysBetween(lastService, at)) : null;
+
+  let state: WarrantyPosition;
+  if (at.getTime() > expiresAt.getTime()) {
+    state = 'OUT_OF_WARRANTY';
+  } else if (serviceGraceEndsAt && at.getTime() > serviceGraceEndsAt.getTime()) {
+    state = 'SERVICE_OVERDUE';
+  } else {
+    state = 'IN_WARRANTY';
+  }
+
+  return {
+    state,
+    expiresAt,
+    serviceDueAt,
+    serviceGraceEndsAt,
+    daysOverdue,
+    daysSinceService,
+    neverServiced: hasCondition && lastService === null && at.getTime() > start.getTime(),
+  };
 }
 
 // ── Downtime & availability ─────────────────────────────────────────────────
@@ -630,6 +787,37 @@ export interface MaintenanceMetrics {
   downtimeHours: number;
   comebackSharePercent: number | null;
   warrantyExposure: number;
+  /** Units inside a live supplier term, whatever their condition. */
+  unitsInTerm: number;
+  /** Units whose term is live but whose service condition has been missed. */
+  unitsServiceOverdue: number;
+}
+
+/**
+ * One class of plant, on its own.
+ *
+ * A fleet-wide availability figure is the number that gets reported; it is not
+ * the number that gets acted on. At a terminal running 22 RTGs, 60 straddle
+ * carriers and 40 haulers, "the fleet is at 94%" hides the fact that the
+ * straddles are at 88% and everything else is fine — and it is the straddles
+ * that will stop the quay. Grouping costs one pass over the same data, and it
+ * is the difference between a dashboard and an answer.
+ */
+export interface ClassRollup {
+  assetClass: AssetClass;
+  label: string;
+  units: number;
+  byStatus: Partial<Record<AssetStatus, number>>;
+  unitsDown: number;
+  openJobs: number;
+  jobsCompleted: number;
+  downtimeHours: number;
+  availabilityPercent: number | null;
+  /** Longest current outage in this class, in hours. Null when nothing is down. */
+  longestDownHours: number | null;
+  /** What a repair in this class is expected to take, and when it is flagged. */
+  expectedRepairHours: number;
+  longDownLimitHours: number;
 }
 
 export interface MaintenanceVerdict {
@@ -637,6 +825,8 @@ export interface MaintenanceVerdict {
   headline: string;
   findings: MaintenanceFinding[];
   metrics: MaintenanceMetrics;
+  /** Worst availability first. Empty when there is nothing on the register. */
+  byClass: ClassRollup[];
 }
 
 export interface VerdictAsset {
@@ -646,6 +836,12 @@ export interface VerdictAsset {
   status: AssetStatus;
   /** Drives the expected repair time, and therefore the long-down limit. */
   assetClass?: AssetClass | null;
+  /** The supplier's term, and the condition that keeps it standing. */
+  warrantyStartAt?: Date | string | null;
+  warrantyTermDays?: number | null;
+  warrantyServiceIntervalDays?: number | null;
+  /** Completion of the most recent service-type job, when one exists. */
+  lastServiceAt?: Date | string | null;
 }
 
 export interface VerdictJob {
@@ -675,6 +871,94 @@ function money(amount: number, currency: string): string {
   const [whole, cents] = fixed.split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return `${currency} ${amount < 0 ? '-' : ''}${grouped}.${cents}`;
+}
+
+/**
+ * Group the fleet by class and answer the same four questions for each.
+ *
+ * Downtime is counted the same way the fleet figure counts it — breakdowns and
+ * recalls, clipped to the window, planned work excluded — because a class card
+ * that disagreed with the headline would be worse than no class card.
+ */
+export function rollUpByClass(
+  assets: VerdictAsset[],
+  jobs: VerdictJob[],
+  windowDays: number,
+  now: Date,
+): ClassRollup[] {
+  const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+  const groups = new Map<AssetClass, { assets: VerdictAsset[]; downtime: number }>();
+
+  for (const asset of assets) {
+    const key = (asset.assetClass ?? 'OTHER') as AssetClass;
+    const group = groups.get(key) ?? { assets: [], downtime: 0 };
+    group.assets.push(asset);
+    groups.set(key, group);
+  }
+
+  const classOf = new Map(assets.map((asset) => [asset.id, (asset.assetClass ?? 'OTHER') as AssetClass]));
+
+  for (const job of jobs) {
+    if (isPlannedWork(job.type) || job.status === 'CANCELLED') continue;
+    const start = asDate(job.reportedAt);
+    if (!start) continue;
+    const end = asDate(job.completedAt) ?? now;
+    const key = classOf.get(job.assetId);
+    if (!key) continue;
+    const group = groups.get(key);
+    if (!group) continue;
+    group.downtime += overlapMinutes(start, end, windowStart, now);
+  }
+
+  const rows: ClassRollup[] = [];
+  for (const [assetClass, group] of groups) {
+    const byStatus: Partial<Record<AssetStatus, number>> = {};
+    for (const asset of group.assets) byStatus[asset.status] = (byStatus[asset.status] ?? 0) + 1;
+
+    const ids = new Set(group.assets.map((asset) => asset.id));
+    const classJobs = jobs.filter((job) => ids.has(job.assetId));
+    const open = classJobs.filter((job) => job.status === 'REPORTED' || job.status === 'IN_PROGRESS');
+    const completed = classJobs.filter((job) => WORKED_JOB_STATUSES.includes(job.status));
+
+    const downAssets = group.assets.filter((asset) => UNAVAILABLE_ASSET_STATUSES.includes(asset.status));
+    let longestDownHours: number | null = null;
+    for (const asset of downAssets) {
+      const oldest = open
+        .filter((job) => job.assetId === asset.id)
+        .map((job) => asDate(job.reportedAt))
+        .filter((date): date is Date => date !== null)
+        .sort((a, b) => a.getTime() - b.getTime())[0];
+      if (!oldest) continue;
+      const hours = Math.floor((now.getTime() - oldest.getTime()) / 3600000);
+      if (longestDownHours === null || hours > longestDownHours) longestDownHours = hours;
+    }
+
+    const figure = availability(group.downtime, group.assets.length * windowDays * 24 * 60);
+
+    rows.push({
+      assetClass,
+      label: assetClassLabel(assetClass),
+      units: group.assets.length,
+      byStatus,
+      unitsDown: downAssets.length,
+      openJobs: open.length,
+      jobsCompleted: completed.length,
+      downtimeHours: toHours(figure.downtimeMinutes) ?? 0,
+      availabilityPercent: figure.percent,
+      longestDownHours,
+      expectedRepairHours: expectedRepairHours(assetClass),
+      longDownLimitHours: longDownLimitHours(assetClass),
+    });
+  }
+
+  // Worst availability first — the class that is costing the most attention —
+  // then by size, so two classes at the same figure are read biggest first.
+  return rows.sort(
+    (a, b) =>
+      (a.availabilityPercent ?? 101) - (b.availabilityPercent ?? 101) ||
+      b.units - a.units ||
+      a.label.localeCompare(b.label),
+  );
 }
 
 /**
@@ -733,6 +1017,8 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
       })
       .reduce((sum, job) => sum + (job.costs ?? []).reduce((row, cost) => row + (cost.amount ?? 0), 0), 0),
   );
+
+  const byClass = rollUpByClass(live, jobs, input.windowDays, now);
 
   const findings: MaintenanceFinding[] = [];
 
@@ -801,6 +1087,39 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
     });
   }
 
+  // The supplier's term, condition included. A unit is counted as at risk only
+  // when the term is still live and the service that keeps it live is missing:
+  // past the expiry date the operator has nothing to lose by missing it.
+  const standings = live.map((asset) => ({
+    asset,
+    standing: assetWarrantyStanding(
+      {
+        warrantyStartAt: asset.warrantyStartAt,
+        warrantyTermDays: asset.warrantyTermDays,
+        warrantyServiceIntervalDays: asset.warrantyServiceIntervalDays,
+        lastServiceAt: asset.lastServiceAt,
+      },
+      now,
+    ),
+  }));
+  const unitsInTerm = standings.filter(
+    (row) => row.standing.state === 'IN_WARRANTY' || row.standing.state === 'SERVICE_OVERDUE',
+  ).length;
+  const overdue = standings.filter((row) => row.standing.state === 'SERVICE_OVERDUE');
+
+  if (overdue.length > 0) {
+    const worst = overdue.reduce((a, b) => (b.standing.daysOverdue > a.standing.daysOverdue ? b : a));
+    const named = overdue
+      .slice(0, 3)
+      .map((row) => row.asset.assetCode)
+      .join(', ');
+    findings.push({
+      code: 'warranty_condition',
+      severity: 'attention',
+      message: `${overdue.length} ${overdue.length === 1 ? 'unit is' : 'units are'} inside a supplier term whose service condition has been missed — ${named}${overdue.length > 3 ? ' and others' : ''}. ${worst.asset.assetCode} is ${worst.standing.daysOverdue} days past the last date a service would have kept the cover. A claim today is at the supplier's discretion.`,
+    });
+  }
+
   const metrics: MaintenanceMetrics = {
     assets: live.length,
     assetsDown: longDown.length,
@@ -810,6 +1129,8 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
     downtimeHours: toHours(downtime) ?? 0,
     comebackSharePercent: comebackShare,
     warrantyExposure,
+    unitsInTerm,
+    unitsServiceOverdue: overdue.length,
   };
 
   if (live.length === 0) {
@@ -818,6 +1139,7 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
       headline: 'No assets on the register yet.',
       findings: [],
       metrics,
+      byClass,
     };
   }
 
@@ -827,6 +1149,7 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
       headline: `No availability figure yet — ${live.length} assets, no downtime recorded in the last ${input.windowDays} days.`,
       findings,
       metrics,
+      byClass,
     };
   }
 
@@ -840,5 +1163,6 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
     headline,
     findings,
     metrics,
+    byClass,
   };
 }

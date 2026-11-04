@@ -8,6 +8,7 @@ import {
 import type { MaintenanceJobStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  assetWarrantyStanding,
   availability,
   canTransition,
   checkMeterReading,
@@ -131,6 +132,10 @@ export class MaintenanceService {
         meterReading: openingReading ?? 0,
         meterReadAt: openingReading !== null ? new Date() : null,
         commissionedAt: dto.commissionedAt ? new Date(dto.commissionedAt) : null,
+        warrantySupplier: dto.warrantySupplier?.trim() || null,
+        warrantyStartAt: dto.warrantyStartAt ? new Date(dto.warrantyStartAt) : null,
+        warrantyTermDays: dto.warrantyTermDays ?? null,
+        warrantyServiceIntervalDays: dto.warrantyServiceIntervalDays ?? null,
         notes: dto.notes?.trim() || null,
       },
     });
@@ -179,9 +184,23 @@ export class MaintenanceService {
       },
     });
 
+    const serviced = await this.lastServiceByAsset(
+      companyId,
+      assets.map((asset) => asset.id),
+    );
+
     return assets.map((asset) => ({
       ...asset,
       openJob: asset.jobs?.[0] ?? null,
+      warranty: assetWarrantyStanding(
+        {
+          warrantyStartAt: asset.warrantyStartAt,
+          warrantyTermDays: asset.warrantyTermDays,
+          warrantyServiceIntervalDays: asset.warrantyServiceIntervalDays,
+          lastServiceAt: serviced.get(asset.id) ?? null,
+        },
+        new Date(),
+      ),
       jobs: undefined,
     }));
   }
@@ -202,10 +221,22 @@ export class MaintenanceService {
 
     const openJob = asset.jobs.find((job) => job.status === 'REPORTED' || job.status === 'IN_PROGRESS') ?? null;
     const lastCompleted = asset.jobs.find((job) => WORKED_JOB_STATUSES.includes(job.status)) ?? null;
+    const lastService = asset.jobs.find(
+      (job) => WORKED_JOB_STATUSES.includes(job.status) && isPlannedWork(job.type),
+    );
 
     return {
       ...asset,
       openJob,
+      warranty: assetWarrantyStanding(
+        {
+          warrantyStartAt: asset.warrantyStartAt,
+          warrantyTermDays: asset.warrantyTermDays,
+          warrantyServiceIntervalDays: asset.warrantyServiceIntervalDays,
+          lastServiceAt: lastService?.completedAt ?? null,
+        },
+        new Date(),
+      ),
       lastJobWarranty: lastCompleted
         ? {
             jobId: lastCompleted.id,
@@ -227,6 +258,18 @@ export class MaintenanceService {
     if (dto.custodian !== undefined) data.custodian = dto.custodian.trim() || null;
     if (dto.site !== undefined) data.site = dto.site.trim() || null;
     if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
+
+    // Warranty terms can be corrected and can be withdrawn, because both happen:
+    // a term written on the wrong unit, and a term the supplier never gave. Null
+    // clears — which is the honest correction, and is not the same as zero days.
+    if (dto.warrantySupplier !== undefined) data.warrantySupplier = dto.warrantySupplier?.trim() || null;
+    if (dto.warrantyStartAt !== undefined) {
+      data.warrantyStartAt = dto.warrantyStartAt ? new Date(dto.warrantyStartAt) : null;
+    }
+    if (dto.warrantyTermDays !== undefined) data.warrantyTermDays = dto.warrantyTermDays ?? null;
+    if (dto.warrantyServiceIntervalDays !== undefined) {
+      data.warrantyServiceIntervalDays = dto.warrantyServiceIntervalDays ?? null;
+    }
 
     if (dto.assetCode !== undefined) {
       const nextCode = MaintenanceService.canonicalAssetCode(dto.assetCode);
@@ -719,6 +762,9 @@ export class MaintenanceService {
     );
 
     const lastCompleted = jobs.find((job) => WORKED_JOB_STATUSES.includes(job.status)) ?? null;
+    const lastService = jobs.find(
+      (job) => WORKED_JOB_STATUSES.includes(job.status) && isPlannedWork(job.type),
+    );
     const comebacks = comparable.filter((job) => Boolean(job.priorJobId));
 
     // Cost per operating unit needs two meter readings across the window. When
@@ -742,6 +788,15 @@ export class MaintenanceService {
         hours: toHours(availabilityFigure.downtimeMinutes),
       },
       costs,
+      warranty: assetWarrantyStanding(
+        {
+          warrantyStartAt: asset.warrantyStartAt,
+          warrantyTermDays: asset.warrantyTermDays,
+          warrantyServiceIntervalDays: asset.warrantyServiceIntervalDays,
+          lastServiceAt: lastService?.completedAt ?? null,
+        },
+        now,
+      ),
       faultPattern: pattern.map((row) => ({
         ...row,
         faultCode: codeById.get(row.faultCodeId) ?? null,
@@ -776,6 +831,45 @@ export class MaintenanceService {
     };
   }
 
+  /**
+   * When each unit was last serviced.
+   *
+   * One query for the whole page rather than one per row: a fleet list that
+   * asks the database a question per unit is the reason maintenance screens get
+   * slow exactly when the fleet is big enough to need them.
+   *
+   * Deliberately restricted to completed planned work and inspections — see
+   * `keepsWarrantyAlive`. A breakdown is the machine failing, and a cancelled
+   * card is work that never happened; neither keeps a supplier's term standing.
+   */
+  private async lastServiceByAsset(companyId: string, assetIds: string[]): Promise<Map<string, Date>> {
+    const serviced = new Map<string, Date>();
+    if (assetIds.length === 0) return serviced;
+
+    const rows = await this.prisma.maintenanceJob.findMany({
+      where: {
+        companyId,
+        assetId: { in: assetIds },
+        status: { in: WORKED_JOB_STATUSES },
+        type: { in: ['PLANNED', 'INSPECTION'] },
+        completedAt: { not: null },
+      },
+      select: { assetId: true, completedAt: true },
+      orderBy: { completedAt: 'desc' },
+      // The newest few hundred services per fleet are enough to answer "when
+      // was this last serviced", and a bounded read cannot be made slow by a
+      // tenant that has been running for a decade.
+      take: 2000,
+    });
+
+    for (const row of rows) {
+      if (!row.completedAt) continue;
+      const seen = serviced.get(row.assetId);
+      if (!seen || row.completedAt.getTime() > seen.getTime()) serviced.set(row.assetId, row.completedAt);
+    }
+    return serviced;
+  }
+
   private costPerUnit(total: number, start: number | null, end: number | null): number | null {
     if (start === null || end === null) return null;
     const delta = end - start;
@@ -797,7 +891,17 @@ export class MaintenanceService {
     const [assets, jobs] = await Promise.all([
       this.prisma.maintenanceAsset.findMany({
         where: { companyId },
-        select: { id: true, assetCode: true, name: true, status: true, assetClass: true, meterType: true },
+        select: {
+          id: true,
+          assetCode: true,
+          name: true,
+          status: true,
+          assetClass: true,
+          meterType: true,
+          warrantyStartAt: true,
+          warrantyTermDays: true,
+          warrantyServiceIntervalDays: true,
+        },
         orderBy: { assetCode: 'asc' },
         take: 1000,
       }),
@@ -830,8 +934,13 @@ export class MaintenanceService {
       }),
     ]);
 
+    const serviced = await this.lastServiceByAsset(
+      companyId,
+      assets.map((asset) => asset.id),
+    );
+
     const verdict = maintenanceVerdict({
-      assets,
+      assets: assets.map((asset) => ({ ...asset, lastServiceAt: serviced.get(asset.id) ?? null })),
       jobs,
       windowDays,
       now,

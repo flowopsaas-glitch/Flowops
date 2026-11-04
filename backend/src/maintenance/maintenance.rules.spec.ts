@@ -1,6 +1,8 @@
 import {
   DEFAULT_EXPECTED_REPAIR_HOURS,
   MAX_WARRANTY_TERM_DAYS,
+  WARRANTY_SERVICE_GRACE_DAYS,
+  assetWarrantyStanding,
   availability,
   canTransition,
   checkMeterReading,
@@ -12,6 +14,7 @@ import {
   faultPattern,
   findComeback,
   isWarrantyComeback,
+  keepsWarrantyAlive,
   longDownLimitHours,
   maintenanceVerdict,
   nextJobNumber,
@@ -150,6 +153,101 @@ describe('warranty position', () => {
   it('accepts a stored expiry over re-deriving one', () => {
     const stored = { ...completed, warrantyExpiresAt: at('2026-10-02T08:00:00Z') };
     expect(warrantyPosition(stored, at('2026-10-03T00:00:00Z'))).toBe('OUT_OF_WARRANTY');
+  });
+});
+
+/**
+ * The term is the promise; the service is what keeps the promise standing.
+ *
+ * Every case below comes from one sentence: 30 months on the fuel tanks,
+ * extending to engine, injection sets and pumps, kept alive by one labour-only
+ * service a year. A record that counted days only would call a machine nobody
+ * has touched in two years "in warranty", and be wrong on the day it mattered.
+ */
+describe('the warranty on the machine', () => {
+  const delivered = at('2026-01-01T00:00:00Z');
+  const terms = {
+    warrantyStartAt: delivered,
+    warrantyTermDays: 913, // 30 months
+    warrantyServiceIntervalDays: 365,
+  };
+
+  it('is IN_WARRANTY while the term is live and the annual service is done', () => {
+    const standing = assetWarrantyStanding(
+      { ...terms, lastServiceAt: at('2026-10-01T00:00:00Z') },
+      at('2026-11-04T00:00:00Z'),
+    );
+    expect(standing.state).toBe('IN_WARRANTY');
+    expect(standing.daysOverdue).toBe(0);
+    expect(standing.expiresAt?.toISOString()).toBe('2028-07-02T00:00:00.000Z');
+  });
+
+  it('is SERVICE_OVERDUE — not IN — when the service that keeps it alive is missing', () => {
+    // Serviced once, nine months in, then forgotten. The term runs to mid-2028.
+    const standing = assetWarrantyStanding(
+      { ...terms, lastServiceAt: at('2026-09-30T00:00:00Z') },
+      at('2028-01-15T00:00:00Z'),
+    );
+    expect(standing.state).toBe('SERVICE_OVERDUE');
+    expect(standing.daysOverdue).toBeGreaterThan(0);
+  });
+
+  it('gives the annual service a grace month before calling it late', () => {
+    // Service due 2027-01-01, grace to 2027-01-31.
+    const inGrace = assetWarrantyStanding({ ...terms }, at('2027-01-31T00:00:00Z'));
+    const justPast = assetWarrantyStanding({ ...terms }, at('2027-02-01T00:00:00Z'));
+    expect(inGrace.state).toBe('IN_WARRANTY');
+    expect(justPast.state).toBe('SERVICE_OVERDUE');
+    expect(WARRANTY_SERVICE_GRACE_DAYS).toBe(30);
+  });
+
+  it('dates the first service from delivery when nothing has ever been serviced', () => {
+    const standing = assetWarrantyStanding({ ...terms }, at('2027-06-01T00:00:00Z'));
+    expect(standing.neverServiced).toBe(true);
+    expect(standing.serviceDueAt?.toISOString()).toBe('2027-01-01T00:00:00.000Z');
+    expect(standing.serviceGraceEndsAt?.toISOString()).toBe('2027-01-31T00:00:00.000Z');
+    expect(standing.state).toBe('SERVICE_OVERDUE');
+  });
+
+  it('lets an expiry beat an overdue service — past the term there is nothing to keep alive', () => {
+    // 30 months from 2026-01-01 is 2028-07-02; nothing serviced since.
+    const standing = assetWarrantyStanding({ ...terms }, at('2028-09-01T00:00:00Z'));
+    expect(standing.state).toBe('OUT_OF_WARRANTY');
+  });
+
+  it('does not let a pre-delivery service buy an extra year', () => {
+    // Serviced during commissioning, three weeks before the term began.
+    const standing = assetWarrantyStanding(
+      { ...terms, lastServiceAt: at('2025-12-10T00:00:00Z') },
+      at('2027-02-01T00:00:00Z'),
+    );
+    expect(standing.state).toBe('SERVICE_OVERDUE');
+    expect(standing.daysOverdue).toBe(1);
+  });
+
+  it('is UNKNOWN — never OUT — when no term was ever written down', () => {
+    const standing = assetWarrantyStanding({}, at('2027-01-01T00:00:00Z'));
+    expect(standing.state).toBe('UNKNOWN');
+    expect(standing.expiresAt).toBeNull();
+    expect(standing.serviceDueAt).toBeNull();
+  });
+
+  it('treats a term with no service condition as a plain clock', () => {
+    const standing = assetWarrantyStanding(
+      { warrantyStartAt: delivered, warrantyTermDays: 365 },
+      at('2026-12-15T00:00:00Z'),
+    );
+    expect(standing.state).toBe('IN_WARRANTY');
+    expect(standing.serviceDueAt).toBeNull();
+  });
+
+  it('counts what keeps a warranty alive: the service and the inspection, not the breakdown', () => {
+    expect(keepsWarrantyAlive('PLANNED')).toBe(true);
+    expect(keepsWarrantyAlive('INSPECTION')).toBe(true);
+    // The machine failing is not the operator maintaining it; a recall is the
+    // supplier's action, not the operator's compliance.
+    expect(keepsWarrantyAlive('BREAKDOWN')).toBe(false);
+    expect(keepsWarrantyAlive('RECALL')).toBe(false);
   });
 });
 
@@ -601,5 +699,157 @@ describe('the fleet verdict', () => {
     });
     expect(verdict.metrics.assets).toBe(0);
     expect(verdict.headline).toMatch(/no assets/i);
+  });
+});
+
+/**
+ * The number that gets reported is the fleet; the number that gets acted on is
+ * the class.
+ *
+ * 22 RTGs, 60 straddle carriers and 40 haulers at 94% is not one problem — it
+ * is a straddle problem hiding inside an average. These tests pin that the
+ * grouping is honest: the same downtime arithmetic as the headline, the class's
+ * own expected repair time, and the worst class first.
+ */
+describe('the class rollup', () => {
+  const now = at('2026-11-04T12:00:00Z');
+  const day = 24 * 60 * 60 * 1000;
+
+  const fleet = [
+    { id: 'r1', assetCode: 'RTG-01', name: null, status: 'IN_SERVICE' as const, assetClass: 'RTG' as const },
+    { id: 'r2', assetCode: 'RTG-02', name: null, status: 'IN_SERVICE' as const, assetClass: 'RTG' as const },
+    { id: 's1', assetCode: 'SC-01', name: null, status: 'DOWN' as const, assetClass: 'STRADDLE_CARRIER' as const },
+    { id: 'h1', assetCode: 'HL-01', name: null, status: 'IN_SERVICE' as const, assetClass: 'HAULER' as const },
+  ];
+
+  it('answers per class, worst availability first', () => {
+    const verdict = maintenanceVerdict({
+      assets: fleet,
+      jobs: [
+        {
+          id: 'j1',
+          assetId: 's1',
+          type: 'BREAKDOWN',
+          status: 'IN_PROGRESS',
+          reportedAt: new Date(now.getTime() - 10 * day),
+        },
+      ],
+      windowDays: 30,
+      now,
+    });
+
+    expect(verdict.byClass.map((row) => row.assetClass)).toEqual(['STRADDLE_CARRIER', 'RTG', 'HAULER']);
+
+    const straddles = verdict.byClass[0];
+    expect(straddles.units).toBe(1);
+    expect(straddles.unitsDown).toBe(1);
+    expect(straddles.availabilityPercent).toBe(66.7);
+    expect(straddles.longestDownHours).toBe(240);
+    expect(straddles.label).toBe('Straddle carrier');
+
+    // The classes that are fine are still shown — a rollup that only lists
+    // problems cannot answer "is anything else going wrong?".
+    expect(verdict.byClass.find((row) => row.assetClass === 'RTG')?.availabilityPercent).toBe(100);
+  });
+
+  it('carries each class\'s own expected repair time, so the card can say when it will be flagged', () => {
+    const verdict = maintenanceVerdict({ assets: fleet, jobs: [], windowDays: 30, now });
+    const rtg = verdict.byClass.find((row) => row.assetClass === 'RTG');
+    expect(rtg?.expectedRepairHours).toBe(120);
+    expect(rtg?.longDownLimitHours).toBe(180);
+    expect(verdict.byClass.find((row) => row.assetClass === 'HAULER')?.expectedRepairHours).toBe(
+      DEFAULT_EXPECTED_REPAIR_HOURS,
+    );
+  });
+
+  it('does not count planned work against a class — the same rule as the headline', () => {
+    const verdict = maintenanceVerdict({
+      assets: fleet,
+      jobs: [
+        {
+          id: 'j1',
+          assetId: 'r1',
+          type: 'PLANNED',
+          status: 'COMPLETED',
+          reportedAt: new Date(now.getTime() - 2 * day),
+          completedAt: new Date(now.getTime() - 1 * day),
+        },
+      ],
+      windowDays: 30,
+      now,
+    });
+    expect(verdict.byClass.find((row) => row.assetClass === 'RTG')?.availabilityPercent).toBe(100);
+    expect(verdict.byClass.find((row) => row.assetClass === 'RTG')?.downtimeHours).toBe(0);
+  });
+
+  it('gives an empty register an empty rollup rather than a zero row', () => {
+    const verdict = maintenanceVerdict({ assets: [], jobs: [], windowDays: 30, now });
+    expect(verdict.byClass).toEqual([]);
+  });
+});
+
+describe('a warranty that lapses without expiring', () => {
+  const now = at('2028-01-15T00:00:00Z');
+
+  it('names the units whose cover is unproven, in one sentence that survives being forwarded', () => {
+    const verdict = maintenanceVerdict({
+      assets: [
+        {
+          id: 'r1',
+          assetCode: 'RTG-01',
+          name: null,
+          status: 'IN_SERVICE',
+          assetClass: 'RTG',
+          warrantyStartAt: at('2026-01-01T00:00:00Z'),
+          warrantyTermDays: 913,
+          warrantyServiceIntervalDays: 365,
+          lastServiceAt: at('2026-09-30T00:00:00Z'),
+        },
+        {
+          id: 'r2',
+          assetCode: 'RTG-02',
+          name: null,
+          status: 'IN_SERVICE',
+          assetClass: 'RTG',
+          warrantyStartAt: at('2026-01-01T00:00:00Z'),
+          warrantyTermDays: 913,
+          warrantyServiceIntervalDays: 365,
+          lastServiceAt: at('2027-11-01T00:00:00Z'),
+        },
+      ],
+      jobs: [],
+      windowDays: 30,
+      now,
+    });
+
+    expect(verdict.metrics.unitsInTerm).toBe(2);
+    expect(verdict.metrics.unitsServiceOverdue).toBe(1);
+    const finding = verdict.findings.find((f) => f.code === 'warranty_condition');
+    expect(finding?.message).toContain('RTG-01');
+    expect(finding?.message).not.toContain('RTG-02');
+    expect(finding?.message).toMatch(/supplier's discretion/i);
+  });
+
+  it('says nothing when every live term is being serviced', () => {
+    const verdict = maintenanceVerdict({
+      assets: [
+        {
+          id: 'r1',
+          assetCode: 'RTG-01',
+          name: null,
+          status: 'IN_SERVICE',
+          assetClass: 'RTG',
+          warrantyStartAt: at('2026-01-01T00:00:00Z'),
+          warrantyTermDays: 913,
+          warrantyServiceIntervalDays: 365,
+          lastServiceAt: at('2027-11-01T00:00:00Z'),
+        },
+      ],
+      jobs: [],
+      windowDays: 30,
+      now,
+    });
+    expect(verdict.findings.find((f) => f.code === 'warranty_condition')).toBeUndefined();
+    expect(verdict.metrics.unitsServiceOverdue).toBe(0);
   });
 });

@@ -6,7 +6,7 @@
  * fleet to look available, and the contract holder deciding whether to renew.
  * Four rules keep the same page readable by both:
  *
- *   - **Warranty is three-valued.** `UNKNOWN` renders as "warranty not
+ *   - **Warranty is never collapsed.** `UNKNOWN` renders as "warranty not
  *     recorded", never as "out of warranty". A missing term is a gap in the
  *     record, not a commercial position.
  *   - **Availability carries its basis.** A percentage is always shown next to
@@ -112,7 +112,43 @@ export type AssetMeterType = "HOURS" | "KM";
 export type MaintenanceJobType = (typeof JOB_TYPES)[number];
 export type MaintenanceJobStatus = (typeof JOB_STATUSES)[number];
 export type CostKind = (typeof COST_KINDS)[number];
-export type WarrantyPosition = "IN_WARRANTY" | "OUT_OF_WARRANTY" | "UNKNOWN";
+/**
+ * Four answers, because a supplier's term can stop standing without expiring.
+ *
+ * `SERVICE_OVERDUE` says the term is live and the service that keeps it live is
+ * not on record. It is deliberately not "void": whether a claim is honoured is
+ * the supplier's decision, and the screen does not get to make it. What it can
+ * say is that the evidence is missing — which is the part the operator can
+ * still fix.
+ */
+export type WarrantyPosition = "IN_WARRANTY" | "SERVICE_OVERDUE" | "OUT_OF_WARRANTY" | "UNKNOWN";
+
+/** What the server says about a unit's supplier warranty, condition included. */
+export interface WarrantyStanding {
+  state: WarrantyPosition;
+  expiresAt: string | null;
+  serviceDueAt: string | null;
+  serviceGraceEndsAt: string | null;
+  daysOverdue: number;
+  daysSinceService: number | null;
+  neverServiced: boolean;
+}
+
+/** One class of plant, standing on its own. */
+export interface ClassRollup {
+  assetClass: AssetClass;
+  label: string;
+  units: number;
+  byStatus: Partial<Record<AssetStatus, number>>;
+  unitsDown: number;
+  openJobs: number;
+  jobsCompleted: number;
+  downtimeHours: number;
+  availabilityPercent: number | null;
+  longestDownHours: number | null;
+  expectedRepairHours: number;
+  longDownLimitHours: number;
+}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -132,6 +168,12 @@ export interface MaintenanceAsset {
   status: AssetStatus;
   retiredAt: string | null;
   notes: string | null;
+  warrantySupplier?: string | null;
+  warrantyStartAt?: string | null;
+  warrantyTermDays?: number | null;
+  warrantyServiceIntervalDays?: number | null;
+  /** Computed by the server: the term, and whether its condition still holds. */
+  warranty?: WarrantyStanding | null;
   openJob?: MaintenanceJob | null;
 }
 
@@ -192,6 +234,8 @@ export interface MaintenanceMetrics {
   downtimeHours: number;
   comebackSharePercent: number | null;
   warrantyExposure: number;
+  unitsInTerm: number;
+  unitsServiceOverdue: number;
 }
 
 export interface MaintenanceSummary {
@@ -199,6 +243,8 @@ export interface MaintenanceSummary {
   headline: string;
   findings: MaintenanceFinding[];
   metrics: MaintenanceMetrics;
+  /** Worst availability first. The class is the unit of action, not the fleet. */
+  byClass: ClassRollup[];
   assetsByStatus: Record<string, number>;
   windowDays: number;
   windowStart: string;
@@ -237,6 +283,8 @@ export interface AssetHistory {
     expiresAt: string | null;
     termDays: number | null;
   } | null;
+  /** The supplier's term on the machine itself. */
+  warranty?: WarrantyStanding | null;
   openJob: MaintenanceJob | null;
 }
 
@@ -416,6 +464,8 @@ export function warrantyText(position: WarrantyPosition | null | undefined, expi
   switch (position) {
     case "IN_WARRANTY":
       return expiresAt ? `In warranty to ${formatDate(expiresAt)}` : "In warranty";
+    case "SERVICE_OVERDUE":
+      return "Service overdue — cover unproven";
     case "OUT_OF_WARRANTY":
       return "Out of warranty";
     case "UNKNOWN":
@@ -427,8 +477,38 @@ export function warrantyText(position: WarrantyPosition | null | undefined, expi
 
 export function warrantyTone(position: WarrantyPosition | null | undefined): "success" | "neutral" | "warning" {
   if (position === "IN_WARRANTY") return "success";
+  // A live term with a missed service is the one case that looks fine and is
+  // not, so it gets the tone that draws the eye.
+  if (position === "SERVICE_OVERDUE") return "warning";
   if (position === "OUT_OF_WARRANTY") return "neutral";
   return "warning";
+}
+
+/**
+ * The sentence for a unit's supplier warranty.
+ *
+ * Every version of it says what the next action is: a date to book, a service
+ * to book, or the fact that the cover is gone. "In warranty" on its own tells
+ * nobody anything they can act on.
+ */
+export function warrantyStandingText(standing: WarrantyStanding | null | undefined): string {
+  if (!standing) return "Warranty not recorded";
+  switch (standing.state) {
+    case "IN_WARRANTY": {
+      if (standing.serviceDueAt) {
+        return `In warranty to ${formatDate(standing.expiresAt)} · service due by ${formatDate(standing.serviceDueAt)}`;
+      }
+      return standing.expiresAt ? `In warranty to ${formatDate(standing.expiresAt)}` : "In warranty";
+    }
+    case "SERVICE_OVERDUE": {
+      const late = standing.daysOverdue > 0 ? ` by ${standing.daysOverdue} ${standing.daysOverdue === 1 ? "day" : "days"}` : "";
+      return `Service overdue${late} — the term runs to ${formatDate(standing.expiresAt)}, but a claim today is at the supplier's discretion`;
+    }
+    case "OUT_OF_WARRANTY":
+      return "Out of warranty";
+    default:
+      return "Warranty not recorded";
+  }
 }
 
 /** Derived on the client for display only; the server owns the stored value. */

@@ -1,6 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CompleteJobDto, CreateJobDto, ListJobsQuery } from './maintenance.dto';
+import { CompleteJobDto, CreateAssetDto, CreateJobDto, ListJobsQuery, UpdateAssetDto } from './maintenance.dto';
 
 /**
  * Query-string and JSON coercion.
@@ -64,5 +64,46 @@ describe('CompleteJobDto', () => {
   it('accepts a term in days', () => {
     const errors = validateSync(instantiate(CompleteJobDto, { workPerformed: 'Replaced seal kit', warrantyTermDays: 30 }));
     expect(errors).toHaveLength(0);
+  });
+});
+
+describe('CreateAssetDto — the supplier warranty', () => {
+  const base = { assetCode: 'RTG-07', assetClass: 'RTG' };
+
+  it('accepts 30 months as a number of days', () => {
+    const errors = validateSync(instantiate(CreateAssetDto, { ...base, warrantyTermDays: 913 }));
+    expect(errors).toHaveLength(0);
+  });
+
+  it('refuses a term longer than ten years, which is the word "lifetime" in disguise', () => {
+    const errors = validateSync(instantiate(CreateAssetDto, { ...base, warrantyTermDays: 4000 }));
+    expect(errors.some((e) => e.property === 'warrantyTermDays')).toBe(true);
+  });
+
+  it('refuses a service interval past five years', () => {
+    const errors = validateSync(instantiate(CreateAssetDto, { ...base, warrantyServiceIntervalDays: 2000 }));
+    expect(errors.some((e) => e.property === 'warrantyServiceIntervalDays')).toBe(true);
+  });
+
+  it('refuses a start date that is not a date', () => {
+    const errors = validateSync(instantiate(CreateAssetDto, { ...base, warrantyStartAt: 'sometime in 2024' }));
+    expect(errors.some((e) => e.property === 'warrantyStartAt')).toBe(true);
+  });
+
+  it('accepts a unit with no warranty at all — that is a fact, not an error', () => {
+    expect(validateSync(instantiate(CreateAssetDto, base))).toHaveLength(0);
+  });
+});
+
+describe('UpdateAssetDto — withdrawing a term', () => {
+  it('accepts null, which is how a term recorded against the wrong unit is corrected', () => {
+    const dto = instantiate(UpdateAssetDto, { warrantyTermDays: null, warrantyStartAt: null });
+    expect(validateSync(dto)).toHaveLength(0);
+    expect(dto.warrantyTermDays).toBeNull();
+  });
+
+  it('still refuses a term that cannot be priced', () => {
+    const errors = validateSync(instantiate(UpdateAssetDto, { warrantyTermDays: 99999 }));
+    expect(errors.some((e) => e.property === 'warrantyTermDays')).toBe(true);
   });
 });

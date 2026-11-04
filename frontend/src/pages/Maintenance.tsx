@@ -51,10 +51,12 @@ import {
   signOffJob,
   startJob,
   warrantyPositionOf,
+  warrantyStandingText,
   warrantyText,
   warrantyTone,
   type AssetHistory,
   type AssetStatus,
+  type ClassRollup,
   type CostKind,
   type MaintenanceAsset,
   type MaintenanceJob,
@@ -416,6 +418,8 @@ export default function MaintenancePage() {
             />
           </div>
 
+          <ClassBand rows={summary?.byClass ?? []} loading={loading} />
+
           <section aria-labelledby="fleet-heading" className="space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <h2 id="fleet-heading" className="text-base font-semibold text-white">
@@ -582,7 +586,7 @@ function AssetDetail({
   onClose: () => void;
   onRaise: () => void;
 }) {
-  const { asset, availability, costs, meter, faultPattern, comebacks, lastJobWarranty } = history;
+  const { asset, availability, costs, meter, faultPattern, comebacks, lastJobWarranty, warranty } = history;
 
   return (
     <div className="space-y-5">
@@ -628,6 +632,33 @@ function AssetDetail({
             </span>
           ) : (
             <span className="text-xs text-slate-400">No completed work on this unit yet.</span>
+          )}
+        </div>
+      </div>
+
+      {/* The supplier's term on the machine, which is a different contract from
+          the warranty on the last job. Both are shown because both decide who
+          pays, and conflating them is how a claim gets made against the wrong
+          one. */}
+      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-wide text-slate-400">
+          Supplier warranty{asset.warrantySupplier ? ` · ${asset.warrantySupplier}` : ""}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <StatusBadge tone={warrantyTone(warranty?.state ?? "UNKNOWN")}>
+            {warrantyStandingText(warranty)}
+          </StatusBadge>
+          {asset.warrantyTermDays ? (
+            <span className="text-xs text-slate-400">
+              {asset.warrantyTermDays} days from {formatDate(asset.warrantyStartAt ?? null)}
+              {asset.warrantyServiceIntervalDays
+                ? ` · serviced every ${asset.warrantyServiceIntervalDays} days to stay valid`
+                : ""}
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400">
+              No supplier term recorded — the platform will not guess one.
+            </span>
           )}
         </div>
       </div>
@@ -722,6 +753,64 @@ function AssetDetail({
   );
 }
 
+/**
+ * The fleet by class.
+ *
+ * A fleet-wide figure is the number that gets reported; the class is the number
+ * that gets acted on. At 122 machines, "94% availability" is not a fact anyone
+ * can do anything with — "straddle carriers at 88%, the rest at 99%" is a
+ * conversation with a supplier.
+ *
+ * Each card carries the limit its own class is judged against, so the reader
+ * can see when an outage will be called one, rather than discovering it.
+ */
+function ClassBand({ rows, loading }: { rows: ClassRollup[]; loading: boolean }) {
+  if (loading && rows.length === 0) return null;
+  if (rows.length === 0) return null;
+
+  return (
+    <section aria-labelledby="classes-heading" className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 id="classes-heading" className="text-base font-semibold text-white">
+          By class
+        </h2>
+        <p className="text-xs text-slate-400">Worst availability first — a class is what gets fixed.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {rows.map((row) => {
+          const below = row.availabilityPercent !== null && row.availabilityPercent < 95;
+          return (
+            <div
+              key={row.assetClass}
+              className={`rounded-2xl border p-4 ${
+                below ? "border-amber-400/30 bg-amber-500/10" : "border-white/10 bg-white/5"
+              }`}
+              data-testid={`class-${row.assetClass}`}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium text-slate-200">{row.label}</span>
+                <span className="text-xs text-slate-400">
+                  {row.units} {row.units === 1 ? "unit" : "units"}
+                </span>
+              </div>
+              <div className="mt-2 text-2xl font-semibold tabular-nums text-white">
+                {formatPercent(row.availabilityPercent)}
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                {row.unitsDown} down · {row.openJobs} open ·{" "}
+                {row.longestDownHours === null ? "nothing out now" : `longest ${row.longestDownHours} h`}
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                {row.expectedRepairHours} h expected repair · flags past {row.longDownLimitHours} h
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function Metric({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-3">
@@ -752,6 +841,10 @@ function RegisterAssetForm({
   const [site, setSite] = useState("");
   const [meterType, setMeterType] = useState<"HOURS" | "KM">("HOURS");
   const [meterReading, setMeterReading] = useState("");
+  const [warrantySupplier, setWarrantySupplier] = useState("");
+  const [warrantyStartAt, setWarrantyStartAt] = useState("");
+  const [warrantyTermDays, setWarrantyTermDays] = useState("");
+  const [warrantyServiceIntervalDays, setWarrantyServiceIntervalDays] = useState("");
 
   return (
     <form
@@ -766,6 +859,13 @@ function RegisterAssetForm({
           site: site || undefined,
           meterType,
           meterReading: meterReading === "" ? undefined : Number(meterReading),
+          // Blank means "not recorded", never zero: the API stores the absence
+          // and the warranty reads UNKNOWN rather than expired.
+          warrantySupplier: warrantySupplier || undefined,
+          warrantyStartAt: warrantyStartAt || undefined,
+          warrantyTermDays: warrantyTermDays === "" ? undefined : Number(warrantyTermDays),
+          warrantyServiceIntervalDays:
+            warrantyServiceIntervalDays === "" ? undefined : Number(warrantyServiceIntervalDays),
         });
       }}
     >
@@ -855,6 +955,71 @@ function RegisterAssetForm({
           />
         </div>
       </div>
+
+      {/* Optional, and worth capturing at registration: a supplier term that
+          nobody wrote down cannot be claimed against later, and the condition
+          that keeps it alive is a fact about the contract, not the repair. */}
+      <fieldset className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <legend className="px-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+          Supplier warranty (optional)
+        </legend>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className={labelClass} htmlFor="asset-warranty-supplier">
+              Supplier
+            </label>
+            <input
+              id="asset-warranty-supplier"
+              className={inputClass}
+              value={warrantySupplier}
+              onChange={(event) => setWarrantySupplier(event.target.value)}
+              placeholder="Kalmar, Terex, whoever holds the contract"
+            />
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="asset-warranty-start">
+              Term starts
+            </label>
+            <input
+              id="asset-warranty-start"
+              type="date"
+              className={inputClass}
+              value={warrantyStartAt}
+              onChange={(event) => setWarrantyStartAt(event.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="asset-warranty-term">
+              Term (days)
+            </label>
+            <input
+              id="asset-warranty-term"
+              className={inputClass}
+              inputMode="numeric"
+              value={warrantyTermDays}
+              onChange={(event) => setWarrantyTermDays(event.target.value)}
+              placeholder="30 months = 913"
+            />
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="asset-warranty-service">
+              Serviced every (days)
+            </label>
+            <input
+              id="asset-warranty-service"
+              className={inputClass}
+              inputMode="numeric"
+              value={warrantyServiceIntervalDays}
+              onChange={(event) => setWarrantyServiceIntervalDays(event.target.value)}
+              placeholder="365 — an annual labour-only service"
+            />
+          </div>
+        </div>
+        <p className="mt-2 text-[11px] text-slate-500">
+          With an interval set, the unit reads “service overdue” instead of “in warranty” once a service is missed — a
+          live term with a missed condition is the case that looks fine and is not.
+        </p>
+      </fieldset>
 
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
 

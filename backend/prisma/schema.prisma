@@ -7067,6 +7067,22 @@ model MaintenanceAsset {
   status        AssetStatus @default(IN_SERVICE)
   commissionedAt DateTime?
   retiredAt     DateTime?
+
+  /// The supplier's warranty on the machine itself: a term, and the condition
+  /// that keeps the term standing.
+  ///
+  /// Not to be confused with `MaintenanceJob.warrantyTermDays`, which is the
+  /// warranty *this workshop* carries on the work it did. The supplier's term
+  /// belongs to the unit, and it can lapse without expiring — 30 months on the
+  /// fuel tanks, extending to engine, injection sets and pumps, kept alive by
+  /// one labour-only service a year. A record that counted days only would read
+  /// IN_WARRANTY on a machine nobody has serviced in three years, which is the
+  /// wrong answer on the one day it matters.
+  warrantySupplier           String?
+  warrantyStartAt            DateTime?
+  warrantyTermDays           Int?
+  warrantyServiceIntervalDays Int?
+
   notes         String? @db.Text
 
   createdAt DateTime @default(now())

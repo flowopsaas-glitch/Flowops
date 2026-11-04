@@ -68,10 +68,14 @@ promise into a written permanent obligation has manufactured a liability its
 operator never priced. The business can still *make* that promise; the record
 just will not pretend it is a term.
 
-### 3.2 Warranty position is three-valued
+### 3.2 Warranty position is four-valued
 
 ```ts
-type WarrantyPosition = 'IN_WARRANTY' | 'OUT_OF_WARRANTY' | 'UNKNOWN';
+type WarrantyPosition =
+  | 'IN_WARRANTY'
+  | 'SERVICE_OVERDUE'
+  | 'OUT_OF_WARRANTY'
+  | 'UNKNOWN';
 ```
 
 `UNKNOWN` is returned when no term was recorded, when the card never completed,
@@ -79,7 +83,18 @@ or when it was cancelled. Collapsing `UNKNOWN` into `OUT_OF_WARRANTY` would let
 the system tell an operator that their own rework is chargeable — a commercial
 position no database should take on its own.
 
-The UI never renders `UNKNOWN` as "expired". It says **"Warranty not recorded"**.
+`SERVICE_OVERDUE` was added after the first real warranty was described: 30
+months, kept alive by **one labour-only service a year**. The term is the
+promise; the service is what keeps the promise standing. A record that counted
+days only reported `IN_WARRANTY` on a machine nobody had touched in two years —
+true to the arithmetic, false to the contract. §3.9 has the rule.
+
+It is deliberately not called "void". Whether a claim is honoured is the
+supplier's decision and this record does not get to make it. What it can say is
+that the evidence is missing, which is the part the operator can still fix.
+
+The UI never renders `UNKNOWN` as "expired". It says **"Warranty not recorded"**,
+and never renders `SERVICE_OVERDUE` as "void" either.
 
 ### 3.3 The clock starts at completion, not at sign-off
 
@@ -137,6 +152,69 @@ events stay. A unit with job cards cannot be renumbered (`assetCode` is locked
 once history exists) and cannot be deleted out from under its history
 (`ON DELETE RESTRICT`).
 
+### 3.9 The supplier's term is a promise with a condition
+
+Two warranties exist here and they are not the same object:
+
+| | Where it lives | Whose promise | Decided by |
+|---|---|---|---|
+| **The job warranty** | `MaintenanceJob.warrantyTermDays` | this workshop, on the work it did | completion date + term |
+| **The supplier's term** | `MaintenanceAsset.warranty*` | Kalmar, Terex, whoever holds the contract | the term **and** its condition |
+
+Conflating them is how a claim gets made against the wrong party. The job
+warranty was in §3.1. The supplier's term is four columns on the unit:
+
+```
+warrantySupplier            TEXT NULL     -- named, because a claim needs an addressee
+warrantyStartAt             TIMESTAMP    -- delivery or commissioning, not the day it was typed
+warrantyTermDays            INTEGER      -- 30 months = 913
+warrantyServiceIntervalDays INTEGER      -- 365; the condition, or null for a plain term
+```
+
+**What counts as the service.** Completed, non-cancelled `PLANNED` or
+`INSPECTION` work on that unit — the same set the verdict excludes from
+downtime. Symmetry is not the reason; the reason is that a breakdown is the
+machine failing, not the operator attending to it, and a recall is the
+supplier's action rather than the operator's compliance. `keepsWarrantyAlive()`
+is named separately from `isPlannedWork()` because the two ideas can part
+company later — a breakdown visit that also carried out the service would keep
+the warranty alive without becoming planned availability.
+
+**The clock.** The service is due at `interval` days after the later of delivery
+and the last recorded service. A service performed during commissioning, three
+weeks before the term starts, does not buy an extra year.
+
+**The grace.** 30 days (`WARRANTY_SERVICE_GRACE_DAYS`). Annual services have a
+tolerance band, and an alarm that fires on the 366th day would be an alarm
+nobody keeps. Past the grace, the unit reads `SERVICE_OVERDUE` with the number
+of days it is late.
+
+**Order of decision.** Expiry beats condition: past the term there is nothing
+left to keep alive, so a three-year-old machine that was never serviced is
+`OUT_OF_WARRANTY`, not `SERVICE_OVERDUE`.
+
+**Where it surfaces.** The unit drawer, the fleet table (one query for the
+whole page, not one per row), and the verdict, where it is a finding with money
+attached: *"2 units are inside a supplier term whose service condition has been
+missed — RTG-07 and others. RTG-07 is 47 days past the last date a service would
+have kept the cover. A claim today is at the supplier's discretion."*
+
+### 3.10 The fleet figure is not the one anybody acts on
+
+`GET /maintenance/summary` returns `byClass`: every class on the register, with
+its own units, availability, open cards, longest current outage, and **the limit
+its own class is judged against** (§6).
+
+At 122 machines, "the fleet is at 94%" is a figure that gets reported. "Straddle
+carriers 88%, RTGs 99%" is the one that gets a supplier on the phone. The rollup
+uses the same downtime arithmetic as the headline — planned work excluded,
+clipped to the window — because a class card that disagreed with the headline
+would be worse than no class card at all.
+
+Retired units are excluded here for the same reason they are excluded from
+availability: nobody expects them to work, and counting them makes every class
+they appear in look worse.
+
 ## 4. What was deliberately not built
 
 | Not built | Why |
@@ -174,6 +252,22 @@ clock and sign-off accepts work on the custodian's behalf. Raising a card is
 operational because a card that cannot be raised at the machine gets raised next
 week or not at all.
 
+**Payloads that changed with the supplier term.** `POST /assets` and
+`PATCH /assets/:id` accept `warrantySupplier`, `warrantyStartAt`,
+`warrantyTermDays` (1–3650) and `warrantyServiceIntervalDays` (1–1825). On
+`PATCH`, `null` withdraws a term recorded against the wrong unit — a withdrawal,
+not a zero.
+
+`GET /assets`, `GET /assets/:id`, `GET /assets/:id/history` and `GET /summary`
+now compute a `warranty` standing per unit (`state`, `expiresAt`, `serviceDueAt`,
+`serviceGraceEndsAt`, `daysOverdue`, `daysSinceService`, `neverServiced`), and
+`GET /summary` additionally returns `byClass` (§6.1) and the metrics
+`unitsInTerm` / `unitsServiceOverdue`.
+
+The standing is always computed on read, never stored. A stored boolean would be
+wrong the morning after the service that would have kept it right, and nothing
+would be there to notice.
+
 ## 6. The verdict
 
 `GET /maintenance/summary` returns a sentence, a status and the thresholds that
@@ -210,18 +304,38 @@ service for 168 hours" — never a bare count. Retired units are excluded from
 availability: including them would flatter the number with assets nobody expects
 to work.
 
+### 6.1 By class
+
+The same data, grouped by `assetClass`, worst availability first:
+
+| Field | Meaning |
+|---|---|
+| `units`, `byStatus`, `unitsDown` | what the class consists of, right now |
+| `openJobs`, `jobsCompleted` | the work in the window |
+| `availabilityPercent`, `downtimeHours` | same arithmetic as the headline, per class |
+| `longestDownHours` | the worst current outage in the class |
+| `expectedRepairHours`, `longDownLimitHours` | what the class is judged against |
+
+Ordering is availability ascending, then units descending, then label. Two
+classes at the same figure are read biggest first, because that is the one with
+more money in it.
+
+In the UI this is a band of cards above the register. Each card states its own
+limit — "72 h expected repair · flags past 108 h" — so nobody has to learn from
+an alarm what the alarm means.
+
 ## 7. Test coverage
 
 | Suite | Count | What it pins |
 |---|---|---|
-| `backend/src/maintenance/maintenance.rules.spec.ts` | 54 | three-valued warranty, downtime nulls, availability basis, comeback rules, meter integrity, verdict thresholds, class-aware long-down |
-| `backend/src/maintenance/maintenance.service.spec.ts` | 34 | tenancy 404s, idempotency, number allocation, auto-linking, `lifetime` refusal, cancel-clears-downtime, planned ≠ lost, unit page maths |
-| `backend/src/maintenance/dto/maintenance.dto.spec.ts` | 8 | query-string coercion (`"false"` must not become `true`), required fields, `lifetime` rejected at the edge |
+| `backend/src/maintenance/maintenance.rules.spec.ts` | 69 | four-valued warranty, the supplier term and its condition, downtime nulls, availability basis, comeback rules, meter integrity, class-aware long-down, the per-class rollup |
+| `backend/src/maintenance/maintenance.service.spec.ts` | 41 | tenancy 404s, idempotency, number allocation, auto-linking, `lifetime` refusal, cancel-clears-downtime, planned ≠ lost, unit page maths, a breakdown must not reset the service clock |
+| `backend/src/maintenance/dto/maintenance.dto.spec.ts` | 15 | query-string coercion (`"false"` must not become `true`), required fields, `lifetime` rejected at the edge, term/interval bounds, null is how a wrong term is corrected |
 | `backend/src/maintenance/dto/vocabulary-drift.spec.ts` | 7 | the DTO vocabularies equal the Prisma enums, in order — a class the schema accepts must be registerable |
-| `frontend/src/lib/maintenance.test.ts` | 20 | what the screen may claim: no clean 100%, no invented cost/hour, "not recorded" ≠ "expired"; every class has a label |
-| `frontend/src/pages/Maintenance.test.tsx` | 13 | headline, findings, planned ≠ zero downtime, no delete, event trail, capture flow |
+| `frontend/src/lib/maintenance.test.ts` | 25 | what the screen may claim: no clean 100%, no invented cost/hour, "not recorded" ≠ "expired" ≠ "overdue"; every class has a label |
+| `frontend/src/pages/Maintenance.test.tsx` | 14 | headline, findings, planned ≠ zero downtime, no delete, event trail, capture flow, the class band and its stated limits |
 
-Totals: **103 backend** in the module, **33 frontend**.
+Totals: **132 backend** in the module, **39 frontend**; full suites 2864+ and 1175.
 
 Three notes on the tests themselves, because each one is a defect that a
 green suite would otherwise have hidden:
