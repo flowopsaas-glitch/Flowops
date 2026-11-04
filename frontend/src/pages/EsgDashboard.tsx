@@ -8,6 +8,9 @@ import { api } from "../api/client";
 type FleetCarbonReport = {
   period: string;
   totalShipments: number;
+  /** Optional: absent from an API that predates the measured-distance split. */
+  measuredShipments?: number;
+  distanceNotMeasured?: number;
   totalDistanceKm: number;
   totalCo2Kg: number;
   totalCo2Tonnes: number;
@@ -151,6 +154,21 @@ export default function EsgDashboard() {
             <KPI label="Offset Cost" value={`R${carbon.offsetCostZar.toLocaleString()}`} icon={Coins} color="bg-amber-500/20 text-amber-300" />
             <KPI label="Shipments" value={carbon.totalShipments.toLocaleString()} icon={BarChart3} color="bg-violet-500/20 text-violet-300" />
           </div>
+
+          {/* What the totals do NOT cover. A carbon figure that quietly omits
+              shipments reads as complete; saying so is the difference between a
+              report and a guess. */}
+          {(carbon.distanceNotMeasured ?? 0) > 0 && (
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {carbon.distanceNotMeasured} of {carbon.totalShipments} shipments have no pickup or
+                delivery coordinates, so their distance and CO₂ are <strong>not measured</strong> and are
+                excluded from the totals above, which cover{' '}
+                {(carbon.measuredShipments ?? carbon.totalShipments - (carbon.distanceNotMeasured ?? 0)).toLocaleString()} shipments.
+              </span>
+            </div>
+          )}
 
           {/* Relatable equivalents — the part clients actually remember */}
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">

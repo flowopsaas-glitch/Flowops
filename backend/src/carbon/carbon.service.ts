@@ -138,7 +138,17 @@ export interface CarbonCalculation {
 
 export interface FleetCarbonReport {
   period: string;
+  /** Waybills in scope for the period, whether or not their distance was known. */
   totalShipments: number;
+  /** Waybills whose distance could be measured — the population the figures cover. */
+  measuredShipments: number;
+  /**
+   * Waybills with no usable coordinates. They are excluded from every distance
+   * and emission figure rather than charged at an assumed distance: a fleet's
+   * total that quietly contains invented kilometres is worse than one that
+   * states what it could not measure.
+   */
+  distanceNotMeasured: number;
   totalDistanceKm: number;
   totalCo2Kg: number;
   totalCo2Tonnes: number;
@@ -259,41 +269,54 @@ export class CarbonService {
 
     let totalCo2 = 0;
     let totalDist = 0;
+    let measuredShipments = 0;
+    let distanceNotMeasured = 0;
     const byVehicle: Record<string, { shipments: number; co2Kg: number; distanceKm: number }> = {};
     const byMonth: Record<string, { co2Kg: number; shipments: number }> = {};
     /** Recorded vehicle types that fell back to the average-van factor. */
     const unrecognised = new Set<string>();
 
     for (const wb of waybills) {
-      let dist = 10;
-      if (wb.senderLat && wb.senderLng && wb.recipientLat && wb.recipientLng) {
-        dist = GeocodingService.haversineKm(
-          wb.senderLat, wb.senderLng,
-          wb.recipientLat, wb.recipientLng,
-        ) * 1.3;
-      }
-
       // One resolver for both paths. The fleet report used to carry its own copy
       // of the mapping, which is how the bicycle and "motorbike" defects had to
       // be fixed twice; a divergence here would mean a shipment's figure and the
       // fleet total disagree.
       const resolved = resolveVehicle(wb.shipments?.[0]?.driver?.vehicleType);
       const mapped = resolved.key;
-      const co2 = dist * resolved.factor;
       if (!resolved.recognised && resolved.input) unrecognised.add(resolved.input);
 
-      totalCo2 += co2;
-      totalDist += dist;
-
+      // Counts stay in scope terms: every waybill in the period is one shipment,
+      // and it appears under its vehicle and its month even when its distance is
+      // unknown. Only the distance and CO2 sums narrow to what was measured.
       if (!byVehicle[mapped]) byVehicle[mapped] = { shipments: 0, co2Kg: 0, distanceKm: 0 };
       byVehicle[mapped].shipments++;
-      byVehicle[mapped].co2Kg += co2;
-      byVehicle[mapped].distanceKm += dist;
 
       const monthKey = wb.createdAt.toISOString().slice(0, 7);
       if (!byMonth[monthKey]) byMonth[monthKey] = { co2Kg: 0, shipments: 0 };
-      byMonth[monthKey].co2Kg += co2;
       byMonth[monthKey].shipments++;
+
+      // No route, no kilometres. The report used to charge a flat 10 km here,
+      // which put invented distance into the fleet total and every figure
+      // derived from it (cost per km, the loaded/empty split, the offsets).
+      const hasRoute = wb.senderLat != null && wb.senderLng != null
+        && wb.recipientLat != null && wb.recipientLng != null;
+      if (!hasRoute) {
+        distanceNotMeasured += 1;
+        continue;
+      }
+
+      const dist = GeocodingService.haversineKm(
+        wb.senderLat as number, wb.senderLng as number,
+        wb.recipientLat as number, wb.recipientLng as number,
+      ) * 1.3;
+      const co2 = dist * resolved.factor;
+
+      totalCo2 += co2;
+      totalDist += dist;
+      measuredShipments += 1;
+      byVehicle[mapped].co2Kg += co2;
+      byVehicle[mapped].distanceKm += dist;
+      byMonth[monthKey].co2Kg += co2;
     }
 
     const totalTonnes = totalCo2 / 1000;
@@ -302,10 +325,15 @@ export class CarbonService {
     return {
       period: `Last ${days} days`,
       totalShipments: waybills.length,
+      measuredShipments,
+      distanceNotMeasured,
       totalDistanceKm: Math.round(totalDist * 100) / 100,
       totalCo2Kg: Math.round(totalCo2 * 100) / 100,
       totalCo2Tonnes: Math.round(totalTonnes * 10000) / 10000,
-      avgCo2PerShipment: waybills.length > 0 ? Math.round((totalCo2 / waybills.length) * 100) / 100 : 0,
+      // Divided by what was measured, not by what was in scope: folding
+      // unmeasured shipments into the denominator would understate every
+      // shipment that was measured.
+      avgCo2PerShipment: measuredShipments > 0 ? Math.round((totalCo2 / measuredShipments) * 100) / 100 : 0,
       avgCo2PerKm: totalDist > 0 ? Math.round((totalCo2 / totalDist) * 10000) / 10000 : 0,
       offsetCostZar: offsetCost,
       byVehicleType: Object.fromEntries(

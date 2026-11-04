@@ -1,4 +1,10 @@
 import { CarbonService, resolveVehicle } from './carbon.service';
+import { GeocodingService } from '../geocoding/geocoding.service';
+
+/** A real route, so the fleet fixtures measure something rather than invent it. */
+const JHB = { lat: -26.2041, lng: 28.0473 };
+const PTA = { lat: -25.7479, lng: 28.2293 };
+const JHB_PTA_KM = GeocodingService.haversineKm(JHB.lat, JHB.lng, PTA.lat, PTA.lng) * 1.3;
 
 /**
  * The carbon module had no tests, which is how a one-word gap in its lookup
@@ -86,10 +92,10 @@ describe('CarbonService.getFleetReport — the same zero-factor trap, second cod
         vehicleTypes.map((vehicleType, i) => ({
           id: `wb-${i}`,
           weight: null,
-          senderLat: null,
-          senderLng: null,
-          recipientLat: null,
-          recipientLng: null,
+          senderLat: JHB.lat,
+          senderLng: JHB.lng,
+          recipientLat: PTA.lat,
+          recipientLng: PTA.lng,
           createdAt: new Date('2026-11-01T08:00:00.000Z'),
           shipments: [{ driver: { vehicleType } }],
         })),
@@ -185,10 +191,10 @@ describe('FleetCarbonReport — one mapping, so the totals cannot disagree', () 
         vehicleTypes.map((vehicleType, i) => ({
           id: `wb-${i}`,
           weight: null,
-          senderLat: null,
-          senderLng: null,
-          recipientLat: null,
-          recipientLng: null,
+          senderLat: JHB.lat,
+          senderLng: JHB.lng,
+          recipientLat: PTA.lat,
+          recipientLng: PTA.lng,
           createdAt: new Date('2026-11-01T08:00:00.000Z'),
           shipments: [{ driver: { vehicleType } }],
         })),
@@ -197,7 +203,7 @@ describe('FleetCarbonReport — one mapping, so the totals cannot disagree', () 
 
   it('matches the per-shipment figure for the same vehicle', async () => {
     const report = await new CarbonService(fleetOf(['Medium Truck']) as never).getFleetReport('A');
-    const perShipment = svc.calculateShipment(10, 'medium_truck');
+    const perShipment = svc.calculateShipment(JHB_PTA_KM, 'medium_truck');
     expect(Object.keys(report.byVehicleType)).toEqual([perShipment.vehicleType]);
     expect(report.totalCo2Kg).toBeCloseTo(perShipment.co2Kg, 2);
   });
@@ -210,5 +216,81 @@ describe('FleetCarbonReport — one mapping, so the totals cannot disagree', () 
   it('lists nothing when every driver type is understood', async () => {
     const report = await new CarbonService(fleetOf(['bicycle', 'bakkie']) as never).getFleetReport('A');
     expect(report.unrecognisedVehicleTypes).toEqual([]);
+  });
+});
+
+describe('CarbonService.getFleetReport — distance it cannot measure stays unmeasured', () => {
+  /**
+   * The report used to charge a flat 10 km to any waybill without coordinates.
+   * Ten assumed kilometres is small only until it is multiplied by a fleet, an
+   * emission factor and a year — and it makes the total unfalsifiable, because
+   * nothing downstream can tell a measured kilometre from an assumed one.
+   */
+  const waybills = (rows: Array<{ vehicleType: string | null; hasRoute: boolean }>) => ({
+    waybill: {
+      findMany: async () =>
+        rows.map((row, i) => ({
+          id: `wb-${i}`,
+          weight: null,
+          senderLat: row.hasRoute ? JHB.lat : null,
+          senderLng: row.hasRoute ? JHB.lng : null,
+          recipientLat: row.hasRoute ? PTA.lat : null,
+          recipientLng: row.hasRoute ? PTA.lng : null,
+          createdAt: new Date('2026-11-01T08:00:00.000Z'),
+          shipments: [{ driver: { vehicleType: row.vehicleType } }],
+        })),
+    },
+  });
+
+  const report = (rows: Array<{ vehicleType: string | null; hasRoute: boolean }>) =>
+    new CarbonService(waybills(rows) as never).getFleetReport('A');
+
+  it('reports no distance and no emissions rather than assume ten kilometres', async () => {
+    const measured = await report([{ vehicleType: 'truck', hasRoute: false }]);
+    expect(measured.totalDistanceKm).toBe(0);
+    expect(measured.totalCo2Kg).toBe(0);
+    expect(measured.offsetCostZar).toBe(0);
+  });
+
+  it('says how many waybills it could not measure', async () => {
+    const result = await report([{ vehicleType: 'truck', hasRoute: false }]);
+    expect(result.distanceNotMeasured).toBe(1);
+    expect(result.measuredShipments).toBe(0);
+    expect(result.totalShipments).toBe(1);
+  });
+
+  it('totals only the waybills that had a route', async () => {
+    const result = await report([
+      { vehicleType: 'truck', hasRoute: true },
+      { vehicleType: 'truck', hasRoute: false },
+    ]);
+    expect(result.totalShipments).toBe(2);
+    expect(result.measuredShipments).toBe(1);
+    expect(result.distanceNotMeasured).toBe(1);
+    expect(result.totalDistanceKm).toBeCloseTo(Math.round(JHB_PTA_KM * 100) / 100, 2);
+  });
+
+  it('divides per-shipment emissions by the shipments it measured', async () => {
+    const mixed = await report([
+      { vehicleType: 'truck', hasRoute: true },
+      { vehicleType: 'truck', hasRoute: false },
+    ]);
+    const single = await report([{ vehicleType: 'truck', hasRoute: true }]);
+    // Same denominator as the one-waybill report: the unmeasured shipment must
+    // not drag the average down.
+    expect(mixed.avgCo2PerShipment).toBe(single.avgCo2PerShipment);
+  });
+
+  it('keeps an unmeasured shipment in its vehicle and month counts', async () => {
+    const result = await report([
+      { vehicleType: 'truck', hasRoute: true },
+      { vehicleType: 'truck', hasRoute: false },
+    ]);
+    expect(result.byVehicleType.TRUCK_SMALL_DIESEL.shipments).toBe(2);
+    expect(result.byMonth[0].shipments).toBe(2);
+    // ...while the sums beside those counts stay measured-only.
+    expect(result.byVehicleType.TRUCK_SMALL_DIESEL.distanceKm).toBeCloseTo(
+      Math.round(JHB_PTA_KM * 100) / 100, 2,
+    );
   });
 });
