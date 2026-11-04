@@ -65,6 +65,16 @@ jobs:
           chmod +x scripts/ghcr-publish-preflight.sh scripts/ghcr-publish-preflight.test.sh
           ./scripts/ghcr-publish-preflight.test.sh
 
+      # GitHub validates the YAML of a workflow but not the bash inside a
+      # `run:` block. A syntax error there is invisible until a whole run is
+      # spent discovering it — and on a private repo those runs are billed.
+      # A doubled backslash at end-of-line (escaped backslash, not a
+      # continuation) is how this went wrong once; `bash -n` catches it.
+      - name: Run blocks are valid shell
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/lint-ci-run-blocks.py
+
   # ────────────────────────────────────────────────────────────────────────
   # Compose config guard.
   #
@@ -1278,8 +1288,12 @@ jobs:
           # The PUBLIC probe, at the path nginx actually proxies. `/health` sits on
           # the container root and is invisible through the ingress, so the two
           # routes must both exist or the outside world has no health signal at
-          # all. This asserts the route is really registered — the unit spec can
+          # all. This asserts the route is really registered - the unit spec can
           # only prove the controller's behaviour, not its path.
+          #
+          # One statement per line: a previous revision used backslash
+          # continuations here and doubled the backslash, which silently turned
+          # the next line into a command starting with `||`.
           pub_code=$(curl -s -o /tmp/pub-health.json -w '%{http_code}' http://localhost:3001/api/v1/health)
           pub_body=$(cat /tmp/pub-health.json)
           echo "Public health: HTTP $pub_code $pub_body"
@@ -1292,12 +1306,18 @@ jobs:
             exit 1
           fi
 
-          echo "$pub_body" | grep -q '"status"' \
-            || { echo "FAIL: /api/v1/health body has no status field"; exit 1; }
-          echo "$pub_body" | grep -q '"uptime"' \
-            && { echo "FAIL: /api/v1/health leaks uptime on a public route"; exit 1; }
-          echo "$pub_body" | grep -q '"issues"' \
-            && { echo "FAIL: /api/v1/health leaks internal diagnostics"; exit 1; }
+          if ! echo "$pub_body" | grep -q '"status"'; then
+            echo "FAIL: /api/v1/health body has no status field"
+            exit 1
+          fi
+          if echo "$pub_body" | grep -q '"uptime"'; then
+            echo "FAIL: /api/v1/health leaks uptime on a public route"
+            exit 1
+          fi
+          if echo "$pub_body" | grep -q '"issues"'; then
+            echo "FAIL: /api/v1/health leaks internal diagnostics"
+            exit 1
+          fi
           echo "PASS: public /api/v1/health responds 200 with a redacted body"
 
           docker stop flowops-backend-smoke smoke-postgres 2>/dev/null || true
