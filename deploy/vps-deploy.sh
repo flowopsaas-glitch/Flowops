@@ -125,7 +125,7 @@ done
 # to a clean checkout, lost on `git checkout`, and impossible to commit because
 # backend/scripts/compose-env-allowlist.mjs fails the build for exactly that.
 # Failing here — before the stack moves — is the whole point of a pre-flight.
-grep -q '^RBAC_STRICT=true' .env \
+grep -q '^RBAC_STRICT=true$' .env \
   || die "RBAC_STRICT must be \"true\" in .env (found: $(grep '^RBAC_STRICT' .env || echo \"not set\")).\n       Non-strict production silently allows routes that carry no access decision.\n       Fix:  sed -i 's/^#*RBAC_STRICT=.*/RBAC_STRICT=true/' .env   (or append it)\n       Do NOT hardcode it in deploy/docker-compose.vps.yml — CI rejects that."
 ok "Pre-flight checks passed"
 
