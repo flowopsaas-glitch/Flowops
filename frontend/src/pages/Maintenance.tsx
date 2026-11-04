@@ -24,7 +24,6 @@ import {
   ASSET_STATUS_LABELS,
   COST_KINDS,
   COST_KIND_LABELS,
-  JOB_STATUSES,
   JOB_STATUS_LABELS,
   JOB_TYPES,
   JOB_TYPE_LABELS,
@@ -37,6 +36,7 @@ import {
   createJob,
   fetchAssetHistory,
   fetchAssets,
+  fetchJob,
   fetchJobs,
   fetchSummary,
   fleetHeadline,
@@ -58,6 +58,7 @@ import {
   type CostKind,
   type MaintenanceAsset,
   type MaintenanceJob,
+  type MaintenanceJobEvent,
   type MaintenanceJobType,
   type MaintenanceSummary,
 } from "../lib/maintenance";
@@ -994,6 +995,7 @@ function JobDetail({
 }) {
   const actions = allowedJobActions(job.status);
   const [panel, setPanel] = useState<"none" | "complete" | "signoff" | "cancel" | "cost">("none");
+  const [events, setEvents] = useState<MaintenanceJobEvent[] | null>(job.events ?? null);
   const [workPerformed, setWorkPerformed] = useState("");
   const [warrantyTermDays, setWarrantyTermDays] = useState("");
   const [labourHours, setLabourHours] = useState("");
@@ -1003,6 +1005,24 @@ function JobDetail({
   const [costDescription, setCostDescription] = useState("");
   const [costQuantity, setCostQuantity] = useState("1");
   const [costUnitCost, setCostUnitCost] = useState("");
+
+  // The card's history is the record. It is fetched rather than inferred from
+  // timestamps, because the events say *what happened and who did it*, which is
+  // the part a dispute turns on.
+  useEffect(() => {
+    let cancelled = false;
+    fetchJob(job.id)
+      .then((detail) => {
+        if (!cancelled) setEvents(detail.events ?? []);
+      })
+      .catch(() => {
+        // A failed history load must not hide the card itself.
+        if (!cancelled) setEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [job.id]);
 
   const run = async (fn: () => Promise<unknown>, fallback: string) => {
     setBusy(true);
@@ -1337,14 +1357,24 @@ function JobDetail({
 
       <div>
         <h3 className="mb-2 text-sm font-semibold text-white">History</h3>
-        {job.status === "CANCELLED" ? (
-          <p className="text-xs text-slate-400">Cancelled cards keep their history.</p>
-        ) : (
+        {events === null ? (
+          <p className="text-xs text-slate-400">Loading the card's history…</p>
+        ) : events.length === 0 ? (
           <p className="text-xs text-slate-400">
             Reported {formatDateTime(job.reportedAt)}
             {job.completedAt ? ` · completed ${formatDateTime(job.completedAt)}` : ""}
             {job.signedOffAt ? ` · signed off by ${job.signedOffBy} on ${formatDate(job.signedOffAt)}` : ""}
           </p>
+        ) : (
+          <ol className="space-y-1">
+            {events.map((event) => (
+              <li key={event.id} className="flex flex-wrap items-baseline gap-x-2 text-xs text-slate-400">
+                <span className="tabular-nums text-slate-500">{formatDateTime(event.createdAt)}</span>
+                <span className="text-slate-200">{event.description}</span>
+                {event.actorName ? <span className="text-slate-500">— {event.actorName}</span> : null}
+              </li>
+            ))}
+          </ol>
         )}
       </div>
     </div>

@@ -131,6 +131,16 @@ export interface MaintenanceAsset {
   openJob?: MaintenanceJob | null;
 }
 
+export interface MaintenanceJobEvent {
+  id: string;
+  type: string;
+  fromStatus: MaintenanceJobStatus | null;
+  toStatus: MaintenanceJobStatus | null;
+  actorName: string | null;
+  description: string;
+  createdAt: string;
+}
+
 export interface MaintenanceJob {
   id: string;
   jobNumber: string;
@@ -160,6 +170,7 @@ export interface MaintenanceJob {
   faultCode?: { id: string; code: string; label: string } | null;
   costs?: Array<{ amount: number; kind: CostKind }>;
   priorJob?: { id: string; jobNumber: string; completedAt: string | null } | null;
+  events?: MaintenanceJobEvent[];
 }
 
 export interface MaintenanceFinding {
@@ -281,6 +292,11 @@ export async function fetchJobs(query: {
   });
   const rows = unwrap(body);
   return Array.isArray(rows) ? rows : [];
+}
+
+export async function fetchJob(id: string): Promise<MaintenanceJob> {
+  const body = await api.get<Envelope<MaintenanceJob>, Envelope<MaintenanceJob>>(`/maintenance/jobs/${id}`);
+  return unwrap(body);
 }
 
 export async function createJob(payload: Record<string, unknown>): Promise<MaintenanceJob> {

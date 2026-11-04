@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   jobs: [] as Row[],
   history: null as Row | null,
   posted: [] as { url: string; body: unknown }[],
+  events: [] as Row[],
 }));
 
 vi.mock("../api/client", () => {
@@ -18,6 +19,11 @@ vi.mock("../api/client", () => {
     if (url.startsWith("/maintenance/assets/")) return h.history;
     if (url === "/maintenance/assets") return h.assets;
     if (url === "/maintenance/jobs") return h.jobs;
+    if (url.startsWith("/maintenance/jobs/")) {
+      const id = url.split("/").pop();
+      const found = h.jobs.find((row) => row.id === id);
+      return { ...(found ?? h.jobs[0]), events: h.events };
+    }
     return [];
   });
   const post = vi.fn(async (url: string, body: unknown) => {
@@ -154,6 +160,26 @@ beforeEach(() => {
   h.jobs = [job()];
   h.history = history();
   h.posted = [];
+  h.events = [
+    {
+      id: "ev-1",
+      type: "CREATED",
+      fromStatus: null,
+      toStatus: "REPORTED",
+      actorName: "Sipho Dlamini",
+      description: "Breakdown raised on RS-014.",
+      createdAt: "2026-11-03T06:00:00.000Z",
+    },
+    {
+      id: "ev-2",
+      type: "COMEBACK_LINKED",
+      fromStatus: null,
+      toStatus: null,
+      actorName: "Sipho Dlamini",
+      description: "Same fault as MJ-2026-0009, which is still inside the warranty it carried.",
+      createdAt: "2026-11-03T06:00:01.000Z",
+    },
+  ];
 });
 
 describe("Maintenance — the fleet position is stated, not implied", () => {
@@ -237,6 +263,20 @@ describe("Maintenance — a job card says what actually happened", () => {
 
     await userEvent.click(within(dialog).getByText("Cancel card"));
     expect(within(dialog).getByText(/There is no delete/i)).toBeTruthy();
+  });
+});
+
+describe("Maintenance — the card's history is the record", () => {
+  it("shows the append-only trail, not just timestamps", async () => {
+    render(<MaintenancePage />);
+    await userEvent.click(await screen.findByRole("row", { name: "Open job MJ-2026-0001" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("Breakdown raised on RS-014.")).toBeTruthy();
+    // The comeback is a link with a reason, visible on the card itself.
+    expect(
+      within(dialog).getByText(/Same fault as MJ-2026-0009, which is still inside the warranty/i),
+    ).toBeTruthy();
   });
 });
 
