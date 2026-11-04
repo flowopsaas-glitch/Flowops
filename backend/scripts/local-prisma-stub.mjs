@@ -110,6 +110,39 @@ function collectPrismaTypeNames(dir) {
   return [...names].sort();
 }
 
+/**
+ * Type names imported from '@prisma/client' that are neither a model nor an
+ * enum — `CustomsDeclaration`, `WaybillStatusType`, and so on. Real Prisma
+ * emits them; this stub has to as well, or `npm run build` reports missing
+ * exports in files that are perfectly correct.
+ */
+function collectClientTypeImports(dir, known) {
+  const names = new Set();
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+        walk(full);
+        continue;
+      }
+      if (!/\.ts$/.test(entry.name)) continue;
+      const text = readFileSync(full, 'utf8');
+      for (const match of text.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"]@prisma\/client['"]/g)) {
+        for (const raw of match[1].split(',')) {
+          // `{ type Foo }` and `{ Foo as Bar }` both occur in this codebase.
+          const parts = raw.trim().split(/\s+as\s+/);
+          const name = parts[parts.length - 1].trim().replace(/^(?:type|typeof)\s+/, '');
+          if (!name || known.has(name) || names.has(name)) continue;
+          names.add(name);
+        }
+      }
+    }
+  };
+  walk(dir);
+  return [...names].sort();
+}
+
 const schema = readFileSync(schemaPath, 'utf8');
 const enums = parseEnums(schema);
 const models = parseModels(schema);
@@ -241,10 +274,25 @@ const modelKeys = models.map((m) => `  ${m.charAt(0).toLowerCase() + m.slice(1)}
 // here to satisfy `import { Waybill } from '@prisma/client'`.
 const modelTypes = models.map((m) => `export type ${m} = PrismaRow;`).join('\n');
 
-const prismaTypeNames = collectPrismaTypeNames(join(here, '..', 'src'));
+const srcDir = join(here, '..', 'src');
+const prismaTypeNames = collectPrismaTypeNames(srcDir);
+const knownExports = new Set([
+  ...models,
+  ...Object.keys(enums),
+  'PrismaClient',
+  'Prisma',
+  'PrismaClientKnownRequestError',
+  'PrismaClientValidationError',
+  'PrismaClientInitializationError',
+  'dmmf',
+]);
+const clientTypeImports = collectClientTypeImports(srcDir, knownExports);
 const prismaTypes = prismaTypeNames
   .map((name) => `  type ${name}<T = any, U = any, V = any> = any;`)
   .join('\n');
+
+// Types the codebase imports that the schema does not describe one-to-one.
+const namedTypeExports = clientTypeImports.map((name) => `export type ${name} = any;`).join('\n');
 
 const dts = `// GENERATED LOCALLY by scripts/local-prisma-stub.mjs — do not edit, do not commit.
 /* eslint-disable */
@@ -283,6 +331,8 @@ export interface PrismaDelegate {
 ${enumDecls}
 
 ${modelTypes}
+
+${namedTypeExports}
 
 export declare namespace Prisma {
   type TransactionClient = PrismaClient;

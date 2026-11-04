@@ -1,4 +1,4 @@
-import { CarbonService } from './carbon.service';
+import { CarbonService, resolveVehicle } from './carbon.service';
 
 /**
  * The carbon module had no tests, which is how a one-word gap in its lookup
@@ -112,5 +112,103 @@ describe('CarbonService.getFleetReport — the same zero-factor trap, second cod
     expect(report.byVehicleType.BICYCLE.shipments).toBe(1);
     expect(report.byVehicleType.TRUCK_SMALL_DIESEL.shipments).toBe(1);
     expect(report.totalCo2Kg).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * `Driver.vehicleType` is free text with a schema default, so the platform's own
+ * form and an imported spreadsheet can disagree on spelling for years without
+ * anyone noticing — as long as the report still produces a number.
+ */
+describe('resolveVehicle — spelling is not a vehicle type', () => {
+  it.each([
+    ['truck', 'TRUCK_SMALL_DIESEL'],
+    ['Truck', 'TRUCK_SMALL_DIESEL'],
+    ['TRUCK', 'TRUCK_SMALL_DIESEL'],
+    ['medium truck', 'TRUCK_MEDIUM_DIESEL'],
+    ['Medium_Truck', 'TRUCK_MEDIUM_DIESEL'],
+    ['medium-truck', 'TRUCK_MEDIUM_DIESEL'],
+    ['  large truck  ', 'TRUCK_LARGE_DIESEL'],
+    ['E_BIKE', 'E_BIKE'],
+    ['e bike', 'E_BIKE'],
+  ])('resolves %s to %s', (input, expected) => {
+    const resolved = resolveVehicle(input);
+    expect(resolved.key).toBe(expected);
+    expect(resolved.recognised).toBe(true);
+  });
+
+  it('marks an unrecognised type as unrecognised instead of pretending it is a van', () => {
+    const resolved = resolveVehicle('Isuzu FVR 850');
+    expect(resolved.key).toBe('DEFAULT');
+    expect(resolved.recognised).toBe(false);
+    expect(resolved.input).toBe('Isuzu FVR 850');
+  });
+
+  it('distinguishes "nothing recorded" from "something unrecognised"', () => {
+    expect(resolveVehicle(undefined).input).toBeNull();
+    expect(resolveVehicle('').input).toBeNull();
+    expect(resolveVehicle('   ').input).toBeNull();
+    expect(resolveVehicle('hovercraft').input).toBe('hovercraft');
+  });
+
+  it('keeps the zero-emission factor for a bicycle, which is falsy', () => {
+    expect(resolveVehicle('bicycle').factor).toBe(0);
+    expect(resolveVehicle('bicycle').recognised).toBe(true);
+  });
+});
+
+describe('CarbonService.calculateShipment — the assumption is stated', () => {
+  it('says nothing when the type was understood', () => {
+    const result = svc.calculateShipment(10, 'bakkie');
+    expect(result.vehicleTypeRecognised).toBe(true);
+    expect(result.emissionAssumption).toBeNull();
+  });
+
+  it('names the unrecognised value it substituted', () => {
+    const result = svc.calculateShipment(10, 'Isuzu FVR 850');
+    expect(result.vehicleTypeRecognised).toBe(false);
+    expect(result.emissionAssumption).toContain('Isuzu FVR 850');
+    expect(result.emissionAssumption).toContain('average diesel van');
+  });
+
+  it('says when nothing was recorded at all', () => {
+    const result = svc.calculateShipment(10);
+    expect(result.vehicleTypeRecognised).toBe(false);
+    expect(result.emissionAssumption).toContain('No vehicle type recorded');
+  });
+});
+
+describe('FleetCarbonReport — one mapping, so the totals cannot disagree', () => {
+  const fleetOf = (vehicleTypes: Array<string | null>) => ({
+    waybill: {
+      findMany: async () =>
+        vehicleTypes.map((vehicleType, i) => ({
+          id: `wb-${i}`,
+          weight: null,
+          senderLat: null,
+          senderLng: null,
+          recipientLat: null,
+          recipientLng: null,
+          createdAt: new Date('2026-11-01T08:00:00.000Z'),
+          shipments: [{ driver: { vehicleType } }],
+        })),
+    },
+  });
+
+  it('matches the per-shipment figure for the same vehicle', async () => {
+    const report = await new CarbonService(fleetOf(['Medium Truck']) as never).getFleetReport('A');
+    const perShipment = svc.calculateShipment(10, 'medium_truck');
+    expect(Object.keys(report.byVehicleType)).toEqual([perShipment.vehicleType]);
+    expect(report.totalCo2Kg).toBeCloseTo(perShipment.co2Kg, 2);
+  });
+
+  it('lists the recorded values it could not understand', async () => {
+    const report = await new CarbonService(fleetOf(['Isuzu FVR 850', 'hovercraft', 'truck']) as never).getFleetReport('A');
+    expect(report.unrecognisedVehicleTypes).toEqual(['Isuzu FVR 850', 'hovercraft']);
+  });
+
+  it('lists nothing when every driver type is understood', async () => {
+    const report = await new CarbonService(fleetOf(['bicycle', 'bakkie']) as never).getFleetReport('A');
+    expect(report.unrecognisedVehicleTypes).toEqual([]);
   });
 });

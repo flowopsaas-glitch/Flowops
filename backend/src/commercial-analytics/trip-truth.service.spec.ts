@@ -346,4 +346,33 @@ describe('TripTruthService.getTruckPack (Slices 4–5)', () => {
     expect(pack.trucks[0].km).toMatchObject({ status: 'PARTIAL', emptyKm: null, emptyPct: null });
     expect(pack.trucks[0].km.note).toContain('not shown rather than guessed');
   });
+
+  it('does not bill a driver for distance between two vehicles odometers', async () => {
+    // The same driver in a 120 000 km truck and a 45 000 km bakkie. Max−min
+    // reported a 75 000 km span here, which turned an empty-running ratio into
+    // fiction (and, with a cost-per-km metric, into an accusation).
+    const svc = makePackService({
+      rows: [
+        alloc({ waybillId: 'w1', driverId: 'd1', revenue: 1000, totalCost: 400, grossMargin: 600, distanceKm: 300 }),
+      ],
+      readings: [
+        { driverId: 'd1', odometerKm: 120000, occurredAt: new Date('2026-10-02T06:00:00Z') },
+        { driverId: 'd1', odometerKm: 45000, occurredAt: new Date('2026-10-03T06:00:00Z') },
+        { driverId: 'd1', odometerKm: 45400, occurredAt: new Date('2026-10-04T06:00:00Z') },
+      ],
+      drivers: [{ id: 'd1', name: 'Sam Driver', vehicleReg: 'CA 123' }],
+    });
+    const pack = await svc.getTruckPack('company-a', '2026-10');
+
+    // 400 believable kilometres, not 75 000: the backwards reading is excluded
+    // and said so.
+    expect(pack.trucks[0].km).toMatchObject({
+      status: 'MEASURED',
+      odometerSpanKm: 400,
+      readings: 3,
+      readingsExcluded: 1,
+      emptyKm: 100,
+    });
+    expect(pack.trucks[0].km.note).toContain('left out');
+  });
 });
