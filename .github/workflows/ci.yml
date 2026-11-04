@@ -1001,16 +1001,36 @@ jobs:
           terraform validate
 
       - name: Validate modules (init + validate per skeleton)
+        # One module at a time, and a failure is re-emitted as a GitHub
+        # *annotation*. Job logs live in blob storage and are not always
+        # retrievable; annotations are part of the check-run record and render
+        # on the PR, so the actual error survives where the log does not.
+        # `terraform version` and `df` are printed because a module init
+        # failure is usually space or version skew, not HCL syntax — and with
+        # `set -e` the old version reported nothing but "exit code 1".
         run: |
-          set -e
+          set -uo pipefail
+          echo "terraform: $(terraform version | head -1)"
+          failed=0
           for m in frontend-cdn network backend-ecs database cache secrets; do
             echo "::group::module/$m"
             cd "infra/terraform/modules/$m"
-            terraform init -backend=false
-            terraform validate
+            for step in "init -backend=false" "validate"; do
+              if out=$(terraform $step -no-color 2>&1); then
+                printf '%s\n' "$out"
+              else
+                printf '%s\n' "$out"
+                err=$(printf '%s' "$out" | grep -E '^Error|^│|^╷' | head -12 | cut -c1-140 | tr '\n' ' ')
+                echo "::error title=terraform ${step%% *} failed in modules/$m::${err}"
+                failed=1
+                break   # validate is meaningless after a failed init
+              fi
+            done
             cd - >/dev/null
+            df -h / | tail -1
             echo "::endgroup::"
           done
+          exit "$failed"
 
 
   # ──────────────────────────────────────────────────────────────────────────
