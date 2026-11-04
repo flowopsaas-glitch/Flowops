@@ -95,4 +95,46 @@ MSG
 fi
 
 say "✓ all ${#ROUTES[@]} routes present in the deployed bundle"
-$QUIET || printf '\n\033[1;32mPost-deploy check passed\033[0m — the running frontend serves %s\n' "$ASSET"
+
+# ── 5. the API is reachable through the same proxy the browser uses ─────────
+# nginx proxies only /api/ and /socket.io/. The API's own `/health` is on the
+# container root and is therefore invisible through the tunnel, and nginx's SPA
+# fallback (`try_files $uri $uri/ /index.html`) answers any other path with
+# index.html + 200 — so a wrong health URL looks healthy forever. Check the
+# public probe through the proxy, and insist that it is JSON.
+API_RAW="$($COMPOSE exec -T frontend sh -c \
+  'curl -sS -m 15 -w "\n%{http_code} %{content_type}" http://localhost:80/api/v1/health' | tr -d '\r')"
+API_META="$(printf '%s' "$API_RAW" | tail -1)"
+API_CODE="${API_META%% *}"
+API_TYPE="${API_META#* }"
+API_BODY="$(printf '%s' "$API_RAW" | sed '$d' | head -c 300)"
+
+if [ "$API_CODE" != "200" ]; then
+  printf '\033[1;31m✗ /api/v1/health through the frontend proxy returned HTTP %s\033[0m\n' "$API_CODE" >&2
+  printf '    body: %s\n\n' "$API_BODY" >&2
+  printf '  The proxy path is broken, or the route is not registered. Check:\n' >&2
+  printf '    %s exec api wget -qO- http://localhost:3000/api/v1/health\n' "$COMPOSE" >&2
+  exit 1
+fi
+
+case "$API_TYPE" in
+  *application/json*) : ;;
+  *)
+    printf '\033[1;31m✗ /api/v1/health answered HTTP 200 as %s, not JSON\033[0m\n' "'${API_TYPE}'" >&2
+    printf '    That is nginx serving index.html (the SPA fallback) — the request never\n' >&2
+    printf '    reached the API. A monitor reading only the status code calls this healthy.\n' >&2
+    exit 1
+    ;;
+esac
+
+# Match on the parsed intent, not on a byte-for-byte serialisation: JSON spacing
+# is not part of anyone's contract.
+if ! printf '%s' "$API_BODY" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+  printf '\033[1;31m✗ API reports a non-ok status through the proxy\033[0m\n' >&2
+  printf '    body: %s\n' "$API_BODY" >&2
+  exit 1
+fi
+
+ok "api /api/v1/health via the proxy: HTTP 200, ${API_TYPE}, status ok"
+
+$QUIET || printf '\n\033[1;32mPost-deploy check passed\033[0m — the running frontend serves %s and reaches the API\n' "$ASSET"

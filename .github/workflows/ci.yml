@@ -1275,6 +1275,31 @@ jobs:
           echo "Health: $body"
           echo "PASS: NestJS backend booted and /health responded"
 
+          # The PUBLIC probe, at the path nginx actually proxies. `/health` sits on
+          # the container root and is invisible through the ingress, so the two
+          # routes must both exist or the outside world has no health signal at
+          # all. This asserts the route is really registered — the unit spec can
+          # only prove the controller's behaviour, not its path.
+          pub_code=$(curl -s -o /tmp/pub-health.json -w '%{http_code}' http://localhost:3001/api/v1/health)
+          pub_body=$(cat /tmp/pub-health.json)
+          echo "Public health: HTTP $pub_code $pub_body"
+
+          if [ "$pub_code" != "200" ]; then
+            echo "FAIL: /api/v1/health returned HTTP $pub_code (expected 200)"
+            docker logs flowops-backend-smoke | tail -50
+            docker stop flowops-backend-smoke smoke-postgres 2>/dev/null || true
+            docker network rm smoke-net 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "$pub_body" | grep -q '"status"' \
+            || { echo "FAIL: /api/v1/health body has no status field"; exit 1; }
+          echo "$pub_body" | grep -q '"uptime"' \
+            && { echo "FAIL: /api/v1/health leaks uptime on a public route"; exit 1; }
+          echo "$pub_body" | grep -q '"issues"' \
+            && { echo "FAIL: /api/v1/health leaks internal diagnostics"; exit 1; }
+          echo "PASS: public /api/v1/health responds 200 with a redacted body"
+
           docker stop flowops-backend-smoke smoke-postgres 2>/dev/null || true
           docker network rm smoke-net 2>/dev/null || true
 

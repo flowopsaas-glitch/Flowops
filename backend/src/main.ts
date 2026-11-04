@@ -99,6 +99,16 @@ async function bootstrap() {
 
   // ── API versioning prefix ─────────────────────────────────────────────
   app.setGlobalPrefix('api/v1', {
+    // Entries are matched against the controller+method path BEFORE the prefix
+    // is applied, so anything whose route already contains the prefix is listed
+    // here to stop it becoming /api/v1/api/v1/…
+    //
+    // `/health` is the INTERNAL probe: Docker HEALTHCHECK, the compose
+    // healthcheck, the deploy script and CI all call it on the container's own
+    // root, so it must stay un-prefixed. The public probe is a separate
+    // controller on path `health`, which this prefix turns into
+    // /api/v1/health — the only health URL nginx proxies. Both delegate to
+    // HealthSentinelService.probe(), so they cannot disagree.
     exclude: ['/health', '/api/v1/whatsapp/webhook', '/api/v1/paystack/webhook'],
   });
 

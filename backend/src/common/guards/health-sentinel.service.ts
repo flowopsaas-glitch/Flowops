@@ -34,6 +34,16 @@ interface HealthStatus {
   issues: string[];
 }
 
+/** Result of a live probe. Shared by the internal and public health routes. */
+export interface HealthProbe {
+  status: 'ok' | 'degraded';
+  db: 'connected' | 'unreachable';
+  uptime: number;
+  /** Internal diagnostics. Never returned by the public route. */
+  issues: string[];
+  ts: string;
+}
+
 @Injectable()
 export class HealthSentinelService {
   private readonly logger = new Logger('HEALTH_SENTINEL');
@@ -126,6 +136,34 @@ export class HealthSentinelService {
       ...this.lastStatus,
       healthy: this.lastStatus.issues.length === 0,
     };
+  }
+
+  /**
+   * A LIVE probe, not the cached background status. Runs its own `SELECT 1`.
+   *
+   * This exists because the platform had two health surfaces and only one of
+   * them worked: `/health` (correct, but not proxied by nginx, so unreachable
+   * through the tunnel) and nothing at `/api/v1/health` (proxied, so a 404).
+   * A monitor pointed at the public ingress could not tell a healthy API from a
+   * dead one — and `/health` through the SPA catch-all returned index.html with
+   * a 200, which looks green forever.
+   *
+   * Both routes now call this, so they cannot drift apart.
+   */
+  async probe(): Promise<HealthProbe> {
+    const sentinel = this.getStatus();
+    const ts = new Date().toISOString();
+
+    if (!sentinel.healthy) {
+      return { status: 'degraded', db: sentinel.database === 'healthy' ? 'connected' : 'unreachable', uptime: Math.round(process.uptime()), issues: sentinel.issues, ts };
+    }
+
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      return { status: 'ok', db: 'connected', uptime: Math.round(process.uptime()), issues: [], ts };
+    } catch {
+      return { status: 'degraded', db: 'unreachable', uptime: Math.round(process.uptime()), issues: ['database unreachable'], ts };
+    }
   }
 
   private async checkDatabase(): Promise<'healthy' | 'degraded' | 'down'> {

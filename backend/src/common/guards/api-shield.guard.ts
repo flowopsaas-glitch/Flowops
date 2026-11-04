@@ -230,7 +230,11 @@ export class ApiShieldGuard implements CanActivate {
   private isAllowedBotPath(path: string): boolean {
     // Allow bots on public paths (health, tracking, status). Segment-aware:
     // '/health' must not accidentally allow '/healthz-private'.
-    const allowed = ['/health', '/api/v1/track', '/api/v1/status'];
+    // '/api/v1/health' is the public probe — monitors share the curl/wget/axios
+    // vocabulary this guard logs, so it belongs on the list. '/api/v1/status'
+    // was here but no such route exists; a dead allowlist entry is worse than
+    // none, because it implies coverage that isn't there.
+    const allowed = ['/health', '/api/v1/health', '/api/v1/track'];
     return allowed.some((p) => path === p || path.startsWith(p + '/'));
   }
 
