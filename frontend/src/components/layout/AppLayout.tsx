@@ -420,6 +420,10 @@ export default function AppLayout() {
     // role matrix grants to ADMIN, COMPANY_ADMIN, MANAGER, DISPATCH, WAREHOUSE
     // and VIEWER — the same roles the API accepts.
     { section: "OPS", label: "Claims & Liability", desc: "Damage, loss, shortage & delay claims", to: "/claims", icon: Scale, perm: "claims" },
+    // Maintenance is operational before it is financial: the person at the
+    // machine raises the card, the workshop completes it, the custodian signs
+    // it off. Gated on `maintenance`, the same roles the API accepts.
+    { section: "OPS", label: "Asset Maintenance", desc: "Units, job cards & warranty", to: "/maintenance", icon: Wrench, perm: "maintenance" },
     { section: "OPS", label: "Safety Incident Dispatch", desc: "Review & verify safety incidents", to: "/safety-incident-dispatch", icon: ShieldAlert },
     { section: "OPS", label: "Safety Incident Report", desc: "Report a new safety incident", to: "/safety-incident-report", icon: AlertTriangle },
     { section: "OPS", label: "Trip Document Pack", desc: "HS code, origin & duty records", to: "/trip-document-pack", icon: FileText },

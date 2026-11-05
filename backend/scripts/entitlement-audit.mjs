@@ -108,6 +108,8 @@ export const EXEMPT = {
   "driver-safety/driver-safety.controller.ts": "safety/compliance must never be plan-locked",
   "common/compliance/driver-compliance.controller.ts": "safety/compliance must never be plan-locked",
   "fleet-maintenance/fleet-maintenance.controller.ts": "core fleet upkeep (no plan feature key exists)",
+  "maintenance/maintenance.controller.ts": "core asset/job-card record — the evidence a warranty or a comeback is judged on; no plan feature key exists (roles-guarded)",
+  "claims/claims.controller.ts": "claims & liability are a core operational record on every plan (no plan feature key exists, roles-guarded)",
   "fleet-intelligence/fleet-intelligence.controller.ts": "read-only fleet insight over core fleet data",
   "carbon/carbon.controller.ts": "read-only ESG estimate over core ops data",
   "esg/esg.controller.ts": "read-only ESG reporting over core ops data",
