@@ -10,6 +10,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   assetWarrantyStanding,
   availability,
+  checkCommercialUpdate,
+  commercialChain,
   canTransition,
   checkMeterReading,
   checkWarrantyTerm,
@@ -44,6 +46,7 @@ import type {
   MaintenanceSummaryQuery,
   RecordMeterDto,
   SignOffJobDto,
+  UpdateCommercialDto,
   StartJobDto,
   UpdateAssetDto,
 } from './dto/maintenance.dto';
@@ -480,6 +483,8 @@ export class MaintenanceService {
     });
     if (!job) throw new NotFoundException('Job not found.');
 
+    const costSummary = summariseCosts(job.costs ?? []);
+
     return {
       ...job,
       warranty: {
@@ -487,7 +492,9 @@ export class MaintenanceService {
         expiresAt: job.warrantyExpiresAt,
         termDays: job.warrantyTermDays,
       },
-      costSummary: summariseCosts(job.costs ?? []),
+      /** Quoted, authorised, worked, invoiced, paid — and where it is stuck. */
+      commercial: commercialChain(job, costSummary.total, new Date()),
+      costSummary,
       isComeback: Boolean(job.priorJobId),
       downtimeHours: toHours(downtimeMinutes(job, new Date())),
     };
@@ -641,6 +648,106 @@ export class MaintenanceService {
       description: `Cancelled: ${reason}`,
     });
     return updated;
+  }
+
+  /**
+   * Record where the money and the authority have got to.
+   *
+   * Six steps, each with the date it actually happened: quoted, authorised,
+   * worked, invoiced, paid. The dates are the point. A card that records "five
+   * days" without recording which of those days were spent waiting for a
+   * purchase order cannot tell a slow workshop from a slow procurement
+   * department, and both parties will assume it was the other one.
+   *
+   * Partial by design: a contractor arriving at the depot with a written
+   * quotation records one thing and carries on. Fields not supplied are left
+   * alone, so this cannot blank a date by omission.
+   *
+   * Money does **not** move the work status. Invoicing a completed card and
+   * signing it off are different acts by different people, and letting one
+   * imply the other would let an accounting entry accept work on the
+   * custodian's behalf.
+   */
+  async recordCommercial(companyId: string, actor: MaintenanceActor, id: string, dto: UpdateCommercialDto) {
+    const job = await this.requireJob(companyId, id);
+    if (job.status === 'CANCELLED') {
+      throw new BadRequestException(
+        'This job was cancelled. Money and authority belong to work that happened — raise a new card instead.',
+      );
+    }
+
+    const supplied = (value: unknown) => value !== undefined;
+
+    const patch = {
+      quotationAmount: supplied(dto.quotationAmount) ? dto.quotationAmount ?? null : undefined,
+      quotationAt: supplied(dto.quotationAt) ? this.parseDate(dto.quotationAt, 'Quotation date') : undefined,
+      purchaseOrderNumber: supplied(dto.purchaseOrderNumber) ? dto.purchaseOrderNumber ?? null : undefined,
+      purchaseOrderAt: supplied(dto.purchaseOrderAt)
+        ? this.parseDate(dto.purchaseOrderAt, 'Purchase order date')
+        : undefined,
+      invoicedAt: supplied(dto.invoicedAt) ? this.parseDate(dto.invoicedAt, 'Invoice date') : undefined,
+      paidAt: supplied(dto.paidAt) ? this.parseDate(dto.paidAt, 'Payment date') : undefined,
+    };
+
+    const check = checkCommercialUpdate(
+      {
+        quotationAmount: job.quotationAmount,
+        quotationAt: job.quotationAt,
+        purchaseOrderNumber: job.purchaseOrderNumber,
+        purchaseOrderAt: job.purchaseOrderAt,
+        invoicedAt: job.invoicedAt,
+        paidAt: job.paidAt,
+        completedAt: job.completedAt,
+      },
+      patch,
+    );
+    if (!check.ok) throw new BadRequestException(check.reason);
+
+    const data: Prisma.MaintenanceJobUpdateInput = {};
+    if (supplied(dto.quotationAmount)) data.quotationAmount = dto.quotationAmount ?? null;
+    if (supplied(dto.quotationAt)) data.quotationAt = patch.quotationAt ?? null;
+    if (supplied(dto.purchaseOrderNumber)) data.purchaseOrderNumber = patch.purchaseOrderNumber ?? null;
+    if (supplied(dto.purchaseOrderAt)) data.purchaseOrderAt = patch.purchaseOrderAt ?? null;
+    if (supplied(dto.invoicedAt)) data.invoicedAt = patch.invoicedAt ?? null;
+    if (supplied(dto.paidAt)) data.paidAt = patch.paidAt ?? null;
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('Nothing to record — supply a quotation, purchase order, invoice or payment.');
+    }
+
+    const updated = await this.prisma.maintenanceJob.update({ where: { id }, data });
+
+    // One event per change, in the words a person would use. The trail is the
+    // only defence a correction has: a re-quoted price and a quietly edited one
+    // look identical in the row and completely different here.
+    const changes: string[] = [];
+    if (supplied(dto.quotationAmount)) {
+      changes.push(`quotation ${dto.quotationAmount === null ? 'withdrawn' : `${(dto.quotationAmount as number).toFixed(2)} ${job.currency ?? 'ZAR'}`}`);
+    }
+    if (supplied(dto.quotationAt)) changes.push(`quoted ${patch.quotationAt ? this.day(patch.quotationAt) : '—'}`);
+    if (supplied(dto.purchaseOrderNumber) || supplied(dto.purchaseOrderAt)) {
+      changes.push(
+        `purchase order ${patch.purchaseOrderNumber ?? '—'}${patch.purchaseOrderAt ? ` arrived ${this.day(patch.purchaseOrderAt)}` : ''}`,
+      );
+    }
+    if (supplied(dto.invoicedAt)) changes.push(`invoiced ${patch.invoicedAt ? this.day(patch.invoicedAt) : '—'}`);
+    if (supplied(dto.paidAt)) changes.push(`paid ${patch.paidAt ? this.day(patch.paidAt) : '—'}`);
+
+    const cost = await this.jobCostTotal(companyId, id);
+    const chain = commercialChain(updated, cost, new Date());
+
+    await this.appendEvent(companyId, id, {
+      type: 'COMMERCIAL_CHANGED',
+      actor,
+      description: `${changes.join('; ')}.`,
+      metadata: {
+        quotationAmount: updated.quotationAmount,
+        purchaseOrderNumber: updated.purchaseOrderNumber,
+        quoteToOrderHours: chain.quoteToOrderHours,
+      },
+    });
+
+    return { ...updated, commercial: chain };
   }
 
   async addCost(companyId: string, actor: MaintenanceActor, jobId: string, dto: AddJobCostDto) {
@@ -870,6 +977,28 @@ export class MaintenanceService {
     return serviced;
   }
 
+  /** A supplied date, validated once so every caller gets the same refusal. */
+  private parseDate(value: string | null | undefined, label: string): Date | null {
+    if (value === null || value === undefined || value === '') return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) throw new BadRequestException(`${label} is not a valid date.`);
+    this.assertNotFuture(date, label);
+    return date;
+  }
+
+  /** ISO day, for event sentences. A timestamp in a sentence is noise. */
+  private day(value: Date): string {
+    return value.toISOString().slice(0, 10);
+  }
+
+  private async jobCostTotal(companyId: string, jobId: string): Promise<number> {
+    const costs = await this.prisma.maintenanceJobCost.findMany({
+      where: { companyId, jobId },
+      select: { amount: true, kind: true },
+    });
+    return summariseCosts(costs).total;
+  }
+
   private costPerUnit(total: number, start: number | null, end: number | null): number | null {
     if (start === null || end === null) return null;
     const delta = end - start;
@@ -912,6 +1041,7 @@ export class MaintenanceService {
         },
         select: {
           id: true,
+          jobNumber: true,
           assetId: true,
           type: true,
           status: true,
@@ -919,6 +1049,12 @@ export class MaintenanceService {
           startedAt: true,
           completedAt: true,
           priorJobId: true,
+          quotationAmount: true,
+          quotationAt: true,
+          purchaseOrderNumber: true,
+          purchaseOrderAt: true,
+          invoicedAt: true,
+          paidAt: true,
           priorJob: {
             select: {
               status: true,
@@ -1109,7 +1245,15 @@ export class MaintenanceService {
     companyId: string,
     jobId: string,
     input: {
-      type: 'CREATED' | 'STATUS_CHANGED' | 'METER_RECORDED' | 'COST_ADDED' | 'NOTE_ADDED' | 'COMEBACK_LINKED' | 'WARRANTY_SET';
+      type:
+        | 'CREATED'
+        | 'STATUS_CHANGED'
+        | 'METER_RECORDED'
+        | 'COST_ADDED'
+        | 'NOTE_ADDED'
+        | 'COMEBACK_LINKED'
+        | 'WARRANTY_SET'
+        | 'COMMERCIAL_CHANGED';
       fromStatus?: MaintenanceJobStatus;
       toStatus?: MaintenanceJobStatus;
       actor: MaintenanceActor;

@@ -20,6 +20,7 @@ import {
   SignOffJobDto,
   StartJobDto,
   UpdateAssetDto,
+  UpdateCommercialDto,
 } from './dto/maintenance.dto';
 
 /**
@@ -165,6 +166,23 @@ export class MaintenanceController {
   @ApiOperation({ summary: 'Withdraw a card with a reason — the correction path, since there is no delete' })
   cancelJob(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: CancelJobDto) {
     return this.maintenance.cancelJob(u.companyId, u, id, dto);
+  }
+
+  /**
+   * Money and authority are manager-level.
+   *
+   * Everything else on a card can be recorded by the person standing at the
+   * machine — that is the whole point of raising it there. A quotation, a
+   * purchase order, an invoice and a payment are commercial commitments to a
+   * customer: they decide what is owed and by whom. Recording them is not a
+   * yard task, and the roles reflect the consequence rather than the
+   * convenience.
+   */
+  @Post('jobs/:id/commercial')
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Record the quotation, purchase order, invoice or payment on a job card' })
+  recordCommercial(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: UpdateCommercialDto) {
+    return this.maintenance.recordCommercial(u.companyId, u, id, dto);
   }
 
   @Post('jobs/:id/costs')

@@ -608,6 +608,350 @@ export function costPerOperatingUnit(
   return roundMoney(cost / delta);
 }
 
+// ── The commercial chain ────────────────────────────────────────────────────
+
+/**
+ * A job card describes one repair. It used to start at "reported" and end at
+ * "signed off", which is the part the workshop controls.
+ *
+ * A contractor's job is longer than that on both ends. He quotes; procurement
+ * decides; a purchase order arrives; only then may he start; when the work is
+ * done he invoices; eventually he is paid. Six events, and the card recorded
+ * two of them.
+ *
+ * That gap is not an accounting nicety. It hides the largest single cause of
+ * lost availability on a terminal: a machine that is broken is not repaired
+ * until somebody with budget authority says yes, and that conversation can
+ * take longer than the repair. A fleet report that shows nine days of downtime
+ * when five were the repair is not measuring the workshop — it is measuring
+ * procurement, and blaming the wrong party for it.
+ *
+ * Everything below is derived. No duration is ever typed in.
+ */
+
+export type CommercialStepKey = 'QUOTED' | 'AUTHORISED' | 'WORKED' | 'INVOICED' | 'PAID';
+
+export interface CommercialStep {
+  key: CommercialStepKey;
+  label: string;
+  /** When the step happened. Null when it has not, or when it is unknown. */
+  at: Date | null;
+  done: boolean;
+  /** Hours elapsed since the previous step. Null when either end is unknown. */
+  waitHours: number | null;
+}
+
+export interface CommercialChain {
+  steps: CommercialStep[];
+  /** The next step that has not happened. Null once the job is paid. */
+  nextStep: CommercialStepKey | null;
+  /** Hours the card has been sitting at `nextStep`, from the last known event. */
+  stuckHours: number | null;
+  /** Quotation sent → purchase order received. The unpaid wait. */
+  quoteToOrderHours: number | null;
+  /** Purchase order → work started. */
+  orderToWorkHours: number | null;
+  /** Work started → work completed. */
+  workHours: number | null;
+  /** Fault reported → completed (or to now, while the job is still open). */
+  outageHours: number | null;
+  /** The part of the outage spent waiting for authority rather than repairing. */
+  authorityWaitHours: number | null;
+  /** Authority wait as a share of the whole outage. Null when either is unknown. */
+  authoritySharePercent: number | null;
+  quotedAmount: number | null;
+  /** The sum of the cost rows — what the job actually cost. */
+  actualCost: number | null;
+  /** Quoted minus actual. Positive is under quote; negative is an overrun. */
+  variance: number | null;
+  /** Work began before the order arrived — the risk the contractor described. */
+  startedBeforeOrder: boolean;
+  /** Work is finished and no purchase order was ever recorded. */
+  workedWithoutOrder: boolean;
+  /** Work is finished and the job has not been invoiced. */
+  uninvoiced: boolean;
+  /** Invoice date → payment date, in whole days. */
+  collectionDays: number | null;
+}
+
+export interface CommercialBearingJob {
+  status?: MaintenanceJobStatus;
+  reportedAt?: Date | string | null;
+  startedAt?: Date | string | null;
+  completedAt?: Date | string | null;
+  quotationAmount?: number | null;
+  quotationAt?: Date | string | null;
+  purchaseOrderNumber?: string | null;
+  purchaseOrderAt?: Date | string | null;
+  invoicedAt?: Date | string | null;
+  paidAt?: Date | string | null;
+}
+
+const COMMERCIAL_STEP_LABELS: Record<CommercialStepKey, string> = {
+  QUOTED: 'Quoted',
+  AUTHORISED: 'Authorised',
+  WORKED: 'Worked',
+  INVOICED: 'Invoiced',
+  PAID: 'Paid',
+};
+
+function hoursBetween(from: Date | null, to: Date | null): number | null {
+  if (!from || !to) return null;
+  const hours = (to.getTime() - from.getTime()) / 3600000;
+  // Negative gaps are clock skew or a mis-typed date. They are refused at the
+  // edge; a negative *figure* here would silently flatter an average.
+  return hours >= 0 ? Math.round(hours * 10) / 10 : null;
+}
+
+/**
+ * The chain, and where it is stuck.
+ *
+ * `stuckHours` is the question a contractor actually asks — not "how long did
+ * it take" but "how long have I been waiting *now*". It is measured from the
+ * last step that did happen, so it is answerable while the job is still open.
+ */
+export function commercialChain(
+  job: CommercialBearingJob,
+  actualCost: number | null,
+  now: Date = new Date(),
+): CommercialChain {
+  const reportedAt = asDate(job.reportedAt);
+  const startedAt = asDate(job.startedAt);
+  const completedAt = asDate(job.completedAt);
+  const quotationAt = asDate(job.quotationAt);
+  const purchaseOrderAt = asDate(job.purchaseOrderAt);
+  const invoicedAt = asDate(job.invoicedAt);
+  const paidAt = asDate(job.paidAt);
+
+  const cancellation = job.status === 'CANCELLED';
+
+  // A cancelled card has no live chain: the work did not happen, so nothing
+  // downstream of it can be "late".
+  const rawSteps: Array<Omit<CommercialStep, 'label'>> = [
+    { key: 'QUOTED', at: quotationAt, done: quotationAt !== null, waitHours: hoursBetween(reportedAt, quotationAt) },
+    { key: 'AUTHORISED', at: purchaseOrderAt, done: purchaseOrderAt !== null, waitHours: hoursBetween(quotationAt, purchaseOrderAt) },
+    { key: 'WORKED', at: completedAt, done: completedAt !== null, waitHours: hoursBetween(purchaseOrderAt, startedAt ?? completedAt) },
+    { key: 'INVOICED', at: invoicedAt, done: invoicedAt !== null, waitHours: hoursBetween(completedAt, invoicedAt) },
+    { key: 'PAID', at: paidAt, done: paidAt !== null, waitHours: hoursBetween(invoicedAt, paidAt) },
+  ];
+  const steps: CommercialStep[] = rawSteps.map((step) => ({ ...step, label: COMMERCIAL_STEP_LABELS[step.key] }));
+
+  let nextStep: CommercialStepKey | null = null;
+  let stuckHours: number | null = null;
+
+  // Which steps still matter depends on how far the job has got. A quotation
+  // requested after the work is finished is a formality nobody needs; what is
+  // outstanding on a completed card is the invoice. Reporting "now quote it"
+  // for a finished repair would send the reader to the wrong desk.
+  const finished =
+    completedAt !== null ||
+    (typeof job.status === 'string' && WORKED_JOB_STATUSES.includes(job.status as MaintenanceJobStatus));
+  const relevant = (key: CommercialStepKey): boolean =>
+    finished ? key === 'INVOICED' || key === 'PAID' : true;
+
+  if (!cancellation) {
+    const pending = steps.find((step) => !step.done && relevant(step.key));
+    nextStep = pending?.key ?? null;
+    if (pending) {
+      // From the last thing that did happen. If nothing has happened yet, from
+      // the moment the fault was reported — the clock the customer started.
+      const lastKnown = [...steps]
+        .filter((step) => step.done && step.at)
+        .map((step) => step.at as Date)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      stuckHours = hoursBetween(lastKnown ?? reportedAt, now);
+    } else {
+      stuckHours = 0;
+    }
+  }
+
+  const quoteToOrderHours = hoursBetween(quotationAt, purchaseOrderAt);
+  const orderToWorkHours = hoursBetween(purchaseOrderAt, startedAt);
+  const workHours = hoursBetween(startedAt, completedAt);
+  const outageEnd = completedAt ?? (cancellation ? null : now);
+  const outageHours = hoursBetween(reportedAt, outageEnd);
+
+  const authorityWaitHours = quoteToOrderHours;
+  const authoritySharePercent =
+    authorityWaitHours !== null && outageHours !== null && outageHours > 0
+      ? Math.round((authorityWaitHours / outageHours) * 1000) / 10
+      : null;
+
+  const quotedAmount =
+    typeof job.quotationAmount === 'number' && Number.isFinite(job.quotationAmount) ? job.quotationAmount : null;
+  const cost = typeof actualCost === 'number' && Number.isFinite(actualCost) ? actualCost : null;
+  const variance = quotedAmount !== null && cost !== null ? roundMoney(quotedAmount - cost) : null;
+
+  const worked =
+    completedAt !== null ||
+    (typeof job.status === 'string' && WORKED_JOB_STATUSES.includes(job.status as MaintenanceJobStatus));
+
+  return {
+    steps,
+    nextStep,
+    stuckHours,
+    quoteToOrderHours,
+    orderToWorkHours,
+    workHours,
+    outageHours,
+    authorityWaitHours,
+    authoritySharePercent,
+    quotedAmount,
+    actualCost: cost,
+    variance,
+    // Deliberately two separate facts. "Started before the order that later
+    // arrived" is a risk taken against a known instruction; "worked without any
+    // order at all" is work that may never be paid for. Collapsing them would
+    // hide whichever is worse.
+    startedBeforeOrder:
+      startedAt !== null && purchaseOrderAt !== null && startedAt.getTime() < purchaseOrderAt.getTime(),
+    workedWithoutOrder: worked && purchaseOrderAt === null && !cancellation,
+    uninvoiced: worked && invoicedAt === null && !cancellation,
+    collectionDays:
+      invoicedAt !== null && paidAt !== null
+        ? Math.max(0, Math.floor((paidAt.getTime() - invoicedAt.getTime()) / 86400000))
+        : null,
+  };
+}
+
+// ── Refusing a chain that contradicts itself ────────────────────────────────
+
+export interface CommercialFields {
+  quotationAmount?: number | null;
+  quotationAt?: Date | string | null;
+  purchaseOrderNumber?: string | null;
+  purchaseOrderAt?: Date | string | null;
+  invoicedAt?: Date | string | null;
+  paidAt?: Date | string | null;
+}
+
+export interface CommercialCheck {
+  ok: boolean;
+  reason?: string;
+  value: CommercialFields;
+}
+
+/**
+ * Validate a commercial update against what the card already holds.
+ *
+ * Every refusal here is a contradiction that would otherwise be stored and
+ * then quietly averaged into a report. A purchase order dated before its
+ * quotation is not a typo to shrug at — it makes the wait negative, and a
+ * negative wait makes the fleet look faster than it is.
+ *
+ * Corrections are allowed and are *not* refusals: money gets re-quoted, dates
+ * get fixed. The event trail records the before and after, which is the
+ * defence a refusal can never provide.
+ */
+export function checkCommercialUpdate(
+  current: CommercialFields & { completedAt?: Date | string | null },
+  patch: CommercialFields,
+): CommercialCheck {
+  const merged: CommercialFields = {
+    quotationAmount: patch.quotationAmount !== undefined ? patch.quotationAmount : current.quotationAmount ?? null,
+    quotationAt: patch.quotationAt !== undefined ? patch.quotationAt : current.quotationAt ?? null,
+    purchaseOrderNumber:
+      patch.purchaseOrderNumber !== undefined ? patch.purchaseOrderNumber : current.purchaseOrderNumber ?? null,
+    purchaseOrderAt: patch.purchaseOrderAt !== undefined ? patch.purchaseOrderAt : current.purchaseOrderAt ?? null,
+    invoicedAt: patch.invoicedAt !== undefined ? patch.invoicedAt : current.invoicedAt ?? null,
+    paidAt: patch.paidAt !== undefined ? patch.paidAt : current.paidAt ?? null,
+  };
+
+  if (merged.quotationAmount !== null && merged.quotationAmount !== undefined) {
+    const amount = merged.quotationAmount;
+    if (!Number.isFinite(amount)) {
+      return { ok: false, reason: 'A quotation is an amount of money.', value: merged };
+    }
+    if (amount <= 0) {
+      return {
+        ok: false,
+        reason:
+          'A quotation of zero is not a quotation. Leave the field blank if the job was not quoted — a recorded zero would read as a job done for free.',
+        value: merged,
+      };
+    }
+  }
+
+  const orderNumber = merged.purchaseOrderNumber?.trim() || null;
+  merged.purchaseOrderNumber = orderNumber;
+  if (orderNumber && !merged.purchaseOrderAt) {
+    return {
+      ok: false,
+      reason:
+        'A purchase order needs the date it arrived. A number with no date cannot be told apart from an order that never came, and the wait it ended is the figure this record exists to show.',
+      value: merged,
+    };
+  }
+  if (!orderNumber && merged.purchaseOrderAt) {
+    return {
+      ok: false,
+      reason: 'A purchase order needs its reference. Without it the invoice cannot be matched to the order that authorised the work.',
+      value: merged,
+    };
+  }
+
+  const quoted = asDate(merged.quotationAt);
+  const ordered = asDate(merged.purchaseOrderAt);
+  const invoiced = asDate(merged.invoicedAt);
+  const paid = asDate(merged.paidAt);
+
+  if (quoted && ordered && ordered.getTime() < quoted.getTime()) {
+    return {
+      ok: false,
+      reason:
+        'The purchase order is dated before the quotation it answers. That would make the wait negative, and a negative wait makes the fleet look faster than it is.',
+      value: merged,
+    };
+  }
+  if (ordered && invoiced && invoiced.getTime() < ordered.getTime()) {
+    return {
+      ok: false,
+      reason: 'The invoice is dated before the purchase order. Nothing can be invoiced before it was authorised.',
+      value: merged,
+    };
+  }
+  if (invoiced && paid && paid.getTime() < invoiced.getTime()) {
+    return { ok: false, reason: 'The payment is dated before the invoice it settles.', value: merged };
+  }
+
+  const completedAt = asDate(current.completedAt);
+  if (invoiced && !completedAt) {
+    return {
+      ok: false,
+      reason: 'This job has no completion date. Work that is not finished cannot be invoiced.',
+      value: merged,
+    };
+  }
+  if (invoiced && completedAt && invoiced.getTime() < completedAt.getTime()) {
+    return {
+      ok: false,
+      reason: 'The invoice is dated before the work was completed. The invoice claims work that had not happened yet.',
+      value: merged,
+    };
+  }
+
+  return { ok: true, value: merged };
+}
+
+/**
+ * A wait worth naming: at least a day, and at least as long as the repair it
+ * preceded.
+ *
+ * No absolute threshold would survive contact with a real terminal — five days
+ * is prompt for one job and outrageous for another. "The permission took longer
+ * than the repair" is wrong at any scale, and it needs no invented number to say
+ * so. The day-long floor stops a two-hour quote on a one-hour fix from becoming
+ * a finding.
+ */
+export const COMMERCIAL_THRESHOLDS = {
+  authorityWaitFloorHours: 24,
+} as const;
+
+export function authorityWaitIsFinding(waitHours: number | null, workHours: number | null): boolean {
+  if (waitHours === null || workHours === null) return false;
+  return waitHours >= COMMERCIAL_THRESHOLDS.authorityWaitFloorHours && waitHours >= workHours;
+}
+
 // ── Meter integrity ─────────────────────────────────────────────────────────
 
 export interface MeterCheck {
@@ -791,6 +1135,12 @@ export interface MaintenanceMetrics {
   unitsInTerm: number;
   /** Units whose term is live but whose service condition has been missed. */
   unitsServiceOverdue: number;
+  /** Hours spent waiting for a purchase order, across jobs in the window. */
+  authorityWaitHours: number;
+  /** Cards quoted and still not authorised. The live procurement queue. */
+  awaitingOrder: number;
+  /** Completed work that has not been invoiced — money earned and not claimed. */
+  unbilledExposure: number;
 }
 
 /**
@@ -844,14 +1194,13 @@ export interface VerdictAsset {
   lastServiceAt?: Date | string | null;
 }
 
-export interface VerdictJob {
+export interface VerdictJob extends CommercialBearingJob {
   id: string;
+  jobNumber?: string | null;
   assetId: string;
   type: MaintenanceJobType;
   status: MaintenanceJobStatus;
   reportedAt: Date | string;
-  completedAt?: Date | string | null;
-  startedAt?: Date | string | null;
   priorJobId?: string | null;
   priorJob?: WarrantyBearingJob | null;
   costs?: Array<{ amount: number }>;
@@ -1120,6 +1469,60 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
     });
   }
 
+  // ── The commercial chain, across the fleet ──────────────────────────────
+  //
+  // Two different failures live here and they are not interchangeable. A card
+  // quoted and never authorised is work that has not started — the unit is
+  // standing still for a signature. A card completed and never invoiced is work
+  // that happened and has not been paid for. One costs availability, the other
+  // costs cash, and a report that adds them together reports neither.
+
+  const chains = jobs.map((job) => {
+    const actual = (job.costs ?? []).reduce((sum, cost) => sum + (cost.amount ?? 0), 0);
+    return { job, chain: commercialChain(job, actual, now) };
+  });
+
+  const authorityWaitHours = roundMoney(
+    chains.reduce((sum, row) => sum + (row.chain.authorityWaitHours ?? 0), 0),
+  );
+
+  const awaitingOrder = chains.filter(
+    (row) => row.chain.nextStep === 'AUTHORISED' && row.job.status !== 'CANCELLED',
+  );
+  if (awaitingOrder.length > 0) {
+    const oldest = Math.max(...awaitingOrder.map((row) => row.chain.stuckHours ?? 0));
+    findings.push({
+      code: 'awaiting_order',
+      severity: 'attention',
+      message: `${awaitingOrder.length} ${awaitingOrder.length === 1 ? 'card is' : 'cards are'} quoted and waiting for a purchase order, the oldest for ${Math.round(oldest)} hours. The unit stands still in that time and the repair has not begun.`,
+    });
+  }
+
+  // Per-card, and only when the permission took at least as long as the repair
+  // it preceded. See `authorityWaitIsFinding`.
+  for (const { job, chain } of chains) {
+    if (job.status === 'CANCELLED') continue;
+    if (!authorityWaitIsFinding(chain.authorityWaitHours, chain.workHours)) continue;
+    const name = job.jobNumber ?? 'This card';
+    findings.push({
+      code: `authority_wait:${job.id}`,
+      severity: 'attention',
+      message: `${name} waited ${chain.authorityWaitHours} hours for a purchase order and took ${chain.workHours} hours to repair — the permission took longer than the job.`,
+    });
+  }
+
+  const unbilled = chains.filter((row) => row.chain.uninvoiced);
+  const unbilledExposure = roundMoney(
+    unbilled.reduce((sum, row) => sum + (row.chain.actualCost ?? 0), 0),
+  );
+  if (unbilled.length > 0 && unbilledExposure > 0) {
+    findings.push({
+      code: 'unbilled',
+      severity: 'attention',
+      message: `${money(unbilledExposure, currency)} of completed work across ${unbilled.length} ${unbilled.length === 1 ? 'card has' : 'cards have'} not been invoiced. The work is done; the claim is not.`,
+    });
+  }
+
   const metrics: MaintenanceMetrics = {
     assets: live.length,
     assetsDown: longDown.length,
@@ -1131,6 +1534,9 @@ export function maintenanceVerdict(input: VerdictInput): MaintenanceVerdict {
     warrantyExposure,
     unitsInTerm,
     unitsServiceOverdue: overdue.length,
+    authorityWaitHours,
+    awaitingOrder: awaitingOrder.length,
+    unbilledExposure,
   };
 
   if (live.length === 0) {

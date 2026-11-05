@@ -7038,6 +7038,9 @@ enum MaintenanceEventType {
   NOTE_ADDED
   COMEBACK_LINKED
   WARRANTY_SET
+  /// Money and authority. Appended last because PostgreSQL enums are ordered
+  /// and the drift guard compares them as an ordered list, not a set.
+  COMMERCIAL_CHANGED
 }
 
 model MaintenanceAsset {
@@ -7212,6 +7215,32 @@ model MaintenanceJob {
   invoiceRef   String?
   currency     String @default("ZAR")
 
+  /// ── The commercial chain ────────────────────────────────────────────────
+  ///
+  /// A repair is five days. Getting permission to start it is however long
+  /// procurement takes, and nothing used to record that. A contractor who
+  /// quotes, waits, is authorised, works, invoices and is paid has six events;
+  /// the only two the workshop ever owned were "started" and "finished".
+  ///
+  /// All nullable, because a card can be raised without any of it and a guess
+  /// is worse than a gap. Each date is the moment the step actually happened,
+  /// never the moment it was typed in.
+  ///
+  /// `quotationAmount` is the one amount stored. What was actually spent lives
+  /// in `MaintenanceJobCost` rows, so quoted-versus-actual is derived rather
+  /// than claimed — two stored totals for the same job is how a dispute starts.
+  quotationAmount     Float?
+  /// When the quotation went to the customer. Starts the unpaid clock.
+  quotationAt         DateTime?
+  /// The order reference. Required with `purchaseOrderAt`: a number with no
+  /// date cannot be told apart from an order that never arrived.
+  purchaseOrderNumber String?
+  /// When the authority arrived. This — not the date the fault was reported —
+  /// is when the contractor is allowed to start.
+  purchaseOrderAt     DateTime?
+  invoicedAt          DateTime?
+  paidAt              DateTime?
+
   cancelledReason String? @db.Text
 
   createdAt DateTime @default(now())
@@ -7226,6 +7255,9 @@ model MaintenanceJob {
   @@index([companyId, reportedAt])
   @@index([assetId, reportedAt])
   @@index([companyId, warrantyExpiresAt])
+  /// Aged work in, and money not yet collected — the two queries finance runs.
+  @@index([companyId, invoicedAt])
+  @@index([companyId, purchaseOrderAt])
   @@index([faultCodeId])
   @@index([priorJobId])
   @@map("maintenance_jobs")

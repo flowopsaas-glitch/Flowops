@@ -257,6 +257,53 @@ export class RecordMeterDto {
   recordedByName?: string;
 }
 
+/**
+ * The commercial chain: quoted → authorised → worked → invoiced → paid.
+ *
+ * Every field is optional and every field is nullable, because a contractor
+ * records the step he is standing in. Sending `null` withdraws a value that was
+ * entered against the wrong card — which is a correction, and a different act
+ * from leaving the field out. The service records both in the event trail.
+ *
+ * `quotationAmount` is the only amount. What the job actually cost is the sum
+ * of its cost rows; storing a second total would let the two disagree and the
+ * disagreement would surface in an argument, not in a report.
+ */
+export class UpdateCommercialDto {
+  @ApiPropertyOptional({ example: 42500, description: 'What was quoted, in the job currency.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  quotationAmount?: number | null;
+
+  @ApiPropertyOptional({ description: 'When the quotation went to the customer.' })
+  @IsOptional()
+  @IsISO8601()
+  quotationAt?: string | null;
+
+  @ApiPropertyOptional({ example: 'PO-2026-118423', description: 'The order reference. Required with purchaseOrderAt.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  purchaseOrderNumber?: string | null;
+
+  @ApiPropertyOptional({ description: 'When the authority actually arrived — the moment work was allowed to start.' })
+  @IsOptional()
+  @IsISO8601()
+  purchaseOrderAt?: string | null;
+
+  @ApiPropertyOptional({ description: 'When the invoice was issued. Cannot precede completion.' })
+  @IsOptional()
+  @IsISO8601()
+  invoicedAt?: string | null;
+
+  @ApiPropertyOptional({ description: 'When the invoice was settled.' })
+  @IsOptional()
+  @IsISO8601()
+  paidAt?: string | null;
+}
+
 export class CreateFaultCodeDto {
   @ApiProperty({ example: 'HYD-LEAK', description: 'Short code; unique per company.' })
   @IsString()

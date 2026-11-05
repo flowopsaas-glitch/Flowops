@@ -46,8 +46,12 @@ import {
   formatMeter,
   formatMoney,
   formatPercent,
+  commercialStuckText,
   jobCostTotal,
+  varianceText,
   jobStatusTone,
+  recordCommercial,
+  repairVsWaitText,
   signOffJob,
   startJob,
   warrantyPositionOf,
@@ -57,6 +61,7 @@ import {
   type AssetHistory,
   type AssetStatus,
   type ClassRollup,
+  type CommercialChain,
   type CostKind,
   type MaintenanceAsset,
   type MaintenanceJob,
@@ -417,6 +422,8 @@ export default function MaintenancePage() {
               isLoading={loading}
             />
           </div>
+
+          <CommercialBand metrics={summary?.metrics ?? null} />
 
           <ClassBand rows={summary?.byClass ?? []} loading={loading} />
 
@@ -1139,6 +1146,235 @@ function RaiseJobForm({
   );
 }
 
+// ── The commercial chain ────────────────────────────────────────────────────
+
+/**
+ * Quoted → authorised → worked → invoiced → paid, with the gap between each.
+ *
+ * The gaps are the point. A timeline that shows five dates and no durations
+ * tells you the job was slow but not who slowed it, which is exactly the
+ * argument this strip exists to end.
+ */
+function ChainStrip({ chain }: { chain: CommercialChain | null | undefined }) {
+  if (!chain) {
+    return (
+      <p className="text-sm text-slate-400">
+        No commercial trail recorded. Quoting, the purchase order, the invoice and the payment are not on this card,
+        so nothing here can say whether the delay was the repair or the permission.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <ol className="grid gap-2 sm:grid-cols-5" data-testid="commercial-chain">
+        {chain.steps.map((step) => {
+          const current = chain.nextStep === step.key;
+          return (
+            <li
+              key={step.key}
+              className={`rounded-xl border p-2 ${
+                step.done
+                  ? "border-white/10 bg-white/5"
+                  : current
+                    ? "border-amber-400/40 bg-amber-500/10"
+                    : "border-white/5 bg-transparent"
+              }`}
+            >
+              <div className="text-[11px] uppercase tracking-wide text-slate-400">{step.label}</div>
+              <div className="mt-0.5 text-xs text-slate-200">
+                {step.done ? formatDate(step.at) : current ? "waiting" : "—"}
+              </div>
+              {step.waitHours !== null ? (
+                <div className="mt-1 text-[11px] text-slate-500">{formatWait(step.waitHours)} after previous</div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-wide text-slate-400">Where it stands</div>
+        <p className="mt-1 text-sm text-slate-200" data-testid="commercial-stuck">
+          {commercialStuckText(chain)}
+        </p>
+        <p className="mt-1 text-xs text-slate-400" data-testid="commercial-split">
+          {repairVsWaitText(chain)}
+        </p>
+        {chain.quotedAmount !== null ? (
+          <p className="mt-1 text-xs text-slate-400">
+            Quoted {formatMoney(chain.quotedAmount)} · spent {formatMoney(chain.actualCost)} ·{" "}
+            {varianceText(chain)}
+          </p>
+        ) : null}
+        {chain.startedBeforeOrder ? (
+          <p className="mt-2 text-xs text-amber-300">
+            Work started before the purchase order arrived. That is the contractor carrying the risk, and it is worth
+            knowing before the invoice is queried.
+          </p>
+        ) : null}
+        {chain.workedWithoutOrder ? (
+          <p className="mt-2 text-xs text-amber-300">
+            Work is finished and no purchase order was recorded. There may be nobody who has agreed to pay for it.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function formatWait(hours: number): string {
+  if (hours >= 48) {
+    const days = Math.round((hours / 24) * 10) / 10;
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  }
+  const rounded = Math.round(hours);
+  return `${rounded} ${rounded === 1 ? "hour" : "hours"}`;
+}
+
+/**
+ * Recording a step.
+ *
+ * Prefilled with what the card already holds, and only the fields that changed
+ * are sent. That is what makes clearing a box mean "withdraw this date" rather
+ * than "I did not fill it in this time" — a distinction the API depends on and
+ * a form has to earn.
+ */
+function CommercialPanel({
+  job,
+  busy,
+  error,
+  onCancel,
+  onSubmit,
+}: {
+  job: MaintenanceJob;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSubmit: (payload: Record<string, unknown>) => void;
+}) {
+  const initial = {
+    quotationAmount: job.quotationAmount === null ? "" : String(job.quotationAmount),
+    quotationAt: job.quotationAt ? job.quotationAt.slice(0, 10) : "",
+    purchaseOrderNumber: job.purchaseOrderNumber ?? "",
+    purchaseOrderAt: job.purchaseOrderAt ? job.purchaseOrderAt.slice(0, 10) : "",
+    invoicedAt: job.invoicedAt ? job.invoicedAt.slice(0, 10) : "",
+    paidAt: job.paidAt ? job.paidAt.slice(0, 10) : "",
+  };
+  const [form, setForm] = useState(initial);
+  const set = (key: keyof typeof initial) => (event: { target: { value: string } }) =>
+    setForm((current) => ({ ...current, [key]: event.target.value }));
+
+  const payload: Record<string, unknown> = {};
+  for (const key of Object.keys(initial) as Array<keyof typeof initial>) {
+    if (form[key] === initial[key]) continue;
+    const value = form[key].trim();
+    if (value === "") {
+      payload[key] = null;
+    } else if (key === "quotationAmount") {
+      payload[key] = Number(value);
+    } else {
+      payload[key] = value;
+    }
+  }
+
+  const rows: Array<{ key: keyof typeof initial; label: string; type: string; placeholder?: string }> = [
+    { key: "quotationAmount", label: "Quoted amount", type: "number", placeholder: "42500" },
+    { key: "quotationAt", label: "Quotation sent", type: "date" },
+    { key: "purchaseOrderNumber", label: "Purchase order no.", type: "text", placeholder: "PO-2026-118423" },
+    { key: "purchaseOrderAt", label: "Order arrived", type: "date" },
+    { key: "invoicedAt", label: "Invoiced", type: "date" },
+    { key: "paidAt", label: "Paid", type: "date" },
+  ];
+
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (Object.keys(payload).length === 0) return;
+        onSubmit(payload);
+      }}
+    >
+      <p className="text-xs text-slate-400">
+        Each date is the day it actually happened. The gap between the quotation and the order is the time the unit
+        stood still waiting for permission — and it is the figure that decides whether a slow repair was the workshop
+        or the paperwork.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.key}>
+            <label className={labelClass} htmlFor={`commercial-${row.key}`}>
+              {row.label}
+            </label>
+            <input
+              id={`commercial-${row.key}`}
+              className={inputClass}
+              type={row.type}
+              step={row.type === "number" ? "0.01" : undefined}
+              value={form[row.key]}
+              onChange={set(row.key)}
+              placeholder={row.placeholder}
+            />
+          </div>
+        ))}
+      </div>
+      {error ? <p className="text-sm text-red-300">{error}</p> : null}
+      <div className="flex justify-end gap-2">
+        <button type="button" className={secondaryButton} onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="submit" className={primaryButton} disabled={busy || Object.keys(payload).length === 0}>
+          {busy ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Money and authority, for the whole fleet.
+ *
+ * Deliberately separate from the availability tiles: availability is what the
+ * workshop controls, and the authority wait is what it does not. Adding them
+ * together would produce one number that blames the wrong department.
+ */
+function CommercialBand({ metrics }: { metrics: MaintenanceSummary["metrics"] | null }) {
+  if (!metrics) return null;
+  const tiles = [
+    {
+      label: "Waiting on a PO",
+      value: String(metrics.awaitingOrder),
+      hint: metrics.awaitingOrder === 0 ? "nothing quoted and stuck" : "cards quoted, not authorised",
+    },
+    {
+      label: "Authority wait",
+      value: metrics.authorityWaitHours === 0 ? "0 h" : formatWait(metrics.authorityWaitHours),
+      hint: "quotation to purchase order, in window",
+    },
+    {
+      label: "Not yet invoiced",
+      value: formatMoney(metrics.unbilledExposure),
+      hint: "work completed, claim not raised",
+    },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4" data-testid="commercial-band">
+      <div className="text-xs uppercase tracking-wide text-slate-400">Money & authority</div>
+      <div className="mt-2 grid gap-3 sm:grid-cols-3">
+        {tiles.map((tile) => (
+          <div key={tile.label}>
+            <div className="text-[11px] text-slate-400">{tile.label}</div>
+            <div className="text-lg font-semibold tabular-nums text-white">{tile.value}</div>
+            <div className="text-[11px] text-slate-500">{tile.hint}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Job detail ──────────────────────────────────────────────────────────────
 
 function JobDetail({
@@ -1159,8 +1395,11 @@ function JobDetail({
   setBusy: (value: boolean) => void;
 }) {
   const actions = allowedJobActions(job.status);
-  const [panel, setPanel] = useState<"none" | "complete" | "signoff" | "cancel" | "cost">("none");
+  const [panel, setPanel] = useState<"none" | "complete" | "signoff" | "cancel" | "cost" | "commercial">("none");
   const [events, setEvents] = useState<MaintenanceJobEvent[] | null>(job.events ?? null);
+  // The fetched card carries the derived commercial chain; the row from the
+  // list does not. Kept separate so a failed detail load still renders the card.
+  const [chain, setChain] = useState<CommercialChain | null>(job.commercial ?? null);
   const [workPerformed, setWorkPerformed] = useState("");
   const [warrantyTermDays, setWarrantyTermDays] = useState("");
   const [labourHours, setLabourHours] = useState("");
@@ -1178,7 +1417,9 @@ function JobDetail({
     let cancelled = false;
     fetchJob(job.id)
       .then((detail) => {
-        if (!cancelled) setEvents(detail.events ?? []);
+        if (cancelled) return;
+        setEvents(detail.events ?? []);
+        setChain(detail.commercial ?? null);
       })
       .catch(() => {
         // A failed history load must not hide the card itself.
@@ -1233,6 +1474,18 @@ function JobDetail({
           hint={job.warrantyTermDays ? `${job.warrantyTermDays} days` : "term not recorded"}
         />
         <Metric label="Meter" value={job.meterAtJob === null ? "—" : String(job.meterAtJob)} hint="at the job" />
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs uppercase tracking-wide text-slate-400">Quotation, authority and payment</div>
+          {actions.addCost && job.status !== "CANCELLED" ? (
+            <button type="button" className={secondaryButton} onClick={() => setPanel("commercial")}>
+              Record step
+            </button>
+          ) : null}
+        </div>
+        <ChainStrip chain={chain} />
       </div>
 
       {job.workPerformed ? (
@@ -1428,6 +1681,20 @@ function JobDetail({
             </button>
           </div>
         </form>
+      ) : null}
+
+      {panel === "commercial" ? (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <CommercialPanel
+            job={job}
+            busy={busy}
+            error={error}
+            onCancel={() => setPanel("none")}
+            onSubmit={(payload) =>
+              run(() => recordCommercial(job.id, payload), "Could not record that step.")
+            }
+          />
+        </div>
       ) : null}
 
       {panel === "cost" ? (

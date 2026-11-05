@@ -205,6 +205,14 @@ export interface MaintenanceJob {
   downtimeMinutes: number | null;
   meterAtJob: number | null;
   priorJobId: string | null;
+  quotationAmount: number | null;
+  quotationAt: string | null;
+  purchaseOrderNumber: string | null;
+  purchaseOrderAt: string | null;
+  invoicedAt: string | null;
+  paidAt: string | null;
+  /** Computed by the server on the job detail read. */
+  commercial?: CommercialChain | null;
   warrantyTermDays: number | null;
   warrantyExpiresAt: string | null;
   labourHours: number | null;
@@ -217,6 +225,38 @@ export interface MaintenanceJob {
   costs?: Array<{ amount: number; kind: CostKind }>;
   priorJob?: { id: string; jobNumber: string; completedAt: string | null } | null;
   events?: MaintenanceJobEvent[];
+}
+
+/** The six steps between a fault and the money. */
+export type CommercialStepKey = "QUOTED" | "AUTHORISED" | "WORKED" | "INVOICED" | "PAID";
+
+export interface CommercialStep {
+  key: CommercialStepKey;
+  label: string;
+  /** When it happened; null when it has not, or when it is unknown. */
+  at: string | null;
+  done: boolean;
+  /** Hours since the previous step. Null when either end is unknown. */
+  waitHours: number | null;
+}
+
+export interface CommercialChain {
+  steps: CommercialStep[];
+  nextStep: CommercialStepKey | null;
+  stuckHours: number | null;
+  quoteToOrderHours: number | null;
+  orderToWorkHours: number | null;
+  workHours: number | null;
+  outageHours: number | null;
+  authorityWaitHours: number | null;
+  authoritySharePercent: number | null;
+  quotedAmount: number | null;
+  actualCost: number | null;
+  variance: number | null;
+  startedBeforeOrder: boolean;
+  workedWithoutOrder: boolean;
+  uninvoiced: boolean;
+  collectionDays: number | null;
 }
 
 export interface MaintenanceFinding {
@@ -236,6 +276,9 @@ export interface MaintenanceMetrics {
   warrantyExposure: number;
   unitsInTerm: number;
   unitsServiceOverdue: number;
+  authorityWaitHours: number;
+  awaitingOrder: number;
+  unbilledExposure: number;
 }
 
 export interface MaintenanceSummary {
@@ -399,6 +442,24 @@ export async function addJobCost(id: string, payload: Record<string, unknown>) {
   return unwrap(body);
 }
 
+/**
+ * Record a step in the commercial chain.
+ *
+ * Only the fields the caller passes are sent, so a partial update cannot blank
+ * a date the server already holds. An empty string is staged as `null` by the
+ * form, which is how a wrong entry is withdrawn — a withdrawal, not a zero.
+ */
+export async function recordCommercial(
+  id: string,
+  payload: Record<string, unknown>,
+): Promise<MaintenanceJob & { commercial: CommercialChain }> {
+  const body = await api.post<
+    Envelope<MaintenanceJob & { commercial: CommercialChain }>,
+    Envelope<MaintenanceJob & { commercial: CommercialChain }>
+  >(`/maintenance/jobs/${id}/commercial`, payload);
+  return unwrap(body);
+}
+
 // ── Presentation ────────────────────────────────────────────────────────────
 
 /** Money with thin spaces, matching the rest of the app. Null is an em dash. */
@@ -518,6 +579,71 @@ export function warrantyPositionOf(job: MaintenanceJob, at: Date = new Date()): 
   const expiry = new Date(job.warrantyExpiresAt);
   if (Number.isNaN(expiry.getTime())) return "UNKNOWN";
   return at.getTime() <= expiry.getTime() ? "IN_WARRANTY" : "OUT_OF_WARRANTY";
+}
+
+/**
+ * Where a card is stuck, in a sentence a supervisor can act on.
+ *
+ * "Waiting for a purchase order for 86 hours" is actionable. "Authorised: —" is
+ * a blank cell, and a blank cell is where a five-day repair quietly becomes a
+ * nine-day outage that nobody can explain.
+ */
+export function commercialStuckText(chain: CommercialChain | null | undefined): string {
+  if (!chain) return "Commercial chain not recorded";
+  if (!chain.nextStep) return "Complete — quoted, authorised, invoiced and paid";
+  const hours = chain.stuckHours;
+  const unit = hours === null ? "" : hours >= 48 ? ` for ${Math.floor(hours / 24)} days` : ` for ${Math.round(hours)} hours`;
+  switch (chain.nextStep) {
+    case "QUOTED":
+      return `Not quoted yet${unit}`;
+    case "AUTHORISED":
+      return `Quoted, waiting for a purchase order${unit}`;
+    case "WORKED":
+      return `Authorised, work not yet complete${unit}`;
+    case "INVOICED":
+      return `Work done, not yet invoiced${unit}`;
+    case "PAID":
+      return `Invoiced, not yet paid${unit}`;
+    default:
+      return "—";
+  }
+}
+
+/**
+ * The sentence that makes the whole feature worth having: how much of the
+ * outage was the repair, and how much was waiting for permission.
+ *
+ * Null-safe by construction. If either figure is unknown the comparison is not
+ * made — a percentage invented from a missing date is worse than no percentage.
+ */
+export function repairVsWaitText(chain: CommercialChain | null | undefined): string {
+  if (!chain) return "No commercial trail recorded";
+  const wait = chain.authorityWaitHours;
+  const work = chain.workHours;
+  if (wait === null && work === null) return "Neither the repair nor the wait has been dated yet";
+  if (wait === null) return work === null ? "—" : `${formatHours(work)} of repair`;
+  if (work === null) return `${formatHours(wait)} waiting for a purchase order`;
+  const total = wait + work;
+  if (total <= 0) return "—";
+  const share = Math.round((wait / total) * 100);
+  return `${formatHours(work)} repairing · ${formatHours(wait)} waiting for authority (${share}% of the job)`;
+}
+
+function formatHours(hours: number): string {
+  if (!Number.isFinite(hours)) return "—";
+  if (hours >= 48) {
+    const days = Math.round((hours / 24) * 10) / 10;
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  }
+  return `${Math.round(hours)} ${Math.round(hours) === 1 ? "hour" : "hours"}`;
+}
+
+/** Quoted against actual, with the sign made explicit — an overrun is not "a variance". */
+export function varianceText(chain: CommercialChain | null | undefined, currency = "ZAR"): string {
+  if (!chain || chain.variance === null) return "No quotation recorded";
+  const amount = formatMoney(Math.abs(chain.variance), currency);
+  if (chain.variance === 0) return `On quote at ${amount}`;
+  return chain.variance > 0 ? `${amount} under quote` : `${amount} over quote`;
 }
 
 export function jobStatusTone(

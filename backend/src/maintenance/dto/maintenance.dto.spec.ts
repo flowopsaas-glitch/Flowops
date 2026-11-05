@@ -1,6 +1,13 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CompleteJobDto, CreateAssetDto, CreateJobDto, ListJobsQuery, UpdateAssetDto } from './maintenance.dto';
+import {
+  CompleteJobDto,
+  CreateAssetDto,
+  CreateJobDto,
+  ListJobsQuery,
+  UpdateAssetDto,
+  UpdateCommercialDto,
+} from './maintenance.dto';
 
 /**
  * Query-string and JSON coercion.
@@ -105,5 +112,53 @@ describe('UpdateAssetDto — withdrawing a term', () => {
   it('still refuses a term that cannot be priced', () => {
     const errors = validateSync(instantiate(UpdateAssetDto, { warrantyTermDays: 99999 }));
     expect(errors.some((e) => e.property === 'warrantyTermDays')).toBe(true);
+  });
+});
+
+describe('UpdateCommercialDto — the chain at the edge', () => {
+  it('accepts a quotation on its own — a contractor records the step he is in', () => {
+    const errors = validateSync(instantiate(UpdateCommercialDto, { quotationAmount: 42500 }));
+    expect(errors).toHaveLength(0);
+  });
+
+  it('refuses a quotation of zero before it ever reaches the rules', () => {
+    const errors = validateSync(instantiate(UpdateCommercialDto, { quotationAmount: 0 }));
+    expect(errors.some((e) => e.property === 'quotationAmount')).toBe(true);
+  });
+
+  it('refuses a negative quotation', () => {
+    const errors = validateSync(instantiate(UpdateCommercialDto, { quotationAmount: -100 }));
+    expect(errors.some((e) => e.property === 'quotationAmount')).toBe(true);
+  });
+
+  it('refuses a date that is not a date', () => {
+    const errors = validateSync(instantiate(UpdateCommercialDto, { purchaseOrderAt: 'last Tuesday' }));
+    expect(errors.some((e) => e.property === 'purchaseOrderAt')).toBe(true);
+  });
+
+  it('passes null through untouched — that is how a wrong entry is withdrawn', () => {
+    const dto = instantiate(UpdateCommercialDto, { quotationAmount: null, paidAt: null });
+    expect(validateSync(dto)).toHaveLength(0);
+    expect(dto.quotationAmount).toBeNull();
+    expect(dto.paidAt).toBeNull();
+  });
+
+  it('accepts a full chain in one request', () => {
+    const errors = validateSync(
+      instantiate(UpdateCommercialDto, {
+        quotationAmount: 42500,
+        quotationAt: '2026-11-02T09:00:00.000Z',
+        purchaseOrderNumber: 'PO-2026-118423',
+        purchaseOrderAt: '2026-11-06T09:00:00.000Z',
+        invoicedAt: '2026-11-12T09:00:00.000Z',
+        paidAt: '2026-12-12T09:00:00.000Z',
+      }),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  it('refuses an order reference long enough to be a paragraph', () => {
+    const errors = validateSync(instantiate(UpdateCommercialDto, { purchaseOrderNumber: 'x'.repeat(81) }));
+    expect(errors.some((e) => e.property === 'purchaseOrderNumber')).toBe(true);
   });
 });

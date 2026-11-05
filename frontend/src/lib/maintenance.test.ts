@@ -3,6 +3,9 @@ import {
   ASSET_CLASSES,
   ASSET_CLASS_LABELS,
   allowedJobActions,
+  commercialStuckText,
+  repairVsWaitText,
+  varianceText,
   warrantyStandingText,
   fleetHeadline,
   formatDuration,
@@ -14,6 +17,7 @@ import {
   warrantyPositionOf,
   warrantyText,
   warrantyTone,
+  type CommercialChain,
   type MaintenanceJob,
   type MaintenanceSummary,
 } from "./maintenance";
@@ -46,6 +50,12 @@ function job(overrides: Partial<MaintenanceJob> = {}): MaintenanceJob {
     downtimeMinutes: 180,
     meterAtJob: null,
     priorJobId: null,
+    quotationAmount: null,
+    quotationAt: null,
+    purchaseOrderNumber: null,
+    purchaseOrderAt: null,
+    invoicedAt: null,
+    paidAt: null,
     warrantyTermDays: null,
     warrantyExpiresAt: null,
     labourHours: null,
@@ -191,6 +201,9 @@ describe("the headline", () => {
       warrantyExposure: 0,
       unitsInTerm: 0,
       unitsServiceOverdue: 0,
+      authorityWaitHours: 0,
+      awaitingOrder: 0,
+      unbilledExposure: 0,
     },
     byClass: [],
     assetsByStatus: { IN_SERVICE: 6 },
@@ -254,5 +267,71 @@ describe("a warranty that can lapse without expiring", () => {
     const text = warrantyStandingText(standing({ serviceDueAt: null }));
     expect(text).toMatch(/In warranty to/);
     expect(text).not.toMatch(/service due/);
+  });
+});
+
+/** A chain with only the fields the four sentences read. */
+function chain(overrides: Partial<CommercialChain> = {}): CommercialChain {
+  return {
+    steps: [],
+    nextStep: "AUTHORISED",
+    stuckHours: null,
+    quoteToOrderHours: null,
+    orderToWorkHours: null,
+    workHours: null,
+    outageHours: null,
+    authorityWaitHours: null,
+    authoritySharePercent: null,
+    quotedAmount: null,
+    actualCost: null,
+    variance: null,
+    startedBeforeOrder: false,
+    workedWithoutOrder: false,
+    uninvoiced: false,
+    collectionDays: null,
+    ...overrides,
+  };
+}
+
+describe("commercial chain — the sentences the screen is allowed to print", () => {
+  it("never calls a wait a finding until it has a floor and a ratio", () => {
+    // Not shown here (server-side), but the copy must not invent one either:
+    // an undated wait reads as undated, not as zero.
+    expect(commercialStuckText(chain({ stuckHours: null }))).toBe("Quoted, waiting for a purchase order");
+    expect(commercialStuckText(chain({ stuckHours: 5 }))).toBe("Quoted, waiting for a purchase order for 5 hours");
+    expect(commercialStuckText(chain({ stuckHours: 48 }))).toBe("Quoted, waiting for a purchase order for 2 days");
+    // 47.9 h must not round up into "2 days" and overstate the delay.
+    expect(commercialStuckText(chain({ stuckHours: 47 }))).toBe("Quoted, waiting for a purchase order for 47 hours");
+  });
+
+  it("names the desk that is holding the card, step by step", () => {
+    expect(commercialStuckText(chain({ nextStep: "QUOTED", stuckHours: 6 }))).toMatch(/^Not quoted yet for 6 hours$/);
+    expect(commercialStuckText(chain({ nextStep: "WORKED", stuckHours: 30 }))).toMatch(/^Authorised, work not yet complete for 30 hours$/);
+    expect(commercialStuckText(chain({ nextStep: "INVOICED", stuckHours: 264 }))).toMatch(/^Work done, not yet invoiced for 11 days$/);
+    expect(commercialStuckText(chain({ nextStep: "PAID", stuckHours: 96 }))).toMatch(/^Invoiced, not yet paid for 4 days$/);
+    expect(commercialStuckText(chain({ nextStep: null }))).toMatch(/^Complete/);
+  });
+
+  it("says 'not recorded' rather than drawing a chain out of nothing", () => {
+    expect(commercialStuckText(null)).toBe("Commercial chain not recorded");
+    expect(repairVsWaitText(undefined)).toBe("No commercial trail recorded");
+    expect(varianceText(null)).toBe("No quotation recorded");
+  });
+
+  it("splits the outage into the repair and the permission", () => {
+    const text = repairVsWaitText(chain({ workHours: 72, authorityWaitHours: 96 }));
+    expect(text).toBe("3 days repairing · 4 days waiting for authority (57% of the job)");
+    // One side dated is a fact, not half a comparison.
+    expect(repairVsWaitText(chain({ workHours: 72 }))).toBe("3 days of repair");
+    expect(repairVsWaitText(chain({ authorityWaitHours: 96 }))).toBe("4 days waiting for a purchase order");
+    expect(repairVsWaitText(chain())).toBe("Neither the repair nor the wait has been dated yet");
+  });
+
+  it("states an overrun as an overrun, with the sign spelled out", () => {
+    expect(varianceText(chain({ variance: 4400 }))).toBe("ZAR 4 400.00 under quote");
+    expect(varianceText(chain({ variance: -1250.5 }))).toBe("ZAR 1 250.50 over quote");
+    expect(varianceText(chain({ variance: 0 }))).toBe("On quote at ZAR 0.00");
+    expect(varianceText(chain({ variance: null }))).toBe("No quotation recorded");
+    expect(varianceText(chain({ variance: -99 }), "USD")).toBe("USD 99.00 over quote");
   });
 });

@@ -1017,3 +1017,144 @@ describe('the class rollup', () => {
     expect(summary.byClass[0].units).toBe(1);
   });
 });
+
+/**
+ * Recording the commercial chain.
+ *
+ * The tests below are about the two things that go wrong with money on a job
+ * card: a step stored that contradicts the step before it, and a correction made
+ * quietly. The first is refused at the edge; the second is written into the
+ * event trail, because a re-quoted price and a silently edited one look
+ * identical in the row and completely different in the history.
+ */
+describe('the commercial chain', () => {
+  const quoted = () =>
+    job({
+      id: 'job-1',
+      status: 'IN_PROGRESS',
+      reportedAt: new Date(Date.now() - 6 * 86400000),
+      startedAt: new Date(Date.now() - 6 * 86400000 + 3600000),
+    });
+
+  it('records a quotation and knows the card is now waiting for authority', async () => {
+    const { prisma } = makePrisma({ assets: [asset()], jobs: [quoted()] });
+    const service = new MaintenanceService(prisma);
+
+    const result = await service.recordCommercial(COMPANY, ACTOR, 'job-1', {
+      quotationAmount: 42500,
+      quotationAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+    });
+
+    expect(result.quotationAmount).toBe(42500);
+    expect(result.commercial.nextStep).toBe('AUTHORISED');
+    expect(result.commercial.stuckHours).toBeGreaterThan(0);
+  });
+
+  it('writes the change into the append-only trail, so a correction is visible', async () => {
+    const { prisma, state } = makePrisma({ assets: [asset()], jobs: [quoted()] });
+    const service = new MaintenanceService(prisma);
+
+    await service.recordCommercial(COMPANY, ACTOR, 'job-1', { quotationAmount: 42500 });
+    await service.recordCommercial(COMPANY, ACTOR, 'job-1', { quotationAmount: 39000 });
+
+    const events = state.events.filter((e: any) => e.type === 'COMMERCIAL_CHANGED');
+    expect(events).toHaveLength(2);
+    expect(events[1].description).toContain('39000.00');
+    expect(events[1].actorName).toBe(ACTOR.name);
+  });
+
+  it('refuses an order dated before the quotation, with the reason in words', async () => {
+    const { prisma, state } = makePrisma({ assets: [asset()], jobs: [quoted()] });
+    const service = new MaintenanceService(prisma);
+
+    await expect(
+      service.recordCommercial(COMPANY, ACTOR, 'job-1', {
+        quotationAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+        purchaseOrderNumber: 'PO-1',
+        purchaseOrderAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // A refusal writes nothing at all — no row, and no event claiming one.
+    expect(state.events.filter((e: any) => e.type === 'COMMERCIAL_CHANGED')).toHaveLength(0);
+  });
+
+  it('refuses to invoice work that is not complete', async () => {
+    const { prisma } = makePrisma({ assets: [asset()], jobs: [quoted()] });
+    const service = new MaintenanceService(prisma);
+    await expect(
+      service.recordCommercial(COMPANY, ACTOR, 'job-1', {
+        invoicedAt: new Date(Date.now() - 86400000).toISOString(),
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('cannot be pointed at a card belonging to another tenant', async () => {
+    const { prisma } = makePrisma({ assets: [asset()], jobs: [quoted()] });
+    const service = new MaintenanceService(prisma);
+    await expect(
+      service.recordCommercial(OTHER, ACTOR, 'job-1', { quotationAmount: 1000 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('refuses money on a cancelled card', async () => {
+    const { prisma } = makePrisma({
+      assets: [asset()],
+      jobs: [job({ id: 'job-1', status: 'CANCELLED', cancelledReason: 'Raised against the wrong unit.' })],
+    });
+    const service = new MaintenanceService(prisma);
+    await expect(
+      service.recordCommercial(COMPANY, ACTOR, 'job-1', { quotationAmount: 1000 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('does not blank the rest of the chain when one step is recorded', async () => {
+    // Dates relative to now: a fixed future date is legitimately refused.
+    const fourDaysAgo = new Date(Date.now() - 4 * 86400000);
+    const twoDaysAgo = new Date(Date.now() - 2 * 86400000);
+    const { prisma } = makePrisma({ assets: [asset()], jobs: [quoted()] });
+    const service = new MaintenanceService(prisma);
+
+    await service.recordCommercial(COMPANY, ACTOR, 'job-1', {
+      quotationAmount: 42500,
+      quotationAt: fourDaysAgo.toISOString(),
+    });
+    const after = await service.recordCommercial(COMPANY, ACTOR, 'job-1', {
+      purchaseOrderNumber: 'PO-2026-118423',
+      purchaseOrderAt: twoDaysAgo.toISOString(),
+    });
+
+    expect(after.quotationAmount).toBe(42500);
+    expect(after.commercial.quoteToOrderHours).toBe(48);
+    expect(after.commercial.nextStep).toBe('WORKED');
+  });
+
+  it('reports quoted against actual from the cost rows, not from a second stored total', async () => {
+    const { prisma } = makePrisma({
+      assets: [asset()],
+      jobs: [job({ id: 'job-1', status: 'COMPLETED', completedAt: new Date(Date.now() - 2 * 86400000) })],
+      costs: [
+        { id: 'c1', companyId: COMPANY, jobId: 'job-1', kind: 'PART', amount: 30000 },
+        { id: 'c2', companyId: COMPANY, jobId: 'job-1', kind: 'LABOUR', amount: 8100 },
+      ],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const result = await service.recordCommercial(COMPANY, ACTOR, 'job-1', { quotationAmount: 42500 });
+    expect(result.commercial.actualCost).toBe(38100);
+    expect(result.commercial.variance).toBe(4400);
+  });
+
+  it('exposes the chain on the card, so the page does not have to derive it', async () => {
+    const { prisma } = makePrisma({
+      assets: [asset()],
+      jobs: [job({ id: 'job-1', status: 'COMPLETED', completedAt: new Date(Date.now() - 2 * 86400000) })],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const card = await service.getJob(COMPANY, 'job-1');
+    expect(card.commercial).toBeDefined();
+    expect(card.commercial.uninvoiced).toBe(true);
+    expect(card.commercial.nextStep).toBe('INVOICED');
+  });
+});
