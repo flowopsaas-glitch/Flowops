@@ -688,25 +688,86 @@ export function formatMeter(value: number | null | undefined, type: AssetMeterTy
 }
 
 /**
- * Whether a card can still be worked on.
+ * The roles the maintenance API accepts on manager-level actions.
  *
- * Used to decide which actions the row offers, so the UI does not present a
- * button the API will refuse. The server remains the authority; this is the
- * same state machine, mirrored for presentation.
+ * Mirrors the `@Roles` decorators on `complete`, `sign-off`, `cancel` and
+ * `commercial` in `backend/src/maintenance/maintenance.controller.ts`. It is a
+ * constant rather than an inline condition so that drift is a visible edit, and
+ * `maintenance.roles.test.ts` reads the controller and fails if the two ever
+ * disagree.
+ *
+ * This exists because the page used to decide its buttons from the card's
+ * status alone. A dispatcher opening a card saw "Complete job" and "Record
+ * step", filled in six dates, pressed Save, and was refused — the UI offering
+ * what the API had already decided against. The server is still the authority;
+ * this only stops the screen promising something it cannot deliver.
  */
-export function allowedJobActions(status: MaintenanceJobStatus): {
+export const MAINTENANCE_MANAGER_ROLES = ["ADMIN", "COMPANY_ADMIN", "MANAGER"] as const;
+
+/** Roles the API accepts on `POST /jobs` — raising a card and starting work. */
+export const MAINTENANCE_JOB_WRITER_ROLES = [
+  "ADMIN",
+  "COMPANY_ADMIN",
+  "MANAGER",
+  "DISPATCH",
+  "WAREHOUSE",
+] as const;
+
+/** Roles the API accepts on `POST /assets` — registering a unit. Warehouse may
+ *  work a card but not add a machine to the register. */
+export const MAINTENANCE_ASSET_WRITER_ROLES = [
+  "ADMIN",
+  "COMPANY_ADMIN",
+  "MANAGER",
+  "DISPATCH",
+] as const;
+
+const normRole = (role: string | null | undefined): string => String(role ?? "").trim().toUpperCase();
+
+/** May complete, sign off, cancel, or record the commercial dates. */
+export function isMaintenanceManager(role: string | null | undefined): boolean {
+  return (MAINTENANCE_MANAGER_ROLES as readonly string[]).includes(normRole(role));
+}
+
+/** May raise a card, start work, add a cost or a note. */
+export function isMaintenanceJobWriter(role: string | null | undefined): boolean {
+  return (MAINTENANCE_JOB_WRITER_ROLES as readonly string[]).includes(normRole(role));
+}
+
+/** May register a unit or change the meter. */
+export function isMaintenanceAssetWriter(role: string | null | undefined): boolean {
+  return (MAINTENANCE_ASSET_WRITER_ROLES as readonly string[]).includes(normRole(role));
+}
+
+/**
+ * Whether a card can still be worked on, and by whom.
+ *
+ * Two questions, both required: the card's status, and the reader's role. The
+ * status alone was the original bug — it said what was possible rather than
+ * what *this* reader could do. The server remains the authority; this is the
+ * same two-part test, mirrored for presentation.
+ */
+export function allowedJobActions(
+  status: MaintenanceJobStatus,
+  role: string | null | undefined,
+): {
   start: boolean;
   complete: boolean;
   signOff: boolean;
   cancel: boolean;
   addCost: boolean;
+  recordCommercial: boolean;
 } {
+  const manager = isMaintenanceManager(role);
+  const writer = isMaintenanceJobWriter(role);
+  const open = status !== "CANCELLED";
   return {
-    start: status === "REPORTED",
-    complete: status === "REPORTED" || status === "IN_PROGRESS",
-    signOff: status === "COMPLETED",
-    cancel: status !== "SIGNED_OFF" && status !== "CANCELLED",
-    addCost: status !== "CANCELLED",
+    start: writer && status === "REPORTED",
+    complete: manager && open && (status === "REPORTED" || status === "IN_PROGRESS"),
+    signOff: manager && status === "COMPLETED",
+    cancel: manager && status !== "SIGNED_OFF" && status !== "CANCELLED",
+    addCost: writer && open,
+    recordCommercial: manager && open,
   };
 }
 
