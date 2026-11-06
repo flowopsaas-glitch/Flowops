@@ -215,6 +215,50 @@ Retired units are excluded here for the same reason they are excluded from
 availability: nobody expects them to work, and counting them makes every class
 they appear in look worse.
 
+### 3.11 The repair and the permission are two different waits
+
+A unit is not broken from the moment somebody agrees to fix it. It is broken from
+the moment it failed. Those two clocks can be nine days apart, and the nine days
+are the entire argument: the workshop says the supplier was slow, the supplier
+says the workshop sat on the quote, and the module — until this change — called
+all nine days "downtime" and blamed nobody.
+
+So the card now carries the five dates that actually exist in a service
+transaction: quoted, ordered, worked, invoiced, paid. Each gap is computed, never
+typed: `quoteToOrderHours` (the authority wait), `orderToWorkHours` (mobilising),
+`workHours` (the repair), `invoiceToPaidDays` (the collection). And one gap that
+is not a gap yet — `stuckHours`, measured from the last step that *did* happen,
+so it is answerable while the card is still open.
+
+The two facts that would otherwise be one:
+
+- **Started before the order** — the technician went to the machine before the PO
+  arrived, and the order later arrived. A risk taken against a known delay.
+- **Worked without an order** — the work is finished and no PO is recorded at
+  all. There may be nobody who has agreed to pay for it.
+
+Collapsing these would hide whichever is worse, so they are separate booleans and
+separate sentences.
+
+Refusals, all at the edge, all with a reason a stranger can read: an order dated
+before its quotation (it would make the wait negative); an invoice dated before
+completion (it claims work that had not happened); an invoice dated before the
+order that authorised it; a payment dated before its invoice; a quotation of zero
+(a job done for free is not a quotation); an order reference with no date, or a
+date with no reference.
+
+Corrections are allowed and expected. Re-recording a step writes the before and
+after into the event trail as `COMMERCIAL_CHANGED`, because a date that changed
+silently is exactly the thing the invoice dispute will turn on.
+
+Money never moves work status. A paid card is not a finished repair, and marking
+one so would let an accounts clerk close a machine that is still broken.
+
+The fleet figure (`/summary`, metrics `awaitingOrder`, `authorityWaitHours`,
+`unbilledExposure`) is deliberately separate from availability. Availability is
+what the workshop controls; the authority wait is what it does not. Adding them
+together produces one number that blames the wrong department.
+
 ## 4. What was deliberately not built
 
 | Not built | Why |
@@ -246,6 +290,13 @@ All routes are under `/maintenance` and carry an explicit `@Roles` decision
 | POST | `/jobs/:id/sign-off` | **ADMIN, COMPANY_ADMIN, MANAGER** |
 | POST | `/jobs/:id/cancel` | **ADMIN, COMPANY_ADMIN, MANAGER** |
 | POST | `/jobs/:id/costs`, `/jobs/:id/notes` | + DISPATCH, WAREHOUSE |
+| POST | `/jobs/:id/commercial` | **ADMIN, COMPANY_ADMIN, MANAGER** |
+
+`/jobs/:id/commercial` is manager-level for the same reason sign-off is: it is
+the record that decides who pays, and a figure that anyone can edit is a figure
+that settles nothing. It accepts any subset of the six fields, and an omitted
+field is left alone while an explicit `null` withdraws it — the difference
+between "not this time" and "this was wrong".
 
 Completion and sign-off are manager-level because completion sets the warranty
 clock and sign-off accepts work on the custodian's behalf. Raising a card is
@@ -328,14 +379,42 @@ an alarm what the alarm means.
 
 | Suite | Count | What it pins |
 |---|---|---|
-| `backend/src/maintenance/maintenance.rules.spec.ts` | 69 | four-valued warranty, the supplier term and its condition, downtime nulls, availability basis, comeback rules, meter integrity, class-aware long-down, the per-class rollup |
-| `backend/src/maintenance/maintenance.service.spec.ts` | 41 | tenancy 404s, idempotency, number allocation, auto-linking, `lifetime` refusal, cancel-clears-downtime, planned ≠ lost, unit page maths, a breakdown must not reset the service clock |
-| `backend/src/maintenance/dto/maintenance.dto.spec.ts` | 15 | query-string coercion (`"false"` must not become `true`), required fields, `lifetime` rejected at the edge, term/interval bounds, null is how a wrong term is corrected |
+| `backend/src/maintenance/maintenance.rules.spec.ts` | 97 | four-valued warranty, the supplier term and its condition, downtime nulls, availability basis, comeback rules, meter integrity, class-aware long-down, the per-class rollup, the commercial chain (arithmetic, null-not-zero, stuck-next-step, started-before-order ≠ worked-without-order, variance, cancelled cards) and every refusal in §3.11 |
+| `backend/src/maintenance/maintenance.service.spec.ts` | 50 | tenancy 404s, idempotency, number allocation, auto-linking, `lifetime` refusal, cancel-clears-downtime, planned ≠ lost, unit page maths, a breakdown must not reset the service clock, recording a commercial step and the event it leaves |
+| `backend/src/maintenance/dto/maintenance.dto.spec.ts` | 22 | query-string coercion (`"false"` must not become `true`), required fields, `lifetime` rejected at the edge, term/interval bounds, null is how a wrong term is corrected, the commercial payload bounds and future dates |
 | `backend/src/maintenance/dto/vocabulary-drift.spec.ts` | 7 | the DTO vocabularies equal the Prisma enums, in order — a class the schema accepts must be registerable |
-| `frontend/src/lib/maintenance.test.ts` | 25 | what the screen may claim: no clean 100%, no invented cost/hour, "not recorded" ≠ "expired" ≠ "overdue"; every class has a label |
-| `frontend/src/pages/Maintenance.test.tsx` | 14 | headline, findings, planned ≠ zero downtime, no delete, event trail, capture flow, the class band and its stated limits |
+| `frontend/src/lib/maintenance.test.ts` | 30 | what the screen may claim: no clean 100%, no invented cost/hour, "not recorded" ≠ "expired" ≠ "overdue"; every class has a label; the four commercial sentences, including the 47-hour case that must not round up into "2 days" |
+| `frontend/src/pages/Maintenance.test.tsx` | 19 | headline, findings, planned ≠ zero downtime, no delete, event trail, capture flow, the class band and its stated limits, the chain strip and its stuck sentence, and that an untouched box never blanks a date |
 
-Totals: **132 backend** in the module, **39 frontend**; full suites 2864+ and 1175.
+Totals: **176 backend** in the module, **49 frontend**; full suites 2937 and 1185.
+
+### 7.1 Mutation record for the commercial chain
+
+A test that passes is not evidence a rule is enforced; a test that fails without
+the rule is. Eleven mutations were run against the chain, and the two that
+survived were defects the suite had hidden:
+
+| Mutation | Survived? | Tests that caught it |
+|---|---|---|
+| `authorityWaitIsFinding` loses `wait ≥ workHours` | **survived → fixed** | added "does not call a wait a finding when the workshop was the slower party" |
+| `checkCommercialUpdate` loses the invoice-before-order refusal | **survived → fixed** | added "refuses an invoice raised before the order that authorised the spend" |
+| `stuckHours` measured from the fault instead of the last step | no | 2 |
+| variance sign flipped | no | 2 |
+| cancelled cards left with a live chain | no | 1 |
+| authority share taken over the repair instead of the outage | no | 1 |
+| PO-before-quotation refusal removed | no | 2 |
+| quotation of zero accepted | no | 1 |
+| invoice accepted with no completion date | no | 2 |
+| payment-before-invoice refusal removed | no | 1 |
+| PO reference without a date accepted | no | 1 |
+| `workedWithoutOrder` hard-set to false | no | 1 |
+
+Both survivors were real: the first made every wait over 24 hours a finding, so
+a three-day wait on a five-day repair would have been escalated; the second let a
+late-typed PO sit behind an invoice that had already gone out. Three frontend
+mutations (sending every form field instead of only the changed ones, flipping
+the variance wording, dropping the authority share) were also run — all three
+were caught.
 
 Three notes on the tests themselves, because each one is a defect that a
 green suite would otherwise have hidden:
@@ -361,3 +440,58 @@ green suite would otherwise have hidden:
    holder — the data is already in `/assets/:id/history`.
 4. **Migration of `VehicleService`** onto `assetId`, once a tenant has both
    kinds of record and the mapping is unambiguous.
+
+## 9. Lane 1 — the commercial chain, as built
+
+Shipped as its own change, on top of the module above, because it is a different
+promise: §1–§8 answer *is this machine available*; this answers *who made it
+unavailable, and did anybody agree to pay for it*.
+
+**Schema.** Six nullable columns on `MaintenanceJob` — `quotationAmount`,
+`quotationAt`, `purchaseOrderNumber`, `purchaseOrderAt`, `invoicedAt`, `paidAt` —
+and `COMMERCIAL_CHANGED` appended last in `MaintenanceEventType`. Two indexes,
+`(companyId, invoicedAt)` and `(companyId, purchaseOrderAt)`, because the two
+questions asked of this table are "what is uninvoiced" and "what is waiting on an
+order". No backfill: an invented date would be worse than a blank one, and the
+card says "no commercial trail recorded" until somebody records one.
+
+Only `quotationAmount` is stored as money. The actual cost is the sum of the
+existing cost rows, so the variance is derived on every read and cannot drift
+from the costs beneath it.
+
+**Derived, never typed.** `commercialChain()` returns the five steps with their
+dates and gaps, `nextStep`, `stuckHours`, `quoteToOrderHours`,
+`orderToWorkHours`, `workHours`, `outageHours`, `authorityWaitHours`,
+`authoritySharePercent`, `variance`, `startedBeforeOrder`, `workedWithoutOrder`,
+`uninvoiced`, `collectionDays`. Every one of them returns `null` rather than `0`
+when the dates are not there, because a zero is a claim and a null is an absence.
+
+**Surfaces.**
+
+- The job card's chain strip: five dated steps, each gap in hours or days, then
+  one sentence naming the desk the card is sitting on (*"Work done, not yet
+  invoiced for 11 days"*) and one splitting the job (*"3 days repairing · 4 days
+  waiting for authority (57% of the job)"*). The strip is on the detail fetch,
+  not the list row, so the fleet table stays one query.
+- Recording a step is one form, prefilled. Only changed fields are sent, so
+  clearing a box means "withdraw this date" and leaving it alone means "not this
+  time".
+- The fleet band: cards waiting on a PO, the average authority wait in the
+  window, and the rand value of completed-but-uninvoiced work. Separate from the
+  availability tiles on purpose (§3.11).
+- The verdict gains `awaiting_order`, `authority_wait:<id>` (only when
+  `authorityWaitIsFinding` is true: ≥ 24 h **and** ≥ the repair hours) and
+  `unbilled`, and the metrics `authorityWaitHours`, `awaitingOrder`,
+  `unbilledExposure`.
+
+**Deliberately not built, still.**
+
+| Not built | Why |
+|---|---|
+| Approval workflow inside FlowOps | The PO is issued by the contract holder. Mirroring their approval chain would mean owning a decision we do not own. |
+| Invoice PDF generation / matching | The reference is recorded and shown; producing or matching the document is finance's system, and a wrong match moves money silently. |
+| Supplier scorecards | Tempting and premature. The data is now there; a scorecard before a full quarter of clean dates would grade contractors on our own capture gaps. |
+
+**What would make this world class rather than merely complete:** the same six
+fields captured from a phone at the machine, in under twenty seconds, by someone
+who is not sitting at a desk (§8.2 covers the capture side).

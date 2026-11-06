@@ -1,12 +1,16 @@
 import {
+  COMMERCIAL_THRESHOLDS,
   DEFAULT_EXPECTED_REPAIR_HOURS,
   MAX_WARRANTY_TERM_DAYS,
   WARRANTY_SERVICE_GRACE_DAYS,
   assetWarrantyStanding,
+  authorityWaitIsFinding,
   availability,
   canTransition,
+  checkCommercialUpdate,
   checkMeterReading,
   checkWarrantyTerm,
+  commercialChain,
   costAmount,
   costPerOperatingUnit,
   downtimeMinutes,
@@ -851,5 +855,374 @@ describe('a warranty that lapses without expiring', () => {
     });
     expect(verdict.findings.find((f) => f.code === 'warranty_condition')).toBeUndefined();
     expect(verdict.metrics.unitsServiceOverdue).toBe(0);
+  });
+});
+
+/**
+ * A repair is five days. Getting permission to start it is however long
+ * procurement takes.
+ *
+ * This is the whole reason the chain exists. A card that records "nine days
+ * down" without recording that five were the job and four were a purchase order
+ * is not measuring the workshop at all — it is measuring somebody else and
+ * sending the bill to the wrong department.
+ */
+describe('the commercial chain', () => {
+  const now = at('2026-11-20T00:00:00Z');
+
+  const full = {
+    status: 'SIGNED_OFF' as const,
+    reportedAt: at('2026-11-01T08:00:00Z'),
+    quotationAt: at('2026-11-01T10:00:00Z'),
+    purchaseOrderNumber: 'PO-2026-118423',
+    purchaseOrderAt: at('2026-11-06T10:00:00Z'),
+    startedAt: at('2026-11-06T12:00:00Z'),
+    completedAt: at('2026-11-11T12:00:00Z'),
+    invoicedAt: at('2026-11-12T09:00:00Z'),
+    paidAt: at('2026-12-12T09:00:00Z'),
+  };
+
+  it('separates the wait for authority from the repair itself', () => {
+    const chain = commercialChain(full, 38100, now);
+    // Five days quoted-and-waiting, five days working.
+    expect(chain.quoteToOrderHours).toBe(120);
+    expect(chain.workHours).toBe(120);
+    // Reported 01 Nov 08:00, completed 11 Nov 12:00 — ten days and four hours.
+    expect(chain.outageHours).toBe(244);
+    expect(chain.authoritySharePercent).toBe(49.2);
+    expect(chain.collectionDays).toBe(30);
+    expect(chain.nextStep).toBeNull();
+  });
+
+  it('is the finding Robert described: the permission took longer than the job', () => {
+    // Quoted Monday, order Friday, three days to repair.
+    const slowProcurement = {
+      status: 'SIGNED_OFF' as const,
+      reportedAt: at('2026-11-02T08:00:00Z'),
+      quotationAt: at('2026-11-02T09:00:00Z'),
+      purchaseOrderAt: at('2026-11-06T09:00:00Z'),
+      startedAt: at('2026-11-06T10:00:00Z'),
+      completedAt: at('2026-11-09T10:00:00Z'),
+    };
+    const chain = commercialChain(slowProcurement, null, now);
+    expect(chain.authorityWaitHours).toBe(96);
+    expect(chain.workHours).toBe(72);
+    expect(authorityWaitIsFinding(chain.authorityWaitHours, chain.workHours)).toBe(true);
+  });
+
+  it('does not cry wolf over a quick quote on a quick fix', () => {
+    // Two hours waiting, one hour working: a ratio of 2 and still nothing.
+    expect(authorityWaitIsFinding(2, 1)).toBe(false);
+    expect(authorityWaitIsFinding(23, 1)).toBe(false);
+    expect(authorityWaitIsFinding(24, 1)).toBe(true);
+    expect(COMMERCIAL_THRESHOLDS.authorityWaitFloorHours).toBe(24);
+  });
+
+  it('does not call a wait a finding when the workshop was the slower party', () => {
+    // Both men were in the way, and the toolbox was in it longer. The wait is
+    // still worth recording; it is not the thing to escalate.
+    expect(authorityWaitIsFinding(24, 24)).toBe(true); // dead heat: the wait still carries half
+    expect(authorityWaitIsFinding(26, 40)).toBe(false);
+    expect(authorityWaitIsFinding(30, 72)).toBe(false);
+  });
+
+  it('says nothing about a wait it cannot date — null is not zero', () => {
+    const noQuote = { ...full, quotationAt: null };
+    const chain = commercialChain(noQuote, null, now);
+    expect(chain.quoteToOrderHours).toBeNull();
+    expect(chain.authoritySharePercent).toBeNull();
+    expect(authorityWaitIsFinding(chain.authorityWaitHours, chain.workHours)).toBe(false);
+  });
+
+  it('knows where the card is stuck right now, not just how long it took', () => {
+    const quotedOnly = {
+      status: 'REPORTED' as const,
+      reportedAt: at('2026-11-16T08:00:00Z'),
+      quotationAt: at('2026-11-16T10:00:00Z'),
+    };
+    const chain = commercialChain(quotedOnly, null, now);
+    expect(chain.nextStep).toBe('AUTHORISED');
+    expect(chain.stuckHours).toBe(86); // since the quotation, not since the fault
+    expect(chain.steps.find((step) => step.key === 'AUTHORISED')?.done).toBe(false);
+  });
+
+  it('counts a card with nothing recorded as stuck since the fault was reported', () => {
+    const bare = { status: 'REPORTED' as const, reportedAt: at('2026-11-19T00:00:00Z') };
+    expect(commercialChain(bare, null, now).stuckHours).toBe(24);
+  });
+
+  it('flags work started before the order that later arrived', () => {
+    const early = { ...full, startedAt: at('2026-11-04T08:00:00Z') };
+    expect(commercialChain(early, null, now).startedBeforeOrder).toBe(true);
+    expect(commercialChain(full, null, now).startedBeforeOrder).toBe(false);
+  });
+
+  it('separates "no order at all" from "started early" — they cost different things', () => {
+    const noOrder = { ...full, purchaseOrderNumber: null, purchaseOrderAt: null };
+    const chain = commercialChain(noOrder, 12000, now);
+    expect(chain.workedWithoutOrder).toBe(true);
+    // Nothing to have started early against.
+    expect(chain.startedBeforeOrder).toBe(false);
+  });
+
+  it('says which completed work has not been invoiced', () => {
+    const done = { ...full, invoicedAt: null, paidAt: null };
+    const chain = commercialChain(done, 12000, now);
+    expect(chain.uninvoiced).toBe(true);
+    expect(chain.nextStep).toBe('INVOICED');
+  });
+
+  it('states quoted against actual, so a margin is a fact rather than a feeling', () => {
+    const quoted = { ...full, quotationAmount: 42500 };
+    const chain = commercialChain(quoted, 38100, now);
+    expect(chain.variance).toBe(4400);
+    expect(chain.quotedAmount).toBe(42500);
+    expect(chain.actualCost).toBe(38100);
+    // An overrun is negative, not hidden.
+    expect(commercialChain(quoted, 45000, now).variance).toBe(-2500);
+    // No quote, no variance — never a variance against zero.
+    expect(commercialChain({ ...full, quotationAmount: null }, 45000, now).variance).toBeNull();
+  });
+
+  it('gives a cancelled card no live chain to be late on', () => {
+    const cancelled = { ...full, status: 'CANCELLED' as const };
+    const chain = commercialChain(cancelled, null, now);
+    expect(chain.nextStep).toBeNull();
+    expect(chain.stuckHours).toBeNull();
+    expect(chain.uninvoiced).toBe(false);
+  });
+
+  it('labels every step, because an unlabelled timeline is a puzzle', () => {
+    const chain = commercialChain(full, null, now);
+    expect(chain.steps.map((step) => step.label)).toEqual(['Quoted', 'Authorised', 'Worked', 'Invoiced', 'Paid']);
+    for (const step of chain.steps) expect(step.label.trim()).toBeTruthy();
+  });
+});
+
+describe('refusing a chain that contradicts itself', () => {
+  const completed = {
+    completedAt: at('2026-11-11T12:00:00Z'),
+  };
+
+  it('refuses an order number with no date — it cannot end a wait it never dated', () => {
+    const check = checkCommercialUpdate(completed, { purchaseOrderNumber: 'PO-1' });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/date it arrived/i);
+  });
+
+  it('refuses a date with no order number — the invoice cannot be matched to it', () => {
+    const check = checkCommercialUpdate(completed, { purchaseOrderAt: at('2026-11-06T00:00:00Z') });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/reference/i);
+  });
+
+  it('refuses an order dated before the quotation it answers', () => {
+    const check = checkCommercialUpdate(completed, {
+      quotationAt: at('2026-11-06T00:00:00Z'),
+      purchaseOrderNumber: 'PO-1',
+      purchaseOrderAt: at('2026-11-02T00:00:00Z'),
+    });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/negative wait/i);
+  });
+
+  it('refuses an invoice for work that has not been completed', () => {
+    const check = checkCommercialUpdate({ completedAt: null }, { invoicedAt: at('2026-11-12T00:00:00Z') });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/not finished|no completion/i);
+  });
+
+  it('refuses an invoice dated before the work it claims', () => {
+    const check = checkCommercialUpdate(completed, { invoicedAt: at('2026-11-01T00:00:00Z') });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/had not happened/i);
+  });
+
+  it('refuses an invoice raised before the order that authorised the spend', () => {
+    // The order arrived on the Wednesday but was only typed in on the Friday,
+    // after the invoice had gone out. Every other date on the card is honest,
+    // so the order-vs-invoice comparison is the only thing that can catch it.
+    const lateTyped = {
+      completedAt: at('2026-11-10T12:00:00Z'),
+      quotationAt: at('2026-11-02T09:00:00Z'),
+      purchaseOrderNumber: 'PO-2026-118423',
+      purchaseOrderAt: at('2026-11-14T08:00:00Z'),
+      invoicedAt: at('2026-11-12T09:00:00Z'),
+    };
+    const check = checkCommercialUpdate(lateTyped, { paidAt: at('2026-11-20T09:00:00Z') });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/before the purchase order/i);
+  });
+
+  it('refuses a payment dated before its invoice', () => {
+    const withInvoice = { completedAt: at('2026-11-11T12:00:00Z'), invoicedAt: at('2026-11-12T09:00:00Z') };
+    const check = checkCommercialUpdate(withInvoice, { paidAt: at('2026-11-01T00:00:00Z') });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/before the invoice/i);
+  });
+
+  it('refuses a quotation of zero — that is a job done for free, not a quote', () => {
+    const check = checkCommercialUpdate(completed, { quotationAmount: 0 });
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/not a quotation/i);
+  });
+
+  it('accepts the ordinary case and hands back the merged values', () => {
+    const check = checkCommercialUpdate(completed, {
+      quotationAmount: 42500,
+      quotationAt: at('2026-11-02T09:00:00Z'),
+      purchaseOrderNumber: '  PO-2026-118423 ',
+      purchaseOrderAt: at('2026-11-06T09:00:00Z'),
+    });
+    expect(check.ok).toBe(true);
+    expect(check.value.purchaseOrderNumber).toBe('PO-2026-118423');
+    expect(check.value.quotationAmount).toBe(42500);
+  });
+
+  it('lets a wrong term be withdrawn — null is a correction, not a zero', () => {
+    const check = checkCommercialUpdate(
+      { ...completed, quotationAmount: 42500, purchaseOrderNumber: 'PO-1', purchaseOrderAt: at('2026-11-06T00:00:00Z') },
+      { quotationAmount: null },
+    );
+    expect(check.ok).toBe(true);
+    expect(check.value.quotationAmount).toBeNull();
+  });
+
+  it('leaves untouched fields alone rather than blanking them', () => {
+    const check = checkCommercialUpdate(
+      {
+        completedAt: at('2026-11-11T12:00:00Z'),
+        quotationAmount: 42500,
+        purchaseOrderNumber: 'PO-1',
+        purchaseOrderAt: at('2026-11-06T00:00:00Z'),
+      },
+      { invoicedAt: at('2026-11-12T00:00:00Z') },
+    );
+    expect(check.ok).toBe(true);
+    expect(check.value.quotationAmount).toBe(42500);
+    expect(check.value.purchaseOrderNumber).toBe('PO-1');
+  });
+});
+
+/**
+ * The fleet view of the commercial chain.
+ *
+ * Two failures that look similar in a dashboard and are nothing alike: a card
+ * quoted and never authorised (the unit is standing still for a signature) and
+ * a card finished and never invoiced (the work is done and the claim is not).
+ * One costs availability, the other costs cash.
+ */
+describe('the commercial chain in the verdict', () => {
+  const now = at('2026-11-20T00:00:00Z');
+  const unit = { id: 'a1', assetCode: 'RTG-07', name: null, status: 'IN_SERVICE' as const, assetClass: 'RTG' as const };
+
+  it('names the cards waiting for authority and how long they have waited', () => {
+    const verdict = maintenanceVerdict({
+      assets: [unit],
+      jobs: [
+        {
+          id: 'j1',
+          jobNumber: 'MJ-2026-0007',
+          assetId: 'a1',
+          type: 'BREAKDOWN',
+          status: 'REPORTED',
+          reportedAt: at('2026-11-16T08:00:00Z'),
+          quotationAt: at('2026-11-16T10:00:00Z'),
+        },
+      ],
+      windowDays: 30,
+      now,
+    });
+
+    expect(verdict.metrics.awaitingOrder).toBe(1);
+    const finding = verdict.findings.find((f) => f.code === 'awaiting_order');
+    expect(finding?.message).toContain('86 hours');
+    expect(finding?.message).toMatch(/repair has not begun/i);
+  });
+
+  it('reports the hours the fleet spent waiting rather than repairing', () => {
+    const verdict = maintenanceVerdict({
+      assets: [unit],
+      jobs: [
+        {
+          id: 'j1',
+          jobNumber: 'MJ-2026-0001',
+          assetId: 'a1',
+          type: 'BREAKDOWN',
+          status: 'SIGNED_OFF',
+          reportedAt: at('2026-11-02T08:00:00Z'),
+          quotationAt: at('2026-11-02T09:00:00Z'),
+          purchaseOrderNumber: 'PO-1',
+          purchaseOrderAt: at('2026-11-06T09:00:00Z'),
+          startedAt: at('2026-11-06T10:00:00Z'),
+          completedAt: at('2026-11-09T10:00:00Z'),
+        },
+      ],
+      windowDays: 30,
+      now,
+    });
+
+    expect(verdict.metrics.authorityWaitHours).toBe(96);
+    const finding = verdict.findings.find((f) => f.code === 'authority_wait:j1');
+    expect(finding?.message).toContain('MJ-2026-0001');
+    expect(finding?.message).toMatch(/96 hours for a purchase order/i);
+    expect(finding?.message).toMatch(/72 hours to repair/i);
+    expect(finding?.message).toMatch(/permission took longer than the job/i);
+  });
+
+  it('puts a figure on finished work that was never invoiced', () => {
+    const verdict = maintenanceVerdict({
+      assets: [unit],
+      jobs: [
+        {
+          id: 'j1',
+          jobNumber: 'MJ-2026-0002',
+          assetId: 'a1',
+          type: 'BREAKDOWN',
+          status: 'SIGNED_OFF',
+          reportedAt: at('2026-11-02T08:00:00Z'),
+          startedAt: at('2026-11-02T09:00:00Z'),
+          completedAt: at('2026-11-03T09:00:00Z'),
+          costs: [{ amount: 12000 }],
+        },
+      ],
+      windowDays: 30,
+      now,
+    });
+
+    expect(verdict.metrics.unbilledExposure).toBe(12000);
+    const finding = verdict.findings.find((f) => f.code === 'unbilled');
+    expect(finding?.message).toContain('12 000.00');
+    expect(finding?.message).toMatch(/claim is not/i);
+  });
+
+  it('says nothing at all when the chain is complete and paid', () => {
+    const verdict = maintenanceVerdict({
+      assets: [unit],
+      jobs: [
+        {
+          id: 'j1',
+          jobNumber: 'MJ-2026-0003',
+          assetId: 'a1',
+          type: 'BREAKDOWN',
+          status: 'SIGNED_OFF',
+          reportedAt: at('2026-11-02T08:00:00Z'),
+          quotationAt: at('2026-11-02T09:00:00Z'),
+          purchaseOrderNumber: 'PO-1',
+          purchaseOrderAt: at('2026-11-03T09:00:00Z'),
+          startedAt: at('2026-11-03T10:00:00Z'),
+          completedAt: at('2026-11-05T10:00:00Z'),
+          invoicedAt: at('2026-11-05T12:00:00Z'),
+          paidAt: at('2026-11-18T12:00:00Z'),
+          costs: [{ amount: 5000 }],
+        },
+      ],
+      windowDays: 30,
+      now,
+    });
+
+    expect(verdict.metrics.awaitingOrder).toBe(0);
+    expect(verdict.metrics.unbilledExposure).toBe(0);
+    expect(verdict.findings.filter((f) => f.code === 'unbilled' || f.code === 'awaiting_order')).toEqual([]);
   });
 });

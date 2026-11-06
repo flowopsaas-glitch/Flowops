@@ -22,7 +22,7 @@ vi.mock("../api/client", () => {
     if (url.startsWith("/maintenance/jobs/")) {
       const id = url.split("/").pop();
       const found = h.jobs.find((row) => row.id === id);
-      return { ...(found ?? h.jobs[0]), events: h.events };
+      return { ...(found ?? h.jobs[0]), events: h.events, commercial: found?.commercial ?? null };
     }
     return [];
   });
@@ -51,6 +51,9 @@ function summary(overrides: Row = {}): Row {
       warrantyExposure: 0,
       unitsInTerm: 0,
       unitsServiceOverdue: 0,
+      authorityWaitHours: 0,
+      awaitingOrder: 0,
+      unbilledExposure: 0,
     },
     byClass: [
       {
@@ -421,5 +424,115 @@ describe("Maintenance — capture happens where the machine is", () => {
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByText("Complete job"));
     expect(within(dialog).getByText(/“Lifetime” is refused/)).toBeTruthy();
+  });
+});
+
+/** A chain shaped like the one Robert described: a fast repair, a slow yes. */
+function chain(overrides: Row = {}): Row {
+  return {
+    steps: [
+      { key: "QUOTED", label: "Quoted", at: "2026-11-02T09:00:00.000Z", done: true, waitHours: 1 },
+      { key: "AUTHORISED", label: "Authorised", at: "2026-11-06T09:00:00.000Z", done: true, waitHours: 96 },
+      { key: "WORKED", label: "Worked", at: "2026-11-09T09:00:00.000Z", done: true, waitHours: 1 },
+      { key: "INVOICED", label: "Invoiced", at: null, done: false, waitHours: null },
+      { key: "PAID", label: "Paid", at: null, done: false, waitHours: null },
+    ],
+    nextStep: "INVOICED",
+    stuckHours: 264,
+    quoteToOrderHours: 96,
+    orderToWorkHours: 1,
+    workHours: 72,
+    outageHours: 169,
+    authorityWaitHours: 96,
+    authoritySharePercent: 56.8,
+    quotedAmount: 42500,
+    actualCost: 38100,
+    variance: 4400,
+    startedBeforeOrder: false,
+    workedWithoutOrder: false,
+    uninvoiced: true,
+    collectionDays: null,
+    ...overrides,
+  };
+}
+
+describe("Maintenance — the repair and the permission are different waits", () => {
+  it("shows the chain on the card, with who is holding it up", async () => {
+    h.jobs = [job({ status: "COMPLETED", commercial: chain() })];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    const strip = await screen.findByTestId("commercial-chain");
+    expect(within(strip).getByText("Quoted")).toBeTruthy();
+    expect(within(strip).getByText("4 days after previous")).toBeTruthy();
+
+    // The sentence that ends the argument about who was slow.
+    expect(await screen.findByTestId("commercial-stuck")).toHaveTextContent(
+      /Work done, not yet invoiced for 11 days/,
+    );
+    expect(screen.getByTestId("commercial-split")).toHaveTextContent(/3 days repairing/);
+    expect(screen.getByTestId("commercial-split")).toHaveTextContent(/4 days waiting for authority/);
+  });
+
+  it("says plainly when nothing commercial has been recorded, rather than showing zeros", async () => {
+    h.jobs = [job({ status: "COMPLETED", commercial: null })];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    expect(await screen.findByText(/No commercial trail recorded/i)).toBeTruthy();
+  });
+
+  it("warns when work started before the order that authorised it", async () => {
+    h.jobs = [job({ status: "COMPLETED", commercial: chain({ startedBeforeOrder: true }) })];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    expect(await screen.findByText(/started before the purchase order arrived/i)).toBeTruthy();
+  });
+
+  it("records only what changed, so an untouched box cannot blank a date", async () => {
+    h.jobs = [
+      job({
+        status: "COMPLETED",
+        quotationAmount: 42500,
+        quotationAt: "2026-11-02T09:00:00.000Z",
+        commercial: chain(),
+      }),
+    ];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Record step" }));
+
+    const invoiced = document.getElementById("commercial-invoicedAt") as HTMLInputElement;
+    await userEvent.type(invoiced, "2026-11-12");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const call = h.posted.find((entry) => entry.url.endsWith("/commercial"));
+    expect(call).toBeTruthy();
+    expect(call?.body).toEqual({ invoicedAt: "2026-11-12" });
+  });
+});
+
+describe("Maintenance — money and authority on the fleet page", () => {
+  it("shows what is waiting for a purchase order and what has not been invoiced", async () => {
+    h.summary = summary({
+      metrics: {
+        ...(summary().metrics as Row),
+        awaitingOrder: 3,
+        authorityWaitHours: 96,
+        unbilledExposure: 12000,
+      },
+    });
+    render(<MaintenancePage />);
+
+    const band = await screen.findByTestId("commercial-band");
+    expect(within(band).getByText("Waiting on a PO")).toBeTruthy();
+    expect(within(band).getByText("3")).toBeTruthy();
+    expect(within(band).getByText("4 days")).toBeTruthy();
+    expect(within(band).getByText(/12 000\.00/)).toBeTruthy();
   });
 });
