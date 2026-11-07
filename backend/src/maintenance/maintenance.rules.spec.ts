@@ -1016,14 +1016,26 @@ describe('refusing a chain that contradicts itself', () => {
     expect(check.reason).toMatch(/reference/i);
   });
 
-  it('refuses an order dated before the quotation it answers', () => {
+  it('accepts an order dated before the quotation, and leaves that wait blank', () => {
+    // The order was signed before the quote was written up — the client's
+    // admin lag, not a lie. Refusing it stopped the card being filled in at
+    // all, and hoursBetween already declines to report such a gap as a
+    // negative number, so the averages were never at risk.
     const check = checkCommercialUpdate(completed, {
       quotationAt: at('2026-11-06T00:00:00Z'),
       purchaseOrderNumber: 'PO-1',
       purchaseOrderAt: at('2026-11-02T00:00:00Z'),
     });
-    expect(check.ok).toBe(false);
-    expect(check.reason).toMatch(/negative wait/i);
+    expect(check.ok).toBe(true);
+    expect(check.anomalies.join(' ')).toMatch(/before the quotation/i);
+    // The protection the refusal used to claim it was providing: the wait is
+    // blank rather than negative.
+    const chain = commercialChain(
+      { ...check.value, status: 'REPORTED' as const, reportedAt: at('2026-11-01T00:00:00Z') },
+      null,
+      at('2026-11-20T00:00:00Z'),
+    );
+    expect(chain.steps.find((s) => s.key === 'AUTHORISED')?.waitHours ?? null).toBeNull();
   });
 
   it('refuses an invoice for work that has not been completed', () => {
@@ -1032,16 +1044,18 @@ describe('refusing a chain that contradicts itself', () => {
     expect(check.reason).toMatch(/not finished|no completion/i);
   });
 
-  it('refuses an invoice dated before the work it claims', () => {
+  it('accepts an invoice dated before the completion, and says so', () => {
     const check = checkCommercialUpdate(completed, { invoicedAt: at('2026-11-01T00:00:00Z') });
-    expect(check.ok).toBe(false);
-    expect(check.reason).toMatch(/had not happened/i);
+    expect(check.ok).toBe(true);
+    expect(check.anomalies.join(' ')).toMatch(/before the work was completed/i);
   });
 
-  it('refuses an invoice raised before the order that authorised the spend', () => {
+  it('accepts an invoice raised before the order that authorised the spend', () => {
     // The order arrived on the Wednesday but was only typed in on the Friday,
-    // after the invoice had gone out. Every other date on the card is honest,
-    // so the order-vs-invoice comparison is the only thing that can catch it.
+    // after the invoice had gone out. This is the ordinary shape of a client's
+    // paperwork — a tax invoice dated the 24th against an order the client
+    // dated the 29th is five days of their admin, not a falsehood. The card
+    // has to accept it; what it must not do is report a negative wait.
     const lateTyped = {
       completedAt: at('2026-11-10T12:00:00Z'),
       quotationAt: at('2026-11-02T09:00:00Z'),
@@ -1050,15 +1064,15 @@ describe('refusing a chain that contradicts itself', () => {
       invoicedAt: at('2026-11-12T09:00:00Z'),
     };
     const check = checkCommercialUpdate(lateTyped, { paidAt: at('2026-11-20T09:00:00Z') });
-    expect(check.ok).toBe(false);
-    expect(check.reason).toMatch(/before the purchase order/i);
+    expect(check.ok).toBe(true);
+    expect(check.anomalies.join(' ')).toMatch(/before the purchase order/i);
   });
 
-  it('refuses a payment dated before its invoice', () => {
+  it('accepts a payment dated before its invoice, and says so', () => {
     const withInvoice = { completedAt: at('2026-11-11T12:00:00Z'), invoicedAt: at('2026-11-12T09:00:00Z') };
     const check = checkCommercialUpdate(withInvoice, { paidAt: at('2026-11-01T00:00:00Z') });
-    expect(check.ok).toBe(false);
-    expect(check.reason).toMatch(/before the invoice/i);
+    expect(check.ok).toBe(true);
+    expect(check.anomalies.join(' ')).toMatch(/before the invoice/i);
   });
 
   it('refuses a quotation of zero — that is a job done for free, not a quote', () => {

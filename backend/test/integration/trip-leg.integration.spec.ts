@@ -58,7 +58,7 @@ describe('TripLegService (PostgreSQL)', () => {
     });
   }
 
-  async function seedGeofence(companyId: string, postId: string, overrides: Partial<{ code: string; lat: number; lng: number; radiusM: number; side: string }> = {}) {
+  async function seedGeofence(companyId: string, postId: string, overrides: Partial<{ code: string; name: string; lat: number; lng: number; radiusM: number; side: string }> = {}) {
     return prisma.borderGeofence.create({
       data: {
         companyId,
@@ -194,7 +194,6 @@ describe('TripLegService (PostgreSQL)', () => {
     await seedSession(companyId, post.id, geofence.id, {
       driverId: driver.id,
       state: 'GAPPED',
-      gapLargestSeconds: undefined as any,
     });
 
     const session = await prisma.borderDwellSession.findFirst({

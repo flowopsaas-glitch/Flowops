@@ -724,6 +724,48 @@ describe('reading a card', () => {
     const read = await service.getJob(COMPANY, 'job-1');
     expect(read.warranty.position).toBe('UNKNOWN');
   });
+
+  it('derives out-of-order dates from what is stored, so a refetch still explains them', async () => {
+    // Invoiced on the 22nd against an order the client dated the 24th.
+    const { prisma } = makePrisma({
+      assets: [asset()],
+      jobs: [
+        job({
+          status: 'COMPLETED',
+          completedAt: new Date('2026-10-01T12:00:00.000Z'),
+          quotationAt: new Date('2026-09-20T09:00:00.000Z'),
+          purchaseOrderNumber: 'PO-2026-118423',
+          purchaseOrderAt: new Date('2026-09-24T09:00:00.000Z'),
+          invoicedAt: new Date('2026-09-22T09:00:00.000Z'),
+        }),
+      ],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const read = await service.getJob(COMPANY, 'job-1');
+    expect(read.anomalies.join(' ')).toMatch(/before the purchase order/i);
+  });
+
+  it('reports no anomalies when every date arrived in order', async () => {
+    const { prisma } = makePrisma({
+      assets: [asset()],
+      jobs: [
+        job({
+          status: 'COMPLETED',
+          // Quoted, ordered, completed, then invoiced — nothing out of order.
+          completedAt: new Date('2026-09-24T12:00:00.000Z'),
+          quotationAt: new Date('2026-09-20T09:00:00.000Z'),
+          purchaseOrderNumber: 'PO-2026-118423',
+          purchaseOrderAt: new Date('2026-09-22T09:00:00.000Z'),
+          invoicedAt: new Date('2026-09-26T09:00:00.000Z'),
+        }),
+      ],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const read = await service.getJob(COMPANY, 'job-1');
+    expect(read.anomalies).toEqual([]);
+  });
 });
 
 describe('the unit page', () => {
@@ -1063,20 +1105,27 @@ describe('the commercial chain', () => {
     expect(events[1].actorName).toBe(ACTOR.name);
   });
 
-  it('refuses an order dated before the quotation, with the reason in words', async () => {
+  it('accepts an order dated before the quotation, and records the anomaly', async () => {
     const { prisma, state } = makePrisma({ assets: [asset()], jobs: [quoted()] });
     const service = new MaintenanceService(prisma);
 
-    await expect(
-      service.recordCommercial(COMPANY, ACTOR, 'job-1', {
-        quotationAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-        purchaseOrderNumber: 'PO-1',
-        purchaseOrderAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    // Not refused. The wait this would corrupt is already refused by
+    // hoursBetween, so refusing here only stopped real paperwork being
+    // entered — an order signed before the quote was written up is the
+    // client's admin lag, not a lie.
+    const result = await service.recordCommercial(COMPANY, ACTOR, 'job-1', {
+      quotationAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      purchaseOrderNumber: 'PO-1',
+      purchaseOrderAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+    });
 
-    // A refusal writes nothing at all — no row, and no event claiming one.
-    expect(state.events.filter((e: any) => e.type === 'COMMERCIAL_CHANGED')).toHaveLength(0);
+    expect(result.anomalies.join(' ')).toMatch(/before the quotation/i);
+
+    // The reason the wait is blank travels with the change, so the record
+    // explains itself later rather than just looking wrong.
+    const events = state.events.filter((e: any) => e.type === 'COMMERCIAL_CHANGED');
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify(events[0].metadata ?? {})).toMatch(/before the quotation/i);
   });
 
   it('refuses to invoice work that is not complete', async () => {

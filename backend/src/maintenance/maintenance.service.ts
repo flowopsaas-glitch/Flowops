@@ -11,6 +11,7 @@ import {
   assetWarrantyStanding,
   availability,
   checkCommercialUpdate,
+  commercialAnomalies,
   commercialChain,
   canTransition,
   checkMeterReading,
@@ -494,6 +495,12 @@ export class MaintenanceService {
       },
       /** Quoted, authorised, worked, invoiced, paid — and where it is stuck. */
       commercial: commercialChain(job, costSummary.total, new Date()),
+      /**
+       * Dates that arrived out of order. Derived from what is stored rather
+       * than remembered from the save, so the card still explains a blank
+       * wait weeks later, on a refetch, to someone who was not there.
+       */
+      anomalies: commercialAnomalies(job),
       costSummary,
       isComeback: Boolean(job.priorJobId),
       downtimeHours: toHours(downtimeMinutes(job, new Date())),
@@ -744,10 +751,14 @@ export class MaintenanceService {
         quotationAmount: updated.quotationAmount,
         purchaseOrderNumber: updated.purchaseOrderNumber,
         quoteToOrderHours: chain.quoteToOrderHours,
+        // Out-of-order dates are accepted, so the record has to carry them.
+        // A refusal would have left nothing behind; this leaves the reason
+        // the waits are blank sitting next to the blank waits.
+        anomalies: check.anomalies,
       },
     });
 
-    return { ...updated, commercial: chain };
+    return { ...updated, commercial: chain, anomalies: check.anomalies };
   }
 
   async addCost(companyId: string, actor: MaintenanceActor, jobId: string, dto: AddJobCostDto) {
