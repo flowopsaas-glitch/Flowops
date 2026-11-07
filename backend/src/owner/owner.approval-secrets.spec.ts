@@ -46,7 +46,7 @@ describe('OwnerService approval requests keep the stored password hash server-si
     ]);
     const svc = makeService({ approvalRequest: { findMany } }, { record: jest.fn() });
 
-    const rows = (await svc.getApprovalRequests()) as Record<string, unknown>[];
+    const rows = (await svc.getApprovalRequests()) as unknown as Record<string, unknown>[];
 
     expect(rows).toHaveLength(2);
     for (const row of rows) {
@@ -76,7 +76,7 @@ describe('OwnerService approval requests keep the stored password hash server-si
     const record = jest.fn().mockResolvedValue(undefined);
     const svc = makeService({ approvalRequest: { update } }, { record });
 
-    const res = (await svc.rejectRequest('req-1', 'not a fit', OWNER_ACTOR)) as Record<string, unknown>;
+    const res = (await svc.rejectRequest('req-1', 'not a fit', OWNER_ACTOR)) as unknown as Record<string, unknown>;
 
     expect(res).not.toHaveProperty('passwordHash');
     expect(res.id).toBe('req-1');

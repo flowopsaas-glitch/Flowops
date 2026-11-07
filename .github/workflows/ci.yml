@@ -458,6 +458,21 @@ jobs:
           path: backend/backend-build.log
           retention-days: 7
 
+      - name: Test type-check (blocking)
+        # The hole this closes: `npm run build` uses tsconfig.build.json,
+        # which excludes `test` and `**/*spec.ts`, and the integration suite
+        # runs ts-jest with isolatedModules: true (transpile-only). A spec can
+        # therefore reference a property that does not exist on its type,
+        # compile it away to `undefined`, and pass while asserting nothing.
+        # Nothing else type-checks spec files, so this is the only gate.
+        #
+        # It shipped advisory because it cannot be verified locally: the
+        # offline Prisma stub (npm run prisma:stub) does not export
+        # PrismaClient, Prisma or the enums, so against the stub it reports
+        # ~2k false errors. CI runs `prisma generate` and gets the real
+        # client, against which this was observed clean — so it now blocks.
+        run: npm run typecheck:tests
+
       - name: Unit tests
         # Keep failure annotations, and publish observed counts on successful
         # runs as well (job logs are not reachable from every environment).
