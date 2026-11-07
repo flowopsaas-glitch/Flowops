@@ -476,3 +476,39 @@ describe('DriverSafetyController — identity comes from the session', () => {
     expect(svc.checkPosition).toHaveBeenCalledWith('d-1', COMPANY, -26.0, 28.0, undefined);
   });
 });
+
+describe('DriverSafetyService.acknowledgeAlert — tenant scoping', () => {
+  let service: DriverSafetyService;
+  let prisma: any;
+
+  const COMPANY = 'C-ACME';
+  const OTHER_COMPANY = 'C-EVIL';
+
+  beforeEach(() => {
+    prisma = {
+      safetyAlert: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'alert-1', acknowledged: true }),
+      },
+    };
+    service = new DriverSafetyService(prisma as any, {} as any, {} as any, {} as any);
+  });
+
+  it("acknowledges only within the caller's company", async () => {
+    await service.acknowledgeAlert('alert-1', COMPANY);
+
+    expect(prisma.safetyAlert.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'alert-1', companyId: COMPANY } }),
+    );
+  });
+
+  it('refuses to acknowledge an alert owned by another tenant', async () => {
+    prisma.safetyAlert.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.acknowledgeAlert('alert-1', OTHER_COMPANY)).rejects.toThrow(
+      NotFoundException,
+    );
+    // The point of the fix: no read-back of a row the caller does not own.
+    expect(prisma.safetyAlert.findFirst).not.toHaveBeenCalled();
+  });
+});
