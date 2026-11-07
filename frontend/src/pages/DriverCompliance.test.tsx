@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AuthContextValue } from '../contexts/AuthContext';
 
@@ -145,7 +145,13 @@ describe('Driver compliance — allowed is not the same as compliant', () => {
   it('states the policy, including that the requirement switch is not available here', async () => {
     renderPage();
     const note = await screen.findByTestId('policy-note');
-    expect(note.textContent).toMatch(/not required/i);
+    // The note mounts immediately and reads "Reading the compliance policy…"
+    // until the summary arrives. findByTestId only waits for the element to
+    // exist, so on a slower runner this assertion ran against the loading
+    // text and failed here while passing locally. Wait for the content.
+    await waitFor(() => {
+      expect(note.textContent).toMatch(/not required/i);
+    });
     expect(note.textContent).toMatch(/would block/i);
     expect(note.textContent).toMatch(/warning window/i);
   });
