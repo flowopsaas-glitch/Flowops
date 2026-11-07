@@ -11,6 +11,7 @@ import {
   assetWarrantyStanding,
   availability,
   checkCommercialUpdate,
+  commercialAnomalies,
   commercialChain,
   canTransition,
   checkMeterReading,
@@ -494,6 +495,12 @@ export class MaintenanceService {
       },
       /** Quoted, authorised, worked, invoiced, paid — and where it is stuck. */
       commercial: commercialChain(job, costSummary.total, new Date()),
+      /**
+       * Dates that arrived out of order. Derived from what is stored rather
+       * than remembered from the save, so the card still explains a blank
+       * wait weeks later, on a refetch, to someone who was not there.
+       */
+      anomalies: commercialAnomalies(job),
       costSummary,
       isComeback: Boolean(job.priorJobId),
       downtimeHours: toHours(downtimeMinutes(job, new Date())),

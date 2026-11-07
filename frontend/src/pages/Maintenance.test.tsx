@@ -523,6 +523,38 @@ describe("Maintenance — the repair and the permission are different waits", ()
     expect(call).toBeTruthy();
     expect(call?.body).toEqual({ invoicedAt: "2026-11-12" });
   });
+
+  it("explains a blank wait instead of leaving it looking like missing data", async () => {
+    // The dates arrived out of order and were accepted. The wait between them
+    // is blank by design, and a blank box with no reason beside it reads as
+    // data that was never entered.
+    h.jobs = [
+      job({
+        status: "COMPLETED",
+        commercial: chain(),
+        anomalies: [
+          "The invoice is dated before the purchase order. Usually the client dating their order late; recorded as given.",
+        ],
+      }),
+    ];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    const notes = await screen.findByTestId("commercial-anomalies");
+    expect(notes).toHaveTextContent(/before the purchase order/i);
+    expect(notes).toHaveTextContent(/recorded as given/i);
+  });
+
+  it("says nothing extra when every date arrived in order", async () => {
+    h.jobs = [job({ status: "COMPLETED", commercial: chain(), anomalies: [] })];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    expect(await screen.findByTestId("commercial-chain")).toBeTruthy();
+    expect(screen.queryByTestId("commercial-anomalies")).toBeNull();
+  });
 });
 
 describe("Maintenance — money and authority on the fleet page", () => {

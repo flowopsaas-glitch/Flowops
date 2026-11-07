@@ -1164,7 +1164,13 @@ function RaiseJobForm({
  * tells you the job was slow but not who slowed it, which is exactly the
  * argument this strip exists to end.
  */
-function ChainStrip({ chain }: { chain: CommercialChain | null | undefined }) {
+function ChainStrip({
+  chain,
+  anomalies,
+}: {
+  chain: CommercialChain | null | undefined;
+  anomalies?: string[] | null;
+}) {
   if (!chain) {
     return (
       <p className="text-sm text-slate-400">
@@ -1201,6 +1207,24 @@ function ChainStrip({ chain }: { chain: CommercialChain | null | undefined }) {
           );
         })}
       </ol>
+
+      {anomalies && anomalies.length > 0 ? (
+        <div
+          className="rounded-xl border border-amber-400/30 bg-amber-500/5 p-3"
+          data-testid="commercial-anomalies"
+        >
+          <div className="text-xs uppercase tracking-wide text-amber-300">
+            Dates recorded as given
+          </div>
+          <ul className="mt-1 space-y-1">
+            {anomalies.map((note) => (
+              <li key={note} className="text-xs text-amber-100/90">
+                {note}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
         <div className="text-xs uppercase tracking-wide text-slate-400">Where it stands</div>
@@ -1413,6 +1437,7 @@ function JobDetail({
   // The fetched card carries the derived commercial chain; the row from the
   // list does not. Kept separate so a failed detail load still renders the card.
   const [chain, setChain] = useState<CommercialChain | null>(job.commercial ?? null);
+  const [anomalies, setAnomalies] = useState<string[]>(job.anomalies ?? []);
   const [workPerformed, setWorkPerformed] = useState("");
   const [warrantyTermDays, setWarrantyTermDays] = useState("");
   const [labourHours, setLabourHours] = useState("");
@@ -1433,6 +1458,7 @@ function JobDetail({
         if (cancelled) return;
         setEvents(detail.events ?? []);
         setChain(detail.commercial ?? null);
+        setAnomalies(detail.anomalies ?? []);
       })
       .catch(() => {
         // A failed history load must not hide the card itself.
@@ -1498,7 +1524,7 @@ function JobDetail({
             </button>
           ) : null}
         </div>
-        <ChainStrip chain={chain} />
+        <ChainStrip chain={chain} anomalies={anomalies} />
       </div>
 
       {job.workPerformed ? (
@@ -1711,7 +1737,11 @@ function JobDetail({
             error={error}
             onCancel={() => setPanel("none")}
             onSubmit={(payload) =>
-              run(() => recordCommercial(job.id, payload), "Could not record that step.")
+              run(async () => {
+                const saved = await recordCommercial(job.id, payload);
+                setChain(saved.commercial ?? null);
+                setAnomalies(saved.anomalies ?? []);
+              }, "Could not record that step.")
             }
           />
         </div>

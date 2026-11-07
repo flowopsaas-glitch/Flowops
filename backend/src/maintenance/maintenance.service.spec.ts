@@ -724,6 +724,48 @@ describe('reading a card', () => {
     const read = await service.getJob(COMPANY, 'job-1');
     expect(read.warranty.position).toBe('UNKNOWN');
   });
+
+  it('derives out-of-order dates from what is stored, so a refetch still explains them', async () => {
+    // Invoiced on the 22nd against an order the client dated the 24th.
+    const { prisma } = makePrisma({
+      assets: [asset()],
+      jobs: [
+        job({
+          status: 'COMPLETED',
+          completedAt: new Date('2026-10-01T12:00:00.000Z'),
+          quotationAt: new Date('2026-09-20T09:00:00.000Z'),
+          purchaseOrderNumber: 'PO-2026-118423',
+          purchaseOrderAt: new Date('2026-09-24T09:00:00.000Z'),
+          invoicedAt: new Date('2026-09-22T09:00:00.000Z'),
+        }),
+      ],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const read = await service.getJob(COMPANY, 'job-1');
+    expect(read.anomalies.join(' ')).toMatch(/before the purchase order/i);
+  });
+
+  it('reports no anomalies when every date arrived in order', async () => {
+    const { prisma } = makePrisma({
+      assets: [asset()],
+      jobs: [
+        job({
+          status: 'COMPLETED',
+          // Quoted, ordered, completed, then invoiced — nothing out of order.
+          completedAt: new Date('2026-09-24T12:00:00.000Z'),
+          quotationAt: new Date('2026-09-20T09:00:00.000Z'),
+          purchaseOrderNumber: 'PO-2026-118423',
+          purchaseOrderAt: new Date('2026-09-22T09:00:00.000Z'),
+          invoicedAt: new Date('2026-09-26T09:00:00.000Z'),
+        }),
+      ],
+    });
+    const service = new MaintenanceService(prisma);
+
+    const read = await service.getJob(COMPANY, 'job-1');
+    expect(read.anomalies).toEqual([]);
+  });
 });
 
 describe('the unit page', () => {

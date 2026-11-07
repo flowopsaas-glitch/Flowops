@@ -213,6 +213,11 @@ export interface MaintenanceJob {
   paidAt: string | null;
   /** Computed by the server on the job detail read. */
   commercial?: CommercialChain | null;
+  /**
+   * Dates that arrived out of order. The server derives these from what is
+   * stored, so they survive a refetch and explain a wait the card left blank.
+   */
+  anomalies?: string[] | null;
   warrantyTermDays: number | null;
   warrantyExpiresAt: string | null;
   labourHours: number | null;

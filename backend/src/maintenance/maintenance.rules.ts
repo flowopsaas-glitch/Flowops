@@ -857,6 +857,48 @@ export interface CommercialCheck {
  * get fixed. The event trail records the before and after, which is the
  * defence a refusal can never provide.
  */
+/**
+ * The dates that arrived out of order, derived from what is stored.
+ *
+ * Pure on purpose, so the same list is produced at write time (to go into the
+ * event trail) and at read time (to go on the screen). A blank wait with no
+ * reason beside it is indistinguishable from missing data — the reader is left
+ * to guess whether the card is empty or wrong. Returning the same words in both
+ * places means the card explains itself long after the save that caused it.
+ */
+export function commercialAnomalies(
+  job: CommercialFields & { completedAt?: Date | string | null },
+): string[] {
+  const quoted = asDate(job.quotationAt);
+  const ordered = asDate(job.purchaseOrderAt);
+  const invoiced = asDate(job.invoicedAt);
+  const paid = asDate(job.paidAt);
+  const completedAt = asDate(job.completedAt);
+  const anomalies: string[] = [];
+
+  if (quoted && ordered && ordered.getTime() < quoted.getTime()) {
+    anomalies.push(
+      'The purchase order is dated before the quotation it answers. Recorded as given — the quotation-to-order wait is left blank rather than negative.',
+    );
+  }
+  if (ordered && invoiced && invoiced.getTime() < ordered.getTime()) {
+    anomalies.push(
+      'The invoice is dated before the purchase order. Usually the client dating their order late; recorded as given.',
+    );
+  }
+  if (invoiced && paid && paid.getTime() < invoiced.getTime()) {
+    anomalies.push(
+      'The payment is dated before the invoice it settles. Recorded as given — the invoice-to-payment wait is left blank.',
+    );
+  }
+  if (invoiced && completedAt && invoiced.getTime() < completedAt.getTime()) {
+    anomalies.push(
+      'The invoice is dated before the work was completed. Recorded as given — worth checking the completion date.',
+    );
+  }
+  return anomalies;
+}
+
 export function checkCommercialUpdate(
   current: CommercialFields & { completedAt?: Date | string | null },
   patch: CommercialFields,
@@ -909,28 +951,10 @@ export function checkCommercialUpdate(
     };
   }
 
-  const quoted = asDate(merged.quotationAt);
-  const ordered = asDate(merged.purchaseOrderAt);
   const invoiced = asDate(merged.invoicedAt);
-  const paid = asDate(merged.paidAt);
-
-  if (quoted && ordered && ordered.getTime() < quoted.getTime()) {
-    anomalies.push(
-      'The purchase order is dated before the quotation it answers. Recorded as given — the quotation-to-order wait is left blank rather than negative.',
-    );
-  }
-  if (ordered && invoiced && invoiced.getTime() < ordered.getTime()) {
-    anomalies.push(
-      'The invoice is dated before the purchase order. Usually the client dating their order late; recorded as given.',
-    );
-  }
-  if (invoiced && paid && paid.getTime() < invoiced.getTime()) {
-    anomalies.push(
-      'The payment is dated before the invoice it settles. Recorded as given — the invoice-to-payment wait is left blank.',
-    );
-  }
-
   const completedAt = asDate(current.completedAt);
+  anomalies.push(...commercialAnomalies({ ...merged, completedAt }));
+
   if (invoiced && !completedAt) {
     return {
       ok: false,
@@ -939,12 +963,6 @@ export function checkCommercialUpdate(
       anomalies: [],
     };
   }
-  if (invoiced && completedAt && invoiced.getTime() < completedAt.getTime()) {
-    anomalies.push(
-      'The invoice is dated before the work was completed. Recorded as given — worth checking the completion date.',
-    );
-  }
-
   return { ok: true, value: merged, anomalies };
 }
 
