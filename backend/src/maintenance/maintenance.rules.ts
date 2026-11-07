@@ -829,15 +829,29 @@ export interface CommercialCheck {
   ok: boolean;
   reason?: string;
   value: CommercialFields;
+  /**
+   * Dates that arrived out of order. These are accepted, not refused.
+   * `hoursBetween` already answers `null` for a negative gap, so the report
+   * was never at risk; refusing only stopped real paperwork being entered.
+   * A tax invoice raised on the 24th against a purchase order the client
+   * dated on the 29th is five days of their admin lag, not a lie. The waits
+   * stay blank and the anomaly travels with the record so it stays visible.
+   */
+  anomalies: string[];
 }
 
 /**
  * Validate a commercial update against what the card already holds.
  *
- * Every refusal here is a contradiction that would otherwise be stored and
- * then quietly averaged into a report. A purchase order dated before its
- * quotation is not a typo to shrug at — it makes the wait negative, and a
- * negative wait makes the fleet look faster than it is.
+ * Refusals here are reserved for contradictions that would otherwise be
+ * stored and then quietly averaged into a report — an amount that is not
+ * money, a purchase order with a number but no date.
+ *
+ * Out-of-order *dates* are deliberately NOT refused. `hoursBetween` already
+ * answers `null` for a negative gap, so the averages were never at risk;
+ * refusing only stopped real paperwork being entered. Backdated client
+ * orders are ordinary, and a contractor catching up five years of history
+ * cannot reorder the paper he was handed. Those come back as `anomalies`.
  *
  * Corrections are allowed and are *not* refusals: money gets re-quoted, dates
  * get fixed. The event trail records the before and after, which is the
@@ -857,10 +871,12 @@ export function checkCommercialUpdate(
     paidAt: patch.paidAt !== undefined ? patch.paidAt : current.paidAt ?? null,
   };
 
+  const anomalies: string[] = [];
+
   if (merged.quotationAmount !== null && merged.quotationAmount !== undefined) {
     const amount = merged.quotationAmount;
     if (!Number.isFinite(amount)) {
-      return { ok: false, reason: 'A quotation is an amount of money.', value: merged };
+      return { ok: false, reason: 'A quotation is an amount of money.', value: merged, anomalies: [] };
     }
     if (amount <= 0) {
       return {
@@ -868,6 +884,7 @@ export function checkCommercialUpdate(
         reason:
           'A quotation of zero is not a quotation. Leave the field blank if the job was not quoted — a recorded zero would read as a job done for free.',
         value: merged,
+        anomalies: [],
       };
     }
   }
@@ -880,6 +897,7 @@ export function checkCommercialUpdate(
       reason:
         'A purchase order needs the date it arrived. A number with no date cannot be told apart from an order that never came, and the wait it ended is the figure this record exists to show.',
       value: merged,
+      anomalies: [],
     };
   }
   if (!orderNumber && merged.purchaseOrderAt) {
@@ -887,6 +905,7 @@ export function checkCommercialUpdate(
       ok: false,
       reason: 'A purchase order needs its reference. Without it the invoice cannot be matched to the order that authorised the work.',
       value: merged,
+      anomalies: [],
     };
   }
 
@@ -896,22 +915,19 @@ export function checkCommercialUpdate(
   const paid = asDate(merged.paidAt);
 
   if (quoted && ordered && ordered.getTime() < quoted.getTime()) {
-    return {
-      ok: false,
-      reason:
-        'The purchase order is dated before the quotation it answers. That would make the wait negative, and a negative wait makes the fleet look faster than it is.',
-      value: merged,
-    };
+    anomalies.push(
+      'The purchase order is dated before the quotation it answers. Recorded as given — the quotation-to-order wait is left blank rather than negative.',
+    );
   }
   if (ordered && invoiced && invoiced.getTime() < ordered.getTime()) {
-    return {
-      ok: false,
-      reason: 'The invoice is dated before the purchase order. Nothing can be invoiced before it was authorised.',
-      value: merged,
-    };
+    anomalies.push(
+      'The invoice is dated before the purchase order. Usually the client dating their order late; recorded as given.',
+    );
   }
   if (invoiced && paid && paid.getTime() < invoiced.getTime()) {
-    return { ok: false, reason: 'The payment is dated before the invoice it settles.', value: merged };
+    anomalies.push(
+      'The payment is dated before the invoice it settles. Recorded as given — the invoice-to-payment wait is left blank.',
+    );
   }
 
   const completedAt = asDate(current.completedAt);
@@ -920,17 +936,16 @@ export function checkCommercialUpdate(
       ok: false,
       reason: 'This job has no completion date. Work that is not finished cannot be invoiced.',
       value: merged,
+      anomalies: [],
     };
   }
   if (invoiced && completedAt && invoiced.getTime() < completedAt.getTime()) {
-    return {
-      ok: false,
-      reason: 'The invoice is dated before the work was completed. The invoice claims work that had not happened yet.',
-      value: merged,
-    };
+    anomalies.push(
+      'The invoice is dated before the work was completed. Recorded as given — worth checking the completion date.',
+    );
   }
 
-  return { ok: true, value: merged };
+  return { ok: true, value: merged, anomalies };
 }
 
 /**

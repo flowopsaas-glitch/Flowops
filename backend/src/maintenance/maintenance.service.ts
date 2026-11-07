@@ -744,10 +744,14 @@ export class MaintenanceService {
         quotationAmount: updated.quotationAmount,
         purchaseOrderNumber: updated.purchaseOrderNumber,
         quoteToOrderHours: chain.quoteToOrderHours,
+        // Out-of-order dates are accepted, so the record has to carry them.
+        // A refusal would have left nothing behind; this leaves the reason
+        // the waits are blank sitting next to the blank waits.
+        anomalies: check.anomalies,
       },
     });
 
-    return { ...updated, commercial: chain };
+    return { ...updated, commercial: chain, anomalies: check.anomalies };
   }
 
   async addCost(companyId: string, actor: MaintenanceActor, jobId: string, dto: AddJobCostDto) {

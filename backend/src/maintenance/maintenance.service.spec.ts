@@ -1063,20 +1063,27 @@ describe('the commercial chain', () => {
     expect(events[1].actorName).toBe(ACTOR.name);
   });
 
-  it('refuses an order dated before the quotation, with the reason in words', async () => {
+  it('accepts an order dated before the quotation, and records the anomaly', async () => {
     const { prisma, state } = makePrisma({ assets: [asset()], jobs: [quoted()] });
     const service = new MaintenanceService(prisma);
 
-    await expect(
-      service.recordCommercial(COMPANY, ACTOR, 'job-1', {
-        quotationAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-        purchaseOrderNumber: 'PO-1',
-        purchaseOrderAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    // Not refused. The wait this would corrupt is already refused by
+    // hoursBetween, so refusing here only stopped real paperwork being
+    // entered — an order signed before the quote was written up is the
+    // client's admin lag, not a lie.
+    const result = await service.recordCommercial(COMPANY, ACTOR, 'job-1', {
+      quotationAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      purchaseOrderNumber: 'PO-1',
+      purchaseOrderAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+    });
 
-    // A refusal writes nothing at all — no row, and no event claiming one.
-    expect(state.events.filter((e: any) => e.type === 'COMMERCIAL_CHANGED')).toHaveLength(0);
+    expect(result.anomalies.join(' ')).toMatch(/before the quotation/i);
+
+    // The reason the wait is blank travels with the change, so the record
+    // explains itself later rather than just looking wrong.
+    const events = state.events.filter((e: any) => e.type === 'COMMERCIAL_CHANGED');
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify(events[0].metadata ?? {})).toMatch(/before the quotation/i);
   });
 
   it('refuses to invoice work that is not complete', async () => {
