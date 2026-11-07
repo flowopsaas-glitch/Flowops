@@ -75,7 +75,7 @@ const expectRedacted = (row: Record<string, unknown>) => {
 describe('DriversService credential redaction', () => {
   describe('withoutDriverSecrets', () => {
     it('removes the PIN hash and the rating token and keeps everything else', () => {
-      const out = withoutDriverSecrets(storedDriver()) as Record<string, unknown>;
+      const out = withoutDriverSecrets(storedDriver()) as unknown as Record<string, unknown>;
       expectRedacted(out);
       expect(Object.keys(out).sort()).toEqual(
         [...Object.keys(storedDriver()).filter((k) => k !== 'driverPin' && k !== 'ratingToken'), 'hasPinSet'].sort(),
@@ -83,7 +83,7 @@ describe('DriversService credential redaction', () => {
     });
 
     it('reports hasPinSet false for a driver who has never been given a PIN', () => {
-      const out = withoutDriverSecrets(storedDriver({ driverPin: null })) as Record<string, unknown>;
+      const out = withoutDriverSecrets(storedDriver({ driverPin: null })) as unknown as Record<string, unknown>;
       expect(out.hasPinSet).toBe(false);
       expect(out).not.toHaveProperty('driverPin');
     });
@@ -109,10 +109,7 @@ describe('DriversService credential redaction', () => {
         { ...storedDriver({ id: 'drv-2', name: 'Thandi Nkosi' }), branch: null },
       ]);
 
-      const rows = (await makeService(prisma).findAll('co-1', { status: 'ACTIVE' })) as Record<
-        string,
-        unknown
-      >[];
+      const rows = (await makeService(prisma).findAll('co-1', { status: 'ACTIVE' })) as unknown as Record<string, unknown>[];
 
       expect(rows).toHaveLength(2);
       expectRedacted(rows[0]);
@@ -125,7 +122,7 @@ describe('DriversService credential redaction', () => {
     it('GET /drivers/:id: findOne strips the credential but still 404s across tenants', async () => {
       const prisma = makePrisma();
       prisma.driver.findFirst.mockResolvedValue(storedDriver());
-      expectRedacted((await makeService(prisma).findOne('drv-1', 'co-1')) as Record<string, unknown>);
+      expectRedacted((await makeService(prisma).findOne('drv-1', 'co-1')) as unknown as Record<string, unknown>);
 
       prisma.driver.findFirst.mockResolvedValue(null);
       await expect(makeService(prisma).findOne('drv-1', 'other-co')).rejects.toThrow(NotFoundException);
@@ -134,7 +131,7 @@ describe('DriversService credential redaction', () => {
     it('findMine strips the credential and still returns null when no driver is linked', async () => {
       const prisma = makePrisma();
       prisma.driver.findFirst.mockResolvedValue(storedDriver());
-      expectRedacted((await makeService(prisma).findMine('usr-1', 'co-1')) as Record<string, unknown>);
+      expectRedacted((await makeService(prisma).findMine('usr-1', 'co-1')) as unknown as Record<string, unknown>);
 
       prisma.driver.findFirst.mockResolvedValue(null);
       expect(await makeService(prisma).findMine('usr-1', 'co-1')).toBeNull();
@@ -150,7 +147,7 @@ describe('DriversService credential redaction', () => {
         name: 'Sipho Dlamini',
         phone: '+27821234567',
         pin: '4321',
-      })) as Record<string, unknown>;
+      })) as unknown as Record<string, unknown>;
 
       expectRedacted(created);
       // The hash was still WRITTEN - only the response is redacted.
@@ -168,7 +165,7 @@ describe('DriversService credential redaction', () => {
 
       const updated = (await makeService(prisma).update('drv-1', 'co-1', {
         name: 'Sipho D.',
-      })) as Record<string, unknown>;
+      })) as unknown as Record<string, unknown>;
       expectRedacted(updated);
     });
 
@@ -177,7 +174,7 @@ describe('DriversService credential redaction', () => {
       prisma.driver.findFirst.mockResolvedValue(storedDriver());
       prisma.driver.update.mockResolvedValue(storedDriver({ isActive: false }));
 
-      const removed = (await makeService(prisma).remove('drv-1', 'co-1')) as Record<string, unknown>;
+      const removed = (await makeService(prisma).remove('drv-1', 'co-1')) as unknown as Record<string, unknown>;
       expectRedacted(removed);
       expect(removed.isActive).toBe(false);
     });
