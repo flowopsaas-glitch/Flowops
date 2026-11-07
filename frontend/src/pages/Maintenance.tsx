@@ -9,6 +9,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
+import { useAuth } from "../contexts/auth-context";
 import {
   DataTable,
   ErrorState,
@@ -29,6 +30,9 @@ import {
   JOB_TYPE_LABELS,
   addJobCost,
   allowedJobActions,
+  isMaintenanceAssetWriter,
+  isMaintenanceJobWriter,
+  isMaintenanceManager,
   assetStatusTone,
   cancelJob,
   completeJob,
@@ -154,6 +158,7 @@ function Modal({
 }
 
 export default function MaintenancePage() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<MaintenanceSummary | null>(null);
   const [assets, setAssets] = useState<MaintenanceAsset[]>([]);
   const [jobs, setJobs] = useState<MaintenanceJob[]>([]);
@@ -336,12 +341,16 @@ export default function MaintenancePage() {
             <button type="button" className={secondaryButton} onClick={refresh} aria-label="Refresh">
               <RefreshCw className="h-4 w-4" /> Refresh
             </button>
-            <button type="button" className={secondaryButton} onClick={() => setRegistering(true)}>
-              <Plus className="h-4 w-4" /> Register unit
-            </button>
-            <button type="button" className={primaryButton} onClick={() => setRaising(true)}>
-              <Wrench className="h-4 w-4" /> Raise job card
-            </button>
+            {isMaintenanceAssetWriter(user?.role) ? (
+              <button type="button" className={secondaryButton} onClick={() => setRegistering(true)}>
+                <Plus className="h-4 w-4" /> Register unit
+              </button>
+            ) : null}
+            {isMaintenanceJobWriter(user?.role) ? (
+              <button type="button" className={primaryButton} onClick={() => setRaising(true)}>
+                <Wrench className="h-4 w-4" /> Raise job card
+              </button>
+            ) : null}
           </div>
         }
       />
@@ -1394,7 +1403,11 @@ function JobDetail({
   onError: (message: string | null) => void;
   setBusy: (value: boolean) => void;
 }) {
-  const actions = allowedJobActions(job.status);
+  const { user } = useAuth();
+  // Status says what is possible; the role says what *this* reader may do. The
+  // server checks both, so the screen must too.
+  const actions = allowedJobActions(job.status, user?.role);
+  const manager = isMaintenanceManager(user?.role);
   const [panel, setPanel] = useState<"none" | "complete" | "signoff" | "cancel" | "cost" | "commercial">("none");
   const [events, setEvents] = useState<MaintenanceJobEvent[] | null>(job.events ?? null);
   // The fetched card carries the derived commercial chain; the row from the
@@ -1479,7 +1492,7 @@ function JobDetail({
       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs uppercase tracking-wide text-slate-400">Quotation, authority and payment</div>
-          {actions.addCost && job.status !== "CANCELLED" ? (
+          {actions.recordCommercial ? (
             <button type="button" className={secondaryButton} onClick={() => setPanel("commercial")}>
               Record step
             </button>
@@ -1538,6 +1551,13 @@ function JobDetail({
           Close
         </button>
       </div>
+
+      {!manager && job.status !== "CANCELLED" ? (
+        <p className="text-xs text-slate-500">
+          Completing, signing off, cancelling and the quotation and payment dates are manager actions. You can start
+          work and add costs.
+        </p>
+      ) : null}
 
       {panel === "complete" ? (
         <form

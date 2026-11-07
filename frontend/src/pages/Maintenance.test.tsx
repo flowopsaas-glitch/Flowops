@@ -11,6 +11,13 @@ const h = vi.hoisted(() => ({
   history: null as Row | null,
   posted: [] as { url: string; body: unknown }[],
   events: [] as Row[],
+  role: "MANAGER" as string | null,
+}));
+
+// The page decides which buttons exist from the reader's role as well as the
+// card's status, so the role has to be part of the fixture.
+vi.mock("../contexts/auth-context", () => ({
+  useAuth: () => ({ user: { id: "user-1", role: h.role, companyId: "tenant-1" } }),
 }));
 
 vi.mock("../api/client", () => {
@@ -190,6 +197,7 @@ function history(overrides: Row = {}): Row {
 }
 
 beforeEach(() => {
+  h.role = "MANAGER";
   h.summary = summary();
   h.assets = [asset()];
   h.jobs = [job()];
@@ -534,5 +542,70 @@ describe("Maintenance — money and authority on the fleet page", () => {
     expect(within(band).getByText("3")).toBeTruthy();
     expect(within(band).getByText("4 days")).toBeTruthy();
     expect(within(band).getByText(/12 000\.00/)).toBeTruthy();
+  });
+});
+
+describe("Maintenance — the screen does not offer what the API will refuse", () => {
+  it("hides the manager actions from a dispatcher, and says who has them", async () => {
+    h.role = "DISPATCH";
+    h.jobs = [job({ status: "IN_PROGRESS" })];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    // The four the API reserves for a manager.
+    expect(screen.queryByRole("button", { name: "Complete job" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel card" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Record step" })).toBeNull();
+
+    // What a dispatcher may actually do stays.
+    expect(screen.getByRole("button", { name: "Add cost" })).toBeTruthy();
+
+    // And its absence is explained rather than mysterious — a control that
+    // simply vanishes reads as a broken page.
+    expect(screen.getByText(/are manager actions/i)).toBeTruthy();
+  });
+
+  it("shows them to a manager, with no apology", async () => {
+    h.role = "MANAGER";
+    h.jobs = [job({ status: "IN_PROGRESS" })];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    expect(screen.getByRole("button", { name: "Complete job" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Record step" })).toBeTruthy();
+    expect(screen.queryByText(/are manager actions/i)).toBeNull();
+  });
+
+  it("does not offer a viewer any action at all", async () => {
+    h.role = "VIEWER";
+    h.jobs = [job({ status: "REPORTED" })];
+    render(<MaintenancePage />);
+
+    await userEvent.click(await screen.findByRole("row", { name: /Open job MJ-2026-0001/i }));
+
+    expect(screen.queryByRole("button", { name: "Start work" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add cost" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Complete job" })).toBeNull();
+    // Reading is still allowed — that is the whole point of a viewer.
+    expect(screen.getAllByText(/Hydraulic oil leaking at the boom cylinder/).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the warehouse out of the register but inside the cards", async () => {
+    h.role = "WAREHOUSE";
+    h.jobs = [job({ status: "REPORTED" })];
+    render(<MaintenancePage />);
+
+    expect(await screen.findByRole("button", { name: /Raise job card/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Register unit/i })).toBeNull();
+  });
+
+  it("shows both to a manager", async () => {
+    h.role = "MANAGER";
+    render(<MaintenancePage />);
+
+    expect(await screen.findByRole("button", { name: /Raise job card/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Register unit/i })).toBeTruthy();
   });
 });

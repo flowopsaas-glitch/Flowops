@@ -4,6 +4,9 @@ import {
   ASSET_CLASS_LABELS,
   allowedJobActions,
   commercialStuckText,
+  isMaintenanceAssetWriter,
+  isMaintenanceJobWriter,
+  isMaintenanceManager,
   repairVsWaitText,
   varianceText,
   warrantyStandingText,
@@ -153,17 +156,71 @@ describe("figures carry their basis", () => {
 
 describe("what a card offers", () => {
   it("offers completion from report or in-progress, and nothing after sign-off", () => {
-    expect(allowedJobActions("REPORTED").complete).toBe(true);
-    expect(allowedJobActions("IN_PROGRESS").signOff).toBe(false);
-    expect(allowedJobActions("COMPLETED").signOff).toBe(true);
-    expect(allowedJobActions("SIGNED_OFF").cancel).toBe(false);
+    expect(allowedJobActions("REPORTED", "MANAGER").complete).toBe(true);
+    expect(allowedJobActions("IN_PROGRESS", "MANAGER").signOff).toBe(false);
+    expect(allowedJobActions("COMPLETED", "MANAGER").signOff).toBe(true);
+    expect(allowedJobActions("SIGNED_OFF", "MANAGER").cancel).toBe(false);
     // A cost line can still arrive after sign-off — workshop invoices do — and
     // the API allows it, so the UI must not hide the only way to record it.
-    expect(allowedJobActions("SIGNED_OFF").addCost).toBe(true);
+    expect(allowedJobActions("SIGNED_OFF", "MANAGER").addCost).toBe(true);
   });
 
   it("never offers a cost line on a cancelled card", () => {
-    expect(allowedJobActions("CANCELLED").addCost).toBe(false);
+    expect(allowedJobActions("CANCELLED", "MANAGER").addCost).toBe(false);
+  });
+
+  it("does not offer a manager action to a role the API refuses", () => {
+    // The defect this pins: the card used to decide from status alone, so a
+    // dispatcher was shown Complete / Sign off / Cancel / Record step, filled
+    // them in, and was refused by the API every time.
+    const dispatcher = allowedJobActions("IN_PROGRESS", "DISPATCH");
+    expect(dispatcher.complete).toBe(false);
+    expect(dispatcher.cancel).toBe(false);
+    expect(dispatcher.recordCommercial).toBe(false);
+    // …but still gets the day-to-day actions the API does allow on that card.
+    expect(dispatcher.addCost).toBe(true);
+    // Starting is a status-bound action, so it is asserted on the status that
+    // offers it — a dispatcher may start a reported card, manager or not.
+    expect(allowedJobActions("REPORTED", "DISPATCH").start).toBe(true);
+
+    const warehouse = allowedJobActions("REPORTED", "WAREHOUSE");
+    expect(warehouse.complete).toBe(false);
+    expect(warehouse.signOff).toBe(false);
+    expect(warehouse.recordCommercial).toBe(false);
+    expect(warehouse.start).toBe(true);
+  });
+
+  it("offers nothing at all to a read-only role, rather than a button that 403s", () => {
+    for (const status of ["REPORTED", "IN_PROGRESS", "COMPLETED", "SIGNED_OFF"] as const) {
+      const actions = allowedJobActions(status, "VIEWER");
+      expect(actions.start).toBe(false);
+      expect(actions.complete).toBe(false);
+      expect(actions.signOff).toBe(false);
+      expect(actions.cancel).toBe(false);
+      expect(actions.addCost).toBe(false);
+      expect(actions.recordCommercial).toBe(false);
+    }
+  });
+
+  it("treats a missing or oddly-cased role as no role at all", () => {
+    // An unanswered /auth/me must not be read as permission.
+    expect(allowedJobActions("IN_PROGRESS", null).complete).toBe(false);
+    expect(allowedJobActions("IN_PROGRESS", undefined).recordCommercial).toBe(false);
+    expect(allowedJobActions("IN_PROGRESS", "").cancel).toBe(false);
+    // The API stores roles uppercase; a lowercase value from a stale token or a
+    // hand-set row is the same role and must not silently lose its rights.
+    expect(allowedJobActions("IN_PROGRESS", "manager").complete).toBe(true);
+    expect(allowedJobActions("IN_PROGRESS", " Company_Admin ").recordCommercial).toBe(true);
+  });
+
+  it("splits writing a card from writing the asset register", () => {
+    // The API lets WAREHOUSE raise and work a card but not add a machine to the
+    // register — mirroring that keeps a mystery button off the page.
+    expect(isMaintenanceJobWriter("WAREHOUSE")).toBe(true);
+    expect(isMaintenanceAssetWriter("WAREHOUSE")).toBe(false);
+    expect(isMaintenanceAssetWriter("DISPATCH")).toBe(true);
+    expect(isMaintenanceManager("DISPATCH")).toBe(false);
+    expect(isMaintenanceManager("ADMIN")).toBe(true);
   });
 
   it("tones a cancelled card as danger and a completed one as success", () => {
