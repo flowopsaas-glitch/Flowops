@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
+import { InvoicesService } from '../invoices/invoices.service';
 import {
   PLAN_ENTITLEMENTS,
   FEATURE_KEYS,
@@ -46,6 +47,9 @@ export class OwnerService {
     private jwt: JwtService,
     private config: ConfigService,
     private audit: AuditService,
+    // Used only to raise an invoice on a tenant's behalf, so numbering and
+    // totals stay server-authoritative in the one place that already owns them.
+    private invoices: InvoicesService,
   ) {}
 
   // ── Tenants ───────────────────────────────────────────────────────────
@@ -1380,5 +1384,359 @@ export class OwnerService {
     }
 
     return { request: updated, message: 'Request declined.' };
+  }
+
+  // ── Commercial ─────────────────────────────────────────────────────────
+  //
+  // What a tenant is DOING is already visible in the owner console (MRR,
+  // seats, waybills). What was missing is where the tenant STANDS: being
+  // courted, happy, at risk, leaving. That lived in someone's head and in
+  // Slack threads, so it was lost whenever that person was unavailable.
+  //
+  // These methods back the owner console's commercial surface. They are
+  // owner-only: notes in particular are about the customer, never for them,
+  // and there is deliberately no tenant-scoped read path to commercial_notes.
+
+  /** The statuses the owner console offers. */
+  static readonly COMMERCIAL_STATUSES = [
+    'PROSPECT',
+    'ONBOARDING',
+    'ACTIVE',
+    'AT_RISK',
+    'RENEWAL_DUE',
+    'CHURNING',
+    'CHURNED',
+    'DORMANT',
+  ] as const;
+
+  private static readonly COMMERCIAL_SELECT = {
+    id: true,
+    name: true,
+    tradingName: true,
+    plan: true,
+    commercialStatus: true,
+    commercialStatusReason: true,
+    commercialStatusChangedAt: true,
+    featureOverrides: true,
+    priceOverrideZar: true,
+    updatedAt: true,
+  } as const;
+
+  /** Assemble one tenant's commercial picture. */
+  private async buildCommercialSummary(company: {
+    id: string;
+    name: string;
+    tradingName?: string | null;
+    plan?: string | null;
+    commercialStatus: string | null;
+    commercialStatusReason: string | null;
+    commercialStatusChangedAt: Date | null;
+    featureOverrides: unknown;
+    priceOverrideZar: number | null;
+    updatedAt?: Date | null;
+  }) {
+    const [latestQuote, latestInvoice, latestCommercialNote, notes, quotes, invoices] =
+      await Promise.all([
+        this.prisma.quote.findFirst({
+          where: { companyId: company.id },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.invoice.findFirst({
+          where: { companyId: company.id },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.commercialNote.findFirst({
+          where: { companyId: company.id },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.commercialNote.count({ where: { companyId: company.id } }),
+        this.prisma.quote.count({ where: { companyId: company.id } }),
+        this.prisma.invoice.count({ where: { companyId: company.id } }),
+      ]);
+
+    const overrides = company.featureOverrides ?? null;
+    const hasOverride = overrides != null || company.priceOverrideZar != null;
+
+    return {
+      tenantId: company.id,
+      tenantName: company.tradingName || company.name,
+      commercialStatus: company.commercialStatus,
+      commercialStatusReason: company.commercialStatusReason,
+      statusChangedAt: company.commercialStatusChangedAt?.toISOString() ?? null,
+      // Raw value, for edit forms.
+      subscriptionOverride: { featureOverrides: overrides, priceOverrideZar: company.priceOverrideZar },
+      // Short human-readable form, for list rows.
+      subscriptionOverrideSummary: hasOverride
+        ? {
+            features: Array.isArray(overrides)
+              ? overrides
+              : overrides && typeof overrides === 'object'
+                ? Object.keys(overrides as Record<string, unknown>)
+                : [],
+            priceOverrideZar: company.priceOverrideZar,
+          }
+        : null,
+      latestQuote,
+      latestInvoice,
+      latestCommercialNote,
+      counts: { notes, quotes, invoices },
+      updatedAt: company.updatedAt?.toISOString() ?? null,
+    };
+  }
+
+  /** Every tenant's commercial picture, for the owner console list. */
+  async listTenantCommercial() {
+    const companies = await this.prisma.company.findMany({
+      select: OwnerService.COMMERCIAL_SELECT,
+      orderBy: { name: 'asc' },
+    });
+    return Promise.all(companies.map((c) => this.buildCommercialSummary(c)));
+  }
+
+  /** One tenant's commercial picture. */
+  async getTenantCommercialSummary(tenantId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: OwnerService.COMMERCIAL_SELECT,
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+    return this.buildCommercialSummary(company);
+  }
+
+  /**
+   * Record what was said to a tenant.
+   *
+   * The note is required to actually say something — an empty note is worse
+   * than no note, because it makes the history look populated when it isn't.
+   */
+  async addCommercialNote(
+    tenantId: string,
+    dto: { note?: unknown; tags?: unknown },
+    actor?: OwnerActor,
+  ) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    const note = typeof dto?.note === 'string' ? dto.note.trim() : '';
+    if (!note) throw new BadRequestException('A commercial note cannot be empty');
+
+    const tags = Array.isArray(dto?.tags)
+      ? dto.tags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+      : [];
+
+    const created = await this.prisma.commercialNote.create({
+      data: { companyId: tenantId, note, tags, createdByEmail: actor?.email ?? null },
+    });
+
+    await this.audit.record({
+      action: 'tenant.commercial_note_added',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: { tags, noteLength: note.length },
+    });
+
+    return created;
+  }
+
+  /**
+   * Set where a tenant stands commercially.
+   *
+   * A status without a reason is refused outright. Six months later "AT_RISK"
+   * on its own tells the next person nothing — the reason is the whole value,
+   * and requiring it is the only way it reliably gets written.
+   */
+  async updateCommercialStatus(
+    tenantId: string,
+    dto: { status?: unknown; reason?: unknown },
+    actor?: OwnerActor,
+  ) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, commercialStatus: true, commercialStatusReason: true },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    const status = typeof dto?.status === 'string' ? dto.status.trim() : '';
+    if (!status) throw new BadRequestException('A commercial status is required');
+    if (!(OwnerService.COMMERCIAL_STATUSES as readonly string[]).includes(status)) {
+      throw new BadRequestException(
+        `Unknown commercial status "${status}". Expected one of: ${OwnerService.COMMERCIAL_STATUSES.join(', ')}`,
+      );
+    }
+
+    const reason = typeof dto?.reason === 'string' ? dto.reason.trim() : '';
+    if (!reason) throw new BadRequestException('A commercial status needs a reason');
+
+    const updated = await this.prisma.company.update({
+      where: { id: tenantId },
+      data: {
+        commercialStatus: status,
+        commercialStatusReason: reason,
+        commercialStatusChangedAt: new Date(),
+      },
+      select: OwnerService.COMMERCIAL_SELECT,
+    });
+
+    await this.audit.record({
+      action: 'tenant.commercial_status_changed',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: {
+        from: company.commercialStatus,
+        to: status,
+        reason,
+      },
+    });
+
+    return this.buildCommercialSummary(updated);
+  }
+
+  /**
+   * Grant a tenant features or a negotiated price beyond their plan.
+   *
+   * Only the two known override keys are accepted. Spreading the body would
+   * let an owner write arbitrary Company columns from the console.
+   */
+  async updateSubscriptionOverride(tenantId: string, dto: unknown, actor?: OwnerActor) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, featureOverrides: true, priceOverrideZar: true },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    const input = dto && typeof dto === 'object' && !Array.isArray(dto) ? (dto as Record<string, unknown>) : {};
+    const data: { featureOverrides?: unknown; priceOverrideZar?: number | null } = {};
+
+    if ('featureOverrides' in input) {
+      const value = input.featureOverrides;
+      if (value !== null && (typeof value !== 'object' || Array.isArray(value))) {
+        throw new BadRequestException('featureOverrides must be an object or null');
+      }
+      data.featureOverrides = value ?? null;
+    }
+
+    if ('priceOverrideZar' in input) {
+      const value = input.priceOverrideZar;
+      if (value === null || value === '') {
+        data.priceOverrideZar = null;
+      } else {
+        const parsed = typeof value === 'number' ? value : Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          throw new BadRequestException('priceOverrideZar must be a non-negative number or null');
+        }
+        data.priceOverrideZar = parsed;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('Supply featureOverrides and/or priceOverrideZar');
+    }
+
+    const updated = await this.prisma.company.update({
+      where: { id: tenantId },
+      data,
+      select: OwnerService.COMMERCIAL_SELECT,
+    });
+
+    await this.audit.record({
+      action: 'tenant.subscription_override_changed',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: {
+        featureOverridesChanged: 'featureOverrides' in data,
+        priceFrom: company.priceOverrideZar,
+        priceTo: data.priceOverrideZar !== undefined ? data.priceOverrideZar : company.priceOverrideZar,
+      },
+    });
+
+    return this.buildCommercialSummary(updated);
+  }
+
+  /**
+   * Raise a quote on a tenant's behalf. The tenant is taken from the URL,
+   * never from the body — an owner must not be able to write into a company
+   * they did not name.
+   */
+  async createTenantQuote(tenantId: string, dto: unknown, actor?: OwnerActor) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    const input = dto && typeof dto === 'object' && !Array.isArray(dto) ? (dto as Record<string, unknown>) : {};
+
+    const fromAddress = typeof input.fromAddress === 'string' ? input.fromAddress.trim() : '';
+    const toAddress = typeof input.toAddress === 'string' ? input.toAddress.trim() : '';
+    if (!fromAddress) throw new BadRequestException('fromAddress is required');
+    if (!toAddress) throw new BadRequestException('toAddress is required');
+
+    const weight = Number(input.weight);
+    const price = Number(input.price);
+    if (!Number.isFinite(weight) || weight <= 0) throw new BadRequestException('weight must be a positive number');
+    if (!Number.isFinite(price) || price < 0) throw new BadRequestException('price must be a non-negative number');
+
+    const created = await this.prisma.quote.create({
+      data: {
+        companyId: tenantId,
+        fromAddress,
+        toAddress,
+        clientName: typeof input.clientName === 'string' ? input.clientName.trim() || null : null,
+        weight,
+        price,
+        currency: typeof input.currency === 'string' && input.currency.trim() ? input.currency.trim() : 'ZAR',
+        breakdown: input.breakdown ?? undefined,
+      },
+    });
+
+    await this.audit.record({
+      action: 'tenant.commercial_quote_created',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: { quoteId: created.id, price: created.price, currency: created.currency },
+    });
+
+    return created;
+  }
+
+  /**
+   * Raise an invoice on a tenant's behalf, delegating to InvoicesService so
+   * numbering and totals stay server-authoritative in exactly one place.
+   */
+  async createTenantInvoice(tenantId: string, dto: unknown, actor?: OwnerActor) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true },
+    });
+    if (!company) throw new NotFoundException('Tenant not found');
+
+    const created = await this.invoices.create(tenantId, dto);
+
+    await this.audit.record({
+      action: 'tenant.commercial_invoice_created',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      targetType: 'company',
+      targetId: tenantId,
+      targetName: company.name,
+      metadata: { invoiceId: (created as { id?: string })?.id ?? null },
+    });
+
+    return created;
   }
 }

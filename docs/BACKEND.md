@@ -218,9 +218,46 @@ curl http://localhost:3000/api/v1/paystack/verify/<reference> \
 | WhatsApp | `/api/v1/whatsapp` | Send, threads, messages, webhook |
 | Paystack | `/api/v1/paystack` | initialize, verify, subscribe, cancel, plans, webhook |
 | AI | `/api/v1/ai` | Copilot, events, supervisor, email hub |
-| Owner | `/api/v1/owner` | Tenant management, platform metrics |
+| Owner | `/api/v1/owner` | Tenant management, platform metrics, **commercial standing** (see below) |
 | Compliance | `/api/v1/compliance` | `GET /drivers` (fleet compliance report), `GET /drivers/:id`, `PATCH /drivers/:id` (record evidence: expiry dates, hold), `PATCH /drivers/:id/hold` |
 | Storage | (internal) | Cloudflare R2 upload/download |
+
+### Owner: commercial standing
+
+The owner console has always shown what a tenant is **doing** — MRR, waybills,
+drivers, delivery rates. It never showed where the relationship **stands**:
+whether the tenant is being courted, is happy, is at risk, or is leaving. That
+judgement lived in someone's head and in Slack threads, so it evaporated
+whenever that person was unavailable.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/owner/tenants-commercial` | Every tenant's standing, for the console list |
+| GET | `/api/v1/owner/tenants/:id/commercial-summary` | One tenant: status, notes, counts, latest quote/invoice |
+| POST | `/api/v1/owner/tenants/:id/commercial-notes` | Record what was said. Body: `{ note, tags[] }` |
+| POST | `/api/v1/owner/tenants/:id/status` | Set the standing. Body: `{ status, reason }` |
+| POST | `/api/v1/owner/tenants/:id/subscription-override` | Grant features or a negotiated price |
+| POST | `/api/v1/owner/tenants/:id/quotes` | Raise a quote on the tenant's behalf |
+| POST | `/api/v1/owner/tenants/:id/invoices` | Raise an invoice on the tenant's behalf |
+
+Statuses: `PROSPECT`, `ONBOARDING`, `ACTIVE`, `AT_RISK`, `RENEWAL_DUE`,
+`CHURNING`, `CHURNED`, `DORMANT`.
+
+Three rules worth knowing before changing any of this:
+
+- **A status without a reason is refused.** Six months later `AT_RISK` on its
+  own tells the next person nothing — the reason is the entire value, so it is
+  required rather than optional.
+- **Commercial notes are owner-only.** There is deliberately no tenant-scoped
+  read path. `createdByEmail` is stored as a string, not a relation, so
+  deleting an owner account cannot erase what was said to a customer.
+- **Quotes and invoices are always filed against the tenant in the URL**, never
+  a `companyId` from the request body. Invoice numbering and totals are
+  delegated to `InvoicesService.create()` so they stay server-authoritative in
+  the one place that already owns them.
+
+Nothing is backfilled: a tenant nobody has classified yet has **no** status,
+which is a different fact from a status of "none".
 
 Full interactive docs: `GET http://localhost:3000/docs` (Swagger UI, non-production only)
 

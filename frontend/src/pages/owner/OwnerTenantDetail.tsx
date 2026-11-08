@@ -13,6 +13,7 @@ import {
 import { ArrowLeft, Eye, Plus, CheckCircle, UserX, TrendingUp, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { startImpersonation } from "../../lib/impersonation";
+import TenantCommercialPanel from "../../components/owner/TenantCommercialPanel";
 
 type TenantAnalytics = {
   currency: string;
@@ -388,6 +389,10 @@ export default function OwnerTenantDetail() {
               </div>
             ) : null}
           </div>
+
+          {/* Where this relationship stands. Everything below says what the tenant
+              is DOING; this is the only place that says how it's going. */}
+          {id ? <TenantCommercialPanel tenantId={id} /> : null}
 
           {/* Usage + revenue */}
           <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">

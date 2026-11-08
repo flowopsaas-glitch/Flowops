@@ -44,6 +44,14 @@ export class OwnerController {
     return this.svc.getTenantPresence();
   }
 
+  // A different path shape from 'tenants/:id' (this is /owner/tenants-commercial,
+  // that is /owner/tenants/<id>), so unlike 'tenants/presence' above there is no
+  // capture ambiguity here — it just reads better next to the other list routes.
+  @Get('tenants-commercial')
+  listTenantsCommercial() {
+    return this.svc.listTenantCommercial();
+  }
+
   @Get('tenants/:id')
   getTenant(@Param('id') id: string) {
     return this.svc.getTenant(id);
@@ -304,6 +312,51 @@ export class OwnerController {
   @Post('approval-requests/:id/reject')
   rejectRequest(@Param('id') id: string, @Body() body: { reason?: string }, @CurrentUser() owner: any) {
     return this.svc.rejectRequest(id, body?.reason, owner);
+  }
+
+  // ── Commercial ─────────────────────────────────────────────────────────
+  //
+  // Where each tenant STANDS commercially: status with a mandatory reason,
+  // notes about the relationship, subscription overrides, and owner-raised
+  // quotes and invoices. Owner-only; there is deliberately no tenant-scoped
+  // read path to commercial notes.
+
+  @Get('tenants/:id/commercial-summary')
+  tenantCommercialSummary(@Param('id') id: string) {
+    return this.svc.getTenantCommercialSummary(id);
+  }
+
+  @Post('tenants/:id/commercial-notes')
+  addCommercialNote(
+    @Param('id') id: string,
+    @Body() body: { note?: string; tags?: unknown },
+    @CurrentUser() owner: any,
+  ) {
+    return this.svc.addCommercialNote(id, body, owner);
+  }
+
+  @Post('tenants/:id/status')
+  updateCommercialStatus(
+    @Param('id') id: string,
+    @Body() body: { status?: string; reason?: string },
+    @CurrentUser() owner: any,
+  ) {
+    return this.svc.updateCommercialStatus(id, body, owner);
+  }
+
+  @Post('tenants/:id/subscription-override')
+  updateSubscriptionOverride(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+    return this.svc.updateSubscriptionOverride(id, body, owner);
+  }
+
+  @Post('tenants/:id/quotes')
+  createTenantQuote(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+    return this.svc.createTenantQuote(id, body, owner);
+  }
+
+  @Post('tenants/:id/invoices')
+  createTenantInvoice(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+    return this.svc.createTenantInvoice(id, body, owner);
   }
 }
 

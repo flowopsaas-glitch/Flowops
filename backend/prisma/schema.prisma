@@ -202,6 +202,16 @@ model Company {
   // it overrides the plan list price for MRR + billing display. Null = use plan.
   priceOverrideZar Float?
 
+  // ── Owner-managed commercial status ────────────────────────────────────
+  // Where this tenant sits in the commercial relationship, set from the owner
+  // console (lead / active / at-risk / churning / ...). Null = never
+  // classified. A status is only worth recording alongside WHY it was set, so
+  // the service writes both together and refuses a status without a reason —
+  // a bare status is unactionable for the next person on shift.
+  commercialStatus          String?
+  commercialStatusReason    String?
+  commercialStatusChangedAt DateTime?
+
   // CLAW Autopilot for Operations (Enterprise) — when enabled, the autonomy
   // engine may auto-execute safe ops actions (reassign stalled pickups,
   // escalate SLA pre-breaches / COD mismatches). Aggression overrides the
@@ -236,6 +246,7 @@ model Company {
   workflows          Workflow[]
   approvalRequest    ApprovalRequest?
   planUpgradeRequests PlanUpgradeRequest[]
+  commercialNotes    CommercialNote[]
   apiKeys            ApiKey[]
   webhookEndpoints   WebhookEndpoint[]
   outboxEvents       OutboxEvent[]
@@ -3506,6 +3517,35 @@ model CommercialConfig {
 
   @@map("commercial_configs")
 }
+
+// ─── Owner Commercial Notes ──────────────────────────────────────────────────
+// The owner console's running record of what was said to a tenant: why a
+// status changed, what was promised, what a customer is waiting on.
+//
+// Distinct from the tenant's own notes — a tenant must never read these.
+// There is no companyId-based tenant read path by design: these are written
+// and read only behind OwnerAuthGuard.
+model CommercialNote {
+  id        String @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  note String
+  // Free-form labels (["pricing", "renewal"]) kept as Json so the owner
+  // console can add tags without a migration.
+  tags Json?
+
+  // Who wrote it. Stored as the owner's email string rather than a relation,
+  // so deleting an owner account cannot erase the history of what was said
+  // to a customer.
+  createdByEmail String?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@map("commercial_notes")
+}
+
 
 
 // ─── Logistics Analytics (per-tenant monthly KPI snapshots) ──────────────────
