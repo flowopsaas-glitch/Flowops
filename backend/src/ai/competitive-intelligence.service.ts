@@ -49,14 +49,25 @@ const OWNER_ACTIONABLE_TYPES = [...ACTIONABLE_TYPES, 'INTEGRATION_HEALTH'];
  * Architecture map fed to the Build Planner so the generated spec is grounded
  * in how FlowOps is actually built — not generic advice.
  */
-const FLOWOPS_ARCHITECTURE = `FlowOps tech stack & conventions (target the plan at THIS, not generic advice):
+// Exported so a test can assert the conventions below stay correct. This string is the
+// build-planner's only description of how FlowOps is built, so a wrong convention here is
+// copied into every auto-drafted issue — it previously told the planner to use
+// `prisma db push`, which contradicts the migrate-deploy-only rule and breaks the drift guard.
+export const FLOWOPS_ARCHITECTURE = `FlowOps tech stack & conventions (target the plan at THIS, not generic advice):
 - Backend: NestJS 10 + TypeScript. A feature = a module folder backend/src/<feature>/ with
   <feature>.module.ts, .controller.ts, .service.ts and dto/. Controllers gate with
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER) + @UseGuards(RolesGuard) and read
   the tenant via @CurrentUser() u (u.companyId). Public routes use @Public(). Register the module in
   backend/src/app.module.ts.
-- Data: Prisma + PostgreSQL, schema backend/prisma/schema.prisma, additive 'prisma db push'. Models are
-  company-scoped via a companyId column.
+- Data: Prisma + PostgreSQL, schema backend/prisma/schema.prisma. Schema changes ship as a NEW
+  migration folder backend/prisma/migrations/<timestamp>_<name>/migration.sql — NEVER 'prisma db
+  push' and never 'migrate dev' (deploys run 'prisma migrate deploy' only, and CI fails on any
+  drift between the migrations and the schema). Models are company-scoped via a companyId column;
+  a companyId does NOT imply a company foreign key — most tables scope the tenant in application
+  code and Prisma emits an FK only where the model declares a @relation.
+- Index names: Postgres caps identifiers at 63 bytes and truncates differently to Prisma, so any
+  @@index/@@unique spanning several columns must carry an explicit short map: "..." name (spelled
+  identically in the migration) or the drift guard will reject the migrations.
 - Entitlements: premium capability is gated with BillingService.hasFeature(companyId, '<flag>') and the
   flag is declared in backend/src/billing/plan-entitlements.ts across tiers starter | professional | enterprise.
   Hard limits use BillingService.assertCanCreate(companyId, '<resource>').
@@ -861,7 +872,7 @@ Return ONLY the JSON array, no other text. NEVER include commentary, explanation
       newEndpoints: ['Define the REST endpoint(s) this feature needs under /api/v1.'],
       implementationSteps: [
         `Scope the capability from the finding: "${ctx.finding}".`,
-        'Design the data model + Prisma changes (additive; applied via prisma db push).',
+        'Design the data model + Prisma changes as an additive migration under backend/prisma/migrations/ (never `prisma db push` — deploys run `prisma migrate deploy` only, and CI rejects drift).',
         'Build the backend service + endpoints, with entitlement/role guards.',
         'Build the frontend page + navigation entry.',
         'Add tests, verify build (nest build + tsc/vite), and ship behind the right tier.',
