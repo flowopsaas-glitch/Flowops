@@ -360,11 +360,19 @@ export class DriverSafetyService {
     });
   }
 
-  async acknowledgeAlert(alertId: string, _driverId: string) {
-    return this.prisma.safetyAlert.update({
-      where: { id: alertId },
+  /**
+   * Tenant-scoped: a safety alert belongs to a company, so acknowledging one
+   * must be scoped to the caller's company the same way updateZone/deleteZone
+   * are. The id alone is not enough — it would let a caller acknowledge (and
+   * read back) another tenant's alert.
+   */
+  async acknowledgeAlert(alertId: string, companyId: string) {
+    const res = await this.prisma.safetyAlert.updateMany({
+      where: { id: alertId, companyId },
       data: { acknowledged: true, acknowledgedAt: new Date() },
     });
+    if (res.count === 0) throw new NotFoundException('Safety alert not found');
+    return this.prisma.safetyAlert.findFirst({ where: { id: alertId, companyId } });
   }
 
   // ══════════════════════════════════════════════════════════════════════════

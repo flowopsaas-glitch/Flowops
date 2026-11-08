@@ -494,12 +494,27 @@ jobs:
         # route that ships without a decision instead of publishing it.
         run: node scripts/rbac-inventory.mjs --check
 
+      - name: Tenant scope (blocking)
+        # Every id-only update/delete/findUnique/findFirst must either be
+        # scoped to companyId or carry a written reason in
+        # scripts/tenant-scope-policy.mjs.
+        #
+        # This used to be advisory because the scanner could only measure
+        # character distance to the nearest companyId, so it reported 119
+        # hits and could not tell a scoped-read-then-write from a leak — a
+        # list that long is a list nobody reads. It now classifies each hit
+        # (platform file, reviewed method, identity lookup, or proven to be
+        # guarded by a scoped read in the same method), leaving nothing
+        # unexplained at zero, so it can block. An exemption that stops
+        # matching any code fails the build too, so the allowlist cannot
+        # quietly rot into somewhere bugs hide.
+        run: npm run tenant-scope:check --silent
+
       - name: Advisory RBAC + tenant-scope reports (non-blocking)
-        # Full scanner output as a review artifact. RBAC *coverage* is
-        # enforced by the blocking step above; the tenant-scope scanner
-        # cannot see runtime control flow, so it informs review rather than
-        # failing the build. Legitimate hits exist (platform-admin
-        # endpoints, token lookups, writes to rows already proven in-tenant).
+        # Full scanner output as a review artifact. Coverage is enforced by
+        # the two blocking steps above; this keeps the whole classification
+        # visible so a reviewer can argue with the decisions, not just the
+        # verdict.
         run: |
           mkdir -p audit-reports
           npm run rbac:inventory --silent > audit-reports/rbac-inventory.txt

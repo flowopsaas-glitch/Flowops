@@ -28,7 +28,7 @@
     "migrations:test": "node --test scripts/migrations.test.mjs",
     "migrations:rehearsal:test": "node --test scripts/migrate-rehearsal.test.mjs",
     "migrations:rehearse": "node scripts/migrate-rehearsal.mjs",
-    "release:safety:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/release-startup.test.mjs scripts/rbac-inventory.test.mjs scripts/compose-env-allowlist.test.mjs scripts/deploy-rbac-guard.test.mjs",
+    "release:safety:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/release-startup.test.mjs scripts/rbac-inventory.test.mjs scripts/compose-env-allowlist.test.mjs scripts/deploy-rbac-guard.test.mjs scripts/tenant-scope-audit.test.mjs",
     "deploy-guard:test": "node --test scripts/deploy-rbac-guard.test.mjs",
     "compose-env:test": "node --test scripts/compose-env-allowlist.test.mjs",
     "compose-env:check": "node scripts/compose-env-allowlist.mjs --check",
@@ -37,7 +37,9 @@
     "rbac:inventory:json": "node scripts/rbac-inventory.mjs --format json",
     "rbac:check": "node scripts/rbac-inventory.mjs --check",
     "tenant-scope:audit": "node scripts/tenant-scope-audit.mjs",
-    "tenant-scope:audit:json": "node scripts/tenant-scope-audit.mjs --format json"
+    "tenant-scope:audit:json": "node scripts/tenant-scope-audit.mjs --format json",
+    "tenant-scope:check": "node scripts/tenant-scope-audit.mjs --check",
+    "tenant-scope:test": "node --test scripts/tenant-scope-audit.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.540.0",
