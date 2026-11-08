@@ -12,6 +12,7 @@ import SlotOptimizerPanel from './SlotOptimizerPanel';
 const h = vi.hoisted(() => ({
   listSlotApplications: vi.fn(),
   getCorridors: vi.fn(),
+  getCorridorCapacity: vi.fn(),
   runOptimizer: vi.fn(),
   applyOptimizer: vi.fn(),
   showToast: vi.fn(),
@@ -20,6 +21,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../../api/railSlotApi', () => ({
   listSlotApplications: h.listSlotApplications,
   getCorridors: h.getCorridors,
+  getCorridorCapacity: h.getCorridorCapacity,
   runOptimizer: h.runOptimizer,
   applyOptimizer: h.applyOptimizer,
   OPTIMIZER_DECISION_LABEL: { ALLOCATE: 'Allocate', DEFER: 'Defer', REJECT: 'Reject' },
@@ -36,6 +38,8 @@ const PENDING_APP = {
 beforeEach(() => {
   h.listSlotApplications.mockResolvedValue([PENDING_APP]);
   h.getCorridors.mockResolvedValue([{ code: 'COR-ORE', name: 'Ore' }]);
+  // No ledger statement by default: the panel falls back to a typed figure.
+  h.getCorridorCapacity.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -164,5 +168,72 @@ describe('SlotOptimizerPanel', () => {
     await waitFor(() => expect(screen.getByText('Corridor utilisation')).toBeTruthy());
     expect(screen.getByText(/Declared capacity vs allocated/)).toBeTruthy();
     expect(screen.getAllByText('4').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Capacity comes from the ledger, not from this screen. A corridor with a statement in
+ * force shows its figure read-only and is never sent as a client-supplied number: a
+ * figure typed in a browser is not evidence, and an allocation justified by one cannot
+ * be cited afterwards.
+ */
+describe('SlotOptimizerPanel — capacity from the ledger', () => {
+  const IN_FORCE = {
+    id: 'cap-1', corridorCode: 'COR-ORE',
+    validFrom: '2026-01-01T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z',
+    theoreticalPathsPerDay: 20, capacityFactor: 0.65, practicalPathsPerDay: 8,
+    unit: 'PATHS_PER_DAY', dataStatus: 'SOURCED',
+    sourceRef: 'Annexure 33b Capacity_DB FY2026/27', notes: null,
+    createdByEmail: 'mia@toc.co.za', createdAt: '2026-10-01T00:00:00.000Z',
+  };
+
+  const runOk = () => h.runOptimizer.mockResolvedValue({
+    generatedAt: '2026-10-10T12:00:00Z', notes: [],
+    proposals: [{ applicationId: 'a1', applicationNumber: 'SA-2026-00001', corridorCode: 'COR-ORE',
+      decision: 'ALLOCATE', score: 150, weeklyDemand: 3, reasons: ['Fits declared capacity.'], warnings: [] }],
+    utilization: [{ corridorCode: 'COR-ORE', capacityPerWeek: 56, allocatedPerWeek: 0,
+      proposedPerWeek: 3, deferredPerWeek: 0, remainingPerWeek: 53 }],
+  });
+
+  it('shows the ledger figure instead of asking for one, with its source', async () => {
+    h.getCorridorCapacity.mockResolvedValue([IN_FORCE]);
+    runOk();
+    render(<SlotOptimizerPanel canWrite />);
+
+    expect(await screen.findByTestId('ledger-capacity-COR-ORE')).toHaveTextContent('56');
+    expect(screen.getByText(/8 paths\/day × 7/)).toBeTruthy();
+    expect(screen.getByText(/Annexure 33b Capacity_DB FY2026\/27/)).toBeTruthy();
+    expect(screen.queryByLabelText(/weekly capacity for ore/i)).toBeNull();
+  });
+
+  it('never sends a client-supplied figure for a corridor the ledger covers', async () => {
+    h.getCorridorCapacity.mockResolvedValue([IN_FORCE]);
+    runOk();
+    render(<SlotOptimizerPanel canWrite />);
+    await screen.findByTestId('ledger-capacity-COR-ORE');
+
+    fireEvent.click(screen.getByRole('button', { name: /run optimizer/i }));
+    await waitFor(() => expect(h.runOptimizer).toHaveBeenCalled());
+    expect(h.runOptimizer).toHaveBeenCalledWith([]);
+  });
+
+  it('takes TRAINS_PER_WEEK statements at face value', async () => {
+    h.getCorridorCapacity.mockResolvedValue([
+      { ...IN_FORCE, unit: 'TRAINS_PER_WEEK', practicalPathsPerDay: 12 },
+    ]);
+    runOk();
+    render(<SlotOptimizerPanel canWrite />);
+
+    expect(await screen.findByTestId('ledger-capacity-COR-ORE')).toHaveTextContent('12');
+  });
+
+  it('offers a typed figure only where no statement is in force', async () => {
+    h.getCorridorCapacity.mockResolvedValue([
+      { ...IN_FORCE, validFrom: '2027-01-01T00:00:00.000Z', validUntil: '2028-01-01T00:00:00.000Z' },
+    ]);
+    render(<SlotOptimizerPanel canWrite />);
+
+    await waitFor(() => expect(screen.getByLabelText(/weekly capacity for ore/i)).toBeTruthy());
+    expect(screen.queryByTestId('ledger-capacity-COR-ORE')).toBeNull();
   });
 });
