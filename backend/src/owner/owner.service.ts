@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ConflictExc
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { ShipmentStatus } from '@prisma/client';
+import { Prisma, ShipmentStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
@@ -1422,6 +1422,34 @@ export class OwnerService {
     updatedAt: true,
   } as const;
 
+  /**
+   * Narrow an untrusted JSON-ish value into something Prisma will accept.
+   *
+   * `Prisma.InputJsonValue` deliberately excludes `unknown` (and top-level
+   * `null`), so a request body has to be walked before it can be written to a
+   * Json column. The walk doubles as validation: a function, a Symbol or a
+   * non-finite number is refused rather than quietly serialised into
+   * something surprising.
+   */
+  private static toJsonInput(value: unknown, path: string): Prisma.InputJsonValue {
+    if (typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) throw new BadRequestException(`${path} must be a finite number`);
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map((item, i) => OwnerService.toJsonInput(item, `${path}[${i}]`));
+    }
+    if (value !== null && typeof value === 'object') {
+      const out: Record<string, Prisma.InputJsonValue | null> = {};
+      for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+        out[key] = nested === null ? null : OwnerService.toJsonInput(nested, `${path}.${key}`);
+      }
+      return out;
+    }
+    throw new BadRequestException(`${path} must be JSON-serialisable`);
+  }
+
   /** Assemble one tenant's commercial picture. */
   private async buildCommercialSummary(company: {
     id: string;
@@ -1614,14 +1642,20 @@ export class OwnerService {
     if (!company) throw new NotFoundException('Tenant not found');
 
     const input = dto && typeof dto === 'object' && !Array.isArray(dto) ? (dto as Record<string, unknown>) : {};
-    const data: { featureOverrides?: unknown; priceOverrideZar?: number | null } = {};
+    const data: { featureOverrides?: Prisma.InputJsonValue; priceOverrideZar?: number | null } = {};
+    // Clearing a Json column is a different write from setting one: see below.
+    let clearFeatureOverrides = false;
 
     if ('featureOverrides' in input) {
       const value = input.featureOverrides;
-      if (value !== null && (typeof value !== 'object' || Array.isArray(value))) {
-        throw new BadRequestException('featureOverrides must be an object or null');
+      if (value === null || value === undefined || value === '') {
+        clearFeatureOverrides = true;
+      } else {
+        if (typeof value !== 'object' || Array.isArray(value)) {
+          throw new BadRequestException('featureOverrides must be an object or null');
+        }
+        data.featureOverrides = OwnerService.toJsonInput(value, 'featureOverrides');
       }
-      data.featureOverrides = value ?? null;
     }
 
     if ('priceOverrideZar' in input) {
@@ -1637,13 +1671,21 @@ export class OwnerService {
       }
     }
 
-    if (Object.keys(data).length === 0) {
+    // Clearing is itself a valid, complete request — it just doesn't put
+    // anything in `data`, so it has to count here or `{ featureOverrides: null }`
+    // would be refused for being empty despite naming a field.
+    if (Object.keys(data).length === 0 && !clearFeatureOverrides) {
       throw new BadRequestException('Supply featureOverrides and/or priceOverrideZar');
     }
 
     const updated = await this.prisma.company.update({
       where: { id: tenantId },
-      data,
+      data: {
+        ...data,
+        // Prisma.InputJsonValue disallows a bare null, because "JSON null" and
+        // "SQL NULL" would be ambiguous. Clearing the column is explicit.
+        ...(clearFeatureOverrides ? { featureOverrides: Prisma.DbNull } : {}),
+      },
       select: OwnerService.COMMERCIAL_SELECT,
     });
 
@@ -1688,6 +1730,8 @@ export class OwnerService {
     if (!Number.isFinite(weight) || weight <= 0) throw new BadRequestException('weight must be a positive number');
     if (!Number.isFinite(price) || price < 0) throw new BadRequestException('price must be a non-negative number');
 
+    const breakdown = input.breakdown;
+
     const created = await this.prisma.quote.create({
       data: {
         companyId: tenantId,
@@ -1697,7 +1741,10 @@ export class OwnerService {
         weight,
         price,
         currency: typeof input.currency === 'string' && input.currency.trim() ? input.currency.trim() : 'ZAR',
-        breakdown: input.breakdown ?? undefined,
+        // Same JSON rule as the overrides: walk it, don't cast it.
+        ...(breakdown !== undefined && breakdown !== null
+          ? { breakdown: OwnerService.toJsonInput(breakdown, 'breakdown') }
+          : {}),
       },
     });
 

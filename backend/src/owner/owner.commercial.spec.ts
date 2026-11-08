@@ -349,6 +349,55 @@ describe('OwnerService subscription overrides', () => {
     expect(update.mock.calls[1][0].data.priceOverrideZar).toBe(0);
   });
 
+  it('clearing featureOverrides writes the null sentinel, not a bare JSON null', async () => {
+    /**
+     * Prisma.InputJsonValue disallows a bare `null` — "JSON null" and "SQL
+     * NULL" would be ambiguous — so clearing the column has to be an explicit
+     * DbNull. Assert the key is written rather than pinning the sentinel's
+     * value: the local Prisma stub resolves `Prisma.DbNull` to undefined while
+     * the generated client resolves it to the sentinel, and only the
+     * generated client is what runs in production.
+     */
+    const update = jest.fn().mockResolvedValue(companyRow());
+    const svc = makeService({
+      company: { findUnique: jest.fn().mockResolvedValue(companyRow()), update },
+      ...commercialCounts(),
+    });
+
+    await svc.updateSubscriptionOverride('cmp-1', { featureOverrides: null }, OWNER_ACTOR);
+
+    expect(update.mock.calls[0][0].data).toHaveProperty('featureOverrides');
+  });
+
+  it('stores featureOverrides as a plain JSON value, rejecting anything unserialisable', async () => {
+    const update = jest.fn().mockResolvedValue(companyRow());
+    const svc = makeService({
+      company: { findUnique: jest.fn().mockResolvedValue(companyRow()), update },
+      ...commercialCounts(),
+    });
+
+    await svc.updateSubscriptionOverride(
+      'cmp-1',
+      { featureOverrides: { railSlots: true, note: 'negotiated', nested: { cap: 40 } } },
+      OWNER_ACTOR,
+    );
+    expect(update.mock.calls[0][0].data.featureOverrides).toEqual({
+      railSlots: true,
+      note: 'negotiated',
+      nested: { cap: 40 },
+    });
+
+    // A function would silently vanish through JSON.stringify; refuse it.
+    await expect(
+      svc.updateSubscriptionOverride('cmp-1', { featureOverrides: { bad: () => 1 } }, OWNER_ACTOR),
+    ).rejects.toThrow(/JSON-serialisable/);
+
+    // So would a non-finite number, which JSON would turn into `null`.
+    await expect(
+      svc.updateSubscriptionOverride('cmp-1', { featureOverrides: { cap: NaN } }, OWNER_ACTOR),
+    ).rejects.toThrow(/finite number/);
+  });
+
   it('refuses a non-object featureOverrides and an empty body', async () => {
     const update = jest.fn();
     const svc = makeService({
@@ -418,6 +467,51 @@ describe('OwnerService owner-raised quotes and invoices', () => {
       ),
     ).rejects.toThrow(/price must be a non-negative number/);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('carries a breakdown through as JSON, and refuses an unserialisable one', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'q-1' });
+    const svc = makeService({
+      company: { findUnique: jest.fn().mockResolvedValue(companyRow()) },
+      ...commercialCounts({ quote: { create, count: jest.fn(), findFirst: jest.fn() } }),
+    });
+
+    await svc.createTenantQuote(
+      'cmp-1',
+      {
+        fromAddress: 'JHB',
+        toAddress: 'DBN',
+        weight: 1,
+        price: 1,
+        breakdown: { fuel: 120, tolls: 45 },
+      },
+      OWNER_ACTOR,
+    );
+    expect(create.mock.calls[0][0].data.breakdown).toEqual({ fuel: 120, tolls: 45 });
+
+    await expect(
+      svc.createTenantQuote(
+        'cmp-1',
+        { fromAddress: 'JHB', toAddress: 'DBN', weight: 1, price: 1, breakdown: { bad: () => 1 } },
+        OWNER_ACTOR,
+      ),
+    ).rejects.toThrow(/JSON-serialisable/);
+  });
+
+  it('omits breakdown entirely when the owner did not supply one', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'q-1' });
+    const svc = makeService({
+      company: { findUnique: jest.fn().mockResolvedValue(companyRow()) },
+      ...commercialCounts({ quote: { create, count: jest.fn(), findFirst: jest.fn() } }),
+    });
+
+    await svc.createTenantQuote(
+      'cmp-1',
+      { fromAddress: 'JHB', toAddress: 'DBN', weight: 1, price: 1 },
+      OWNER_ACTOR,
+    );
+
+    expect(create.mock.calls[0][0].data).not.toHaveProperty('breakdown');
   });
 
   it('defaults the quote currency to ZAR', async () => {
