@@ -5976,7 +5976,11 @@ model RailCorridorCapacity {
   updatedAt      DateTime @updatedAt
 
   @@unique([companyId, corridorCode, validFrom])
-  @@index([companyId, corridorCode, validFrom, validUntil])
+  // Pinned: the name this index would otherwise generate is 70 bytes and
+  // Postgres caps identifiers at 63 — and Prisma's truncation of it does not
+  // match Postgres's, so the migrations would not reconstruct the schema.
+  // (Same trap as terminal_truck_window_changes above.)
+  @@index([companyId, corridorCode, validFrom, validUntil], map: "rail_corridor_capacity_corridor_period_idx")
   @@map("rail_corridor_capacity")
 }
 

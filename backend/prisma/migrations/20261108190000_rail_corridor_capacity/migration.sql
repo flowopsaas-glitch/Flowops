@@ -56,9 +56,17 @@ CREATE TABLE "rail_corridor_capacity" (
 -- CreateIndex
 -- The only read patterns: a tenant's statements for one corridor, and the
 -- statements covering a given period.
+--
+-- The secondary index name is pinned in the schema with `map:`, so it is spelled
+-- identically here. The name it would generate by default is 70 bytes; Postgres
+-- caps identifiers at 63, and Prisma's truncation does NOT produce the same
+-- string Postgres does (it keeps the "_idx" suffix, Postgres just cuts), so the
+-- migrations would fail to reconstruct the schema. A short explicit name avoids
+-- the whole class of problem. The unique name below is 59 bytes and needs no
+-- pinning.
 CREATE UNIQUE INDEX "rail_corridor_capacity_companyId_corridorCode_validFrom_key"
     ON "rail_corridor_capacity"("companyId", "corridorCode", "validFrom");
-CREATE INDEX "rail_corridor_capacity_companyId_corridorCode_validFrom_validUntil_idx"
+CREATE INDEX "rail_corridor_capacity_corridor_period_idx"
     ON "rail_corridor_capacity"("companyId", "corridorCode", "validFrom", "validUntil");
 
 -- No foreign key on companyId, and that is deliberate.

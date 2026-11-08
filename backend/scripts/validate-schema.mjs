@@ -17,13 +17,14 @@
  * every other check in the repo — failed both the Backend and Schema SQL CI
  * jobs with P1012.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as wasm from '@prisma/prisma-schema-wasm';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schemaPath = join(here, '..', 'prisma', 'schema.prisma');
+const migrationsDir = join(here, '..', 'prisma', 'migrations');
 const schema = readFileSync(schemaPath, 'utf8');
 
 // validate() takes a JSON *string*, not an object — passing an object crashes
@@ -37,6 +38,42 @@ try {
 } catch (e) {
   // The thrown value is an Error whose message holds the JSON diagnostics.
   message = String(e?.message ?? e);
+}
+
+/**
+ * Postgres caps identifiers at 63 bytes and silently truncates on creation,
+ * while Prisma truncates differently (it keeps the _idx / _key suffix). So a
+ * migration that spells a long generated name out in full no longer reconstructs
+ * the schema, and only the CI drift guard notices. Flag it here instead.
+ */
+const POSTGRES_MAX_IDENTIFIER = 63;
+function overlongIdentifiers() {
+  if (!existsSync(migrationsDir)) return [];
+  const found = [];
+  for (const dir of readdirSync(migrationsDir).sort()) {
+    const file = join(migrationsDir, dir, 'migration.sql');
+    if (!existsSync(file)) continue;
+    readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/"([^"]{64,})"/g)) {
+        found.push(`${dir}/migration.sql:${i + 1}  ${m[1]}  (${m[1].length} chars)`);
+      }
+    });
+  }
+  return found;
+}
+
+// Advisory, not fatal: an over-long name is fine as long as the schema pins the
+// truncated form with `map:` (see terminal_truck_window_changes). Only the CI
+// drift guard can confirm the two actually agree, so warn and carry on.
+const tooLong = overlongIdentifiers();
+if (tooLong.length) {
+  console.warn(`\nWarning: identifiers longer than ${POSTGRES_MAX_IDENTIFIER} bytes:`);
+  for (const f of tooLong) console.warn(`  ${f}`);
+  console.warn(
+    'Postgres truncates these on creation and Prisma truncates differently.\n' +
+    'If the schema does not pin the truncated name with `map:`, the drift guard\n' +
+    'will reject the migrations. Prefer pinning a short name in both places.\n'
+  );
 }
 
 if (!message) {
