@@ -312,6 +312,23 @@ Full interactive docs: `GET http://localhost:3000/docs` (Swagger UI, non-product
 
 ## Database migrations
 
+**Validate the schema before you commit it:**
+
+```bash
+npm run prisma:validate
+```
+
+This runs Prisma's own WASM schema engine — no network, no query engine, so it
+works offline and locally. It is the only local check that actually validates
+the datamodel. `npm run prisma:stub` (which builds the offline client used for
+`tsc` and jest) parses the schema with regex and deliberately validates
+**nothing**, so a malformed schema passes every local check and only surfaces in
+CI at `prisma generate`. CI runs `prisma:validate` too.
+
+One trap this catches: **Prisma supports only `//` and `///` comments.** A
+`/* */` block comment is valid TypeScript, invisible to `tsc`, eslint and the
+stub, and fails `prisma generate` with `P1012: This line is invalid`.
+
 ```bash
 # Create a new migration after schema changes
 npx prisma migrate dev --name describe_your_change

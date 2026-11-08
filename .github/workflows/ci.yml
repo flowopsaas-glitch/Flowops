@@ -356,6 +356,13 @@ jobs:
 
       - run: npm ci
 
+      # Validate the datamodel with Prisma's own WASM schema engine before the
+      # expensive client generation. `npm run prisma:stub` parses the schema
+      # with regex and validates nothing, so a malformed schema otherwise
+      # reaches CI and fails here with a far less legible message.
+      - name: Validate Prisma schema
+        run: npm run prisma:validate
+
       - name: Generate Prisma client
         run: npx prisma generate
 
@@ -610,6 +617,13 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - run: npm ci
+
+      # Validate the datamodel with Prisma's own WASM schema engine before the
+      # expensive client generation. `npm run prisma:stub` parses the schema
+      # with regex and validates nothing, so a malformed schema otherwise
+      # reaches CI and fails here with a far less legible message.
+      - name: Validate Prisma schema
+        run: npm run prisma:validate
 
       - name: Generate Prisma client
         run: npx prisma generate

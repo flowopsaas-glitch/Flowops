@@ -5929,26 +5929,24 @@ enum RailCapacityUnit {
   TRAINS_PER_WEEK
 }
 
-/**
- * What a tenant believes a corridor can carry.
- *
- * A train path occupies one slot on EVERY section it traverses, so a route's
- * ceiling is its BOTTLENECK section — never the sum of its sections (the
- * frontend's railCapacityAnalysis.ts already derives it that way over the
- * published Annexure 33b data). The theoretical figure is what the bottleneck
- * can pass; the practical figure applies the capacity factor, because a
- * timetable that is 100% utilised is one delay away from collapse.
- *
- * Tenant-scoped on purpose. Capacity is a property of the physical corridor,
- * but FlowOps cannot see other operators' applications and must not pretend to
- * know what the infrastructure manager has allocated to them. So this records
- * what THIS operator is working from, and the check below measures THIS
- * operator's own commitments against it. A corridor with no statement returns
- * UNKNOWN rather than a number nobody can stand behind.
- *
- * dataStatus is carried here for the same reason as on rail_corridor_nodes: an
- * unsourced capacity figure must look unsourced in the UI.
- */
+// What a tenant believes a corridor can carry.
+//
+// A train path occupies one slot on EVERY section it traverses, so a route's
+// ceiling is its BOTTLENECK section — never the sum of its sections (the
+// frontend's railCapacityAnalysis.ts already derives it that way over the
+// published Annexure 33b data). The theoretical figure is what the bottleneck
+// can pass; the practical figure applies the capacity factor, because a
+// timetable that is 100% utilised is one delay away from collapse.
+//
+// Tenant-scoped on purpose. Capacity is a property of the physical corridor,
+// but FlowOps cannot see other operators' applications and must not pretend to
+// know what the infrastructure manager has allocated to them. So this records
+// what THIS operator is working from, and the check below measures THIS
+// operator's own commitments against it. A corridor with no statement returns
+// UNKNOWN rather than a number nobody can stand behind.
+//
+// dataStatus is carried here for the same reason as on rail_corridor_nodes: an
+// unsourced capacity figure must look unsourced in the UI.
 model RailCorridorCapacity {
   id           String            @id @default(cuid())
   companyId    String
