@@ -61,12 +61,14 @@ CREATE UNIQUE INDEX "rail_corridor_capacity_companyId_corridorCode_validFrom_key
 CREATE INDEX "rail_corridor_capacity_companyId_corridorCode_validFrom_validUntil_idx"
     ON "rail_corridor_capacity"("companyId", "corridorCode", "validFrom", "validUntil");
 
--- AddForeignKey
--- Deleting a tenant takes its capacity statements with it.
-ALTER TABLE "rail_corridor_capacity"
-    ADD CONSTRAINT "rail_corridor_capacity_companyId_fkey"
-    FOREIGN KEY ("companyId") REFERENCES "companies"("id")
-    ON DELETE CASCADE ON UPDATE CASCADE;
+-- No foreign key on companyId, and that is deliberate.
+--
+-- Prisma only emits a FK when the model declares a @relation, and this schema
+-- scopes tenants at the application level: 60+ tables (including
+-- rail_slot_applications and rail_possession_windows) carry companyId with no
+-- company relation and therefore no FK. Adding one here would be the drift the
+-- migration guard exists to catch — and would make this table behave
+-- differently from every sibling it is read alongside.
 
 -- AlterTable
 -- Advisory snapshot columns on the application, alongside the existing gate
