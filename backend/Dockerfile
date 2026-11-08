@@ -1,11 +1,19 @@
 # ── Stage 1: builder ────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 
+# Native addons (bcrypt is the one we ship) normally install a prebuilt binary
+# downloaded from GitHub releases. When that CDN is unavailable it returns 504
+# and node-pre-gyp falls back to compiling from source — which needs a
+# toolchain. Without this, a third-party CDN outage breaks the build.
+RUN apk add --no-cache python3 make g++ linux-headers openssl
+
 WORKDIR /app
 
 # Install deps first (layer cache)
+# `--only=production=false` was never a valid npm flag; npm warned and ignored
+# it. `npm ci` is the unambiguous way to say "everything, dev deps included".
 COPY package*.json ./
-RUN npm ci --only=production=false
+RUN npm ci
 
 # Copy source
 COPY tsconfig*.json ./
@@ -29,14 +37,24 @@ WORKDIR /app
 
 # OpenSSL is required by the Prisma query-engine binary at runtime.
 # Without it, Prisma prints "failed to detect libssl" and refuses to start.
-RUN apk add --no-cache openssl
+# libstdc++ is needed at runtime by native addons compiled from source in this
+# stage, so it is installed permanently and excluded from the toolchain below.
+RUN apk add --no-cache openssl libstdc++
 
 # Only production deps. npm is needed to install the runtime tree, but it is
 # not needed by the compiled NestJS process or the Prisma CLI at runtime.
 # Remove the bundled npm tree afterwards so its stale transitive tar package
 # cannot become part of the production image's attack surface.
+#
+# The build toolchain is added as a virtual package and deleted in the SAME
+# layer so it never ships in the image. bcrypt's prebuilt binary is fetched
+# from a third-party CDN; when that returns 504 node-pre-gyp compiles from
+# source instead, and without a toolchain here the install dies. A third-party
+# outage should not be able to break a release build. See the builder stage.
 COPY package*.json ./
-RUN npm ci --only=production \
+RUN apk add --no-cache --virtual .gyp-deps python3 make g++ linux-headers \
+ && npm ci --only=production \
+ && apk del .gyp-deps \
  && npm cache clean --force \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
