@@ -220,6 +220,7 @@ curl http://localhost:3000/api/v1/paystack/verify/<reference> \
 | AI | `/api/v1/ai` | Copilot, events, supervisor, email hub |
 | Owner | `/api/v1/owner` | Tenant management, platform metrics, **commercial standing** (see below) |
 | Compliance | `/api/v1/compliance` | `GET /drivers` (fleet compliance report), `GET /drivers/:id`, `PATCH /drivers/:id` (record evidence: expiry dates, hold), `PATCH /drivers/:id/hold` |
+| Rail | `/api/v1/rail` | Slot applications, corridor envelope, compliance documents, **corridor capacity** (see below) |
 | Storage | (internal) | Cloudflare R2 upload/download |
 
 ### Owner: commercial standing
@@ -259,11 +260,74 @@ Three rules worth knowing before changing any of this:
 Nothing is backfilled: a tenant nobody has classified yet has **no** status,
 which is a different fact from a status of "none".
 
+### Rail: corridor capacity
+
+Slot applications ask for `trainsPerWeek` on a corridor over a window, and the
+lifecycle runs right through to `ALLOCATED`. What never existed was any notion
+of how much the corridor could carry — the only signal that a corridor was
+over-committed was `conflictNote`, free text written by a human who happened to
+notice. Two applications could sit in `ALLOCATED` on the same corridor over the
+same dates and nothing would object.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/rail/slots/capacity` | Capacity statements for one corridor, or all |
+| GET | `/api/v1/rail/slots/capacity/preview` | Headroom over a window: `?corridorCode=&from=&until=&trainsPerWeek=` |
+| PUT | `/api/v1/rail/slots/capacity` | Create or replace a statement for a corridor and period |
+| DELETE | `/api/v1/rail/slots/capacity/:id` | Remove a statement |
+
+Verdicts: `OK`, `TIGHT` (above 90% utilisation), `OVERSUBSCRIBED` (above 100%),
+`UNKNOWN` (no statement covers the period).
+
+Four rules worth knowing before changing any of this:
+
+- **It never blocks a submission.** The infrastructure manager decides what is
+  allocated, and applying for more than you expect to be granted is legitimate.
+  FlowOps records and surfaces; it does not refuse. The verdict is snapshotted
+  onto the application at submission as `capacityCheckStatus` / `capacityCheck`
+  so the decision can be reviewed against the headroom that existed.
+- **A route's ceiling is its bottleneck section, never the sum of its
+  sections.** A train path occupies one slot on *every* section it traverses, so
+  a 30-section route does not have thirty times the capacity of one section.
+  `railCapacityAnalysis.ts` derives it that way over the published Annexure 33b
+  data, and the backend follows the same rule.
+- **Practical, not theoretical.** Capacity is stored as theoretical x a stored
+  capacity factor (default 0.65), because a timetable at 100% of theoretical is
+  one delay away from collapse. The factor is stored, not assumed, so a later
+  recompute is auditable. The practical figure is always derived server-side —
+  a caller cannot send one that contradicts the theoretical figure.
+- **Possessions are reported, never deducted.** What a possession costs depends
+  on whether it is a full closure or single-line working. Subtracting a guessed
+  amount would be a guess dressed up as arithmetic.
+
+Tenant-scoped by design: FlowOps can see no other operator's applications and
+must not imply knowledge of what has been allocated to them, so the check
+measures this operator's own commitments. A corridor with no statement returns
+`UNKNOWN` rather than a number nobody can stand behind, and an unsourced figure
+stays `SOURCE_PENDING` until it is cited.
+
 Full interactive docs: `GET http://localhost:3000/docs` (Swagger UI, non-production only)
 
 ---
 
 ## Database migrations
+
+**Validate the schema before you commit it:**
+
+```bash
+npm run prisma:validate
+```
+
+This runs Prisma's own WASM schema engine — no network, no query engine, so it
+works offline and locally. It is the only local check that actually validates
+the datamodel. `npm run prisma:stub` (which builds the offline client used for
+`tsc` and jest) parses the schema with regex and deliberately validates
+**nothing**, so a malformed schema passes every local check and only surfaces in
+CI at `prisma generate`. CI runs `prisma:validate` too.
+
+One trap this catches: **Prisma supports only `//` and `///` comments.** A
+`/* */` block comment is valid TypeScript, invisible to `tsc`, eslint and the
+stub, and fails `prisma generate` with `P1012: This line is invalid`.
 
 ```bash
 # Create a new migration after schema changes

@@ -5804,6 +5804,12 @@ model RailSlotApplication {
   envelopeCheckStatus      String?                   // COMPATIBLE | INCOMPATIBLE | UNVERIFIED
   envelopeCheck            Json?
   complianceSnapshot       Json?
+  // Advisory capacity picture at submission: OK | TIGHT | OVERSUBSCRIBED | UNKNOWN.
+  // Advisory, never blocking — the infrastructure manager decides what is
+  // allocated, and operators legitimately apply for more than they expect to
+  // be granted.
+  capacityCheckStatus      String?
+  capacityCheck            Json?
 
   // Lifecycle
   submittedAt              DateTime?
@@ -5918,6 +5924,66 @@ enum RailOccurrenceStatus {
 }
 
 // Annexure 20b, one row per source row (FlowOps-assigned code CNX-nnn). Platform-wide.
+enum RailCapacityUnit {
+  PATHS_PER_DAY
+  TRAINS_PER_WEEK
+}
+
+// What a tenant believes a corridor can carry.
+//
+// A train path occupies one slot on EVERY section it traverses, so a route's
+// ceiling is its BOTTLENECK section — never the sum of its sections (the
+// frontend's railCapacityAnalysis.ts already derives it that way over the
+// published Annexure 33b data). The theoretical figure is what the bottleneck
+// can pass; the practical figure applies the capacity factor, because a
+// timetable that is 100% utilised is one delay away from collapse.
+//
+// Tenant-scoped on purpose. Capacity is a property of the physical corridor,
+// but FlowOps cannot see other operators' applications and must not pretend to
+// know what the infrastructure manager has allocated to them. So this records
+// what THIS operator is working from, and the check below measures THIS
+// operator's own commitments against it. A corridor with no statement returns
+// UNKNOWN rather than a number nobody can stand behind.
+//
+// dataStatus is carried here for the same reason as on rail_corridor_nodes: an
+// unsourced capacity figure must look unsourced in the UI.
+model RailCorridorCapacity {
+  id           String            @id @default(cuid())
+  companyId    String
+  corridorCode String // soft reference to rail_corridor_nodes.code
+
+  // The period this statement covers — a timetable period, not an application window.
+  validFrom    DateTime
+  validUntil   DateTime
+
+  // Paths per day across the corridor's bottleneck section.
+  theoreticalPathsPerDay Float
+  // Stored rather than recomputed so a change of factor is auditable, and so a
+  // tenant can cite a different factor than the workbook's default.
+  capacityFactor       Float             @default(0.65)
+  practicalPathsPerDay Float
+
+  unit        RailCapacityUnit @default(PATHS_PER_DAY)
+  dataStatus  RailDataStatus   @default(SOURCE_PENDING)
+  sourceRef   String? // e.g. "Annexure 33b Capacity_DB FY2026/27"
+  verifiedBy  String?
+  verifiedAt  DateTime?
+  notes       String?          @db.Text
+
+  createdById    String?
+  createdByEmail String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([companyId, corridorCode, validFrom])
+  // Pinned: the name this index would otherwise generate is 70 bytes and
+  // Postgres caps identifiers at 63 — and Prisma's truncation of it does not
+  // match Postgres's, so the migrations would not reconstruct the schema.
+  // (Same trap as terminal_truck_window_changes above.)
+  @@index([companyId, corridorCode, validFrom, validUntil], map: "rail_corridor_capacity_corridor_period_idx")
+  @@map("rail_corridor_capacity")
+}
+
 model RailCancellationCode {
   id               String                @id @default(cuid())
   code             String                @unique // CNX-001

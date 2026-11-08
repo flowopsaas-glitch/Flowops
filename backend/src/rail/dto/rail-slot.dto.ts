@@ -4,7 +4,9 @@ import {
   IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
-import { RailComplianceDocType, RailElectrification, RailGauge, RailVehicleProfile } from '@prisma/client';
+import {
+  RailCapacityUnit, RailComplianceDocType, RailDataStatus, RailElectrification, RailGauge, RailVehicleProfile,
+} from '@prisma/client';
 import { RawBoolean, RawString } from '../../common/decorators/raw-string.decorator';
 
 /**
@@ -83,6 +85,40 @@ export class MarkOperatedDto {
 
 export class LinkConsignmentDto {
   @RawString() @IsString() @IsNotEmpty() @MaxLength(60) consignmentId!: string;
+}
+
+/**
+ * What a tenant believes a corridor can carry over a period.
+ *
+ * `practicalPathsPerDay` is derived from `theoreticalPathsPerDay` x
+ * `capacityFactor` on the server — never accepted from the caller, or the two
+ * could contradict each other and the headroom would be meaningless.
+ */
+export class UpsertCorridorCapacityDto {
+  /** Corridor catalog code, e.g. COR-ORE. */
+  @RawString() @IsString() @Matches(CODE, { message: 'corridorCode must look like COR-ORE' }) @MaxLength(40)
+  corridorCode!: string;
+
+  /** The timetable period this statement covers. */
+  @IsDateString() validFrom!: string;
+  @IsDateString() validUntil!: string;
+
+  /**
+   * Paths per day across the corridor's BOTTLENECK section — the section with
+   * the least capacity, since a train path occupies a slot on every section it
+   * traverses. Not a sum across sections.
+   */
+  @IsNumber() @Min(0) @Max(10_000) theoreticalPathsPerDay!: number;
+
+  /** Defaults to 0.65 (the Annexure 33b workbook's own factor). */
+  @IsOptional() @IsNumber() @Min(0) @Max(1) capacityFactor?: number;
+
+  @IsOptional() @IsEnum(RailCapacityUnit) unit?: RailCapacityUnit;
+  @IsOptional() @IsEnum(RailDataStatus) dataStatus?: RailDataStatus;
+
+  /** Where the figure came from — required in practice to ever leave SOURCE_PENDING. */
+  @RawString() @IsOptional() @IsString() @MaxLength(200) sourceRef?: string;
+  @RawString() @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 
 export class EnvelopeSubjectDto {

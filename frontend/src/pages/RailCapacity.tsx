@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ReferenceNotice from "./rail/ReferenceNotice";
 import {
   capacityDb,
@@ -11,6 +11,8 @@ import {
   type CapacityRow,
 } from "../data/railCapacityData";
 import { fyConsistencyStatement, routeHeadroom } from "../data/railCapacityAnalysis";
+import CorridorCapacityPanel from "../components/rail/CorridorCapacityPanel";
+import { getCorridors } from "../api/railSlotApi";
 
 /**
  * Slots & Capacity page — built round 68 from Annexure 33 Capacity Statement (2).xlsm (V4-06);
@@ -36,6 +38,11 @@ function sectionDerived(r: CapacityRow) {
 export default function RailCapacity() {
   const [fy, setFy] = useState("FY26/27");
   const [route, setRoute] = useState("General Freight: Johannesburg to Durban");
+  const [corridors, setCorridors] = useState<Array<{ code: string; name: string }>>([]);
+
+  useEffect(() => {
+    getCorridors().then((c) => setCorridors(c.map((x) => ({ code: x.code, name: x.name })))).catch(() => setCorridors([]));
+  }, []);
 
   const rows = useMemo(
     () => capacityDb.filter((r) => r.fy === fy && r.route === route),
@@ -341,6 +348,10 @@ export default function RailCapacity() {
             all five fiscal years in the 2026-10-23 revision, retiring the former E-33B-01 sparse-cell caveat.
           </p>
         </div>
+
+        {/* The operator's own position — the half of slot allocation that the
+            published workbook cannot tell you, because it is about you. */}
+        <CorridorCapacityPanel corridors={corridors} />
       </div>
     </div>
   );

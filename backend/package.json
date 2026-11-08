@@ -39,7 +39,8 @@
     "tenant-scope:audit": "node scripts/tenant-scope-audit.mjs",
     "tenant-scope:audit:json": "node scripts/tenant-scope-audit.mjs --format json",
     "tenant-scope:check": "node scripts/tenant-scope-audit.mjs --check",
-    "tenant-scope:test": "node --test scripts/tenant-scope-audit.test.mjs"
+    "tenant-scope:test": "node --test scripts/tenant-scope-audit.test.mjs",
+    "prisma:validate": "node scripts/validate-schema.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.540.0",

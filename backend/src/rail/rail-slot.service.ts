@@ -2,7 +2,7 @@ import {
   BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Prisma, RailSlotApplicationStatus } from '@prisma/client';
+import { Prisma, RailCapacityUnit, RailSlotApplicationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
@@ -15,7 +15,7 @@ import { assertSignatoryRole } from './rail-roles';
 import {
   AllocateApplicationDto, ConflictDto, CreateComplianceDocDto, CreateSlotApplicationDto, EnvelopeCheckDto,
   LinkConsignmentDto, MarkOperatedDto, RejectApplicationDto, RevokeComplianceDocDto, SelfScreeningDto,
-  UpdateSlotApplicationDto,
+  UpdateSlotApplicationDto, UpsertCorridorCapacityDto,
 } from './dto/rail-slot.dto';
 import { CORRIDOR_CATALOG } from './catalog/corridors.catalog';
 import { EXPECTED_CORRIDOR_COUNT, EXPECTED_TRANSFER_YARD_COUNT, YARD_CATALOG } from './catalog/yards.catalog';
@@ -254,6 +254,10 @@ export class RailSlotService {
     const corridor = (await this.corridors()).find((c) => c.code === app.corridorCode);
     const envelope = checkEnvelope(corridor, [this.subjectOfApplication(app)], asOf);
     const window = checkValidityWindow(app.requestedFrom, app.requestedUntil);
+    // Advisory: reported so the applicant can see the corridor's headroom, but
+    // never a blocker — the infrastructure manager decides what is allocated,
+    // and applying for more than you expect to be granted is legitimate.
+    const capacity = await this.capacityForApplication(companyId, app);
 
     const blockers: string[] = [];
     if (!selfScreening.complete) blockers.push(`Annexure 25 self-screening is incomplete (unanswered: ${selfScreening.unanswered.join(', ') || 'none'}${selfScreening.unknownQuestions.length ? `; unknown: ${selfScreening.unknownQuestions.join(', ')}` : ''}).`);
@@ -269,6 +273,7 @@ export class RailSlotService {
       compliance,
       envelope,
       window,
+      capacity,
       /** UNVERIFIED does not block, but it is shown so the applicant knows the IM, not FlowOps, confirmed the fit. */
       notes: envelope.status === 'UNVERIFIED' ? ['The corridor envelope could not be verified — submission is allowed, but FlowOps has not confirmed that the rolling stock fits.'] : [],
     };
@@ -425,17 +430,23 @@ export class RailSlotService {
         data: {
           status: 'SUBMITTED', submittedAt: now, envelopeCheckStatus: r.envelope.status,
           envelopeCheck: r.envelope as unknown as Prisma.InputJsonValue, complianceSnapshot: r.compliance as unknown as Prisma.InputJsonValue,
+          // Advisory snapshot: what the corridor looked like at the moment of
+          // submitting, so the decision can be reviewed later against the
+          // headroom that existed when it was taken.
+          capacityCheckStatus: r.capacity.status,
+          capacityCheck: r.capacity as unknown as Prisma.InputJsonValue,
         },
       });
       await this.outbox.enqueue(tx, companyId, 'rail.slot.submitted', {
         applicationId: id, applicationNumber: app.applicationNumber, corridorCode: app.corridorCode,
         envelopeStatus: r.envelope.status, isDangerousGoods: app.isDangerousGoods,
+        capacityStatus: r.capacity.status,
         requestedFrom: app.requestedFrom.toISOString(), requestedUntil: app.requestedUntil.toISOString(),
       });
       return u;
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.SLOT_SUBMITTED, { type: RAIL_AUDIT_TARGET.SLOT_APPLICATION, id, name: app.applicationNumber },
-      { envelopeStatus: r.envelope.status, complianceSatisfied: r.compliance.satisfied, selfScreeningFlags: r.selfScreening.flagged });
+      { envelopeStatus: r.envelope.status, complianceSatisfied: r.compliance.satisfied, selfScreeningFlags: r.selfScreening.flagged, capacityStatus: r.capacity.status });
     return { application: this.withClock(updated), readiness: r };
   }
 
@@ -481,6 +492,284 @@ export class RailSlotService {
   resolveCapacityConflict(companyId: string, id: string, actor: RailActor) {
     return this.transition(companyId, id, 'UNDER_ASSESSMENT', actor, RAIL_AUDIT_ACTION.SLOT_CONFLICT_RESOLVED, { conflictNote: null },
       undefined, undefined, undefined, 'rail.slot.conflict_resolved');
+  }
+
+  // ── Corridor capacity ─────────────────────────────────────────────────────
+  //
+  // Slot applications ask for trainsPerWeek on a corridor over a window, and
+  // the lifecycle runs right through to ALLOCATED. What this service never had
+  // was any notion of how much the corridor can carry, so the only signal that
+  // a corridor was over-committed was `conflictNote`: free text, written by a
+  // human who happened to notice. Two applications could sit in ALLOCATED on
+  // the same corridor over the same dates and nothing would object.
+  //
+  // A train path occupies one slot on EVERY section it traverses, so a route's
+  // ceiling is its BOTTLENECK section — never the sum of its sections. The
+  // theoretical figure is what that bottleneck can pass; the practical figure
+  // applies a capacity factor, because a timetable at 100% of theoretical is
+  // one delay away from collapse.
+  //
+  // The check is ADVISORY and never blocks a submission. The infrastructure
+  // manager decides what is allocated, and operators legitimately apply for
+  // more than they expect to be granted. What this adds is that they can see
+  // it — before they apply, and after they hold it.
+  //
+  // Tenant-scoped on purpose: FlowOps can see no other operator's applications
+  // and must not imply knowledge of what has been allocated to them, so this
+  // measures THIS operator's own commitments. A corridor with no statement
+  // yields UNKNOWN rather than a number nobody can stand behind.
+
+  /** Annexure 33b's own capacity factor. Stored per statement, not assumed. */
+  static readonly CAPACITY_FACTOR_DEFAULT = 0.65;
+
+  /** Utilisation above this is TIGHT; above 1.0 is OVERSUBSCRIBED. */
+  static readonly CAPACITY_TIGHT_THRESHOLD = 0.9;
+
+  /** Statuses that consume corridor capacity because the IM has granted them. */
+  private static readonly CAPACITY_COMMITTED: RailSlotApplicationStatus[] = ['ALLOCATED'];
+  /** Statuses asking for capacity that has not been granted yet. */
+  private static readonly CAPACITY_PENDING: RailSlotApplicationStatus[] = [
+    'SUBMITTED', 'UNDER_ASSESSMENT', 'CAPACITY_CONFLICT',
+  ];
+
+  private static pathsPerDay(value: number, unit: RailCapacityUnit): number {
+    return unit === 'TRAINS_PER_WEEK' ? value / 7 : value;
+  }
+
+  private static windowsOverlap(aFrom: Date, aUntil: Date, bFrom: Date, bUntil: Date): boolean {
+    return aFrom.getTime() <= bUntil.getTime() && bFrom.getTime() <= aUntil.getTime();
+  }
+
+  async listCapacity(companyId: string, corridorCode?: string) {
+    await this.assertEntitled(companyId);
+    return this.prisma.railCorridorCapacity.findMany({
+      where: { companyId, ...(corridorCode ? { corridorCode } : {}) },
+      orderBy: [{ corridorCode: 'asc' }, { validFrom: 'asc' }],
+    });
+  }
+
+  async upsertCapacity(companyId: string, dto: UpsertCorridorCapacityDto, actor: RailActor) {
+    await this.assertEntitled(companyId);
+    await this.corridorOrThrow(dto.corridorCode);
+
+    const validFrom = this.toDate(dto.validFrom, 'validFrom');
+    const validUntil = this.toDate(dto.validUntil, 'validUntil');
+    if (!validFrom || !validUntil) throw new BadRequestException('validFrom and validUntil are required.');
+    if (validUntil.getTime() <= validFrom.getTime()) {
+      throw new BadRequestException('validUntil must be after validFrom.');
+    }
+
+    const factor = dto.capacityFactor ?? RailSlotService.CAPACITY_FACTOR_DEFAULT;
+    // Derived server-side: accepting it from the caller would let the two
+    // figures contradict each other and make the headroom meaningless.
+    const practicalPathsPerDay = dto.theoreticalPathsPerDay * factor;
+
+    const data = {
+      companyId,
+      corridorCode: dto.corridorCode,
+      validFrom,
+      validUntil,
+      theoreticalPathsPerDay: dto.theoreticalPathsPerDay,
+      capacityFactor: factor,
+      practicalPathsPerDay,
+      unit: dto.unit ?? 'PATHS_PER_DAY',
+      dataStatus: dto.dataStatus ?? 'SOURCE_PENDING',
+      sourceRef: dto.sourceRef?.trim() || null,
+      notes: dto.notes?.trim() || null,
+      createdById: actor?.id ?? null,
+      createdByEmail: actor?.email ?? null,
+    };
+
+    const saved = await this.prisma.railCorridorCapacity.upsert({
+      where: {
+        companyId_corridorCode_validFrom: {
+          companyId, corridorCode: dto.corridorCode, validFrom,
+        },
+      },
+      create: data,
+      update: { ...data, createdById: undefined, createdByEmail: undefined },
+    });
+
+    await this.record(companyId, actor, RAIL_AUDIT_ACTION.CORRIDOR_CAPACITY_SET,
+      { type: RAIL_AUDIT_TARGET.CORRIDOR_CAPACITY, id: saved.id, name: `${dto.corridorCode} ${validFrom.toISOString().slice(0, 10)}` },
+      { theoreticalPathsPerDay: saved.theoreticalPathsPerDay, capacityFactor: factor, practicalPathsPerDay, dataStatus: saved.dataStatus });
+
+    return saved;
+  }
+
+  async deleteCapacity(companyId: string, id: string, actor: RailActor) {
+    await this.assertEntitled(companyId);
+    const row = await this.prisma.railCorridorCapacity.findFirst({ where: { id, companyId } });
+    if (!row) throw new NotFoundException('Corridor capacity statement not found.');
+    await this.prisma.railCorridorCapacity.delete({ where: { id } });
+    await this.record(companyId, actor, RAIL_AUDIT_ACTION.CORRIDOR_CAPACITY_CLEARED,
+      { type: RAIL_AUDIT_TARGET.CORRIDOR_CAPACITY, id, name: `${row.corridorCode} ${row.validFrom.toISOString().slice(0, 10)}` }, {});
+    return { deleted: true };
+  }
+
+  /**
+   * How much of a corridor this tenant is already holding over a window.
+   *
+   * `trainsPerWeek` lets a caller ask "what would it look like if I also
+   * applied for N trains?" without writing anything.
+   */
+  async capacityPreview(
+    companyId: string,
+    corridorCode: string,
+    from: Date,
+    until: Date,
+    opts: { trainsPerWeek?: number | null; excludeApplicationId?: string } = {},
+  ) {
+    await this.assertEntitled(companyId);
+    await this.corridorOrThrow(corridorCode);
+    if (until.getTime() <= from.getTime()) {
+      throw new BadRequestException('until must be after from.');
+    }
+    return this.evaluateCapacity(companyId, corridorCode, from, until, opts);
+  }
+
+  /** The computation, shared by the preview endpoint and the submission snapshot. */
+  private async evaluateCapacity(
+    companyId: string,
+    corridorCode: string,
+    from: Date,
+    until: Date,
+    opts: { trainsPerWeek?: number | null; excludeApplicationId?: string } = {},
+  ) {
+    const statements = await this.prisma.railCorridorCapacity.findMany({
+      where: {
+        companyId,
+        corridorCode,
+        validFrom: { lte: until },
+        validUntil: { gte: from },
+      },
+      orderBy: { practicalPathsPerDay: 'asc' },
+    });
+
+    // Possessions take the corridor away for a while. Surfaced, never netted
+    // off: how much a possession actually costs depends on whether it is a full
+    // closure or single-line working, and inventing a factor would be a guess
+    // dressed up as arithmetic.
+    const possessions = await this.prisma.railPossessionWindow.findMany({
+      where: {
+        companyId,
+        corridorCode,
+        status: { in: ['PLANNED', 'ACTIVE'] },
+        startsAt: { lte: until },
+        endsAt: { gte: from },
+      },
+      orderBy: { startsAt: 'asc' },
+    });
+
+    const applications = await this.prisma.railSlotApplication.findMany({
+      where: {
+        companyId,
+        corridorCode,
+        status: { in: [...RailSlotService.CAPACITY_COMMITTED, ...RailSlotService.CAPACITY_PENDING] },
+      },
+      select: {
+        id: true, applicationNumber: true, status: true, trainsPerWeek: true,
+        requestedFrom: true, requestedUntil: true, validFrom: true, validUntil: true,
+      },
+    });
+
+    let committedPathsPerDay = 0;
+    let pendingPathsPerDay = 0;
+    const contributing: Array<{ applicationNumber: string; status: string; pathsPerDay: number }> = [];
+
+    for (const app of applications) {
+      if (opts.excludeApplicationId && app.id === opts.excludeApplicationId) continue;
+      // Allocated windows are the real ones; until then the requested window is
+      // the only estimate available.
+      const aFrom = app.validFrom ?? app.requestedFrom;
+      const aUntil = app.validUntil ?? app.requestedUntil;
+      if (!RailSlotService.windowsOverlap(aFrom, aUntil, from, until)) continue;
+
+      const daily = (app.trainsPerWeek ?? 0) / 7;
+      if (daily <= 0) continue;
+
+      if (RailSlotService.CAPACITY_COMMITTED.includes(app.status)) committedPathsPerDay += daily;
+      else pendingPathsPerDay += daily;
+      contributing.push({ applicationNumber: app.applicationNumber, status: app.status, pathsPerDay: daily });
+    }
+
+    // No statement covering the window: say so rather than inventing a ceiling.
+    if (statements.length === 0) {
+      return {
+        status: 'UNKNOWN' as const,
+        corridorCode,
+        from: from.toISOString(),
+        until: until.toISOString(),
+        declaredPathsPerDay: null,
+        committedPathsPerDay,
+        pendingPathsPerDay,
+        thisApplicationPathsPerDay: opts.trainsPerWeek ? opts.trainsPerWeek / 7 : 0,
+        demandPathsPerDay: committedPathsPerDay + pendingPathsPerDay + (opts.trainsPerWeek ? opts.trainsPerWeek / 7 : 0),
+        headroomPathsPerDay: null,
+        utilisation: null,
+        statements: [],
+        possessions: possessions.map((p) => ({ id: p.id, title: p.title, kind: p.kind, startsAt: p.startsAt, endsAt: p.endsAt })),
+        contributing,
+        reason: 'No capacity statement covers this corridor for that period, so no headroom can be stated. Add one to get a number.',
+      };
+    }
+
+    // Where several statements overlap, the binding one is the most
+    // restrictive — the corridor is only as strong as its weakest period.
+    const binding = statements[0];
+    const declaredPathsPerDay = RailSlotService.pathsPerDay(binding.practicalPathsPerDay, binding.unit);
+    const thisApplication = opts.trainsPerWeek ? opts.trainsPerWeek / 7 : 0;
+    const demand = committedPathsPerDay + pendingPathsPerDay + thisApplication;
+    const utilisation = declaredPathsPerDay > 0 ? demand / declaredPathsPerDay : null;
+    const headroom = declaredPathsPerDay - demand;
+
+    let status: 'OK' | 'TIGHT' | 'OVERSUBSCRIBED';
+    if (utilisation === null) status = 'OK';
+    else if (utilisation > 1) status = 'OVERSUBSCRIBED';
+    else if (utilisation > RailSlotService.CAPACITY_TIGHT_THRESHOLD) status = 'TIGHT';
+    else status = 'OK';
+
+    return {
+      status,
+      corridorCode,
+      from: from.toISOString(),
+      until: until.toISOString(),
+      declaredPathsPerDay,
+      theoreticalPathsPerDay: binding.theoreticalPathsPerDay,
+      capacityFactor: binding.capacityFactor,
+      dataStatus: binding.dataStatus,
+      sourceRef: binding.sourceRef,
+      committedPathsPerDay,
+      pendingPathsPerDay,
+      thisApplicationPathsPerDay: thisApplication,
+      demandPathsPerDay: demand,
+      headroomPathsPerDay: headroom,
+      utilisation,
+      statements: statements.map((st) => ({
+        id: st.id,
+        validFrom: st.validFrom.toISOString(),
+        validUntil: st.validUntil.toISOString(),
+        practicalPathsPerDay: RailSlotService.pathsPerDay(st.practicalPathsPerDay, st.unit),
+        dataStatus: st.dataStatus,
+        binding: st.id === binding.id,
+      })),
+      possessions: possessions.map((p) => ({ id: p.id, title: p.title, kind: p.kind, startsAt: p.startsAt, endsAt: p.endsAt })),
+      contributing,
+      reason: null,
+    };
+  }
+
+  /** The capacity picture for one application, for the readiness payload and the snapshot. */
+  private async capacityForApplication(
+    companyId: string,
+    app: { id: string; corridorCode: string; trainsPerWeek: number | null; requestedFrom: Date; requestedUntil: Date; validFrom: Date | null; validUntil: Date | null },
+  ) {
+    const from = app.validFrom ?? app.requestedFrom;
+    const until = app.validUntil ?? app.requestedUntil;
+    return this.evaluateCapacity(companyId, app.corridorCode, from, until, {
+      trainsPerWeek: app.trainsPerWeek,
+      excludeApplicationId: app.id,
+    });
   }
 
   /**
