@@ -59,6 +59,8 @@ export const RAIL_AUDIT_ACTION = {
   SLOT_EXPIRED: 'slot_application.expired',
   SLOT_OPERATED: 'slot_application.operated',
   SLOT_CONSIGNMENT_LINKED: 'slot_application.consignment_linked',
+  CORRIDOR_CAPACITY_SET: 'corridor_capacity.set',
+  CORRIDOR_CAPACITY_CLEARED: 'corridor_capacity.cleared',
   SLOT_FORFEITURE_FLAGGED: 'slot_application.forfeiture_flagged',
   // ── Digital train manifest (the departure document) ────────────────────────
   MANIFEST_CREATED: 'train_manifest.created',
@@ -156,6 +158,7 @@ export const RAIL_AUDIT_TARGET = {
   TELEMETRY_ALERT: 'rail_telemetry_alert',
   COMPLIANCE_DOC: 'rail_compliance_doc',
   CHANGE_REQUEST: 'rail_change_request',
+  CORRIDOR_CAPACITY: 'rail_corridor_capacity',
   POSSESSION: 'rail_possession_window',
   OCCURRENCE: 'rail_occurrence_report',
   WEIGHBRIDGE_READING: 'rail_weighbridge_reading',

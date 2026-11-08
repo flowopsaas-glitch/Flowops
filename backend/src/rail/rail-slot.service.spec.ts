@@ -32,6 +32,8 @@ function make(opts: { entitled?: boolean } = {}) {
   const consignments = new FakeTable('con');
   const wagons = new FakeTable('wag');
   const aiEvents = new FakeTable('ai');
+  const capacity = new FakeTable('cap', { unique: [['companyId', 'corridorCode', 'validFrom']] });
+  const possessions = new FakeTable('pos');
   const consignmentDelegate = {
     ...consignments,
     findFirst: jest.fn(async (args: any) => {
@@ -44,6 +46,7 @@ function make(opts: { entitled?: boolean } = {}) {
     withTenant: async (_companyId: string, fn: any, _opts?: any) => fn(prisma),
     railSlotApplication: apps, railOperatorComplianceDoc: docs, railCorridorNode: corridors, railYardSpec: yards,
     railConsignment: consignmentDelegate, aiEvent: aiEvents,
+    railCorridorCapacity: capacity, railPossessionWindow: possessions,
   };
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
@@ -65,7 +68,13 @@ function make(opts: { entitled?: boolean } = {}) {
   };
   const actions = () => audit.record.mock.calls.map(([e]) => e.action);
   const entries = () => audit.record.mock.calls.map(([e]) => e);
-  return { svc, prisma, billing, audit, apps, docs, corridors, yards, consignments, wagons, aiEvents, seedApp, seedDocs, answers, draftReady, actions, entries };
+  const seedCapacity = (over: Record<string, any> = {}) =>
+    capacity.seed({
+      companyId: 'A', corridorCode: 'COR-ORE', validFrom: at(0), validUntil: at(365),
+      theoreticalPathsPerDay: 20, capacityFactor: 0.65, practicalPathsPerDay: 13,
+      unit: 'PATHS_PER_DAY', dataStatus: 'SOURCE_PENDING', sourceRef: null, notes: null, ...over,
+    });
+  return { svc, prisma, billing, audit, apps, docs, corridors, yards, consignments, wagons, aiEvents, capacity, possessions, seedApp, seedDocs, seedCapacity, answers, draftReady, actions, entries };
 }
 type H = ReturnType<typeof make>;
 const dto = (over: Record<string, any> = {}) => ({
@@ -90,6 +99,8 @@ describe('entitlement', () => {
       () => s.linkConsignment('A', 'x', { consignmentId: 'c' }, MANAGER), () => s.listDocs('A'), () => s.complianceSummary('A'),
       () => s.createDoc('A', { docType: 'RSR_PERMIT', validFrom: at(-1).toISOString(), validUntil: at(1).toISOString() }, MANAGER),
       () => s.verifyDoc('A', 'x', MANAGER), () => s.revokeDoc('A', 'x', { reason: 'abc' }, MANAGER),
+      () => s.listCapacity('A'), () => s.capacityPreview('A', 'COR-ORE', at(0), at(10)),
+      () => s.upsertCapacity('A', dto() as any, MANAGER), () => s.deleteCapacity('A', 'x', MANAGER),
     ];
     for (const call of calls) await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
     expect(h.billing.hasFeature).toHaveBeenCalledTimes(calls.length);
@@ -762,5 +773,276 @@ describe('checkEnvelope (on-demand tool)', () => {
   it('needs something to check', async () => {
     const h = make();
     await expect(h.svc.checkEnvelope('A', {})).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('corridor capacity — the gap that used to be a free-text note', () => {
+  /**
+   * Slot applications ask for trainsPerWeek on a corridor and run through to
+   * ALLOCATED, but nothing ever computed how much the corridor could carry: the
+   * only signal a corridor was over-committed was `conflictNote`, written by a
+   * human who happened to notice. Two applications could sit in ALLOCATED over
+   * the same dates and nothing would object.
+   *
+   * The check is ADVISORY and must never block a submission — the IM decides
+   * what is allocated, and applying for more than you expect to be granted is
+   * legitimate. These tests pin that boundary as firmly as the arithmetic.
+   */
+  const window = { from: at(100), until: at(200) };
+
+  it('says UNKNOWN rather than inventing a ceiling when no statement covers the period', async () => {
+    const h = make();
+    h.seedCapacity({ validFrom: at(0), validUntil: at(10) }); // does not overlap the window
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.status).toBe('UNKNOWN');
+    expect(r.declaredPathsPerDay).toBeNull();
+    expect(r.headroomPathsPerDay).toBeNull();
+    expect(r.utilisation).toBeNull();
+    expect(r.reason).toMatch(/No capacity statement covers/);
+  });
+
+  it('computes headroom from the practical figure, not the theoretical one', async () => {
+    const h = make();
+    // 20 theoretical x 0.65 = 13 practical. A demand of 7 trains/week = 1/day.
+    h.seedCapacity({ validFrom: at(0), validUntil: at(365), theoreticalPathsPerDay: 20, capacityFactor: 0.65, practicalPathsPerDay: 13 });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until, { trainsPerWeek: 7 });
+
+    expect(r.declaredPathsPerDay).toBe(13);
+    expect(r.demandPathsPerDay).toBe(1);
+    expect(r.headroomPathsPerDay).toBe(12);
+    expect(r.utilisation).toBeCloseTo(1 / 13, 5);
+    expect(r.status).toBe('OK');
+  });
+
+  it('grades TIGHT above 90% utilisation and OVERSUBSCRIBED above 100%', async () => {
+    const h = make();
+    h.seedCapacity({ theoreticalPathsPerDay: 20, capacityFactor: 0.5, practicalPathsPerDay: 10 });
+
+    const tight: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until, { trainsPerWeek: 65 });
+    expect(tight.demandPathsPerDay).toBeCloseTo(65 / 7, 5); // ~9.29 of 10 → 92.9%
+    expect(tight.status).toBe('TIGHT');
+
+    const over: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until, { trainsPerWeek: 77 });
+    expect(over.status).toBe('OVERSUBSCRIBED');
+    expect(over.headroomPathsPerDay).toBeLessThan(0);
+  });
+
+  it('binds on the most restrictive statement when several cover the period', async () => {
+    const h = make();
+    h.seedCapacity({ validFrom: at(0), validUntil: at(150), practicalPathsPerDay: 20 });
+    h.seedCapacity({ validFrom: at(151), validUntil: at(400), practicalPathsPerDay: 4 });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until, { trainsPerWeek: 7 });
+
+    // The corridor is only as strong as its weakest overlapping period.
+    expect(r.declaredPathsPerDay).toBe(4);
+    expect(r.statements.filter((s: any) => s.binding)).toHaveLength(1);
+    expect(r.statements.find((s: any) => s.binding).practicalPathsPerDay).toBe(4);
+  });
+
+  it('counts ALLOCATED applications as committed and ignores DRAFT ones', async () => {
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    h.seedApp({ status: 'ALLOCATED', trainsPerWeek: 21, requestedFrom: at(100), requestedUntil: at(200), validFrom: null, validUntil: null });
+    h.seedApp({ status: 'DRAFT', trainsPerWeek: 21, requestedFrom: at(100), requestedUntil: at(200), validFrom: null, validUntil: null });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.committedPathsPerDay).toBe(3); // 21/week = 3/day, ALLOCATED only
+    expect(r.contributing).toHaveLength(1);
+    expect(r.contributing[0].status).toBe('ALLOCATED');
+  });
+
+  it('separates what has been granted from what is merely being asked for', async () => {
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    h.seedApp({ status: 'ALLOCATED', trainsPerWeek: 14, requestedFrom: at(100), requestedUntil: at(200) });
+    h.seedApp({ status: 'SUBMITTED', trainsPerWeek: 14, requestedFrom: at(100), requestedUntil: at(200) });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.committedPathsPerDay).toBe(2);
+    expect(r.pendingPathsPerDay).toBe(2);
+    expect(r.demandPathsPerDay).toBe(4);
+  });
+
+  it('ignores applications whose window does not overlap the period asked about', async () => {
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    h.seedApp({ status: 'ALLOCATED', trainsPerWeek: 70, requestedFrom: at(0), requestedUntil: at(50) }); // ends before the window
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.committedPathsPerDay).toBe(0);
+  });
+
+  it('prefers the allocated window over the requested one once the IM has granted it', async () => {
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    // Requested a year, but the IM only granted the first month — that is what consumes capacity.
+    h.seedApp({ status: 'ALLOCATED', trainsPerWeek: 70, requestedFrom: at(0), requestedUntil: at(365), validFrom: at(0), validUntil: at(30) });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.committedPathsPerDay).toBe(0);
+  });
+
+  it('surfaces overlapping possessions but never nets them off the ceiling', async () => {
+    /**
+     * How much a possession actually costs depends on whether it is a full
+     * closure or single-line working. Inventing a factor would be a guess
+     * dressed up as arithmetic, so the possession is reported and the operator
+     * judges it.
+     */
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    h.possessions.seed({ companyId: 'A', corridorCode: 'COR-ORE', kind: 'ANNUAL_PLAN', status: 'PLANNED', title: 'Sishen–Saldanha relaying', startsAt: at(120), endsAt: at(140) });
+    h.possessions.seed({ companyId: 'A', corridorCode: 'COR-ORE', kind: 'ANNUAL_PLAN', status: 'COMPLETED', title: 'Done last year', startsAt: at(0), endsAt: at(5) });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.possessions.map((p: any) => p.title)).toEqual(['Sishen–Saldanha relaying']);
+    // The ceiling AND the headroom are unchanged — the possession is
+    // information, not a deduction. Pin headroom specifically: subtracting a
+    // possession from the arithmetic would be a guess dressed as a number, and
+    // it is the kind of change that looks like an improvement.
+    expect(r.declaredPathsPerDay).toBe(10);
+    expect(r.headroomPathsPerDay).toBe(10);
+  });
+
+  it('never counts another tenant\'s applications', async () => {
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    h.seedApp({ companyId: 'B', status: 'ALLOCATED', trainsPerWeek: 700, requestedFrom: at(100), requestedUntil: at(200) });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.committedPathsPerDay).toBe(0);
+    expect(r.contributing).toHaveLength(0);
+  });
+
+  it('converts a TRAINS_PER_WEEK statement to paths per day', async () => {
+    const h = make();
+    h.seedCapacity({ unit: 'TRAINS_PER_WEEK', practicalPathsPerDay: 70 });
+
+    const r: any = await h.svc.capacityPreview('A', 'COR-ORE', window.from, window.until);
+
+    expect(r.declaredPathsPerDay).toBe(10);
+  });
+
+  // ── writing the ledger ────────────────────────────────────────────────────
+
+  it('derives the practical figure server-side and will not accept it from the caller', async () => {
+    const h = make();
+    const saved: any = await h.svc.upsertCapacity('A', {
+      corridorCode: 'COR-ORE', validFrom: at(0).toISOString(), validUntil: at(365).toISOString(),
+      theoreticalPathsPerDay: 20,
+      // A caller who also sends a contradictory practical figure is ignored.
+      ...{ practicalPathsPerDay: 999 } as any,
+    } as any, MANAGER);
+
+    expect(saved.practicalPathsPerDay).toBe(13); // 20 x 0.65, not 999
+    expect(saved.capacityFactor).toBe(0.65);
+  });
+
+  it('honours a stated capacity factor and keeps it auditable', async () => {
+    const h = make();
+    const saved: any = await h.svc.upsertCapacity('A', {
+      corridorCode: 'COR-ORE', validFrom: at(0).toISOString(), validUntil: at(365).toISOString(),
+      theoreticalPathsPerDay: 20, capacityFactor: 0.8,
+    } as any, MANAGER);
+
+    expect(saved.capacityFactor).toBe(0.8);
+    expect(saved.practicalPathsPerDay).toBe(16);
+  });
+
+  it('replaces the statement for the same corridor and period instead of stacking', async () => {
+    const h = make();
+    await h.svc.upsertCapacity('A', { corridorCode: 'COR-ORE', validFrom: at(0).toISOString(), validUntil: at(365).toISOString(), theoreticalPathsPerDay: 20 } as any, MANAGER);
+    await h.svc.upsertCapacity('A', { corridorCode: 'COR-ORE', validFrom: at(0).toISOString(), validUntil: at(365).toISOString(), theoreticalPathsPerDay: 30 } as any, MANAGER);
+
+    expect(h.capacity.rows).toHaveLength(1);
+    expect(h.capacity.rows[0].theoreticalPathsPerDay).toBe(30);
+  });
+
+  it('refuses a period that ends before it starts, and an unknown corridor', async () => {
+    const h = make();
+    await expect(h.svc.upsertCapacity('A', {
+      corridorCode: 'COR-ORE', validFrom: at(100).toISOString(), validUntil: at(50).toISOString(), theoreticalPathsPerDay: 20,
+    } as any, MANAGER)).rejects.toThrow(/validUntil must be after validFrom/);
+
+    await expect(h.svc.upsertCapacity('A', {
+      corridorCode: 'COR-NOPE', validFrom: at(0).toISOString(), validUntil: at(10).toISOString(), theoreticalPathsPerDay: 20,
+    } as any, MANAGER)).rejects.toThrow(/Unknown corridor/);
+    expect(h.capacity.rows).toHaveLength(0);
+  });
+
+  it('records who stated the capacity and where it came from', async () => {
+    const h = make();
+    const saved: any = await h.svc.upsertCapacity('A', {
+      corridorCode: 'COR-ORE', validFrom: at(0).toISOString(), validUntil: at(365).toISOString(),
+      theoreticalPathsPerDay: 20, sourceRef: 'Annexure 33b Capacity_DB FY2026/27', dataStatus: 'VERIFIED',
+    } as any, MANAGER);
+
+    expect(h.actions()).toContain('corridor_capacity.set');
+    const entry = h.entries().find((e: any) => e.action === 'corridor_capacity.set');
+    expect(entry.actorEmail).toBe('mia@toc.co.za');
+    expect(entry.targetType).toBe('rail_corridor_capacity');
+    expect(entry.targetId).toBe(saved.id);
+  });
+
+  it('cannot delete another tenant\'s statement', async () => {
+    const h = make();
+    const other = h.capacity.seed({ companyId: 'B', corridorCode: 'COR-ORE', validFrom: at(0), validUntil: at(365), theoreticalPathsPerDay: 20, practicalPathsPerDay: 13, unit: 'PATHS_PER_DAY' });
+
+    await expect(h.svc.deleteCapacity('A', other.id, MANAGER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(h.capacity.rows).toHaveLength(1);
+  });
+
+  // ── the advisory boundary ─────────────────────────────────────────────────
+
+  it('snapshots the capacity picture at submission', async () => {
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    const app = h.draftReady({ trainsPerWeek: 21, requestedFrom: at(100), requestedUntil: at(200) });
+
+    await h.svc.submit('A', app.id, MANAGER, NOW);
+
+    expect(h.apps.rows[0].capacityCheckStatus).toBe('OK');
+    expect(h.apps.rows[0].capacityCheck.demandPathsPerDay).toBe(3);
+  });
+
+  it('does NOT block submission when the corridor is already over-subscribed', async () => {
+    /**
+     * The whole point of the boundary. The infrastructure manager decides what
+     * is allocated; an operator applying for more than they expect to be
+     * granted is behaving rationally, not wrongly. FlowOps records and
+     * surfaces — it does not refuse.
+     */
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 2 }); // almost nothing left
+    h.seedApp({ status: 'ALLOCATED', trainsPerWeek: 70, requestedFrom: at(100), requestedUntil: at(200) });
+    const app = h.draftReady({ trainsPerWeek: 70, requestedFrom: at(100), requestedUntil: at(200) });
+
+    const out: any = await h.svc.submit('A', app.id, MANAGER, NOW);
+
+    expect(out.application.status).toBe('SUBMITTED');
+    expect(out.application.capacityCheckStatus).toBe('OVERSUBSCRIBED');
+    expect(out.readiness.blockers).toHaveLength(0);
+  });
+
+  it('reports the capacity picture through readiness so it is visible before submitting', async () => {
+    const h = make();
+    h.seedCapacity({ practicalPathsPerDay: 10 });
+    const app = h.draftReady({ trainsPerWeek: 21, requestedFrom: at(100), requestedUntil: at(200) });
+
+    const r: any = await h.svc.readiness('A', app.id, NOW);
+
+    expect(r.capacity.status).toBe('OK');
+    expect(r.capacity.corridorCode).toBe('COR-ORE');
   });
 });

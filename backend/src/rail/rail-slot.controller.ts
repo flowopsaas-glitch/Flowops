@@ -1,12 +1,12 @@
 import {
-  Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards,
+  Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RailSlotService } from './rail-slot.service';
 import {
   AllocateApplicationDto, ConflictDto, CreateComplianceDocDto, CreateSlotApplicationDto, EnvelopeCheckDto,
   LinkConsignmentDto, MarkOperatedDto, RejectApplicationDto, RevokeComplianceDocDto, SelfScreeningDto,
-  UpdateSlotApplicationDto,
+  UpdateSlotApplicationDto, UpsertCorridorCapacityDto,
 } from './dto/rail-slot.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
@@ -63,6 +63,52 @@ export class RailSlotController {
   @Get('overview')
   @ApiOperation({ summary: 'Slot-application counts, 60-day mobilisation clocks needing attention, RSR guard, reference completeness' })
   overview(@CurrentUser() u: AuthenticatedUser) { return this.slots.overview(u.companyId); }
+
+  // ── corridor capacity ─────────────────────────────────────────────────────
+  //
+  // What this tenant believes a corridor can carry, and how much of it their
+  // own applications already hold. ADVISORY throughout: the infrastructure
+  // manager decides what is allocated, so nothing here blocks a submission —
+  // it exists so the operator can see the headroom before they ask.
+
+  @Get('capacity')
+  @ApiOperation({ summary: 'Capacity statements for this corridor (or all corridors)' })
+  listCapacity(@CurrentUser() u: AuthenticatedUser, @Query('corridorCode') corridorCode?: string) {
+    return this.slots.listCapacity(u.companyId, corridorCode);
+  }
+
+  // Declared before 'capacity/:id' so the literal 'preview' segment is never
+  // captured as an :id.
+  @Get('capacity/preview')
+  @ApiOperation({
+    summary: 'Headroom on a corridor over a window, including this tenant\'s own committed and pending applications',
+  })
+  capacityPreview(
+    @CurrentUser() u: AuthenticatedUser,
+    @Query('corridorCode') corridorCode: string,
+    @Query('from') from: string,
+    @Query('until') until: string,
+    @Query('trainsPerWeek') trainsPerWeek?: string,
+  ) {
+    return this.slots.capacityPreview(u.companyId, corridorCode, new Date(from), new Date(until), {
+      // Empty string from the query string means "not supplied", not zero.
+      trainsPerWeek: trainsPerWeek ? Number(trainsPerWeek) : null,
+    });
+  }
+
+  @Put('capacity')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Create or replace a corridor capacity statement for a period' })
+  upsertCapacity(@CurrentUser() u: AuthenticatedUser, @Body() dto: UpsertCorridorCapacityDto) {
+    return this.slots.upsertCapacity(u.companyId, dto, u);
+  }
+
+  @Delete('capacity/:id')
+  @Roles(...RAIL_WRITE_ROLES)
+  @ApiOperation({ summary: 'Remove a corridor capacity statement' })
+  deleteCapacity(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string) {
+    return this.slots.deleteCapacity(u.companyId, id, u);
+  }
 
   // ── compliance documents ───────────────────────────────────────────────────
 

@@ -44,6 +44,9 @@ export interface SlotApplication {
   submittedAt?: string | null; allocatedAt?: string | null; mobilizeBy?: string | null; firstOperatedAt?: string | null;
   forfeitureFlaggedAt?: string | null; conflictNote?: string | null; rejectionReason?: string | null;
   consignmentId?: string | null; createdAt: string;
+  /** Advisory snapshot taken at submission — never a submission blocker. */
+  capacityCheckStatus?: CapacityStatus | null;
+  capacityCheck?: CapacityCheck | null;
   mobilisation: Mobilisation;
 }
 
@@ -105,6 +108,8 @@ export interface Readiness {
   ready: boolean; status: SlotApplicationStatus; blockers: string[]; notes: string[];
   selfScreening: { complete: boolean; unanswered: string[]; flagged: string[]; missingRemarks: string[] };
   compliance: ComplianceEvaluation; envelope: EnvelopeResult;
+  /** Advisory — reported so the applicant can see the headroom, never a blocker. */
+  capacity: CapacityCheck;
 }
 
 // ── Reference ────────────────────────────────────────────────────────────────
@@ -162,6 +167,103 @@ export const DOC_TYPES = Object.keys(DOC_TYPE_LABEL) as RailComplianceDocType[];
 export const SLOT_STATUS_LABEL: Record<SlotApplicationStatus, string> = {
   DRAFT: "Draft", SUBMITTED: "Submitted", UNDER_ASSESSMENT: "Under assessment", CAPACITY_CONFLICT: "Capacity conflict",
   ALLOCATED: "Allocated", REJECTED: "Rejected", EXPIRED: "Expired",
+};
+
+// ── Corridor capacity ───────────────────────────────────────────────────────
+//
+// Slot applications ask for trainsPerWeek and run through to ALLOCATED, but
+// nothing computed how much a corridor could carry: the only signal a corridor
+// was over-committed was a free-text note written by whoever noticed. This is
+// that missing half.
+//
+// ADVISORY end to end. The infrastructure manager decides what is allocated,
+// and applying for more than you expect to be granted is legitimate — so this
+// informs and never refuses. Tenant-scoped: it measures THIS operator's own
+// commitments, because FlowOps can see no other operator's applications.
+
+export type CapacityStatus = "OK" | "TIGHT" | "OVERSUBSCRIBED" | "UNKNOWN";
+export type RailCapacityUnit = "PATHS_PER_DAY" | "TRAINS_PER_WEEK";
+
+export interface CorridorCapacity {
+  id: string;
+  corridorCode: string;
+  validFrom: string;
+  validUntil: string;
+  theoreticalPathsPerDay: number;
+  capacityFactor: number;
+  practicalPathsPerDay: number;
+  unit: RailCapacityUnit;
+  dataStatus: RailDataStatus;
+  sourceRef: string | null;
+  notes: string | null;
+  createdByEmail: string | null;
+  createdAt: string;
+}
+
+export interface CapacityCheck {
+  status: CapacityStatus;
+  corridorCode: string;
+  from: string;
+  until: string;
+  /** Null when no capacity statement covers the period. */
+  declaredPathsPerDay: number | null;
+  theoreticalPathsPerDay?: number;
+  capacityFactor?: number;
+  dataStatus?: RailDataStatus;
+  sourceRef?: string | null;
+  /** Granted by the IM. */
+  committedPathsPerDay: number;
+  /** Asked for but not yet granted. */
+  pendingPathsPerDay: number;
+  thisApplicationPathsPerDay: number;
+  demandPathsPerDay: number;
+  headroomPathsPerDay: number | null;
+  utilisation: number | null;
+  statements: Array<{
+    id: string; validFrom: string; validUntil: string;
+    practicalPathsPerDay: number; dataStatus: RailDataStatus; binding: boolean;
+  }>;
+  /** Reported, never deducted: what a possession costs depends on whether it is
+   *  a full closure or single-line working, and that is not ours to guess. */
+  possessions: Array<{ id: string; title: string; kind: string; startsAt: string; endsAt: string }>;
+  contributing: Array<{ applicationNumber: string; status: string; pathsPerDay: number }>;
+  reason: string | null;
+}
+
+export const getCorridorCapacity = async (corridorCode?: string): Promise<CorridorCapacity[]> => {
+  const q = corridorCode ? `?corridorCode=${encodeURIComponent(corridorCode)}` : "";
+  const r = unwrap(await api.get(`/rail/slots/capacity${q}`));
+  return Array.isArray(r) ? r : [];
+};
+
+export const previewCorridorCapacity = async (args: {
+  corridorCode: string; from: string; until: string; trainsPerWeek?: number | null;
+}): Promise<CapacityCheck> =>
+  unwrap(await api.get(
+    `/rail/slots/capacity/preview?corridorCode=${encodeURIComponent(args.corridorCode)}` +
+    `&from=${encodeURIComponent(args.from)}&until=${encodeURIComponent(args.until)}` +
+    (args.trainsPerWeek ? `&trainsPerWeek=${args.trainsPerWeek}` : ""),
+  ));
+
+export const upsertCorridorCapacity = async (dto: {
+  corridorCode: string; validFrom: string; validUntil: string;
+  theoreticalPathsPerDay: number; capacityFactor?: number;
+  unit?: RailCapacityUnit; dataStatus?: RailDataStatus; sourceRef?: string; notes?: string;
+}): Promise<CorridorCapacity> => unwrap(await api.put("/rail/slots/capacity", dto));
+
+export const deleteCorridorCapacity = async (id: string): Promise<{ deleted: boolean }> =>
+  unwrap(await api.delete(`/rail/slots/capacity/${id}`));
+
+export const CAPACITY_STATUS_LABEL: Record<CapacityStatus, string> = {
+  OK: "Headroom available",
+  TIGHT: "Tight",
+  OVERSUBSCRIBED: "Over-subscribed",
+  UNKNOWN: "No capacity stated",
+};
+
+export const CAPACITY_UNIT_LABEL: Record<RailCapacityUnit, string> = {
+  PATHS_PER_DAY: "paths/day",
+  TRAINS_PER_WEEK: "trains/week",
 };
 
 // ── Schedule optimizer (Phase 2: decision support — proposes, humans apply) ──

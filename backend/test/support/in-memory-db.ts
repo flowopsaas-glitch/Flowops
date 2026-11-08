@@ -14,6 +14,22 @@ export type Row = Record<string, any>;
 const isOperator = (v: unknown): v is Row =>
   !!v && typeof v === 'object' && !(v instanceof Date) && !Array.isArray(v);
 
+/**
+ * Prisma addresses a compound unique key as a single nested condition —
+ * `{ companyId_corridorCode_validFrom: { companyId, corridorCode, validFrom } }`.
+ * Flatten those into their constituent columns so the fake can match them the
+ * way the generated client would.
+ */
+export function normaliseWhere(where: Row = {}): Row {
+  const out: Row = {};
+  for (const [key, cond] of Object.entries(where)) {
+    if (key === 'OR' || key === 'AND' || key === 'NOT') { out[key] = cond; continue; }
+    if (key.includes('_') && isOperator(cond)) Object.assign(out, normaliseWhere(cond as Row));
+    else out[key] = cond;
+  }
+  return out;
+}
+
 const cmp = (a: unknown, b: unknown): number => {
   const x = a instanceof Date ? a.getTime() : (a as number);
   const y = b instanceof Date ? b.getTime() : (b as number);
@@ -21,7 +37,7 @@ const cmp = (a: unknown, b: unknown): number => {
 };
 
 export function matches(row: Row, where: Row = {}): boolean {
-  return Object.entries(where).every(([key, cond]) => {
+  return Object.entries(normaliseWhere(where)).every(([key, cond]) => {
     if (cond === undefined) return true;
     if (key === 'OR') return (cond as Row[]).some((w) => matches(row, w));
     if (key === 'AND') return (cond as Row[]).every((w) => matches(row, w));
@@ -39,6 +55,11 @@ export function matches(row: Row, where: Row = {}): boolean {
         return ('lt' in cond ? cmp(actual, cond.lt) < 0 : true) && ('lte' in cond ? cmp(actual, cond.lte) <= 0 : true)
           && ('gt' in cond ? cmp(actual, cond.gt) > 0 : true) && ('gte' in cond ? cmp(actual, cond.gte) >= 0 : true);
       }
+    }
+    // Prisma compares values, not object identity: two Dates holding the same
+    // instant are equal, and a compound-unique upsert depends on that.
+    if (actual instanceof Date || cond instanceof Date) {
+      return actual instanceof Date && cond instanceof Date && actual.getTime() === cond.getTime();
     }
     return actual === cond;
   });
@@ -104,6 +125,18 @@ export class FakeTable {
 
   count = jest.fn(async ({ where }: { where?: Row } = {}) => this.rows.filter((r) => matches(r, where)).length);
 
+  /**
+   * Find by `where`, then update or create. Mirrors Prisma closely enough for
+   * the compound-key upserts the rail capacity ledger uses; it is not
+   * transactional, so it does not reproduce concurrent-write behaviour.
+   */
+  upsert = jest.fn(async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
+    const row = this.rows.find((r) => matches(r, where));
+    if (!row) return this.seed(clean(create));
+    Object.assign(row, clean(update), { updatedAt: new Date() });
+    return { ...row };
+  });
+
   update = jest.fn(async ({ where, data }: { where: Row; data: Row }) => {
     const row = this.rows.find((r) => matches(r, where));
     if (!row) throw Object.assign(new Error('Record not found'), { code: 'P2025' });
@@ -125,7 +158,7 @@ export class FakeTable {
 
   /** Every jest.fn on this table, to assert "nothing was touched". */
   get fns(): jest.Mock[] {
-    return [this.create, this.findFirst, this.findUnique, this.findMany, this.count, this.update, this.updateMany, this.delete];
+    return [this.create, this.findFirst, this.findUnique, this.findMany, this.count, this.update, this.updateMany, this.delete, this.upsert];
   }
 }
 
