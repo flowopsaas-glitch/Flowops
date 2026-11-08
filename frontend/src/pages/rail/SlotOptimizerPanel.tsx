@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, Sparkles, XCircle } from "lucide-react";
 import {
-  applyOptimizer, getCorridors, listSlotApplications, runOptimizer,
-  OPTIMIZER_DECISION_LABEL, type CorridorUtilization, type OptimizerProposal, type OptimizerResult, type SlotApplication,
+  applyOptimizer, getCorridors, getCorridorCapacity, listSlotApplications, runOptimizer,
+  OPTIMIZER_DECISION_LABEL, type CorridorCapacity, type CorridorUtilization, type OptimizerProposal,
+  type OptimizerResult, type SlotApplication,
 } from "../../api/railSlotApi";
 import { useToast } from "../../components/toast-context";
 import type { Tone } from "../../lib/railSlot";
@@ -13,8 +14,13 @@ import { Banner, Pill, Section, btnNeutral, btnPrimary, inputCls } from "./railU
  *
  * The backend PROPOSES (deterministic constraint policy over capacity,
  * possessions, envelope + compliance); a human APPLIES each decision through the
- * normal allocate/reject workflow. Capacity is entered by the operator (e.g.
- * from Annexure 33b) — the optimizer never invents it.
+ * normal allocate/reject workflow.
+ *
+ * Capacity comes from the corridor-capacity ledger, not from this screen. Where a
+ * corridor has a statement in force the figure is shown read-only, with its unit and
+ * source, and is never re-typed: a number entered in a browser is not evidence, and an
+ * allocation justified by one cannot be cited afterwards. The input remains only for
+ * corridors the ledger says nothing about. The optimizer never invents capacity.
  */
 
 const DECISION_TONE: Record<string, Tone> = {
@@ -29,6 +35,7 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
   const { showToast } = useToast();
   const [apps, setApps] = useState<SlotApplication[]>([]);
   const [corridorNames, setCorridorNames] = useState<Map<string, string>>(new Map());
+  const [statements, setStatements] = useState<CorridorCapacity[]>([]);
   const [capacity, setCapacity] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -40,8 +47,13 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
 
   const load = useCallback(() => (async () => {
     try {
-      const [a, cor] = await Promise.all([listSlotApplications(), getCorridors()]);
+      const [a, cor, caps] = await Promise.all([
+        listSlotApplications(),
+        getCorridors(),
+        getCorridorCapacity().catch(() => [] as CorridorCapacity[]),
+      ]);
       setApps(a);
+      setStatements(caps);
       setResult(null);
       setSelected(new Set());
       setCorridorNames(new Map(cor.map((c) => [c.code, c.name])));
@@ -67,13 +79,51 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
     return [...set].sort();
   }, [pending]);
 
+  /**
+   * The statement in force today, per corridor. Mirrors the backend's resolution so the
+   * screen shows the figure the optimizer will actually use. Later periods supersede
+   * earlier ones, and the backend's PATHS_PER_DAY → trains/week conversion is shown
+   * rather than hidden, so the operator can see where the number came from.
+   */
+  const inForce = useMemo(() => {
+    const now = Date.now();
+    const byCorridor = new Map<string, CorridorCapacity>();
+    const sorted = [...statements].sort(
+      (a, b) => new Date(b.validFrom).getTime() - new Date(a.validFrom).getTime(),
+    );
+    for (const s of sorted) {
+      const from = new Date(s.validFrom).getTime();
+      const until = new Date(s.validUntil).getTime();
+      if (from > now || until < now) continue;
+      if (!byCorridor.has(s.corridorCode)) byCorridor.set(s.corridorCode, s);
+    }
+    return byCorridor;
+  }, [statements]);
+
+  const declaredTrainsPerWeek = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const [code, s] of inForce) {
+      const scale = s.unit === "TRAINS_PER_WEEK" ? 1 : 7;
+      out.set(code, Math.floor(s.practicalPathsPerDay * scale));
+    }
+    return out;
+  }, [inForce]);
+
   const run = async () => {
+    // Corridors with a statement in force are resolved server-side from the ledger, so
+    // they are deliberately NOT sent: the backend ignores a client figure for those
+    // anyway, and sending one would only suggest it mattered. Only the remainder are
+    // typed by hand, and only if no corridor has capacity from either source do we refuse.
     const entries = corridorsInPlay
+      .filter((code) => !declaredTrainsPerWeek.has(code))
       .filter((code) => (capacity[code] ?? "").trim() !== "")
       .map((code) => ({ corridorCode: code, trainsPerWeek: Math.max(0, Math.floor(Number(capacity[code]))) }))
       .filter((c) => Number.isFinite(c.trainsPerWeek));
-    if (entries.length === 0) {
-      showToast("Enter the declared weekly capacity (e.g. Annexure 33b) for at least one corridor first.", "error");
+    if (declaredTrainsPerWeek.size === 0 && entries.length === 0) {
+      showToast(
+        "No corridor has a capacity statement in force. Record one under Corridor capacity, or enter the declared weekly capacity (e.g. Annexure 33b) for at least one corridor.",
+        "error",
+      );
       return;
     }
     setRunning(true);
@@ -146,23 +196,47 @@ export default function SlotOptimizerPanel({ canWrite }: { canWrite: boolean }) 
               ? "Pending-application status could not be verified."
               : pending.length === 0
               ? "No pending applications (submitted / under assessment / capacity conflict) — nothing to optimise."
-              : `${pending.length} pending application(s) across ${corridorsInPlay.length} corridor(s). Enter the declared trains-per-week each corridor can carry:`}
+              : `${pending.length} pending application(s) across ${corridorsInPlay.length} corridor(s). Capacity comes from the ledger; corridors with no statement in force need a figure for this run:`}
           </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {corridorsInPlay.map((code) => (
-              <label key={code} className="block rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div key={code} className="block rounded-xl border border-white/10 bg-white/[0.03] p-3">
                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
                   {corridorNames.get(code) ?? code} — trains / week
                 </span>
-                <input
-                  type="number" min={0} step={1}
-                  className={`${inputCls} mt-2`}
-                  placeholder="e.g. 21"
-                  value={capacity[code] ?? ""}
-                  onChange={(e) => setCapacity((prev) => ({ ...prev, [code]: e.target.value }))}
-                  aria-label={`Weekly capacity for ${corridorNames.get(code) ?? code}`}
-                />
-              </label>
+                {inForce.has(code) ? (
+                  // The ledger owns this figure. Shown, not editable — retyping it here
+                  // would not change what the optimizer uses, and pretending otherwise
+                  // would let an allocation look sourced when it is not.
+                  <>
+                    <p
+                      className="mt-2 text-lg font-semibold text-emerald-200"
+                      data-testid={`ledger-capacity-${code}`}
+                    >
+                      {declaredTrainsPerWeek.get(code)}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-snug text-slate-400">
+                      From the capacity ledger: {inForce.get(code)!.practicalPathsPerDay}{" "}
+                      {inForce.get(code)!.unit === "TRAINS_PER_WEEK" ? "trains/week" : "paths/day × 7"}
+                      {inForce.get(code)!.sourceRef ? ` — ${inForce.get(code)!.sourceRef}` : ""}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="number" min={0} step={1}
+                      className={`${inputCls} mt-2`}
+                      placeholder="e.g. 21"
+                      value={capacity[code] ?? ""}
+                      onChange={(e) => setCapacity((prev) => ({ ...prev, [code]: e.target.value }))}
+                      aria-label={`Weekly capacity for ${corridorNames.get(code) ?? code}`}
+                    />
+                    <p className="mt-1 text-[11px] leading-snug text-slate-400">
+                      No statement in force — this figure is used for this run only.
+                    </p>
+                  </>
+                )}
+              </div>
             ))}
           </div>
           <div className="flex gap-2">

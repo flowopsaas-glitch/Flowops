@@ -22,11 +22,20 @@ export class OptimizerCapacityDto {
 
 export class RunOptimizerDto {
   /**
-   * Declared weekly capacity per corridor (e.g. from Annexure 33b). Corridors
-   * absent from this list are never allocated — the optimizer never invents capacity.
+   * Declared weekly capacity per corridor (e.g. from Annexure 33b) — a FALLBACK,
+   * used only for corridors that have no stored capacity statement in force.
+   *
+   * Capacity recorded through the corridor-capacity ledger
+   * (POST /rail/slots/capacity) is authoritative and wins over anything here. The
+   * optimizer must not take its capacity figure from the caller: a browser-supplied
+   * number is not evidence, and the whole point of the ledger is that capacity is a
+   * sourced, auditable statement rather than something retyped per request.
+   *
+   * Corridors with no stored statement AND no entry here are never allocated — the
+   * optimizer never invents capacity.
    */
-  @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => OptimizerCapacityDto)
-  capacity!: OptimizerCapacityDto[];
+  @IsOptional() @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => OptimizerCapacityDto)
+  capacity?: OptimizerCapacityDto[];
 }
 
 export class OptimizerDecisionDto {

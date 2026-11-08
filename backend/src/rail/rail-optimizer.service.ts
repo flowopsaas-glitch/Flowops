@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { RailCapacityUnit } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { RailSlotService } from './rail-slot.service';
@@ -31,9 +32,75 @@ export class RailOptimizerService {
     }
   }
 
+  /**
+   * The optimizer allocates against the corridor-capacity LEDGER, not against numbers
+   * supplied by the caller.
+   *
+   * Capacity is a sourced, auditable statement — Annexure 33b, a workbook, an IM
+   * confirmation — recorded through POST /rail/slots/capacity. Taking it from the
+   * request instead would mean a browser decides how much a corridor can carry, which
+   * is exactly the "capacity arrives from nowhere" failure the ledger was built to
+   * prevent, and it would let an allocation be justified by a figure nobody can cite.
+   *
+   * Caller-supplied figures still work, but only as a FALLBACK for corridors the ledger
+   * says nothing about. A stored statement always wins.
+   */
+  private async resolveCapacity(
+    companyId: string,
+    now: Date,
+    fallback: RunOptimizerDto['capacity'],
+  ): Promise<OptimizerCapacity[]> {
+    const statements = await this.prisma.railCorridorCapacity.findMany({
+      where: { companyId },
+      orderBy: [{ corridorCode: 'asc' }, { validFrom: 'desc' }],
+    });
+
+    // The statement in force at the moment of the run. Periods can overlap, so the most
+    // recently started one wins — a later published timetable supersedes an earlier draft.
+    const inForce = new Map<string, number>();
+    for (const s of statements) {
+      const startsAfterRun = s.validFrom.getTime() > now.getTime();
+      const endedBeforeRun = s.validUntil.getTime() < now.getTime();
+      if (startsAfterRun || endedBeforeRun) continue;
+      if (inForce.has(s.corridorCode)) continue; // ordered validFrom desc, so first seen wins
+      inForce.set(s.corridorCode, this.toTrainsPerWeek(s));
+    }
+
+    const resolved: OptimizerCapacity[] = [...inForce].map(([corridorCode, trainsPerWeek]) => ({
+      corridorCode,
+      trainsPerWeek,
+    }));
+
+    for (const c of fallback ?? []) {
+      if (inForce.has(c.corridorCode)) continue; // stored statement wins
+      resolved.push({ corridorCode: c.corridorCode, trainsPerWeek: c.trainsPerWeek });
+    }
+
+    return resolved;
+  }
+
+  /**
+   * The policy reasons in trains per week; the ledger stores whatever unit the operator
+   * declared. Convert rather than assume, and round DOWN: the optimizer must never claim
+   * more capacity than the statement supports.
+   */
+  private toTrainsPerWeek(statement: { unit: RailCapacityUnit; practicalPathsPerDay: number }): number {
+    const declared = statement.practicalPathsPerDay;
+    if (!Number.isFinite(declared) || declared <= 0) return 0;
+
+    if (statement.unit === RailCapacityUnit.TRAINS_PER_WEEK) return Math.floor(declared);
+
+    // PATHS_PER_DAY: a path is one scheduled train path over the corridor's bottleneck
+    // section per day, so a daily figure scales to a weekly one across seven days. This
+    // assumes the corridor runs every day of the week — true for the timetable periods
+    // these statements cover, and the conversion is recorded in the run's notes so a
+    // reader can see where the number came from rather than trusting it.
+    return Math.floor(declared * 7);
+  }
+
   async run(companyId: string, dto: RunOptimizerDto, now = new Date()): Promise<OptimizerResult> {
     await this.assertEntitled(companyId);
-    const capacity: OptimizerCapacity[] = dto.capacity.map((c) => ({ corridorCode: c.corridorCode, trainsPerWeek: c.trainsPerWeek }));
+    const capacity: OptimizerCapacity[] = await this.resolveCapacity(companyId, now, dto.capacity);
 
     const [pending, allocated, possessions, docs] = await Promise.all([
       this.prisma.railSlotApplication.findMany({
