@@ -108,35 +108,42 @@ export class AccountingService {
     // against the committed value, and the new balance is an `increment` the
     // database computes rather than a number we hand it. A caller that loses
     // the race gets count === 0 and a 409 instead of silently overwriting.
-    const claim = await this.prisma.creditNote.updateMany({
-      where: {
-        id,
-        companyId,
-        status: 'ISSUED',
-        // appliedAmount + amount must not exceed the note total, in SQL.
-        appliedAmount: { lte: Money.subtract(cn.total, amount) },
-      },
-      data: { appliedAmount: { increment: amount } },
-    });
-    if (claim.count === 0) {
-      throw new ConflictException(
-        'Credit note was already applied, or too little remains to apply this amount',
-      );
-    }
+    //
+    // It runs inside withTenant() for two reasons: the claim and the status
+    // update must commit together or not at all (a claimed amount with a stale
+    // status would let the note be applied again), and it sets app.company_id
+    // so row-level security covers these writes too.
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const claim = await tx.creditNote.updateMany({
+        where: {
+          id,
+          companyId,
+          status: 'ISSUED',
+          // appliedAmount + amount must not exceed the note total, in SQL.
+          appliedAmount: { lte: Money.subtract(cn.total, amount) },
+        },
+        data: { appliedAmount: { increment: amount } },
+      });
+      if (claim.count === 0) {
+        throw new ConflictException(
+          'Credit note was already applied, or too little remains to apply this amount',
+        );
+      }
 
-    // Status is derived from the COMMITTED balance, not the stale read, so it
-    // converges however many callers raced on the claim.
-    const applied = await this.prisma.creditNote.findUniqueOrThrow({ where: { id } });
-    const fullyApplied = !Money.isGreater(applied.total, applied.appliedAmount);
+      // Status is derived from the COMMITTED balance, not the stale read, so it
+      // converges however many callers raced on the claim.
+      const applied = await tx.creditNote.findUniqueOrThrow({ where: { id } });
+      const fullyApplied = !Money.isGreater(applied.total, applied.appliedAmount);
 
-    return this.prisma.creditNote.update({
-      where: { id },
-      data: {
-        invoiceId: invoiceId ?? applied.invoiceId,
-        status: fullyApplied ? 'APPLIED' : 'ISSUED',
-        appliedAt: fullyApplied ? (applied.appliedAt ?? new Date()) : applied.appliedAt,
-      },
-      include: { items: true },
+      return tx.creditNote.update({
+        where: { id },
+        data: {
+          invoiceId: invoiceId ?? applied.invoiceId,
+          status: fullyApplied ? 'APPLIED' : 'ISSUED',
+          appliedAt: fullyApplied ? (applied.appliedAt ?? new Date()) : applied.appliedAt,
+        },
+        include: { items: true },
+      });
     });
   }
 

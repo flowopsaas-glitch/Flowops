@@ -29,6 +29,13 @@ function makeHarness(note: Row) {
   const db = { note: { ...note } };
 
   const prisma: any = {
+    // withTenant wraps work in a transaction and sets app.company_id. The
+    // harness has no real transaction, so handing the callback the same fake
+    // keeps the semantics under test (the claim and the status update) intact
+    // without pretending to model isolation.
+    withTenant: async (_companyId: string, fn: (tx: any) => Promise<any>) =>
+      fn(prismaProxy),
+
     creditNote: {
       findUnique: async ({ where }: any) =>
         where.id === db.note.id ? { ...db.note } : null,
@@ -69,6 +76,7 @@ function makeHarness(note: Row) {
       findFirst: async ({ where }: any) => ({ id: where.id, companyId: where.companyId }),
     },
   };
+  const prismaProxy = prisma;
 
   return { prisma, db };
 }
