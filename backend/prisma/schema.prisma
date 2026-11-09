@@ -381,6 +381,9 @@ model User {
   linkedDriver           Driver?
 
   @@unique([email, companyId])
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+    // predicate on every row access. Without a leading index both are seq scans.
+    @@index([companyId])
   @@map("users")
 }
 
@@ -411,6 +414,12 @@ model ApiKey {
 
   createdAt DateTime @default(now())
 
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
+
   @@map("api_keys")
 }
 
@@ -427,6 +436,12 @@ model WebhookEndpoint {
   createdAt DateTime @default(now())
 
   deliveries WebhookDelivery[]
+
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
 
   @@map("webhook_endpoints")
 }
@@ -727,6 +742,12 @@ model Driver {
   truckAppointments  TerminalTruckAppointment[]
   truckWindowRecipients TerminalTruckWindowRecipient[]
 
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
+
   @@map("drivers")
 }
 
@@ -779,6 +800,12 @@ model Branch {
   drivers   Driver[]
   manifests Manifest[]
   waybills  Waybill[]  @relation("OriginBranch")
+
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
 
   @@map("branches")
 }
@@ -1303,6 +1330,12 @@ model WaybillInboxItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
+
   @@map("waybill_inbox_items")
 }
 
@@ -1340,6 +1373,12 @@ model Collection {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
+
   @@map("collections")
 }
 
@@ -1370,6 +1409,12 @@ model Shipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
+
   @@map("shipments")
 }
 
@@ -1397,6 +1442,12 @@ model Manifest {
 
   waybills ManifestWaybill[]
   tripCostEntries TripCostEntry[]
+
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
 
   @@map("manifests")
 }
@@ -1459,6 +1510,9 @@ model Invoice {
   @@unique([invoiceNumber, companyId])
   @@unique([id, companyId])
   @@index([publicToken])
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+    // predicate on every row access. Without a leading index both are seq scans.
+    @@index([companyId])
   @@map("invoices")
 }
 
@@ -1520,6 +1574,12 @@ model RateCard {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
+
   @@map("rate_cards")
 }
 
@@ -1539,6 +1599,12 @@ model Quote {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
 
   @@map("quotes")
 }
@@ -1640,6 +1706,12 @@ model Payment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
+
   @@map("payments")
 }
 
@@ -1704,6 +1776,12 @@ model AiEvent {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+
+    // predicate on every row access. Without a leading index both are seq scans.
+
+    @@index([companyId])
 
   @@map("ai_events")
 }
@@ -1937,6 +2015,9 @@ model CodTransaction {
 
   @@unique([walletId, idempotencyKey])
   @@index([walletId, createdAt])
+  // Every tenant-scoped read filters on companyId, and RLS evaluates the same
+    // predicate on every row access. Without a leading index both are seq scans.
+    @@index([companyId])
   @@map("cod_transactions")
 }
 
