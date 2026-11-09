@@ -40,6 +40,7 @@ import { StorageModule } from './storage/storage.module';
 import { ComplianceModule } from './common/compliance/compliance.module';
 import { KpiModule } from './common/kpi/kpi.module';
 import { GatewayModule } from './gateway/gateway.module';
+import { PublicToolsModule } from './public-tools/public-tools.module';
 import { EmailModule } from './email/email.module';
 import { CodModule } from './cod/cod.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
@@ -240,6 +241,11 @@ import { DispatchModule } from './dispatch/dispatch.module';
     ComplianceModule,
     KpiModule,
     GatewayModule,
+
+    // ── Public freight tools ──────────────────────────────────────────────
+    // Unauthenticated calculators (landed cost, HS lookup). Prospects use
+    // them before they have an account; that is the point of them.
+    PublicToolsModule,
   ],
   controllers: [AppController, PublicHealthController],
   providers: [

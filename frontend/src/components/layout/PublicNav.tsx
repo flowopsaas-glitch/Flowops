@@ -7,6 +7,10 @@ const links = [
   { label: "Pricing", to: "/pricing" },
   { label: "Last Mile", to: "/last-mile" },
   { label: "Track Parcel", to: "/track" },
+  // Free tools: the top of the funnel. Someone costing an import needs an
+  // answer tonight, and they find it before they ever compare vendors.
+  { label: "Duty Calculator", to: "/tools/landed-cost" },
+  { label: "HS Codes", to: "/tools/hs-codes" },
 ];
 
 export default function PublicNav() {
