@@ -108,7 +108,7 @@ export default function FleetDutyBoard() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8" data-testid="fleet-duty-board">
+    <div className="mx-auto max-w-7xl" data-testid="fleet-duty-board">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold text-white">

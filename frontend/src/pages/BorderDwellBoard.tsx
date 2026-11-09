@@ -75,7 +75,7 @@ export default function BorderDwellBoard() {
   }), [sessions]);
 
   return (
-    <div className="p-6 bg-[#07111f] min-h-screen">
+    <div className="min-h-full bg-[#07111f]">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black text-white mb-1">Border Dwell Board</h1>

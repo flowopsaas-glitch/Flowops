@@ -98,7 +98,7 @@ export default function SafetyIncidentReport() {
 
   if (submitted) {
     return (
-      <div className="p-6 bg-[#07111f] min-h-screen flex items-center justify-center">
+      <div className="min-h-full bg-[#07111f] flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
             <ShieldAlert size={32} strokeWidth={2} className="text-green-400" />
@@ -117,7 +117,7 @@ export default function SafetyIncidentReport() {
   }
 
   return (
-    <div className="p-6 bg-[#07111f] min-h-screen max-w-3xl mx-auto">
+    <div className="min-h-full bg-[#07111f] max-w-3xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => {}}

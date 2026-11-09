@@ -157,7 +157,7 @@ export default function SafetyZones() {
   const totalAlerts = alerts.length;
 
   return (
-    <div className="min-h-screen p-6 space-y-6">
+    <div className="min-h-full space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

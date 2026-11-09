@@ -532,7 +532,7 @@ export default function OnboardingWizard() {
 
   if (completed) {
     return (
-      <div className="min-h-screen bg-[#07111f] flex items-center justify-center p-4">
+      <div className="min-h-full bg-[#07111f] flex items-center justify-center p-4">
         <div className="w-full max-w-2xl rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-sm">
           <SuccessScreen />
         </div>

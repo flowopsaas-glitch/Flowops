@@ -90,7 +90,7 @@ export default function ProofPayments() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8" data-testid="proof-payments">
+    <div className="mx-auto max-w-7xl" data-testid="proof-payments">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold text-white">

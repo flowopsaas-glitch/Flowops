@@ -413,7 +413,7 @@ export default function Dashboard() {
   // Handle Session Mounting Context Latency
   if (booting) {
     return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center text-emerald-400 font-mono text-xs uppercase tracking-widest">
+      <div className="min-h-full bg-[#020617] flex items-center justify-center text-emerald-400 font-mono text-xs uppercase tracking-widest">
         🚀 Mounting Secure Control Space Session Core...
       </div>
     );
@@ -439,7 +439,7 @@ export default function Dashboard() {
     : [];
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 p-8 space-y-8 font-sans">
+    <div className="min-h-full bg-[#020617] text-slate-100 space-y-8 font-sans">
       <CommandCenterHeader eyebrow="Command Center" title="Logistics Control Hub" subtitle={`${persona} · ${company?.name || "FlowOps Demo"}`} />
 
       {(metricsError || kpisError || etaError) && (

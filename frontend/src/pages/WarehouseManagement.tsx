@@ -94,7 +94,7 @@ export default function WarehouseManagement() {
 
 
   return (
-    <div className="min-h-screen bg-[#070d19] text-white p-6 space-y-6">
+    <div className="min-h-full bg-[#070d19] text-white space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

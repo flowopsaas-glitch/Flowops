@@ -129,7 +129,7 @@ export default function TripLegsBoard() {
     m == null ? "duration unknown" : `${m} min`;
 
   return (
-    <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(20,120,160,0.10),transparent_30%),linear-gradient(180deg,#07111f,#0b1530)] p-4 sm:p-6">
+    <div className="min-h-full bg-[radial-gradient(circle_at_top,rgba(20,120,160,0.10),transparent_30%),linear-gradient(180deg,#07111f,#0b1530)]">
       <div className="mx-auto max-w-7xl space-y-5">
 
         {/* Header */}

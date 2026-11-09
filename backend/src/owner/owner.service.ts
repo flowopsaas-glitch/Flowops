@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, ShipmentStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
 import { InvoicesService } from '../invoices/invoices.service';
@@ -50,6 +51,9 @@ export class OwnerService {
     // Used only to raise an invoice on a tenant's behalf, so numbering and
     // totals stay server-authoritative in the one place that already owns them.
     private invoices: InvoicesService,
+    // Gives an approved tenant its working defaults (costing config, SKU
+    // numbering) so it is usable immediately rather than after a settings hunt.
+    private onboarding: OnboardingService,
   ) {}
 
   // ── Tenants ───────────────────────────────────────────────────────────
@@ -1191,6 +1195,12 @@ export class OwnerService {
 
   async approveRequest(requestId: string, actor?: OwnerActor) {
     const req = await this.prisma.approvalRequest.findUniqueOrThrow({ where: { id: requestId } });
+    // Fail fast on an already-decided request. This is a courtesy check — the
+    // authoritative guard is the conditional UPDATE inside the transaction,
+    // which is the only one that holds under concurrency.
+    if (req.status !== 'PENDING') {
+      throw new ConflictException(`This request has already been ${req.status.toLowerCase()}.`);
+    }
     // Create company + user
     // Use the dedicated passwordHash column set during registration.
     // The legacy path that read from JSON.parse(req.notes) was always wrong —
@@ -1206,25 +1216,53 @@ export class OwnerService {
     }
 
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14-day trial
-    const company = await this.prisma.company.create({
-      data: { name: req.company, email: req.email, isActive: true, plan: 'starter', trialEndsAt },
-    });
+
+    // One transaction for the company, its admin, and the claim that marks the
+    // request approved.
+    //
+    // These used to be three separate statements. A failure between them left
+    // states that had to be cleaned up by hand: a company with no admin (if
+    // the user insert failed), or a live tenant whose request still read
+    // PENDING — which let a second approval create a SECOND tenant. The old
+    // code tried to undo that by deleting the company, but did so with
+    // `.catch(() => undefined)`, so a failed cleanup failed silently and the
+    // orphan simply stayed behind.
+    //
+    // Now, if the claim loses, the transaction rolls the company and the admin
+    // back with it. There is no partial tenant left to clean up.
+    let company: { id: string; name: string };
     try {
-      await this.prisma.user.create({
-        data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: company.id, emailVerified: true },
+      company = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.company.create({
+          data: { name: req.company, email: req.email, isActive: true, plan: 'starter', trialEndsAt },
+        });
+        await tx.user.create({
+          data: { email: req.email, passwordHash, name: req.fullName, phone: req.phone, role: 'ADMIN', companyId: created.id, emailVerified: true },
+        });
+
+        // The atomic claim: whoever flips PENDING -> APPROVED wins, and only
+        // one caller can, because the WHERE is evaluated against the committed
+        // row. Losing rolls the whole transaction back.
+        const claim = await tx.approvalRequest.updateMany({
+          where: { id: requestId, status: 'PENDING' },
+          data: { status: 'APPROVED', companyId: created.id },
+        });
+        if (claim.count === 0) {
+          throw new ConflictException('This request was approved by someone else.');
+        }
+        return { id: created.id, name: created.name };
       });
     } catch (e: any) {
       if (e?.code === 'P2002') {
-        // Roll back the just-created company so a retry/approve is clean.
-        await this.prisma.company.delete({ where: { id: company.id } }).catch(() => undefined);
         throw new ConflictException('A user with this email already exists. This request may have already been approved.');
       }
       throw e;
     }
-    await this.prisma.approvalRequest.update({
-      where: { id: requestId },
-      data: { status: 'APPROVED', companyId: company.id },
-    });
+
+    // Defaults run after the transaction and are best-effort: a tenant missing
+    // its costing defaults is an inconvenience, but failing an approval over
+    // them would lose a client. Idempotent, so a re-run is always safe.
+    await this.onboarding.provisionDefaultsSafely(company.id);
     await this.audit.record({
       action: 'request.approve',
       actorId: actor?.id ?? null,

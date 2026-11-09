@@ -154,7 +154,7 @@ export default function DriversManagement() {
   const offlineCount = drivers.filter(d => d.status === "OFFLINE" || (d.isActive !== false && !d.lastSeen)).length;
 
   return (
-    <div className="min-h-screen p-6 space-y-6">
+    <div className="min-h-full space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
