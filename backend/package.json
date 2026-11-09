@@ -28,7 +28,7 @@
     "migrations:test": "node --test scripts/migrations.test.mjs",
     "migrations:rehearsal:test": "node --test scripts/migrate-rehearsal.test.mjs",
     "migrations:rehearse": "node scripts/migrate-rehearsal.mjs",
-    "release:safety:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/release-startup.test.mjs scripts/rbac-inventory.test.mjs scripts/compose-env-allowlist.test.mjs scripts/deploy-rbac-guard.test.mjs scripts/tenant-scope-audit.test.mjs",
+    "release:safety:test": "node --test scripts/migrate-rehearsal.test.mjs scripts/release-startup.test.mjs scripts/rbac-inventory.test.mjs scripts/compose-env-allowlist.test.mjs scripts/deploy-rbac-guard.test.mjs scripts/tenant-scope-audit.test.mjs scripts/tenant-context-coverage.test.mjs",
     "deploy-guard:test": "node --test scripts/deploy-rbac-guard.test.mjs",
     "compose-env:test": "node --test scripts/compose-env-allowlist.test.mjs",
     "compose-env:check": "node scripts/compose-env-allowlist.mjs --check",
@@ -39,7 +39,11 @@
     "tenant-scope:audit": "node scripts/tenant-scope-audit.mjs",
     "tenant-scope:audit:json": "node scripts/tenant-scope-audit.mjs --format json",
     "tenant-scope:check": "node scripts/tenant-scope-audit.mjs --check",
-    "tenant-scope:test": "node --test scripts/tenant-scope-audit.test.mjs",
+    "tenant-scope:test": "node --test scripts/tenant-scope-audit.test.mjs scripts/tenant-context-coverage.test.mjs",
+    "tenant-context:audit": "node scripts/tenant-context-coverage.mjs",
+    "tenant-context:audit:json": "node scripts/tenant-context-coverage.mjs --format json",
+    "tenant-context:check": "node scripts/tenant-context-coverage.mjs --check",
+    "tenant-context:test": "node --test scripts/tenant-context-coverage.test.mjs",
     "prisma:validate": "node scripts/validate-schema.mjs"
   },
   "dependencies": {
