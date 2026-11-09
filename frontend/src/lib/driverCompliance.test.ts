@@ -49,14 +49,18 @@ describe('serviceStatus', () => {
     expect(serviceStatus({ nextServiceDate: null, currentKm: 20_100, nextServiceKm: 20_000 }).state).toBe('overdue');
   });
 
+  // `now` is passed explicitly. These dates are built relative to the hardcoded NOW
+  // above, but serviceStatus defaults its clock to Date.now() — so without this the
+  // assertions silently depend on what day the suite happens to run, and the days(5)
+  // case flips from 'due' to 'overdue' the moment real time passes it.
   it('falls back to the calendar when there is no odometer', () => {
-    expect(serviceStatus({ nextServiceDate: days(60), currentKm: null, nextServiceKm: null }).state).toBe('ok');
-    expect(serviceStatus({ nextServiceDate: days(5), currentKm: null, nextServiceKm: null }).state).toBe('due');
-    expect(serviceStatus({ nextServiceDate: days(-5), currentKm: null, nextServiceKm: null }).state).toBe('overdue');
+    expect(serviceStatus({ nextServiceDate: days(60), currentKm: null, nextServiceKm: null }, 14, NOW).state).toBe('ok');
+    expect(serviceStatus({ nextServiceDate: days(5), currentKm: null, nextServiceKm: null }, 14, NOW).state).toBe('due');
+    expect(serviceStatus({ nextServiceDate: days(-5), currentKm: null, nextServiceKm: null }, 14, NOW).state).toBe('overdue');
   });
 
   it('is unknown, not OK, when nothing is recorded', () => {
-    const state = serviceStatus({ nextServiceDate: null, currentKm: null, nextServiceKm: null });
+    const state = serviceStatus({ nextServiceDate: null, currentKm: null, nextServiceKm: null }, 14, NOW);
     expect(state.state).toBe('unknown');
     expect(state.label).toMatch(/no service date/i);
   });
