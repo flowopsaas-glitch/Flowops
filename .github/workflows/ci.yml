@@ -517,6 +517,21 @@ jobs:
         # quietly rot into somewhere bugs hide.
         run: npm run tenant-scope:check --silent
 
+      - name: Tenant context coverage (blocking)
+        # The database layer of tenant isolation is OFF in production:
+        # app.rls_strict was never set, so the RLS policy steps aside whenever
+        # app.company_id is unset and every query outside prisma.withTenant()
+        # is isolated by application code alone. Flipping Phase 2 on without
+        # knowing the coverage would refuse rows for seeds, outbox drains and
+        # cron sweeps.
+        #
+        # So the number has to be measured, then grown. This gate does not
+        # demand full coverage - that would fail today - it demands that the
+        # gap may never widen: new tenant queries must run inside withTenant.
+        # Improvements are banked by re-recording scripts/tenant-context-
+        # baseline.json, so progress is monotonic and reviewable.
+        run: npm run tenant-context:check --silent
+
       - name: Advisory RBAC + tenant-scope reports (non-blocking)
         # Full scanner output as a review artifact. Coverage is enforced by
         # the two blocking steps above; this keeps the whole classification
@@ -526,10 +541,13 @@ jobs:
           mkdir -p audit-reports
           npm run rbac:inventory --silent > audit-reports/rbac-inventory.txt
           npm run tenant-scope:audit --silent > audit-reports/tenant-scope-audit.txt
+          npm run tenant-context:audit --silent > audit-reports/tenant-context-coverage.txt
           echo "--- RBAC inventory (tail) ---"
           tail -12 audit-reports/rbac-inventory.txt
           echo "--- Tenant-scope audit (tail) ---"
           tail -12 audit-reports/tenant-scope-audit.txt
+          echo "--- Tenant-context coverage (tail) ---"
+          tail -14 audit-reports/tenant-context-coverage.txt
 
       - name: Upload advisory audit reports
         if: always()
