@@ -270,7 +270,7 @@ export default function Waybills() {
   ];
 
   return (
-    <div className="relative min-h-screen bg-[#060B1A] text-white p-4 font-sans">
+    <div className="relative min-h-full bg-[#060B1A] text-white font-sans">
       <div className="mx-auto max-w-6xl space-y-6">
 
         {/* Header */}

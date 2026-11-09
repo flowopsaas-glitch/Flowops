@@ -14,7 +14,7 @@ import { EmptyState, PageHeader } from "@/components/patterns";
  */
 export default function TripsNotRecorded() {
   return (
-    <div className="p-6 bg-[#07111f] min-h-screen">
+    <div className="min-h-full bg-[#07111f]">
       <PageHeader
         title="Trip Transactions"
         description="Trips are not event-sourced in FlowOps."

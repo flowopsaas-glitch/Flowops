@@ -175,7 +175,7 @@ export default function RouteOptimizer() {
   const hasLoadedCollections = lastLoadedAt !== null;
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 p-8 space-y-6">
+    <div className="min-h-full bg-[#020617] text-slate-100 space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="rounded-2xl border border-white/10 bg-emerald-500/10 p-3 text-emerald-400">

@@ -391,7 +391,7 @@ export default function DriverDispatch() {
 
 
   return (
-    <div className="min-h-screen bg-[#07111f] p-7">
+    <div className="min-h-full bg-[#07111f]">
       <div className="mx-auto max-w-[1820px] space-y-6">
 
         <CommandCenterHeader

@@ -369,7 +369,7 @@ export default function TransactionLog({ kind: lockedKind }: TransactionLogProps
   const title = lockedKind === "waybill" ? "Waybill Transaction Log" : "Transaction Log";
 
   return (
-    <div className="p-6 bg-[#07111f] min-h-screen">
+    <div className="min-h-full bg-[#07111f]">
       <PageHeader
         title={title}
         description="Recorded movement and status events for waybills and rail consignments, newest first."

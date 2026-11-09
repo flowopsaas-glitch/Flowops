@@ -118,7 +118,7 @@ export default function DriverChatPage() {
   const selectedDriver = drivers.find(d => d.id === selectedId);
 
   return (
-    <div className="flex h-full min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.08),transparent_25%),#07111f]">
+    <div className="flex h-full min-h-full bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.08),transparent_25%),#07111f]">
 
       {/* Sidebar — driver list */}
       <div className="flex flex-col w-80 shrink-0 border-r border-white/8 bg-black/20">

@@ -140,7 +140,7 @@ export default function PodDeliveries() {
   // --- 🧊 SUB-VIEW: THE LIVE QUEUE ---
   if (view === 'queue') {
     return (
-      <div className="min-h-full bg-[#07111f] p-6 sm:p-8 animate-in fade-in slide-in-from-right-4 duration-300">
+      <div className="min-h-full bg-[#07111f] animate-in fade-in slide-in-from-right-4 duration-300">
         <button
           onClick={() => { setView('overview'); setSelectedWaybillId(null); }}
           className="flex items-center gap-2 text-white/50 hover:text-white transition-colors font-bold text-xs uppercase tracking-widest mb-8"
