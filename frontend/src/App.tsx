@@ -164,6 +164,8 @@ const LandingPage   = lazy(() => import("./pages/marketing/LandingPage"));
 const FeaturesPage  = lazy(() => import("./pages/marketing/FeaturesPage"));
 const PricingPage   = lazy(() => import("./pages/marketing/PricingPage"));
 const SubcontractorPage = lazy(() => import("./pages/marketing/SubcontractorPage"));
+const LandedCostCalculator = lazy(() => import("./pages/marketing/LandedCostCalculator"));
+const HsCodeLookup = lazy(() => import("./pages/marketing/HsCodeLookup"));
 const AdminApprovalDashboard = lazy(() => import("./pages/AdminApprovalDashboard"));
 const SarsEdiSetup  = lazy(() => import("./pages/forwarding/SarsEdiSetup"));
 const NotFoundPage  = lazy(() => import("./pages/NotFoundPage"));
@@ -242,6 +244,9 @@ export default function App() {
           {/* Marketing pages — public, no auth required */}
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          {/* Public freight tools — free, unauthenticated, top of funnel */}
+          <Route path="/tools/landed-cost" element={<LandedCostCalculator />} />
+          <Route path="/tools/hs-codes" element={<HsCodeLookup />} />
           <Route path="/last-mile" element={<SubcontractorPage />} />
           <Route path="/subcontractors" element={<SubcontractorPage />} />
           <Route path="/transport-operators" element={<SubcontractorPage />} />
