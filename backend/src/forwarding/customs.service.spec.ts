@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import { NotFoundException } from '@nestjs/common';
 import { CustomsService } from './customs.service';
-import { PrismaService } from '../prisma/prisma.service';
 import { estimateImportDuty, SA_VAT_RATE, SA_IMPORT_UPLIFTMENT } from '../public-tools/sa-import-duty';
 
 /**

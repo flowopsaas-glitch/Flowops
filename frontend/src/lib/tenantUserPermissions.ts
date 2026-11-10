@@ -150,11 +150,14 @@ export function buildFullTenantNavPermissions(): TenantNavPermissions {
 export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPermissions {
   const value = String(role || "").trim().toUpperCase();
 
-  if (value === "SUPER_ADMIN" || value === "ULTIMATE_OWNER") {
-    return buildFullTenantNavPermissions();
-  }
-
-  if (value === "COMPANY_ADMIN" || value === "ADMIN" || value === "TENANT_ADMIN") {
+  // Only real `enum UserRole` values belong here. SUPER_ADMIN, ULTIMATE_OWNER
+  // and TENANT_ADMIN were also checked for, but no such role exists in
+  // schema.prisma, so the API can never issue one and those branches were dead.
+  // They are removed rather than kept as harmless-looking aliases: a branch for
+  // a role that cannot exist reads as a permission the platform has. An unknown
+  // role now falls through to the all-false default at the bottom, which is the
+  // correct answer for something the server will never send.
+  if (value === "COMPANY_ADMIN" || value === "ADMIN") {
     return buildFullTenantNavPermissions();
   }
 
@@ -287,9 +290,15 @@ export function buildRoleDefaultTenantNavPermissions(role?: string): TenantNavPe
     return buildViewerPermissions();
   }
 
-  // OPS_CLERK is not (yet) a value of the backend `UserRole` enum — the API
-  // cannot issue it — but the Wave-1 matrix names it, so it is mapped here to the
-  // DISPATCH profile and becomes live the day the role exists on the server.
+  // OPS_CLERK (warehouse clerk) is named by the Wave-1 brief but is NOT a value
+  // of the backend `UserRole` enum — the API cannot issue it, so this branch is
+  // unreachable today. Adding the role needs `ALTER TYPE ... ADD VALUE`.
+  //
+  // It is kept as a forward-compat alias: the day the role exists, a clerk
+  // inherits the dispatch profile without anyone remembering to wire it up.
+  // It is deliberately NOT listed in RAIL_WRITE_ROLES / RAIL_SIGNATORY_ROLES
+  // above — those are runtime gates, and a role that cannot match is a gate
+  // that does not close.
   if (value === "DISPATCH" || value === "OPS_CLERK") {
     return {
       dashboard: true,
@@ -443,14 +452,24 @@ export function normalizeTenantNavPermissions(
 
 export type RailAccessLevel = "NONE" | "READ_ONLY" | "FULL";
 
+// These MUST all be values of the backend `enum UserRole` (schema.prisma:
+// ADMIN, COMPANY_ADMIN, MANAGER, DISPATCH, WAREHOUSE, AGENT, USER, DRIVER,
+// VIEWER). A role named here that the API cannot issue is not a fallback — it
+// is a role that silently never matches, and it misleads the next reader into
+// thinking the platform has it.
+//
+// SUPER_ADMIN, ULTIMATE_OWNER, TENANT_ADMIN and OPS_CLERK were listed here and
+// exist in NO enum. They are removed rather than kept "for when they arrive":
+// a gate that cannot fire is not forward-compatibility, it is noise. Adding a
+// role is a schema change; when one is added, it goes in here at the same
+// time. backend/src/rail/rail-role-drift.spec.ts enforces the correspondence.
 const RAIL_WRITE_ROLES = new Set([
-  "SUPER_ADMIN", "ULTIMATE_OWNER", "TENANT_ADMIN", "COMPANY_ADMIN", "ADMIN",
-  "MANAGER", "DISPATCH", "OPS_CLERK",
+  "COMPANY_ADMIN", "ADMIN", "MANAGER", "DISPATCH",
 ]);
 
 /** Authorised representatives: may sign off, resolve and lodge Regulator disputes. */
 const RAIL_SIGNATORY_ROLES = new Set([
-  "SUPER_ADMIN", "ULTIMATE_OWNER", "TENANT_ADMIN", "COMPANY_ADMIN", "ADMIN", "MANAGER",
+  "COMPANY_ADMIN", "ADMIN", "MANAGER",
 ]);
 
 const normRole = (role?: string) => String(role || "").trim().toUpperCase();

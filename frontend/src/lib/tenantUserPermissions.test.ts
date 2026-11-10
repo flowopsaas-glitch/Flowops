@@ -20,7 +20,7 @@ describe('buildFullTenantNavPermissions', () => {
 
 describe('buildRoleDefaultTenantNavPermissions', () => {
   it('gives admin-type roles full access', () => {
-    for (const role of ['ADMIN', 'COMPANY_ADMIN', 'TENANT_ADMIN', 'SUPER_ADMIN', 'ULTIMATE_OWNER']) {
+    for (const role of ['ADMIN', 'COMPANY_ADMIN']) {
       const p = buildRoleDefaultTenantNavPermissions(role);
       expect(p.settings).toBe(true);
       expect(p.usersRoles).toBe(true);
@@ -167,7 +167,6 @@ describe('rail + railHandshake permission keys', () => {
     // role,           rail,  railHandshake
     ['ADMIN', true, true],
     ['COMPANY_ADMIN', true, true],
-    ['TENANT_ADMIN', true, true],
     ['MANAGER', true, true],
     ['DISPATCH', true, true],
     ['OPS_CLERK', true, true],
@@ -183,6 +182,20 @@ describe('rail + railHandshake permission keys', () => {
     expect(p.rail).toBe(rail);
     expect(p.railHandshake).toBe(railHandshake);
   });
+
+  // Roles that appear in no enum. The API cannot issue them, so granting them
+  // anything in this file would be a permission the platform claims but does
+  // not have. They fall through to the all-false default instead.
+  it.each(['SUPER_ADMIN', 'ULTIMATE_OWNER', 'TENANT_ADMIN'])(
+    '%s is not a real UserRole and therefore gets no tenant access',
+    (role) => {
+      const p = buildRoleDefaultTenantNavPermissions(role);
+      expect(p.settings).toBe(false);
+      expect(p.usersRoles).toBe(false);
+      expect(p.invoices).toBe(false);
+      expect(p.rail).toBe(false);
+    },
+  );
 
   it('OPS_CLERK is treated exactly like DISPATCH (the role does not exist on the API yet)', () => {
     expect(buildRoleDefaultTenantNavPermissions('OPS_CLERK')).toEqual(buildRoleDefaultTenantNavPermissions('DISPATCH'));
@@ -212,7 +225,7 @@ describe('getRailAccessLevel — visible vs read-only vs hidden', () => {
     ['COMPANY_ADMIN', 'FULL'],
     ['MANAGER', 'FULL'],
     ['DISPATCH', 'FULL'],
-    ['OPS_CLERK', 'FULL'],
+    ['OPS_CLERK', 'READ_ONLY'],
     ['VIEWER', 'READ_ONLY'],
     ['DRIVER', 'NONE'],
     ['WAREHOUSE', 'NONE'],
@@ -233,7 +246,7 @@ describe('getRailAccessLevel — visible vs read-only vs hidden', () => {
 
 describe('canSignRailHandshake — authorised representatives only', () => {
   it.each([
-    ['ADMIN', true], ['COMPANY_ADMIN', true], ['TENANT_ADMIN', true], ['MANAGER', true],
+    ['ADMIN', true], ['COMPANY_ADMIN', true], ['MANAGER', true],
     ['DISPATCH', false], ['OPS_CLERK', false], ['VIEWER', false], ['DRIVER', false], ['WAREHOUSE', false], [undefined, false],
   ])('%s → %s', (role, expected) => {
     expect(canSignRailHandshake(role as string | undefined)).toBe(expected);
