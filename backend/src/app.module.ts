@@ -99,6 +99,7 @@ import { LiveTrackingModule } from './live-tracking/live-tracking.module';
 import { DigitalPaymentsModule } from './digital-payments/digital-payments.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
 import { DispatchModule } from './dispatch/dispatch.module';
+import { GeneralAverageModule } from './general-average/general-average.module';
 
 @Module({
   imports: [
@@ -206,6 +207,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
 
     // Smart Auto-Dispatch + Customer Live Tracking
     DispatchModule,
+    GeneralAverageModule,
 
     OtpModule,
 

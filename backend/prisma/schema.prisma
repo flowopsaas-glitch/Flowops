@@ -300,6 +300,8 @@ model Company {
   tripLegs           TripLeg[]
 
   @@map("companies")
+  generalAverageEvents        GeneralAverageEvent[]
+  generalAverageContributors  GeneralAverageContributor[]
 }
 
 // ─── Integration credentials (per-tenant, encrypted) ────────────────────────
@@ -816,6 +818,46 @@ model Branch {
 // (cost vs sell) and documents hang off it. Additive — no changes to the
 // existing courier tables. See .kiro/specs/freight-forwarding.
 
+/// General Average — a maritime-law principle, not a FlowOps invention.
+///
+/// When a shipowner incurs an extraordinary expenditure, or sacrifices part of
+/// the ship or cargo, to save the whole adventure from a common danger, the
+/// loss is shared proportionally by everyone whose property came through it:
+/// the hull, the freight, and every cargo interest on the voyage. A cargo owner
+/// whose goods arrived undamaged still owes a contribution.
+///
+/// The operational consequence is the one that costs forwarders money: the
+/// shipowner has a lien over the cargo, and cargo is not released until the
+/// cargo interest provides GA security (an average bond, an insurer's
+/// guarantee, or a cash deposit). A forwarder who releases cargo without
+/// security is personally liable for the contribution.
+///
+/// The adjustment itself is prepared by a GA adjuster and can take years. When
+/// it lands, contributions are trued up — refunded if the deposit exceeded the
+/// final share, collected if it fell short.
+enum GeneralAverageStatus {
+  DECLARED   // shipowner has declared GA; contributors not yet identified
+  SECURING   // cargo interests notified, security being collected
+  SECURED    // all contributors have lodged security
+  ADJUSTED   // the adjuster's award has been received
+  SETTLED    // contributions trued up against the award
+  CLOSED     // nothing further outstanding
+}
+
+/// Form of security lodged against a contribution.
+enum GeneralAverageSecurity {
+  AVERAGE_BOND      // cargo interest's own undertaking (usually with a bank)
+  INSURER_GUARANTEE // the cargo underwriter guarantees the contribution
+  CASH_DEPOSIT      // cash paid to the adjuster's trust account
+}
+
+/// How a cargo interest's contributory value was arrived at.
+enum GeneralAverageValueBasis {
+  CIF           // cost + insurance + freight — the standard contributory value
+  DECLARED      // as declared by the cargo interest, pending verification
+  ADJUSTED      // as finally assessed by the GA adjuster
+}
+
 enum FreightMode {
   OCEAN
   AIR
@@ -913,6 +955,7 @@ model ShipmentFile {
   @@unique([fileNumber, companyId])
   @@index([companyId, status])
   @@map("shipment_files")
+  generalAverageContributions GeneralAverageContributor[]
 }
 
 model ShipmentContainer {
@@ -7494,4 +7537,116 @@ model MaintenanceJobEvent {
   @@index([jobId, createdAt])
   @@index([companyId, createdAt])
   @@map("maintenance_job_events")
+}
+
+
+/// A General Average declaration covering one voyage.
+///
+/// One event per casualty. Contributors are the cargo interests on that voyage,
+/// found by matching shipment files on the same vessel/voyage — see
+/// GeneralAverageService.discoverContributors.
+model GeneralAverageEvent {
+  id String @id @default(cuid())
+
+  // ── The casualty ───────────────────────────────────────────────────────────
+  vesselName   String
+  vesselImo    String? // IMO number; the durable identifier for a ship
+  vesselMmsi   String? // AIS id, mirrors ShipmentFile.vesselMmsi
+  voyageNumber String?
+  occurredAt   DateTime
+  portOfRefuge String? // where the vessel put in after the casualty
+  /// What happened, in the shipowner's or agent's words. Free text by design:
+  /// GA notices are prose and the exact wording matters later.
+  nature       String  @db.Text
+
+  // ── Who declared it ────────────────────────────────────────────────────────
+  declaredBy   String?   // shipowner / master / agent
+  declaredAt   DateTime?
+  adjusterName String?
+  adjusterRef  String?   // the adjuster's own file reference
+
+  // ── Money ──────────────────────────────────────────────────────────────────
+  /// Extraordinary expenditure incurred for the common safety (towage, port
+  /// charges, salvage remuneration...).
+  totalExpenditure Float   @default(0)
+  /// Value of property SACRIFICED for the common safety (jettison, damage
+  /// caused by firefighting...). Distinct from expenditure: both are allowed in
+  /// general average, and separating them is what an adjuster will ask for.
+  totalSacrifice   Float   @default(0)
+  currency         String   @default("USD")
+
+  status GeneralAverageStatus @default(DECLARED)
+  notes  String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contributors GeneralAverageContributor[]
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@map("general_average_events")
+}
+
+/// One cargo interest's stake in a General Average event.
+///
+/// The field that carries the operational weight is `securityLodgedAt`: until
+/// it is set, the cargo must not be released. See canReleaseCargo().
+model GeneralAverageContributor {
+  id String @id @default(cuid())
+
+  eventId String
+  event   GeneralAverageEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  shipmentFileId String
+  shipmentFile   ShipmentFile @relation(fields: [shipmentFileId], references: [id], onDelete: Cascade)
+
+  // ── Contributory value ─────────────────────────────────────────────────────
+  /// The value this interest contributes ON. CIF at the port of destination is
+  /// the standard basis. Stored rather than derived: the adjuster may assess a
+  /// different figure, and the two must be reconcilable.
+  contributoryValue Float
+  valueBasis        GeneralAverageValueBasis @default(DECLARED)
+  /// Set once the adjuster's award is in. Until then the share is an estimate
+  /// and every figure derived from it is explicitly provisional.
+  adjustedValue     Float?
+
+  // ── Derived share (recomputed, never hand-entered) ──────────────────────────
+  /// Percentage of the total contributory value this interest represents.
+  sharePct Float?
+  /// sharePct applied to (expenditure + sacrifice). Provisional until ADJUSTED.
+  estimatedContribution Float?
+  /// What the adjuster finally assessed. Null until the award is received.
+  assessedContribution  Float?
+
+  // ── Security ───────────────────────────────────────────────────────────────
+  securityType     GeneralAverageSecurity?
+  securityAmount   Float?
+  securityRef      String? // bond number / guarantee reference / deposit ref
+  /// THE release gate. Null means: do not let this cargo go.
+  securityLodgedAt DateTime?
+
+  // ── Release and settlement ─────────────────────────────────────────────────
+  releasedAt DateTime?
+  releasedBy String? // user id who authorised release — an attestation
+  /// Positive = still owed after the award. Negative = refund due.
+  balanceDue Float?
+  settledAt  DateTime?
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, shipmentFileId])
+  @@index([eventId])
+  @@index([shipmentFileId])
+  @@index([companyId])
+  @@map("general_average_contributors")
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
