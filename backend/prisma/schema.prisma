@@ -5916,7 +5916,12 @@ enum RailVehicleProfile {
 
 enum RailDataStatus {
   SOURCE_PENDING  // identity known; technical data not yet loaded from a cited source
-  VERIFIED        // loaded from a cited source and reviewed
+  VERIFIED        // the whole envelope loaded from a cited source and reviewed
+  // PARTIAL is appended rather than inserted between the two above. PostgreSQL stores
+  // enum values in order and Prisma's drift guard compares them as an ordered list, so
+  // placing it in the middle would mean dropping and recreating the type and rewriting
+  // every row that uses it. Read it as a third state, not as a later rung than VERIFIED.
+  PARTIAL         // some envelope fields loaded from a cited source; others still pending
 }
 
 enum RailComplianceDocType {
@@ -5964,6 +5969,11 @@ model RailCorridorNode {
   maxTrainLengthM   Int?
 
   contacts          Json?                // role mailboxes / functions only — no personal data (POPIA)
+  /// Departures from the general envelope on named sections (CorridorEnvelopeException[]).
+  /// The corridor-level columns hold the GENERAL limit; Chapter 2 of the Network Statement
+  /// then departs from it by section, and those departures are safety numbers that cannot
+  /// be flattened into the general column.
+  envelopeExceptions Json?
   dataStatus        RailDataStatus       @default(SOURCE_PENDING)
   sourceRef         String?
   verifiedBy        String?

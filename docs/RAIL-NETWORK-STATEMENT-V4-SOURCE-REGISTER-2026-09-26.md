@@ -1118,14 +1118,14 @@ Source: `backend/src/rail/catalog/corridors.catalog.ts`, `yards.catalog.ts`.
 
 | Code | V4 corridor | Pre-V4 aliases | Annexure 33b routes (indicative) | Data status | Gauge / electrification / axle load / profile / train length |
 | --- | --- | --- | --- | --- | --- |
-| COR-CONTAINER | Container | Natal | General Freight: Johannesburg to Durban | SOURCE_PENDING | not supplied |
-| COR-CAPE | Cape | Cape 1 | General Freight: Johannesburg to Cape Town; General Freight: Vereeniging/Danskraal to East London | SOURCE_PENDING | not supplied |
-| COR-ORE | Ore | Cape 2 | Ore | SOURCE_PENDING | not supplied |
-| COR-NORTH | North | Northern | Manganese; General Freight & Export Coal: Lephalale to Richards Bay; General Freight: Musina - Pyramid South/Hoedspruit | SOURCE_PENDING | not supplied |
-| COR-NORTH-EAST | North-East | — | Magnetite; Eastern Mainline: Rayton to Komatipoort/Richards Bay | SOURCE_PENDING | not supplied |
-| COR-CENTRAL | Central | — | General Freight: Mafikeng to Beaconsfield/Potchefstroom | SOURCE_PENDING | not supplied |
+| COR-NORTH | North | Northern | Manganese; General Freight & Export Coal: Lephalale to Richards Bay; General Freight: Musina - Pyramid South/Hoedspruit | PARTIAL | 1067 mm / Diesel/25 kV AC/3 kV DC / 20 t / — / 2000 m<br>Exceptions: 26 t on Blackhill via Ogies and Ermelo to Richards Bay; Trichardt to Ermelo; 18.5 t on Empangeni – Nkwalini |
+| COR-ORE | Ore | Cape 2 | Ore | PARTIAL | 1067 mm / 50 kV AC / 30 t / — / — |
+| COR-NORTH-EAST | North-East | — | Magnetite; Eastern Mainline: Rayton to Komatipoort/Richards Bay | PARTIAL | 1067 mm / 3 kV DC/Diesel / 20 t / — / 1600 m<br>Exceptions: 18.5 t on Certain branch lines — the document defers the list to Annexure 6, which was not supplied |
+| COR-CAPE | Cape | Cape 1 | General Freight: Johannesburg to Cape Town; General Freight: Vereeniging/Danskraal to East London | PARTIAL | 1067 mm / Diesel/25 kV AC/3 kV DC / 20 t / — / 1150 m<br>Exceptions: 16.5 t on The sections the document rates at 16.5 t — deferred to Annexure 6, which was not supplied; 610 mm on Humewood Road (Gqeberha) to Gamtoos to Avontuur, and Patensie; 600 m on Beaufort West to Bellville |
+| COR-CENTRAL | Central | — | General Freight: Mafikeng to Beaconsfield/Potchefstroom | PARTIAL | 1067 mm / 3 kV DC/Diesel / 20 t / — / 1200 m |
+| COR-CONTAINER | Container | Natal | General Freight: Johannesburg to Durban | PARTIAL | 1067 mm / 3 kV DC/Diesel / 20 t / — / 1200 m |
 
-Transfer yards in the catalog: **0 of 11** expected by the brief (none supplied). Corridors: **6 of 6**, all `SOURCE_PENDING`.
+Transfer yards in the catalog: **0 of 11** expected by the brief (none supplied). Corridors: **6 of 6**, status: `PARTIAL`. Gauge, electrification, axle load and train length come from Network Statement V4 Chapter 2 §2.8–2.13; the vehicle profile is still missing because Annexures 2 and 3 were never supplied, so no corridor is `VERIFIED`.
 
 <!-- END GENERATED: annexure-captures -->
 

@@ -1,4 +1,4 @@
-import { EnvelopeCorridor, EnvelopeSubject, axleLoadOf, checkEnvelope, wagonToSubject } from './rail-envelope';
+import { EnvelopeCorridor, EnvelopeSubject, axleLoadBand, axleLoadOf, checkEnvelope, wagonToSubject } from './rail-envelope';
 import { CORRIDOR_CATALOG } from './catalog/corridors.catalog';
 
 /** SYNTHETIC fixture for the engine tests — these numbers are NOT corridor data. */
@@ -115,12 +115,86 @@ describe('checkEnvelope — reference data that is not (fully) there', () => {
   it('nothing to check is UNVERIFIED, not COMPATIBLE', () => {
     expect(checkEnvelope(verified, []).status).toBe('UNVERIFIED');
   });
-  it('every REAL catalog corridor is currently UNVERIFIED and never INCOMPATIBLE — the honest state until data is supplied', () => {
+  it('a grossly overweight wagon is INCOMPATIBLE on every REAL catalog corridor now that limits are loaded', () => {
+    // This test used to assert UNVERIFIED for all six, because Chapter 2 of the Network
+    // Statement had never been supplied. It has been: the limits are real now, so a 99 t
+    // axle can no longer be waved through on the grounds that nobody knows the limit.
     for (const c of CORRIDOR_CATALOG) {
       const r = checkEnvelope(c, [wagon({ axleLoadTonnes: 99, gauge: 'STANDARD_1435MM' })]);
-      expect(r.status).toBe('UNVERIFIED');
-      expect(r.violations).toEqual([]);
+      expect(`${c.code}: ${r.status}`).toBe(`${c.code}: INCOMPATIBLE`);
+      expect(r.violations.map((v) => v.code)).toContain('AXLE_LOAD_EXCEEDED');
     }
+  });
+
+  it('still says the corridor is not VERIFIED, because PARTIAL is not VERIFIED', () => {
+    const r = checkEnvelope(CORRIDOR_CATALOG[0], [wagon({ axleLoadTonnes: 10 })]);
+    expect(r.corridorVerified).toBe(false);
+    expect(r.status).toBe('UNVERIFIED');
+    expect(r.warnings.join() + r.unverified.join()).toMatch(/PARTIAL/);
+  });
+
+  describe('axle load is a band, not a number (North: 18.5 / 20 / 26 t)', () => {
+    const north = CORRIDOR_CATALOG.find((c) => c.code === 'COR-NORTH')!;
+    const subject = (t: number) => [wagon({ axleLoadTonnes: t })];
+
+    it('clears an axle load at or below the floor, which is safe on every section', () => {
+      const r = checkEnvelope(north, subject(18.5));
+      expect(r.violations).toEqual([]);
+      expect(r.warnings.map((w) => w.code)).not.toContain('AXLE_LOAD_EXCEEDED');
+    });
+
+    it('rejects an axle load above the ceiling — cleared nowhere on the corridor', () => {
+      const r = checkEnvelope(north, subject(27));
+      expect(r.violations.map((v) => v.code)).toEqual(['AXLE_LOAD_EXCEEDED']);
+    });
+
+    it('WARNS inside the band and names the sections that ARE cleared for it', () => {
+      // 26 t is lawful on the Blackhill–Ogies–Ermelo–Richards Bay and Trichardt–Ermelo
+      // stretches and unlawful on Empangeni–Nkwalini, so the answer depends on the route.
+      const r = checkEnvelope(north, subject(26));
+      expect(r.violations).toEqual([]);
+      const w = r.warnings.find((x) => x.code === 'AXLE_LOAD_EXCEEDED')!;
+      expect(w.severity).toBe('WARNING');
+      expect(w.message).toMatch(/Blackhill/);
+    });
+
+    it('is the band that makes 20 t a warning on North, not a pass', () => {
+      // 20 t is the corridor's GENERAL limit, but North publishes an 18.5 t section, so
+      // even the general figure is not automatically safe everywhere.
+      const r = checkEnvelope(north, subject(20));
+      const w = r.warnings.find((x) => x.code === 'AXLE_LOAD_EXCEEDED')!;
+      expect(w.severity).toBe('WARNING');
+      expect(w.limit).toBe(18.5);
+    });
+
+    it('axleLoadBand collapses a corridor with no exceptions to a single point', () => {
+      const central = CORRIDOR_CATALOG.find((c) => c.code === 'COR-CENTRAL')!;
+      const b = axleLoadBand(central.maxAxleLoadTonnes ?? null, central.envelopeExceptions ?? []);
+      expect(b).toMatchObject({ floorTonnes: 20, ceilingTonnes: 20 });
+      expect(b!.upgraded).toEqual([]);
+    });
+
+    it('axleLoadBand is null when nothing is known', () => {
+      expect(axleLoadBand(null, [])).toBeNull();
+    });
+  });
+
+  describe('Cape is predominantly Cape gauge but has 610 mm branches', () => {
+    const cape = CORRIDOR_CATALOG.find((c) => c.code === 'COR-CAPE')!;
+
+    // Cape's band is 16.5–20 t, so 16.5 t keeps the axle load out of the way of the gauge test.
+    it('rejects an off-corridor gauge outright', () => {
+      const r = checkEnvelope(cape, [wagon({ gauge: 'STANDARD_1435MM', axleLoadTonnes: 16.5 })]);
+      expect(r.violations.map((v) => v.code)).toContain('GAUGE_MISMATCH');
+    });
+
+    it('WARNS rather than rejects for the 610 mm branches the document records', () => {
+      const r = checkEnvelope(cape, [wagon({ gauge: 'NARROW_610MM', axleLoadTonnes: 16.5 })]);
+      expect(r.violations).toEqual([]);
+      const w = r.warnings.find((x) => x.code === 'GAUGE_MISMATCH')!;
+      expect(w.severity).toBe('WARNING');
+      expect(w.message).toMatch(/Avontuur|Patensie|Gamtoos/);
+    });
   });
   it('stamps the time it was checked', () => {
     expect(checkEnvelope(verified, [wagon()], new Date('2026-10-02T10:00:00Z')).checkedAt).toBe('2026-10-02T10:00:00.000Z');

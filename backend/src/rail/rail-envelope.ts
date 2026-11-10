@@ -1,5 +1,31 @@
 import type { RailElectrification, RailGauge, RailVehicleProfile } from '@prisma/client';
-import { RAIL_VEHICLE_PROFILE_ORDER } from './rail-reference';
+import { CorridorEnvelopeException, RAIL_VEHICLE_PROFILE_ORDER } from './rail-reference';
+
+/**
+ * The axle-load limits a corridor states, as a BAND rather than a single number.
+ *
+ * Network Statement Chapter 2 gives a general axle load and then departs from it by section:
+ * North is 20 t generally, 26 t on the Blackhill–Ogies–Ermelo–Richards Bay and Trichardt–
+ * Ermelo stretches, and 18.5 t Empangeni–Nkwalini. Those departures are safety numbers, so
+ * the check is deliberately three-valued:
+ *
+ *   above the band  → VIOLATION. Not cleared anywhere on the corridor.
+ *   inside the band → WARNING. Cleared on SOME sections only; the route decides, and a
+ *                     machine cannot tell which sections this train will traverse.
+ *   at or below the floor → cleared for every section the document rates.
+ *
+ * A single corridor-level number could only ever be wrong here: taking the maximum would
+ * clear an overweight train onto an 18.5 t section, and taking the minimum would reject the
+ * 26 t export route the document explicitly sanctions.
+ */
+export interface AxleLoadBand {
+  /** Lowest limit the document states anywhere on the corridor — safe on every section. */
+  floorTonnes: number;
+  /** Highest limit the document states anywhere on the corridor. */
+  ceilingTonnes: number;
+  /** The sections cleared above the floor, so the warning can say where it IS allowed. */
+  upgraded: CorridorEnvelopeException[];
+}
 
 /**
  * Corridor-envelope compatibility: does this rolling stock fit this corridor?
@@ -28,7 +54,9 @@ export interface EnvelopeCorridor {
   maxAxleLoadTonnes?: number | null;
   vehicleProfile?: RailVehicleProfile | null;
   maxTrainLengthM?: number | null;
-  dataStatus?: 'SOURCE_PENDING' | 'VERIFIED' | null;
+  dataStatus?: 'SOURCE_PENDING' | 'PARTIAL' | 'VERIFIED' | null;
+  /** Section-level departures from the corridor-level envelope. */
+  envelopeExceptions?: CorridorEnvelopeException[] | null;
 }
 
 export interface EnvelopeSubject {
@@ -65,6 +93,30 @@ export interface EnvelopeResult {
 
 const EPS = 1e-9;
 
+/**
+ * Fold a corridor's general axle load and its section exceptions into one band.
+ * Returns null when nothing is known on either side.
+ */
+export function axleLoadBand(
+  generalTonnes: number | null,
+  exceptions?: readonly CorridorEnvelopeException[] | null,
+): AxleLoadBand | null {
+  const all = [
+    ...(generalTonnes == null ? [] : [generalTonnes]),
+    // Null-tolerant: a corridor row written before this column existed reads back as NULL,
+    // and a default parameter would not catch an explicit null.
+    ...(exceptions ?? []).filter((e) => e.kind === 'AXLE_LOAD' && typeof e.tonnes === 'number').map((e) => e.tonnes as number),
+  ];
+  if (all.length === 0) return null;
+  const floorTonnes = Math.min(...all);
+  const ceilingTonnes = Math.max(...all);
+  return {
+    floorTonnes,
+    ceilingTonnes,
+    upgraded: (exceptions ?? []).filter((e) => e.kind === 'AXLE_LOAD' && (e.tonnes ?? 0) > floorTonnes + EPS),
+  };
+}
+
 /** Axle load of a wagon = (tare + loaded) / axles, only when all three are known and positive. */
 export function axleLoadOf(w: { tareTonnes?: number | null; loadedTonnes?: number | null; axles?: number | null }): number | null {
   const { tareTonnes: tare, loadedTonnes: loaded, axles } = w;
@@ -99,27 +151,47 @@ export function checkEnvelope(
     };
   }
   const verified = corridor.dataStatus === 'VERIFIED';
+  const exceptions = corridor.envelopeExceptions ?? [];
+  const band = axleLoadBand(corridor.maxAxleLoadTonnes ?? null, exceptions);
   const findings: EnvelopeFinding[] = [];
   const missing = { gauge: [] as string[], axle: [] as string[] };
   const corridorUnknown: string[] = [];
 
   if (corridor.gauge == null) corridorUnknown.push('gauge');
-  if (corridor.maxAxleLoadTonnes == null) corridorUnknown.push('maximum axle load');
+  if (!band) corridorUnknown.push('maximum axle load');
 
   for (const s of subjects) {
     const label = s.label ?? 'subject';
     if (corridor.gauge != null) {
       if (s.gauge == null) missing.gauge.push(label);
       else if (s.gauge !== corridor.gauge) {
-        findings.push({ code: 'GAUGE_MISMATCH', severity: 'VIOLATION', subject: label, actual: s.gauge, limit: corridor.gauge,
-          message: `${label}: gauge ${s.gauge} does not match the ${corridor.name ?? corridor.code} corridor gauge ${corridor.gauge}.` });
+        // A corridor may be predominantly one gauge with narrow-gauge branches (Cape is
+        // 1 065 mm "predominantly" but 610 mm on the Avontuur and Patensie branches). A
+        // train built for a recorded branch gauge is possible-but-unusual, so it warns
+        // instead of rejecting — the gauge column alone cannot say which lines it may use.
+        const branch = exceptions.find((e) => e.kind === 'GAUGE' && e.gauge === s.gauge);
+        findings.push({
+          code: 'GAUGE_MISMATCH',
+          severity: branch ? 'WARNING' : 'VIOLATION',
+          subject: label, actual: s.gauge, limit: corridor.gauge,
+          message: branch
+            ? `${label}: gauge ${s.gauge} does not match the ${corridor.name ?? corridor.code} corridor's predominant gauge ${corridor.gauge}, but the document records ${s.gauge} for ${branch.sections} — confirm the train stays on those lines.`
+            : `${label}: gauge ${s.gauge} does not match the ${corridor.name ?? corridor.code} corridor gauge ${corridor.gauge}.`,
+        });
       }
     }
-    if (corridor.maxAxleLoadTonnes != null) {
+    if (band) {
       if (s.axleLoadTonnes == null) missing.axle.push(label);
-      else if (s.axleLoadTonnes > corridor.maxAxleLoadTonnes + EPS) {
-        findings.push({ code: 'AXLE_LOAD_EXCEEDED', severity: 'VIOLATION', subject: label, actual: round2(s.axleLoadTonnes), limit: corridor.maxAxleLoadTonnes,
-          message: `${label}: axle load ${round2(s.axleLoadTonnes)} t exceeds the ${corridor.name ?? corridor.code} corridor limit of ${corridor.maxAxleLoadTonnes} t by ${round2(s.axleLoadTonnes - corridor.maxAxleLoadTonnes)} t.` });
+      else if (s.axleLoadTonnes > band.ceilingTonnes + EPS) {
+        findings.push({ code: 'AXLE_LOAD_EXCEEDED', severity: 'VIOLATION', subject: label, actual: round2(s.axleLoadTonnes), limit: band.ceilingTonnes,
+          message: `${label}: axle load ${round2(s.axleLoadTonnes)} t exceeds the highest limit the ${corridor.name ?? corridor.code} corridor publishes (${band.ceilingTonnes} t) by ${round2(s.axleLoadTonnes - band.ceilingTonnes)} t — it is not cleared for any section of this corridor.` });
+      } else if (s.axleLoadTonnes > band.floorTonnes + EPS) {
+        const where = band.upgraded
+          .filter((e) => (e.tonnes ?? 0) >= s.axleLoadTonnes! - EPS)
+          .map((e) => e.sections)
+          .join('; ') || 'the more heavily cleared sections';
+        findings.push({ code: 'AXLE_LOAD_EXCEEDED', severity: 'WARNING', subject: label, actual: round2(s.axleLoadTonnes), limit: band.floorTonnes,
+          message: `${label}: axle load ${round2(s.axleLoadTonnes)} t exceeds the ${band.floorTonnes} t floor the ${corridor.name ?? corridor.code} corridor clears for every section. It is cleared only for ${where} — confirm the route before accepting.` });
       }
     }
     if (corridor.vehicleProfile != null && s.vehicleProfile != null) {
@@ -141,7 +213,15 @@ export function checkEnvelope(
   }
 
   const unverified: string[] = [];
-  if (!verified) unverified.push(`The ${corridor.name ?? corridor.code} corridor's reference data is not VERIFIED (${corridor.dataStatus ?? 'unknown'}); limits cannot be relied on.`);
+  if (!verified) {
+    // A PARTIAL corridor has real, cited limits — only some of them. Saying "limits cannot
+    // be relied on" overstates it, and saying nothing at all understates it.
+    unverified.push(
+      corridor.dataStatus === 'PARTIAL'
+        ? `The ${corridor.name ?? corridor.code} corridor's reference data is PARTIAL: the loaded limits come from the published Network Statement, but the corridor is not fully reviewed and some fields (vehicle profile, gradients) were never supplied. Treat the limits as published, not as signed off.`
+        : `The ${corridor.name ?? corridor.code} corridor's reference data is not VERIFIED (${corridor.dataStatus ?? 'unknown'}); limits cannot be relied on.`,
+    );
+  }
   for (const k of corridorUnknown) unverified.push(`The corridor's ${k} is not loaded.`);
   const list = (names: string[]) => (names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} +${names.length - 3} more`);
   if (missing.gauge.length) unverified.push(`Gauge not declared for ${missing.gauge.length} item(s): ${list(missing.gauge)}.`);
@@ -150,7 +230,24 @@ export function checkEnvelope(
 
   let violations = findings.filter((f) => f.severity === 'VIOLATION');
   let warnings = findings.filter((f) => f.severity === 'WARNING');
-  if (!verified) {
+  /**
+   * Corridor data that has been loaded from a cited source may reject. Data that has not
+   * been loaded at all may not.
+   *
+   * Both VERIFIED and PARTIAL mean "the limits came from a cited source" — and the two
+   * criteria that can reject, gauge and axle load, are precisely the fields Chapter 2 of
+   * the Network Statement supplies for all six corridors. What makes a corridor PARTIAL is
+   * the vehicle profile and the gradients, and neither of those can ever reject: they are
+   * advisory by construction. Suppressing a genuine axle-load rejection because of a
+   * missing advisory field would leave a 99 t axle load sailing through a 20 t corridor
+   * on the strength of a formality.
+   *
+   * So the test is whether the data is CITED, not whether it is fully reviewed. The
+   * PARTIAL caveat still travels with the result (see `unverified` above), so nobody is
+   * told the corridor is signed off when it is not.
+   */
+  const mayReject = corridor.dataStatus === 'VERIFIED' || corridor.dataStatus === 'PARTIAL';
+  if (!mayReject) {
     // Unverified reference data may inform, but it never rejects.
     warnings = [...violations.map((v) => ({ ...v, severity: 'WARNING' as const, message: `(corridor data unverified) ${v.message}` })), ...warnings];
     violations = [];

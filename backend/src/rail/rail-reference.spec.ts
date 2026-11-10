@@ -35,7 +35,9 @@ describe('vocabulary mirrors the Prisma enums (drift guard)', () => {
     expect(RAIL_GAUGE_VALUES).toHaveLength(3); // 1067 / 610 / 1435 mm
     expect(RAIL_ELECTRIFICATION_VALUES).toHaveLength(4); // 3kV DC / 25kV AC / 50kV AC / Diesel
     expect(RAIL_VEHICLE_PROFILE_VALUES).toEqual(['A', 'B', 'B_PLUS_1']);
-    expect(RAIL_AXLE_LOAD_CLASSES_T).toEqual([20, 26, 30]);
+    // 20/26/30 came from the brief; 16.5 and 18.5 are what Network Statement Chapter 2
+    // actually states (Cape §2.11.1.6, North §2.8.1.6, North-East §2.10.1.6).
+    expect(RAIL_AXLE_LOAD_CLASSES_T).toEqual([16.5, 18.5, 20, 26, 30]);
     expect(RAIL_COMPLIANCE_DOC_TYPES).toHaveLength(8);
   });
 });
@@ -195,13 +197,46 @@ describe('corridor and yard catalogs — only what is evidenced', () => {
     expect(new Set(CORRIDOR_CATALOG.map((c) => c.code)).size).toBe(6);
   });
 
-  it('NO technical data is invented: every envelope field is empty and every corridor is SOURCE_PENDING', () => {
+  /**
+   * The invariant this test protects is "NO technical data is invented" — not "every field is
+   * empty". Those used to be the same thing, because Network Statement Chapter 2 had never
+   * been supplied. It has now: §2.8–2.13 give the envelope, so the honest state is no longer
+   * "nothing is known" but "what is known is cited, and what is not stated stays empty".
+   *
+   * So the test now checks provenance rather than emptiness.
+   */
+  it('NO technical data is invented: every loaded envelope value is cited, and the rest is empty', () => {
     for (const c of CORRIDOR_CATALOG) {
-      expect(c).toMatchObject({
-        gauge: null, electrification: [], maxAxleLoadTonnes: null, vehicleProfile: null, maxTrainLengthM: null, dataStatus: 'SOURCE_PENDING', verifiedBy: null,
-      });
-      expect(c.sourceRef).toMatch(/NOT SUPPLIED/);
+      // Every corridor cites the chapter and section its numbers came from.
+      expect(c.sourceRef).toMatch(/Network Statement/i);
+      expect(c.sourceRef).toMatch(/§2\.(8|9|10|11|12|13)/);
+      // Chapter 2 defers the vehicle gauge to Annexures 2 and 3, which were not supplied,
+      // so no corridor may claim one or claim to be fully verified.
+      expect(c.vehicleProfile).toBeNull();
+      expect(c.dataStatus).not.toBe('VERIFIED');
+      expect(c.verifiedBy).toBeNull();
+      // Every value that IS set must come from a vocabulary the document states.
+      if (c.gauge !== null) expect(RAIL_GAUGE_VALUES).toContain(c.gauge);
+      if (c.maxAxleLoadTonnes !== null) expect(RAIL_AXLE_LOAD_CLASSES_T).toContain(c.maxAxleLoadTonnes);
+      for (const t of c.electrification) expect(RAIL_ELECTRIFICATION_VALUES).toContain(t as RailElectrification);
+      for (const e of c.envelopeExceptions ?? []) {
+        if (e.tonnes !== undefined) expect(RAIL_AXLE_LOAD_CLASSES_T).toContain(e.tonnes);
+        if (e.gauge !== undefined) expect(RAIL_GAUGE_VALUES).toContain(e.gauge);
+      }
     }
+  });
+
+  it('loads the envelope Chapter 2 actually states, per corridor', () => {
+    const table = Object.fromEntries(CORRIDOR_CATALOG.map((c) => [c.code, c]));
+    // gauge (all Cape gauge) / axle load / train length — NS V4 §2.8–2.13.
+    expect(table['COR-NORTH']).toMatchObject({ maxAxleLoadTonnes: 20, maxTrainLengthM: 2000 });
+    expect(table['COR-ORE']).toMatchObject({ maxAxleLoadTonnes: 30, maxTrainLengthM: null });
+    expect(table['COR-NORTH-EAST']).toMatchObject({ maxAxleLoadTonnes: 20, maxTrainLengthM: 1600 });
+    expect(table['COR-CAPE']).toMatchObject({ maxAxleLoadTonnes: 20, maxTrainLengthM: 1150 });
+    expect(table['COR-CENTRAL']).toMatchObject({ maxAxleLoadTonnes: 20, maxTrainLengthM: 1200 });
+    expect(table['COR-CONTAINER']).toMatchObject({ maxAxleLoadTonnes: 20, maxTrainLengthM: 1200 });
+    // Ore is the only 50 kV AC corridor; it is also the only one stated with no train length.
+    expect(table['COR-ORE'].electrification).toEqual(['AC_50KV']);
   });
 
   it('seeds ZERO yards — the 11 transfer yards were never supplied (surfaced, not hidden)', () => {

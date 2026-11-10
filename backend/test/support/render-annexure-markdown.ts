@@ -16,6 +16,8 @@ import {
 } from '../../src/rail/catalog/cancellation-process.catalog';
 import { CORRIDOR_CATALOG } from '../../src/rail/catalog/corridors.catalog';
 import { EXPECTED_CORRIDOR_COUNT, EXPECTED_TRANSFER_YARD_COUNT, YARD_CATALOG } from '../../src/rail/catalog/yards.catalog';
+import { RAIL_ELECTRIFICATION_LABEL, RAIL_GAUGE_LABEL } from '../../src/rail/rail-reference';
+import type { RailElectrification } from '@prisma/client';
 
 export const MARKERS = {
   full: { begin: '<!-- BEGIN GENERATED: annexure-captures — do not edit; run `docs/tools/render-annexure-captures.ts` -->', end: '<!-- END GENERATED: annexure-captures -->' },
@@ -78,9 +80,25 @@ export function renderProcess(): string {
   return `${steps}\n\n\\* step number not printed in the source; inferred from the sequence.\n\n**Initiators (steps 1–5)**\n\n${init}\n\n**Timings and windows quoted by the annexures**\n\n${timings}`;
 }
 
+/** One corridor's envelope, exactly as the catalog holds it — never summarised. */
+function envelopeCell(c: (typeof CORRIDOR_CATALOG)[number]): string {
+  const gauge = c.gauge ? RAIL_GAUGE_LABEL[c.gauge] : '—';
+  const elec = c.electrification.map((e) => RAIL_ELECTRIFICATION_LABEL[e as RailElectrification]).join('/') || '—';
+  const axle = c.maxAxleLoadTonnes == null ? '—' : `${c.maxAxleLoadTonnes} t`;
+  const len = c.maxTrainLengthM == null ? '—' : `${c.maxTrainLengthM} m`;
+  const cell = `${gauge} / ${elec} / ${axle} / ${c.vehicleProfile ?? '—'} / ${len}`;
+  const ex = (c.envelopeExceptions ?? []).map((e) => {
+    const what = e.kind === 'AXLE_LOAD' ? `${e.tonnes} t` : e.kind === 'GAUGE' ? (e.gauge ? RAIL_GAUGE_LABEL[e.gauge] : '—') : `${e.metres} m`;
+    return `${what} on ${e.sections}`;
+  });
+  return ex.length ? `${cell}<br>Exceptions: ${ex.join('; ')}` : cell;
+}
+
 export function renderReferenceState(): string {
-  const rows = CORRIDOR_CATALOG.map((c) => [c.code, c.name, c.aliases.join(', ') || '—', c.workbookRoutes.join('; '), c.dataStatus, 'not supplied']);
-  return `${table(['Code', 'V4 corridor', 'Pre-V4 aliases', 'Annexure 33b routes (indicative)', 'Data status', 'Gauge / electrification / axle load / profile / train length'], rows)}\n\nTransfer yards in the catalog: **${YARD_CATALOG.length} of ${EXPECTED_TRANSFER_YARD_COUNT}** expected by the brief (none supplied). Corridors: **${CORRIDOR_CATALOG.length} of ${EXPECTED_CORRIDOR_COUNT}**, all \`SOURCE_PENDING\`.`;
+  const rows = CORRIDOR_CATALOG.map((c) => [c.code, c.name, c.aliases.join(', ') || '—', c.workbookRoutes.join('; '), c.dataStatus, envelopeCell(c)]);
+  const statuses = new Set(CORRIDOR_CATALOG.map((c) => c.dataStatus));
+  const statusNote = [...statuses].sort().map((s) => `\`${s}\``).join(', ');
+  return `${table(['Code', 'V4 corridor', 'Pre-V4 aliases', 'Annexure 33b routes (indicative)', 'Data status', 'Gauge / electrification / axle load / profile / train length'], rows)}\n\nTransfer yards in the catalog: **${YARD_CATALOG.length} of ${EXPECTED_TRANSFER_YARD_COUNT}** expected by the brief (none supplied). Corridors: **${CORRIDOR_CATALOG.length} of ${EXPECTED_CORRIDOR_COUNT}**, status: ${statusNote}. Gauge, electrification, axle load and train length come from Network Statement V4 Chapter 2 §2.8–2.13; the vehicle profile is still missing because Annexures 2 and 3 were never supplied, so no corridor is \`VERIFIED\`.`;
 }
 
 export function renderFullCapture(): string {
