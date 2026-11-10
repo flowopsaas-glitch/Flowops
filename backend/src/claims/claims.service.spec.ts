@@ -36,6 +36,11 @@ function makePrisma(seed: { waybills?: any[]; claims?: any[]; creditNotes?: any[
           return String(value ?? '').toLowerCase().includes(String(cond.contains).toLowerCase());
         }
         if ('notIn' in cond) return !cond.notIn.includes(value);
+        // `in` is what a compare-and-set transition is built from: the WHERE
+        // names the statuses that may still move. Without it the fake cannot
+        // tell two racing callers apart, so every concurrency test below would
+        // pass for the wrong reason.
+        if ('in' in cond) return cond.in.includes(value);
         return false;
       }
       return value === cond;
@@ -92,6 +97,17 @@ function makePrisma(seed: { waybills?: any[]; claims?: any[]; creditNotes?: any[
         if (index === -1) throw new Error('record not found');
         state.claims[index] = { ...state.claims[index], ...data, updatedAt: now() };
         return state.claims[index];
+      },
+      // The compare-and-set primitive. Prisma matches the WHERE against the
+      // COMMITTED row and reports how many rows it moved; the fake does the
+      // same, so a caller holding a stale read simply matches nothing.
+      updateMany: async ({ where, data }: any) => {
+        const matched = state.claims.filter((c) => match(c, where));
+        for (const row of matched) {
+          const index = state.claims.findIndex((c) => c.id === row.id);
+          state.claims[index] = { ...state.claims[index], ...data, updatedAt: now() };
+        }
+        return { count: matched.length };
       },
     },
     claimEvent: {
@@ -419,5 +435,133 @@ describe('ClaimsService — list and summary', () => {
     expect(summary.claimedOpen).toBe(open.claimedAmount + 4250 + 4250);
     expect(summary.overdue).toBe(1);
     expect(summary.byStatus.APPROVED).toBe(1);
+  });
+});
+
+/**
+ * Concurrency: a claim is money, and two operators acting on the same claim
+ * must not produce two financial records.
+ *
+ * Every test here drives two calls at the same claim through Promise.allSettled
+ * so both read the committed row before either writes. That is the shape the
+ * bug takes in production: two browser tabs, or a retry racing a webhook. The
+ * assertions are about what was CREATED — a credit note, an audit event — not
+ * merely about which status the row ended up holding, because a row that ends
+ * in the right state having paid out twice is the failure nobody notices.
+ */
+describe('ClaimsService — two callers, one claim', () => {
+  /** A claim assessed as the carrier's liability and approved for 1 000. */
+  async function approvedClaim() {
+    const built = build();
+    const claim = await built.svc.create(COMPANY, ACTOR, baseClaim);
+    await built.svc.assess(COMPANY, ACTOR, claim.id, {
+      liability: 'CARRIER',
+      liabilityBasis: 'Trading terms 4.2',
+    });
+    await built.svc.approve(COMPANY, ACTOR, claim.id, { approvedAmount: 1000 });
+    return { ...built, claim };
+  }
+
+  it('settling twice raises exactly one credit note', async () => {
+    const { svc, state, claim } = await approvedClaim();
+
+    const results = await Promise.allSettled([
+      svc.settle(COMPANY, ACTOR, claim.id),
+      svc.settle(COMPANY, ACTOR, claim.id),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    // The money assertion: one settlement, one credit note. Two would mean the
+    // client was credited twice for a single agreed payout.
+    expect(state.creditNotes).toHaveLength(1);
+  });
+
+  it('settling twice records exactly one SETTLED event', async () => {
+    const { svc, state, claim } = await approvedClaim();
+    await Promise.allSettled([
+      svc.settle(COMPANY, ACTOR, claim.id),
+      svc.settle(COMPANY, ACTOR, claim.id),
+    ]);
+    expect(state.events.filter((e) => e.type === 'SETTLED')).toHaveLength(1);
+  });
+
+  it('approving twice records exactly one APPROVED event', async () => {
+    const { svc, state } = build();
+    const claim = await svc.create(COMPANY, ACTOR, baseClaim);
+    await svc.assess(COMPANY, ACTOR, claim.id, {
+      liability: 'CARRIER',
+      liabilityBasis: 'Trading terms 4.2',
+    });
+
+    const results = await Promise.allSettled([
+      svc.approve(COMPANY, ACTOR, claim.id, { approvedAmount: 900 }),
+      svc.approve(COMPANY, ACTOR, claim.id, { approvedAmount: 1500 }),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(state.events.filter((e) => e.toStatus === 'APPROVED')).toHaveLength(1);
+    // The amount the winner wrote, not a second caller's overwrite.
+    expect(state.claims[0].approvedAmount).toBe(900);
+  });
+
+  it('rejecting twice records exactly one REJECTED event', async () => {
+    const { svc, state } = build();
+    const claim = await svc.create(COMPANY, ACTOR, baseClaim);
+
+    const results = await Promise.allSettled([
+      svc.reject(COMPANY, ACTOR, claim.id, { reason: 'Not our liability' }),
+      svc.reject(COMPANY, ACTOR, claim.id, { reason: 'Out of time' }),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(state.events.filter((e) => e.toStatus === 'REJECTED')).toHaveLength(1);
+  });
+
+  it('an approve racing a reject settles on one outcome, not both', async () => {
+    const { svc, state } = build();
+    const claim = await svc.create(COMPANY, ACTOR, baseClaim);
+    await svc.assess(COMPANY, ACTOR, claim.id, {
+      liability: 'CARRIER',
+      liabilityBasis: 'Trading terms 4.2',
+    });
+
+    const results = await Promise.allSettled([
+      svc.approve(COMPANY, ACTOR, claim.id, { approvedAmount: 1000 }),
+      svc.reject(COMPANY, ACTOR, claim.id, { reason: 'Carrier disputes' }),
+    ]);
+
+    const winners = results.filter((r) => r.status === 'fulfilled');
+    expect(winners).toHaveLength(1);
+    const loser = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(loser.reason).toBeInstanceOf(ConflictException);
+    // The claim may not end up both approved and rejected.
+    expect(['APPROVED', 'REJECTED']).toContain(state.claims[0].status);
+    // Exactly one of the two racing outcomes was recorded. Scoped to the
+    // targets of the race: the assess() in the setup above is also a
+    // STATUS_CHANGED event, and counting it would let a real duplicate hide.
+    const outcomes = state.events.filter((e) => e.toStatus === 'APPROVED' || e.toStatus === 'REJECTED');
+    expect(outcomes).toHaveLength(1);
+  });
+
+  it('a settled claim refuses to be settled again', async () => {
+    const { svc, state, claim } = await approvedClaim();
+    await svc.settle(COMPANY, ACTOR, claim.id);
+
+    await expect(svc.settle(COMPANY, ACTOR, claim.id)).rejects.toBeInstanceOf(ConflictException);
+    expect(state.creditNotes).toHaveLength(1);
+  });
+
+  it('withdrawing a claim that was just approved fails rather than resurrecting it', async () => {
+    const { svc, state, claim } = await approvedClaim();
+
+    const results = await Promise.allSettled([
+      svc.settle(COMPANY, ACTOR, claim.id),
+      svc.withdraw(COMPANY, ACTOR, claim.id, { reason: 'Client withdrew' }),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    // Whichever won, the claim is terminal and the other produced no payout.
+    expect(['SETTLED', 'WITHDRAWN']).toContain(state.claims[0].status);
   });
 });

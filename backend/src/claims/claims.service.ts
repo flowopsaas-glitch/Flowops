@@ -226,29 +226,40 @@ export class ClaimsService {
       );
     }
 
-    const fromStatus = claim.status;
-    if (fromStatus !== 'OPEN' && fromStatus !== 'UNDER_REVIEW') {
-      throw new ConflictException(transitionRefusal(fromStatus, 'UNDER_REVIEW'));
-    }
-    const nextStatus: ClaimStatus = fromStatus === 'OPEN' ? 'UNDER_REVIEW' : fromStatus;
-
     await this.prisma.$transaction(async (tx) => {
-      await tx.claim.update({
-        where: { id: claim.id },
+      // Re-read inside the transaction: this is the row the decision is made
+      // on, not the one read before the request was validated. Assessing an
+      // already-reviewed claim records the assessment without moving it, so
+      // UNDER_REVIEW is a legal predecessor here even though the state machine
+      // has no UNDER_REVIEW → UNDER_REVIEW edge — which is why this one
+      // transition is written out rather than using claimStatus().
+      const current = await tx.claim.findFirst({ where: { id, companyId } });
+      if (!current) throw new NotFoundException('Claim not found');
+      if (current.status !== 'OPEN' && current.status !== 'UNDER_REVIEW') {
+        throw new ConflictException(transitionRefusal(current.status, 'UNDER_REVIEW'));
+      }
+      const nextStatus: ClaimStatus = current.status === 'OPEN' ? 'UNDER_REVIEW' : current.status;
+      const moved = await tx.claim.updateMany({
+        where: { id, companyId, status: current.status },
         data: {
           liability: dto.liability,
           liabilityBasis: dto.liabilityBasis.trim(),
-          liabilityCap: dto.liabilityCap != null ? roundMoney(dto.liabilityCap) : claim.liabilityCap,
+          liabilityCap: dto.liabilityCap != null ? roundMoney(dto.liabilityCap) : current.liabilityCap,
           status: nextStatus,
           assessedById: actor?.id ?? null,
         },
       });
+      if (moved.count === 0) {
+        throw new ConflictException(
+          'This claim was just changed by someone else — reload it before acting on it again.',
+        );
+      }
       await tx.claimEvent.create({
         data: {
-          claimId: claim.id,
+          claimId: id,
           companyId,
-          type: nextStatus === fromStatus ? 'NOTE_ADDED' : 'STATUS_CHANGED',
-          fromStatus,
+          type: nextStatus === current.status ? 'NOTE_ADDED' : 'STATUS_CHANGED',
+          fromStatus: current.status,
           toStatus: nextStatus,
           actorId: actor?.id ?? null,
           actorName: actor?.name ?? null,
@@ -271,13 +282,11 @@ export class ClaimsService {
     const approvedAmount = roundMoney(dto.approvedAmount);
     const check = checkApprovalAmount(approvedAmount, claim.claimedAmount, claim.liabilityCap);
     if (!check.ok) throw new BadRequestException(check.reason);
-    const fromStatus = claim.status;
-
     await this.prisma.$transaction(async (tx) => {
-      await tx.claim.update({
-        where: { id: claim.id },
-        data: { status: 'APPROVED', approvedAmount, approvedById: actor?.id ?? null },
-      });
+      const fromStatus = await this.claimStatus(
+        tx, companyId, claim.id, 'APPROVED',
+        { approvedAmount, approvedById: actor?.id ?? null },
+      );
       await tx.claimEvent.create({
         data: {
           claimId: claim.id,
@@ -299,16 +308,15 @@ export class ClaimsService {
   async reject(companyId: string, actor: ClaimActor, id: string, dto: RejectClaimDto): Promise<ClaimWithEvents> {
     const claim = await this.requireTransition(companyId, id, 'REJECTED');
     const reason = (dto.reason ?? '').trim();
-    const fromStatus = claim.status;
     if (reason.length < 5) {
       throw new BadRequestException('Give a reason for the rejection — the client sees this.');
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.claim.update({
-        where: { id: claim.id },
-        data: { status: 'REJECTED', rejectionReason: reason, closedAt: new Date() },
-      });
+      const fromStatus = await this.claimStatus(
+        tx, companyId, claim.id, 'REJECTED',
+        { rejectionReason: reason, closedAt: new Date() },
+      );
       await tx.claimEvent.create({
         data: {
           claimId: claim.id,
@@ -328,13 +336,12 @@ export class ClaimsService {
 
   async withdraw(companyId: string, actor: ClaimActor, id: string, dto: WithdrawClaimDto = {}): Promise<ClaimWithEvents> {
     const claim = await this.requireTransition(companyId, id, 'WITHDRAWN');
-    const fromStatus = claim.status;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.claim.update({
-        where: { id: claim.id },
-        data: { status: 'WITHDRAWN', closedAt: new Date() },
-      });
+      const fromStatus = await this.claimStatus(
+        tx, companyId, claim.id, 'WITHDRAWN',
+        { closedAt: new Date() },
+      );
       await tx.claimEvent.create({
         data: {
           claimId: claim.id,
@@ -367,10 +374,19 @@ export class ClaimsService {
       throw new BadRequestException('A claim must be approved for a positive amount before it can be settled.');
     }
 
-    const fromStatus = claim.status;
     const creditNoteNumber = await this.nextCreditNoteNumber(companyId);
 
     await this.prisma.$transaction(async (tx) => {
+      // Claim the transition BEFORE raising the credit note. The order is the
+      // point of this method: a caller that loses the race must leave nothing
+      // behind, and a credit note is a financial instrument rather than an
+      // audit line that can be tidied up later. Claiming first means the
+      // loser throws having created no money at all.
+      const fromStatus = await this.claimStatus(
+        tx, companyId, claim.id, 'SETTLED',
+        { settledAt: new Date(), closedAt: new Date() },
+      );
+
       const creditNote = await tx.creditNote.create({
         data: {
           number: creditNoteNumber,
@@ -398,12 +414,11 @@ export class ClaimsService {
         },
       });
 
+      // Safe as a plain update: this caller owns the transition, so no one
+      // else can be moving the row underneath it.
       await tx.claim.update({
         where: { id: claim.id },
         data: {
-          status: 'SETTLED',
-          settledAt: new Date(),
-          closedAt: new Date(),
           creditNoteId: creditNote.id,
           creditNoteNumber: creditNote.number,
         },
@@ -496,6 +511,56 @@ export class ClaimsService {
       throw new ConflictException(transitionRefusal(claim.status, to));
     }
     return claim;
+  }
+
+  /**
+   * Move a claim to `to` atomically, inside an open transaction.
+   *
+   * A claim is money. The read-then-write this replaces is the bug that
+   * shipped three times elsewhere in this codebase — a credit note applied
+   * twice, a payment confirmed twice, a signup approved twice — and settling a
+   * claim raises a real credit note, so the fourth occurrence would not be a
+   * duplicated audit line but a duplicated payout.
+   *
+   * Two operators acting at once both read the same committed row, both pass
+   * every application check, and both write. Nothing throws. The fix is to
+   * make the expectation part of the write: the WHERE names the status this
+   * caller believes the claim holds, and Postgres evaluates it against the
+   * committed row at lock time, so the second caller matches nothing.
+   *
+   * Reading INSIDE the transaction matters as much as the CAS itself. It is
+   * what makes `fromStatus` on the audit event truthful: a caller that read
+   * OPEN a second ago, was meanwhile moved to UNDER_REVIEW by someone else,
+   * and then matched a permissive WHERE would otherwise record a transition
+   * from a state the claim was never in.
+   *
+   * Returns the status the claim actually held, for the audit event.
+   */
+  private async claimStatus(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    id: string,
+    to: ClaimStatus,
+    data: Prisma.ClaimUpdateManyMutationInput = {},
+  ): Promise<ClaimStatus> {
+    const current = await tx.claim.findFirst({ where: { id, companyId } });
+    if (!current) throw new NotFoundException('Claim not found');
+    if (!canTransition(current.status, to)) {
+      throw new ConflictException(transitionRefusal(current.status, to));
+    }
+    const moved = await tx.claim.updateMany({
+      where: { id, companyId, status: current.status },
+      data: { ...data, status: to },
+    });
+    if (moved.count === 0) {
+      // The row changed between the read and the write. Someone else won, and
+      // this caller's work has not happened — say so plainly rather than
+      // guessing at a reason it might have been refused.
+      throw new ConflictException(
+        'This claim was just changed by someone else — reload it before acting on it again.',
+      );
+    }
+    return current.status;
   }
 
   private async eventsFor(companyId: string, claimId: string): Promise<ClaimEvent[]> {
