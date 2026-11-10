@@ -160,7 +160,17 @@ export class RailWeighbridgeService {
     return {
       reading,
       evaluation,
-      hold: { held: decision.held, status: decision.held ? 'HOLD_FOR_LOAD_ADJUSTMENT' : 'NONE', reason: decision.reason, wagons: decision.wagons, totalExcessTonnes: decision.totalExcessTonnes, changed: decision.held !== wasHeld },
+      hold: {
+        held: decision.held,
+        status: decision.held ? 'HOLD_FOR_LOAD_ADJUSTMENT' : 'NONE',
+        reason: decision.reason,
+        wagons: decision.wagons,
+        totalExcessTonnes: decision.totalExcessTonnes,
+        // §5.2.11: past 3 t over, the wagon may not proceed at all. Re-weighing does not
+        // clear this — the wagon has to come off the train.
+        safetyStop: decision.safetyStop,
+        changed: decision.held !== wasHeld,
+      },
     };
   }
 }

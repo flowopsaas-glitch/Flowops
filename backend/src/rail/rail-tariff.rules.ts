@@ -16,7 +16,17 @@ import { Money } from '../common/money.util';
  *   • escalation is OPT-IN and recorded on the line (the constants are [BRIEF, unverified]).
  */
 
+import { commercialThreshold } from './catalog/commercial-thresholds.catalog';
+
 // ── constants ────────────────────────────────────────────────────────────────
+
+/**
+ * §5.2.11 of the Network Statement: a wagon overloaded by MORE than this many tonnes "shall
+ * not be allowed to proceed to its destination due to safety considerations". Sourced, not
+ * from the brief — see `commercial-thresholds.catalog.ts`.
+ */
+const OVERLOAD_MUST_NOT_PROCEED_T = commercialThreshold('overload_must_not_proceed_tonnes')!.value!;
+
 
 export const RAIL_TARIFF_CONSTANTS = {
   /** [BRIEF, unverified] annual escalation of infrastructure (c/GTK) rates, in percent. */
@@ -151,25 +161,49 @@ export function latestReadingPerWagon<T extends ReadingLike>(readings: readonly 
 
 export interface HoldDecision {
   held: boolean;
-  wagons: { wagonNumber: string; excessTonnes: number }[];
+  wagons: { wagonNumber: string; excessTonnes: number; mustNotProceed: boolean }[];
   totalExcessTonnes: number;
   reason: string | null;
+  /**
+   * True when at least one wagon is overloaded beyond the point the Network Statement says it
+   * must not be moved at all (§5.2.11: more than 3 t over).
+   *
+   * This is a different decision from `held`. An ordinary overload is a commercial and
+   * operational problem: reduce the load and re-weigh. A safety stop is a prohibition — the
+   * wagon "shall not be allowed to proceed to its destination due to safety considerations",
+   * so re-weighing is not enough, the wagon has to be taken off the train.
+   */
+  safetyStop: boolean;
 }
 
-/** A consignment is held while ANY wagon's latest reading is OVERLOADED; re-weighing it within its limit lifts that wagon's share. */
+/**
+ * A consignment is held while ANY wagon's latest reading is OVERLOADED; re-weighing it within
+ * its limit lifts that wagon's share.
+ *
+ * §5.2.11 draws a line inside "overloaded" that this function now reports separately: past
+ * OVERLOAD_MUST_NOT_PROCEED_T the wagon is not merely overweight, it is forbidden to move.
+ */
 export function deriveHold(readings: readonly ReadingLike[]): HoldDecision {
   const wagons = latestReadingPerWagon(readings)
     .filter((r) => r.status === 'OVERLOADED')
-    .map((r) => ({ wagonNumber: r.wagonNumber, excessTonnes: r.excessTonnes ?? 0 }))
+    .map((r) => {
+      const excessTonnes = r.excessTonnes ?? 0;
+      return { wagonNumber: r.wagonNumber, excessTonnes, mustNotProceed: excessTonnes > OVERLOAD_MUST_NOT_PROCEED_T };
+    })
     .sort((a, b) => a.wagonNumber.localeCompare(b.wagonNumber));
   const totalExcessTonnes = Math.round(wagons.reduce((n, w) => n + w.excessTonnes, 0) * 1000) / 1000;
+  const stopped = wagons.filter((w) => w.mustNotProceed);
+  const reason = !wagons.length
+    ? null
+    : stopped.length
+      ? `Safety stop (§5.2.11): ${stopped.map((w) => `${w.wagonNumber} (${w.excessTonnes} t over)`).join(', ')} ${stopped.length === 1 ? 'is' : 'are'} more than ${OVERLOAD_MUST_NOT_PROCEED_T} t over and shall not be allowed to proceed to ${stopped.length === 1 ? 'its' : 'their'} destination due to safety considerations. Remove ${stopped.length === 1 ? 'the wagon' : 'these wagons'} from the train.`
+      : `Overloaded: ${wagons.map((w) => `${w.wagonNumber} (${w.excessTonnes} t over)`).join(', ')}. Reduce the load and re-weigh ${wagons.length === 1 ? 'the wagon' : 'each wagon'} within its limit.`;
   return {
     held: wagons.length > 0,
     wagons,
     totalExcessTonnes,
-    reason: wagons.length
-      ? `Overloaded: ${wagons.map((w) => `${w.wagonNumber} (${w.excessTonnes} t over)`).join(', ')}. Reduce the load and re-weigh ${wagons.length === 1 ? 'the wagon' : 'each wagon'} within its limit.`
-      : null,
+    reason,
+    safetyStop: stopped.length > 0,
   };
 }
 
