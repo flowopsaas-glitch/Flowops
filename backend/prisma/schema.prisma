@@ -4812,6 +4812,20 @@ model RailNetwork {
   /// referred onward. Transnet: 96 (Annexure 28, Head of NSP&O).
   resolveByHours      Int     @default(96)
 
+  /// Display names for the role KEYS the attribution and initiator enums use.
+  ///
+  /// `RailAttribution.TRIM` and `RailChangeInitiator.PRASA_OTHER_IM` name
+  /// ROLES -- the infrastructure manager, another infrastructure manager --
+  /// using Transnet's words for them. The enum values stay as they are: they
+  /// are persisted in rows, are part of the API contract and appear in DTO
+  /// validation, so renaming them would be a migration and a breaking change
+  /// to buy a cosmetic improvement. What varies by network is the word shown.
+  ///
+  /// Shape: `{ "TRIM": "Network Rail", "TOC": "Train Operator" }`. A role
+  /// absent from this map falls back to the Transnet label, so a partial seed
+  /// still reads as a sentence. null = use every Transnet label.
+  roleLabels          Json?
+
   rungs       RailEscalationRung[]
   reports     RailHandshakeReport[]
 

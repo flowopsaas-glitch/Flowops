@@ -108,13 +108,55 @@ export type ChangeConsequence =
   | 'PENDING_ALLOCATION'
   | 'PENDING_DEPARTURE_TIME';
 
+/**
+ * What to CALL a role, as opposed to which role it is.
+ *
+ * `RailAttribution.TRIM` and `RailChangeInitiator.PRASA_OTHER_IM` name ROLES
+ * -- the infrastructure manager, another infrastructure manager -- in
+ * Transnet's words. The enum values are persisted in rows, are part of the
+ * API contract and appear in DTO validation, so they stay: renaming them
+ * would be a migration and a breaking change to buy a cosmetic improvement.
+ * What genuinely varies by network is the word an operator is shown, which is
+ * what this carries.
+ *
+ * Every field is optional, so a network can label only what it cares about;
+ * anything unlabelled falls back to the Transnet wording rather than to a
+ * blank or to a raw enum key.
+ */
+export interface RoleLabels {
+  TRIM?: string;
+  TOC?: string;
+  FORCE_MAJEURE?: string;
+  UNDETERMINED?: string;
+  YARD_OPERATOR?: string;
+  PORT_TERMINAL_OPERATOR?: string;
+  PRASA_OTHER_IM?: string;
+}
+
+/** Transnet's words for each role. Also the default for every network. */
+export const TRANSNET_ROLE_LABELS: Readonly<Required<RoleLabels>> = {
+  TRIM: 'TRIM',
+  TOC: 'TOC',
+  FORCE_MAJEURE: 'Force Majeure',
+  UNDETERMINED: 'Undetermined',
+  YARD_OPERATOR: 'yard operator',
+  PORT_TERMINAL_OPERATOR: 'port terminal operator',
+  PRASA_OTHER_IM: 'PRASA or another infrastructure manager',
+};
+
+/** Resolve one role to its display word, falling back to Transnet's. */
+const labelFor = (labels: RoleLabels | undefined, role: keyof RoleLabels): string =>
+  labels?.[role]?.trim() || TRANSNET_ROLE_LABELS[role];
+
 export interface ConsequenceInput {
   attribution: RailAttribution;
   hoursBeforeDeparture: number | null;
-  /** TRIM-caused only: did the Access Seeker accept the replacement path? undefined = not yet known. */
+  /** Infrastructure-manager-caused only: did the Access Seeker accept the replacement path? undefined = not yet known. */
   replacementAccepted?: boolean | null;
-  /** TRIM-caused only: a planned occupation is excluded from the TRIM-failure remedies [REG R-013.3]. */
+  /** Infrastructure-manager-caused only: a planned occupation is excluded from the IM-failure remedies [REG R-013.3]. */
   isPlannedOccupation?: boolean;
+  /** Display words for the roles. Omit for Transnet's wording. */
+  labels?: RoleLabels;
 }
 
 export interface ConsequenceResult {
@@ -146,15 +188,16 @@ export function evaluateConsequence(input: ConsequenceInput): ConsequenceResult 
       return out('CREDIT_IF_REALLOCATED', false, null, `Cancelled more than ${RAIL_FLEX_WINDOWS.commercialWindowHours} h before departure: a credit applies if the train path is reallocated.`);
     }
     return out('FORFEIT_FEES_PAID_IN_ADVANCE', true, 'TOC',
-      `TOC-attributed cancellation ${h <= 0 ? 'at or after departure (deemed cancellation)' : `${Math.round(h * 10) / 10} h before departure`}, i.e. within ${RAIL_FLEX_WINDOWS.commercialWindowHours} h and without Force Majeure: access fees paid in advance are forfeited.`);
+      `${labelFor(input.labels, 'TOC')}-attributed cancellation ${h <= 0 ? 'at or after departure (deemed cancellation)' : `${Math.round(h * 10) / 10} h before departure`}, i.e. within ${RAIL_FLEX_WINDOWS.commercialWindowHours} h and without Force Majeure: access fees paid in advance are forfeited.`);
   }
-  // attribution === 'TRIM'
-  if (input.isPlannedOccupation) return out('NONE_PLANNED_OCCUPATION', false, null, 'A planned occupation is excluded from the TRIM-failure remedies.');
-  if (input.replacementAccepted === true) return out('NONE_REPLACEMENT_ACCEPTED', false, null, 'TRIM-caused, but the replacement train path was accepted — no refund.');
+  // attribution is the infrastructure manager (Transnet: TRIM)
+  const im = labelFor(input.labels, 'TRIM');
+  if (input.isPlannedOccupation) return out('NONE_PLANNED_OCCUPATION', false, null, `A planned occupation is excluded from the ${im}-failure remedies.`);
+  if (input.replacementAccepted === true) return out('NONE_REPLACEMENT_ACCEPTED', false, null, `${im}-caused, but the replacement train path was accepted — no refund.`);
   if (input.replacementAccepted === false) {
-    return out('FULL_TRAIN_PATH_FEE_REFUND', true, 'TRIM', 'TRIM-caused, and the replacement train path was not accepted: the full Train Path fee is refunded.', ['Subject to the limitation of liability in the Rail Access Agreement.']);
+    return out('FULL_TRAIN_PATH_FEE_REFUND', true, 'TRIM', `${im}-caused, and the replacement train path was not accepted: the full Train Path fee is refunded.`, ['Subject to the limitation of liability in the Rail Access Agreement.']);
   }
-  return out('PENDING_REPLACEMENT_OUTCOME', false, null, 'TRIM-caused: a refund applies only if the replacement path is not accepted. The outcome is not yet known.');
+  return out('PENDING_REPLACEMENT_OUTCOME', false, null, `${im}-caused: a refund applies only if the replacement path is not accepted. The outcome is not yet known.`);
 }
 
 // ── status machine ───────────────────────────────────────────────────────────
@@ -185,8 +228,14 @@ export function allowedAllocations(possibleParties: readonly string[]): RailAttr
 }
 
 /** A mismatch between WHO raised the request and who the reason is allocated to — flagged, never blocked. */
-export function initiatorMismatch(initiatedBy: string, attribution: RailAttribution): string | null {
-  if (initiatedBy === 'TRIM' && attribution === 'TOC') return 'TRIM raised this request, but the chosen reason is allocated to Rail Operations (the TOC side) in Annexure 20b.';
-  if (initiatedBy === 'TOC' && attribution === 'TRIM') return 'The TOC raised this request, but the chosen reason is allocated to the Infrastructure Manager in Annexure 20b — check the reason code.';
+export function initiatorMismatch(
+  initiatedBy: string,
+  attribution: RailAttribution,
+  labels?: RoleLabels,
+): string | null {
+  const im = labelFor(labels, 'TRIM');
+  const toc = labelFor(labels, 'TOC');
+  if (initiatedBy === 'TRIM' && attribution === 'TOC') return `${im} raised this request, but the chosen reason is allocated to Rail Operations (the ${toc} side) in Annexure 20b.`;
+  if (initiatedBy === 'TOC' && attribution === 'TRIM') return `The ${toc} raised this request, but the chosen reason is allocated to the Infrastructure Manager in Annexure 20b — check the reason code.`;
   return null;
 }

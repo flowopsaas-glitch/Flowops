@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
 import { RailHandshakeService } from './rail-handshake.service';
+import { RailNetworkService } from './rail-network.service';
 import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, recordRailAudit,
 } from './rail-audit';
@@ -12,8 +13,8 @@ import { AllocatePartyDto, CreateChangeRequestDto, PreviewChangeRequestDto, Prop
 import { CANCELLATION_CODE_CATALOG, CancellationCodeEntry } from './catalog/cancellation-codes.catalog';
 import { CANCELLATION_INITIATORS, CANCELLATION_PROCESS_STEPS } from './catalog/cancellation-process.catalog';
 import {
-  RAIL_FLEX_WINDOWS, acknowledgementState, allowedAllocations, attributionFromParty, canChange, classifyNotice, evaluateConsequence,
-  initiatorMismatch, noticeLateMinutes, responsiblePartyFor,
+  RAIL_FLEX_WINDOWS, RoleLabels, TRANSNET_ROLE_LABELS, acknowledgementState, allowedAllocations, attributionFromParty,
+  canChange, classifyNotice, evaluateConsequence, initiatorMismatch, noticeLateMinutes, responsiblePartyFor,
 } from './rail-change.rules';
 
 /** A cancellation code as the API returns it. */
@@ -36,6 +37,7 @@ export class RailChangeService {
     private readonly billing: BillingService,
     private readonly audit: AuditService,
     private readonly handshake: RailHandshakeService,
+    private readonly networks: RailNetworkService,
   ) {}
 
   private async assertEntitled(companyId: string): Promise<void> {
@@ -82,7 +84,31 @@ export class RailChangeService {
     return d;
   }
 
-  private async derive(dto: PreviewChangeRequestDto, now: Date) {
+  /**
+   * The words this tenant's network uses for each role.
+   *
+   * Resolved once per request rather than per call site, and it never throws:
+   * a network that cannot be read yields the Transnet wording, because an
+   * operator asking who owes them a refund must get an answer even if the
+   * catalogue is misconfigured.
+   */
+  private async roleLabelsFor(companyId?: string): Promise<RoleLabels> {
+    try {
+      const network = await this.networks.defaultNetwork(companyId ?? null);
+      const raw = network?.roleLabels as Record<string, unknown> | null | undefined;
+      if (!raw || typeof raw !== 'object') return {};
+      const out: RoleLabels = {};
+      for (const key of ['TRIM', 'TOC', 'FORCE_MAJEURE', 'UNDETERMINED', 'YARD_OPERATOR', 'PORT_TERMINAL_OPERATOR', 'PRASA_OTHER_IM'] as const) {
+        const v = raw[key];
+        if (typeof v === 'string' && v.trim() !== '') out[key] = v;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  private async derive(dto: PreviewChangeRequestDto, now: Date, companyId?: string) {
     const code = (await this.codes()).find((c) => c.code === dto.cancellationCode);
     if (!code) throw new BadRequestException(`Unknown cancellation code "${dto.cancellationCode}" (Annexure 20b).`);
     const originalDeparture = this.toDate(dto.originalDeparture, 'originalDeparture');
@@ -91,17 +117,25 @@ export class RailChangeService {
     if (eventOccurredAt && eventOccurredAt.getTime() > now.getTime() + 5 * 60_000) throw new BadRequestException('eventOccurredAt cannot be in the future.');
 
     const attribution = attributionFromParty(code.responsibleParty);
+    // The wording a network uses for each role, resolved once per derive().
+    // Calls into the database are kept out of the pure rules module, so the
+    // rules stay testable and this stays a single read per request.
+    const labels = await this.roleLabelsFor(companyId);
     const notice = classifyNotice(now, originalDeparture);
     const consequence = evaluateConsequence({
-      attribution, hoursBeforeDeparture: notice.hoursBeforeDeparture, isPlannedOccupation: !!dto.isPlannedOccupation, replacementAccepted: undefined,
+      attribution, hoursBeforeDeparture: notice.hoursBeforeDeparture, isPlannedOccupation: !!dto.isPlannedOccupation, replacementAccepted: undefined, labels,
     });
     const warnings: string[] = [];
-    const mismatch = initiatorMismatch(dto.initiatedBy, attribution);
+    const mismatch = initiatorMismatch(dto.initiatedBy, attribution, labels);
     if (mismatch) warnings.push(mismatch);
     const late = noticeLateMinutes(eventOccurredAt, now);
     if (late !== null && late > 0) warnings.push(`Notice is ${late} minute(s) later than the ${RAIL_FLEX_WINDOWS.noticeWithinMinutes}-minute window in Annexure 20a.`);
     if (notice.noticeBand === 'UNKNOWN') warnings.push('No departure time was given, so the notice window and the 72-hour consequence cannot be determined.');
-    if (dto.isPlannedOccupation && attribution !== 'TRIM') warnings.push('"Planned occupation" only affects TRIM-caused cancellations.');
+    if (dto.isPlannedOccupation && attribution !== 'TRIM') {
+      // Falls back to Transnet's word for the role, so an unconfigured tenant
+      // reads exactly the sentence they read before this change.
+      warnings.push(`"Planned occupation" only affects ${labels.TRIM ?? TRANSNET_ROLE_LABELS.TRIM}-caused cancellations.`);
+    }
     if (dto.kind !== 'CANCEL' && !proposedDeparture) warnings.push('A reschedule / re-plan normally names the proposed new departure.');
     return { code, attribution, originalDeparture, proposedDeparture, eventOccurredAt, notice, consequence, late, warnings };
   }
@@ -109,7 +143,7 @@ export class RailChangeService {
   /** Nothing is saved. */
   async preview(companyId: string, dto: PreviewChangeRequestDto, now = new Date()) {
     await this.assertEntitled(companyId);
-    const d = await this.derive(dto, now);
+    const d = await this.derive(dto, now, companyId);
     return {
       code: { code: d.code.code, reason: d.code.reason, sourceText: d.code.sourceText, responsibleParty: d.code.responsibleParty, possibleParties: d.code.possibleParties },
       attribution: d.attribution,
@@ -156,7 +190,7 @@ export class RailChangeService {
 
   async create(companyId: string, dto: CreateChangeRequestDto, actor: RailActor, now = new Date()) {
     await this.assertEntitled(companyId);
-    const d = await this.derive(dto, now);
+    const d = await this.derive(dto, now, companyId);
 
     // Everything the request points at must belong to THIS tenant.
     if (dto.consignmentId && !(await this.prisma.railConsignment.findFirst({ where: { id: dto.consignmentId, companyId }, select: { id: true } }))) {

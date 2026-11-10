@@ -7,6 +7,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { FakeTable, snapshot } from '../../test/support/in-memory-db';
 import { RailChangeService } from './rail-change.service';
+import { RailNetworkService } from './rail-network.service';
 import { RailActor, RAIL_AUDIT_ACTION } from './rail-audit';
 import { CANCELLATION_CODE_CATALOG } from './catalog/cancellation-codes.catalog';
 
@@ -45,7 +46,26 @@ function make(opts: { entitled?: boolean } = {}) {
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
   const audit = { record: jest.fn().mockResolvedValue('audit-1') };
   const handshake = { logDeviation: jest.fn(async () => ({ id: 'dev-1' })) };
-  const svc = new RailChangeService(prisma as any, billing as any, audit as any, handshake as any);
+  // Backed by the real resolver over an empty catalogue, so every existing
+  // expectation below exercises the Transnet fallback: the wording a tenant
+  // sees today is unchanged unless a network says otherwise.
+  const networksDb: Array<Record<string, unknown>> = [];
+  const networks = new RailNetworkService({
+    railNetwork: {
+      findFirst: jest.fn(async ({ where }: any) => {
+        const hit = networksDb.find((n) => {
+          if (where?.id && n.id !== where.id) return false;
+          if (where?.isDefault !== undefined && !!n.isDefault !== !!where.isDefault) return false;
+          if (where && 'companyId' in where && n.companyId !== where.companyId) return false;
+          return true;
+        });
+        return hit ?? null;
+      }),
+    },
+    railEscalationRung: { findMany: jest.fn(async () => []) },
+  } as any);
+  const seedNetwork = (n: Record<string, unknown>) => { networksDb.push(n); return n; };
+  const svc = new RailChangeService(prisma as any, billing as any, audit as any, handshake as any, networks);
 
   const seedRequest = (over: Record<string, any> = {}) =>
     requests.seed({
@@ -68,7 +88,7 @@ function make(opts: { entitled?: boolean } = {}) {
     });
   const actions = () => audit.record.mock.calls.map(([e]) => e.action);
   const entries = () => audit.record.mock.calls.map(([e]) => e);
-  return { svc, prisma, billing, audit, handshake, requests, codes, consignments, slotApps, reports, seedRequest, seedTrim, seedUndetermined, actions, entries };
+  return { svc, prisma, billing, audit, handshake, networks, seedNetwork, requests, codes, consignments, slotApps, reports, seedRequest, seedTrim, seedUndetermined, actions, entries };
 }
 type H = ReturnType<typeof make>;
 
@@ -604,5 +624,83 @@ describe('allocateParty — the Clearinghouse decides a "could be …" reason', 
     const h = make();
     const r = h.seedUndetermined({ status: 'CLOSED' });
     await expect(h.svc.allocateParty('A', r.id, body('TOC'), MANAGER, NOW)).rejects.toThrow(/closed change request cannot be re-allocated/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('the consequence wording follows the tenant\'s network', () => {
+  /**
+   * Driven through preview(), the same entry point a controller uses, rather
+   * than by calling the rules directly: a resolver that is correct but never
+   * wired leaves the operator reading the wrong network's name in the one
+   * sentence that tells them who owes them money.
+   */
+  const p = (h: any, over: Record<string, any> = {}) => h.svc.preview('A', dto(over) as any, NOW);
+  /** Seed a cancellation code, so the preview derives its attribution from it. */
+  const seedCode = (h: any, code: string, party: string) =>
+    h.codes.seed({ code, sourceRow: 1, reason: 'test reason', responsibleParty: party, possibleParties: [], sourceText: party, isActive: true });
+
+  it('a Transnet tenant reads Transnet\'s wording, exactly as before', async () => {
+    // No network seeded: this is today's behaviour, and it must not move.
+    const h = make();
+    seedCode(h, TRIM_CODE, 'INFRASTRUCTURE_MANAGER');
+    const r = await p(h, { cancellationCode: TRIM_CODE });
+    // preview() returns the whole ConsequenceResult under `consequence`; the
+    // decision is the `.consequence` field inside it and the wording is `.basis`.
+    expect(r.consequence.consequence).toBe('PENDING_REPLACEMENT_OUTCOME');
+    expect(r.consequence.basis).toMatch(/TRIM/);
+  });
+
+  it('a tenant on another network reads that network\'s name, not Transnet\'s', async () => {
+    const h = make();
+    h.seedNetwork({ id: 'net-uk', isDefault: true, companyId: null, roleLabels: { TRIM: 'Network Rail' } });
+    seedCode(h, TRIM_CODE, 'INFRASTRUCTURE_MANAGER');
+    seedCode(h, TOC_CODE, 'RAIL_OPERATIONS');
+
+    // Two different sentences, both of which named TRIM unconditionally:
+    //
+    //  the BASIS, which is the sentence saying who owes the refund, and
+    //  the planned-occupation WARNING, which fires only when the attribution
+    //  is NOT the infrastructure manager -- so it needs a TOC code to appear.
+    const im = await p(h, { cancellationCode: TRIM_CODE });
+    expect(im.consequence.basis).toMatch(/Network Rail/);
+    expect(im.consequence.basis).not.toMatch(/TRIM/);
+
+    const toc = await p(h, { cancellationCode: TOC_CODE, isPlannedOccupation: true });
+    expect(toc.warnings.join(' ')).toMatch(/Network Rail/);
+    expect(toc.warnings.join(' ')).not.toMatch(/TRIM/);
+  });
+
+  it('the DECISION is identical whichever network is configured', async () => {
+    // The point of separating role from label: a UK tenant gets the same
+    // refund, on the same tests, borne by the same party -- only the noun
+    // differs. If this ever fails, labelling has leaked into the logic.
+    const plain = make();
+    seedCode(plain, TRIM_CODE, 'INFRASTRUCTURE_MANAGER');
+    const uk = make();
+    uk.seedNetwork({ id: 'net-uk', isDefault: true, companyId: null, roleLabels: { TRIM: 'Network Rail' } });
+    seedCode(uk, TRIM_CODE, 'INFRASTRUCTURE_MANAGER');
+
+    for (const over of [
+      { isPlannedOccupation: true },
+      {},
+    ]) {
+      const a = await p(plain, { cancellationCode: TRIM_CODE, ...over });
+      const b = await p(uk, { cancellationCode: TRIM_CODE, ...over });
+      expect(b.consequence.consequence).toBe(a.consequence.consequence);
+      expect(b.consequence.penaltyApplicable).toBe(a.consequence.penaltyApplicable);
+      expect(b.consequence.penaltyAgainst).toBe(a.consequence.penaltyAgainst);
+      expect(b.attribution).toBe(a.attribution);
+      expect(b.notice).toEqual(a.notice);
+    }
+  });
+
+  it('a network that labels nothing still reads as Transnet, never as a blank', async () => {
+    const h = make();
+    h.seedNetwork({ id: 'net-quiet', isDefault: true, companyId: null, roleLabels: null });
+    seedCode(h, TRIM_CODE, 'INFRASTRUCTURE_MANAGER');
+    const r = await p(h, { cancellationCode: TRIM_CODE });
+    expect(r.consequence.basis).toMatch(/TRIM/);
+    expect(r.consequence.basis).not.toMatch(/undefined|null/);
   });
 });

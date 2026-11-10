@@ -241,3 +241,157 @@ describe('RailNetworkService — the default network is tenant-scoped', () => {
     expect(await svc.defaultNetwork('A')).toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('RailNetworkService — role labels are per-network, not Transnet', () => {
+  /**
+   * The attribution and initiator enums name ROLES -- the infrastructure
+   * manager, the train operator -- but their values are Transnet's names for
+   * those roles: TRIM, PRASA. The logic that decides who bears a cancellation
+   * is universal; only the word shown to the operator is not.
+   *
+   * So this is a labelling problem, not a logic problem, and it is worth being
+   * precise about that: no penalty, refund or deadline changes here. What
+   * changes is that a UK operator is no longer told their cancellation was
+   * caused by "TRIM", an entity with no contractual relationship to them.
+   *
+   * The enum values stay as they are. They are stable keys that appear in
+   * persisted rows, API contracts and DTO validation; renaming them would be a
+   * migration and a breaking change to buy a cosmetic improvement.
+   */
+
+  const prismaWith = (networks: Array<Record<string, unknown>>) =>
+    ({
+      railNetwork: {
+        findFirst: jest.fn(async ({ where }: any) => {
+          const ok = (n: Record<string, unknown>): boolean => {
+            if (where?.id && n.id !== where.id) return false;
+            if (where?.isDefault !== undefined && !!n.isDefault !== !!where.isDefault) return false;
+            if (where && 'companyId' in where && n.companyId !== where.companyId) return false;
+            // mirrors the resolver's OR [{ companyId }, { companyId: null }]
+            if (Array.isArray(where?.OR)) {
+              const allowed = where.OR.some((c: any) =>
+                c.companyId === null ? n.companyId === null : n.companyId === c.companyId);
+              if (!allowed) return false;
+            }
+            return true;
+          };
+          const hit = networks.find(ok);
+          return hit ?? null;
+        }),
+      },
+      railEscalationRung: { findMany: jest.fn(async () => []) },
+    }) as any;
+
+  it('a Transnet network names the infrastructure manager as Transnet does', async () => {
+    const svc = new RailNetworkService(prismaWith([{ id: 'net-transnet', companyId: null, roleLabels: null }]));
+    const label = await svc.roleLabel('net-transnet', 'TRIM');
+    expect(label).toMatch(/Transnet/);
+  });
+
+  it('another network names its own infrastructure manager', async () => {
+    const svc = new RailNetworkService(prismaWith([
+      { id: 'net-uk', companyId: null, roleLabels: { TRIM: 'Network Rail', TOC: 'Train Operator' } },
+    ]));
+    expect(await svc.roleLabel('net-uk', 'TRIM')).toBe('Network Rail');
+    expect(await svc.roleLabel('net-uk', 'TOC')).toBe('Train Operator');
+  });
+
+  it('no Transnet name leaks into another network\'s label', async () => {
+    const svc = new RailNetworkService(prismaWith([
+      { id: 'net-uk', companyId: null, roleLabels: { TRIM: 'Network Rail', PRASA_OTHER_IM: 'Other Infrastructure Manager' } },
+    ]));
+    for (const role of ['TRIM', 'PRASA_OTHER_IM']) {
+      expect(await svc.roleLabel('net-uk', role)).not.toMatch(/TRIM|Transnet|PRASA/i);
+    }
+  });
+
+  it('a role the network did not label falls back to the Transnet label, not to nothing', async () => {
+    // Partial seeds are the realistic case: someone adds a network and labels
+    // what they care about. An unlabelled role must still read as a sentence.
+    const svc = new RailNetworkService(prismaWith([
+      { id: 'net-uk', companyId: null, roleLabels: { TRIM: 'Network Rail' } },
+    ]));
+    expect(await svc.roleLabel('net-uk', 'FORCE_MAJEURE')).toBeTruthy();
+    expect(await svc.roleLabel('net-uk', 'FORCE_MAJEURE')).toMatch(/force majeure/i);
+  });
+
+  it('a role with no label anywhere degrades to the key rather than inventing a name', async () => {
+    const svc = new RailNetworkService(prismaWith([{ id: 'net-x', companyId: null, roleLabels: {} }]));
+    expect(await svc.roleLabel('net-x', 'SOMETHING_UNHEARD_OF')).toBe('SOMETHING_UNHEARD_OF');
+  });
+
+  it('an unknown network still gets a usable Transnet label', async () => {
+    const svc = new RailNetworkService(prismaWith([]));
+    expect(await svc.roleLabel('net-does-not-exist', 'TRIM')).toMatch(/Transnet/);
+  });
+
+  it('every role in the attribution and initiator enums has a Transnet label', async () => {
+    // If a role ships with no fallback, the UI renders a raw enum key to an
+    // operator trying to work out who owes them money.
+    const svc = new RailNetworkService(prismaWith([]));
+    for (const role of [
+      'TRIM', 'TOC', 'FORCE_MAJEURE', 'UNDETERMINED',
+      'YARD_OPERATOR', 'PORT_TERMINAL_OPERATOR', 'PRASA_OTHER_IM',
+    ]) {
+      const label = await svc.roleLabel(null, role);
+      expect(label).not.toBe(role);
+      expect(label.length).toBeGreaterThan(2);
+    }
+  });
+});
+
+describe('RailNetworkService — reading a network by id is tenant-scoped', () => {
+  /**
+   * The tenant-scope audit caught roleLabel() reading by primary key with no
+   * tenant in the WHERE clause. An id is not a permission: handed one from
+   * anywhere, that query reads another tenant's network just as happily as
+   * this tenant's.
+   */
+  const prismaWith = (networks: Array<Record<string, unknown>>) =>
+    ({
+      railNetwork: {
+        findFirst: jest.fn(async ({ where }: any) => {
+          const hit = networks.find((n) => {
+            if (where?.id && n.id !== where.id) return false;
+            if (where && 'companyId' in where && n.companyId !== where.companyId) return false;
+            if (Array.isArray(where?.OR)) {
+              const allowed = where.OR.some((c: any) =>
+                c.companyId === null ? n.companyId === null : n.companyId === c.companyId);
+              if (!allowed) return false;
+            }
+            return true;
+          });
+          return hit ?? null;
+        }),
+      },
+      railEscalationRung: { findMany: jest.fn(async () => []) },
+    }) as any;
+
+  const shared = { id: 'net-preset', companyId: null, roleLabels: { TRIM: 'Transnet' } };
+  const mine = { id: 'net-mine', companyId: 'A', roleLabels: { TRIM: 'My Rail' } };
+  const theirs = { id: 'net-theirs', companyId: 'B', roleLabels: { TRIM: 'Their Rail' } };
+
+  it("reads the tenant's own network", async () => {
+    const svc = new RailNetworkService(prismaWith([shared, mine, theirs]));
+    expect(await svc.roleLabel('net-mine', 'TRIM', 'A')).toBe('My Rail');
+  });
+
+  it("refuses another tenant's network even when the id is known", async () => {
+    // The whole point: knowing the id must not be enough.
+    const svc = new RailNetworkService(prismaWith([shared, mine, theirs]));
+    expect(await svc.roleLabel('net-theirs', 'TRIM', 'A')).not.toBe('Their Rail');
+  });
+
+  it('reads the shared preset for any tenant', async () => {
+    const svc = new RailNetworkService(prismaWith([shared, mine, theirs]));
+    expect(await svc.roleLabel('net-preset', 'TRIM', 'B')).toBe('Transnet');
+  });
+
+  it('with no tenant context, matches only the shared preset — never a tenant row', async () => {
+    // Fail closed: an unauthenticated read must not reach tenant-defined data.
+    const svc = new RailNetworkService(prismaWith([shared, mine, theirs]));
+    expect(await svc.roleLabel('net-mine', 'TRIM')).not.toBe('My Rail');
+    expect(await svc.roleLabel('net-preset', 'TRIM')).toBe('Transnet');
+  });
+});
