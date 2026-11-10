@@ -44,12 +44,14 @@ export class DigitalPaymentsService {
       throw new BadRequestException('Payment already confirmed');
     }
 
-    await claimTransition(
-      () => this.prisma.digitalPayment.updateMany({
-        where: { id: payment.id, companyId, status: { not: 'SUCCESS' } },
-        data: { status: 'SUCCESS', externalId: dto.externalId, paidAt: new Date() },
-      }),
-      'Payment was confirmed by someone else.',
+    await this.prisma.withTenant(companyId, (tx) =>
+      claimTransition(
+        () => tx.digitalPayment.updateMany({
+          where: { id: payment.id, companyId, status: { not: 'SUCCESS' } },
+          data: { status: 'SUCCESS', externalId: dto.externalId, paidAt: new Date() },
+        }),
+        'Payment was confirmed by someone else.',
+      ),
     );
     return this.prisma.digitalPayment.findUniqueOrThrow({ where: { id: payment.id } });
   }
@@ -59,12 +61,14 @@ export class DigitalPaymentsService {
     if (payment.status !== 'PENDING' && payment.status !== 'PROCESSING') {
       throw new BadRequestException('Payment cannot be marked as failed');
     }
-    await claimTransition(
-      () => this.prisma.digitalPayment.updateMany({
-        where: { id, companyId, status: { in: ['PENDING', 'PROCESSING'] } },
-        data: { status: 'FAILED' },
-      }),
-      'Payment was already resolved by someone else.',
+    await this.prisma.withTenant(companyId, (tx) =>
+      claimTransition(
+        () => tx.digitalPayment.updateMany({
+          where: { id, companyId, status: { in: ['PENDING', 'PROCESSING'] } },
+          data: { status: 'FAILED' },
+        }),
+        'Payment was already resolved by someone else.',
+      ),
     );
     return this.prisma.digitalPayment.findUniqueOrThrow({ where: { id } });
   }
@@ -76,12 +80,14 @@ export class DigitalPaymentsService {
     }
     // Refunding twice is money out twice. Two callers who both read SUCCESS
     // both pass the check above, so the WHERE is what actually stops it.
-    await claimTransition(
-      () => this.prisma.digitalPayment.updateMany({
-        where: { id, companyId, status: 'SUCCESS' },
-        data: { status: 'REFUNDED' },
-      }),
-      'Payment was refunded by someone else.',
+    await this.prisma.withTenant(companyId, (tx) =>
+      claimTransition(
+        () => tx.digitalPayment.updateMany({
+          where: { id, companyId, status: 'SUCCESS' },
+          data: { status: 'REFUNDED' },
+        }),
+        'Payment was refunded by someone else.',
+      ),
     );
     return this.prisma.digitalPayment.findUniqueOrThrow({ where: { id } });
   }

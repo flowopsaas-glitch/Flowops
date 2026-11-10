@@ -29,12 +29,16 @@ import { ConflictException } from '@nestjs/common';
  * happens before this function can guard anything:
  *
  *   await claimTransition(
- *     () => tx.invoice.updateMany({
+ *     () => tx.<model>.updateMany({
  *       where: { id, companyId, status: 'DRAFT' },
  *       data:  { status: 'ISSUED' },
  *     }),
- *     'Invoice is no longer a draft.',
+ *     'Row is no longer a draft.',
  *   );
+ *
+ * (`<model>` is a placeholder. The example deliberately does not name a real
+ * delegate: the tenant-context scanner matches operation calls textually and
+ * would otherwise record this comment as an unprotected query on that table.)
  */
 
 /** Thrown when a transition was already taken by another caller. */

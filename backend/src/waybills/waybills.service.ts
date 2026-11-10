@@ -275,10 +275,12 @@ export class WaybillsService {
     const isTransition = !!dto.status && dto.status !== existing.status;
     let updated: any;
     if (isTransition) {
-      const claimed = await this.prisma.waybill.updateMany({
-        where: { id, companyId, status: existing.status },
-        data,
-      });
+      const claimed = await this.prisma.withTenant(companyId, (tx) =>
+        tx.waybill.updateMany({
+          where: { id, companyId, status: existing.status },
+          data,
+        }),
+      );
       if (claimed.count === 0) {
         throw new ConflictException(
           'This waybill was updated by someone else first — refresh and try again.',
@@ -290,10 +292,12 @@ export class WaybillsService {
       updated = await this.prisma.waybill.findFirst({ where: { id, companyId } });
     } else {
       // Non-status edits still must not escape the tenant.
-      const claimed = await this.prisma.waybill.updateMany({
-        where: { id, companyId },
-        data,
-      });
+      const claimed = await this.prisma.withTenant(companyId, (tx) =>
+        tx.waybill.updateMany({
+          where: { id, companyId },
+          data,
+        }),
+      );
       if (claimed.count === 0) throw new NotFoundException('Waybill not found');
       updated = await this.prisma.waybill.findFirst({ where: { id, companyId } });
     }
@@ -460,10 +464,12 @@ export class WaybillsService {
       // validated the jump against a status we read, which a concurrent scan
       // or driver-app delivery may already have moved past. Warehouse
       // handhelds genuinely do scan the same parcel twice.
-      const claimed = await this.prisma.waybill.updateMany({
-        where: { id: waybill.id, companyId, status: waybill.status },
-        data: { status: targetStatus as any },
-      });
+      const claimed = await this.prisma.withTenant(companyId, (tx) =>
+        tx.waybill.updateMany({
+          where: { id: waybill.id, companyId, status: waybill.status },
+          data: { status: targetStatus as any },
+        }),
+      );
       if (claimed.count === 0) {
         results.push({ trackingNumber: tn, result: 'conflict', id: waybill.id });
         continue;
@@ -497,10 +503,12 @@ export class WaybillsService {
     // send the customer a rating SMS; the first token would silently stop
     // working. The claim means one token, one message.
     const data = { ratingToken: token, ratingRequestedAt: new Date() };
-    const claimed = await this.prisma.waybill.updateMany({
-      where: { id, companyId, status: 'DELIVERED', ratingToken: null },
-      data,
-    });
+    const claimed = await this.prisma.withTenant(companyId, (tx) =>
+      tx.waybill.updateMany({
+        where: { id, companyId, status: 'DELIVERED', ratingToken: null },
+        data,
+      }),
+    );
     if (claimed.count === 0) {
       // Either it moved out of DELIVERED, or a rating was already requested.
       // Read the raw row: findOne() strips ratingToken by design (it is the

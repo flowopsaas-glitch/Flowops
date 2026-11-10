@@ -85,6 +85,9 @@ function makeHarness(row: Record<string, any> = {}) {
     },
     shipment: { updateMany: jest.fn(async () => ({ count: 0 })) },
     $transaction: jest.fn(async (fn: any) => fn(prisma)),
+    // RLS context wrapper. The real one opens a transaction and sets
+    // app.company_id; for these tests it just hands back the same client.
+    withTenant: jest.fn(async (_companyId: string, fn: any) => fn(prisma)),
   };
 
   const svc = Object.create(WaybillsService.prototype) as WaybillsService;

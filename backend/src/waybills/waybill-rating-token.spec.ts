@@ -38,8 +38,17 @@ const makeService = (deps: Record<string, unknown>) => {
   return svc;
 };
 
-const makePrisma = (waybill: Record<string, jest.Mock>) =>
-  ({ waybill, shipment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } }) as any;
+const makePrisma = (waybill: Record<string, jest.Mock>) => {
+  const prisma = {
+    waybill,
+    shipment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+  } as any;
+  // RLS context wrapper: the real one opens a transaction and sets
+  // app.company_id. These tests care about what is written, not isolation, so
+  // it hands back the same client.
+  prisma.withTenant = jest.fn(async (_companyId: string, fn: any) => fn(prisma));
+  return prisma;
+};
 
 describe('Waybill rating token is not served on row-shaped responses', () => {
   it('GET /waybills: the page of waybills carries no rating token', async () => {
