@@ -17,6 +17,7 @@ import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, railSystemAuditEntry, recordRailAudit,
 } from './rail-audit';
 import { RAIL_SIGNATORY_ROLES } from './rail-roles';
+import { RailNetworkService } from './rail-network.service';
 
 /**
  * Daily Handshake service — Transnet Network Statement, Annexure 28.
@@ -40,6 +41,7 @@ export class RailHandshakeService {
     private readonly billing: BillingService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly networks: RailNetworkService,
   ) {}
 
   /** Best-effort audit write attributed to an authenticated user. */
@@ -131,11 +133,33 @@ export class RailHandshakeService {
    * Forum at 72h — that rung belongs to the Head of NSP&O, who is entitled to
    * the full 96h to resolve before anyone refers the item onward.
    */
-  private stageForElapsedHours(hours: number): EscalationStage {
-    if (hours <= 24) return EscalationStage.LIAISON_MANAGER_24H;
-    if (hours <= 48) return EscalationStage.HEAD_LIAISON_48H;
-    if (hours <= 96) return EscalationStage.HEAD_NSPO_72H;
-    return EscalationStage.ROUTE_LOGISTICS_FORUM;
+  /**
+   * The report's ladder, resolved once per refresh.
+   *
+   * Reports raised before networks existed carry no networkId and fall through
+   * to the default network, so their ladder is unchanged by this refactor.
+   */
+  private async ladderForReport(networkId: string | null | undefined) {
+    if (!networkId) {
+      const fallback = await this.networks.defaultNetwork();
+      return this.networks.ladderFor(fallback?.id ?? null);
+    }
+    return this.networks.ladderFor(networkId);
+  }
+
+  /**
+   * The last rung whose holder is expected to actually resolve the item,
+   * before it is referred onward: the highest rung that is neither a referral
+   * nor manual-only.
+   *
+   * On Transnet this is the Head of NSP&O, who is entitled to the full 96
+   * hours from the window end. The reason this is derived rather than named is
+   * that the equivalent rung differs by network, and a deadline stamped
+   * against the wrong one is a deadline that expires unchallenged.
+   */
+  private decisionRung(ladder: Awaited<ReturnType<RailNetworkService['ladderFor']>>) {
+    const decidable = ladder.filter((r) => !r.isManualOnly && !r.isTerminal);
+    return decidable.length > 0 ? decidable[decidable.length - 1] : null;
   }
 
   /** Annexure 28: the Head of NSP&O must resolve within 96h of the window closing. */
@@ -525,25 +549,46 @@ export class RailHandshakeService {
     report: Prisma.RailHandshakeReportGetPayload<{ include: { deviations: true } }>,
   ) {
     const updates: Promise<unknown>[] = [];
+    // Resolve the ladder once per report, not once per deviation: every OPEN
+    // item on a report shares a network and elapsed window, and a ladder read
+    // per row would be an N+1 against a table that changes once a year.
+    const elapsed = this.hoursSince(report.windowEnd);
+    const ladder = await this.ladderForReport(report.networkId);
+    const decisionRung = this.decisionRung(ladder);
+    const rung = await this.networks.rungForElapsedHours(report.networkId, elapsed);
+
     const refreshed = report.deviations.map((d) => {
       if (d.status !== DeviationStatus.OPEN) return d;
-      const elapsed = this.hoursSince(report.windowEnd);
-      const stage = this.stageForElapsedHours(elapsed);
-      if (stage !== d.escalationStage) {
+      // The ladder comes from the report's network, not from a switch in this
+      // file. A tenant working against another infrastructure manager climbs
+      // that network's rungs, on that network's clock, to that network's
+      // people — the Transnet ladder is one row set, not the definition.
+      if (!rung) return d;
+      const stage = rung.legacyStage ?? EscalationStage.NONE;
+      // Whether to write. The stored stage is a faithful projection of the
+      // rung, so an unchanged stage means the item is already on the right
+      // rung — and rows predating the rung column carry a NULL id, which is
+      // NOT treated as a move. Comparing the ids naively there would rewrite
+      // every legacy row on first read and flood the audit trail with
+      // escalations that never happened. The migration backfills the column.
+      const rungChanged = d.escalationRungId != null && d.escalationRungId !== rung.id;
+      if (stage !== d.escalationStage || rungChanged) {
         const fromStage = d.escalationStage; // capture before the write is issued
-        // The 96h resolve-by is stamped once, the first time the item reaches
-        // the 72h rung. It is never re-stamped: the source fixes the deadline
-        // from the window end, not from whenever we happened to notice.
-        const reachedNspo = stage === EscalationStage.HEAD_NSPO_72H;
+        // The resolve-by is stamped once, the first time the item reaches the
+        // last decision-making rung — the final person entitled to resolve it
+        // before the item is referred onward. It is never re-stamped: the
+        // deadline is fixed from the window end, not from whenever we noticed.
+        const reachedDecision = Boolean(decisionRung && rung.id === decisionRung.id);
         const resolveByAt =
-          reachedNspo && !d.resolveByAt ? this.resolveByFor(report.windowEnd) : d.resolveByAt;
+          reachedDecision && !d.resolveByAt ? this.resolveByFor(report.windowEnd) : d.resolveByAt;
         updates.push(
           this.prisma.railHandshakeDeviation.update({
             where: { id: d.id },
             data: {
+              escalationRungId: rung.id,
               escalationStage: stage,
               escalatedAt: new Date(),
-              ...(reachedNspo && !d.resolveByAt ? { resolveByAt } : {}),
+              ...(reachedDecision && !d.resolveByAt ? { resolveByAt } : {}),
             },
           }),
         );
@@ -560,7 +605,7 @@ export class RailHandshakeService {
             },
           ),
         );
-        return { ...d, escalationStage: stage, resolveByAt };
+        return { ...d, escalationRungId: rung.id, escalationStage: stage, resolveByAt };
       }
       return d;
     });

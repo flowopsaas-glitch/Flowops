@@ -12,6 +12,7 @@ import {
   DeviationStatus, EscalationStage, HandshakeReportStatus, UserRole,
 } from '@prisma/client';
 import { RailHandshakeService } from './rail-handshake.service';
+import { RailNetworkService } from './rail-network.service';
 import { RailActor } from './rail-audit';
 import { RAIL_AUDIT_ACTION } from './rail-audit';
 import { RAIL_SIGNATORY_ROLES } from './rail-roles';
@@ -27,7 +28,10 @@ type Row = Record<string, any>;
 // ── In-memory Prisma fake ─────────────────────────────────────────────────────
 
 function makeDb() {
-  const db = { reports: [] as Row[], deviations: [] as Row[], consignments: [] as Row[], seq: 0 };
+  const db = {
+    reports: [] as Row[], deviations: [] as Row[], consignments: [] as Row[],
+    networks: [] as Row[], rungs: [] as Row[], seq: 0,
+  };
   const id = (p: string) => `${p}-${++db.seq}`;
 
   /** Evaluate the subset of Prisma `where` the service uses. */
@@ -59,6 +63,18 @@ function makeDb() {
   const prisma = {
     $transaction: async (fn: any) => fn(prisma),
     withTenant: async (_companyId: string, fn: any, _opts?: any) => fn(prisma),
+    // No networks or rungs seeded: the resolver falls back to the Transnet
+    // ladder, which is the behaviour every test below was written against.
+    // Seeding them here is how a test opts into another network's ladder.
+    railNetwork: {
+      findFirst: jest.fn(async () => db.networks.find((n: any) => n.isDefault) ?? null),
+    },
+    railEscalationRung: {
+      findMany: jest.fn(async ({ where }: any) =>
+        db.rungs
+          .filter((r: any) => !where?.networkId || r.networkId === where.networkId)
+          .sort((a: any, b: any) => a.afterHours - b.afterHours || a.ordinal - b.ordinal)),
+    },
     railHandshakeReport: {
       count: jest.fn(async ({ where }: any) => db.reports.filter((r) => matches(r, where)).length),
       create: jest.fn(async ({ data, include }: any) => {
@@ -139,7 +155,7 @@ function makeDb() {
     db.deviations.push(row);
     return row;
   };
-  return { db, prisma, seedReport, seedDeviation };
+  return { db, prisma, seedReport, seedDeviation, seedNetwork: (n: any) => { db.networks.push(n); return n; }, seedRung: (r: any) => { db.rungs.push(r); return r; } };
 }
 
 function makeService(opts: { entitled?: boolean } = {}) {
@@ -147,8 +163,15 @@ function makeService(opts: { entitled?: boolean } = {}) {
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const outbox = { enqueue: jest.fn().mockResolvedValue('ob1') };
-  const svc = new RailHandshakeService(prisma as any, billing as any, audit as any, outbox as any);
-  return { svc, db, prisma, billing, audit, outbox, seedReport, seedDeviation };
+  // The real RailNetworkService against the same fake Prisma: the handshake
+  // tests must exercise the ladder as it is actually resolved, not a stub that
+  // happens to agree with it. With no rail_networks rows seeded it falls back
+  // to the Transnet ladder, which is what every existing test assumes.
+  const networks = new RailNetworkService(prisma as any);
+  const svc = new RailHandshakeService(
+    prisma as any, billing as any, audit as any, outbox as any, networks,
+  );
+  return { svc, db, prisma, billing, audit, outbox, networks, seedReport, seedDeviation };
 }
 
 /** The `AuditService.record` calls, as plain entries. */
@@ -165,8 +188,16 @@ afterEach(() => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Escalation math
 // ═══════════════════════════════════════════════════════════════════════════════
-describe('escalation ladder — stageForElapsedHours()', () => {
-  const stage = (hours: number): EscalationStage => (makeService().svc as any).stageForElapsedHours(hours);
+describe('escalation ladder — resolved from the network, not from a switch', () => {
+  // The ladder used to be a private switch on this service. It is now data
+  // held against a network and resolved by RailNetworkService, so these
+  // boundaries are asserted against the resolver. With no network configured
+  // it falls back to the Transnet ladder, which is what they were written for.
+  const stage = async (hours: number): Promise<EscalationStage | null> => {
+    const { networks } = makeService();
+    const rung = await networks.rungForElapsedHours(null, hours);
+    return rung?.legacyStage ?? null;
+  };
 
   it.each([
     // [hours since report window closed, expected stage]
@@ -182,8 +213,8 @@ describe('escalation ladder — stageForElapsedHours()', () => {
     [96, EscalationStage.HEAD_NSPO_72H],    // resolve-by boundary is inclusive
     [96.01, EscalationStage.ROUTE_LOGISTICS_FORUM],
     [500, EscalationStage.ROUTE_LOGISTICS_FORUM],
-  ])('%p h elapsed → %s', (hours, expected) => {
-    expect(stage(hours)).toBe(expected);
+  ])('%p h elapsed → %s', async (hours, expected) => {
+    expect(await stage(hours)).toBe(expected);
   });
 
   /**
@@ -199,19 +230,19 @@ describe('escalation ladder — stageForElapsedHours()', () => {
    * ROUTE_LOGISTICS_FORUM keep their value while its meaning shifts.
    */
   describe('the ladder matches the source (gaps G-1 and G-2, closed)', () => {
-    it('the 72h rung is the Head of Network Service Planning and Operations, not the Route Logistics Forum', () => {
-      expect(stage(72)).toBe(EscalationStage.HEAD_NSPO_72H);
-      expect(stage(72)).not.toBe(EscalationStage.ROUTE_LOGISTICS_FORUM);
+    it('the 72h rung is the Head of Network Service Planning and Operations, not the Route Logistics Forum', async () => {
+      expect(await stage(72)).toBe(EscalationStage.HEAD_NSPO_72H);
+      expect(await stage(72)).not.toBe(EscalationStage.ROUTE_LOGISTICS_FORUM);
     });
 
-    it('the Head of NSP&O holds the item for the full 96h resolve-by before anyone refers it onward', () => {
-      expect(stage(73)).toBe(EscalationStage.HEAD_NSPO_72H);
-      expect(stage(95)).toBe(EscalationStage.HEAD_NSPO_72H);
-      expect(stage(96)).toBe(EscalationStage.HEAD_NSPO_72H);
+    it('the Head of NSP&O holds the item for the full 96h resolve-by before anyone refers it onward', async () => {
+      expect(await stage(73)).toBe(EscalationStage.HEAD_NSPO_72H);
+      expect(await stage(95)).toBe(EscalationStage.HEAD_NSPO_72H);
+      expect(await stage(96)).toBe(EscalationStage.HEAD_NSPO_72H);
     });
 
-    it('the Forum is a later referral, reached only after the 96h resolve-by expires', () => {
-      expect(stage(96.01)).toBe(EscalationStage.ROUTE_LOGISTICS_FORUM);
+    it('the Forum is a later referral, reached only after the 96h resolve-by expires', async () => {
+      expect(await stage(96.01)).toBe(EscalationStage.ROUTE_LOGISTICS_FORUM);
     });
 
     it("the clock never lodges a dispute with the Regulator - that is a person's decision", () => {
@@ -236,6 +267,15 @@ describe('escalation ladder — applied on read (getReport) and by the sweep', (
     status: DeviationStatus.OPEN, escalationStage: EscalationStage.LIAISON_MANAGER_24H, ...over,
   });
 
+/** The rung code each legacy stage maps to, for asserting written rung ids. */
+const codeFor = (stage: string): string => ({
+  LIAISON_MANAGER_24H: 'liaison-manager',
+  HEAD_LIAISON_48H: 'head-access-seeker',
+  HEAD_NSPO_72H: 'head-nspo',
+  ROUTE_LOGISTICS_FORUM: 'route-logistics-forum',
+  REGULATOR_DISPUTE: 'regulator-dispute',
+})[stage] ?? '';
+
   it.each([
     [10, EscalationStage.LIAISON_MANAGER_24H, false],
     [30, EscalationStage.HEAD_LIAISON_48H, true],
@@ -255,7 +295,14 @@ describe('escalation ladder — applied on read (getReport) and by the sweep', (
       const stampedDeadline = expected === EscalationStage.HEAD_NSPO_72H ? { resolveByAt: expect.any(Date) } : {};
       expect(prisma.railHandshakeDeviation.update).toHaveBeenCalledWith({
         where: { id: dev.id },
-        data: { escalationStage: expected, escalatedAt: expect.any(Date), ...stampedDeadline },
+        data: {
+          // The rung is written alongside the stage projection: the rung is
+          // what the ladder is keyed on, the stage kept for existing queries.
+          escalationRungId: expect.stringContaining(codeFor(expected)),
+          escalationStage: expected,
+          escalatedAt: expect.any(Date),
+          ...stampedDeadline,
+        },
       });
     } else {
       expect(prisma.railHandshakeDeviation.update).not.toHaveBeenCalled(); // already at the right rung
@@ -789,5 +836,92 @@ describe('handshake lifecycle — guards and audit trail', () => {
     audit.record.mockRejectedValue(new Error('audit store down'));
     const rep = seedReport({ status: HandshakeReportStatus.DRAFT });
     await expect(svc.issueReport('A', rep.id, MANAGER)).resolves.toMatchObject({ status: HandshakeReportStatus.PENDING_TOC });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('escalation follows the report\'s network, not Transnet by default', () => {
+  /**
+   * The reason this module exists.
+   *
+   * Escalation used to be an enum naming Transnet posts, so a tenant operating
+   * anywhere else watched their unresolved deviations climb a ladder to people
+   * who do not exist in their market, on a clock set by Annexure 28. These
+   * tests drive a report that names a different network through the same code
+   * path a real report takes, and assert on what the operator is told.
+   */
+  const UK = 'net-uk';
+
+  /** An OPEN deviation awaiting escalation, as the rest of this file seeds them. */
+  const openDev = (over: Row = {}) => ({
+    status: DeviationStatus.OPEN, escalationStage: EscalationStage.LIAISON_MANAGER_24H, ...over,
+  });
+
+  /** Seeds a second network into the fake Prisma. `prisma` is accepted so the
+   *  call sites read the same way as the rest of the file's seeding helpers. */
+  function ukNetwork(db: any, _prisma: any) {
+    db.networks.push({ id: UK, code: 'network-rail', name: 'Network Rail', isDefault: false });
+    // 12/36/72-hour ladder — deliberately unlike Transnet's 24/48/96.
+    const rungs = [
+      { id: 'uk-1', networkId: UK, code: 'duty-controller', title: 'Duty Access Controller', role: 'Network Rail Duty Access Controller', afterHours: 0, ordinal: 10, isManualOnly: false, isTerminal: false, legacyStage: 'LIAISON_MANAGER_24H' },
+      { id: 'uk-2', networkId: UK, code: 'access-manager', title: 'Access Manager', role: 'Network Rail Access Manager', afterHours: 12, ordinal: 20, isManualOnly: false, isTerminal: false, legacyStage: 'HEAD_LIAISON_48H' },
+      { id: 'uk-3', networkId: UK, code: 'head-access', title: 'Head of Access', role: 'Network Rail Head of Access', afterHours: 36, ordinal: 30, isManualOnly: false, isTerminal: false, legacyStage: 'HEAD_NSPO_72H' },
+      { id: 'uk-4', networkId: UK, code: 'orr-referral', title: 'Referral to ORR', role: 'Office of Rail and Road', afterHours: 72, ordinal: 40, isManualOnly: false, isTerminal: true, legacyStage: 'ROUTE_LOGISTICS_FORUM' },
+      { id: 'uk-5', networkId: UK, code: 'regulator-dispute', title: 'Dispute with the Regulator', role: 'Office of Rail and Road', afterHours: 72, ordinal: 50, isManualOnly: true, isTerminal: true, legacyStage: 'REGULATOR_DISPUTE' },
+    ];
+    db.rungs.push(...rungs);
+    return rungs;
+  }
+
+  it('climbs that network\'s rungs, on that network\'s clock', async () => {
+    const { svc, db, prisma, seedReport, seedDeviation } = makeService();
+    ukNetwork(db, prisma);
+
+    // 30h: past the 12h rung here, where on Transnet it would still be the
+    // second rung (24h). Same clock, different ladder.
+    const rep = seedReport({ windowEnd: new Date(NOW - 30 * H), networkId: UK });
+    seedDeviation(rep.id, openDev());
+
+    await svc.getReport('A', rep.id);
+
+    expect(prisma.railHandshakeDeviation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ escalationRungId: 'uk-2' }) }),
+    );
+  });
+
+  it('names that network\'s people in what the operator is shown', async () => {
+    const { svc, db, prisma, seedReport, seedDeviation } = makeService();
+    ukNetwork(db, prisma);
+    const rep = seedReport({ windowEnd: new Date(NOW - 40 * H), networkId: UK });
+    seedDeviation(rep.id, openDev());
+
+    await svc.getReport('A', rep.id);
+
+    // Asserted on what the SERVICE persisted, not merely on what the resolver
+    // would return: a resolver that is right but unwired leaves the operator
+    // looking at the wrong network's people, which is the actual bug.
+    expect(prisma.railHandshakeDeviation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ escalationRungId: 'uk-3' }) }),
+    );
+    const rung = db.rungs.find((r: Row) => r.id === 'uk-3');
+    expect(String(rung.role)).toMatch(/Network Rail/);
+    expect(String(rung.role)).not.toMatch(/TRIM|Transnet|NSP&O/i);
+  });
+
+  it('a report with no network still gets the Transnet ladder', async () => {
+    const { svc, db, prisma, seedReport, seedDeviation } = makeService();
+    ukNetwork(db, prisma); // another network exists, but this report names none
+
+    const rep = seedReport({ windowEnd: new Date(NOW - 30 * H) }); // no networkId
+    seedDeviation(rep.id, openDev());
+
+    await svc.getReport('A', rep.id);
+
+    // Transnet's 24h rung, not the UK network's 12h one.
+    expect(prisma.railHandshakeDeviation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ escalationStage: EscalationStage.HEAD_LIAISON_48H }),
+      }),
+    );
   });
 });

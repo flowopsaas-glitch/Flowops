@@ -7,6 +7,7 @@ import { RailController } from './rail.controller';
 import { RailService } from './rail.service';
 import { RailHandshakeController } from './rail-handshake.controller';
 import { RailHandshakeService } from './rail-handshake.service';
+import { RailNetworkService } from './rail-network.service';
 import { RailSlotController } from './rail-slot.controller';
 import { RailSlotService } from './rail-slot.service';
 import { RailChangeController } from './rail-change.controller';
@@ -77,12 +78,16 @@ import { RailTruckWindowChangesService } from './rail-truck-window-changes.servi
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
     RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService, RailTruckAppointmentsService,
     RailTruckWindowChangesService,
+    // Provided here and exported so the network catalogue is reachable from
+    // the reference/admin surfaces, not only from inside the handshake.
+    RailNetworkService,
   ],
   exports: [
     RailService, RailHandshakeService, RailSlotService,
     RailChangeService, RailPossessionService, RailOccurrenceService, RailTariffService, RailWeighbridgeService,
     RailHandoffService, RailTimetableService, RailOptimizerService, RailTrainManifestService, RailTelemetryService, RailTruckAppointmentsService,
     RailTruckWindowChangesService,
+    RailNetworkService,
   ],
 })
 export class RailModule {}

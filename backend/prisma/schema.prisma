@@ -4772,10 +4772,120 @@ model RailScheduleRow {
 // This is TOC-side (our tenant's view). It does NOT replace the IM's TOMS.
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// The infrastructure manager a rail tenant works against.
+///
+/// Rail is not one market. Who owns the track, who you apply to for a path,
+/// what the dispute process is called, and how long each rung of escalation
+/// takes are all set by the network — and they differ by country. Transnet
+/// publishes a Network Statement with a 24/48/96-hour ladder escalating to
+/// TRIM job titles; a European operator works under Directive 2012/34/EU with
+/// its own timetable and its own infrastructure manager.
+///
+/// Everything in this module used to assume Transnet: the escalation ladder
+/// was a Prisma enum whose values name Transnet posts, and every tenant saw
+/// them whether or not they operated in South Africa. These two models move
+/// the ladder into data so a network is a record, not a code change.
+///
+/// A row with `companyId: null` is a platform preset available to every
+/// tenant; one with a companyId is defined by that tenant. This mirrors how
+/// shared timetable imports already work.
+model RailNetwork {
+  id          String  @id @default(cuid())
+  code        String  @unique // 'transnet' | 'network-rail' | tenant-defined
+  name        String // 'Transnet Freight Rail'
+  shortName   String? // 'TRIM'
+  /// ISO 3166-1 alpha-2. Drives nothing yet; recorded so the catalogue is
+  /// describable and so a tenant's own country can be matched to a network.
+  country     String  @default("ZA")
+  currency    String  @default("ZAR")
+
+  /// null = platform preset (all tenants), set = tenant-defined network.
+  companyId   String?
+  /// The network assumed when a report does not name one. Exactly one preset
+  /// should carry this; the seeder sets Transnet.
+  isDefault   Boolean @default(false)
+
+  /// Citation for the access regime this network's ladder comes from, shown
+  /// in the UI so an operator can check a deadline against the source.
+  networkStatementRef String?
+  /// Hours the final decision-maker gets to resolve before the item can be
+  /// referred onward. Transnet: 96 (Annexure 28, Head of NSP&O).
+  resolveByHours      Int     @default(96)
+
+  rungs       RailEscalationRung[]
+  reports     RailHandshakeReport[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("rail_networks")
+}
+
+/// One rung of a network's escalation ladder.
+///
+/// The ladder used to be `enum EscalationStage`, whose values name Transnet
+/// posts (LIAISON_MANAGER_24H, HEAD_NSPO_72H). That made two things
+/// unchangeable without a migration and a deploy: how long each rung gets,
+/// and who it escalates to. Both are now rows.
+///
+/// `legacyStage` maps a rung onto the historical enum so the stored column on
+/// rail_handshake_deviations stays meaningful and the existing index, queries
+/// and 793 lines of handshake tests keep working unchanged. It is a
+/// projection, not the truth: a network whose ladder has no counterpart in the
+/// Transnet set leaves it null, and callers must read the rung.
+model RailEscalationRung {
+  id          String   @id @default(cuid())
+  networkId   String
+  network     RailNetwork @relation(fields: [networkId], references: [id], onDelete: Cascade)
+
+  /// Stable key within the network, e.g. 'liaison-manager'. Queries and
+  /// integrations should use this rather than the title, which an operator
+  /// may reword without changing the meaning.
+  code        String
+  /// Who holds the item at this rung, as the network names the job.
+  title       String // 'Access Seeker Liaison Manager'
+  /// The wider function, when the network distinguishes them.
+  role        String? // 'TRIM Access Seeker Liaison Manager'
+
+  /// Elapsed hours since the report window closed, at or above which this
+  /// rung applies. The resolver picks the greatest afterHours <= elapsed.
+  afterHours  Int
+  /// Display order. Distinct from afterHours: two rungs can share a threshold
+  /// while one is a referral rather than a step up.
+  ordinal     Int
+
+  /// Never assigned by the clock. Lodging with a regulator is a decision a
+  /// person makes, and the ladder must never make it for them — a rule the
+  /// original enum encoded in prose and which is now enforced by the resolver.
+  isManualOnly Boolean @default(false)
+  /// The last rung the clock will reach on its own.
+  isTerminal   Boolean @default(false)
+
+  /// Projection onto the historical EscalationStage enum. Null when this
+  /// network's ladder has no Transnet counterpart.
+  legacyStage EscalationStage?
+
+  deviations  RailHandshakeDeviation[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([networkId, code])
+  @@index([networkId, afterHours])
+  @@map("rail_escalation_rungs")
+}
+
 model RailHandshakeReport {
   id            String                @id @default(cuid())
   reportNumber  String // HS-2026-00042 (unique per tenant)
   status        HandshakeReportStatus @default(DRAFT)
+
+  /// Which infrastructure manager this handshake is against. Nullable: reports
+  /// raised before networks existed have none, and the resolver falls back to
+  /// the default network so their ladder is unchanged.
+  networkId     String?
+  network       RailNetwork?          @relation(fields: [networkId], references: [id], onDelete: SetNull)
 
   // The 24h window this report reconciles (IM issues at 08:00 daily).
   reportDate    DateTime              // the operating day being reconciled
@@ -4848,6 +4958,13 @@ model RailHandshakeDeviation {
 
   // Handshake agreement + escalation ladder.
   status        DeviationStatus     @default(LOGGED)
+  /// The rung this item currently sits on, from its network's ladder. This is
+  /// the truth: thresholds and job titles both come from here.
+  escalationRungId String?
+  escalationRung   RailEscalationRung? @relation(fields: [escalationRungId], references: [id], onDelete: SetNull)
+  /// Projection of `escalationRung.legacyStage`, kept for the existing index
+  /// and queries. Written by the resolver alongside the rung, never read as
+  /// the source of truth — a rung with no Transnet counterpart leaves NONE.
   escalationStage EscalationStage   @default(NONE)
   disputeReason String?             @db.Text   // TOC's reason for flagging OPEN
   resolutionNote String?            @db.Text
@@ -4937,6 +5054,17 @@ enum DeviationStatus {
 // "Manager: Customer Service", and the previous code comment said "Head of
 // Customer Liaison". See EXC-017 — picking one belongs to the owner and the
 // independent reviewer, so no single variant is encoded as the rule here.
+/// DEPRECATED as the source of truth — kept as a projection.
+///
+/// The ladder is now data: see RailNetwork and RailEscalationRung. These
+/// values name Transnet posts, which is exactly the problem they caused — a
+/// tenant operating outside South Africa saw escalation to TRIM job titles
+/// that do not exist in their market.
+///
+/// The column survives because it is indexed and queried, and because
+/// rail_handshake_deviations already holds rows. It is written from
+/// `escalationRung.legacyStage`; rungs belonging to networks with no Transnet
+/// counterpart leave it null, so callers must read the rung.
 enum EscalationStage {
   NONE                    // within tolerance / agreed
   LIAISON_MANAGER_24H     // 24h: TRIM Access Seeker Liaison Manager
