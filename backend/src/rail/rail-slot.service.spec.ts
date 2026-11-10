@@ -1046,3 +1046,77 @@ describe('corridor capacity — the gap that used to be a free-text note', () =>
     expect(r.capacity.corridorCode).toBe('COR-ORE');
   });
 });
+
+/**
+ * Compliance documents: the attestation and the revocation are claimed, not
+ * merely checked.
+ *
+ * A pre-check reads the row and decides in application code. Two signatories
+ * acting at once both read the same committed row and both pass, and the
+ * second write overwrites the first. For revocation that is worse than a
+ * double entry: the reason is evidence, so the record ends up saying the
+ * document was revoked for a reason the surviving signatory did not write,
+ * while the audit trail claims both of them did it.
+ *
+ * These tests let the pre-check pass and then move the row out from under
+ * the write — the interleaving a pre-check cannot see.
+ */
+describe('compliance document transitions are claimed, not merely checked', () => {
+  type H = ReturnType<typeof make>;
+  /** Flips the row just before the write lands, after the pre-check read it. */
+  const moveUnderneath = (h: H, docId: string, mutate: (row: any) => void) => {
+    const original = h.docs.updateMany.getMockImplementation();
+    let done = false;
+    h.docs.updateMany.mockImplementation(async (args: any) => {
+      if (!done) {
+        done = true;
+        const row = h.docs.rows.find((r: any) => r.id === docId);
+        if (row) mutate(row);
+      }
+      return original!(args);
+    });
+  };
+
+  it('a second verifier loses the claim instead of re-stamping someone else’s attestation', async () => {
+    const h = make();
+    const [doc] = h.seedDocs('A', ['RSR_PERMIT'], { status: 'PENDING_REVIEW' });
+
+    // Another signatory verifies the document after we read it as pending.
+    moveUnderneath(h, doc.id, (row) => { row.status = 'VALID'; });
+
+    await expect(h.svc.verifyDoc('A', doc.id, MANAGER, NOW)).rejects.toThrow(
+      /verified by someone else first/i,
+    );
+    // The winner's attestation is untouched; we did not re-stamp it.
+    expect(h.docs.rows.find((r: any) => r.id === doc.id).verifiedById).not.toBe('u-mgr');
+  });
+
+  it('a revocation that someone else already took is refused, and their reason survives', async () => {
+    const h = make();
+    const [doc] = h.seedDocs('A', ['RSR_PERMIT'], { status: 'VALID' });
+
+    moveUnderneath(h, doc.id, (row) => {
+      row.status = 'REVOKED';
+      row.revokedReason = 'permit suspended by RSR';
+    });
+
+    await expect(
+      h.svc.revokeDoc('A', doc.id, { reason: 'my different reason' }, MANAGER, NOW),
+    ).rejects.toThrow(/revoked by someone else first/i);
+
+    const row = h.docs.rows.find((r: any) => r.id === doc.id);
+    // Their reason is the evidence of record, not ours.
+    expect(row.revokedReason).toBe('permit suspended by RSR');
+  });
+
+  it('the happy path still works — the claim is not simply refusing everything', async () => {
+    const h = make();
+    const [doc] = h.seedDocs('A', ['RSR_PERMIT'], { status: 'PENDING_REVIEW' });
+
+    const v: any = await h.svc.verifyDoc('A', doc.id, MANAGER, NOW);
+    expect(v).toMatchObject({ status: 'VALID', verifiedById: 'u-mgr' });
+
+    const r: any = await h.svc.revokeDoc('A', doc.id, { reason: 'withdrawn by issuer' }, MANAGER, NOW);
+    expect(r).toMatchObject({ status: 'REVOKED', revokedReason: 'withdrawn by issuer' });
+  });
+});
