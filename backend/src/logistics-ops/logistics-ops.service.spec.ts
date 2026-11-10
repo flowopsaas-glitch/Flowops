@@ -259,3 +259,109 @@ describe('LogisticsOpsService.getTrackingTimeline (public feed)', () => {
     expect(timeline).not.toHaveProperty('recipientName');
   });
 });
+
+/**
+ * Two races on the operational path, both closed by claiming rather than
+ * checking.
+ *
+ * A read takes no lock. Where the code decided on a value it had read and
+ * then wrote unconditionally, two callers overlapping both passed the read
+ * and both wrote — the loser silently taking the effect from the winner.
+ */
+describe('LogisticsOpsService — claims, not checks', () => {
+  it('a reattempt is refused when the waybill left FAILED_DELIVERY underneath us', async () => {
+    // guardTransition decides against a status read BEFORE the transaction
+    // opens. Two operators confirming the same failed delivery both pass it.
+    // Only the claim against the live row can tell them apart.
+    const { svc, db, tx } = makeHarness({ status: 'FAILED_DELIVERY' });
+
+    let claimed = false;
+    const original = tx.waybill.updateMany.getMockImplementation()!;
+    tx.waybill.updateMany.mockImplementation(async (args: any) => {
+      // Someone else actioned the exception between our read and our write.
+      if (!claimed && args.data?.status === 'OUT_FOR_DELIVERY') {
+        claimed = true;
+        db.waybill.status = 'OUT_FOR_DELIVERY';
+      }
+      return original(args);
+    });
+
+    await expect(
+      svc.acknowledgeException('wb-1', 'co-1', 'REATTEMPT_CONFIRMED', 'booked again', undefined, {
+        id: 'u-1',
+        role: 'MANAGER',
+      }),
+    ).rejects.toThrow(/already actioned by someone else/i);
+
+    // No tracking event: the reattempt did not happen, so the timeline does
+    // not claim it did.
+    expect(db.events.filter((e: any) => String(e.event).includes('REATTEMPT'))).toHaveLength(0);
+  });
+
+  it('a reattempt still works in the happy path (the claim is not refusing everything)', async () => {
+    const { svc, db } = makeHarness({ status: 'FAILED_DELIVERY' });
+    const out = await svc.acknowledgeException(
+      'wb-1',
+      'co-1',
+      'REATTEMPT_CONFIRMED',
+      'booked again',
+      new Date().toISOString(),
+      { id: 'u-1', role: 'MANAGER' },
+    );
+    expect(out).toBeTruthy();
+    expect(db.events.some((e: any) => String(e.event).includes('REATTEMPT'))).toBe(true);
+  });
+
+  it('auto-reassign does not take custody from a driver who was assigned in the meantime', async () => {
+    const { svc, tx, prisma } = makeHarness({ status: 'AT_ORIGIN_HUB' });
+
+    // A compliant driver must exist or the flow returns early.
+    prisma.driver.findMany.mockResolvedValue([{ id: 'drv-1', name: 'Dan', companyId: 'co-1' }] as any);
+
+    const shipment = { id: 'shp-1', waybillId: 'wb-1', companyId: 'co-1', driverId: null, status: 'PENDING' };
+    tx.shipment.findFirst.mockResolvedValue(shipment as any);
+    (tx.shipment as any).updateMany = jest.fn(async ({ where, data }: any) => {
+      // The shipment moved between our read and our write.
+      if (where.driverId !== shipment.driverId || where.status !== shipment.status) return { count: 0 };
+      Object.assign(shipment, data);
+      return { count: 1 };
+    });
+
+    // Someone assigns it to another driver after we read it as unassigned.
+    const original = (tx.shipment as any).updateMany.getMockImplementation();
+    (tx.shipment as any).updateMany.mockImplementation(async (args: any) => {
+      if (shipment.driverId === null) {
+        shipment.driverId = 'drv-other';
+        shipment.status = 'IN_TRANSIT';
+      }
+      return original(args);
+    });
+
+    await svc.transitionToHub('wb-1', 'co-1', 'AT_DESTINATION_HUB', ' CPT Hub ');
+
+    // The other driver keeps custody; we did not overwrite them.
+    expect(shipment.driverId).toBe('drv-other');
+    expect(shipment.status).toBe('IN_TRANSIT');
+  });
+
+  it('auto-reassign does nothing when the waybill is no longer at the destination hub', async () => {
+    // The hub check is a claim, not a read: a plain read would let two
+    // concurrent reassignments both proceed.
+    const { svc, tx, prisma, db } = makeHarness({ status: 'AT_ORIGIN_HUB' });
+    prisma.driver.findMany.mockResolvedValue([{ id: 'drv-1', name: 'Dan', companyId: 'co-1' }] as any);
+    (tx.shipment as any).create = jest.fn(async ({ data }: any) => ({ id: 'shp-new', ...data }));
+
+    // Move the waybill out of the hub between the receive and the reassign.
+    const original = prisma.$transaction.getMockImplementation()!;
+    let first = true;
+    prisma.$transaction.mockImplementation(async (fn: any) => {
+      const out = await original(fn);
+      if (first) { first = false; db.waybill.status = 'OUT_FOR_DELIVERY'; }
+      return out;
+    });
+
+    await svc.transitionToHub('wb-1', 'co-1', 'AT_DESTINATION_HUB', 'CPT Hub');
+
+    expect((tx.shipment as any).create).not.toHaveBeenCalled();
+  });
+});

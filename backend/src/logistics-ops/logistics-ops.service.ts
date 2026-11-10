@@ -261,14 +261,23 @@ export class LogisticsOpsService {
           actor: actor?.id ?? 'operations',
         }, (message) => { throw new BadRequestException(message); });
         status = 'OUT_FOR_DELIVERY';
-        await tx.waybill.update({
-          where: { id: waybillId },
+        // guardTransition above decided against a status it read outside this
+        // transaction. Two operators confirming the same failed delivery both
+        // pass it and both write, producing two tracking events and two
+        // notifications for one reattempt. Claim against the live row.
+        const claimed = await tx.waybill.updateMany({
+          where: { id: waybillId, companyId, status: 'FAILED_DELIVERY' },
           data: {
             status,
             returnToSender: false,
             nextAttemptAt: parsedNextAttempt,
           },
         });
+        if (claimed.count === 0) {
+          throw new BadRequestException(
+            'This delivery was already actioned by someone else — reload the exception.',
+          );
+        }
       } else if (normalised === 'RETURN_CONFIRMED') {
         await tx.waybill.update({
           where: { id: waybillId },
@@ -634,11 +643,19 @@ export class LogisticsOpsService {
     return this.prisma.$transaction(async (tx) => {
       // The waybill must still be at the destination hub, otherwise another
       // process (a manual dispatcher, a second scan) already moved it.
-      const stillHere = await tx.waybill.findFirst({
+      //
+      // This was a findFirst, which is a plain read: it takes no lock, so two
+      // concurrent reassignments both saw AT_DESTINATION_HUB and both went on
+      // to write the shipment — the loser silently taking custody from the
+      // winner. It is now a claim. The UPDATE locks the row and re-evaluates
+      // the status after any competing commit, so exactly one caller can hold
+      // the hub for this waybill. The write is a no-op on purpose: we are
+      // claiming the row, not changing it.
+      const stillHere = await tx.waybill.updateMany({
         where: { id: waybillId, companyId, status: 'AT_DESTINATION_HUB' },
-        select: { id: true },
+        data: { updatedAt: new Date() },
       });
-      if (!stillHere) return null;
+      if (stillHere.count === 0) return null;
 
       const existing = await tx.shipment.findFirst({
         where: { waybillId, companyId },
@@ -653,10 +670,16 @@ export class LogisticsOpsService {
           );
           return null;
         }
-        await tx.shipment.update({
-          where: { id: existing.id },
+        const claimed = await tx.shipment.updateMany({
+          where: {
+            id: existing.id,
+            companyId,
+            driverId: existing.driverId,
+            status: existing.status,
+          },
           data: { driverId: driver.id, status: 'PENDING' },
         });
+        if (claimed.count === 0) return null; // custody moved; leave it alone
       } else {
         await tx.shipment.create({
           data: { waybillId, companyId, driverId: driver.id, status: 'PENDING' },
