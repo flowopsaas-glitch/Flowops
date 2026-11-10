@@ -113,6 +113,14 @@ export class FakeTable {
     return found ? { ...found } : null;
   });
 
+  findFirstOrThrow = jest.fn(async ({ where, orderBy }: { where?: Row; orderBy?: Row | Row[] } = {}) => {
+    const found = this.sorted(this.rows.filter((r) => matches(r, where)), orderBy)[0];
+    // Matches Prisma: it throws rather than returning null, which is what
+    // makes it safe to call inside a claim without a separate null check.
+    if (!found) throw new Error('No record found (findFirstOrThrow)');
+    return { ...found };
+  });
+
   findUnique = jest.fn(async ({ where }: { where: Row }) => {
     const found = this.rows.find((r) => matches(r, where));
     return found ? { ...found } : null;
