@@ -22,13 +22,16 @@
 14. [Communications](#14-communications)
 15. [Route Optimization](#15-route-optimization)
 16. [Fleet Maintenance](#16-fleet-maintenance)
-17. [AI Features](#17-ai-features)
-18. [Customer Portal & Tracking](#18-customer-portal--tracking)
-19. [Settings & Configuration](#19-settings--configuration)
-20. [User Roles & Permissions](#20-user-roles--permissions)
-21. [Driver Portal (Mobile)](#21-driver-portal-mobile)
-22. [Keyboard Shortcuts & Tips](#22-keyboard-shortcuts--tips)
-23. [Troubleshooting & Support](#23-troubleshooting--support)
+17. [Freight Forwarding](#17-freight-forwarding)
+18. [General Average](#18-general-average)
+19. [Landed Cost & HS Codes](#19-landed-cost--hs-codes)
+20. [AI Features](#20-ai-features)
+21. [Customer Portal & Tracking](#21-customer-portal--tracking)
+22. [Settings & Configuration](#22-settings--configuration)
+23. [User Roles & Permissions](#23-user-roles--permissions)
+24. [Driver Portal (Mobile)](#24-driver-portal-mobile)
+25. [Keyboard Shortcuts & Tips](#25-keyboard-shortcuts--tips)
+26. [Troubleshooting & Support](#26-troubleshooting--support)
 
 ---
 
@@ -53,7 +56,7 @@ When your company account is first approved, an admin will complete the **Onboar
 
 ### 1.3 Navigation
 
-The left sidebar contains all feature areas. What you see depends on your **role** (see Section 20). The sidebar is organised into sections:
+The left sidebar contains all feature areas. What you see depends on your **role** (see Section 23). The sidebar is organised into sections:
 
 - **Operations** — Dashboard, Shipments, Waybills, Collections, Dispatch
 - **Finance** — Invoices, Quotes, Rate Cards, Billing, COD
@@ -497,23 +500,179 @@ Track driver performance:
 
 ---
 
-## 17. AI Features
+## 17. Freight Forwarding
 
-### 17.1 Ask FlowOps (AI Copilot)
+**Availability:** the Freight Forwarding add-on. **Access:** Admins only — every
+forwarding page is admin-gated and requires the `freightForwarding` feature, so
+dispatchers and drivers will not see these routes at all.
+
+### 17.1 The Forwarding Console (`/forwarding`)
+
+Your daily control tower. It opens on six KPIs:
+
+| KPI | What it tells you |
+|---|---|
+| **Open files** | Shipment files not yet closed |
+| **Arriving (7d)** | Files with an ETA inside the next seven days |
+| **Customs pending** | Files with a declaration not yet released |
+| **Demurrage est.** | Money accruing right now on containers past free time, with a count of how many are accruing |
+| **Disbursed out** | Disbursements paid on your behalf and not yet recovered |
+| **At risk** | Files carrying an open exception |
+
+Below the KPIs sit three working lists: **Needs attention**, the **Arrivals
+board**, and the **Customs queue**. The customs queue mirrors the declaration
+lifecycle:
+
+```
+DRAFT  →  SUBMITTED  →  QUERY  →  REJECTED
+                        ↓
+                     RELEASED
+```
+
+A file in `QUERY` is waiting on *you* — SARS has asked for something. Files in
+`REJECTED` need correcting and re-submitting.
+
+Three buttons in the console header take you to the specialist pages: **SARS EDI
+setup**, **SADC corridors**, and **General average**.
+
+### 17.2 The Shipment File (`/forwarding/:id`)
+
+One file per shipment. Depending on the mode and the lane, panels appear and
+disappear — you only see what applies:
+
+- **Vessel tracking** — ocean files only.
+- **Cross-border fields** — origin and destination country, transit countries,
+  vehicle registration, seal numbers, importer TIN (ZIMRA), and the shipper and
+  consignee addresses.
+- **Declaration** — the customs declaration, its status badge, a *Record SARS
+  response* control, and a full transmission log so you can prove what was sent
+  and when.
+- **Demurrage** — per container, so you can see which box is costing you money.
+- **Consolidation** — for consolidated (LCL) files.
+- **Duty & VAT estimate** — an in-file ZAR estimate before the entry is
+  assessed.
+- **Documents** — generated from the file's own data, not re-typed.
+
+### 17.3 Document templates
+
+Documents are grouped by trading bloc. Generate the one the destination
+country actually requires:
+
+| Bloc | Templates |
+|---|---|
+| **Trade** | Commercial Invoice, Packing List, Bill of Lading, Certificate of Origin |
+| **Transport** | CMR Consignment Note, Dangerous Goods, Transit Bond |
+| **SADC** | SA — SAD 500, Zimbabwe — Form 47, Mozambique — JUE, Botswana — BURS, SADC Declaration |
+| **EAC** | Kenya — C17, Tanzania — TANCIS, Uganda — URA, Rwanda — RRA, DRC — DGDA, EAC Declaration |
+| **ECOWAS** | Nigeria — SGD, Ghana — Bill of Entry, Ivory Coast — DGD, Senegal — GAINDE, ECOWAS Declaration |
+| **Other** | Cameroon — SYDONIA, Ethiopia — ERCA |
+
+### 17.4 Related pages
+
+| Page | Path | Use it for |
+|---|---|---|
+| SARS EDI setup | `/forwarding/sars-edi` | Transmission credentials and configuration |
+| SADC corridors | `/forwarding/sadc-corridors` | Border posts, corridors and port routing |
+| General average | `/forwarding/general-average` | GA security, contributions and cargo release |
+
+## 18. General Average
+
+*Requires the Freight Forwarding add-on, Admins only — `/forwarding/general-average`.*
+
+General average is the maritime rule that when part of the ship or cargo is
+**deliberately** sacrificed to save the whole voyage — jettisoning cargo,
+flooding a hold to fight a fire, paying for a tow — the loss is shared
+proportionally by everyone whose property came through, under the
+York-Antwerp Rules.
+
+### 18.1 The part that surprises people
+
+**Cargo that arrived undamaged still owes.** This is the single most common
+misunderstanding, and it is the one that turns into a dispute when a client is
+billed for a casualty that never touched their goods. The contribution is not
+compensation for damage; it is a share of a sacrifice made for the common good.
+
+**The shipowner holds a lien over all the cargo** until security is lodged.
+Nothing is released — damaged or not — until each interest has provided security.
+The page states this plainly whenever any cargo interest is still blocked.
+
+### 18.2 Using the page
+
+Two tabs:
+
+- **Cargo interests** — who owes, what security has been lodged, and who is
+  released versus blocked. The summary tells you how many interests are
+  outstanding.
+- **Award & settlement** — once the average adjuster publishes the award, the
+  adjustment and the settlement of each interest.
+
+Work the interests tab first: get security lodged so cargo can move, then settle
+against the award when it lands.
+
+## 19. Landed Cost & HS Codes
+
+**These two tools are public.** They live at `/tools/landed-cost` and
+`/tools/hs-codes`, need no login, and are safe to send to a client or to leave
+open on a sales call.
+
+### 19.1 Landed cost calculator (`/tools/landed-cost`)
+
+Estimates South African import duty and VAT before you quote.
+
+**Inputs:** customs value in ZAR, and a duty rate as a percentage. The duty rate
+is pre-filled from the HS code you pick, but you can override it — do that the
+moment you have confirmed the real line.
+
+**How the maths works.** SARS does not charge VAT on the bare invoice value. It
+charges VAT on the **Added Tax Value (ATV)**, which is the customs value plus a
+10% upliftment plus the duty:
+
+```
+Customs value
+  + 10% upliftment
+  + duty
+  = Added Tax Value (ATV)
+VAT = 15% of ATV
+Total payable = duty + VAT
+```
+
+Every step is shown on screen, so you can point a client at the line they are
+questioning rather than defending a single number.
+
+### 19.2 HS code lookup (`/tools/hs-codes`)
+
+Search by code or by plain description — `8517`, `laptop`, `vehicles`, or
+`trousers` all work. Useful for classifying goods before you price them, and for
+settling the "what heading does this actually fall under" argument.
+
+### 19.3 What these tools are not
+
+Both results carry the same disclaimer, and it is worth reading:
+
+> Indicative only. The binding rate depends on the full ten-digit code,
+> preferential origin (SADC / EU / AfCFTA), rebate provisions and any
+> anti-dumping or safeguard duty in force. Confirm with SARS or a licensed
+> customs broker before quoting.
+
+An estimate is a starting point for a quote, not a tariff ruling.
+
+## 20. AI Features
+
+### 20.1 Ask FlowOps (AI Copilot)
 
 Chat with the AI assistant:
 - Ask operational questions ("How many deliveries were late this week?")
 - Get recommendations ("Which driver should I assign to Sandton?")
 - Generate reports and summaries
 
-### 17.2 AI Control Tower
+### 20.2 AI Control Tower
 
 The AI monitors your operation 24/7:
 - **SLA breach prediction** — flags at-risk deliveries before they fail
 - **Anomaly detection** — unusual patterns in volumes, failures, or routes
 - **Auto-escalation** — alerts the right people when thresholds are hit
 
-### 17.3 CLAW Autopilot (Enterprise)
+### 20.3 CLAW Autopilot (Enterprise)
 
 Autonomous operations engine that can:
 - Auto-reassign stalled pickups
@@ -521,7 +680,7 @@ Autonomous operations engine that can:
 - Flag COD mismatches
 - Aggression levels: LOW, MEDIUM, HIGH
 
-### 17.4 AI Support Agent
+### 20.4 AI Support Agent
 
 Self-service support chatbot:
 - Answers common questions
@@ -530,9 +689,9 @@ Self-service support chatbot:
 
 ---
 
-## 18. Customer Portal & Tracking
+## 21. Customer Portal & Tracking
 
-### 18.1 Public Tracking Page
+### 21.1 Public Tracking Page
 
 Share tracking links with customers:
 - **https://app.flowop.work/track/TRACKING_NUMBER**
@@ -541,7 +700,7 @@ Share tracking links with customers:
 - ETA estimation
 - No login required
 
-### 18.2 Booking Portal
+### 21.2 Booking Portal
 
 Give clients a branded booking link:
 1. Go to **Settings → Booking Portal Links**
@@ -549,7 +708,7 @@ Give clients a branded booking link:
 3. Share with your client
 4. They can submit collection/booking requests directly
 
-### 18.3 Customer Delivery Rating
+### 21.3 Customer Delivery Rating
 
 After delivery, send a rating request:
 - Customer rates 1-5 stars
@@ -558,16 +717,16 @@ After delivery, send a rating request:
 
 ---
 
-## 19. Settings & Configuration
+## 22. Settings & Configuration
 
-### 19.1 Company Settings
+### 22.1 Company Settings
 
 - Company name, address, VAT number
 - Logo and brand colours
 - Invoice header colour
 - SLA thresholds (warning, breach, escalation minutes)
 
-### 19.2 Branding
+### 22.2 Branding
 
 Customise the look of:
 - Customer-facing tracking pages
@@ -575,7 +734,7 @@ Customise the look of:
 - Invoice headers
 - WhatsApp number for click-to-chat
 
-### 19.3 Notification Preferences
+### 22.3 Notification Preferences
 
 Per-user notification controls:
 - Email / SMS / Push toggles
@@ -583,7 +742,7 @@ Per-user notification controls:
 - Digest frequency (Instant, Daily, Weekly)
 - Quiet hours
 
-### 19.4 Integrations
+### 22.4 Integrations
 
 Connect external services:
 - **WhatsApp Business API** — automated messaging
@@ -593,9 +752,9 @@ Connect external services:
 
 ---
 
-## 20. User Roles & Permissions
+## 23. User Roles & Permissions
 
-### 20.1 Available Roles
+### 23.1 Available Roles
 
 | Role | Access Level |
 |------|-------------|
@@ -606,7 +765,7 @@ Connect external services:
 | **Driver** | Dashboard, collections, POD deliveries, WhatsApp, notifications |
 | **Viewer** | Read-only access to dashboard and basic shipment info |
 
-### 20.2 Managing Users
+### 23.2 Managing Users
 
 Admin only:
 1. Go to **Users & Roles**
@@ -614,7 +773,7 @@ Admin only:
 3. Enter email, name, and role
 4. They receive an email invitation to set up their account
 
-### 20.3 Custom Permissions
+### 23.3 Custom Permissions
 
 Admins can override the default role permissions per user:
 - Navigate to the user's profile
@@ -623,9 +782,9 @@ Admins can override the default role permissions per user:
 
 ---
 
-## 21. Driver Portal (Mobile)
+## 24. Driver Portal (Mobile)
 
-### 21.1 Accessing the Driver Portal
+### 24.1 Accessing the Driver Portal
 
 Drivers use a separate app at **https://driver.flowop.work**
 
@@ -634,7 +793,7 @@ Drivers use a separate app at **https://driver.flowop.work**
 - Works offline with sync when back online
 - Only one active session per driver (security)
 
-### 21.2 Driver Features
+### 24.2 Driver Features
 
 - View assigned deliveries for today
 - Navigate to delivery address
@@ -645,7 +804,7 @@ Drivers use a separate app at **https://driver.flowop.work**
 
 ---
 
-## 22. Keyboard Shortcuts & Tips
+## 25. Keyboard Shortcuts & Tips
 
 | Shortcut | Action |
 |----------|--------|
@@ -662,7 +821,7 @@ Drivers use a separate app at **https://driver.flowop.work**
 
 ---
 
-## 23. Troubleshooting & Support
+## 26. Troubleshooting & Support
 
 ### Common Issues
 

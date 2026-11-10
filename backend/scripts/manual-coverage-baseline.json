@@ -1,0 +1,39 @@
+{
+  "_why": "Which tenant-facing surfaces the manual documents, and how many it does not. NO ROT requires every id listed here to stay documented; RATCHET requires undocumentedTotal never to rise. Re-record only after coverage improved, and say how in the commit.",
+  "recorded": "2026-11-10",
+  "documented": [
+    "waybills",
+    "collections",
+    "dispatch",
+    "manifests",
+    "pod-deliveries",
+    "returns",
+    "clients",
+    "quotes",
+    "rate-cards",
+    "invoices",
+    "cod",
+    "accounting",
+    "communications",
+    "route-optimizer",
+    "maintenance",
+    "copilot",
+    "track",
+    "settings",
+    "forwarding",
+    "general-average",
+    "landed-cost",
+    "hs-code"
+  ],
+  "undocumentedTotal": 8,
+  "undocumented": [
+    "disbursements",
+    "claims",
+    "warehouse",
+    "carriers",
+    "delivery-notes",
+    "esg",
+    "digital-payments",
+    "credit-control"
+  ]
+}
