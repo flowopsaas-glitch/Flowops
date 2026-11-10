@@ -118,9 +118,15 @@ describe('Waybill rating token is not served on row-shaped responses', () => {
   it('update: a legal status change is redacted on the way out, raw on the way to notifications', async () => {
     const notifyWaybillStatus = jest.fn().mockResolvedValue(undefined);
     const pushStatusToShopify = jest.fn().mockResolvedValue(undefined);
+    // Stateful: update() now claims the row with a conditional updateMany and
+    // re-reads it, so the stub has to actually apply the write.
+    const row = waybillRow();
     const prisma = makePrisma({
-      findFirst: jest.fn().mockResolvedValue(waybillRow()),
-      update: jest.fn().mockResolvedValue(waybillRow({ status: 'COLLECTED' })),
+      findFirst: jest.fn().mockImplementation(async () => ({ ...row })),
+      updateMany: jest.fn().mockImplementation(async (args: any) => {
+        Object.assign(row, args.data);
+        return { count: 1 };
+      }),
     });
 
     const updated: any = await makeService({
@@ -138,13 +144,25 @@ describe('Waybill rating token is not served on row-shaped responses', () => {
   describe('the two deliberate paths still issue the token', () => {
     it('requestRating answers with the explicit { success, token } and emails the link', async () => {
       const sendRatingRequest = jest.fn().mockResolvedValue(undefined);
+      // Stateful: requestRating now claims the row (updateMany) and re-reads
+      // it, so the stub must apply the write and hand back the stored token.
+      //
+      // ratingToken is null here because this test is about ISSUING a token.
+      // The fixture defaults ratingToken to TOKEN, which would describe a
+      // parcel that has already been rated — and re-issuing over a link the
+      // customer already holds would invalidate the one they were sent, so
+      // that is now deliberately refused (see the alreadyRequested path).
+      const row = waybillRow({ status: 'DELIVERED', ratingToken: null });
       const prisma = makePrisma({
-        findFirst: jest.fn().mockResolvedValue(waybillRow({ status: 'DELIVERED' })),
-        // The service mints a fresh token and stores it; mirror that so the
-        // assertion below checks the token that was actually written.
-        update: jest.fn().mockImplementation(async (args: any) =>
-          waybillRow({ status: 'DELIVERED', ratingToken: args.data.ratingToken }),
+        findFirst: jest.fn().mockImplementation(async (args: any) =>
+          // The conflict re-read asks for a narrow select.
+          args?.select ? { status: row.status, ratingToken: row.ratingToken } : { ...row },
         ),
+        updateMany: jest.fn().mockImplementation(async (args: any) => {
+          if (row.ratingToken) return { count: 0 }; // already requested
+          Object.assign(row, args.data);
+          return { count: 1 };
+        }),
       });
 
       const res: any = await makeService({
