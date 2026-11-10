@@ -336,7 +336,17 @@ export class DriverSafetyService {
 
   async updateZone(id: string, companyId: string, dto: any) {
     // Tenant-scoped: only edit a safety zone belonging to the caller's company.
-    const res = await this.prisma.safetyZone.updateMany({ where: { id, companyId }, data: dto });
+    // companyId is re-asserted last, not just filtered in the WHERE clause.
+    // `dto` is an untyped body, so a caller could otherwise put `companyId`
+    // in the payload and move their safety zone into another tenant's company —
+    // the WHERE would still match (they own it now) and the write would
+    // re-home it. Setting it explicitly makes the tenant of record the
+    // authenticated one, never the requested one.
+    const { companyId: _ignored, ...rest } = dto ?? {};
+    const res = await this.prisma.safetyZone.updateMany({
+      where: { id, companyId },
+      data: { ...rest, companyId },
+    });
     if (res.count === 0) throw new NotFoundException('Safety zone not found');
     return this.prisma.safetyZone.findFirst({ where: { id, companyId } });
   }

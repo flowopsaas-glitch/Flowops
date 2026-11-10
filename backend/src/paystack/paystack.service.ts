@@ -217,8 +217,20 @@ export class PaystackService {
       return;
     }
 
-    await this.prisma.payment.updateMany({
-      where: { reference },
+    // CLAIM the transition rather than just checking it. Paystack delivers
+    // charge.success at-least-once and can do so concurrently, so two
+    // webhooks can both reach this point having seen a PENDING payment.
+    // Every write below is individually idempotent (fixed status, fixed
+    // plan), so the damage is not a double credit — it is that the second
+    // writer overwrites `paidAt` with a LATER timestamp, so the recorded
+    // time of payment stops being the time of payment, and a promote/
+    // notification runs twice for the same charge.
+    //
+    // Making the status change conditional turns the whole handler into
+    // exactly-once: whichever writer flips PENDING -> SUCCESS wins, and the
+    // loser gets count 0 and stops before touching paidAt.
+    const claimed = await this.prisma.payment.updateMany({
+      where: { reference, status: { not: 'SUCCESS' } },
       data: {
         status: 'SUCCESS',
         paystackReference: reference,
@@ -227,6 +239,12 @@ export class PaystackService {
         paidAt: new Date(),
       },
     });
+    if (claimed.count === 0) {
+      this.logger.log(
+        `charge.success for ${reference} won by a concurrent delivery — skipping (idempotent).`,
+      );
+      return;
+    }
 
     const payment = await this.prisma.payment.findFirst({ where: { reference } });
     if (payment?.invoiceId) {

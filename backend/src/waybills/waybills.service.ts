@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Logger,
+  Injectable, NotFoundException, BadRequestException, ConflictException, Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -15,6 +15,29 @@ import { DriverComplianceService } from '../common/compliance/driver-compliance.
 import { AuditService } from '../audit/audit.service';
 import { FileUploadValidator } from '../common/guards/file-upload.guard';
 import { withoutRatingToken } from '../common/security/waybill-redaction.util';
+
+/**
+ * Fields a tenant may change through PATCH /waybills/:id.
+ *
+ * Everything else on Waybill is server-owned: identifiers and tenancy
+ * (id, companyId, createdAt), lifecycle bookkeeping (codCollected,
+ * codCollectedAt, codDiscrepancy — written by the COD reconciliation flow),
+ * the customer's own rating (customerRating, customerRatingNote), and the
+ * single-use rating token. Accepting any of those from a request body lets a
+ * caller forge a cash collection, forge a customer rating, or move the row
+ * into another tenant.
+ */
+const WAYBILL_PATCHABLE_FIELDS = [
+  'status',
+  'senderName', 'senderPhone', 'senderEmail', 'senderAddress',
+  'senderLat', 'senderLng',
+  'recipientName', 'recipientPhone', 'recipientEmail', 'recipientAddress',
+  'recipientLat', 'recipientLng',
+  'weight', 'dimensions', 'description',
+  'totalAmount', 'codAmount',
+  'riskLevel', 'riskScore', 'riskNotes',
+  'podSignatureUrl', 'podImageUrl', 'podRecipient', 'podDeliveredAt',
+] as const;
 
 @Injectable()
 export class WaybillsService {
@@ -222,8 +245,64 @@ export class WaybillsService {
         throw new BadRequestException(msg);
       });
     }
-    const updated = await this.prisma.waybill.update({ where: { id }, data: dto });
-    if (dto.status && dto.status !== existing.status) {
+    // Build the write from an explicit allowlist.
+    //
+    // The controller accepts `@Body() body: any`, which means the global
+    // ValidationPipe has no DTO class to whitelist against and passes the raw
+    // JSON through untouched — `whitelist: true` cannot help here. The body
+    // was then spread straight into the Prisma update, so a tenant could set
+    // fields they do not own: `companyId` (moving the waybill into another
+    // tenant), `id`, `createdAt`, `codCollected`, `customerRating`,
+    // `ratingToken`. Reading through findOne() scoped the lookup but not the
+    // write, so the row was reachable and then arbitrarily writable.
+    //
+    // Anything not named here is silently ignored rather than written.
+    const data: any = {};
+    for (const k of WAYBILL_PATCHABLE_FIELDS) {
+      if (dto[k] !== undefined) data[k] = dto[k];
+    }
+
+    // Compare-and-set on status transitions. guardTransition above proved the
+    // jump is legal FROM THE STATUS WE READ; it says nothing about whether
+    // that status is still current. Two operators updating the same parcel at
+    // once (a warehouse scan and a driver app delivery landing together) would
+    // both pass, and the later write would silently win — leaving a waybill in
+    // a state nobody chose, a second customer notification already sent, and
+    // the Shipment below synced to the wrong status.
+    //
+    // Pinning the expected current status in the WHERE clause makes the loser
+    // fail instead. This is the same pattern assignDriver already uses.
+    const isTransition = !!dto.status && dto.status !== existing.status;
+    let updated: any;
+    if (isTransition) {
+      const claimed = await this.prisma.withTenant(companyId, (tx) =>
+        tx.waybill.updateMany({
+          where: { id, companyId, status: existing.status },
+          data,
+        }),
+      );
+      if (claimed.count === 0) {
+        throw new ConflictException(
+          'This waybill was updated by someone else first — refresh and try again.',
+        );
+      }
+      // Raw row, not findOne(): the notification and Shopify fan-out below
+      // need the real columns (findOne redacts ratingToken), and only the
+      // value we RETURN is redacted.
+      updated = await this.prisma.waybill.findFirst({ where: { id, companyId } });
+    } else {
+      // Non-status edits still must not escape the tenant.
+      const claimed = await this.prisma.withTenant(companyId, (tx) =>
+        tx.waybill.updateMany({
+          where: { id, companyId },
+          data,
+        }),
+      );
+      if (claimed.count === 0) throw new NotFoundException('Waybill not found');
+      updated = await this.prisma.waybill.findFirst({ where: { id, companyId } });
+    }
+
+    if (isTransition) {
       void this.notifications.notifyWaybillStatus(updated);
       // Fire-and-forget: never let a Shopify push rejection become an
       // unhandledRejection that could crash the process.
@@ -344,7 +423,14 @@ export class WaybillsService {
     targetStatus: string,
   ) {
     const unique = [...new Set(trackingNumbers.map((t) => t.trim()).filter(Boolean))];
-    const results: Array<{ trackingNumber: string; result: 'updated' | 'notFound' | 'unchanged'; id?: string }> = [];
+    // 'conflict' = the parcel moved between our read and our write, so this
+    // scan lost the race and changed nothing. Reported distinctly so a
+    // warehouse operator can re-scan rather than assume it applied.
+    const results: Array<{
+      trackingNumber: string;
+      result: 'updated' | 'notFound' | 'unchanged' | 'conflict';
+      id?: string;
+    }> = [];
 
     for (const tn of unique) {
       const waybill = await this.prisma.waybill.findFirst({
@@ -374,9 +460,22 @@ export class WaybillsService {
         });
         throw new BadRequestException(msg);
       });
-      const updated = await this.prisma.waybill.update({
-        where: { id: waybill.id },
-        data: { status: targetStatus as any },
+      // Compare-and-set, for the same reason as update(): guardTransition
+      // validated the jump against a status we read, which a concurrent scan
+      // or driver-app delivery may already have moved past. Warehouse
+      // handhelds genuinely do scan the same parcel twice.
+      const claimed = await this.prisma.withTenant(companyId, (tx) =>
+        tx.waybill.updateMany({
+          where: { id: waybill.id, companyId, status: waybill.status },
+          data: { status: targetStatus as any },
+        }),
+      );
+      if (claimed.count === 0) {
+        results.push({ trackingNumber: tn, result: 'conflict', id: waybill.id });
+        continue;
+      }
+      const updated = await this.prisma.waybill.findFirst({
+        where: { id: waybill.id, companyId },
       });
       void this.notifications.notifyWaybillStatus(updated);
       results.push({ trackingNumber: tn, result: 'updated', id: waybill.id });
@@ -399,10 +498,36 @@ export class WaybillsService {
       throw new BadRequestException('Rating can only be requested after delivery');
     }
     const token = `${waybill.trackingNumber}-${uuid()}`;
-    const updated = await this.prisma.waybill.update({
-      where: { id },
-      data: { ratingToken: token, ratingRequestedAt: new Date() },
-    });
+    // Claim the request rather than just checking the status. Two clicks (or a
+    // retry after a slow response) would otherwise each mint a token and each
+    // send the customer a rating SMS; the first token would silently stop
+    // working. The claim means one token, one message.
+    const data = { ratingToken: token, ratingRequestedAt: new Date() };
+    const claimed = await this.prisma.withTenant(companyId, (tx) =>
+      tx.waybill.updateMany({
+        where: { id, companyId, status: 'DELIVERED', ratingToken: null },
+        data,
+      }),
+    );
+    if (claimed.count === 0) {
+      // Either it moved out of DELIVERED, or a rating was already requested.
+      // Read the raw row: findOne() strips ratingToken by design (it is the
+      // bearer token for the public rating link), so it cannot answer this
+      // question.
+      const current = await this.prisma.waybill.findFirst({
+        where: { id, companyId },
+        select: { status: true, ratingToken: true },
+      });
+      if (current?.ratingToken) {
+        return { success: true, token: current.ratingToken, alreadyRequested: true } as any;
+      }
+      throw new ConflictException(
+        'This waybill changed — refresh and try again.',
+      );
+    }
+    // Raw row: sendRatingRequest builds the customer's rating link from
+    // ratingToken, so it must not receive the redacted shape.
+    const updated = await this.prisma.waybill.findFirst({ where: { id, companyId } });
     await this.notifications.sendRatingRequest(updated);
     return { success: true, token };
   }

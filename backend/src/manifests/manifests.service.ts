@@ -88,7 +88,17 @@ export class ManifestsService {
 
   async update(id: string, companyId: string, dto: any) {
     // Tenant-scoped: only mutate a manifest belonging to the caller's company.
-    const res = await this.prisma.manifest.updateMany({ where: { id, companyId }, data: dto });
+    // companyId is re-asserted last, not just filtered in the WHERE clause.
+    // `dto` is an untyped body, so a caller could otherwise put `companyId`
+    // in the payload and move their manifest into another tenant's company —
+    // the WHERE would still match (they own it now) and the write would
+    // re-home it. Setting it explicitly makes the tenant of record the
+    // authenticated one, never the requested one.
+    const { companyId: _ignored, ...rest } = dto ?? {};
+    const res = await this.prisma.manifest.updateMany({
+      where: { id, companyId },
+      data: { ...rest, companyId },
+    });
     if (res.count === 0) throw new NotFoundException('Manifest not found');
     return this.prisma.manifest.findFirst({ where: { id, companyId } });
   }

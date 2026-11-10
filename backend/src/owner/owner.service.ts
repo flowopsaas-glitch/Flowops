@@ -1327,37 +1327,67 @@ export class OwnerService {
       throw new ConflictException(`This request is already ${req.status.toLowerCase()}.`);
     }
 
-    // Flip the plan.
-    await this.prisma.company.update({
-      where: { id: req.companyId },
-      data: { plan: req.requestedPlan, trialEndsAt: null }, // clear trial — now on a paid tier
-    });
+    // Claim the decision, then act on it — in that order, inside one
+    // transaction.
+    //
+    // These were separate statements guarded only by the `status !== 'PENDING'`
+    // check above, which is a read and therefore worthless under concurrency.
+    // Two operators clicking Approve and Decline at the same time would both
+    // pass it: the plan would be upgraded and then the request would be marked
+    // REJECTED, leaving the tenant on a paid plan that our own records say we
+    // declined — and the approval email below would still go out. Two Approves
+    // double-audited and double-emailed for one decision.
+    //
+    // The conditional UPDATE is the real guard. Whoever flips PENDING first
+    // wins; the loser gets count 0 and the whole transaction rolls back, so no
+    // plan change, no audit row and (since the email is sent after) no
+    // contradictory email.
+    let updated: any;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.planUpgradeRequest.updateMany({
+          where: { id: requestId, status: 'PENDING' },
+          data: {
+            status: 'APPROVED',
+            reviewedById: actor?.id ?? null,
+            reviewedByEmail: actor?.email ?? null,
+            reviewedAt: new Date(),
+          },
+        });
+        if (claimed.count === 0) {
+          throw new ConflictException('This request has just been decided by someone else.');
+        }
 
-    const updated = await this.prisma.planUpgradeRequest.update({
-      where: { id: requestId },
-      data: {
-        status: 'APPROVED',
-        reviewedById: actor?.id ?? null,
-        reviewedByEmail: actor?.email ?? null,
-        reviewedAt: new Date(),
-      },
-    });
+        // Flip the plan.
+        await tx.company.update({
+          where: { id: req.companyId },
+          data: { plan: req.requestedPlan, trialEndsAt: null }, // clear trial — now on a paid tier
+        });
 
-    // Resolve the owner-console alert for this request.
-    await this.prisma.aiEvent.updateMany({
-      where: { sourceType: 'plan_upgrade_request', sourceId: requestId },
-      data: { resolved: true, resolvedAt: new Date() },
-    });
+        // Resolve the owner-console alert for this request.
+        await tx.aiEvent.updateMany({
+          where: { sourceType: 'plan_upgrade_request', sourceId: requestId },
+          data: { resolved: true, resolvedAt: new Date() },
+        });
 
-    await this.audit.record({
-      action: 'tenant.plan_change',
-      actorId: actor?.id ?? null,
-      actorEmail: actor?.email ?? null,
-      targetType: 'company',
-      targetId: req.companyId,
-      targetName: req.company?.name ?? null,
-      metadata: { from: req.currentPlan, to: req.requestedPlan, via: 'upgrade_request', requestId },
-    });
+        await this.audit.record({
+          action: 'tenant.plan_change',
+          actorId: actor?.id ?? null,
+          actorEmail: actor?.email ?? null,
+          targetType: 'company',
+          targetId: req.companyId,
+          targetName: req.company?.name ?? null,
+          metadata: { from: req.currentPlan, to: req.requestedPlan, via: 'upgrade_request', requestId },
+        });
+
+        return tx.planUpgradeRequest.findUnique({ where: { id: requestId } });
+      });
+    } catch (err) {
+      // Preserve the operator-facing wording for the ordinary already-decided
+      // case; anything else propagates unchanged.
+      if (err instanceof ConflictException) throw err;
+      throw err;
+    }
 
     // Notify the tenant (best-effort).
     if (req.company?.email) {
@@ -1384,8 +1414,10 @@ export class OwnerService {
       throw new ConflictException(`This request is already ${req.status.toLowerCase()}.`);
     }
 
-    const updated = await this.prisma.planUpgradeRequest.update({
-      where: { id: requestId },
+    // Same claim pattern as approveUpgradeRequest: the conditional UPDATE is
+    // what actually decides, so an Approve racing a Decline cannot both land.
+    const claimed = await this.prisma.planUpgradeRequest.updateMany({
+      where: { id: requestId, status: 'PENDING' },
       data: {
         status: 'REJECTED',
         decisionNote: reason ?? null,
@@ -1394,6 +1426,10 @@ export class OwnerService {
         reviewedAt: new Date(),
       },
     });
+    if (claimed.count === 0) {
+      throw new ConflictException('This request has just been decided by someone else.');
+    }
+    const updated = await this.prisma.planUpgradeRequest.findUnique({ where: { id: requestId } });
 
     await this.prisma.aiEvent.updateMany({
       where: { sourceType: 'plan_upgrade_request', sourceId: requestId },

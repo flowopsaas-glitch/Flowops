@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { claimTransition, claimTransitionOf } from '../common/state-transition';
 
 /**
  * Consolidation / co-load: group multiple "house" shipment files under a single
@@ -19,8 +20,19 @@ export class ConsolidationService {
   /** Promote a file to a consolidation master. */
   async markAsMaster(companyId: string, id: string) {
     const f = await this.getOwned(companyId, id);
+    // Fast, readable failure for the ordinary mistake. The write below is the
+    // one that actually holds: between this check and the update a concurrent
+    // attachHouse could link this file under a master, and a file that is both
+    // a master and a house is a broken consolidation tree.
     if (f.masterFileId) throw new BadRequestException('A house file cannot also be a master. Detach it first.');
-    return this.prisma.shipmentFile.update({ where: { id }, data: { isMaster: true } });
+    return claimTransition(
+      () =>
+        this.prisma.shipmentFile.updateMany({
+          where: { id, companyId, masterFileId: null },
+          data: { isMaster: true },
+        }),
+      'That file became a house file while you were promoting it. Nothing was changed.',
+    ).then(() => this.getOwned(companyId, id));
   }
 
   /** Attach a house file to a master. */
@@ -33,11 +45,37 @@ export class ConsolidationService {
     if (house.masterFileId && house.masterFileId !== masterId) {
       throw new BadRequestException('That file is already consolidated under another master.');
     }
-    // Ensure the master is flagged.
-    if (!master.isMaster) {
-      await this.prisma.shipmentFile.update({ where: { id: masterId }, data: { isMaster: true } });
+    if (master.masterFileId) {
+      throw new BadRequestException('That master is itself consolidated under another master.');
     }
-    await this.prisma.shipmentFile.update({ where: { id: houseId }, data: { masterFileId: masterId } });
+
+    // Both writes land together or not at all: a master flagged with no house
+    // attached, or a house linked to an unflagged master, is a half-built
+    // consolidation. The WHERE clause on the house is the real guard — it
+    // re-checks isMaster and masterFileId at write time, so a concurrent
+    // markAsMaster (or a competing attachHouse) loses instead of silently
+    // producing a file that is both master and house, or a house under two
+    // masters.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.shipmentFile.updateMany({
+        where: { id: masterId, companyId, masterFileId: null },
+        data: { isMaster: true },
+      });
+      await claimTransitionOf(
+        () =>
+          tx.shipmentFile.updateMany({
+            where: {
+              id: houseId,
+              companyId,
+              isMaster: false,
+              OR: [{ masterFileId: null }, { masterFileId: masterId }],
+            },
+            data: { masterFileId: masterId },
+          }),
+        1,
+        'That file changed while you were consolidating it — most likely it was promoted to a master or attached to another master. Nothing was changed.',
+      );
+    });
     return this.getConsolidation(companyId, masterId);
   }
 

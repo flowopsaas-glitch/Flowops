@@ -50,6 +50,24 @@ export class CompaniesService {
     return this.prisma.company.findUniqueOrThrow({ where: { id: companyId } });
   }
 
+  /**
+   * White-label re-branding (custom portal domain, brand name, logo and
+   * colours — i.e. removing FlowOps identity from customer touchpoints) is an
+   * Enterprise capability. The frontend hides it on lower tiers, but hiding is
+   * not enforcement, so it is checked here too.
+   */
+  private async assertWhiteLabelAllowed(companyId: string, safe: unknown) {
+    const touchesWhiteLabel = WHITE_LABEL_FIELDS.some((f) => {
+      const v = (safe as any)[f];
+      return v !== undefined && v !== null && v !== '';
+    });
+    if (touchesWhiteLabel && !(await this.billing.hasFeature(companyId, 'whiteLabel'))) {
+      throw new ForbiddenException(
+        'White-label branding (custom portal domain & branding) is available on the Enterprise plan. Upgrade to unlock it.',
+      );
+    }
+  }
+
   async updateMyCompany(companyId: string, data: any) {
     // Allowlist tenant-editable profile/branding/banking/SLA fields ONLY.
     // Billing/platform-controlled fields (plan, trialEndsAt, trialStartedAt,
@@ -59,16 +77,7 @@ export class CompaniesService {
     // whole body after only stripping id/createdAt/updatedAt.)
     const safe = pickAllowed(data, COMPANY_SELF_EDITABLE_FIELDS);
 
-    // Enforce white-label entitlement: block portal re-branding on plans that
-    // don't include it (frontend also hides this, but it fails open on error).
-    const touchesWhiteLabel = WHITE_LABEL_FIELDS.some(
-      (f) => (safe as any)[f] !== undefined && (safe as any)[f] !== null && (safe as any)[f] !== '',
-    );
-    if (touchesWhiteLabel && !(await this.billing.hasFeature(companyId, 'whiteLabel'))) {
-      throw new ForbiddenException(
-        'White-label branding (custom portal domain & branding) is available on the Enterprise plan. Upgrade to unlock it.',
-      );
-    }
+    await this.assertWhiteLabelAllowed(companyId, safe);
 
     return this.prisma.company.update({ where: { id: companyId }, data: safe });
   }
@@ -139,7 +148,19 @@ export class CompaniesService {
   }
 
   async update(id: string, data: any) {
-    const { id: _id, ...safe } = data;
+    // Same allowlist and same entitlement gate as updateMyCompany.
+    //
+    // These two endpoints are the same operation reached by two routes, and
+    // they were hardened at different times: updateMyCompany got the
+    // allowlist, this one still only stripped `id` and spread the rest.
+    // PATCH /companies/:id is reachable by MANAGER as well as ADMIN, so a
+    // manager could have set plan: 'enterprise', trialEndsAt: null,
+    // isActive: true, priceOverrideZar: 0 or featureOverrides — self-serving
+    // a plan upgrade, an entitlement, or a zeroed bill, with no platform
+    // involvement. It also skipped the white-label check, so the portal
+    // re-branding that updateMyCompany charges for was free via this route.
+    const safe = pickAllowed(data, COMPANY_SELF_EDITABLE_FIELDS);
+    await this.assertWhiteLabelAllowed(id, safe);
     return this.prisma.company.update({ where: { id }, data: safe });
   }
 

@@ -43,11 +43,14 @@ function makeHarness(note: Row) {
         if (where.id !== db.note.id) throw new Error('not found');
         return { ...db.note };
       },
-      // The read path used by getCreditNote.
-      findFirst: async ({ where }: any) =>
+      // The read path used by getCreditNote. A jest.fn so a test can hand it
+      // a STALE snapshot — that is the only way to make a lost-race test
+      // deterministic rather than dependent on promise timing.
+      findFirst: jest.fn(async ({ where }: any) =>
         where.id === db.note.id && where.companyId === db.note.companyId
           ? { ...db.note }
           : null,
+      ),
 
       // Last-write-wins, exactly as Postgres would: whatever value the caller
       // computed is what lands, regardless of what happened in between.
@@ -62,12 +65,29 @@ function makeHarness(note: Row) {
       updateMany: jest.fn(async ({ where, data }: any) => {
         if (where.id !== db.note.id) return { count: 0 };
         if (where.companyId && where.companyId !== db.note.companyId) return { count: 0 };
-        if (where.status && where.status !== db.note.status) return { count: 0 };
+        // status can arrive as a value, { not: ... } or { in: [...] } — the
+        // shapes claimTransition uses for a conditional transition.
+        if (where.status !== undefined) {
+          const s = where.status;
+          const ok =
+            typeof s === 'string'
+              ? db.note.status === s
+              : s?.not !== undefined
+                ? db.note.status !== s.not
+                : Array.isArray(s?.in)
+                  ? s.in.includes(db.note.status)
+                  : true;
+          if (!ok) return { count: 0 };
+        }
         if (where.appliedAmount?.lte !== undefined) {
           if (!(db.note.appliedAmount <= where.appliedAmount.lte)) return { count: 0 };
         }
-        if (data.appliedAmount?.increment !== undefined) {
-          db.note.appliedAmount += data.appliedAmount.increment;
+        for (const [k, v] of Object.entries(data ?? {})) {
+          if (typeof v === 'object' && v !== null && 'increment' in (v as any)) {
+            db.note[k] += (v as any).increment;
+          } else {
+            db.note[k] = v;
+          }
         }
         return { count: 1 };
       }),
@@ -191,5 +211,87 @@ describe('applyCreditNote', () => {
     expect(ok).toBe(5);
     expect(db.note.appliedAmount).toBe(1000);
     expect(db.note.appliedAmount).toBeLessThanOrEqual(db.note.total);
+  });
+});
+
+describe('credit note state transitions', () => {
+  const DRAFT = { ...NOTE, status: 'DRAFT' };
+
+  it('issues a draft note exactly once when two callers race', async () => {
+    // Both read DRAFT, both pass the up-front check. Only one can move it —
+    // otherwise issuedAt is stamped twice and two callers each believe they
+    // were the one that issued it.
+    const { prisma, db } = makeHarness(DRAFT);
+    const svc = service(prisma);
+
+    const results = await Promise.allSettled([
+      svc.issueCreditNote('cn-1', 'co-1'),
+      svc.issueCreditNote('cn-1', 'co-1'),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    expect(db.note.status).toBe('ISSUED');
+  });
+
+  it('refuses to issue a note that is no longer a draft', async () => {
+    const { prisma, db } = makeHarness({ ...NOTE, status: 'ISSUED' });
+    const svc = service(prisma);
+
+    await expect(svc.issueCreditNote('cn-1', 'co-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    // The up-front check still answers with 400 and the real status, so the
+    // caller gets a useful message rather than a bare conflict.
+    expect(db.note.status).toBe('ISSUED');
+  });
+
+  it('cannot void a note that was applied while the void was in flight', async () => {
+    // The decisive case, made deterministic. The void reads the note and sees
+    // ISSUED, so the up-front check passes — but by the time it writes, the
+    // committed row has been APPLIED. Only the WHERE clause can stop it.
+    //
+    // Old behaviour: a plain `update({ status: 'VOID' })` lands regardless,
+    // so credit already given to a customer is silently voided out.
+    const { prisma, db } = makeHarness({ ...NOTE, status: 'APPLIED' });
+    // The read this request performed returned the pre-apply snapshot.
+    prisma.creditNote.findFirst.mockResolvedValueOnce({ ...NOTE, status: 'ISSUED' });
+    const svc = service(prisma);
+
+    await expect(svc.voidCreditNote('cn-1', 'co-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(db.note.status).toBe('APPLIED');
+  });
+
+  it('cannot issue a note that another caller already issued', async () => {
+    // Same stale-read shape, for issuing: the check sees DRAFT, the committed
+    // row is already ISSUED.
+    const { prisma, db } = makeHarness({ ...NOTE, status: 'ISSUED' });
+    prisma.creditNote.findFirst.mockResolvedValueOnce({ ...NOTE, status: 'DRAFT' });
+    const svc = service(prisma);
+
+    await expect(svc.issueCreditNote('cn-1', 'co-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(db.note.status).toBe('ISSUED');
+  });
+
+  it('voids a draft note', async () => {
+    const { prisma, db } = makeHarness({ ...NOTE, status: 'ISSUED' });
+    const svc = service(prisma);
+
+    await svc.voidCreditNote('cn-1', 'co-1');
+    expect(db.note.status).toBe('VOID');
+  });
+
+  it('refuses to void an already-applied note', async () => {
+    const { prisma, db } = makeHarness({ ...NOTE, status: 'APPLIED' });
+    const svc = service(prisma);
+
+    await expect(svc.voidCreditNote('cn-1', 'co-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(db.note.status).toBe('APPLIED');
   });
 });
