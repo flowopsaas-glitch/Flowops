@@ -84,6 +84,7 @@ const RailCoverage = lazy(() => import("./pages/RailCoverage"));
 const RailSources = lazy(() => import("./pages/RailSources"));
 const ShipmentFilePage = lazy(() => import("./pages/forwarding/ShipmentFile"));
 const SadcCorridorsPage = lazy(() => import("./pages/forwarding/SadcCorridors"));
+const GeneralAveragePage = lazy(() => import("./pages/forwarding/GeneralAverage"));
 const AutopilotConsole = lazy(() => import("./pages/enterprise/AutopilotConsole"));
 const SupportAgent = lazy(() => import("./pages/SupportAgent"));
 const CourierManagement = lazy(() => import("./pages/CourierManagement"));
@@ -366,6 +367,9 @@ export default function App() {
               <Route path="/rail/agreement" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailAgreement /></RequireFeature></RequirePermission>} />
               <Route path="/rail/coverage" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailCoverage /></RequireFeature></RequirePermission>} />
               <Route path="/rail/sources" element={<RequirePermission perm="rail"><RequireFeature feature="rail" name="Rail & Intermodal"><RailSources /></RequireFeature></RequirePermission>} />
+              {/* Static segment before /forwarding/:id so "general-average" is
+                  not captured as a shipment file id. */}
+              <Route path="/forwarding/general-average" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><GeneralAveragePage /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ForwardingConsole /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/sadc-corridors" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><SadcCorridorsPage /></RequireFeature></RequirePermission>} />
               <Route path="/forwarding/:id" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="Freight Forwarding"><ShipmentFilePage /></RequireFeature></RequirePermission>} />
