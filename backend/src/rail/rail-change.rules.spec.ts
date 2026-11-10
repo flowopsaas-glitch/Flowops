@@ -150,3 +150,73 @@ describe('initiatorMismatch (a warning, never a block)', () => {
     expect(initiatorMismatch('YARD_OPERATOR', 'TOC')).toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('consequence explanations name the network\'s own infrastructure manager', () => {
+  /**
+   * The `basis` string is the sentence an operator reads to find out who owes
+   * them money. It said "TRIM-caused" unconditionally, so a European operator
+   * was told their refund was caused by an entity with no contractual
+   * relationship to them.
+   *
+   * The DECISIONS below were always network-neutral -- who bears a
+   * cancellation is a property of the access regime, not of Transnet -- so
+   * this block asserts the decisions do not move while the wording does.
+   */
+  const UK = { TRIM: 'Network Rail', TOC: 'Train Operator' };
+
+  it('a network\'s own name appears in the basis, not Transnet\'s', () => {
+    const r = evaluateConsequence({
+      attribution: 'TRIM', hoursBeforeDeparture: 5, replacementAccepted: false, labels: UK,
+    });
+    expect(r.basis).toMatch(/Network Rail/);
+    expect(r.basis).not.toMatch(/TRIM/);
+  });
+
+  it('the DECISION is unchanged by the label — same refund, same bearer', () => {
+    const plain = evaluateConsequence({ attribution: 'TRIM', hoursBeforeDeparture: 5, replacementAccepted: false });
+    const labelled = evaluateConsequence({ attribution: 'TRIM', hoursBeforeDeparture: 5, replacementAccepted: false, labels: UK });
+    expect(labelled.consequence).toBe(plain.consequence);
+    expect(labelled.penaltyApplicable).toBe(plain.penaltyApplicable);
+    expect(labelled.penaltyAgainst).toBe(plain.penaltyAgainst);
+    expect(labelled.penaltyAgainst).toBe('TRIM'); // the key is stable; only the wording moves
+  });
+
+  it('defaults to the Transnet wording when no labels are supplied', () => {
+    // Zero behaviour change for existing tenants: the default IS the old text.
+    const r = evaluateConsequence({ attribution: 'TRIM', hoursBeforeDeparture: 5, replacementAccepted: false });
+    expect(r.basis).toMatch(/TRIM/);
+  });
+
+  it('a partial label map still reads as a sentence for the unlabelled roles', () => {
+    const r = evaluateConsequence({
+      attribution: 'TRIM', hoursBeforeDeparture: 5, replacementAccepted: false, labels: { TRIM: 'Network Rail' },
+    });
+    expect(r.basis).toMatch(/Network Rail/);
+    // TOC was not relabelled, so it falls back rather than rendering a blank.
+    const toc = evaluateConsequence({ attribution: 'TOC', hoursBeforeDeparture: 1, labels: { TRIM: 'Network Rail' } });
+    expect(toc.basis).toMatch(/TOC/);
+  });
+
+  it('the planned-occupation exclusion names the network too', () => {
+    const r = evaluateConsequence({
+      attribution: 'TRIM', hoursBeforeDeparture: 5, isPlannedOccupation: true, replacementAccepted: false, labels: UK,
+    });
+    expect(r.basis).toMatch(/Network Rail/);
+    expect(r.basis).not.toMatch(/TRIM/);
+  });
+
+  it('the initiator mismatch warning uses the network\'s own words for the operator', () => {
+    // I first asserted this sentence should name the infrastructure manager.
+    // It does not, and should not: it says "allocated to the Infrastructure
+    // Manager in Annexure 20b", and "Infrastructure Manager" is already
+    // network-neutral, whereas Annexure 20b is a Transnet document that a UK
+    // network has no equivalent of. Substituting "Network Rail" there would
+    // produce a sentence citing an annexure the reader has never heard of.
+    // The role that IS renamed here is the TOC side.
+    const msg = initiatorMismatch('TOC', 'TRIM', UK);
+    expect(msg).toBeTruthy();
+    expect(msg!).toMatch(/Train Operator/);
+    expect(msg!).not.toMatch(/\bTOC\b/);
+  });
+});

@@ -54,15 +54,66 @@ export class RailTariffService {
 
   // ── reference ──────────────────────────────────────────────────────────────
 
-  private async corridors(): Promise<CorridorIdentity[]> {
-    const rows = await this.prisma.railCorridorNode.findMany({ where: { isActive: true } });
+  /**
+   * This tenant's default network, or null when there is none.
+   *
+   * Never throws: a tenant must be able to price a job even if the network
+   * catalogue is misconfigured, and the fallback (offer unattributed rows) is
+   * the behaviour they had before networks existed.
+   */
+  private async defaultNetworkId(companyId: string): Promise<string | null> {
+    try {
+      // Inside withTenant(), so RLS is active on rail_networks: a tenant sees
+      // the shared presets and their own rows and nothing else.
+      return await this.prisma.withTenant(companyId, async (tx: any) => {
+        const own = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId } });
+        if (own?.id) return own.id;
+        const preset = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId: null } });
+        return preset?.id ?? null;
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Restrict a reference-table read to this tenant's network.
+   *
+   * Rows with a NULL network are still returned: those were seeded before
+   * networks existed, and excluding them would empty the catalogue the moment
+   * this shipped.
+   */
+  private async networkScope(companyId: string | undefined, extra: Record<string, unknown> = {}) {
+    const networkId = companyId ? await this.defaultNetworkId(companyId) : null;
+    return networkId
+      ? { ...extra, OR: [{ networkId }, { networkId: null }] }
+      : extra;
+  }
+
+  private async corridors(companyId?: string): Promise<CorridorIdentity[]> {
+    const rows = await this.prisma.railCorridorNode.findMany({ where: await this.networkScope(companyId, { isActive: true }) });
+    // Serve the catalog ONLY when the table is unseeded -- see ancillaryRows().
+    if (!rows.length) {
+      const seeded = await this.prisma.railCorridorNode.count({ where: { isActive: true } });
+      if (seeded > 0) return [];
+    }
     const source: readonly CorridorIdentity[] = rows.length ? rows : CORRIDOR_CATALOG;
     return source.map((c) => ({ code: c.code, name: c.name, aliases: c.aliases ?? [], workbookRoutes: c.workbookRoutes ?? [] }));
   }
 
   /** Seeded rows win; before the seeder has run, the code catalog (the seed's own source) is served. */
-  private async ancillaryRows(): Promise<AncillaryView[]> {
-    const rows = await this.prisma.railAncillaryServiceCatalog.findMany({ where: { isActive: true }, orderBy: { code: 'asc' } });
+  private async ancillaryRows(companyId?: string): Promise<AncillaryView[]> {
+    const rows = await this.prisma.railAncillaryServiceCatalog.findMany({
+      where: await this.networkScope(companyId, { isActive: true }), orderBy: { code: 'asc' },
+    });
+    // Serve the catalog ONLY when the table is unseeded. Falling back whenever
+    // the scoped query came back empty would hand a tenant on another network
+    // the entire Annexure 40 catalogue the moment their own services loaded --
+    // the scoping would be decoration.
+    if (!rows.length) {
+      const seeded = await this.prisma.railAncillaryServiceCatalog.count({ where: { isActive: true } });
+      if (seeded > 0) return [];
+    }
     if (rows.length) {
       return rows.map((r) => ({
         code: r.code, name: r.name, serviceName: r.serviceName, unitOfMeasure: r.unitOfMeasure, priceStatus: r.priceStatus, unitRateZar: r.unitRateZar, serviceNumber: r.serviceNumber,
@@ -79,16 +130,16 @@ export class RailTariffService {
 
   async listAncillary(companyId: string): Promise<AncillaryView[]> {
     await this.assertEntitled(companyId);
-    return this.ancillaryRows();
+    return this.ancillaryRows(companyId);
   }
 
   /** What can and cannot be priced today, per corridor. The honest answer is "nothing" until rates are loaded. */
   async status(companyId: string) {
     await this.assertEntitled(companyId);
     const [corridors, schedules, ancillary] = await Promise.all([
-      this.corridors(),
-      this.prisma.railTariffSchedule.findMany({ where: { isActive: true }, orderBy: { financialYear: 'asc' } }),
-      this.ancillaryRows(),
+      this.corridors(companyId),
+      this.prisma.railTariffSchedule.findMany({ where: await this.networkScope(companyId, { isActive: true }), orderBy: { financialYear: 'asc' } }),
+      this.ancillaryRows(companyId),
     ]);
     const rows = corridors.map((c) => {
       const mine = schedules.filter((s) => s.corridorCode === c.code);
@@ -139,10 +190,10 @@ export class RailTariffService {
     }
 
     const schedules = corridor
-      ? await this.prisma.railTariffSchedule.findMany({ where: { corridorCode: corridor.code, isActive: true } })
+      ? await this.prisma.railTariffSchedule.findMany({ where: await this.networkScope(companyId, { corridorCode: corridor.code, isActive: true }) })
       : [];
     const requestedAncillary = (dto.ancillary ?? []).map((a) => ({ code: a.code, quantity: a.quantity }));
-    const ancillaryCatalog = requestedAncillary.length ? await this.ancillaryRows() : [];
+    const ancillaryCatalog = requestedAncillary.length ? await this.ancillaryRows(companyId) : [];
 
     const request: TariffRequest = {
       corridorCode: corridor?.code ?? null, financialYear, distanceKm: dto.distanceKm, includeEmptyReturn: !!dto.includeEmptyReturn, allowEscalation: !!dto.allowEscalation,

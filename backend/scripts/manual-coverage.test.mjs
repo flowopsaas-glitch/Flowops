@@ -88,6 +88,12 @@ const REQUIRED = [
   'waybills', 'collections', 'dispatch', 'manifests', 'pod-deliveries',
   'returns', 'clients', 'quotes', 'invoices', 'cod', 'accounting',
   'forwarding', 'general-average', 'landed-cost', 'hs-code',
+  // Written 2026-11-10. These eight were shipped, routed and tenant-reachable
+  // with no section at all -- the manual had gone stale the usual way. They are
+  // listed here so that deleting a section fails the build, which is what NO
+  // ROT means. Undocumented-total is now 0.
+  'disbursements', 'claims', 'warehouse', 'carriers', 'delivery-notes',
+  'esg', 'digital-payments', 'credit-control',
 ];
 
 function appRoutes() {

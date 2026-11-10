@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
 import { RailHandshakeService } from './rail-handshake.service';
+import { RailNetworkService } from './rail-network.service';
 import {
   RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, recordRailAudit,
 } from './rail-audit';
@@ -12,8 +13,8 @@ import { AllocatePartyDto, CreateChangeRequestDto, PreviewChangeRequestDto, Prop
 import { CANCELLATION_CODE_CATALOG, CancellationCodeEntry } from './catalog/cancellation-codes.catalog';
 import { CANCELLATION_INITIATORS, CANCELLATION_PROCESS_STEPS } from './catalog/cancellation-process.catalog';
 import {
-  RAIL_FLEX_WINDOWS, acknowledgementState, allowedAllocations, attributionFromParty, canChange, classifyNotice, evaluateConsequence,
-  initiatorMismatch, noticeLateMinutes, responsiblePartyFor,
+  RAIL_FLEX_WINDOWS, RoleLabels, TRANSNET_ROLE_LABELS, acknowledgementState, allowedAllocations, attributionFromParty,
+  canChange, classifyNotice, evaluateConsequence, initiatorMismatch, noticeLateMinutes, responsiblePartyFor,
 } from './rail-change.rules';
 
 /** A cancellation code as the API returns it. */
@@ -36,6 +37,7 @@ export class RailChangeService {
     private readonly billing: BillingService,
     private readonly audit: AuditService,
     private readonly handshake: RailHandshakeService,
+    private readonly networks: RailNetworkService,
   ) {}
 
   private async assertEntitled(companyId: string): Promise<void> {
@@ -60,12 +62,52 @@ export class RailChangeService {
   /** Seeded rows win; before the seeder has run, the code catalog (the seed's own source) is served. */
   async listCodes(companyId: string): Promise<CodeView[]> {
     await this.assertEntitled(companyId);
-    return this.codes();
+    return this.codes(companyId);
   }
 
-  private async codes(): Promise<CodeView[]> {
-    const rows = await this.prisma.railCancellationCode.findMany({ where: { isActive: true }, orderBy: { sourceRow: 'asc' } });
-    return rows.length ? rows.map((r) => this.toCodeView(r, false)) : CANCELLATION_CODE_CATALOG.map((c) => this.toCodeView(c, true));
+  /**
+   * The reason codes this tenant may pick from.
+   *
+   * Annexure 20b is a Transnet document, so its 82 rows are Transnet's. A
+   * tenant on another network that has not loaded their own sees the
+   * unattributed rows rather than Transnet's -- unless they have none, in
+   * which case the catalog is served exactly as before.
+   */
+  private async codes(companyId?: string): Promise<CodeView[]> {
+    const scope = await this.referenceScope(companyId);
+    const rows = await this.prisma.railCancellationCode.findMany({ where: { ...scope, isActive: true }, orderBy: { sourceRow: 'asc' } });
+    if (rows.length) return rows.map((r) => this.toCodeView(r, false));
+
+    // Serve the catalog ONLY when the table is unseeded. Falling back whenever
+    // the scoped query came back empty would hand a tenant on another network
+    // the entire Transnet annexure the moment their own codes loaded -- the
+    // scoping would be decoration.
+    const seeded = await this.prisma.railCancellationCode.count({ where: { isActive: true } });
+    return seeded === 0 ? CANCELLATION_CODE_CATALOG.map((c) => this.toCodeView(c, true)) : [];
+  }
+
+  /**
+   * Restrict a reference-table read to this tenant's network.
+   *
+   * Rows with a NULL network are still returned: those were seeded before
+   * networks existed, and excluding them would empty the catalogue the moment
+   * this shipped.
+   */
+  private async referenceScope(companyId?: string) {
+    if (!companyId) return {};
+    try {
+      // Inside withTenant(), so RLS is active on rail_networks: a tenant sees
+      // the shared presets and their own rows and nothing else.
+      const networkId = await this.prisma.withTenant(companyId, async (tx: any) => {
+        const own = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId } });
+        if (own?.id) return own.id;
+        const preset = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId: null } });
+        return preset?.id ?? null;
+      });
+      return networkId ? { OR: [{ networkId }, { networkId: null }] } : {};
+    } catch {
+      return {};
+    }
   }
 
   async windows(companyId: string) {
@@ -82,8 +124,32 @@ export class RailChangeService {
     return d;
   }
 
-  private async derive(dto: PreviewChangeRequestDto, now: Date) {
-    const code = (await this.codes()).find((c) => c.code === dto.cancellationCode);
+  /**
+   * The words this tenant's network uses for each role.
+   *
+   * Resolved once per request rather than per call site, and it never throws:
+   * a network that cannot be read yields the Transnet wording, because an
+   * operator asking who owes them a refund must get an answer even if the
+   * catalogue is misconfigured.
+   */
+  private async roleLabelsFor(companyId?: string): Promise<RoleLabels> {
+    try {
+      const network = await this.networks.defaultNetwork(companyId ?? null);
+      const raw = network?.roleLabels as Record<string, unknown> | null | undefined;
+      if (!raw || typeof raw !== 'object') return {};
+      const out: RoleLabels = {};
+      for (const key of ['TRIM', 'TOC', 'FORCE_MAJEURE', 'UNDETERMINED', 'YARD_OPERATOR', 'PORT_TERMINAL_OPERATOR', 'PRASA_OTHER_IM'] as const) {
+        const v = raw[key];
+        if (typeof v === 'string' && v.trim() !== '') out[key] = v;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  private async derive(dto: PreviewChangeRequestDto, now: Date, companyId?: string) {
+    const code = (await this.codes(companyId)).find((c) => c.code === dto.cancellationCode);
     if (!code) throw new BadRequestException(`Unknown cancellation code "${dto.cancellationCode}" (Annexure 20b).`);
     const originalDeparture = this.toDate(dto.originalDeparture, 'originalDeparture');
     const proposedDeparture = this.toDate(dto.proposedDeparture, 'proposedDeparture');
@@ -91,17 +157,25 @@ export class RailChangeService {
     if (eventOccurredAt && eventOccurredAt.getTime() > now.getTime() + 5 * 60_000) throw new BadRequestException('eventOccurredAt cannot be in the future.');
 
     const attribution = attributionFromParty(code.responsibleParty);
+    // The wording a network uses for each role, resolved once per derive().
+    // Calls into the database are kept out of the pure rules module, so the
+    // rules stay testable and this stays a single read per request.
+    const labels = await this.roleLabelsFor(companyId);
     const notice = classifyNotice(now, originalDeparture);
     const consequence = evaluateConsequence({
-      attribution, hoursBeforeDeparture: notice.hoursBeforeDeparture, isPlannedOccupation: !!dto.isPlannedOccupation, replacementAccepted: undefined,
+      attribution, hoursBeforeDeparture: notice.hoursBeforeDeparture, isPlannedOccupation: !!dto.isPlannedOccupation, replacementAccepted: undefined, labels,
     });
     const warnings: string[] = [];
-    const mismatch = initiatorMismatch(dto.initiatedBy, attribution);
+    const mismatch = initiatorMismatch(dto.initiatedBy, attribution, labels);
     if (mismatch) warnings.push(mismatch);
     const late = noticeLateMinutes(eventOccurredAt, now);
     if (late !== null && late > 0) warnings.push(`Notice is ${late} minute(s) later than the ${RAIL_FLEX_WINDOWS.noticeWithinMinutes}-minute window in Annexure 20a.`);
     if (notice.noticeBand === 'UNKNOWN') warnings.push('No departure time was given, so the notice window and the 72-hour consequence cannot be determined.');
-    if (dto.isPlannedOccupation && attribution !== 'TRIM') warnings.push('"Planned occupation" only affects TRIM-caused cancellations.');
+    if (dto.isPlannedOccupation && attribution !== 'TRIM') {
+      // Falls back to Transnet's word for the role, so an unconfigured tenant
+      // reads exactly the sentence they read before this change.
+      warnings.push(`"Planned occupation" only affects ${labels.TRIM ?? TRANSNET_ROLE_LABELS.TRIM}-caused cancellations.`);
+    }
     if (dto.kind !== 'CANCEL' && !proposedDeparture) warnings.push('A reschedule / re-plan normally names the proposed new departure.');
     return { code, attribution, originalDeparture, proposedDeparture, eventOccurredAt, notice, consequence, late, warnings };
   }
@@ -109,7 +183,7 @@ export class RailChangeService {
   /** Nothing is saved. */
   async preview(companyId: string, dto: PreviewChangeRequestDto, now = new Date()) {
     await this.assertEntitled(companyId);
-    const d = await this.derive(dto, now);
+    const d = await this.derive(dto, now, companyId);
     return {
       code: { code: d.code.code, reason: d.code.reason, sourceText: d.code.sourceText, responsibleParty: d.code.responsibleParty, possibleParties: d.code.possibleParties },
       attribution: d.attribution,
@@ -156,7 +230,7 @@ export class RailChangeService {
 
   async create(companyId: string, dto: CreateChangeRequestDto, actor: RailActor, now = new Date()) {
     await this.assertEntitled(companyId);
-    const d = await this.derive(dto, now);
+    const d = await this.derive(dto, now, companyId);
 
     // Everything the request points at must belong to THIS tenant.
     if (dto.consignmentId && !(await this.prisma.railConsignment.findFirst({ where: { id: dto.consignmentId, companyId }, select: { id: true } }))) {
@@ -282,7 +356,7 @@ export class RailChangeService {
       throw new BadRequestException(`Annexure 20b already allocates "${req.cancellationReason}" — only a "could be …" reason is allocated at the Clearinghouse.`);
     }
     if (req.status === 'CLOSED') throw new BadRequestException('A closed change request cannot be re-allocated.');
-    const code = (await this.codes()).find((c) => c.code === req.cancellationCode);
+    const code = (await this.codes(companyId)).find((c) => c.code === req.cancellationCode);
     const allowed = allowedAllocations(code?.possibleParties ?? []);
     if (!allowed.includes(dto.attribution)) {
       throw new BadRequestException(`Annexure 20b allows ${allowed.join(' / ') || 'no party'} for "${req.cancellationReason}", not ${dto.attribution}.`);

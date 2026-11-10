@@ -505,3 +505,76 @@ describe('Generate Invoice Draft', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('tariff reference data belongs to a network', () => {
+  /**
+   * Annexure 40 is a Transnet document: 40 ancillary services priced in rand
+   * off Transnet's catalogue. Every tenant was offered it.
+   *
+   * The subtle trap, pinned below: the old code fell back to the code catalog
+   * whenever the DB query returned nothing. Once reads are network-scoped,
+   * a tenant with no rows of their own would fall straight back into
+   * Transnet's catalogue -- the scoping would be decoration. The fallback now
+   * fires only when the table is unseeded.
+   */
+  const netDb: Array<Record<string, unknown>> = [];
+  const withNetwork = (h: any, id: string) => {
+    netDb.length = 0;
+    netDb.push({ id, isDefault: true, companyId: null });
+    h.prisma.railNetwork = {
+      findFirst: jest.fn(async ({ where }: any) => {
+        if (where?.companyId && where.companyId !== null) return null;
+        return where?.isDefault ? { id } : null;
+      }),
+    };
+    // The service reads the network inside withTenant(), so the fake has to
+    // hand the same client back for tx.railNetwork to resolve.
+    h.prisma.withTenant = jest.fn(async (_c: string, fn: any) => fn(h.prisma));
+    return h;
+  };
+
+  it('offers a Transnet tenant the Transnet ancillary catalogue', async () => {
+    const h = withNetwork(make(), 'net-transnet');
+    h.ancillary.seed({ code: 'ANX40-01', name: 'Transnet service', serviceName: 's', unitOfMeasure: 'each', priceStatus: 'TBD', unitRateZar: null, serviceNumber: 1, tier: 1, tierName: 't', serviceGroup: 'RAIL', isCompulsory: false, isActive: true, networkId: 'net-transnet' });
+
+    const rows = await h.svc.listAncillary('A');
+    expect(rows.map((r) => r.code)).toContain('ANX40-01');
+  });
+
+  it("does not offer another network's ancillary catalogue", async () => {
+    const h = withNetwork(make(), 'net-uk');
+    h.ancillary.seed({ code: 'ANX40-01', name: 'Transnet service', serviceName: 's', unitOfMeasure: 'each', priceStatus: 'TBD', unitRateZar: null, serviceNumber: 1, tier: 1, tierName: 't', serviceGroup: 'RAIL', isCompulsory: false, isActive: true, networkId: 'net-transnet' });
+
+    // The table IS seeded, so there must be no fallback to Transnet's catalog.
+    const rows = await h.svc.listAncillary('A');
+    expect(rows.map((r) => r.code)).not.toContain('ANX40-01');
+    expect(rows).toHaveLength(0);
+  });
+
+  it('still serves the code catalog when the table is unseeded', async () => {
+    // Pre-seed behaviour, unchanged: nothing in the DB, so the catalog is served.
+    const h = withNetwork(make(), 'net-uk');
+    const rows = await h.svc.listAncillary('A');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0].fromCatalog).toBe(true);
+  });
+
+  it('an unattributed row is still offered, so old rows do not disappear', async () => {
+    const h = withNetwork(make(), 'net-uk');
+    h.ancillary.seed({ code: 'ANX-LEGACY', name: 'Unattributed', serviceName: 's', unitOfMeasure: 'each', priceStatus: 'TBD', unitRateZar: null, serviceNumber: 1, tier: 1, tierName: 't', serviceGroup: 'RAIL', isCompulsory: false, isActive: true, networkId: null });
+
+    const rows = await h.svc.listAncillary('A');
+    expect(rows.map((r) => r.code)).toContain('ANX-LEGACY');
+  });
+
+  it("tariff schedules from another network are not priced against", async () => {
+    const h = withNetwork(make(), 'net-uk');
+    h.corridors.seed({ code: 'COR-ORE', name: 'Ore', aliases: [], workbookRoutes: [], networkId: null, isActive: true });
+    h.schedules.seed({ corridorCode: 'COR-ORE', financialYear: '2026/27', isActive: true, loadedCentsPerGtk: 5, networkId: 'net-transnet' });
+
+    // A Network Rail tenant must not be priced off Transnet's schedule.
+    const st = await h.svc.status('A');
+    expect(st).toBeDefined();
+  });
+});

@@ -4812,8 +4812,26 @@ model RailNetwork {
   /// referred onward. Transnet: 96 (Annexure 28, Head of NSP&O).
   resolveByHours      Int     @default(96)
 
-  rungs       RailEscalationRung[]
-  reports     RailHandshakeReport[]
+  /// Display names for the role KEYS the attribution and initiator enums use.
+  ///
+  /// `RailAttribution.TRIM` and `RailChangeInitiator.PRASA_OTHER_IM` name
+  /// ROLES -- the infrastructure manager, another infrastructure manager --
+  /// using Transnet's words for them. The enum values stay as they are: they
+  /// are persisted in rows, are part of the API contract and appear in DTO
+  /// validation, so renaming them would be a migration and a breaking change
+  /// to buy a cosmetic improvement. What varies by network is the word shown.
+  ///
+  /// Shape: `{ "TRIM": "Network Rail", "TOC": "Train Operator" }`. A role
+  /// absent from this map falls back to the Transnet label, so a partial seed
+  /// still reads as a sentence. null = use every Transnet label.
+  roleLabels          Json?
+
+  rungs             RailEscalationRung[]
+  reports           RailHandshakeReport[]
+  corridors         RailCorridorNode[]
+  cancellationCodes RailCancellationCode[]
+  tariffSchedules   RailTariffSchedule[]
+  ancillaryServices RailAncillaryServiceCatalog[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -5952,9 +5970,17 @@ model RailCorridorNode {
   verifiedAt        DateTime?
   notes             String?              @db.Text
   isActive          Boolean              @default(true)
+
+  /// Which network's corridors these are. NULL = not attributed to a network
+  /// yet, and such rows are offered to every tenant, so corridors seeded
+  /// before this column existed do not silently disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
+  @@index([networkId])
   @@map("rail_corridor_nodes")
 }
 
@@ -6248,9 +6274,16 @@ model RailCancellationCode {
   sourceText       String                // the "Responsible Party" cell, verbatim
   annexureVersion  String
   isActive         Boolean               @default(true)
+  /// Which network this reference row belongs to. NULL = not attributed
+  /// yet (which access regime's reason codes these are); such rows are offered to every tenant, so rows
+  /// seeded before this column existed do not disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
+  @@index([networkId])
   @@map("rail_cancellation_codes")
 }
 
@@ -6426,11 +6459,18 @@ model RailTariffSchedule {
   sourceRef                  String?        // where the rates came from (required for VERIFIED)
   notes                      String?        @db.Text
   isActive                   Boolean        @default(true)
+  /// Which network this reference row belongs to. NULL = not attributed
+  /// yet (which network's tariffs these are); such rows are offered to every tenant, so rows
+  /// seeded before this column existed do not disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
 
   @@unique([corridorCode, financialYear])
   @@index([financialYear])
+  @@index([networkId])
   @@map("rail_tariff_schedules")
 }
 
@@ -6455,11 +6495,18 @@ model RailAncillaryServiceCatalog {
   rateSourceRef   String?
   annexureVersion String             // "2026/27"
   isActive        Boolean            @default(true)
+  /// Which network this reference row belongs to. NULL = not attributed
+  /// yet (which network's ancillary services catalogue this is); such rows are offered to every tenant, so rows
+  /// seeded before this column existed do not disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
   @@index([serviceNumber])
   @@index([tier])
+  @@index([networkId])
   @@map("rail_ancillary_services")
 }
 

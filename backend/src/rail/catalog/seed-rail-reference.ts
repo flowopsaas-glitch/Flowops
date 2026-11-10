@@ -46,9 +46,34 @@ export interface SeedSummary {
 
 type Db = Pick<PrismaClient, 'railCorridorNode' | 'railYardSpec' | 'railCancellationCode' | 'railAncillaryServiceCatalog' | 'railTariffSchedule'>;
 
+/**
+ * The network code every catalog in this folder is transcribed from.
+ *
+ * These files are Transnet source documents -- Annexure 20b, Annexure 40, the
+ * V4 corridor register -- so every row they seed belongs to Transnet's
+ * network. A tenant on another network must not be offered them.
+ */
+const CATALOG_NETWORK_CODE = 'transnet';
+
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } = {}): Promise<SeedSummary> {
+/**
+ * Network ids by code, resolved by the CALLER.
+ *
+ * The seeder does not read rail_networks itself. It is an operator job with
+ * no tenant in scope, and rail_networks is a tenant table, so a read here
+ * would be an unscoped one. Resolving in the caller keeps the seeder free of
+ * tenant-table access and keeps the reference catalogs seedable in isolation.
+ */
+export interface SeedNetworkIds {
+  /** code -> id. A catalog code absent from this map seeds as NULL. */
+  byCode: Readonly<Record<string, string | null>>;
+}
+
+export async function seedRailReference(
+  prisma: Db,
+  opts: { dryRun?: boolean; networks?: SeedNetworkIds } = {},
+): Promise<SeedSummary> {
   const dryRun = opts.dryRun ?? false;
 
   // 1) Validate everything first — all or nothing.
@@ -71,10 +96,19 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
   const tables: SeedTableSummary[] = [];
 
   // 2) Corridors
+  // Resolve each corridor's network code once. A code with no matching network
+  // is seeded with NULL deliberately: an unseeded catalogue must not block a
+  // seed, and a NULL corridor is offered to every tenant rather than to none.
+  const networkIdByCode = new Map<string, string | null>(Object.entries(opts.networks?.byCode ?? {}));
+
+  /** One lookup per code, cached: the whole catalog is transcribed from one network. */
+  const networkIdFor = (code: string): string | null => networkIdByCode.get(code) ?? null;
+
   const corridors: SeedTableSummary = { table: 'rail_corridor_nodes', catalogRows: CORRIDOR_CATALOG.length, created: 0, updated: 0, unchanged: 0, skippedVerified: 0 };
   for (const c of CORRIDOR_CATALOG) {
     const data = {
       name: c.name, aliases: c.aliases, workbookRoutes: c.workbookRoutes, sortOrder: c.sortOrder,
+      networkId: networkIdByCode.get(c.networkCode) ?? null,
       gauge: c.gauge, electrification: c.electrification, maxAxleLoadTonnes: c.maxAxleLoadTonnes,
       vehicleProfile: c.vehicleProfile, maxTrainLengthM: c.maxTrainLengthM, contacts: c.contacts as never,
       dataStatus: c.dataStatus, sourceRef: c.sourceRef ?? null, verifiedBy: c.verifiedBy ?? null, notes: c.notes || null,
@@ -91,6 +125,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
       && existing.maxAxleLoadTonnes === data.maxAxleLoadTonnes && existing.vehicleProfile === data.vehicleProfile
       && existing.maxTrainLengthM === data.maxTrainLengthM && sameJson(existing.contacts, data.contacts) && existing.dataStatus === data.dataStatus
       && existing.sourceRef === data.sourceRef && (existing.notes ?? null) === data.notes
+      && (existing.networkId ?? null) === data.networkId
     ) {
       corridors.unchanged += 1;
     } else {
@@ -128,6 +163,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
     const data = {
       sourceRow: c.sourceRow, reason: c.reason, responsibleParty: c.responsibleParty, possibleParties: [...c.possibleParties],
       sourceText: c.sourceText, annexureVersion: ANNEXURE_20B_VERSION,
+      networkId: networkIdFor(CATALOG_NETWORK_CODE),
     };
     const existing = await prisma.railCancellationCode.findUnique({ where: { code: c.code } });
     if (!existing) {
@@ -158,6 +194,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
       serviceNumber: a.serviceNumber, serviceName: a.serviceName, name: a.name, sourceLabel: a.sourceLabel ?? null, section: a.section ?? null, description: a.description ?? null,
       unitOfMeasure: a.unitOfMeasure, tier: a.tier, tierName: a.tierName, serviceGroup: a.group, isCompulsory: a.isCompulsory, priceStatus: a.priceStatus,
       unitRateZar: a.unitRateZar ?? null, rateSourceRef: a.rateSourceRef ?? null, annexureVersion: ANNEXURE_40_VERSION,
+      networkId: networkIdFor(CATALOG_NETWORK_CODE),
     };
     const existing = await prisma.railAncillaryServiceCatalog.findUnique({ where: { code: a.code } });
     if (!existing) {
@@ -197,6 +234,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
       electricKwhPer1000Gtk: t.electricKwhPer1000Gtk ?? null, dieselPricePerLitreZar: t.dieselPricePerLitreZar ?? null,
       electricityPricePerKwhZar: t.electricityPricePerKwhZar ?? null, overloadPenaltyPerTonneZar: t.overloadPenaltyPerTonneZar ?? null,
       dataStatus: t.dataStatus, sourceRef: t.sourceRef ?? null, notes: t.notes ?? null,
+      networkId: networkIdFor(CATALOG_NETWORK_CODE),
     };
     const existing = await prisma.railTariffSchedule.findFirst({ where: { corridorCode: t.corridorCode, financialYear: t.financialYear } });
     if (!existing) {

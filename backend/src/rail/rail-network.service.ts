@@ -122,6 +122,57 @@ export class RailNetworkService {
   }
 
   /**
+   * What each ROLE KEY is called on Transnet's network.
+   *
+   * These are the fallback, and unlike the ladder they are also the defaults
+   * for every network: a network that labels only some roles still reads as a
+   * sentence for the rest, because an operator reading "planned occupation
+   * only affects SOMETHING-caused cancellations" cannot act on it.
+   */
+  static readonly TRANSNET_ROLE_LABELS: Readonly<Record<string, string>> = {
+    TRIM: 'Transnet Rail Infrastructure Manager (TRIM)',
+    TOC: 'Train Operating Company (TOC)',
+    FORCE_MAJEURE: 'Force majeure',
+    UNDETERMINED: 'Undetermined - decided at the Clearinghouse',
+    YARD_OPERATOR: 'Yard operator',
+    PORT_TERMINAL_OPERATOR: 'Port terminal operator',
+    PRASA_OTHER_IM: 'PRASA or another infrastructure manager',
+  };
+
+  /**
+   * The word to show an operator for a role key, on a given network.
+   *
+   * Falls back to the Transnet label, and failing that to the key itself.
+   * Showing a raw enum value is worse than showing Transnet's name, and
+   * showing Transnet's name to a European operator is its own small wrong --
+   * but inventing a name is not an option, so the key is the honest last
+   * resort.
+   */
+  async roleLabel(
+    networkId: string | null | undefined,
+    role: string,
+    companyId?: string | null,
+  ): Promise<string> {
+    // Scoped, not merely filtered by id. A tenant may define their own
+    // network, and looking one up by primary key without a tenant in the
+    // WHERE clause reads another tenant's row just as happily as this
+    // tenant's -- the id is not a permission. With no companyId the lookup
+    // deliberately matches only the shared presets, which is the safe failure.
+    const network = networkId
+      ? await this.prisma.railNetwork.findFirst({
+          where: {
+            id: networkId,
+            ...(companyId ? { OR: [{ companyId }, { companyId: null }] } : { companyId: null }),
+          },
+        })
+      : null;
+    const labels = (network?.roleLabels ?? null) as Record<string, unknown> | null;
+    const own = labels && typeof labels === 'object' ? labels[role] : null;
+    if (typeof own === 'string' && own.trim() !== '') return own;
+    return RailNetworkService.TRANSNET_ROLE_LABELS[role] ?? role;
+  }
+
+  /**
    * The network assumed when a report does not name one.
    *
    * Tenant-aware, and deliberately in two steps. A tenant may define its own
