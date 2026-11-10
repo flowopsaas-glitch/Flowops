@@ -6283,6 +6283,7 @@ model RailCancellationCode {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
+  @@index([networkId])
   @@map("rail_cancellation_codes")
 }
 
@@ -6469,6 +6470,7 @@ model RailTariffSchedule {
 
   @@unique([corridorCode, financialYear])
   @@index([financialYear])
+  @@index([networkId])
   @@map("rail_tariff_schedules")
 }
 
@@ -6504,6 +6506,7 @@ model RailAncillaryServiceCatalog {
 
   @@index([serviceNumber])
   @@index([tier])
+  @@index([networkId])
   @@map("rail_ancillary_services")
 }
 
