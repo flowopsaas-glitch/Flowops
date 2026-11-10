@@ -82,7 +82,10 @@ CREATE TABLE IF NOT EXISTS "rail_escalation_rungs" (
   "legacyStage"  "EscalationStage",
   "createdAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"    TIMESTAMP(3) NOT NULL,
-  CONSTRAINT "rail_escalation_rungs_pkey" PRIMARY KEY ("id")
+  CONSTRAINT "rail_escalation_rungs_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "rail_escalation_rungs_networkId_fkey"
+    FOREIGN KEY ("networkId") REFERENCES "rail_networks"("id")
+    ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "rail_escalation_rungs_networkId_code_key"

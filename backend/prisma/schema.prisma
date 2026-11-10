@@ -4912,6 +4912,7 @@ model RailHandshakeReport {
   @@unique([reportNumber, companyId])
   @@index([companyId, status])
   @@index([companyId, reportDate])
+  @@index([networkId])
   @@map("rail_handshake_reports")
 }
 
@@ -4983,6 +4984,7 @@ model RailHandshakeDeviation {
   @@index([reportId])
   @@index([status])
   @@index([escalationStage])
+  @@index([escalationRungId])
   @@map("rail_handshake_deviations")
 }
 
