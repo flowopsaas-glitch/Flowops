@@ -7,6 +7,7 @@ import {
   CreateSalespersonDto, GenerateCommissionDto, UpdateSalespersonDto,
 } from './dto/commission.dto';
 import { Money } from '../common/money.util';
+import { claimTransition } from '../common/state-transition';
 
 // Delegates to the shared integer-cents Money util so all accounting math is
 // exact to the cent (no float drift in notes, commissions, statements).
@@ -68,15 +69,32 @@ export class AccountingService {
       await this.prisma.creditNoteItem.deleteMany({ where: { creditNoteId: id } });
       patch.items = { create: this.lineItems(dto.items) };
     }
-    return this.prisma.creditNote.update({ where: { id }, data: patch, include: { items: true } });
+    // The edit is multi-step (replace line items, then update the note), so
+    // the claim and the edit are one transaction: without it a crash between
+    // them leaves a note whose items were deleted but never recreated.
+    return this.prisma.$transaction(async (tx) => {
+      await claimTransition(
+        () => tx.creditNote.updateMany({ where: { id, companyId, status: 'DRAFT' }, data: { status: 'DRAFT' } }),
+        'Credit note is no longer a draft — it may have just been issued.',
+      );
+      await tx.creditNote.update({ where: { id }, data: patch, include: { items: true } });
+      return tx.creditNote.findUniqueOrThrow({ where: { id }, include: { items: true } });
+    });
   }
 
   async issueCreditNote(id: string, companyId: string) {
     const cn = await this.getCreditNote(id, companyId);
     if (cn.status !== 'DRAFT') throw new BadRequestException(`Cannot issue a ${cn.status} credit note`);
-    return this.prisma.creditNote.update({
-      where: { id }, data: { status: 'ISSUED', issuedAt: new Date() }, include: { items: true },
-    });
+    // Issuing twice would re-stamp issuedAt and, worse, let two callers each
+    // believe they were the one that moved it. The WHERE is the real guard.
+    await claimTransition(
+      () => this.prisma.creditNote.updateMany({
+        where: { id, companyId, status: 'DRAFT' },
+        data: { status: 'ISSUED', issuedAt: new Date() },
+      }),
+      'Credit note was issued by someone else.',
+    );
+    return this.prisma.creditNote.findUniqueOrThrow({ where: { id }, include: { items: true } });
   }
 
   /** Offset an issued credit note against an invoice (records appliedAmount). */
@@ -150,7 +168,14 @@ export class AccountingService {
   async voidCreditNote(id: string, companyId: string) {
     const cn = await this.getCreditNote(id, companyId);
     if (cn.status === 'APPLIED') throw new BadRequestException('Cannot void an already-applied credit note');
-    return this.prisma.creditNote.update({ where: { id }, data: { status: 'VOID' }, include: { items: true } });
+    await claimTransition(
+      () => this.prisma.creditNote.updateMany({
+        where: { id, companyId, status: { not: 'APPLIED' } },
+        data: { status: 'VOID' },
+      }),
+      'Credit note was applied by someone else and can no longer be voided.',
+    );
+    return this.prisma.creditNote.findUniqueOrThrow({ where: { id }, include: { items: true } });
   }
 
   // ════════════════════════════ DEBIT NOTES ════════════════════════════
@@ -204,23 +229,41 @@ export class AccountingService {
       await this.prisma.debitNoteItem.deleteMany({ where: { debitNoteId: id } });
       patch.items = { create: this.lineItems(dto.items) };
     }
-    return this.prisma.debitNote.update({ where: { id }, data: patch, include: { items: true } });
+    return this.prisma.$transaction(async (tx) => {
+      await claimTransition(
+        () => tx.debitNote.updateMany({ where: { id, companyId, status: 'DRAFT' }, data: { status: 'DRAFT' } }),
+        'Debit note is no longer a draft — it may have just been issued.',
+      );
+      await tx.debitNote.update({ where: { id }, data: patch, include: { items: true } });
+      return tx.debitNote.findUniqueOrThrow({ where: { id }, include: { items: true } });
+    });
   }
 
   async issueDebitNote(id: string, companyId: string) {
     const dn = await this.getDebitNote(id, companyId);
     if (dn.status !== 'DRAFT') throw new BadRequestException(`Cannot issue a ${dn.status} debit note`);
-    return this.prisma.debitNote.update({
-      where: { id }, data: { status: 'ISSUED', issuedAt: new Date() }, include: { items: true },
-    });
+    await claimTransition(
+      () => this.prisma.debitNote.updateMany({
+        where: { id, companyId, status: 'DRAFT' },
+        data: { status: 'ISSUED', issuedAt: new Date() },
+      }),
+      'Debit note was issued by someone else.',
+    );
+    return this.prisma.debitNote.findUniqueOrThrow({ where: { id }, include: { items: true } });
   }
 
   async settleDebitNote(id: string, companyId: string) {
     const dn = await this.getDebitNote(id, companyId);
     if (dn.status !== 'ISSUED') throw new BadRequestException('Only ISSUED debit notes can be settled');
-    return this.prisma.debitNote.update({
-      where: { id }, data: { status: 'SETTLED', settledAt: new Date() }, include: { items: true },
-    });
+    // Settling twice would post the settlement twice against the same note.
+    await claimTransition(
+      () => this.prisma.debitNote.updateMany({
+        where: { id, companyId, status: 'ISSUED' },
+        data: { status: 'SETTLED', settledAt: new Date() },
+      }),
+      'Debit note was settled by someone else.',
+    );
+    return this.prisma.debitNote.findUniqueOrThrow({ where: { id }, include: { items: true } });
   }
 
   async voidDebitNote(id: string, companyId: string) {

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { claimTransition } from '../common/state-transition';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto, ConfirmPaymentDto } from './dto/digital-payment.dto';
 import { randomBytes } from 'crypto';
@@ -43,14 +44,14 @@ export class DigitalPaymentsService {
       throw new BadRequestException('Payment already confirmed');
     }
 
-    return this.prisma.digitalPayment.update({
-      where: { id: payment.id },
-      data: {
-        status: 'SUCCESS',
-        externalId: dto.externalId,
-        paidAt: new Date(),
-      },
-    });
+    await claimTransition(
+      () => this.prisma.digitalPayment.updateMany({
+        where: { id: payment.id, companyId, status: { not: 'SUCCESS' } },
+        data: { status: 'SUCCESS', externalId: dto.externalId, paidAt: new Date() },
+      }),
+      'Payment was confirmed by someone else.',
+    );
+    return this.prisma.digitalPayment.findUniqueOrThrow({ where: { id: payment.id } });
   }
 
   async failPayment(id: string, companyId: string) {
@@ -58,10 +59,14 @@ export class DigitalPaymentsService {
     if (payment.status !== 'PENDING' && payment.status !== 'PROCESSING') {
       throw new BadRequestException('Payment cannot be marked as failed');
     }
-    return this.prisma.digitalPayment.update({
-      where: { id },
-      data: { status: 'FAILED' },
-    });
+    await claimTransition(
+      () => this.prisma.digitalPayment.updateMany({
+        where: { id, companyId, status: { in: ['PENDING', 'PROCESSING'] } },
+        data: { status: 'FAILED' },
+      }),
+      'Payment was already resolved by someone else.',
+    );
+    return this.prisma.digitalPayment.findUniqueOrThrow({ where: { id } });
   }
 
   async refundPayment(id: string, companyId: string) {
@@ -69,10 +74,16 @@ export class DigitalPaymentsService {
     if (payment.status !== 'SUCCESS') {
       throw new BadRequestException('Only successful payments can be refunded');
     }
-    return this.prisma.digitalPayment.update({
-      where: { id },
-      data: { status: 'REFUNDED' },
-    });
+    // Refunding twice is money out twice. Two callers who both read SUCCESS
+    // both pass the check above, so the WHERE is what actually stops it.
+    await claimTransition(
+      () => this.prisma.digitalPayment.updateMany({
+        where: { id, companyId, status: 'SUCCESS' },
+        data: { status: 'REFUNDED' },
+      }),
+      'Payment was refunded by someone else.',
+    );
+    return this.prisma.digitalPayment.findUniqueOrThrow({ where: { id } });
   }
 
   async findAll(companyId: string, query?: { status?: string; method?: string; waybillId?: string }) {
