@@ -30,6 +30,7 @@ import {
   canTransition, checkValidityWindow, computeMobilizeBy, isForfeitureDue, isValidityEnded, mobilisationView,
 } from './rail-slot.rules';
 import { CorridorIdentity, resolveCorridor } from './rail-reference';
+import { claimTransition } from '../common/state-transition';
 
 /** A corridor or yard as the API returns it: the DB row when seeded, else the code catalog. */
 export interface ReferenceView extends EnvelopeCorridor, CorridorIdentity {
@@ -910,8 +911,19 @@ export class RailSlotService {
     const eff = effectiveDocStatus(doc, now);
     if (eff === 'EXPIRED' || eff === 'REVOKED') throw new BadRequestException(`A ${eff.toLowerCase()} document cannot be verified. Enter the renewal instead.`);
     if (doc.status === 'VALID') throw new BadRequestException('This document is already verified.');
-    const updated = await this.prisma.railOperatorComplianceDoc.update({
-      where: { id }, data: { status: 'VALID', verifiedAt: now, verifiedById: actor.id, verifiedByEmail: actor.email },
+    // Verifying twice would re-stamp verifiedAt and, worse, record two audit
+    // entries for one attestation and credit the second signatory for the
+    // first one's check. The WHERE is what stops it: only the caller whose
+    // UPDATE matches a still-unverified row gets to record the event.
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      await claimTransition(
+        () => tx.railOperatorComplianceDoc.updateMany({
+          where: { id, companyId, status: { not: 'VALID' } },
+          data: { status: 'VALID', verifiedAt: now, verifiedById: actor.id, verifiedByEmail: actor.email },
+        }),
+        'This document was verified by someone else first.',
+      );
+      return tx.railOperatorComplianceDoc.findFirstOrThrow({ where: { id, companyId } });
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.COMPLIANCE_DOC_VERIFIED, { type: RAIL_AUDIT_TARGET.COMPLIANCE_DOC, id, name: doc.docType }, { docType: doc.docType, validUntil: doc.validUntil.toISOString() });
     return this.withEffective(updated, now);
@@ -922,8 +934,19 @@ export class RailSlotService {
     assertSignatoryRole(actor, 'Revoking a compliance document');
     const doc = await this.getDocOrThrow(companyId, id);
     if (doc.status === 'REVOKED') throw new BadRequestException('This document is already revoked.');
-    const updated = await this.prisma.railOperatorComplianceDoc.update({
-      where: { id }, data: { status: 'REVOKED', revokedAt: now, revokedReason: dto.reason.trim() },
+    // Revocation is irreversible and the reason is evidence. Two signatories
+    // revoking at once would both pass the pre-check, and the second write
+    // would replace the first one's reason while keeping both audit entries —
+    // leaving a record that says it was revoked for a reason nobody wrote.
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      await claimTransition(
+        () => tx.railOperatorComplianceDoc.updateMany({
+          where: { id, companyId, status: { not: 'REVOKED' } },
+          data: { status: 'REVOKED', revokedAt: now, revokedReason: dto.reason.trim() },
+        }),
+        'This document was revoked by someone else first.',
+      );
+      return tx.railOperatorComplianceDoc.findFirstOrThrow({ where: { id, companyId } });
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.COMPLIANCE_DOC_REVOKED, { type: RAIL_AUDIT_TARGET.COMPLIANCE_DOC, id, name: doc.docType }, { docType: doc.docType, reason: dto.reason.trim().slice(0, 500) });
     return this.withEffective(updated, now);

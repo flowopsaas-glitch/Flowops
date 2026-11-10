@@ -32,7 +32,16 @@ function make(opts: { entitled?: boolean; auditResult?: string | null } = {}) {
   });
   const consignments = new FakeTable('con');
   const reports = new FakeTable('hr');
-  const prisma = { railOccurrenceReport: occurrences, railConsignment: consignments, railHandshakeReport: reports };
+  // withTenant is the tenant-context wrapper the service runs writes through.
+  // In memory there is no transaction to open, so it just hands back the same
+  // delegates — the service's logic is what these tests are checking, not the
+  // transaction. What matters is that the CAS in the WHERE clause still runs.
+  const prisma: Record<string, any> = {
+    railOccurrenceReport: occurrences,
+    railConsignment: consignments,
+    railHandshakeReport: reports,
+  };
+  prisma.withTenant = async (_companyId: string, fn: (tx: unknown) => Promise<unknown>) => fn(prisma);
   const billing = { hasFeature: jest.fn().mockResolvedValue(opts.entitled ?? true) };
   const audit = { record: jest.fn().mockResolvedValue(opts.auditResult === undefined ? 'audit-1' : opts.auditResult) };
   const handshake = { logDeviation: jest.fn(async () => ({ id: 'dev-1' })) };
@@ -405,5 +414,88 @@ describe('investigation → preliminary report → close', () => {
       RAIL_AUDIT_ACTION.OCCURRENCE_PRELIMINARY_FILED, RAIL_AUDIT_ACTION.OCCURRENCE_CLOSED,
     ]);
     expect(h.entries().every((e) => e.targetId === created.id && e.actorId === 'u-mgr')).toBe(true);
+  });
+});
+
+/**
+ * Concurrency on a safety register.
+ *
+ * These reports are regulatory records and the note is appended by
+ * concatenating what is already there. Under the old check-then-write, two
+ * people acting at once would each read the same row and both write — one
+ * note lost, two audit entries for one event. The transitions now put the
+ * expectation in the WHERE clause, so the database decides who won.
+ *
+ * Each test below lets the pre-check pass and then moves the row out from
+ * under the write, which is exactly the interleaving the check cannot see.
+ */
+describe('transitions are claimed, not merely checked', () => {
+  // Flips the row just before the write lands, after the pre-check has read it.
+  const moveUnderneath = (h: H, table: any, mutate: (row: any) => void) => {
+    const original = table.updateMany.getMockImplementation();
+    let done = false;
+    table.updateMany.mockImplementation(async (args: any) => {
+      if (!done) { done = true; mutate(h.occurrences.rows[0]); }
+      return original!(args);
+    });
+  };
+
+  it('a second caller starting the investigation loses the claim instead of overwriting', async () => {
+    const h = make();
+    const o = h.seedOccurrence({ status: 'REPORTED' });
+
+    // Another caller moves REPORTED -> UNDER_INVESTIGATION after we read it.
+    moveUnderneath(h, h.occurrences, (row) => { row.status = 'UNDER_INVESTIGATION'; });
+
+    await expect(
+      h.svc.startInvestigation('A', o.id, { note: 'mine' }, MANAGER, NOW),
+    ).rejects.toThrow(/someone else started the investigation/i);
+
+    // The winner's state survives; the loser wrote nothing.
+    expect(h.occurrences.rows[0].status).toBe('UNDER_INVESTIGATION');
+    expect(h.occurrences.rows[0].investigationNote).not.toBe('mine');
+  });
+
+  it('a preliminary report is refused when the note changed underneath, rather than dropping it', async () => {
+    const h = make();
+    const o = h.seedOccurrence({ status: 'UNDER_INVESTIGATION', investigationNote: 'first note' });
+
+    // Someone else appends to the note between our read and our write.
+    moveUnderneath(h, h.occurrences, (row) => {
+      row.investigationNote = 'first note\nother person note';
+    });
+
+    await expect(
+      h.svc.filePreliminary('A', o.id, { note: 'my prelim' }, MANAGER, NOW),
+    ).rejects.toThrow(/changed while the preliminary report was being filed/i);
+
+    // The other person's note is intact — that is the whole point.
+    expect(h.occurrences.rows[0].investigationNote).toBe('first note\nother person note');
+    expect(h.occurrences.rows[0].status).toBe('UNDER_INVESTIGATION');
+    expect(h.occurrences.rows[0].preliminaryReportFiledAt).toBeNull();
+    // No audit entry: the filing did not happen.
+    expect(h.actions()).not.toContain(RAIL_AUDIT_ACTION.OCCURRENCE_PRELIMINARY_FILED);
+  });
+
+  it('closing is refused when someone else closed it in the meantime', async () => {
+    const h = make();
+    const o = h.seedOccurrence({ status: 'PRELIMINARY_REPORT_FILED', preliminaryReportFiledAt: NOW });
+
+    moveUnderneath(h, h.occurrences, (row) => { row.status = 'CLOSED'; });
+
+    await expect(
+      h.svc.close('A', o.id, { note: 'closing too' }, MANAGER, NOW),
+    ).rejects.toThrow(/closed by someone else/i);
+    expect(h.actions()).not.toContain(RAIL_AUDIT_ACTION.OCCURRENCE_CLOSED);
+  });
+
+  it('appends to an existing note in the happy path (proving the CAS is not just refusing everything)', async () => {
+    const h = make();
+    const o = h.seedOccurrence({ status: 'UNDER_INVESTIGATION', investigationNote: 'first note' });
+
+    const filed = await h.svc.filePreliminary('A', o.id, { note: 'my prelim' }, MANAGER, NOW);
+
+    expect(filed.status).toBe('PRELIMINARY_REPORT_FILED');
+    expect(filed.investigationNote).toBe('first note\nmy prelim');
   });
 });

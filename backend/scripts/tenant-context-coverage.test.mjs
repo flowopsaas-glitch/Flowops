@@ -153,7 +153,10 @@ test('the real tree: tenant tables come from the schema, and the scan is sane', 
   const r = JSON.parse(run(['--format', 'json'], { cwd: REPO_ROOT }));
   // Derived from schema.prisma, so this only moves when the schema does. It is
   // the anchor: if it collapses, the scanner stopped seeing tenant tables.
-  assert.equal(r.summary.tenantTables, 135);
+  // 135 -> 137 on 2026-11-10: the General Average migration added two tenant
+  // models (GeneralAverageEvent, GeneralAverageContributor). Raise this only
+  // when models were genuinely added; a DROP here means detection broke.
+  assert.equal(r.summary.tenantTables, 137);
   assert.ok(r.summary.operations > 1000, `expected a large tree, got ${r.summary.operations}`);
   assert.equal(
     r.summary.contextualised + r.summary.bare + r.summary.exempt,

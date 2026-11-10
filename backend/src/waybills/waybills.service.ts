@@ -15,6 +15,7 @@ import { DriverComplianceService } from '../common/compliance/driver-compliance.
 import { AuditService } from '../audit/audit.service';
 import { FileUploadValidator } from '../common/guards/file-upload.guard';
 import { withoutRatingToken } from '../common/security/waybill-redaction.util';
+import { claimTransition } from '../common/state-transition';
 
 /**
  * Fields a tenant may change through PATCH /waybills/:id.
@@ -961,11 +962,42 @@ Set confidence 0.0-1.0 based on how clearly you could read the document. Use nul
     const extracted: any = item.extractedData || {};
     const waybillData = { ...extracted, ...overrides };
 
-    const waybill = await this.create(companyId, waybillData);
+    // Claim the item BEFORE creating the waybill, not after.
+    //
+    // The old order read READY, created the waybill, then wrote COMMITTED.
+    // Two people committing the same scanned document would both pass the
+    // read and both create — one invoiceable waybill each, from one piece of
+    // paper. The pre-check cannot see that; the WHERE clause can.
+    //
+    // Claiming first means a failure in create() would leave the item stuck
+    // COMMITTED with nothing behind it, so that is rolled back rather than
+    // left as a hole in the queue.
+    await claimTransition(
+      () =>
+        this.prisma.withTenant(companyId, (tx) =>
+          tx.waybillInboxItem.updateMany({
+            where: { id: itemId, companyId, status: 'READY' },
+            data: { status: 'COMMITTED' },
+          }),
+        ),
+      'This inbox item was already committed by someone else.',
+    );
+
+    let waybill: any;
+    try {
+      waybill = await this.create(companyId, waybillData);
+    } catch (e) {
+      // Put the item back so the queue is not silently missing it. The caller
+      // sees the original error, not this rollback.
+      await this.prisma.waybillInboxItem
+        .updateMany({ where: { id: itemId, companyId, status: 'COMMITTED' }, data: { status: 'READY' } })
+        .catch(() => undefined);
+      throw e;
+    }
 
     await this.prisma.waybillInboxItem.update({
       where: { id: itemId },
-      data: { status: 'COMMITTED', waybillId: waybill.id },
+      data: { waybillId: waybill.id },
     });
 
     // Live-refresh the inbox: item leaves the queue, new waybill appears.

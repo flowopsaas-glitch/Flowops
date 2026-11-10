@@ -8,6 +8,7 @@ import { RAIL_AUDIT_ACTION, RAIL_AUDIT_TARGET, RailActor, railAuditEntry, record
 import { assertSignatoryRole } from './rail-roles';
 import { CreateOccurrenceDto, NotifyOccurrenceDto, OccurrenceNoteDto } from './dto/rail-occurrence.dto';
 import { responsiblePartyFor } from './rail-change.rules';
+import { claimTransition } from '../common/state-transition';
 
 /**
  * Safety / security occurrence reports (derailment, collision, OHTE / cable theft, SPAD, hazmat spill …),
@@ -159,7 +160,16 @@ export class RailOccurrenceService {
     await this.assertEntitled(companyId);
     const o = await this.getOrThrow(companyId, id);
     if (o.status !== 'REPORTED') throw new BadRequestException(`Only a REPORTED occurrence can move to UNDER_INVESTIGATION (this one is ${o.status}).`);
-    const updated = await this.prisma.railOccurrenceReport.update({ where: { id }, data: { status: 'UNDER_INVESTIGATION', investigationNote: dto.note.trim() } });
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      await claimTransition(
+        () => tx.railOccurrenceReport.updateMany({
+          where: { id, companyId, status: 'REPORTED' },
+          data: { status: 'UNDER_INVESTIGATION', investigationNote: dto.note.trim() },
+        }),
+        'This occurrence has already moved past REPORTED — someone else started the investigation.',
+      );
+      return tx.railOccurrenceReport.findFirstOrThrow({ where: { id, companyId } });
+    });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.OCCURRENCE_INVESTIGATION_STARTED, { type: RAIL_AUDIT_TARGET.OCCURRENCE, id, name: o.occurrenceNumber }, { note: dto.note.trim().slice(0, 500) });
     return this.withState(updated, now);
   }
@@ -169,9 +179,29 @@ export class RailOccurrenceService {
     const o = await this.getOrThrow(companyId, id);
     if (o.status !== 'REPORTED' && o.status !== 'UNDER_INVESTIGATION') throw new BadRequestException(`A preliminary report cannot be filed while the occurrence is ${o.status}.`);
     const late = !!o.preliminaryReportDueAt && now.getTime() > o.preliminaryReportDueAt.getTime();
-    const updated = await this.prisma.railOccurrenceReport.update({
-      where: { id },
-      data: { status: 'PRELIMINARY_REPORT_FILED', preliminaryReportFiledAt: now, investigationNote: `${o.investigationNote ? `${o.investigationNote}\n` : ''}${dto.note.trim()}` },
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      // Re-read inside the transaction: the note is appended by concatenating
+      // what is already there, so filing against a stale copy would silently
+      // drop the other person's note. The note is part of the WHERE clause, so
+      // if it changed underneath us the claim matches nothing and we say so
+      // instead of overwriting.
+      const fresh = await tx.railOccurrenceReport.findFirstOrThrow({ where: { id, companyId } });
+      await claimTransition(
+        () => tx.railOccurrenceReport.updateMany({
+          where: {
+            id, companyId,
+            status: { in: ['REPORTED', 'UNDER_INVESTIGATION'] },
+            investigationNote: fresh.investigationNote,
+          },
+          data: {
+            status: 'PRELIMINARY_REPORT_FILED',
+            preliminaryReportFiledAt: now,
+            investigationNote: `${fresh.investigationNote ? `${fresh.investigationNote}\n` : ''}${dto.note.trim()}`,
+          },
+        }),
+        'This occurrence changed while the preliminary report was being filed — reopen it and file again.',
+      );
+      return tx.railOccurrenceReport.findFirstOrThrow({ where: { id, companyId } });
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.OCCURRENCE_PRELIMINARY_FILED, { type: RAIL_AUDIT_TARGET.OCCURRENCE, id, name: o.occurrenceNumber },
       { late, dueAt: o.preliminaryReportDueAt?.toISOString() ?? null, filedAt: now.toISOString() });
@@ -185,8 +215,24 @@ export class RailOccurrenceService {
     const o = await this.getOrThrow(companyId, id);
     if (o.status === 'CLOSED') throw new BadRequestException('This occurrence is already closed.');
     if (!o.preliminaryReportFiledAt) throw new BadRequestException('File the preliminary report before closing the occurrence.');
-    const updated = await this.prisma.railOccurrenceReport.update({
-      where: { id }, data: { status: 'CLOSED', closedAt: now, investigationNote: `${o.investigationNote ? `${o.investigationNote}\n` : ''}Closed: ${dto.note.trim()}` },
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const fresh = await tx.railOccurrenceReport.findFirstOrThrow({ where: { id, companyId } });
+      await claimTransition(
+        () => tx.railOccurrenceReport.updateMany({
+          where: {
+            id, companyId,
+            status: { not: 'CLOSED' },
+            investigationNote: fresh.investigationNote,
+          },
+          data: {
+            status: 'CLOSED',
+            closedAt: now,
+            investigationNote: `${fresh.investigationNote ? `${fresh.investigationNote}\n` : ''}Closed: ${dto.note.trim()}`,
+          },
+        }),
+        'This occurrence was closed by someone else, or changed while it was being closed.',
+      );
+      return tx.railOccurrenceReport.findFirstOrThrow({ where: { id, companyId } });
     });
     await this.record(companyId, actor, RAIL_AUDIT_ACTION.OCCURRENCE_CLOSED, { type: RAIL_AUDIT_TARGET.OCCURRENCE, id, name: o.occurrenceNumber }, { note: dto.note.trim().slice(0, 500) });
     return this.withState(updated, now);
