@@ -408,3 +408,79 @@ describe('runStatusSweep (hourly, platform-wide)', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Possession status sweep failed'));
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('corridors belong to a network', () => {
+  /**
+   * The six corridors in the catalogue are Transnet's V4 corridors, and every
+   * tenant was offered all of them. A possession window is a booking of track
+   * on a specific corridor, so a European operator was being invited to book
+   * maintenance on the Ore line between Sishen and Saldanha.
+   *
+   * What is NOT being fixed here: the technical envelope (gauge,
+   * electrification, axle load) is still SOURCE_PENDING, because Network
+   * Statement Chapter 2 was never supplied to this repository. Inventing
+   * those numbers would be worse than leaving them null -- the envelope check
+   * correctly reports UNVERIFIED rather than rejecting against a guess.
+   */
+  const TRANSNET = 'net-transnet';
+  const UK = 'net-uk';
+
+  function withNetworks(h: any, networks: Array<Record<string, unknown>>) {
+    h.prisma.railNetwork = {
+      findFirst: jest.fn(async ({ where }: any) => {
+        const hit = networks.find((n) => {
+          if (where?.id && n.id !== where.id) return false;
+          if (where?.isDefault !== undefined && !!n.isDefault !== !!where.isDefault) return false;
+          if (where && 'companyId' in where && n.companyId !== where.companyId) return false;
+          return true;
+        });
+        return hit ?? null;
+      }),
+    };
+    return h;
+  }
+
+  it('offers a Transnet tenant the Transnet corridors', async () => {
+    const h = withNetworks(make(), [{ id: TRANSNET, isDefault: true, companyId: null }]);
+    h.corridors.seed({ code: 'COR-ORE', name: 'Ore', aliases: [], workbookRoutes: [], networkId: TRANSNET, isActive: true });
+
+    const created = await h.svc.create('A', {
+      corridorCode: 'COR-ORE', kind: 'ANNUAL_PLAN', title: 'Ore line maintenance',
+      startsAt: at(11).toISOString(), endsAt: at(13).toISOString(),
+    } as any, MANAGER, NOW);
+    expect(created).toBeDefined();
+  });
+
+  it("does not offer another network's corridors", async () => {
+    const h = withNetworks(make(), [{ id: UK, isDefault: true, companyId: null }]);
+    h.corridors.seed({ code: 'COR-ORE', name: 'Ore', aliases: [], workbookRoutes: [], networkId: TRANSNET, isActive: true });
+    h.corridors.seed({ code: 'COR-WCML', name: 'West Coast Main Line', aliases: [], workbookRoutes: [], networkId: UK, isActive: true });
+
+    await expect(
+      h.svc.create('A', {
+        corridorCode: 'COR-ORE', kind: 'ANNUAL_PLAN', title: 'Ore line maintenance',
+        startsAt: at(11).toISOString(), endsAt: at(13).toISOString(),
+      } as any, MANAGER, NOW),
+    ).rejects.toThrow(/Unknown corridor/);
+
+    const ok = await h.svc.create('A', {
+      corridorCode: 'COR-WCML', kind: 'ANNUAL_PLAN', title: 'WCML maintenance',
+      startsAt: at(11).toISOString(), endsAt: at(13).toISOString(),
+    } as any, MANAGER, NOW);
+    expect(ok).toBeDefined();
+  });
+
+  it('a corridor with no network is still offered, so nothing regresses on old rows', async () => {
+    // Rows seeded before this change carry NULL. Treating NULL as "nobody's"
+    // would make every existing corridor vanish.
+    const h = withNetworks(make(), [{ id: UK, isDefault: true, companyId: null }]);
+    h.corridors.seed({ code: 'COR-LEGACY', name: 'Legacy corridor', aliases: [], workbookRoutes: [], networkId: null, isActive: true });
+
+    const created = await h.svc.create('A', {
+      corridorCode: 'COR-LEGACY', kind: 'ANNUAL_PLAN', title: 'Legacy work',
+      startsAt: at(11).toISOString(), endsAt: at(13).toISOString(),
+    } as any, MANAGER, NOW);
+    expect(created).toBeDefined();
+  });
+});

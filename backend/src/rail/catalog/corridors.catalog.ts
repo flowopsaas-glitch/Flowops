@@ -22,6 +22,12 @@ export interface CorridorCatalogEntry extends ReferenceEnvelopeFields {
   workbookRoutes: string[];
   sortOrder: number;
   notes: string;
+  /**
+   * Which network's corridors these are, by network CODE. The seeder resolves
+   * it to an id; a code with no matching network is seeded with NULL rather
+   * than failing, so a catalog row cannot block a seed.
+   */
+  networkCode: string;
 }
 
 const IDENTITY_SOURCE = 'Identity: source register §11.4 + requirement register EXC-020. Technical envelope: Network Statement V4 Chapter 2 — NOT SUPPLIED.';
@@ -31,21 +37,21 @@ const PENDING = {
 };
 
 export const CORRIDOR_CATALOG: readonly CorridorCatalogEntry[] = [
-  { ...PENDING, code: 'COR-CONTAINER', name: 'Container', aliases: ['Natal'], sortOrder: 10,
+  { ...PENDING, networkCode: 'transnet', code: 'COR-CONTAINER', name: 'Container', aliases: ['Natal'], sortOrder: 10,
     workbookRoutes: ['General Freight: Johannesburg to Durban'],
     notes: 'Workbook route mapped to "Container / North corridor" in source register §11.4 — shared label, mapping unconfirmed.' },
-  { ...PENDING, code: 'COR-CAPE', name: 'Cape', aliases: ['Cape 1'], sortOrder: 20,
+  { ...PENDING, networkCode: 'transnet', code: 'COR-CAPE', name: 'Cape', aliases: ['Cape 1'], sortOrder: 20,
     workbookRoutes: ['General Freight: Johannesburg to Cape Town', 'General Freight: Vereeniging/Danskraal to East London'],
     notes: 'Source register §10.1: no electric traction operates on parts of Vereeniging/Danskraal–East London (decommissioned OHTE/substations).' },
-  { ...PENDING, code: 'COR-ORE', name: 'Ore', aliases: ['Cape 2'], sortOrder: 30,
+  { ...PENDING, networkCode: 'transnet', code: 'COR-ORE', name: 'Ore', aliases: ['Cape 2'], sortOrder: 30,
     workbookRoutes: ['Ore'], notes: '' },
-  { ...PENDING, code: 'COR-NORTH', name: 'North', aliases: ['Northern'], sortOrder: 40,
+  { ...PENDING, networkCode: 'transnet', code: 'COR-NORTH', name: 'North', aliases: ['Northern'], sortOrder: 40,
     workbookRoutes: ['Manganese', 'General Freight & Export Coal: Lephalale to Richards Bay', 'General Freight: Musina - Pyramid South/Hoedspruit'],
     notes: 'Source register §10.1: Musina–Pyramid/Hoedspruit is not electrified.' },
-  { ...PENDING, code: 'COR-NORTH-EAST', name: 'North-East', aliases: [], sortOrder: 50,
+  { ...PENDING, networkCode: 'transnet', code: 'COR-NORTH-EAST', name: 'North-East', aliases: [], sortOrder: 50,
     workbookRoutes: ['Magnetite', 'Eastern Mainline: Rayton to Komatipoort/Richards Bay'],
     notes: 'Source register §10.1: Magnetite is not electrified.' },
-  { ...PENDING, code: 'COR-CENTRAL', name: 'Central', aliases: [], sortOrder: 60,
+  { ...PENDING, networkCode: 'transnet', code: 'COR-CENTRAL', name: 'Central', aliases: [], sortOrder: 60,
     workbookRoutes: ['General Freight: Mafikeng to Beaconsfield/Potchefstroom'], notes: '' },
 ];
 

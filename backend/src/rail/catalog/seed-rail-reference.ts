@@ -44,7 +44,10 @@ export interface SeedSummary {
   tables: SeedTableSummary[];
 }
 
-type Db = Pick<PrismaClient, 'railCorridorNode' | 'railYardSpec' | 'railCancellationCode' | 'railAncillaryServiceCatalog' | 'railTariffSchedule'>;
+type Db = Pick<PrismaClient, 'railCorridorNode' | 'railYardSpec' | 'railCancellationCode' | 'railAncillaryServiceCatalog' | 'railTariffSchedule'> & {
+  /** Optional so an older caller cannot break: without it, corridors seed unattributed. */
+  railNetwork?: { findFirst(args: { where: { code: string } }): Promise<{ id: string } | null> };
+};
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -71,10 +74,21 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
   const tables: SeedTableSummary[] = [];
 
   // 2) Corridors
+  // Resolve each corridor's network code once. A code with no matching network
+  // is seeded with NULL deliberately: an unseeded catalogue must not block a
+  // seed, and a NULL corridor is offered to every tenant rather than to none.
+  const networkIdByCode = new Map<string, string | null>();
+  for (const code of new Set(CORRIDOR_CATALOG.map((c) => c.networkCode))) {
+    if (!code || !prisma.railNetwork) { networkIdByCode.set(code, null); continue; }
+    const row = await prisma.railNetwork.findFirst({ where: { code } });
+    networkIdByCode.set(code, row?.id ?? null);
+  }
+
   const corridors: SeedTableSummary = { table: 'rail_corridor_nodes', catalogRows: CORRIDOR_CATALOG.length, created: 0, updated: 0, unchanged: 0, skippedVerified: 0 };
   for (const c of CORRIDOR_CATALOG) {
     const data = {
       name: c.name, aliases: c.aliases, workbookRoutes: c.workbookRoutes, sortOrder: c.sortOrder,
+      networkId: networkIdByCode.get(c.networkCode) ?? null,
       gauge: c.gauge, electrification: c.electrification, maxAxleLoadTonnes: c.maxAxleLoadTonnes,
       vehicleProfile: c.vehicleProfile, maxTrainLengthM: c.maxTrainLengthM, contacts: c.contacts as never,
       dataStatus: c.dataStatus, sourceRef: c.sourceRef ?? null, verifiedBy: c.verifiedBy ?? null, notes: c.notes || null,
@@ -91,6 +105,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
       && existing.maxAxleLoadTonnes === data.maxAxleLoadTonnes && existing.vehicleProfile === data.vehicleProfile
       && existing.maxTrainLengthM === data.maxTrainLengthM && sameJson(existing.contacts, data.contacts) && existing.dataStatus === data.dataStatus
       && existing.sourceRef === data.sourceRef && (existing.notes ?? null) === data.notes
+      && (existing.networkId ?? null) === data.networkId
     ) {
       corridors.unchanged += 1;
     } else {

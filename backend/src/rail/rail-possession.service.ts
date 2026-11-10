@@ -39,10 +39,42 @@ export class RailPossessionService {
   }
 
   /** Corridor identities (DB rows when seeded, otherwise the code catalog — same fallback as the reference service). */
-  private async corridors(): Promise<CorridorIdentity[]> {
-    const rows = await this.prisma.railCorridorNode.findMany({ where: { isActive: true } });
+  private async corridors(companyId?: string): Promise<CorridorIdentity[]> {
+    const rows = await this.corridorRows(companyId);
     const source: readonly CorridorIdentity[] = rows.length ? rows : CORRIDOR_CATALOG;
     return source.map((c) => ({ code: c.code, name: c.name, aliases: c.aliases ?? [], workbookRoutes: c.workbookRoutes ?? [] }));
+  }
+
+  /**
+   * The corridors this tenant can book track on.
+   *
+   * A corridor belongs to a network, and a possession window is a booking of
+   * track, so offering another network's corridors invites an operator to
+   * book maintenance on a line that does not exist in their market.
+   *
+   * Rows with a NULL network are still offered. Those are corridors seeded
+   * before this column existed, and treating NULL as "not mine" rather than
+   * "not attributed yet" would make every existing corridor vanish the moment
+   * this shipped.
+   */
+  private async corridorRows(companyId?: string) {
+    const networkId = companyId ? await this.defaultNetworkId(companyId) : null;
+    const where = networkId
+      ? { isActive: true, OR: [{ networkId }, { networkId: null }] }
+      : { isActive: true };
+    return this.prisma.railCorridorNode.findMany({ where });
+  }
+
+  /** The tenant's default network, or null when there is none. Never throws. */
+  private async defaultNetworkId(companyId: string): Promise<string | null> {
+    try {
+      const tenant = await this.prisma.railNetwork.findFirst({ where: { isDefault: true, companyId } });
+      if (tenant?.id) return tenant.id;
+      const preset = await this.prisma.railNetwork.findFirst({ where: { isDefault: true, companyId: null } });
+      return preset?.id ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private view<T extends { kind: any; startsAt: Date }>(w: T, now = new Date()) {
@@ -72,14 +104,14 @@ export class RailPossessionService {
         select: { id: true, consignmentNumber: true, status: true, corridor: true, plannedDeparture: true, plannedArrival: true, actualDeparture: true, slaHours: true },
         take: 1000,
       }),
-      this.corridors(),
+      this.corridors(companyId),
     ]);
     return detectPossessionConflicts(windows, consignments, corridors, now);
   }
 
   async create(companyId: string, dto: CreatePossessionDto, actor: RailActor, now = new Date()) {
     await this.assertEntitled(companyId);
-    const corridors = await this.corridors();
+    const corridors = await this.corridors(companyId);
     if (!corridors.some((c) => c.code === dto.corridorCode)) throw new BadRequestException(`Unknown corridor "${dto.corridorCode}".`);
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);

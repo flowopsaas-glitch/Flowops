@@ -4828,6 +4828,7 @@ model RailNetwork {
 
   rungs       RailEscalationRung[]
   reports     RailHandshakeReport[]
+  corridors   RailCorridorNode[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -5966,9 +5967,17 @@ model RailCorridorNode {
   verifiedAt        DateTime?
   notes             String?              @db.Text
   isActive          Boolean              @default(true)
+
+  /// Which network's corridors these are. NULL = not attributed to a network
+  /// yet, and such rows are offered to every tenant, so corridors seeded
+  /// before this column existed do not silently disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
+  @@index([networkId])
   @@map("rail_corridor_nodes")
 }
 
