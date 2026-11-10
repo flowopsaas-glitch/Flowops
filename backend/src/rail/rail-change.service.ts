@@ -62,12 +62,52 @@ export class RailChangeService {
   /** Seeded rows win; before the seeder has run, the code catalog (the seed's own source) is served. */
   async listCodes(companyId: string): Promise<CodeView[]> {
     await this.assertEntitled(companyId);
-    return this.codes();
+    return this.codes(companyId);
   }
 
-  private async codes(): Promise<CodeView[]> {
-    const rows = await this.prisma.railCancellationCode.findMany({ where: { isActive: true }, orderBy: { sourceRow: 'asc' } });
-    return rows.length ? rows.map((r) => this.toCodeView(r, false)) : CANCELLATION_CODE_CATALOG.map((c) => this.toCodeView(c, true));
+  /**
+   * The reason codes this tenant may pick from.
+   *
+   * Annexure 20b is a Transnet document, so its 82 rows are Transnet's. A
+   * tenant on another network that has not loaded their own sees the
+   * unattributed rows rather than Transnet's -- unless they have none, in
+   * which case the catalog is served exactly as before.
+   */
+  private async codes(companyId?: string): Promise<CodeView[]> {
+    const scope = await this.referenceScope(companyId);
+    const rows = await this.prisma.railCancellationCode.findMany({ where: { ...scope, isActive: true }, orderBy: { sourceRow: 'asc' } });
+    if (rows.length) return rows.map((r) => this.toCodeView(r, false));
+
+    // Serve the catalog ONLY when the table is unseeded. Falling back whenever
+    // the scoped query came back empty would hand a tenant on another network
+    // the entire Transnet annexure the moment their own codes loaded -- the
+    // scoping would be decoration.
+    const seeded = await this.prisma.railCancellationCode.count({ where: { isActive: true } });
+    return seeded === 0 ? CANCELLATION_CODE_CATALOG.map((c) => this.toCodeView(c, true)) : [];
+  }
+
+  /**
+   * Restrict a reference-table read to this tenant's network.
+   *
+   * Rows with a NULL network are still returned: those were seeded before
+   * networks existed, and excluding them would empty the catalogue the moment
+   * this shipped.
+   */
+  private async referenceScope(companyId?: string) {
+    if (!companyId) return {};
+    try {
+      // Inside withTenant(), so RLS is active on rail_networks: a tenant sees
+      // the shared presets and their own rows and nothing else.
+      const networkId = await this.prisma.withTenant(companyId, async (tx: any) => {
+        const own = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId } });
+        if (own?.id) return own.id;
+        const preset = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId: null } });
+        return preset?.id ?? null;
+      });
+      return networkId ? { OR: [{ networkId }, { networkId: null }] } : {};
+    } catch {
+      return {};
+    }
   }
 
   async windows(companyId: string) {
@@ -109,7 +149,7 @@ export class RailChangeService {
   }
 
   private async derive(dto: PreviewChangeRequestDto, now: Date, companyId?: string) {
-    const code = (await this.codes()).find((c) => c.code === dto.cancellationCode);
+    const code = (await this.codes(companyId)).find((c) => c.code === dto.cancellationCode);
     if (!code) throw new BadRequestException(`Unknown cancellation code "${dto.cancellationCode}" (Annexure 20b).`);
     const originalDeparture = this.toDate(dto.originalDeparture, 'originalDeparture');
     const proposedDeparture = this.toDate(dto.proposedDeparture, 'proposedDeparture');
@@ -316,7 +356,7 @@ export class RailChangeService {
       throw new BadRequestException(`Annexure 20b already allocates "${req.cancellationReason}" — only a "could be …" reason is allocated at the Clearinghouse.`);
     }
     if (req.status === 'CLOSED') throw new BadRequestException('A closed change request cannot be re-allocated.');
-    const code = (await this.codes()).find((c) => c.code === req.cancellationCode);
+    const code = (await this.codes(companyId)).find((c) => c.code === req.cancellationCode);
     const allowed = allowedAllocations(code?.possibleParties ?? []);
     if (!allowed.includes(dto.attribution)) {
       throw new BadRequestException(`Annexure 20b allows ${allowed.join(' / ') || 'no party'} for "${req.cancellationReason}", not ${dto.attribution}.`);

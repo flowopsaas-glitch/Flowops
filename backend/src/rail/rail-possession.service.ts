@@ -68,10 +68,14 @@ export class RailPossessionService {
   /** The tenant's default network, or null when there is none. Never throws. */
   private async defaultNetworkId(companyId: string): Promise<string | null> {
     try {
-      const tenant = await this.prisma.railNetwork.findFirst({ where: { isDefault: true, companyId } });
-      if (tenant?.id) return tenant.id;
-      const preset = await this.prisma.railNetwork.findFirst({ where: { isDefault: true, companyId: null } });
-      return preset?.id ?? null;
+      // Inside withTenant(), so RLS is active on rail_networks: a tenant sees
+      // the shared presets and their own rows and nothing else.
+      return await this.prisma.withTenant(companyId, async (tx: any) => {
+        const own = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId } });
+        if (own?.id) return own.id;
+        const preset = await tx.railNetwork.findFirst({ where: { isDefault: true, companyId: null } });
+        return preset?.id ?? null;
+      });
     } catch {
       return null;
     }

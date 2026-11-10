@@ -4826,9 +4826,12 @@ model RailNetwork {
   /// still reads as a sentence. null = use every Transnet label.
   roleLabels          Json?
 
-  rungs       RailEscalationRung[]
-  reports     RailHandshakeReport[]
-  corridors   RailCorridorNode[]
+  rungs             RailEscalationRung[]
+  reports           RailHandshakeReport[]
+  corridors         RailCorridorNode[]
+  cancellationCodes RailCancellationCode[]
+  tariffSchedules   RailTariffSchedule[]
+  ancillaryServices RailAncillaryServiceCatalog[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -6271,6 +6274,12 @@ model RailCancellationCode {
   sourceText       String                // the "Responsible Party" cell, verbatim
   annexureVersion  String
   isActive         Boolean               @default(true)
+  /// Which network this reference row belongs to. NULL = not attributed
+  /// yet (which access regime's reason codes these are); such rows are offered to every tenant, so rows
+  /// seeded before this column existed do not disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -6449,6 +6458,12 @@ model RailTariffSchedule {
   sourceRef                  String?        // where the rates came from (required for VERIFIED)
   notes                      String?        @db.Text
   isActive                   Boolean        @default(true)
+  /// Which network this reference row belongs to. NULL = not attributed
+  /// yet (which network's tariffs these are); such rows are offered to every tenant, so rows
+  /// seeded before this column existed do not disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
 
@@ -6478,6 +6493,12 @@ model RailAncillaryServiceCatalog {
   rateSourceRef   String?
   annexureVersion String             // "2026/27"
   isActive        Boolean            @default(true)
+  /// Which network this reference row belongs to. NULL = not attributed
+  /// yet (which network's ancillary services catalogue this is); such rows are offered to every tenant, so rows
+  /// seeded before this column existed do not disappear.
+  networkId         String?
+  network           RailNetwork?         @relation(fields: [networkId], references: [id], onDelete: SetNull)
+
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 

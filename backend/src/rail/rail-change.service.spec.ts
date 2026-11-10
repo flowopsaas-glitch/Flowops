@@ -704,3 +704,69 @@ describe('the consequence wording follows the tenant\'s network', () => {
     expect(r.consequence.basis).not.toMatch(/undefined|null/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('the cancellation codes a tenant is offered belong to their network', () => {
+  /**
+   * Annexure 20b is a Transnet document: 82 rows of Transnet reason codes,
+   * each allocated to a responsible party that decides who pays. Every tenant
+   * was picking from it.
+   *
+   * A tenant on another network loads their own codes, and thereafter must
+   * not be offered Transnet's -- because picking one attributes the
+   * cancellation, and attribution decides money.
+   */
+  const seedNetwork = (h: any, id: string) => {
+    const net = {
+      findFirst: jest.fn(async ({ where }: any) => {
+        if (where?.companyId && where.companyId !== null) return null; // no tenant-defined network
+        return where?.isDefault ? { id } : null;
+      }),
+    };
+    h.prisma.railNetwork = net;
+    // The service reads the network inside withTenant(), so the fake has to
+    // hand the same client back for tx.railNetwork to resolve.
+    h.prisma.withTenant = jest.fn(async (_c: string, fn: any) => fn(h.prisma));
+    return net;
+  };
+
+  it('offers a Transnet tenant the seeded Transnet codes', async () => {
+    const h = make();
+    seedNetwork(h, 'net-transnet');
+    h.codes.seed({ code: 'CNX-001', sourceRow: 1, reason: 'Transnet reason', responsibleParty: 'RAIL_OPERATIONS', possibleParties: [], sourceText: 'x', isActive: true, networkId: 'net-transnet' });
+
+    const codes = await h.svc.listCodes('A');
+    expect(codes.map((c) => c.code)).toContain('CNX-001');
+  });
+
+  it("does not offer another network's codes", async () => {
+    const h = make();
+    seedNetwork(h, 'net-uk');
+    h.codes.seed({ code: 'CNX-001', sourceRow: 1, reason: 'Transnet reason', responsibleParty: 'RAIL_OPERATIONS', possibleParties: [], sourceText: 'x', isActive: true, networkId: 'net-transnet' });
+    h.codes.seed({ code: 'UK-01', sourceRow: 101, reason: 'Network Rail reason', responsibleParty: 'RAIL_OPERATIONS', possibleParties: [], sourceText: 'y', isActive: true, networkId: 'net-uk' });
+
+    const codes = await h.svc.listCodes('A');
+    expect(codes.map((c) => c.code)).toContain('UK-01');
+    expect(codes.map((c) => c.code)).not.toContain('CNX-001');
+  });
+
+  it('a code with no network is still offered, so old rows do not disappear', async () => {
+    const h = make();
+    seedNetwork(h, 'net-uk');
+    h.codes.seed({ code: 'CNX-LEGACY', sourceRow: 1, reason: 'Unattributed', responsibleParty: 'RAIL_OPERATIONS', possibleParties: [], sourceText: 'x', isActive: true, networkId: null });
+
+    const codes = await h.svc.listCodes('A');
+    expect(codes.map((c) => c.code)).toContain('CNX-LEGACY');
+  });
+
+  it('a code from another network cannot be used to attribute a cancellation', async () => {
+    // The money test: submitting a Transnet code must not be accepted.
+    const h = make();
+    seedNetwork(h, 'net-uk');
+    h.codes.seed({ code: 'CNX-001', sourceRow: 1, reason: 'Transnet reason', responsibleParty: 'RAIL_OPERATIONS', possibleParties: [], sourceText: 'x', isActive: true, networkId: 'net-transnet' });
+
+    await expect(
+      h.svc.create('A', dto({ cancellationCode: 'CNX-001' }) as any, MANAGER, NOW),
+    ).rejects.toThrow(/Unknown cancellation code/);
+  });
+});

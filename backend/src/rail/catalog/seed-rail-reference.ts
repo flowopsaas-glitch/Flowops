@@ -44,14 +44,36 @@ export interface SeedSummary {
   tables: SeedTableSummary[];
 }
 
-type Db = Pick<PrismaClient, 'railCorridorNode' | 'railYardSpec' | 'railCancellationCode' | 'railAncillaryServiceCatalog' | 'railTariffSchedule'> & {
-  /** Optional so an older caller cannot break: without it, corridors seed unattributed. */
-  railNetwork?: { findFirst(args: { where: { code: string } }): Promise<{ id: string } | null> };
-};
+type Db = Pick<PrismaClient, 'railCorridorNode' | 'railYardSpec' | 'railCancellationCode' | 'railAncillaryServiceCatalog' | 'railTariffSchedule'>;
+
+/**
+ * The network code every catalog in this folder is transcribed from.
+ *
+ * These files are Transnet source documents -- Annexure 20b, Annexure 40, the
+ * V4 corridor register -- so every row they seed belongs to Transnet's
+ * network. A tenant on another network must not be offered them.
+ */
+const CATALOG_NETWORK_CODE = 'transnet';
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } = {}): Promise<SeedSummary> {
+/**
+ * Network ids by code, resolved by the CALLER.
+ *
+ * The seeder does not read rail_networks itself. It is an operator job with
+ * no tenant in scope, and rail_networks is a tenant table, so a read here
+ * would be an unscoped one. Resolving in the caller keeps the seeder free of
+ * tenant-table access and keeps the reference catalogs seedable in isolation.
+ */
+export interface SeedNetworkIds {
+  /** code -> id. A catalog code absent from this map seeds as NULL. */
+  byCode: Readonly<Record<string, string | null>>;
+}
+
+export async function seedRailReference(
+  prisma: Db,
+  opts: { dryRun?: boolean; networks?: SeedNetworkIds } = {},
+): Promise<SeedSummary> {
   const dryRun = opts.dryRun ?? false;
 
   // 1) Validate everything first — all or nothing.
@@ -77,12 +99,10 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
   // Resolve each corridor's network code once. A code with no matching network
   // is seeded with NULL deliberately: an unseeded catalogue must not block a
   // seed, and a NULL corridor is offered to every tenant rather than to none.
-  const networkIdByCode = new Map<string, string | null>();
-  for (const code of new Set(CORRIDOR_CATALOG.map((c) => c.networkCode))) {
-    if (!code || !prisma.railNetwork) { networkIdByCode.set(code, null); continue; }
-    const row = await prisma.railNetwork.findFirst({ where: { code } });
-    networkIdByCode.set(code, row?.id ?? null);
-  }
+  const networkIdByCode = new Map<string, string | null>(Object.entries(opts.networks?.byCode ?? {}));
+
+  /** One lookup per code, cached: the whole catalog is transcribed from one network. */
+  const networkIdFor = (code: string): string | null => networkIdByCode.get(code) ?? null;
 
   const corridors: SeedTableSummary = { table: 'rail_corridor_nodes', catalogRows: CORRIDOR_CATALOG.length, created: 0, updated: 0, unchanged: 0, skippedVerified: 0 };
   for (const c of CORRIDOR_CATALOG) {
@@ -143,6 +163,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
     const data = {
       sourceRow: c.sourceRow, reason: c.reason, responsibleParty: c.responsibleParty, possibleParties: [...c.possibleParties],
       sourceText: c.sourceText, annexureVersion: ANNEXURE_20B_VERSION,
+      networkId: networkIdFor(CATALOG_NETWORK_CODE),
     };
     const existing = await prisma.railCancellationCode.findUnique({ where: { code: c.code } });
     if (!existing) {
@@ -173,6 +194,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
       serviceNumber: a.serviceNumber, serviceName: a.serviceName, name: a.name, sourceLabel: a.sourceLabel ?? null, section: a.section ?? null, description: a.description ?? null,
       unitOfMeasure: a.unitOfMeasure, tier: a.tier, tierName: a.tierName, serviceGroup: a.group, isCompulsory: a.isCompulsory, priceStatus: a.priceStatus,
       unitRateZar: a.unitRateZar ?? null, rateSourceRef: a.rateSourceRef ?? null, annexureVersion: ANNEXURE_40_VERSION,
+      networkId: networkIdFor(CATALOG_NETWORK_CODE),
     };
     const existing = await prisma.railAncillaryServiceCatalog.findUnique({ where: { code: a.code } });
     if (!existing) {
@@ -212,6 +234,7 @@ export async function seedRailReference(prisma: Db, opts: { dryRun?: boolean } =
       electricKwhPer1000Gtk: t.electricKwhPer1000Gtk ?? null, dieselPricePerLitreZar: t.dieselPricePerLitreZar ?? null,
       electricityPricePerKwhZar: t.electricityPricePerKwhZar ?? null, overloadPenaltyPerTonneZar: t.overloadPenaltyPerTonneZar ?? null,
       dataStatus: t.dataStatus, sourceRef: t.sourceRef ?? null, notes: t.notes ?? null,
+      networkId: networkIdFor(CATALOG_NETWORK_CODE),
     };
     const existing = await prisma.railTariffSchedule.findFirst({ where: { corridorCode: t.corridorCode, financialYear: t.financialYear } });
     if (!existing) {
