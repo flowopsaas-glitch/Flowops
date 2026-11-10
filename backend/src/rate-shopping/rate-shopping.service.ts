@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SA_VAT_RATE } from '../public-tools/sa-import-duty';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -93,7 +94,12 @@ const RATE_TABLE: RateTableEntry[] = [
 ];
 
 const FUEL_SURCHARGE_PCT = 0.185; // 18.5%
-const VAT_PCT            = 0.15;  // 15% SA VAT
+// The SA VAT rate is defined ONCE, in public-tools/sa-import-duty.ts, and
+// imported here. It used to be a bare literal on this line — the third of
+// three copies (the others being customs.service.ts and the shared helper
+// itself). VAT moved 14% -> 15% in 2018 and will move again; a literal in
+// a rate quote is the easiest kind to forget.
+const VAT_PCT = SA_VAT_RATE;
 
 function calculateTableRate(
   entry: RateTableEntry,

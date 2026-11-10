@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { estimateImportDuty } from '../public-tools/sa-import-duty';
 import { GROQ_ENDPOINT, GROQ_MODEL } from '../ai/groq-model';
 
 /**
@@ -14,8 +15,6 @@ import { GROQ_ENDPOINT, GROQ_MODEL } from '../ai/groq-model';
 export class CustomsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private readonly VAT_RATE = 0.15;
-  private readonly UPLIFTMENT = 0.10; // SA import ATV upliftment
 
   async estimate(companyId: string, fileId: string) {
     const file = await this.prisma.shipmentFile.findFirst({
@@ -24,41 +23,35 @@ export class CustomsService {
     });
     if (!file) throw new NotFoundException('Shipment file not found');
 
-    const lines = (file.cargo || []).map((c) => {
-      const customsValue = c.customsValue ?? 0;
-      const dutyRatePct = c.dutyRatePct ?? 0;
-      const duty = +(customsValue * (dutyRatePct / 100)).toFixed(2);
-      const atv = +(customsValue * (1 + this.UPLIFTMENT) + duty).toFixed(2);
-      const vat = +(atv * this.VAT_RATE).toFixed(2);
-      return {
-        cargoId: c.id,
+    // The duty arithmetic lives in ONE place (public-tools/sa-import-duty.ts),
+    // shared by the public calculator, this in-product estimate and the landing
+    // cost page. It used to be re-implemented here with its own VAT_RATE and
+    // UPLIFTMENT constants — a third copy sat in rate-shopping. Three copies of
+    // a statutory rate is three places to miss when SARS changes it: VAT moved
+    // 14% -> 15% in 2018 and will move again.
+    //
+    // The shared implementation also rounds more correctly. This file used
+    // Number.toFixed(2), which rounds 1.005 down to "1.00" because it operates
+    // on the binary float rather than the decimal; the shared helper adds
+    // Number.EPSILON before scaling. Totals can therefore differ from before by
+    // a cent on values that land exactly on a half — that is a fix, not a
+    // regression, and the tests below pin the new behaviour.
+    const cargo = file.cargo || [];
+    const estimate = estimateImportDuty(
+      cargo.map((c) => ({
         description: c.description,
         hsCode: c.hsCode,
-        customsValue,
-        dutyRatePct,
-        duty,
-        atv,
-        vat,
-        totalPayable: +(duty + vat).toFixed(2),
-      };
-    });
-
-    const totals = lines.reduce(
-      (a, l) => ({
-        customsValue: +(a.customsValue + l.customsValue).toFixed(2),
-        duty: +(a.duty + l.duty).toFixed(2),
-        vat: +(a.vat + l.vat).toFixed(2),
-        totalPayable: +(a.totalPayable + l.totalPayable).toFixed(2),
-      }),
-      { customsValue: 0, duty: 0, vat: 0, totalPayable: 0 },
+        quantity: (c as any).quantity,
+        customsValue: c.customsValue ?? 0,
+        dutyRatePct: c.dutyRatePct ?? 0,
+      })),
     );
+    // Re-attach the cargo row id the shared helper has no concept of.
+    const lines = estimate.lines.map((l, i) => ({ cargoId: cargo[i]?.id, ...l }));
 
     return {
-      currency: 'ZAR',
-      vatRatePct: this.VAT_RATE * 100,
-      upliftmentPct: this.UPLIFTMENT * 100,
+      ...estimate,
       lines,
-      totals,
       note: 'Estimate only — duty rates are operator/AI-set; SARS assessment on the SAD declaration is binding.',
     };
   }
