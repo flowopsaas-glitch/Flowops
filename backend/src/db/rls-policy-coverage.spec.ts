@@ -34,6 +34,31 @@ function tenantTables(): Set<string> {
   return tables;
 }
 
+/**
+ * Deliberate deviations from the plain `app_tenant_guard("companyId")` shape.
+ *
+ * Both are WEAKER or DIFFERENT than the standard clause and are safe only
+ * because of what the table holds, so each is enumerated here rather than
+ * permitted in general. Adding the variant to any other table leaves the
+ * allowlist out of step and turns this suite red.
+ */
+const SHARED_ROW_POLICY_TABLES = new Set([
+  // Platform-preset networks (companyId IS NULL) are readable by every tenant;
+  // tenant-defined ones are guarded. Weak by design: a tenant can see the
+  // preset ladder catalogue, never another tenant's own networks.
+  'rail_networks',
+]);
+
+const PARENT_DELEGATED_POLICY_TABLES = new Set([
+  // A rung has no companyId of its own; its policy checks the parent network's.
+  // This is real isolation (not the companyId-less false security warned about
+  // below) because visibility is derived from a guarded parent row.
+  'rail_escalation_rungs',
+]);
+
+/** The shared-row clause: shared rows visible to all, own rows visible to owner. */
+const SHARED_GUARD_SHAPE = 'app_tenant_guard_shared("companyId")';
+
 function rlsMigrationSql(): string {
   // The RLS migration defines the helpers and the bulk of the policies.
   // Tenant tables created AFTER it carry their policy in their own creating
@@ -56,6 +81,20 @@ function appTenantGuard(companyId: string, sessionCompanyId: string | null, rlsS
   return !['on', 'true', '1'].includes(strict);
 }
 
+/** TS mirror of SQL `app_tenant_guard_shared("companyId")` — executable semantics. */
+function appTenantGuardShared(
+  companyId: string | null,
+  sessionCompanyId: string | null,
+  rlsStrict: string | null,
+): boolean {
+  // Platform-preset rows (companyId IS NULL) are visible to everyone.
+  if (companyId === null) return true;
+  const tenant = sessionCompanyId && sessionCompanyId !== '' ? sessionCompanyId : null;
+  if (tenant !== null) return companyId === tenant;
+  const strict = rlsStrict ?? 'off';
+  return !['on', 'true', '1'].includes(strict);
+}
+
 describe('RLS tenant isolation — policy coverage', () => {
   const sql = rlsMigrationSql();
 
@@ -71,9 +110,14 @@ describe('RLS tenant isolation — policy coverage', () => {
     for (const table of tenantTables()) {
       const enabled = sql.includes(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY;`);
       const forced = sql.includes(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY;`);
-      const policy = new RegExp(
+      // Standard shape, or the shared-row shape for an allowlisted table.
+      const standard = new RegExp(
         `CREATE POLICY "tenant_isolation" ON "${table}"\\s+USING \\(app_tenant_guard\\("companyId"\\)\\)\\s+WITH CHECK \\(app_tenant_guard\\("companyId"\\)\\);`,
       ).test(sql);
+      const shared = new RegExp(
+        `CREATE POLICY "tenant_isolation" ON "${table}"\\s+USING \\(${SHARED_GUARD_SHAPE.replace(/[()"]/g, '\\$&')}\\)`,
+      ).test(sql);
+      const policy = standard || (shared && SHARED_ROW_POLICY_TABLES.has(table));
       if (!enabled || !forced || !policy) missing.push(`${table} (enable=${enabled}, force=${forced}, policy=${policy})`);
     }
     expect(missing).toEqual([]);
@@ -84,8 +128,61 @@ describe('RLS tenant isolation — policy coverage', () => {
     const policyTables = [...sql.matchAll(/CREATE POLICY "tenant_isolation" ON "([^"]+)"/g)].map((m) => m[1]);
     // Exactly one policy per tenant table, nothing more (a policy on a table
     // without companyId would filter EVERYTHING on app_tenant() — false security).
-    expect(new Set(policyTables).size).toBe(tables.size);
-    for (const t of policyTables) expect(tables.has(t)).toBe(true);
+    expect(new Set(policyTables).size).toBe(tables.size + PARENT_DELEGATED_POLICY_TABLES.size);
+    for (const t of policyTables) {
+      expect(tables.has(t) || PARENT_DELEGATED_POLICY_TABLES.has(t)).toBe(true);
+    }
+  });
+
+  it('uses the shared-row clause on exactly the allowlisted tables, and nowhere else', () => {
+    // An allowlist that is never checked against reality is a comment, not a
+    // control. This pins both directions: every allowlisted table really uses
+    // the variant, and no unlisted table has quietly adopted it.
+    const using = new RegExp(`USING \\(${SHARED_GUARD_SHAPE.replace(/[()"]/g, '\\$&')}\\)`);
+    const withCheck = new RegExp(`WITH CHECK \\(${SHARED_GUARD_SHAPE.replace(/[()"]/g, '\\$&')}\\)`);
+
+    for (const table of SHARED_ROW_POLICY_TABLES) {
+      const block = sql.match(
+        new RegExp(`CREATE POLICY "tenant_isolation" ON "${table}"[\\s\\S]{0,400}?;`),
+      );
+      // expect() takes a single argument in this repo — no message overload.
+      expect(block).not.toBeNull();
+      expect(using.test(block![0])).toBe(true);
+      expect(withCheck.test(block![0])).toBe(true);
+    }
+
+    // No table outside the allowlist may use the variant.
+    const anyShared = [...sql.matchAll(
+      new RegExp(`CREATE POLICY "tenant_isolation" ON "([^"]+)"[\\s\\S]{0,400}?${SHARED_GUARD_SHAPE.replace(/[()"]/g, '\\$&')}`, 'g'),
+    )].map((m) => m[1]);
+    for (const t of new Set(anyShared)) expect(SHARED_ROW_POLICY_TABLES.has(t)).toBe(true);
+  });
+
+  it('the shared-row guard never leaks one tenant\'s rows to another', () => {
+    // The whole point of the variant: a tenant gains the platform's shared
+    // rows but must not gain a competitor's. Enumerated, because this is the
+    // one place a "harmless" refactor would turn into a data breach.
+    expect(appTenantGuardShared('A', 'A', 'on')).toBe(true);   // own row
+    expect(appTenantGuardShared('B', 'A', 'on')).toBe(false);  // other tenant's row
+    expect(appTenantGuardShared(null, 'A', 'on')).toBe(true);  // platform preset
+    expect(appTenantGuardShared('A', null, 'off')).toBe(true); // no session, phase-1
+    // Strict mode does NOT hide shared rows — that is the deliberate difference
+    // from app_tenant_guard, and the reason the table is allowlisted.
+    expect(appTenantGuardShared(null, null, 'on')).toBe(true);
+    // ...but it still refuses another tenant's row with no session.
+    expect(appTenantGuardShared('A', null, 'on')).toBe(false);
+  });
+
+  it('pins the shared-row guard against the plain guard, so the difference stays visible', () => {
+    // Where the two agree and where they diverge, written down so the choice
+    // cannot drift into an accident.
+    for (const strict of ['on', 'off']) {
+      expect(appTenantGuardShared('A', 'A', strict))
+        .toBe(appTenantGuard('A', strict === 'on' ? 'A' : null, strict));
+    }
+    // The divergence: a shared (NULL-owner) row with no tenant session.
+    expect(appTenantGuardShared(null, null, 'on')).toBe(true);
+    expect(appTenantGuard(null as unknown as string, null, 'on')).toBe(false);
   });
 
   it('pins the phase-1 posture and documents the phase-2 setting flip in the migration', () => {
