@@ -67,7 +67,17 @@ function makeDb() {
     // ladder, which is the behaviour every test below was written against.
     // Seeding them here is how a test opts into another network's ladder.
     railNetwork: {
-      findFirst: jest.fn(async () => db.networks.find((n: any) => n.isDefault) ?? null),
+      // Honours the where-clause, including companyId. A fake that ignores it
+      // would let an unscoped defaultNetwork() look correct, which is exactly
+      // the bug this suite has to be able to catch.
+      findFirst: jest.fn(async ({ where }: any) => {
+        const hit = db.networks.find((n: any) => {
+          if (where?.isDefault !== undefined && !!n.isDefault !== !!where.isDefault) return false;
+          if (where && 'companyId' in where && n.companyId !== where.companyId) return false;
+          return true;
+        });
+        return hit ?? null;
+      }),
     },
     railEscalationRung: {
       findMany: jest.fn(async ({ where }: any) =>
@@ -860,7 +870,7 @@ describe('escalation follows the report\'s network, not Transnet by default', ()
   /** Seeds a second network into the fake Prisma. `prisma` is accepted so the
    *  call sites read the same way as the rest of the file's seeding helpers. */
   function ukNetwork(db: any, _prisma: any) {
-    db.networks.push({ id: UK, code: 'network-rail', name: 'Network Rail', isDefault: false });
+    db.networks.push({ id: UK, code: 'network-rail', name: 'Network Rail', isDefault: false, companyId: null });
     // 12/36/72-hour ladder — deliberately unlike Transnet's 24/48/96.
     const rungs = [
       { id: 'uk-1', networkId: UK, code: 'duty-controller', title: 'Duty Access Controller', role: 'Network Rail Duty Access Controller', afterHours: 0, ordinal: 10, isManualOnly: false, isTerminal: false, legacyStage: 'LIAISON_MANAGER_24H' },

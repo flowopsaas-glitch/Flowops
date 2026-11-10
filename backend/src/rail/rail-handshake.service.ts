@@ -139,9 +139,9 @@ export class RailHandshakeService {
    * Reports raised before networks existed carry no networkId and fall through
    * to the default network, so their ladder is unchanged by this refactor.
    */
-  private async ladderForReport(networkId: string | null | undefined) {
+  private async ladderForReport(networkId: string | null | undefined, companyId?: string | null) {
     if (!networkId) {
-      const fallback = await this.networks.defaultNetwork();
+      const fallback = await this.networks.defaultNetwork(companyId);
       return this.networks.ladderFor(fallback?.id ?? null);
     }
     return this.networks.ladderFor(networkId);
@@ -553,7 +553,7 @@ export class RailHandshakeService {
     // item on a report shares a network and elapsed window, and a ladder read
     // per row would be an N+1 against a table that changes once a year.
     const elapsed = this.hoursSince(report.windowEnd);
-    const ladder = await this.ladderForReport(report.networkId);
+    const ladder = await this.ladderForReport(report.networkId, report.companyId);
     const decisionRung = this.decisionRung(ladder);
     const rung = await this.networks.rungForElapsedHours(report.networkId, elapsed);
 

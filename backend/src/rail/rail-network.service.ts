@@ -121,9 +121,28 @@ export class RailNetworkService {
     })) as RailEscalationRungView[];
   }
 
-  /** The network assumed when a report does not name one. */
-  async defaultNetwork(): Promise<RailNetwork | null> {
-    return this.prisma.railNetwork.findFirst({ where: { isDefault: true } });
+  /**
+   * The network assumed when a report does not name one.
+   *
+   * Tenant-aware, and deliberately in two steps. A tenant may define its own
+   * default network alongside the platform preset, so a bare
+   * `findFirst({ where: { isDefault: true } })` would hand back whichever row
+   * the planner reached first — possibly another tenant's network, silently
+   * changing whose escalation clock a report runs on. Read the tenant's own
+   * default first, then fall back to the shared preset.
+   */
+  async defaultNetwork(companyId?: string | null): Promise<RailNetwork | null> {
+    if (companyId) {
+      const own = await this.prisma.railNetwork.findFirst({
+        where: { isDefault: true, companyId },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (own) return own;
+    }
+    return this.prisma.railNetwork.findFirst({
+      where: { isDefault: true, companyId: null },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   /**

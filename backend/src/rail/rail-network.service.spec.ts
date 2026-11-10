@@ -178,3 +178,66 @@ describe('RailNetworkService — the rules the enum carried in prose', () => {
     expect(resolved?.code).toBe('route-logistics-forum');
   });
 });
+
+describe('RailNetworkService — the default network is tenant-scoped', () => {
+  /**
+   * The tenant-scope audit caught this, and it is worth a test of its own
+   * because the failure is silent: an unscoped `findFirst({ isDefault: true })`
+   * returns whichever row the planner reaches first, so a tenant with their
+   * own default network can be escalated on another tenant's ladder, or on
+   * the platform preset, with nothing logged and nothing thrown.
+   *
+   * The rule being pinned: a tenant's own default network wins, then the
+   * shared platform preset, and never another tenant's.
+   */
+  function svcWith(networks: Array<Record<string, unknown>>) {
+    const prisma = {
+      railNetwork: {
+        // Mirrors the real two-step read: honour companyId, then fall back to
+        // the shared preset. A fake that ignores the clause would let an
+        // unscoped query look correct.
+        findFirst: jest.fn(async ({ where }: any) => {
+          const hit = networks.find((n) => {
+            if (where?.isDefault !== undefined && !!n.isDefault !== !!where.isDefault) return false;
+            if (where && 'companyId' in where && n.companyId !== where.companyId) return false;
+            return true;
+          });
+          return hit ?? null;
+        }),
+      },
+      railEscalationRung: { findMany: jest.fn(async () => []) },
+    } as any;
+    return new RailNetworkService(prisma);
+  }
+
+  const preset = { id: 'net-transnet', isDefault: true, companyId: null, code: 'transnet' };
+  const tenantA = { id: 'net-a', isDefault: true, companyId: 'A', code: 'a-rail' };
+  const tenantB = { id: 'net-b', isDefault: true, companyId: 'B', code: 'b-rail' };
+
+  it("a tenant with their own default gets their own, not the platform's", async () => {
+    const svc = svcWith([preset, tenantA]);
+    expect((await svc.defaultNetwork('A'))?.id).toBe('net-a');
+  });
+
+  it('a tenant with no default of their own falls back to the platform preset', async () => {
+    const svc = svcWith([preset, tenantA]);
+    expect((await svc.defaultNetwork('C'))?.id).toBe('net-transnet');
+  });
+
+  it("never returns another tenant's network", async () => {
+    // Row order is the trap: an unscoped findFirst over this array returns
+    // tenant B's network for tenant A, silently.
+    const svc = svcWith([tenantB, tenantA, preset]);
+    expect((await svc.defaultNetwork('A'))?.id).toBe('net-a');
+  });
+
+  it('a null companyId reads only the platform preset', async () => {
+    const svc = svcWith([tenantB, tenantA, preset]);
+    expect((await svc.defaultNetwork(null))?.id).toBe('net-transnet');
+  });
+
+  it('returns null when there is no default at all, rather than any network', async () => {
+    const svc = svcWith([{ id: 'net-x', isDefault: false, companyId: null, code: 'x' }]);
+    expect(await svc.defaultNetwork('A')).toBeNull();
+  });
+});
