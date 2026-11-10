@@ -10,6 +10,7 @@ import {
   financialYearOf, financialYearsBetween, formatFinancialYear, latestReadingPerWagon, parseFinancialYear,
 } from './rail-tariff.rules';
 import { ANCILLARY_SERVICE_CATALOG } from './catalog/ancillary-services.catalog';
+import { commercialThreshold } from './catalog/commercial-thresholds.catalog';
 
 // ── fixtures (synthetic) ─────────────────────────────────────────────────────
 const sched = (over: Partial<ScheduleLike> = {}): ScheduleLike => ({
@@ -133,7 +134,7 @@ describe('the hold', () => {
   });
 
   it('is not held with no readings, or while every wagon is within its limit', () => {
-    expect(deriveHold([])).toEqual({ held: false, wagons: [], totalExcessTonnes: 0, reason: null });
+    expect(deriveHold([])).toEqual({ held: false, wagons: [], totalExcessTonnes: 0, reason: null, safetyStop: false });
     expect(deriveHold([r('W1', 'WITHIN_LIMIT', '2026-10-02T08:00:00Z')]).held).toBe(false);
   });
   it('an UNVERIFIED reading never holds a consignment (the limit was unknown)', () => {
@@ -142,9 +143,45 @@ describe('the hold', () => {
   it('is held while ANY wagon is overloaded, and says which and by how much', () => {
     const h = deriveHold([r('W2', 'OVERLOADED', '2026-10-02T08:00:00Z', 0.5), r('W1', 'OVERLOADED', '2026-10-02T08:05:00Z', 3.2), r('W3', 'WITHIN_LIMIT', '2026-10-02T08:10:00Z')]);
     expect(h.held).toBe(true);
-    expect(h.wagons).toEqual([{ wagonNumber: 'W1', excessTonnes: 3.2 }, { wagonNumber: 'W2', excessTonnes: 0.5 }]);
+    expect(h.wagons).toEqual([
+      { wagonNumber: 'W1', excessTonnes: 3.2, mustNotProceed: true },
+      { wagonNumber: 'W2', excessTonnes: 0.5, mustNotProceed: false },
+    ]);
     expect(h.totalExcessTonnes).toBe(3.7);
-    expect(h.reason).toBe('Overloaded: W1 (3.2 t over), W2 (0.5 t over). Reduce the load and re-weigh each wagon within its limit.');
+    // W1 is past the 3 t safety line, so the reason names the safety stop rather than
+    // telling the operator to simply re-weigh.
+    expect(h.safetyStop).toBe(true);
+    expect(h.reason).toMatch(/Safety stop/);
+  });
+
+  it('an overload of 3 t or less is a load adjustment, not a safety stop', () => {
+    // §5.2.11: "more than 3 tons". Exactly 3 t is over the limit but not past the safety line.
+    const at = deriveHold([r('W1', 'OVERLOADED', '2026-10-02T08:00:00Z', 3)]);
+    expect(at.held).toBe(true);
+    expect(at.safetyStop).toBe(false);
+    expect(at.wagons[0].mustNotProceed).toBe(false);
+    expect(at.reason).toMatch(/Reduce the load and re-weigh/);
+    const over = deriveHold([r('W1', 'OVERLOADED', '2026-10-02T08:00:00Z', 3.01)]);
+    expect(over.safetyStop).toBe(true);
+    expect(over.wagons[0].mustNotProceed).toBe(true);
+    expect(over.reason).toMatch(/shall not be allowed to proceed/);
+  });
+
+  it('names only the wagons past the safety line, and tells the operator to remove them', () => {
+    const h = deriveHold([
+      r('W1', 'OVERLOADED', '2026-10-02T08:00:00Z', 8),
+      r('W2', 'OVERLOADED', '2026-10-02T08:01:00Z', 1),
+    ]);
+    expect(h.safetyStop).toBe(true);
+    expect(h.reason).toMatch(/W1 \(8 t over\)/);
+    expect(h.reason).not.toMatch(/W2/);
+    expect(h.reason).toMatch(/Remove the wagon/);
+  });
+
+  it('the safety line comes from the sourced threshold, not a number typed in here', () => {
+    // If Chapter 5's 3 t is ever re-published as something else, this test must move with it.
+    expect(commercialThreshold('overload_must_not_proceed_tonnes')!.value).toBe(3);
+    expect(commercialThreshold('overload_must_not_proceed_tonnes')!.source).toMatch(/§5\.2\.11/);
   });
   it('re-weighing the only overloaded wagon within its limit lifts the hold', () => {
     expect(deriveHold([r('W1', 'OVERLOADED', '2026-10-02T08:00:00Z', 3), r('W1', 'WITHIN_LIMIT', '2026-10-02T09:00:00Z')]).held).toBe(false);

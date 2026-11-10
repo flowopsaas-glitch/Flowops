@@ -274,10 +274,24 @@ describe('the hold', () => {
     const c = h.seedConsignment();
     const out = await over(h, c.id);
     expect(out.hold).toMatchObject({ held: true, status: 'HOLD_FOR_LOAD_ADJUSTMENT', changed: true, totalExcessTonnes: 10, wagons: [{ wagonNumber: 'W1', excessTonnes: 10 }] });
-    expect(out.hold.reason).toBe('Overloaded: W1 (10 t over). Reduce the load and re-weigh the wagon within its limit.');
+    // 10 t over is past the §5.2.11 safety line (more than 3 t), so the reason is the safety
+    // stop rather than the ordinary "reduce and re-weigh" wording. See the next test.
+    expect(out.hold.safetyStop).toBe(true);
+    expect(out.hold.reason).toBe('Safety stop (§5.2.11): W1 (10 t over) is more than 3 t over and shall not be allowed to proceed to its destination due to safety considerations. Remove the wagon from the train.');
     expect(h.consignment(c.id)).toMatchObject({ holdStatus: 'HOLD_FOR_LOAD_ADJUSTMENT', holdSetAt: NOW, holdClearedAt: null, holdReason: out.hold.reason });
     expect(h.actions()).toEqual([RAIL_AUDIT_ACTION.WEIGHBRIDGE_READING_RECORDED, RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET]);
     expect(h.entries()[1]).toMatchObject({ action: 'consignment.held_for_load_adjustment', targetType: 'rail_consignment', targetId: c.id, actorId: 'u-mgr', metadata: { totalExcessTonnes: 10 } });
+  });
+
+  it('an overload of 3 t or less is a load adjustment, not a §5.2.11 safety stop', async () => {
+    // 20 t x 4 axles = 80 t allowed. 82 t is 2 t over: the wagon is overweight but the
+    // Network Statement does not forbid it from proceeding, so the hold says re-weigh.
+    const h = make({ verifiedCorridor: { limit: 20 } });
+    const c = h.seedConsignment();
+    const out = await over(h, c.id, 'W1', 82);
+    expect(out.hold).toMatchObject({ held: true, status: 'HOLD_FOR_LOAD_ADJUSTMENT', safetyStop: false });
+    expect(out.hold.wagons[0]).toMatchObject({ excessTonnes: 2, mustNotProceed: false });
+    expect(out.hold.reason).toBe('Overloaded: W1 (2 t over). Reduce the load and re-weigh the wagon within its limit.');
   });
 
   it('a wagon within its limit does not hold the consignment', async () => {
@@ -321,13 +335,15 @@ describe('the hold', () => {
       await over(h, c.id, 'W1', 90);
       await over(h, c.id, 'W2', 85);
       expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(1);
-      expect(h.consignment(c.id).holdReason).toBe('Overloaded: W1 (10 t over), W2 (5 t over). Reduce the load and re-weigh each wagon within its limit.');
+      // Both wagons are more than 3 t over, so this is a §5.2.11 safety stop on both.
+    expect(h.consignment(c.id).holdReason).toBe('Safety stop (§5.2.11): W1 (10 t over), W2 (5 t over) are more than 3 t over and shall not be allowed to proceed to their destination due to safety considerations. Remove these wagons from the train.');
       const firstHeldAt = h.consignment(c.id).holdSetAt;
 
       jest.setSystemTime(new Date(NOW.getTime() + 60 * MIN));
       const out = await h.svc.recordReading('A', dto(c.id, { wagonNumber: 'W1', actualTonnes: 79 }) as any, MANAGER, new Date(NOW.getTime() + 60 * MIN));
       expect(out.hold).toMatchObject({ held: true, changed: false, totalExcessTonnes: 5, wagons: [{ wagonNumber: 'W2', excessTonnes: 5 }] });
-      expect(h.consignment(c.id).holdReason).toBe('Overloaded: W2 (5 t over). Reduce the load and re-weigh the wagon within its limit.');
+      // W1 is fixed but W2 is still 5 t over — still past the 3 t safety line.
+    expect(h.consignment(c.id).holdReason).toBe('Safety stop (§5.2.11): W2 (5 t over) is more than 3 t over and shall not be allowed to proceed to its destination due to safety considerations. Remove the wagon from the train.');
       expect(h.consignment(c.id).holdSetAt).toEqual(firstHeldAt); // when the hold began does not move
       expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_SET)).toHaveLength(1);
       expect(h.actions().filter((a) => a === RAIL_AUDIT_ACTION.CONSIGNMENT_HOLD_CLEARED)).toHaveLength(0);

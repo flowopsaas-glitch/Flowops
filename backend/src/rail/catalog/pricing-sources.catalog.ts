@@ -70,27 +70,30 @@ const U = (priceComponent: string, unit: string, extra: Partial<PricingSourceEnt
   };
 };
 
+/** Chapter 5 of the Network Statement (18 Sep 2026) supplied §5.2; cited per row below. */
+const CH5 = 'Network Statement V4 (18 Sep 2026)';
+
 export const PRICING_SOURCE_CATALOG: readonly PricingSourceEntry[] = [
   U('Infrastructure access — loaded rate (c/GTK), per corridor per FY', 'c/GTK', {
     id: 'P-01', currency: 'ZAR (cents)',
-    sourceDocument: 'Network Statement Vol 4, Section 5 tariff tables — NOT SUPPLIED',
-    sourceSection: 'Table 17 access tariffs; Ch 5 §5.2 — NOT SUPPLIED',
+    sourceDocument: `${CH5} §5.2.3 Table 17 — SUPPLIED`,
+    sourceSection: 'Table 17: Rail Access Fees applicable for 2026/27 (p157), effective 1 Aug 2026',
     formula: 'amount = rate(c/GTK)/100 × GTK; GTK = gross t × km; rounded once to cent',
-    notes: 'Audit §6 row 9. TARIFF_SCHEDULE_CATALOG empty by design. Calculator BLOCKED without VERIFIED loaded rate.',
+    notes: 'SUPPLIED at CATEGORY level, not per corridor. Table 17 is a commodity table: 3.54 c/GTK iron ore, 5.53 manganese, 6.03 coal, 4.41 intermodal, 9.00 mineral exports, 6.96 grain & tankers, 9.50 other general traffic (0.0 for the three passenger/loose-loco categories). Only two labels name a corridor (OreCor, NorthCor); see access-tariffs.catalog.ts. A per-corridor rate still needs the commodity→corridor mapping the document does not give, so TARIFF_SCHEDULE_CATALOG stays empty rather than being filled by inference.',
   }),
   U('Infrastructure access — empty-return rate (c/GTK), per corridor per FY', 'c/GTK', {
     id: 'P-02', currency: 'ZAR (cents)',
-    sourceDocument: 'Network Statement Vol 4, Section 5 tariff tables — NOT SUPPLIED',
-    sourceSection: 'Ch 5 §5.2 — NOT SUPPLIED',
+    sourceDocument: `${CH5} §5.2.3 Table 17 — SUPPLIED, but no separate empty rate published`,
+    sourceSection: 'Table 17 footnote: "This includes empty wagon movements to and from workshops" (attached to Intermodal & Motor Vehicles)',
     formula: 'Same as P-01 on tare weight',
-    notes: 'Empty return opt-in; unpriced line when no rate.',
+    notes: 'Chapter 5 publishes ONE rate per category, not a loaded/empty pair. The footnote says empty workshop movements are already inside the intermodal rate. A distinct empty-return rate is still NOT published. Empty return opt-in; unpriced line when no rate.'
   }),
   U('Infrastructure access — train-kilometre component (if any)', 'UNKNOWN', {
-    id: 'P-03', valueLabel: 'UNKNOWN — existence unconfirmed',
-    sourceDocument: 'Network Statement Vol 4 Ch 5 §5.2 — NOT SUPPLIED',
-    sourceSection: 'Train-km vs GTK charging definitions — NOT SUPPLIED',
-    formula: 'UNKNOWN — do not assume GTK-only or train-km+GTK',
-    notes: 'Calculator models GTK only (gap C-05). Train-km needs source definitions first.',
+    id: 'P-03', valueLabel: 'CONFIRMED to exist — R/train-km published, not yet modelled',
+    sourceDocument: `${CH5} §5.2.3 — SUPPLIED`,
+    sourceSection: 'Table 17 "Tariff per Trainkm (Rand)"; §5.2.3: "a two-part tariff where one tariff is based on train kms and the other on GTKs"',
+    formula: 'amount = R/train-km × train-km, charged IN ADDITION to the GTK component (not instead of it)',
+    notes: 'EXISTENCE NOW CONFIRMED — it is not GTK-only. R/train-km: 680 iron ore & manganese, 260 coal, 30 intermodal/grain/other general, 30.75 mineral exports, 50 metro & passenger <12 wagons, 60 passenger >12 wagons, 12 loose locomotives. Gap C-05 stands: the calculator still models GTK ONLY and therefore under-charges every category. See access-tariffs.catalog.ts.'
   }),
   U('Corridor length / section distances for GTK', 'km', {
     id: 'P-04', currency: 'n/a (quantity)',
@@ -115,10 +118,10 @@ export const PRICING_SOURCE_CATALOG: readonly PricingSourceEntry[] = [
   }),
   U('Traction electricity price / pass-through rate', 'ZAR/kWh', {
     id: 'P-07',
-    sourceDocument: 'Official traction-electricity pricing source — NOT SUPPLIED',
-    sourceSection: 'Tariff / pass-through methodology / billing unit / effective period — NOT SUPPLIED',
-    formula: 'Pass-through: amount = kWh × price; methodology UNKNOWN',
-    notes: 'Separate pass-through cost (gap C-06). Never defaulted.',
+    sourceDocument: `${CH5} §5.2.9 Additional Charges — METHODOLOGY SUPPLIED, rate NOT published`,
+    sourceSection: 'Table 17 note (traction excluded, pass-through); §5.2.9 — aggregated at corridor level, allocated on electric-locomotive GTKs',
+    formula: 'Pass-through: amount = kWh × price; allocation driver = electric GTK. Rate never defaulted.',
+    notes: 'MECHANISM NOW KNOWN: "the costs of electricity traction shall be recovered from those Access Seekers that utilise electrical traction only, therefore this charge shall be excluded from the costs that are shared among all Access Seekers". Aggregated per corridor and allocated by service design per flow using electric locomotive GTKs. The PRICE per kWh is still not published — it is a pass-through of cost, not a tariff. Never defaulted.'
   }),
   U('Diesel price (contracted/pump)', 'ZAR/L', {
     id: 'P-08',
@@ -129,16 +132,16 @@ export const PRICING_SOURCE_CATALOG: readonly PricingSourceEntry[] = [
   }),
   U('Overload penalty rate', 'ZAR / tonne over limit', {
     id: 'P-09',
-    sourceDocument: 'Network Statement / RAA — NOT SUPPLIED',
-    sourceSection: 'Penalty rule/rate — NOT SUPPLIED',
-    formula: 'penalty = total excess t × rate (one line, latest readings only); rate NOT escalated',
-    notes: 'Audit §6 row 12. Corrected-before-departure chargeability UNDECIDED (D23).',
+    sourceDocument: `${CH5} §5.2.11 — RULE SUPPLIED, rate NOT published`,
+    sourceSection: 'Overloading of a Rail Wagon in excess of its Maximum Carrying Capacity',
+    formula: 'penalty = excess t × rate, tiered by level of overloading (higher rate for larger excess); rate NOT published and NOT escalated',
+    notes: 'RULE NOW KNOWN: charges are levied on the actual mass conveyed, on top of the normal rate, at different rates for different levels of overloading (higher for larger). SAFETY: "Wagons that are overloaded by more than 3 tons shall not be allowed to proceed to its destination due to safety considerations" — enforced in commercial-thresholds.catalog.ts. The RATE itself is still not published. Corrected-before-departure chargeability UNDECIDED (D23).'
   }),
   U('Underload / under-utilisation charge (if any)', 'UNKNOWN', {
-    id: 'P-10', valueLabel: 'UNKNOWN — existence unconfirmed',
-    sourceDocument: 'Network Statement / RAA — NOT SUPPLIED',
-    sourceSection: 'Underload rule — NOT SUPPLIED',
-    notes: 'Overload/underload only when approved (C-08). Underload not modelled.',
+    id: 'P-10', valueLabel: 'CONFIRMED to exist — rule supplied, no separate charge published',
+    sourceDocument: `${CH5} §5.2.11 — SUPPLIED`,
+    sourceSection: 'Underloading bulk and break-bulk rail wagons',
+    notes: 'EXISTENCE NOW CONFIRMED. Rule: the Access Seeker pays the FULL Train Path fee regardless, and TRIM may reallocate the path to another operator after identifying a trend of under-loading in its quarterly reviews. SAFETY: "Underloading can be a safety hazard depending on the load profile. It can cause derailments on the line. Rail wagons that are underloaded by 10 tons and more should be carded off." The wagon-level gate is implemented in commercial-thresholds.catalog.ts; the corridor-level under-utilisation charge is still not modelled (C-08).'
   }),
   U('Annexure 40 ancillary services (113 lines)', 'Per annexure unit of measure (verbatim)', {
     id: 'P-11', timetablePeriod: '2026/27 (annexure cover; effective tariff period UNCONFIRMED)',
@@ -155,17 +158,17 @@ export const PRICING_SOURCE_CATALOG: readonly PricingSourceEntry[] = [
   }),
   U('Occurrence / cancellation charges', 'UNKNOWN', {
     id: 'P-13',
-    sourceDocument: 'Annexure 18; 20a/20b; 21; charge schedule — 18 + schedule NOT SUPPLIED',
-    sourceSection: 'Charge schedule — NOT SUPPLIED',
+    sourceDocument: `${CH5} §5.2.10.8–§5.2.10.9 Tables 21 & 22 — RULES SUPPLIED, amounts are the fee itself`,
+    sourceSection: 'Table 21 TRIM Penalties; Table 22 Access Seeker Penalties; §5.2.11 Additional Charges',
     formula: 'Consequence type only (forfeit/credit/refund); amounts never computed',
-    notes: 'Wave 3 models consequence type, never amounts. No charge schedule supplied.',
+    notes: 'RULES NOW KNOWN. Access Seeker: full cancellation within 72 h of departure (not Force Majeure) forfeits the access fees paid in advance; cancelled earlier, TRIM passes credit if it can reallocate the path. TRIM: full Train Path fee refunded where the Access Seeker declines a replacement path, assessed within 20 business days of contract-year end. Financial penalties beyond the Rail Access Agreement are NOT yet imposed — "no financial penalties ... shall be imposed until the Penalty Framework has been approved and implemented", with 3 months written notice required.'
   }),
   U('VAT / tax treatment of rail charges', '%', {
-    id: 'P-14', valueLabel: 'UNKNOWN — rate undecided',
-    sourceDocument: 'Authoritative tax/commercial source — NOT SUPPLIED',
-    sourceSection: 'VAT applicability + rate — NOT SUPPLIED',
+    id: 'P-14', valueLabel: 'Applicability CONFIRMED — rate not stated in Chapter 5',
+    sourceDocument: `${CH5} §5.2.4.4 — applicability SUPPLIED; rate not stated`,
+    sourceSection: '"VAT will be levied where applicable." (§5.2.4.4); §5.2.10.8.2 refers to penalties "together with any VAT thereon if applicable"',
     formula: 'Rail module sets no tax rate; platform default 15% applies on finalisation (D25)',
-    notes: 'Confirm standard / zero-rated / exempt with tax adviser / SARS.',
+    notes: 'APPLICABILITY NOW CONFIRMED by the document — VAT is levied. Chapter 5 does not state the rate, so the platform default stands. Confirm standard / zero-rated / exempt with tax adviser / SARS.'
   }),
   {
     id: 'P-15', priceComponent: 'Infrastructure escalation [BRIEF, UNVERIFIED]', value: 8.5, valueLabel: '8.50% [BRIEF, UNVERIFIED]',
@@ -173,7 +176,7 @@ export const PRICING_SOURCE_CATALOG: readonly PricingSourceEntry[] = [
     sourceDocument: 'Brief only — no corroborating document', sourceSection: 'n/a',
     formula: 'rate × (1+8.50/100)^years, opt-in, earlier-year only, recorded on line',
     verificationStatus: 'UNVERIFIED', owner: null, independentReviewer: null,
-    notes: 'Must remain explicitly UNVERIFIED. Never applied to overload penalty.',
+    notes: 'Must remain explicitly UNVERIFIED — Chapter 5 does NOT corroborate it: §5.2.13 escalates Additional Charges by PPI and §5.2.12 has Access Fees approved annually by IRERC, and neither publishes a percentage. Never applied to overload penalty.',
   },
   {
     id: 'P-16', priceComponent: 'Electricity escalation [BRIEF, UNVERIFIED]', value: 4.42, valueLabel: '4.42% [BRIEF, UNVERIFIED]',
