@@ -39,17 +39,32 @@ describe('seedRailReference', () => {
     expect(codes.rows).toHaveLength(0);
   });
 
-  it('--apply creates the six corridors, all SOURCE_PENDING with no invented limits', async () => {
+  it('--apply creates the six corridors with the Chapter 2 envelope, PARTIAL and cited', async () => {
     const { prisma, corridors } = make();
     const r = await seedRailReference(prisma);
     expect(r.tables[0]).toMatchObject({ created: 6, updated: 0, unchanged: 0 });
     expect(corridors.rows).toHaveLength(6);
     for (const row of corridors.rows) {
-      expect(row).toMatchObject({ dataStatus: 'SOURCE_PENDING', gauge: null, maxAxleLoadTonnes: null, vehicleProfile: null, maxTrainLengthM: null });
-      expect(row.electrification).toEqual([]);
+      // PARTIAL, not VERIFIED: the vehicle profile (Annexures 2 and 3) was never supplied.
+      expect(row).toMatchObject({ dataStatus: 'PARTIAL', vehicleProfile: null, gauge: 'CAPE_1067MM' });
+      expect(row.electrification.length).toBeGreaterThan(0);
+      expect(row.sourceRef).toMatch(/Network Statement/i);
     }
     const ore = corridors.rows.find((c) => c.code === 'COR-ORE')!;
-    expect(ore).toMatchObject({ name: 'Ore', aliases: ['Cape 2'], workbookRoutes: ['Ore'], sortOrder: 30 });
+    expect(ore).toMatchObject({ name: 'Ore', aliases: ['Cape 2'], workbookRoutes: ['Ore'], sortOrder: 30, maxAxleLoadTonnes: 30 });
+    const north = corridors.rows.find((c) => c.code === 'COR-NORTH')!;
+    expect(north).toMatchObject({ maxAxleLoadTonnes: 20, maxTrainLengthM: 2000 });
+  });
+
+  it('persists the section exceptions, so a 26 t clearance cannot be read as a corridor-wide 20 t', async () => {
+    const { prisma, corridors } = make();
+    await seedRailReference(prisma);
+    const north = corridors.rows.find((c) => c.code === 'COR-NORTH')!;
+    const ex = north.envelopeExceptions as Array<{ kind: string; tonnes?: number }>;
+    expect(ex.filter((e) => e.kind === 'AXLE_LOAD').map((e) => e.tonnes).sort((x, y) => (x ?? 0) - (y ?? 0))).toEqual([18.5, 26]);
+    const cape = corridors.rows.find((c) => c.code === 'COR-CAPE')!;
+    const capeEx = cape.envelopeExceptions as Array<{ kind: string; gauge?: string }>;
+    expect(capeEx.find((e) => e.kind === 'GAUGE')?.gauge).toBe('NARROW_610MM');
   });
 
   it('is idempotent: a second run changes nothing', async () => {
@@ -101,7 +116,9 @@ describe('seedRailReference', () => {
 
   it('detects duplicate codes', async () => {
     const { prisma } = make();
-    (CORRIDOR_CATALOG as unknown as any[]).push({ ...CORRIDOR_CATALOG[1] });
+    // Look the row up by code rather than by index: the catalog is not in a fixed order.
+    const dupe = CORRIDOR_CATALOG.find((c) => c.code === 'COR-CAPE')!;
+    (CORRIDOR_CATALOG as unknown as any[]).push({ ...dupe });
     try {
       await expect(seedRailReference(prisma)).rejects.toThrow(/duplicate corridor code COR-CAPE/);
     } finally {

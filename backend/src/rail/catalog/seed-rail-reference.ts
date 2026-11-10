@@ -111,6 +111,7 @@ export async function seedRailReference(
       networkId: networkIdByCode.get(c.networkCode) ?? null,
       gauge: c.gauge, electrification: c.electrification, maxAxleLoadTonnes: c.maxAxleLoadTonnes,
       vehicleProfile: c.vehicleProfile, maxTrainLengthM: c.maxTrainLengthM, contacts: c.contacts as never,
+      envelopeExceptions: (c.envelopeExceptions ?? null) as never,
       dataStatus: c.dataStatus, sourceRef: c.sourceRef ?? null, verifiedBy: c.verifiedBy ?? null, notes: c.notes || null,
     };
     const existing = await prisma.railCorridorNode.findUnique({ where: { code: c.code } });
@@ -126,6 +127,8 @@ export async function seedRailReference(
       && existing.maxTrainLengthM === data.maxTrainLengthM && sameJson(existing.contacts, data.contacts) && existing.dataStatus === data.dataStatus
       && existing.sourceRef === data.sourceRef && (existing.notes ?? null) === data.notes
       && (existing.networkId ?? null) === data.networkId
+      // The section exceptions are limits, not decoration — a re-seed has to notice when one moves.
+      && sameJson(existing.envelopeExceptions as never, data.envelopeExceptions)
     ) {
       corridors.unchanged += 1;
     } else {

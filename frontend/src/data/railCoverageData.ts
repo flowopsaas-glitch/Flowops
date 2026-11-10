@@ -105,7 +105,7 @@ export const coverageMeta: Record<string, CoverageMeta> = {
   "9": {
     capability: "Network reference",
     criticality: "important",
-    effect: "Unavailable. Bridge class and maximum allowable axle mass cap wagon loading. No axle-mass limit can be enforced without it.",
+    effect: "Unavailable. Bridge class caps wagon loading per structure, so no per-bridge or per-section axle-mass limit can be enforced without it. Corridor-level axle loads ARE now enforced from Network Statement Chapter 2 §2.8–2.13 (20 t general, with 16.5 / 18.5 / 26 / 30 t sections recorded), but those are corridor figures: they cannot tell you which individual bridge or section a heavier wagon is cleared for.",
   },
   "10": {
     capability: "Train operations",

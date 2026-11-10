@@ -4,7 +4,7 @@
  * are SOURCE_PENDING with no limit, which is exactly the default these tests start from.
  */
 import { BadRequestException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { RailDataStatus, UserRole } from '@prisma/client';
 import { FakeTable, snapshot } from '../../test/support/in-memory-db';
 import { RailWeighbridgeService } from './rail-weighbridge.service';
 import { RAIL_AUDIT_ACTION, RailActor } from './rail-audit';
@@ -15,7 +15,7 @@ const MANAGER: RailActor = { id: 'u-mgr', email: 'mia@toc.co.za', name: 'Mia Man
 
 const wagon = (n: string, axles: number | null = 4) => ({ id: `wag-${n}`, wagonNumber: n, axles });
 
-function make(opts: { entitled?: boolean; verifiedCorridor?: { limit: number; status?: 'VERIFIED' | 'SOURCE_PENDING' } } = {}) {
+function make(opts: { entitled?: boolean; verifiedCorridor?: { limit: number | null; status?: RailDataStatus } } = {}) {
   const readings = new FakeTable('wr', { defaults: () => ({ wagonId: null, weighbridge: null, axles: null, maxAxleLoadTonnes: null, limitSource: 'NONE', corridorCode: null, allowedTonnes: null, excessTonnes: null, note: null }) });
   const consignments = new FakeTable('con');
   const corridors = new FakeTable('cor');
@@ -115,8 +115,10 @@ describe('validation', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('where the limit comes from', () => {
-  it('with no corridor data (today\'s truth) and no entered limit the reading is UNVERIFIED — it never passes and never holds', async () => {
-    const h = make();
+  it('with no corridor data and no entered limit the reading is UNVERIFIED — it never passes and never holds', async () => {
+    // The catalog used to supply this case for free: every corridor was SOURCE_PENDING with a
+    // null axle load. Chapter 2 has since been loaded, so "no data" has to be seeded.
+    const h = make({ verifiedCorridor: { limit: null, status: 'SOURCE_PENDING' } });
     const c = h.seedConsignment();
     const out = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 500 }) as any, MANAGER, NOW);
     expect(out.reading).toMatchObject({ status: 'UNVERIFIED', limitSource: 'NONE', maxAxleLoadTonnes: null, allowedTonnes: null, excessTonnes: null, corridorCode: 'COR-ORE' });
@@ -140,6 +142,28 @@ describe('where the limit comes from', () => {
     const out = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 500 }) as any, MANAGER, NOW);
     expect(out.reading).toMatchObject({ status: 'UNVERIFIED', limitSource: 'NONE' });
     expect(out.hold.held).toBe(false);
+  });
+
+  it('a PARTIAL corridor limit IS trusted — Chapter 2 publishes the axle load, which is all this check uses', async () => {
+    // A PARTIAL corridor lacks the vehicle profile, and the weighbridge never consults it.
+    // Ignoring a published 20 t because a profile is missing would weigh an overloaded
+    // wagon onto the line and find nothing wrong with it.
+    const h = make({ verifiedCorridor: { limit: 20, status: 'PARTIAL' } });
+    const c = h.seedConsignment();
+    const out = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 100 }) as any, MANAGER, NOW);
+    expect(out.reading).toMatchObject({ status: 'OVERLOADED', limitSource: 'CORRIDOR', maxAxleLoadTonnes: 20 });
+    expect(out.hold.held).toBe(true);
+  });
+
+  it('a corridor whose axle load varies by section is judged on its most restrictive section', async () => {
+    // North publishes 20 t generally but only 18.5 t Empangeni–Nkwalini. A weighbridge does
+    // not know the route, so the 18.5 t floor is what it can safely hold to.
+    const h = make({ verifiedCorridor: { limit: null, status: 'PARTIAL' } });
+    h.corridors.rows[0].maxAxleLoadTonnes = 20;
+    h.corridors.rows[0].envelopeExceptions = [{ kind: 'AXLE_LOAD', sections: 'Empangeni – Nkwalini', tonnes: 18.5 }];
+    const c = h.seedConsignment();
+    const out = await h.svc.recordReading('A', dto(c.id, { actualTonnes: 76 }) as any, MANAGER, NOW); // 19 t/axle × 4
+    expect(out.reading).toMatchObject({ limitSource: 'CORRIDOR', maxAxleLoadTonnes: 18.5, status: 'OVERLOADED' });
   });
 
   it('an entered limit alone is MANUAL and is judged', async () => {
@@ -386,7 +410,8 @@ describe('the record itself', () => {
     const c = h.seedConsignment();
     const out = await h.svc.recordReading('A', dto(c.id, { weighbridge: '  Hotazel WB-2 ', note: '  second pass  ' }) as any, MANAGER, NOW);
     expect(out.reading).toMatchObject({ companyId: 'A', consignmentId: c.id, wagonId: 'wag-W1', weighbridge: 'Hotazel WB-2', note: 'second pass', createdById: 'u-mgr', createdByEmail: 'mia@toc.co.za' });
-    expect(h.entries()[0]).toMatchObject({ action: 'weighbridge.reading_recorded', targetType: 'rail_weighbridge_reading', targetName: 'RAIL-1 W1', metadata: { companyId: 'A', wagonNumber: 'W1', limitSource: 'NONE', status: 'UNVERIFIED' } });
+    // The catalog now supplies Ore at 30 t, so this reading is judged against a real limit.
+    expect(h.entries()[0]).toMatchObject({ action: 'weighbridge.reading_recorded', targetType: 'rail_weighbridge_reading', targetName: 'RAIL-1 W1', metadata: { companyId: 'A', wagonNumber: 'W1', limitSource: 'CORRIDOR' } });
   });
 
   it('an audit failure never loses the reading or the hold', async () => {

@@ -27,8 +27,80 @@ export const RAIL_VEHICLE_PROFILE_LABEL: Record<RailVehicleProfile, string> = { 
  */
 export const RAIL_VEHICLE_PROFILE_ORDER: RailVehicleProfile[] = ['A', 'B', 'B_PLUS_1'];
 
-/** [BRIEF] The maximum axle-load classes a corridor or yard may declare, in tonnes. */
-export const RAIL_AXLE_LOAD_CLASSES_T: readonly number[] = [20, 26, 30];
+/**
+ * The maximum axle-load classes a corridor or yard may declare, in tonnes.
+ *
+ * [NS V4 Ch.2] All five values are stated by the Network Statement: 20 t is the general
+ * limit on five of the six corridors; 26 t is North §2.8.1.6; 30 t is Ore §2.9.1.6;
+ * 18.5 t is North §2.8.1.6 (Empangeni–Nkwalini) and North-East §2.10.1.6 (branch lines);
+ * 16.5 t is the lower bound of Cape §2.11.1.6 ("between 16.5 and 20").
+ */
+export const RAIL_AXLE_LOAD_CLASSES_T: readonly number[] = [16.5, 18.5, 20, 26, 30];
+
+/**
+ * A corridor-level envelope value is the GENERAL limit. Network Statement Chapter 2
+ * states a general figure and then departs from it on named sections — North runs 20 t
+ * but 26 t on the Blackhill–Ogies–Ermelo–Richards Bay and Trichardt–Ermelo stretches and
+ * 18.5 t Empangeni–Nkwalini, and Cape is "predominantly" 1 065 mm but 610 mm on the
+ * Avontuur / Patensie branches.
+ *
+ * Those departures are safety numbers, so they cannot be flattened into the general
+ * column and they cannot live only in prose. Each one is recorded here, typed, and
+ * validated: a corridor is not allowed to declare a limit the document never states.
+ */
+export type CorridorEnvelopeExceptionKind = 'AXLE_LOAD' | 'GAUGE' | 'TRAIN_LENGTH';
+
+export interface CorridorEnvelopeException {
+  kind: CorridorEnvelopeExceptionKind;
+  /**
+   * The sections this applies to, as the source words them. Where the document names the
+   * sections we quote them; where it defers to an annexure we say so, rather than guessing.
+   */
+  sections: string;
+  /** AXLE_LOAD only — tonnes per axle. */
+  tonnes?: number;
+  /** GAUGE only. */
+  gauge?: RailGauge;
+  /** TRAIN_LENGTH only — metres. */
+  metres?: number;
+  /** Why this differs from the corridor-level value. */
+  note?: string;
+}
+
+const ENVELOPE_EXCEPTION_KINDS: readonly CorridorEnvelopeExceptionKind[] = ['AXLE_LOAD', 'GAUGE', 'TRAIN_LENGTH'];
+const ENVELOPE_EXCEPTION_KEYS = new Set(['kind', 'sections', 'tonnes', 'gauge', 'metres', 'note']);
+
+/** Returns a list of problems with one corridor-envelope exception; empty means it is well-formed. */
+export function validateEnvelopeException(e: CorridorEnvelopeException, at: string): string[] {
+  const p: string[] = [];
+  if (!ENVELOPE_EXCEPTION_KINDS.includes(e?.kind)) {
+    p.push(`${at}.kind "${String(e?.kind)}" is not one of ${ENVELOPE_EXCEPTION_KINDS.join('/')}`);
+    return p; // nothing else is meaningful if the kind is unknown
+  }
+  for (const k of Object.keys(e ?? {})) {
+    if (!ENVELOPE_EXCEPTION_KEYS.has(k)) p.push(`${at} has key "${k}" — only kind/sections/tonnes/gauge/metres/note are allowed`);
+  }
+  if (!String(e.sections ?? '').trim()) p.push(`${at}.sections is required`);
+
+  if (e.kind === 'AXLE_LOAD') {
+    if (typeof e.tonnes !== 'number') p.push(`${at} (AXLE_LOAD) requires tonnes`);
+    else if (!RAIL_AXLE_LOAD_CLASSES_T.includes(e.tonnes)) {
+      p.push(`${at} tonnes ${e.tonnes} is not one of ${RAIL_AXLE_LOAD_CLASSES_T.join('/')} t`);
+    }
+    if (e.gauge !== undefined) p.push(`${at} (AXLE_LOAD) must not set gauge`);
+  }
+  if (e.kind === 'GAUGE') {
+    if (e.gauge === undefined) p.push(`${at} (GAUGE) requires gauge`);
+    else if (!RAIL_GAUGE_VALUES.includes(e.gauge)) p.push(`${at} gauge "${e.gauge}" is not one of ${RAIL_GAUGE_VALUES.join('/')}`);
+    if (e.tonnes !== undefined) p.push(`${at} (GAUGE) must not set tonnes`);
+  }
+  if (e.kind === 'TRAIN_LENGTH') {
+    if (typeof e.metres !== 'number' || !Number.isInteger(e.metres) || e.metres <= 0) {
+      p.push(`${at} (TRAIN_LENGTH) requires a positive integer metres`);
+    }
+  }
+  return p;
+}
 
 /** [BRIEF, unverified — V4 section not supplied] A slot is allocated for at most this many years. */
 export const MAX_SLOT_VALIDITY_YEARS = 5;
@@ -82,7 +154,18 @@ export interface ReferenceEnvelopeFields {
   maxTrainLengthM: number | null;
   sidingCapacityWagons?: number | null;
   contacts: ContactEntry[];
-  dataStatus: 'SOURCE_PENDING' | 'VERIFIED';
+  /**
+   * SOURCE_PENDING = nothing loaded yet. PARTIAL = some envelope fields are loaded from a
+   * cited source and others are still missing. VERIFIED = the whole envelope is loaded,
+   * cited and reviewed.
+   */
+  dataStatus: 'SOURCE_PENDING' | 'PARTIAL' | 'VERIFIED';
+  /**
+   * Departures from the general envelope on named sections. See
+   * {@link CorridorEnvelopeException} — these are safety numbers, so they are typed and
+   * validated rather than left as prose.
+   */
+  envelopeExceptions?: CorridorEnvelopeException[] | null;
   sourceRef?: string | null;
   verifiedBy?: string | null;
 }
@@ -103,6 +186,7 @@ export function validateReferenceEntry(e: ReferenceEnvelopeFields): string[] {
   for (const [k, v] of [['maxTrainLengthM', e.maxTrainLengthM], ['sidingCapacityWagons', e.sidingCapacityWagons ?? null]] as const) {
     if (v !== null && (!Number.isInteger(v) || v <= 0)) p.push(`${k} must be a positive integer`);
   }
+  (e.envelopeExceptions ?? []).forEach((x, i) => p.push(...validateEnvelopeException(x, `envelopeExceptions[${i}]`)));
   e.contacts.forEach((c, i) => {
     for (const k of Object.keys(c)) if (!CONTACT_KEYS.has(k)) p.push(`contacts[${i}] has key "${k}" — only role/function/email/phone/notes are allowed (no personal names)`);
     if (!c.role?.trim()) p.push(`contacts[${i}].role is required`);
@@ -116,6 +200,19 @@ export function validateReferenceEntry(e: ReferenceEnvelopeFields): string[] {
     if (e.maxTrainLengthM === null) p.push('VERIFIED requires maxTrainLengthM');
     if (!e.sourceRef?.trim()) p.push('VERIFIED requires sourceRef');
     if (!e.verifiedBy?.trim()) p.push('VERIFIED requires verifiedBy');
+  }
+  if (e.dataStatus === 'PARTIAL') {
+    // PARTIAL claims "some of this is real" — so something must actually be loaded, and it
+    // must say where it came from. Otherwise it is just SOURCE_PENDING wearing a better name.
+    const loaded = [
+      e.gauge !== null,
+      e.electrification.length > 0,
+      e.maxAxleLoadTonnes !== null,
+      e.maxTrainLengthM !== null,
+      (e.envelopeExceptions ?? []).length > 0,
+    ].some(Boolean);
+    if (!loaded) p.push('PARTIAL requires at least one loaded envelope value');
+    if (!e.sourceRef?.trim()) p.push('PARTIAL requires sourceRef');
   }
   return p;
 }

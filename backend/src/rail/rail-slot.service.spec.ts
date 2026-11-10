@@ -189,7 +189,8 @@ describe('reference data', () => {
     const h = make();
     const list = await h.svc.listCorridors('A');
     expect(list).toHaveLength(6);
-    expect(list.every((c) => c.fromCatalog && c.dataStatus === 'SOURCE_PENDING' && c.gauge === null)).toBe(true);
+    // Falling back to the catalog now yields PARTIAL rows with a real, cited gauge.
+    expect(list.every((c) => c.fromCatalog && c.dataStatus === 'PARTIAL' && c.gauge === 'CAPE_1067MM')).toBe(true);
   });
   it('seeded rows win over the catalog', async () => {
     const h = make();
@@ -379,7 +380,7 @@ describe('submit — three hard gates', () => {
       const h = make();
       h.corridors.seed(VERIFIED_ORE);
       const app = h.draftReady({ gauge: 'CAPE_1067MM', axleLoadTonnes: 30, vehicleProfile: 'B' });
-      await expect(h.svc.submit('A', app.id, MANAGER, NOW)).rejects.toThrow(/Corridor envelope — .*axle load 30 t exceeds the Ore corridor limit of 26 t by 4 t/);
+      await expect(h.svc.submit('A', app.id, MANAGER, NOW)).rejects.toThrow(/Corridor envelope — .*axle load 30 t exceeds the highest limit the Ore corridor publishes \(26 t\) by 4 t/);
       expect(h.apps.rows[0].status).toBe('DRAFT');
     });
     it('REJECTS a gauge mismatch', async () => {
@@ -403,11 +404,25 @@ describe('submit — three hard gates', () => {
       const r: any = await h.svc.submit('A', app.id, MANAGER, NOW);
       expect(r.application.envelopeCheckStatus).toBe('UNVERIFIED');
     });
-    it('a pending (unverified) corridor never rejects, even for an absurd axle load', async () => {
-      const h = make(); // no seeded rows → catalog fallback, SOURCE_PENDING
-      const app = h.draftReady({ gauge: 'STANDARD_1435MM', axleLoadTonnes: 40 });
+    it('a corridor with NO loaded envelope never rejects, even for an absurd axle load', async () => {
+      // The catalog used to supply this case for free (every corridor was SOURCE_PENDING).
+      // Now that Chapter 2 has been loaded the catalog is PARTIAL and rejects on real
+      // limits, so the case has to be seeded explicitly — and it is worth keeping, because
+      // "no data, no rejection" is still the rule for a corridor nobody has populated.
+      const h = make();
+      h.corridors.seed({ ...VERIFIED_ORE, code: 'COR-UNKNOWN', name: 'Unloaded', dataStatus: 'SOURCE_PENDING', gauge: null, maxAxleLoadTonnes: null });
+      const app = h.draftReady({ corridorCode: 'COR-UNKNOWN', gauge: 'STANDARD_1435MM', axleLoadTonnes: 40 });
       const r: any = await h.svc.submit('A', app.id, MANAGER, NOW);
       expect(r.application.envelopeCheckStatus).toBe('UNVERIFIED');
+    });
+
+    it('a PARTIAL corridor DOES reject, because its gauge and axle load are cited', async () => {
+      // The six real corridors are PARTIAL: Chapter 2 supplies gauge and axle load (the two
+      // criteria that can reject) and withholds the vehicle profile, which cannot reject.
+      const h = make();
+      h.corridors.seed({ ...VERIFIED_ORE, dataStatus: 'PARTIAL', maxAxleLoadTonnes: 30 });
+      const app = h.draftReady({ gauge: 'CAPE_1067MM', axleLoadTonnes: 40 });
+      await expect(h.svc.submit('A', app.id, MANAGER, NOW)).rejects.toThrow(/exceeds the highest limit the Ore corridor publishes \(30 t\)/);
     });
   });
 

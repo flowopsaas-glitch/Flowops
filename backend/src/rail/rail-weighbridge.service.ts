@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, RailDataStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
@@ -8,11 +8,14 @@ import {
 } from './rail-audit';
 import { RecordWeighbridgeReadingDto } from './dto/rail-weighbridge.dto';
 import { CORRIDOR_CATALOG } from './catalog/corridors.catalog';
-import { resolveCorridor } from './rail-reference';
+import { CorridorEnvelopeException, resolveCorridor } from './rail-reference';
+import { axleLoadBand } from './rail-envelope';
 import { deriveHold, evaluateOverload } from './rail-tariff.rules';
 
 interface CorridorLimit {
-  code: string; name: string; aliases: string[]; workbookRoutes: string[]; maxAxleLoadTonnes: number | null; dataStatus: 'SOURCE_PENDING' | 'VERIFIED';
+  code: string; name: string; aliases: string[]; workbookRoutes: string[]; maxAxleLoadTonnes: number | null; dataStatus: RailDataStatus;
+  /** Section-level axle-load departures, carried through so the floor can be computed. */
+  envelopeExceptions?: CorridorEnvelopeException[] | null;
 }
 
 const FUTURE_SKEW_MS = 5 * 60_000;
@@ -52,9 +55,10 @@ export class RailWeighbridgeService {
 
   private async corridors(): Promise<CorridorLimit[]> {
     const rows = await this.prisma.railCorridorNode.findMany({ where: { isActive: true } });
-    const source: ReadonlyArray<{ code: string; name: string; aliases?: string[] | null; workbookRoutes?: string[] | null; maxAxleLoadTonnes?: number | null; dataStatus: 'SOURCE_PENDING' | 'VERIFIED' }> = rows.length ? rows : CORRIDOR_CATALOG;
+    const source: ReadonlyArray<{ code: string; name: string; aliases?: string[] | null; workbookRoutes?: string[] | null; maxAxleLoadTonnes?: number | null; envelopeExceptions?: unknown; dataStatus: RailDataStatus }> = rows.length ? rows : CORRIDOR_CATALOG;
     return source.map((c) => ({
       code: c.code, name: c.name, aliases: [...(c.aliases ?? [])], workbookRoutes: [...(c.workbookRoutes ?? [])], maxAxleLoadTonnes: c.maxAxleLoadTonnes ?? null, dataStatus: c.dataStatus,
+      envelopeExceptions: (c.envelopeExceptions ?? null) as CorridorEnvelopeException[] | null,
     }));
   }
 
@@ -83,11 +87,20 @@ export class RailWeighbridgeService {
       if (weighedAt.getTime() > now.getTime() + FUTURE_SKEW_MS) throw new BadRequestException('weighedAt cannot be in the future.');
     }
 
-    // The limit. A VERIFIED corridor's maximum is authoritative; a limit entered with the reading (the wagon's own rating)
-    // can only make it STRICTER — a higher figure must never relax a verified limit, or an overload could be typed away.
-    // With no verified corridor limit, an entered one stands alone (MANUAL); with neither there is no limit.
+    // The limit. A corridor's published maximum is authoritative once it has been loaded from a
+    // cited source — VERIFIED or PARTIAL. PARTIAL counts: Chapter 2 of the Network Statement
+    // supplies the axle load, and what a PARTIAL corridor lacks is the vehicle profile, which
+    // this check never consults. Ignoring a published axle load because of a missing profile
+    // would weigh an overloaded wagon onto a 20 t line and find nothing wrong with it.
+    // A limit entered with the reading (the wagon's own rating) can only make it STRICTER — a
+    // higher figure must never relax a published limit, or an overload could be typed away.
+    // With no published corridor limit, an entered one stands alone (MANUAL); neither, no limit.
     const corridor = resolveCorridor(await this.corridors(), consignment.corridor);
-    const corridorLimit = corridor && corridor.dataStatus === 'VERIFIED' && corridor.maxAxleLoadTonnes !== null ? corridor.maxAxleLoadTonnes : null;
+    const cited = corridor?.dataStatus === 'VERIFIED' || corridor?.dataStatus === 'PARTIAL';
+    const envelope = cited && corridor ? axleLoadBand(corridor.maxAxleLoadTonnes, corridor.envelopeExceptions) : null;
+    // Within the band the route decides, and a weighbridge does not know the route — so the
+    // floor applies: the most restrictive limit the corridor publishes anywhere.
+    const corridorLimit = envelope ? envelope.floorTonnes : null;
     const manualLimit = typeof dto.maxAxleLoadTonnes === 'number' ? dto.maxAxleLoadTonnes : null;
     let maxAxleLoadTonnes: number | null = null;
     let limitSource: 'CORRIDOR' | 'MANUAL' | 'NONE' = 'NONE';
