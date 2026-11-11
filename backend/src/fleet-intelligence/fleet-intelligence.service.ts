@@ -108,19 +108,36 @@ export class FleetIntelligenceService {
       }
     }
 
+    // Count the baseline EXACTLY the way the current window is counted, or the
+    // growth figure is arithmetic noise. The current window adds a waybill to a
+    // zone twice when both endpoints are in that zone (pickups++ and
+    // deliveries++); this loop used `recipientAddress || senderAddress`, so it
+    // added it once. The two windows were therefore different units, and a
+    // business with perfectly FLAT volume reported (2N - N) / N = +100% growth
+    // and trend SURGING — which put a static zone in `hotZones` and produced
+    // the advice to pre-position drivers there. Mirror the loop above.
     for (const wb of previous) {
-      const zone = this.extractZone(wb.recipientAddress) || this.extractZone(wb.senderAddress);
-      if (zone) prevZoneMap.set(zone, (prevZoneMap.get(zone) ?? 0) + 1);
+      const pickupZone = this.extractZone(wb.senderAddress);
+      const deliveryZone = this.extractZone(wb.recipientAddress);
+      if (pickupZone) prevZoneMap.set(pickupZone, (prevZoneMap.get(pickupZone) ?? 0) + 1);
+      if (deliveryZone) prevZoneMap.set(deliveryZone, (prevZoneMap.get(deliveryZone) ?? 0) + 1);
     }
 
     // Build zone array with growth trends
     const zones = [...zoneMap.entries()]
       .map(([zone, data]) => {
         const prevCount = prevZoneMap.get(zone) ?? 0;
-        const growthPct = prevCount > 0
+        // No prior window means no baseline, so growth is undefined — not 100.
+        // The old `data.total > 0 ? 100 : 0` put a brand-new zone carrying a
+        // single delivery at +100% and labelled it SURGING, which fed
+        // `hotZones` and produced the advice "… is surging — consider
+        // pre-positioning drivers there" — a reallocation recommendation
+        // derived from no comparison at all.
+        const growthPct: number | null = prevCount > 0
           ? Math.round(((data.total - prevCount) / prevCount) * 100)
-          : data.total > 0 ? 100 : 0;
-        return { zone, ...data, growthPct, trend: growthPct > 20 ? 'SURGING' : growthPct > 0 ? 'GROWING' : growthPct < -20 ? 'DECLINING' : 'STABLE' };
+          : null;
+        const trend = growthPct == null ? 'NEW' : growthPct > 20 ? 'SURGING' : growthPct > 0 ? 'GROWING' : growthPct < -20 ? 'DECLINING' : 'STABLE';
+        return { zone, ...data, growthPct, trend };
       })
       .sort((a, b) => b.total - a.total)
       .slice(0, 20);
@@ -171,7 +188,14 @@ export class FleetIntelligenceService {
       const delivered30d = month.filter(s => s.status === 'DELIVERED').length;
       const avgPerDay = Math.round((delivered7d / 7) * 10) / 10;
       const failed = month.filter(s => s.status === 'FAILED').length;
-      const successRate = month.length > 0 ? Math.round(((month.length - failed) / month.length) * 100) : 100;
+      // Empty denominator: a driver with no shipments in the window has no
+      // success rate at all — not a perfect one. Returning 100 here made an
+      // idle driver outrank one who ran 100 deliveries with 10 failures (90%),
+      // while this SAME record reported utilization 0 and rating 'LOW'.
+      // Null means "no data"; the dashboard KPI service already uses exactly
+      // this convention (value + hasData) and documents why: comparing 0%
+      // against 0% reports a trend that does not exist.
+      const successRate: number | null = month.length > 0 ? Math.round(((month.length - failed) / month.length) * 100) : null;
 
       // Utilization score: 0-100 based on deliveries vs expected (target: 8/day)
       const TARGET_PER_DAY = 8;
@@ -320,7 +344,9 @@ export class FleetIntelligenceService {
     const forecast = [1, 2, 3].map(i => ({
       month: new Date(now.getFullYear(), now.getMonth() + i, 1)
         .toLocaleDateString('en-ZA', { year: 'numeric', month: 'short' }),
-      projected: Math.round(currentLoad + slope * i),
+      // A declining fleet regresses to a negative projection, which is not a
+      // number of shipments anyone can run. Floor at zero.
+      projected: Math.max(0, Math.round(currentLoad + slope * i)),
       capacityPct: currentCapacity > 0 ? Math.round(((currentLoad + slope * i) / currentCapacity) * 100) : 0,
     }));
 
