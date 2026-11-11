@@ -115,23 +115,44 @@ export class RouteOptimizationService {
         optimizedRoutes = this.nearestNeighbourOptimize(waybills, drivers, opt.depot as any);
       }
 
+      // The model's output is a suggestion, not an instruction. It gets the
+      // ordering; it does not get to decide which waybills exist.
+      //
+      // The waybills above were fetched scoped to this company, and then never
+      // consulted again — `waybillId: stop.waybillId` wrote whatever the model
+      // returned. A model can invent an id, and an id it invents may belong to
+      // another tenant, which would have produced an allocation stamped with
+      // this company pointing at somebody else's parcel. It could also repeat a
+      // stop, giving one waybill two allocations on the same run.
+      //
+      // So: keep only ids that are in this company's set, and only once each.
+      const routes = Array.isArray(optimizedRoutes) ? optimizedRoutes : [];
+      const allowedWaybills = new Set(waybills.map((w) => w.id));
+      const claimed = new Set<string>();
+
       // Calculate total metrics
-      const totalDistance = optimizedRoutes.reduce((sum, r) => sum + (r.totalDistance || 0), 0);
-      const totalDuration = optimizedRoutes.reduce((sum, r) => sum + (r.totalTime || 0), 0);
+      const totalDistance = routes.reduce((sum, r) => sum + (r.totalDistance || 0), 0);
+      const totalDuration = routes.reduce((sum, r) => sum + (r.totalTime || 0), 0);
 
       // Create allocations
       const allocations = [];
-      for (const route of optimizedRoutes) {
-        for (let i = 0; i < (route.stops || []).length; i++) {
-          const stop = route.stops[i];
+      for (const route of routes) {
+        if (!route || typeof route !== 'object') continue;
+        for (const stop of (route.stops ?? [])) {
+          if (!stop || typeof stop !== 'object') continue;
+          const waybillId = stop.waybillId;
+          if (typeof waybillId !== 'string' || !allowedWaybills.has(waybillId)) continue;
+          if (claimed.has(waybillId)) continue;
+          claimed.add(waybillId);
+
           allocations.push({
             companyId,
             optimizationId,
-            waybillId: stop.waybillId,
+            waybillId,
             driverId: route.driverId || null,
             vehicleId: route.vehicleId || null,
-            sequence: i + 1,
-            distance: stop.distance || null,
+            sequence: claimed.size,
+            distance: typeof stop.distance === 'number' ? stop.distance : null,
             status: 'PENDING',
           });
         }
@@ -204,7 +225,12 @@ Return a JSON response with:
 
       const data = await response.json();
       const content = JSON.parse(data.choices[0].message.content);
-      return { routes: content.routes || [], insights: content.insights || null };
+      const routes = Array.isArray(content?.routes) ? content.routes : [];
+      const insights =
+        content?.insights && typeof content.insights === 'object' && !Array.isArray(content.insights)
+          ? content.insights
+          : null;
+      return { routes, insights };
     } catch (error) {
       this.logger.warn(`Groq optimization failed, using fallback: ${error.message}`);
       return {

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -70,6 +70,37 @@ export class CarriersService {
 
   // ── Buy-rate contracts ──────────────────────────────────────────────────
 
+  /**
+   * A buy rate, checked before it is stored.
+   *
+   * `Number(dto.buyRate ?? 0)` accepted whatever JavaScript would coerce.
+   * Number('abc') is NaN, which landed in a Float column — a contract rate
+   * that silently is not a number, and NaN then poisons every average,
+   * comparison and sort it touches in the lane explorer. Number('') is 0,
+   * which is worse in a way that looks harmless: an empty field on a form
+   * became a free lane rather than a complaint.
+   *
+   * A genuine 0 is still allowed — a negotiated free leg is a real thing.
+   */
+  private toRate(value: unknown): number {
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value) || value < 0) {
+        throw new BadRequestException('Buy rate must be a positive number');
+      }
+      return value;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed || !/^\d+(\.\d+)?$/.test(trimmed)) {
+        throw new BadRequestException('Buy rate must be a positive number');
+      }
+      const n = Number(trimmed);
+      if (!Number.isFinite(n)) throw new BadRequestException('Buy rate must be a positive number');
+      return n;
+    }
+    throw new BadRequestException('Buy rate must be a positive number');
+  }
+
   async addRate(companyId: string, carrierId: string, dto: any) {
     await this.get(companyId, carrierId); // tenant-scope guard
     return this.prisma.carrierRate.create({
@@ -79,7 +110,7 @@ export class CarriersService {
         lane: dto.lane ?? null,
         mode: dto.mode ?? null,
         containerType: dto.containerType ?? null,
-        buyRate: Number(dto.buyRate ?? 0),
+        buyRate: this.toRate(dto.buyRate ?? 0),
         currency: dto.currency ?? 'USD',
         validFrom: dto.validFrom ? new Date(dto.validFrom) : null,
         validTo: dto.validTo ? new Date(dto.validTo) : null,
