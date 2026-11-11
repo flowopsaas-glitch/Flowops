@@ -1,6 +1,8 @@
 import { createHmac } from 'crypto';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { IntegrationCryptoService } from '../integrations/integration-crypto.service';
 import { AccountingIntegrationsService } from './accounting-integrations.service';
+import { decodeEnvelope, encodeEnvelope, isSealedToken } from './accounting-token-cipher';
 
 /**
  * ACCOUNTING INTEGRATIONS — the paid AI Accounting Bridge (Xero / Sage / Pastel).
@@ -15,18 +17,36 @@ const COMPANY = 'co-1';
 const VICTIM = 'co-2';
 const SECRET = 'real-jwt-secret';
 
+// A real 32-byte key, so the crypto service is genuinely configured in these
+// tests rather than silently running in its unconfigured state.
+const ENC_KEY = '6v2oaLkUu87Wri63V41iaojKoE3vvJqqad+Re1f2IMM=';
+
+const makeConfig = (jwtSecret: string, encKey: string) =>
+  ({
+    get: jest.fn((k: string, d?: any) => {
+      if (k === 'JWT_SECRET') return jwtSecret;
+      if (k === 'APP_URL') return 'https://app.flowop.work';
+      if (k === 'INTEGRATIONS_ENC_KEY') return encKey;
+      return d;
+    }),
+  } as any);
+
+const sealer = new IntegrationCryptoService(makeConfig(SECRET, ENC_KEY));
+
 const sign = (payloadObj: any, secret: string) => {
   const payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
   const sig = createHmac('sha256', secret).update(payload).digest('base64url');
   return `${payload}.${sig}`;
 };
 
-function makeHarness(opts: { jwtSecret?: string; entitled?: boolean } = {}) {
+function makeHarness(opts: { jwtSecret?: string; entitled?: boolean; encKey?: string; invoice?: any } = {}) {
   const jwtSecret = opts.jwtSecret ?? SECRET;
   const entitled = opts.entitled ?? true;
+  const encKey = opts.encKey === undefined ? ENC_KEY : opts.encKey;
 
   const conns: any[] = [];
   const logs: any[] = [];
+  const received: any[] = [];
 
   const accountingConnection = {
     upsert: jest.fn(async ({ where, create, update }: any) => {
@@ -49,6 +69,15 @@ function makeHarness(opts: { jwtSecret?: string; entitled?: boolean } = {}) {
       if (!c) throw new Error('not found');
       return { ...c };
     }),
+    updateMany: jest.fn(async ({ where, data }: any) => {
+      // A `where` clause is a conjunction — match every term present, not a
+      // hardcoded id+companyId pair, so a call scoped by withTenant (id only)
+      // and one scoped explicitly (id + companyId) both behave correctly.
+      const c = conns.find((x) => Object.entries(where).every(([k, v]) => x[k] === v));
+      if (!c) return { count: 0 };
+      Object.assign(c, data);
+      return { count: 1 };
+    }),
     update: jest.fn(async ({ where, data }: any) => {
       const c = conns.find((x) => x.id === where.id);
       if (!c) throw new Error('not found');
@@ -66,19 +95,17 @@ function makeHarness(opts: { jwtSecret?: string; entitled?: boolean } = {}) {
       }),
       findMany: jest.fn(async ({ where }: any) => logs.filter((l) => l.companyId === where.companyId)),
     },
-    invoice: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []) },
+    invoice: { findFirst: jest.fn(async () => opts.invoice ?? null), findMany: jest.fn(async () => []) },
     creditNote: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []) },
+    // The real service scopes the re-seal write with withTenant; the fake just
+    // hands the delegate back the same client.
+    withTenant: jest.fn(async (_cid: string, fn: any) => fn(prisma)),
     __conns: conns,
     __logs: logs,
   };
 
-  const config: any = {
-    get: jest.fn((k: string, d?: any) => {
-      if (k === 'JWT_SECRET') return jwtSecret;
-      if (k === 'APP_URL') return 'https://app.flowop.work';
-      return d;
-    }),
-  };
+  const config: any = makeConfig(jwtSecret, encKey);
+  const crypto: any = new IntegrationCryptoService(makeConfig(jwtSecret, encKey));
 
   const billing: any = { hasFeature: jest.fn(async () => entitled) };
 
@@ -94,8 +121,18 @@ function makeHarness(opts: { jwtSecret?: string; entitled?: boolean } = {}) {
       tenantId: 'tenant-1',
       tenantName: 'Attacker Ledger',
     })),
-    pushInvoice: jest.fn(async () => ({ externalId: 'ext-1' })),
+    pushInvoice: jest.fn(async (pc: any) => {
+      // Mirrors the real provider, which refuses to call out without a token.
+      if (!pc.accessToken) throw new Error('Xero connection is missing an access token.');
+      received.push(pc);
+      return { externalId: 'ext-1' };
+    }),
     pushCreditNote: jest.fn(async () => ({ externalId: 'ext-1' })),
+    refresh: jest.fn(async (rt: string) => ({
+      accessToken: `at-refreshed-from-${rt}`,
+      refreshToken: `rt-rotated-from-${rt}`,
+      expiresInSec: 1800,
+    })),
   };
 
   const fileProvider: any = {
@@ -112,7 +149,8 @@ function makeHarness(opts: { jwtSecret?: string; entitled?: boolean } = {}) {
     billing,
     oauthProvider,
     fileProvider,
-    svc: new AccountingIntegrationsService(prisma, config, billing, oauthProvider, oauthProvider, fileProvider),
+    received,
+    svc: new AccountingIntegrationsService(prisma, config, billing, oauthProvider, oauthProvider, fileProvider, crypto),
   };
 }
 
@@ -202,9 +240,9 @@ describe('AccountingIntegrationsService — tenant scoping and secret handling',
   });
 
   it('listConnections never returns tokens', async () => {
-    // The tokens sit in a plaintext column (flagged separately, needs a
-    // migration). What must hold today is that no read path hands them to a
-    // caller — listConnections projects them away.
+    // Tokens are now encrypted at rest (see the suite below). What must also
+    // hold is that no read path hands them to a caller — listConnections
+    // projects them away.
     const h = makeHarness();
     h.prisma.__conns.push({
       id: 'conn-1', companyId: COMPANY, provider: 'XERO', status: 'CONNECTED',
@@ -224,5 +262,102 @@ describe('AccountingIntegrationsService — tenant scoping and secret handling',
     await h.svc.disconnect('conn-1', COMPANY);
     expect(h.prisma.__conns[0].accessToken).toBeNull();
     expect(h.prisma.__conns[0].refreshToken).toBeNull();
+  });
+});
+
+describe('AccountingIntegrationsService — OAuth tokens at rest', () => {
+  const INVOICE: any = {
+    id: 'inv-1', invoiceNumber: 'INV-1', clientName: 'Acme', clientEmail: 'a@b.co',
+    createdAt: new Date(), dueDate: new Date(), subtotal: 100, tax: 15, total: 115,
+    items: [{ description: 'Freight', quantity: 1, unitPrice: 100 }],
+  };
+
+  const seal = (plain: string) => encodeEnvelope(sealer.encrypt(plain));
+
+  const futureConn = (over: any = {}) => ({
+    id: 'conn-1', companyId: COMPANY, provider: 'XERO', status: 'CONNECTED',
+    accessToken: seal('at-live'), refreshToken: seal('rt-live'),
+    tokenExpiresAt: new Date(Date.now() + 3_600_000),
+    ...over,
+  });
+
+  it('writes no clear token when the OAuth callback completes', async () => {
+    const h = makeHarness();
+    const state = sign({ companyId: COMPANY, provider: 'XERO', ts: Date.now() }, SECRET);
+    await h.svc.handleCallback('code-1', state);
+
+    const row = h.prisma.__conns[0];
+    // FAILED BEFORE: accessToken and refreshToken went straight from the
+    // provider's token response into a @db.Text column. Anything that can read
+    // the database — a backup, a replica, a support dump, a SQL injection that
+    // only selects — holds a live credential for that customer's ledger.
+    expect(row.accessToken).not.toContain('at-code-1');
+    expect(row.refreshToken).not.toContain('rt-1');
+    expect(isSealedToken(row.accessToken)).toBe(true);
+    expect(isSealedToken(row.refreshToken)).toBe(true);
+  });
+
+  it('hands the provider the real token, not the sealed one', async () => {
+    const h = makeHarness({ invoice: INVOICE });
+    h.prisma.__conns.push(futureConn());
+
+    await h.svc.syncInvoice(COMPANY, 'inv-1');
+
+    expect(h.received).toHaveLength(1);
+    expect(h.received[0].accessToken).toEqual('at-live');
+    expect(h.received[0].refreshToken).toEqual('rt-live');
+  });
+
+  it('still syncs a row written before encryption existed, and re-seals it', async () => {
+    const h = makeHarness({ invoice: INVOICE });
+    h.prisma.__conns.push(futureConn({ accessToken: 'at-legacy', refreshToken: 'rt-legacy' }));
+
+    await h.svc.syncInvoice(COMPANY, 'inv-1');
+
+    // The connection keeps working — nobody has to re-authorise their ledger.
+    expect(h.received[0].accessToken).toEqual('at-legacy');
+    // And the clear token is gone after the first read, so rows that are never
+    // used are the only ones left holding plaintext.
+    const row = h.prisma.__conns[0];
+    expect(isSealedToken(row.accessToken)).toBe(true);
+    expect(sealer.decrypt(decodeEnvelope(row.accessToken))).toEqual('at-legacy');
+  });
+
+  it('re-seals the rotated tokens after a refresh', async () => {
+    const h = makeHarness({ invoice: INVOICE });
+    h.prisma.__conns.push(futureConn({ tokenExpiresAt: new Date(Date.now() - 1_000) }));
+
+    await h.svc.syncInvoice(COMPANY, 'inv-1');
+
+    const row = h.prisma.__conns[0];
+    expect(h.received[0].accessToken).toEqual('at-refreshed-from-rt-live');
+    expect(row.accessToken).not.toContain('at-refreshed-from-rt-live');
+    expect(sealer.decrypt(decodeEnvelope(row.accessToken))).toEqual('at-refreshed-from-rt-live');
+    expect(sealer.decrypt(decodeEnvelope(row.refreshToken))).toEqual('rt-rotated-from-rt-live');
+  });
+
+  it('refuses to store a clear token when no encryption key is configured', async () => {
+    const h = makeHarness({ encKey: '' });
+    const state = sign({ companyId: COMPANY, provider: 'XERO', ts: Date.now() }, SECRET);
+
+    const out = await h.svc.handleCallback('code-1', state);
+
+    // Fail closed. A connection holding a clear token is worse than no
+    // connection, so the callback reports the error and writes nothing.
+    expect(out).toContain('integration=error');
+    expect(h.prisma.__conns).toHaveLength(0);
+  });
+
+  it('never turns a tampered envelope into a usable credential', async () => {
+    const h = makeHarness({ invoice: INVOICE });
+    const [v, iv, authTag, ct] = seal('at-live').split('.');
+    const tampered = [v, iv, authTag, (ct[0] === 'A' ? 'B' : 'A') + ct.slice(1)].join('.');
+
+    h.prisma.__conns.push(futureConn({ accessToken: tampered }));
+
+    const out: any = await h.svc.syncInvoice(COMPANY, 'inv-1');
+
+    expect(out.results[0].status).toEqual('FAILED');
+    expect(h.received).toHaveLength(0);
   });
 });

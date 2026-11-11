@@ -162,11 +162,6 @@ export const METHOD_SCOPE = [
       'Private. Only called from uploadInbox(companyId, file) with the id of the inbox row that method just created for that company, and from the deprecated stubExtract. The item cannot be another tenant’s.',
   },
   {
-    file: 'src/accounting-integrations/accounting-integrations.service.ts',
-    method: 'ensureFreshToken',
-    reason: 'Private. Refreshes a connection the caller loaded for its own company; the id never comes from a request.',
-  },
-  {
     file: 'src/forwarding/customs-declaration.service.ts',
     method: 'buildForFile',
     reason: 'Private. Operates on the draft declaration found for the tenant-scoped file in the same call.',
