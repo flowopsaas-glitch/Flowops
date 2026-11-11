@@ -74,10 +74,23 @@ export class PushService {
     return { ok: true };
   }
 
-  /** Remove a subscription (driver disabled notifications / logged out). */
-  async removeSubscription(endpoint: string) {
-    await this.prisma.driverPushSubscription.deleteMany({ where: { endpoint } });
-    return { ok: true };
+  /**
+   * Remove a subscription (driver disabled notifications / logged out).
+   *
+   * Scoped to the driver and tenant the subscription belongs to. It used to
+   * delete by endpoint alone. The endpoint is @unique and hard to guess, which
+   * is true but beside the point: the unsubscribe route authenticates *a*
+   * driver, not the owner of the endpoint, so any driver could pass any
+   * endpoint string and delete a colleague's subscription — quietly stopping
+   * that colleague from being notified of job assignments. Guessing was never
+   * required.
+   */
+  async removeSubscription(driverId: string, companyId: string, endpoint: string) {
+    if (!endpoint) return { ok: true, removed: 0 };
+    const res = await this.prisma.driverPushSubscription.deleteMany({
+      where: { endpoint, driverId, companyId },
+    });
+    return { ok: true, removed: res.count };
   }
 
   /**

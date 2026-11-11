@@ -37,7 +37,10 @@ export class PushController {
   @Public()
   @UseGuards(DriverAuthGuard)
   @Post('unsubscribe')
-  unsubscribe(@Body() body: { endpoint: string }) {
-    return this.push.removeSubscription(body?.endpoint);
+  unsubscribe(
+    @Req() req: any,
+    @Body() body: { endpoint: string },
+  ) {
+    return this.push.removeSubscription(req.driver.id, req.driver.companyId, body?.endpoint);
   }
 }
