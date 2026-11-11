@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ReturnStatus } from '@prisma/client';
+import { claimTransition } from '../common/state-transition';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateReturnDto } from './dto/create-return.dto';
@@ -193,70 +194,99 @@ export class ReturnsService {
   async create(companyId: string, dto: CreateReturnDto) {
     // Resolve the linked waybill (by id or tracking number) so we can carry
     // its tracking number + suggest a COD refund. Best-effort, never blocks.
-    let waybillId = dto.waybillId ?? null;
-    let trackingNumber = dto.trackingNumber ?? null;
-    let suggestedRefund = dto.refundAmount;
+    //
+    // Everything happens in ONE transaction: the waybill lookup, the RMA
+    // allocation and the insert. The RMA lock only means something if the row
+    // that consumes the number is written inside the same transaction.
+    return this.prisma.withTenant(companyId, async (tx) => {
+      let waybillId = dto.waybillId ?? null;
+      let trackingNumber = dto.trackingNumber ?? null;
+      let suggestedRefund = dto.refundAmount;
 
-    if (!waybillId && trackingNumber) {
-      const wb = await this.prisma.waybill.findFirst({
-        where: { companyId, trackingNumber },
-        select: { id: true, codAmount: true, totalAmount: true },
-      });
-      if (wb) {
-        waybillId = wb.id;
+      if (!waybillId && trackingNumber) {
+        const wb = await tx.waybill.findFirst({
+          where: { companyId, trackingNumber },
+          select: { id: true, codAmount: true, totalAmount: true },
+        });
+        if (wb) {
+          waybillId = wb.id;
+          if (suggestedRefund == null) suggestedRefund = wb.codAmount ?? wb.totalAmount ?? undefined;
+        }
+      } else if (waybillId) {
+        const wb = await tx.waybill.findFirst({
+          where: { id: waybillId, companyId },
+          select: { trackingNumber: true, codAmount: true, totalAmount: true },
+        });
+        if (!wb) throw new BadRequestException('Linked waybill not found for this company');
+        trackingNumber = wb.trackingNumber;
         if (suggestedRefund == null) suggestedRefund = wb.codAmount ?? wb.totalAmount ?? undefined;
       }
-    } else if (waybillId) {
-      const wb = await this.prisma.waybill.findFirst({
-        where: { id: waybillId, companyId },
-        select: { trackingNumber: true, codAmount: true, totalAmount: true },
+
+      const rmaNumber = await this.allocateRmaNumber(tx, companyId, new Date());
+
+      return tx.return.create({
+        data: {
+          rmaNumber,
+          companyId,
+          waybillId,
+          trackingNumber,
+          customerName: dto.customerName,
+          customerPhone: dto.customerPhone,
+          customerEmail: dto.customerEmail,
+          pickupAddress: dto.pickupAddress,
+          reason: dto.reason ?? 'OTHER',
+          reasonNote: dto.reasonNote,
+          status: dto.status ?? 'REQUESTED',
+          resolution: dto.resolution ?? 'PENDING',
+          refundAmount: suggestedRefund,
+          restockFee: dto.restockFee,
+          items: dto.items?.length
+            ? {
+                create: dto.items.map((it) => ({
+                  description: it.description,
+                  sku: it.sku,
+                  quantity: it.quantity ?? 1,
+                  unitValue: it.unitValue,
+                  condition: it.condition,
+                })),
+              }
+            : undefined,
+        },
+        include: INCLUDE,
       });
-      if (!wb) throw new BadRequestException('Linked waybill not found for this company');
-      trackingNumber = wb.trackingNumber;
-      if (suggestedRefund == null) suggestedRefund = wb.codAmount ?? wb.totalAmount ?? undefined;
-    }
-
-    const rmaNumber = await this.nextRmaNumber(companyId);
-
-    return this.prisma.return.create({
-      data: {
-        rmaNumber,
-        companyId,
-        waybillId,
-        trackingNumber,
-        customerName: dto.customerName,
-        customerPhone: dto.customerPhone,
-        customerEmail: dto.customerEmail,
-        pickupAddress: dto.pickupAddress,
-        reason: dto.reason ?? 'OTHER',
-        reasonNote: dto.reasonNote,
-        status: dto.status ?? 'REQUESTED',
-        resolution: dto.resolution ?? 'PENDING',
-        refundAmount: suggestedRefund,
-        restockFee: dto.restockFee,
-        items: dto.items?.length
-          ? {
-              create: dto.items.map((it) => ({
-                description: it.description,
-                sku: it.sku,
-                quantity: it.quantity ?? 1,
-                unitValue: it.unitValue,
-                condition: it.condition,
-              })),
-            }
-          : undefined,
-      },
-      include: INCLUDE,
     });
   }
 
+  /**
+   * Edit the descriptive fields of a return. NOT its status.
+   *
+   * This used to spread `...dto`, and UpdateReturnDto declares
+   * `status?: ReturnStatus` — so a PATCH could jump REQUESTED straight to
+   * COMPLETED, skipping approval, collection and inspection, and attach a refund
+   * to a return nobody had agreed to. The lifecycle in transition() was
+   * therefore advisory: real only for callers who chose to use it.
+   */
   async update(id: string, companyId: string, dto: UpdateReturnDto) {
     await this.findOne(id, companyId);
-    return this.prisma.return.update({
-      where: { id },
-      data: { ...dto, scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined },
-      include: INCLUDE,
-    });
+    const { status, resolution, ...editable } = dto as any;
+    if (status !== undefined || resolution !== undefined) {
+      throw new BadRequestException(
+        'A return’s status and resolution are changed through the transition endpoint, ' +
+          'so the lifecycle and its timestamps stay consistent. Use POST /returns/:id/transition.',
+      );
+    }
+    return this.prisma.withTenant(companyId, (tx) =>
+      tx.return.update({
+        where: { id },
+        data: {
+          ...editable,
+          scheduledAt: (editable as any).scheduledAt
+            ? new Date((editable as any).scheduledAt)
+            : undefined,
+        },
+        include: INCLUDE,
+      }),
+    );
   }
 
   /**
@@ -272,45 +302,48 @@ export class ReturnsService {
   ) {
     const current = await this.findOne(id, companyId);
     const data: any = {};
+    // The statuses this action is legal from. Kept alongside `data` because the
+    // write below has to claim on it, not just the check above.
+    let allowed: string[] = [];
 
     switch (action) {
       case 'approve':
-        this.assertFrom(current.status, ['REQUESTED'], action);
+        allowed = ['REQUESTED'];
         data.status = 'APPROVED';
         data.approvedById = userId ?? null;
         data.approvedAt = new Date();
         break;
       case 'reject':
-        this.assertFrom(current.status, ['REQUESTED', 'APPROVED'], action);
+        allowed = ['REQUESTED', 'APPROVED'];
         data.status = 'REJECTED';
         data.resolution = 'PENDING';
         if (body.note) data.inspectionNotes = body.note;
         data.resolvedAt = new Date();
         break;
       case 'schedule':
-        this.assertFrom(current.status, ['APPROVED', 'REQUESTED', 'SCHEDULED'], action);
+        allowed = ['APPROVED', 'REQUESTED', 'SCHEDULED'];
         data.status = 'SCHEDULED';
         if (body.assignedDriverId) data.assignedDriverId = body.assignedDriverId;
         data.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : new Date();
         break;
       case 'collect':
-        this.assertFrom(current.status, ['SCHEDULED', 'APPROVED'], action);
+        allowed = ['SCHEDULED', 'APPROVED'];
         data.status = 'IN_TRANSIT';
         data.collectedAt = new Date();
         break;
       case 'receive':
-        this.assertFrom(current.status, ['IN_TRANSIT', 'SCHEDULED'], action);
+        allowed = ['IN_TRANSIT', 'SCHEDULED'];
         data.status = 'RECEIVED';
         data.receivedAt = new Date();
         break;
       case 'inspect':
-        this.assertFrom(current.status, ['RECEIVED', 'IN_TRANSIT'], action);
+        allowed = ['RECEIVED', 'IN_TRANSIT'];
         data.status = 'INSPECTING';
         if (body.condition) data.condition = body.condition;
         if (body.note) data.inspectionNotes = body.note;
         break;
       case 'resolve':
-        this.assertFrom(current.status, ['INSPECTING', 'RECEIVED'], action);
+        allowed = ['INSPECTING', 'RECEIVED'];
         if (!body.resolution || body.resolution === 'PENDING') {
           throw new BadRequestException('A concrete resolution is required to complete a return');
         }
@@ -324,6 +357,9 @@ export class ReturnsService {
         else if (body.resolution === 'RESTOCK') data.restocked = true;
         break;
       case 'cancel':
+        allowed = [
+          'REQUESTED', 'APPROVED', 'SCHEDULED', 'IN_TRANSIT', 'RECEIVED', 'INSPECTING',
+        ];
         if (['COMPLETED', 'CANCELLED'].includes(current.status)) {
           throw new BadRequestException(`Cannot cancel a return that is already ${current.status}`);
         }
@@ -334,7 +370,25 @@ export class ReturnsService {
         throw new BadRequestException(`Unknown return action: ${action}`);
     }
 
-    const updated = await this.prisma.return.update({ where: { id }, data, include: INCLUDE });
+    // Two guards, deliberately. assertFrom gives the caller a readable 400 for
+    // an illegal action. The claim is what actually holds under concurrency: it
+    // puts the expected statuses in the WHERE so the database decides, because
+    // two staff approving at once both read the same committed row and both
+    // passed the check above.
+    this.assertFrom(current.status, allowed, action);
+
+    await this.prisma.withTenant(companyId, (tx) =>
+      claimTransition(
+        () =>
+          tx.return.updateMany({
+            where: { id, companyId, status: { in: allowed } },
+            data,
+          }),
+        `Return was ${action}d by someone else.`,
+      ),
+    );
+
+    const updated = await this.prisma.return.findFirst({ where: { id, companyId }, include: INCLUDE });
 
     // ── Close the loop ───────────────────────────────────────────────────
     // Surface the transition to staff (notification bell) and email the
@@ -353,9 +407,22 @@ export class ReturnsService {
     return updated;
   }
 
+  /**
+   * Delete a return that never went anywhere.
+   *
+   * A COMPLETED return is the record that a refund was agreed, carrying the
+   * refund amount and any restock fee. Deleting it removes the only evidence
+   * that money moved, so it is refused — cancel the return instead, which keeps
+   * the audit trail.
+   */
   async remove(id: string, companyId: string) {
-    await this.findOne(id, companyId);
-    await this.prisma.return.delete({ where: { id } });
+    const existing = await this.findOne(id, companyId);
+    if (existing.status === 'COMPLETED') {
+      throw new BadRequestException(
+        'A completed return records an agreed refund and cannot be deleted. Cancel it instead.',
+      );
+    }
+    await this.prisma.withTenant(companyId, (tx) => tx.return.delete({ where: { id } }));
     return { deleted: true };
   }
 
@@ -369,13 +436,28 @@ export class ReturnsService {
     }
   }
 
-  /** RMA-YYMM-#### sequential per company per calendar month. */
-  private async nextRmaNumber(companyId: string): Promise<string> {
-    const now = new Date();
+  /**
+   * RMA-YYMM-#### sequential per company per calendar month.
+   *
+   * Counting rows and adding one is not allocation: two returns created together
+   * read the same count and are handed the same number. The count and the insert
+   * now share one transaction holding a transaction-scoped advisory lock keyed
+   * on company and month, so concurrent callers queue instead of colliding.
+   *
+   * Taking the lock in its own transaction would release it before the row that
+   * consumed the number is written, which fixes nothing. See courier-management,
+   * where that exact mistake was made first.
+   */
+  private async allocateRmaNumber(
+    tx: any,
+    companyId: string,
+    now: Date,
+  ): Promise<string> {
     const yy = String(now.getFullYear()).slice(-2);
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const seq = await this.prisma.return.count({
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`rma:${companyId}:${yy}${mm}`}))`;
+    const seq = await tx.return.count({
       where: { companyId, createdAt: { gte: monthStart } },
     });
     return `RMA-${yy}${mm}-${String(seq + 1).padStart(4, '0')}`;

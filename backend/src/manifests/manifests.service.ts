@@ -38,11 +38,11 @@ export class ManifestsService {
    * truck. Can be disabled per-deployment via MANIFEST_REQUIRE_HUB_RECEIVE=false
    * (e.g. a pure direct-courier tenant that doesn't run depots).
    */
-  private async assertLoadable(companyId: string, waybillIds: string[]) {
+  private async assertLoadable(companyId: string, waybillIds: string[], db: any = this.prisma) {
     const requireHub = (process.env.MANIFEST_REQUIRE_HUB_RECEIVE ?? 'true') !== 'false';
     if (!requireHub || waybillIds.length === 0) return;
 
-    const wbs = await this.prisma.waybill.findMany({
+    const wbs = await db.waybill.findMany({
       where: { id: { in: waybillIds }, companyId },
       select: { id: true, trackingNumber: true, status: true },
     });
@@ -66,23 +66,46 @@ export class ManifestsService {
     }
   }
 
+  /**
+   * Create a manifest: validate the load, allocate a code, insert.
+   *
+   * All three have to happen inside one tenant transaction.
+   *
+   * The code used to be `count + 1`. Two manifests created together both counted
+   * the same rows and both got MAN-00001 — and because there is no unique
+   * constraint on the code, nothing complained. The code is what a depot quotes
+   * when it asks where a load is, so two trucks leaving with indistinguishable
+   * paperwork is a real tracking failure, not a cosmetic one.
+   *
+   * The loadability check also used to run before the insert, outside any
+   * transaction: a waybill could pass it and then be picked up by somebody else
+   * before this insert landed. Checking inside the transaction closes that gap.
+   *
+   * The durable fix for the code is a unique index on (companyId, code). That
+   * needs a migration and a check for existing duplicates first; flagged, not
+   * done blind. The advisory lock gives the same guarantee today.
+   */
   async create(companyId: string, dto: { waybillIds: string[]; branchId?: string; driverId?: string; destination?: string }) {
-    await this.assertLoadable(companyId, dto.waybillIds ?? []);
+    return this.prisma.withTenant(companyId, async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`manifest-code:${companyId}`}))`;
 
-    const count = await this.prisma.manifest.count({ where: { companyId } });
-    const code = `MAN-${String(count + 1).padStart(5, '0')}`;
+      await this.assertLoadable(companyId, dto.waybillIds ?? [], tx);
 
-    return this.prisma.manifest.create({
-      data: {
-        code,
-        companyId,
-        branchId: dto.branchId,
-        driverId: dto.driverId,
-        waybills: {
-          create: dto.waybillIds.map((waybillId, i) => ({ waybillId, sortOrder: i })),
+      const count = await tx.manifest.count({ where: { companyId } });
+      const code = `MAN-${String(count + 1).padStart(5, '0')}`;
+
+      return tx.manifest.create({
+        data: {
+          code,
+          companyId,
+          branchId: dto.branchId,
+          driverId: dto.driverId,
+          waybills: {
+            create: dto.waybillIds.map((waybillId, i) => ({ waybillId, sortOrder: i })),
+          },
         },
-      },
-      include: { waybills: { include: { waybill: true } } },
+        include: { waybills: { include: { waybill: true } } },
+      });
     });
   }
 
