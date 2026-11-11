@@ -99,7 +99,17 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlement> = {
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
-    priceZar: 100000,
+    /**
+     * Repriced 2026-11-10 from R100,000 to R250,000 per month.
+     *
+     * This is the LIST price the owner console uses for MRR/ARPA unless a tenant carries a
+     * `priceOverrideZar`. Two things have to move with it, or the numbers lie:
+     *   1. the Paystack plan object PLN_9at9kn2ra8jtae0 must be updated in the Paystack
+     *      dashboard — its own amount is what actually bills the subscription;
+     *   2. every Enterprise tenant already on the old price needs a `priceOverrideZar`,
+     *      otherwise their MRR silently jumps and analytics overstate revenue.
+     */
+    priceZar: 250000,
     limits: { waybillsPerMonth: -1, drivers: -1, users: -1, branches: -1 },
     features: fill(ENTERPRISE),
   },

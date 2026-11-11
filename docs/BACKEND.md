@@ -125,7 +125,7 @@ In Meta Developer Portal → WhatsApp → **Configuration → Webhook**:
 |---|---|---|---|---|
 | Starter | ZAR 0 | Free | — | No Paystack. Instant activation. |
 | Professional | ZAR 19,999 | Monthly | `PLN_l3kobthzahnkpf3` | Paystack subscription |
-| Enterprise | Custom | Monthly | `PLN_9at9kn2ra8jtae0` | Contact sales (asking R100,000/mo) |
+| Enterprise | Custom | Monthly | `PLN_9at9kn2ra8jtae0` | Contact sales (asking R250,000/mo) |
 
 All plan codes are wired into `getPlans()` in `owner.service.ts`. The `createSubscription()` method maps plan codes back to tier names automatically.
 
@@ -148,7 +148,7 @@ curl -X POST http://localhost:3000/api/v1/paystack/subscribe \
   -d '{"planCode": "PLN_l3kobthzahnkpf3"}'
 ```
 
-**To subscribe to Enterprise (Custom pricing — contact sales, asking ZAR 100,000/month):**
+**To subscribe to Enterprise (Custom pricing — contact sales, asking ZAR 250,000/month):**
 ```bash
 curl -X POST http://localhost:3000/api/v1/paystack/subscribe \
   -H "Authorization: Bearer <your_jwt>" \

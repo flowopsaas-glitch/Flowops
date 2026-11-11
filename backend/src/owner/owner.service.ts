@@ -382,7 +382,9 @@ export class OwnerService {
   private static readonly PLAN_PRICE_ZAR: Record<string, number> = {
     starter: 0,
     professional: 19999,
-    enterprise: 100000,
+    // Enterprise list price, repriced 2026-11-10. Keep in step with
+    // plan-entitlements.ts priceZar and the Paystack plan object.
+    enterprise: 250000,
   };
 
   private planPrice(plan?: string | null): number {
@@ -954,7 +956,7 @@ export class OwnerService {
    *
    *   Starter:      FREE   (no Paystack plan — instant activation, no billing)
    *   Professional: ZAR 19,999 / month  PLN_l3kobthzahnkpf3
-   *   Enterprise:   ZAR 100,000 / month  PLN_9at9kn2ra8jtae0 (custom/contact sales)
+   *   Enterprise:   ZAR 250,000 / month  PLN_9at9kn2ra8jtae0 (custom/contact sales)
    *
    *   NOTE: the Professional Paystack plan amount must be updated in the
    *   Paystack dashboard (or a new plan code issued) to charge R11,999.

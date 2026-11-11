@@ -100,7 +100,7 @@ Show in this exact order (maps to his pain points):
 | Professional | Up to 10 | R9,999/month |
 | Growth | Up to 25 | R19,999/month |
 | Scale | Up to 50 | R29,999/month |
-| Enterprise | Unlimited | R100,000/month |
+| Enterprise | Unlimited | R250,000/month |
 
 > "Based on what you told me — [X drivers] — you'd be on the [Professional/Growth] tier at R[X]/month. That's less than what one missed delivery costs you."
 
