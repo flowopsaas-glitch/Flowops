@@ -329,10 +329,31 @@ export class AutopilotService {
 
     // Assign + move to ASSIGNED so it leaves the unassigned queue and the
     // driver portal surfaces it as a live job.
-    const updated = await this.prisma.collection.update({
-      where: { id: sig.entity.id },
+    //
+    // Claimed, not written. detectUnassigned found this pickup as
+    // PENDING + driverId null; the write has to carry that expectation into
+    // the WHERE, or two overlapping runs both act on the same signal. The
+    // loser's update matches nothing, and we stop there — no second driver is
+    // told to drive to a pickup someone else already owns.
+    const claim = await this.prisma.collection.updateMany({
+      where: { id: sig.entity.id, companyId, status: 'PENDING', driverId: null },
       data: { driverId: chosen.id, status: 'ASSIGNED' },
     });
+
+    if (claim.count === 0) {
+      await this.logEvent(companyId, sig, 'already-assigned');
+      return 'Pickup was already assigned — left alone.';
+    }
+
+    const updated = await this.prisma.withTenant(
+      companyId,
+      (tx) => tx.collection.findFirst({ where: { id: sig.entity.id, companyId } }),
+    );
+
+    if (!updated) {
+      await this.logEvent(companyId, sig, 'no-driver');
+      return 'Pickup no longer available — left alone.';
+    }
 
     // ── Close the loop to the humans ─────────────────────────────────────────
     // 1) Tell the driver directly in Driver Chat (the channel they watch).
