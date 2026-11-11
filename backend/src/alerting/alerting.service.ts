@@ -61,18 +61,30 @@ export class AlertingService {
       });
       if (existing) continue;
 
-      await this.prisma.platformAlert.create({
-        data: {
-          type: d.type,
-          severity: d.severity,
-          title: d.title,
-          message: d.message,
-          tenantId: d.tenantId ?? null,
-          tenantName: d.tenantName ?? null,
-          metadata: d.metadata ?? undefined,
-          dedupeKey: d.dedupeKey,
-        },
-      });
+      // The check above and the write below are not atomic, and `dedupeKey` is
+      // @unique. Two overlapping evaluations both find nothing and both insert;
+      // the loser throws P2002. Left unhandled that escaped evaluate(), and the
+      // cron swallows it — so every draft after the collision was dropped until
+      // the next run six hours later. The alert that mattered simply never
+      // fired. Losing the race is not an error; it means someone else already
+      // raised it.
+      try {
+        await this.prisma.platformAlert.create({
+          data: {
+            type: d.type,
+            severity: d.severity,
+            title: d.title,
+            message: d.message,
+            tenantId: d.tenantId ?? null,
+            tenantName: d.tenantName ?? null,
+            metadata: d.metadata ?? undefined,
+            dedupeKey: d.dedupeKey,
+          },
+        });
+      } catch (e: any) {
+        if (e?.code !== 'P2002') throw e;
+        continue;
+      }
       created += 1;
 
       if (ownerEmail) {
@@ -302,12 +314,18 @@ export class AlertingService {
   private async _upsertAlert(dedupeKey: string, data: any, ownerEmail?: string) {
     const exists = await this.prisma.platformAlert.findUnique({ where: { dedupeKey } });
     if (exists) return;
-    await this.prisma.platformAlert.create({
-      data: { type: data.type, severity: data.severity, title: data.title,
-              message: data.message, tenantId: data.tenantId ?? null,
-              tenantName: data.tenantName ?? null, dedupeKey,
-              metadata: data.metadata ?? undefined },
-    });
+    try {
+      await this.prisma.platformAlert.create({
+        data: { type: data.type, severity: data.severity, title: data.title,
+                message: data.message, tenantId: data.tenantId ?? null,
+                tenantName: data.tenantName ?? null, dedupeKey,
+                metadata: data.metadata ?? undefined },
+      });
+    } catch (e: any) {
+      // Losing the race on the unique key means another run already raised it.
+      if (e?.code !== 'P2002') throw e;
+      return;
+    }
     if (ownerEmail) {
       await this.email.sendOwnerAlert(ownerEmail, {
         title: data.title, message: data.message,
