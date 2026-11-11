@@ -127,6 +127,28 @@ done
 # Failing here — before the stack moves — is the whole point of a pre-flight.
 grep -q '^RBAC_STRICT=true$' .env \
   || die "RBAC_STRICT must be \"true\" in .env (found: $(grep '^RBAC_STRICT' .env || echo \"not set\")).\n       Non-strict production silently allows routes that carry no access decision.\n       Fix:  sed -i 's/^#*RBAC_STRICT=.*/RBAC_STRICT=true/' .env   (or append it)\n       Do NOT hardcode it in deploy/docker-compose.vps.yml — CI rejects that."
+
+# INTEGRATIONS_ENC_KEY must be a REAL 32-byte base64 key. PRESENCE IS NOT THE
+# TEST — two traps here, and both leave the stack looking perfectly healthy:
+#
+#   1. the committed template ships the placeholder
+#      CHANGE_ME_RUN_openssl_rand_base64_32, which is present but useless;
+#   2. the api allowlists the key as ${INTEGRATIONS_ENC_KEY:-} in
+#      docker-compose.yml, so an ABSENT key is interpolated as an EMPTY one.
+#      The container boots, /health returns ok, the deploy goes green — and
+#      integration-crypto.service.ts then fails CLOSED, so every
+#      WhatsApp/Shopify/WooCommerce/Xero/Sage secret save refuses to store.
+#      The sole symptom is a boot log line, or `printenv ... | wc -c` returning
+#      1 (present but empty) instead of 45 (a real key). Both were missed for
+#      days. A deploy that cannot store integration secrets is not green.
+#
+# This asserts the exact rule the crypto service enforces at runtime
+# (Buffer.from(raw,'base64').length === 32), so the two cannot drift.
+# Note this STRIPS a trailing \r rather than rejecting it, unlike RBAC_STRICT:
+# Node's base64 decoder ignores it, so a CRLF-edited .env still yields a valid
+# key, and blocking a working deploy over a line ending would be wrong.
+INTEGRATIONS_ENC_KEY="$(grep '^INTEGRATIONS_ENC_KEY=' .env | tail -1 | cut -d= -f2- | tr -d '\r\n')"; [ "$(printf '%s' "$INTEGRATIONS_ENC_KEY" | base64 -d 2>/dev/null | wc -c | tr -d ' ')" = "32" ] \
+  || die "INTEGRATIONS_ENC_KEY in .env must be base64 decoding to exactly 32 bytes.\n       Found: '${INTEGRATIONS_ENC_KEY:-<absent>}'.\n       Without it the api boots healthy and silently refuses to store ANY\n       integration secret — a green deploy with a broken feature.\n       Generate and set one (replaces any existing or commented-out line):\n         KEY=$(openssl rand -base64 32)\n         grep -v '^INTEGRATIONS_ENC_KEY=' .env | grep -v '^#INTEGRATIONS_ENC_KEY=' > .env.tmp\n         printf 'INTEGRATIONS_ENC_KEY=%s\\n' \"$KEY\" >> .env.tmp\n         mv .env.tmp .env\n       Then re-run this script. Expect 45 from:\n         docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \\\\n           exec -T api printenv INTEGRATIONS_ENC_KEY | wc -c"
 ok "Pre-flight checks passed"
 
 # ── 1. Pull latest source ────────────────────────────────────────────────────
@@ -216,6 +238,17 @@ if [[ "$RBAC_LIVE" != "true" ]]; then
   die "The api container reports RBAC_STRICT='${RBAC_LIVE:-<unset>}' but .env says true.\n       The value did not reach the process — the stack is UP but not strict.\n       Check that docker-compose.yml still carries RBAC_STRICT in the api\n       environment allowlist, and re-run: docker compose ... up -d --force-recreate api"
 fi
 ok "api container is running with RBAC_STRICT=true"
+
+# Same lesson, second key: the pre-flight read the FILE, this reads the PROCESS.
+# `.env` can hold a perfectly good key that never reaches the api — that is
+# precisely how the empty-key incident happened. printenv inside the container
+# is the only evidence that counts.
+ENC_LIVE="$($COMPOSE exec -T api printenv INTEGRATIONS_ENC_KEY 2>/dev/null | tr -d '\r\n')"
+ENC_LIVE_BYTES="$(printf '%s' "$ENC_LIVE" | base64 -d 2>/dev/null | wc -c | tr -d ' ')"
+if [[ "$ENC_LIVE_BYTES" != "32" ]]; then
+  die "The api container's INTEGRATIONS_ENC_KEY is not a 32-byte key (${ENC_LIVE_BYTES:-0} bytes, value: '${ENC_LIVE:-<unset>}').\n       .env holds a valid one but it did not reach the process — the stack is UP\n       and integration secret storage is silently disabled.\n       Check that docker-compose.yml still carries INTEGRATIONS_ENC_KEY in the\n       api environment allowlist, then re-run:\n         docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml up -d --force-recreate api"
+fi
+ok "api container has a 32-byte INTEGRATIONS_ENC_KEY ($ENC_LIVE_BYTES bytes)"
 
 # A healthy container is not proof that the browser is being served *this* build: nginx answers
 # /healthz from a static file that never changes, so a frontend-only change that was not rebuilt
