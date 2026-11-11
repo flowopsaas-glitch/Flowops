@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { ClientsService, CreateClientDto } from './clients.service';
+import { ClientsService, CreateClientDto, UpdateClientDto } from './clients.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 const CLIENT_READ_ROLES = [
@@ -43,7 +43,7 @@ export class ClientsController {
     UserRole.DISPATCH, UserRole.AGENT,
   )
   @Patch(':id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() dto: Partial<CreateClientDto>) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() dto: UpdateClientDto) {
     return this.svc.update(id, u.companyId, dto);
   }
 
