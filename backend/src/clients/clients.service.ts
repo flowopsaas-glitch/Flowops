@@ -1,21 +1,64 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString,
+} from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { pickAllowed } from '../common/pick-allowed.util';
 
-export interface CreateClientDto {
-  name: string;
-  tradingName?: string;
-  phone?: string;
-  email?: string;
-  address?: string;
-  billingType?: 'COD' | 'PREPAID' | 'CONTRACT' | 'CASH';
-  creditLimit?: number;
-  paymentTerms?: number;
-  vatNumber?: string;
-  accountCode?: string;
-  contractStart?: string;
-  contractEnd?: string;
-  notes?: string;
+/**
+ * These were a TypeScript `interface`, which is erased at compile time. The
+ * emitted parameter type is therefore `Object`, and Nest's ValidationPipe skips
+ * validation for anything that is not a class — so no `whitelist` stripping and
+ * no type checking ever ran on this body. `update` spread it straight into
+ * Prisma. Real classes so the pipe can actually see them.
+ */
+export const ClientBillingTypes = {
+  COD: 'COD', PREPAID: 'PREPAID', CONTRACT: 'CONTRACT', CASH: 'CASH',
+} as const;
+export type ClientBillingTypeValue = (typeof ClientBillingTypes)[keyof typeof ClientBillingTypes];
+
+const BILLING = [
+  'tradingName', 'phone', 'email', 'address', 'vatNumber', 'accountCode',
+] as const;
+
+export class CreateClientDto {
+  @IsString() name: string;
+  @IsOptional() @IsString() tradingName?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsEmail() email?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsEnum(ClientBillingTypes) billingType?: ClientBillingTypeValue;
+  @IsOptional() @IsNumber() creditLimit?: number;
+  @IsOptional() @IsInt() paymentTerms?: number;
+  @IsOptional() @IsString() vatNumber?: string;
+  @IsOptional() @IsString() accountCode?: string;
+  @IsOptional() @IsDateString() contractStart?: string;
+  @IsOptional() @IsDateString() contractEnd?: string;
+  @IsOptional() @IsString() notes?: string;
 }
+
+export class UpdateClientDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() tradingName?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsEmail() email?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsEnum(ClientBillingTypes) billingType?: ClientBillingTypeValue;
+  @IsOptional() @IsNumber() creditLimit?: number;
+  @IsOptional() @IsInt() paymentTerms?: number;
+  @IsOptional() @IsString() vatNumber?: string;
+  @IsOptional() @IsString() accountCode?: string;
+  @IsOptional() @IsDateString() contractStart?: string;
+  @IsOptional() @IsDateString() contractEnd?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+/** Client-writable Client fields (excludes id/companyId/isActive/timestamps). */
+const CLIENT_FIELDS = [
+  'name', ...BILLING, 'billingType', 'creditLimit', 'paymentTerms',
+  'contractStart', 'contractEnd', 'notes',
+] as const;
+void IsBoolean;
 
 @Injectable()
 export class ClientsService {
@@ -59,17 +102,16 @@ export class ClientsService {
     });
   }
 
-  async update(id: string, companyId: string, dto: Partial<CreateClientDto>) {
+  async update(id: string, companyId: string, dto: UpdateClientDto) {
     await this.findOne(id, companyId);
-    return this.prisma.client.update({
-      where: { id },
-      data: {
-        ...dto,
-        billingType: dto.billingType as any,
-        contractStart: dto.contractStart ? new Date(dto.contractStart) : undefined,
-        contractEnd: dto.contractEnd ? new Date(dto.contractEnd) : undefined,
-      },
-    });
+    // Whitelist what a client may write. The DTO was an interface, so the
+    // ValidationPipe never saw it and `...dto` carried the raw body into
+    // Prisma — including `companyId`, which nothing overwrote afterwards, so a
+    // PATCH could move this client record into another company's directory.
+    const data: any = pickAllowed(dto, CLIENT_FIELDS);
+    if (typeof dto.contractStart === 'string') data.contractStart = new Date(dto.contractStart);
+    if (typeof dto.contractEnd === 'string') data.contractEnd = new Date(dto.contractEnd);
+    return this.prisma.client.update({ where: { id }, data });
   }
 
   async remove(id: string, companyId: string) {
