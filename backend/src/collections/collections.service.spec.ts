@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CollectionStatus } from '@prisma/client';
 import { CollectionsService } from './collections.service';
 
+let lastTenantContext: string | null = null;
+
 function makeHarness(status: CollectionStatus = CollectionStatus.PENDING) {
   const collection: any = {
     id: 'collection-1',
@@ -15,10 +17,18 @@ function makeHarness(status: CollectionStatus = CollectionStatus.PENDING) {
     driverId: status === CollectionStatus.ASSIGNED ? 'driver-1' : null,
     driver: null,
   };
+  // The tenant transaction client and the outer client share the SAME updateMany mock, so
+  // an assertion about "the write happened" holds whichever client performed it. They are
+  // deliberately NOT shared for findFirst: the collect flow overrides tx.collection.findFirst
+  // per-test to simulate a lost compare-and-set, and that must not leak into findOne().
+  const collectionUpdateMany = jest.fn(async () => ({ count: 1 }));
+  lastTenantContext = null;
   const tx = {
     collection: {
-      updateMany: jest.fn(async () => ({ count: 1 })),
-      findFirst: jest.fn(async (): Promise<any> => ({ status: CollectionStatus.COLLECTED })),
+      updateMany: collectionUpdateMany,
+      // Default to the harness collection so tenant-transaction reads behave like the
+      // outer client. The lost-compare-and-set test overrides this per-test.
+      findFirst: jest.fn(async (): Promise<any> => collection),
     },
     waybill: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -30,7 +40,7 @@ function makeHarness(status: CollectionStatus = CollectionStatus.PENDING) {
   const prisma = {
     collection: {
       findFirst: jest.fn(async () => collection),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      updateMany: collectionUpdateMany,
     },
     driver: {
       findFirst: jest.fn().mockResolvedValue({ id: 'driver-1', companyId: 'company-1' }),
@@ -39,7 +49,15 @@ function makeHarness(status: CollectionStatus = CollectionStatus.PENDING) {
     company: { findUnique: jest.fn().mockResolvedValue({ country: 'ZA' }) },
     waybill: { findFirst: jest.fn().mockResolvedValue(null) },
     $transaction: jest.fn(async (callback: (client: any) => unknown) => callback(tx)),
+    // Mirrors PrismaService.withTenant: sets app.company_id, then hands the callback a client.
+    withTenant: jest.fn(async (companyId: string, callback: (client: any) => unknown) => {
+      lastTenantContext = companyId;
+      return callback(tx);
+    }),
   };
+  // findOne() and assignDriver() reach these through the transaction client too.
+  (tx as any).driver = prisma.driver;
+  (tx as any).company = prisma.company;
   const geo = { smartResolve: jest.fn(), geocode: jest.fn() };
   const notifications = { notifyCollectionScheduled: jest.fn() };
   const push = { notifyDriver: jest.fn() };
@@ -80,7 +98,7 @@ describe('CollectionsService state integrity', () => {
   });
 
   it('assigns only a driver from the collection tenant with an eligible-state CAS', async () => {
-    const { service, prisma, tx, push } = makeHarness(CollectionStatus.PENDING);
+    const { service, prisma, push } = makeHarness(CollectionStatus.PENDING);
     await service.assignDriver('collection-1', 'company-1', 'driver-1');
     expect(prisma.driver.findFirst).toHaveBeenCalledWith({ where: { id: 'driver-1', companyId: 'company-1' } });
     expect(prisma.collection.updateMany).toHaveBeenCalledWith({
@@ -93,7 +111,10 @@ describe('CollectionsService state integrity', () => {
       data: { driverId: 'driver-1', status: CollectionStatus.ASSIGNED },
     });
     expect(push.notifyDriver).toHaveBeenCalledWith('driver-1');
-    expect(tx.collection.updateMany).not.toHaveBeenCalled();
+    // The whole custody change now runs inside a tenant transaction, so the write is
+    // covered by RLS as well as by the explicit companyId filter.
+    expect(prisma.withTenant).toHaveBeenCalledWith('company-1', expect.any(Function));
+    expect(lastTenantContext).toBe('company-1');
   });
 
   it('refuses to confirm a cancelled collection before entering a transaction', async () => {

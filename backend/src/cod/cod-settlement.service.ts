@@ -70,9 +70,15 @@ export class CodSettlementService {
       throw new BadRequestException('Waybill and tenant context are required');
     }
 
-    // ── Step 1: tenant-scoped waybill + driver mapping (outside the tx is fine
-    // for the *read*; the CAS below is what makes the write safe) ─────────────
-    const waybill = await this.prisma.waybill.findFirst({
+    // ── Steps 1-4: everything inside ONE tenant transaction ──────────────────
+    // The waybill read, the billing check, the compare-and-set and the wallet
+    // credit used to straddle the transaction boundary. That was a TOCTOU gap:
+    // the row could change between the read and the claim, so the amount we
+    // validated was not necessarily the amount we credited. Doing it all inside
+    // withTenant gives one atomic snapshot AND sets app.company_id, so Postgres
+    // RLS enforces the tenant scope underneath the explicit companyId filters.
+    return this.prisma.withTenant(companyId, async (tx) => {
+    const waybill = await tx.waybill.findFirst({
       where: { id: waybillId, companyId },
       include: {
         shipments: {
@@ -116,7 +122,7 @@ export class CodSettlementService {
     // so the relation filter is the tenant scope. A waybill with no billing line
     // (or only a CANCELLED invoice) is a data-integrity problem: refuse to
     // credit cash against nothing rather than paper over it.
-    const billing = await this.prisma.invoiceItem.findFirst({
+    const billing = await tx.invoiceItem.findFirst({
       where: { waybillId, invoice: { companyId, status: { not: 'CANCELLED' } } },
       select: { id: true, invoice: { select: { id: true, status: true } } },
     });
@@ -143,8 +149,7 @@ export class CodSettlementService {
           ? ` (SHORT by R${Math.abs(discrepancy).toFixed(2)})`
           : ` (OVER by R${discrepancy.toFixed(2)})`;
 
-    // ── Steps 2-4: one transaction, claim first, then credit ─────────────────
-    return this.prisma.$transaction(async (tx) => {
+      // ── Claim first, then credit ────────────────────────────────────────────
       // Compare-and-set. `updateMany` with `codCollected: false` in the WHERE is
       // the double-settlement guard: the second concurrent attempt matches 0
       // rows (the first committed `true`), so it cannot credit twice.
@@ -255,14 +260,16 @@ export class CodSettlementService {
       .update(JSON.stringify({ driverId, companyId, amount: rounded, note: normalizedNote }))
       .digest('hex');
 
-    const driver = await this.prisma.driver.findFirst({
-      where: { id: driverId, companyId },
-      select: { id: true },
-    });
-    if (!driver) throw new NotFoundException('Driver not found');
-
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.withTenant(companyId, async (tx) => {
+        // Tenant-scoped driver read inside the same transaction as the debit, so a
+        // driver cannot be moved between companies mid-settlement.
+        const driver = await tx.driver.findFirst({
+          where: { id: driverId, companyId },
+          select: { id: true },
+        });
+        if (!driver) throw new NotFoundException('Driver not found');
+
         const wallet = await tx.driverWallet.findUnique({ where: { driverId } });
         if (!wallet) throw new NotFoundException('Driver wallet not found');
 
