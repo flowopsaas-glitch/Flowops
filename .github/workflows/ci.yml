@@ -726,6 +726,7 @@ jobs:
       # the Playwright version) so the job does not depend on the
       # Playwright CDN being reachable on every run.
       - name: Cache Playwright browsers
+        id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
@@ -734,14 +735,34 @@ jobs:
 
       # Only Chromium is needed: both projects in playwright.config.ts
       # (Desktop Chrome, Pixel 5) run on Chromium. Installing every engine
-      # pulls extra apt packages for browsers no test uses. Retried up to
-      # 3 times to ride out transient CDN/apt failures; the step still
-      # fails the job if all attempts fail — no silent pass.
+      # pulls extra packages for browsers no test uses.
+      #
+      # `--with-deps` is deliberately NOT used. It made this job depend on the
+      # runner's apt mirror, and that mirror stopped resolving:
+      #
+      #   Err: ... Temporary failure resolving 'azure.archive.ubuntu.com'
+      #
+      # The install log showed why that cost us every single run. Every shared
+      # library Chromium actually needs — libnss3, libgbm1, libcups2t64,
+      # libatk-bridge2.0-0t64, libxkbcommon0, xvfb and the rest — was already
+      # on the runner image at the newest version. The only packages left to
+      # fetch were nine optional Unicode/CJK font packages. Those matter for
+      # rendering international glyphs; they have nothing to do with launching
+      # a browser. So --with-deps made the job's only hard network dependency
+      # a set of fonts it did not need, and when the fetch failed,
+      # "Run Playwright tests" was skipped without executing one assertion.
+      #
+      # Retried up to 3 times to ride out a transient CDN failure; the step
+      # still fails the job if all attempts fail — no silent pass.
       - name: Install Playwright
+        # cache-hit is true only on an EXACT key match, and the key pins the
+        # lockfile — so a restore-keys fallback for another Playwright version
+        # still installs rather than running a browser we never downloaded.
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: frontend
         run: |
           for attempt in 1 2 3; do
-            if npx playwright install --with-deps chromium; then
+            if npx playwright install chromium; then
               exit 0
             fi
             echo "Playwright install attempt ${attempt} failed; retrying..." >&2
