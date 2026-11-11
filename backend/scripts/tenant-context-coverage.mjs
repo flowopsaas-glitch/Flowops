@@ -153,16 +153,38 @@ function withTenantSpans(source) {
 
 const tenants = tenantDelegates();
 const platformByFile = new Map(PLATFORM_SCOPE.map((p) => [p.file, p.reason]));
+
+/**
+ * Blank out comment bodies, keeping every newline so that indices and line
+ * numbers still line up with the original file.
+ *
+ * Why: this scanner used to count code examples written in documentation as
+ * real database operations. `src/waybills/waybill-status.machine.ts` documents
+ * the pattern the module exists to prevent —
+ *     * `prisma.waybill.update({ data: { status }})` jumps.
+ * and that line was reported as a genuine unguarded status write. Phantom
+ * findings inflate the counts, waste triage, and move the ratchet when someone
+ * edits a comment.
+ */
+function blankComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (_m, lead) => lead + ' '.repeat(_m.length - lead.length));
+}
+
 const files = walk(ROOT);
 
 const findings = [];
 for (const file of files) {
   const rel = relative(process.cwd(), file).replace(/\\/g, '/');
   const source = readFileSync(file, 'utf8');
-  const spans = withTenantSpans(source);
+  // Match against the comment-blanked copy; report against the original, so the
+  // snippet a developer sees is the real line of code.
+  const scan = blankComments(source);
+  const spans = withTenantSpans(scan);
   const exemptReason = platformByFile.get(rel);
 
-  for (const match of source.matchAll(CALL)) {
+  for (const match of scan.matchAll(CALL)) {
     const model = match[1];
     if (!tenants.has(model)) continue; // not a tenant table: RLS does not apply
     const op = match[0].match(/\.(\w+)\s*\($/)?.[1] ?? '?';
@@ -365,15 +387,30 @@ if (checking) {
   }
 
   const problems = [];
+
+  // PER-MODULE regressions fail on their own, whether or not the total moved.
+  //
+  // The old rule only failed when the TOTAL rose above the baseline. Because the
+  // baseline is a historical high-water mark and coverage has improved since it
+  // was recorded, that left a gap — 19 operations at the time this was fixed —
+  // in which a new unscoped tenant query was completely invisible. Worse, the gap
+  // grew with every improvement: converting a service to withTenant silently
+  // banked headroom for future regressions. The ratchet ran backwards.
+  //
+  // Per-module comparison has no such slack: any module that gets worse fails,
+  // immediately, even while another module is getting better.
+  if (regressions.length) problems.push(`regressed modules:\n${regressions.join('\n')}`);
+  if (appeared.length) problems.push(`new modules (no baseline entry):\n${appeared.join('\n')}`);
+
   if (summary.bare > baseline.total) {
     problems.push(
       `bare tenant operations rose from ${baseline.total} (recorded ${baseline.recorded}) ` +
         `to ${summary.bare}. New tenant queries must run inside prisma.withTenant(). ` +
         'If coverage genuinely improved, re-record with --update-baseline.',
     );
-    if (regressions.length) problems.push(`regressed modules:\n${regressions.join('\n')}`);
-    if (appeared.length) problems.push(`new modules (no baseline entry):\n${appeared.join('\n')}`);
+  }
 
+  if (problems.length) {
     // Only the modules that actually moved. Dumping all ~1,300 would be a
     // wall nobody reads; what the author needs is the delta they just caused.
     const toBlame = new Set(

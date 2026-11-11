@@ -493,6 +493,20 @@ jobs:
           if [ "$status" -ne 0 ]; then exit "$status"; fi
           exit "$summary_status"
 
+      - name: Prisma query keys (blocking)
+        # Catches a mistyped Prisma field (`where.waybillID` for
+        # `where.waybillId`) where TypeScript cannot: when the generated
+        # client is unavailable the stub is loosely typed, the typo compiles,
+        # and it surfaces as a 500 on a read path.
+        #
+        # This script existed and worked but nothing ran it — it was
+        # referenced only in two comments. Scope is deliberately the audit
+        # trail service: run across every service it reports ~34 findings,
+        # most of them false positives on relation paths and composite keys,
+        # and a guard that cries wolf gets ignored. Narrow and clean beats
+        # broad and noisy.
+        run: npm run prisma:check-keys --silent
+
       - name: RBAC coverage (blocking)
         # Every route must carry one deliberate access decision (@Roles,
         # @AnyAuthenticated, @Public, or @OwnerOnly). This is the option-3
