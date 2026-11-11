@@ -89,78 +89,160 @@ export class OrderFlowService {
     return this.prisma.orderFlowIntegration.delete({ where: { id } });
   }
 
-  async ingestOrder(companyId: string, dto: IngestOrderDto) {
+  /**
+   * Ingest one external order.
+   *
+   * IDEMPOTENCY — this is a webhook endpoint. Stores retry a delivery whenever
+   * they do not receive a 2xx, including when our work succeeded and only the
+   * response was lost. So the same external order legitimately arrives more than
+   * once. The sync log already records every successful ingestion keyed by
+   * (integrationId, externalOrderId); it is consulted first, and a repeat
+   * delivery returns the original waybill instead of creating a second one.
+   * Without this, every retry became another shipment to pay for.
+   */
+  async ingestOrder(
+    companyId: string,
+    dto: IngestOrderDto,
+  ): Promise<{
+    success: boolean;
+    duplicate: boolean;
+    waybillId: string;
+    externalOrderId: string;
+  }> {
     const integration = await this.getIntegration(dto.integrationId, companyId);
     if (integration.status !== 'ACTIVE') {
       throw new BadRequestException('Integration is not active');
     }
 
+    const orderData = dto.orderData ?? {};
+
+    // Weight is a Float column. parseFloat('heavy') is NaN, which is neither
+    // validated by the DTO (orderData is a free-form object) nor rejected by the
+    // service — it reached the database as a broken value.
+    let weight: number | null = null;
+    if (orderData.weight !== undefined && orderData.weight !== null && orderData.weight !== '') {
+      const parsed = Number(orderData.weight);
+      if (!Number.isFinite(parsed)) {
+        throw new BadRequestException(`Order weight is not a number: ${orderData.weight}`);
+      }
+      if (parsed < 0) {
+        throw new BadRequestException('Order weight cannot be negative');
+      }
+      weight = parsed;
+    }
+
+    // A repeat delivery must be recognised BEFORE any write, and the check has to
+    // be scoped to the integration: two stores can both own order 1001.
+    const already = await this.prisma.orderSyncLog.findFirst({
+      where: {
+        integrationId: dto.integrationId,
+        companyId,
+        externalOrderId: dto.externalOrderId,
+        status: 'SUCCESS',
+      },
+      select: { waybillId: true },
+    });
+    if (already?.waybillId) {
+      this.logger.log(
+        `Order ${dto.externalOrderId} already ingested as waybill ${already.waybillId}; ignoring retry`,
+      );
+      return {
+        success: true,
+        duplicate: true,
+        waybillId: already.waybillId,
+        externalOrderId: dto.externalOrderId,
+      };
+    }
+
     try {
-      // Map external order to waybill creation
-      const orderData = dto.orderData;
-      const waybill = await this.prisma.waybill.create({
-        data: {
-          companyId,
-          trackingNumber: `OF-${dto.externalOrderId}-${Date.now()}`,
-          senderName: orderData.senderName || orderData.shopName || 'External Order',
-          senderAddress: orderData.senderAddress || '',
-          senderPhone: orderData.senderPhone || '',
-          recipientName: orderData.recipientName || orderData.customerName || '',
-          recipientAddress: orderData.recipientAddress || orderData.shippingAddress || '',
-          recipientPhone: orderData.recipientPhone || orderData.customerPhone || '',
-          recipientEmail: orderData.recipientEmail || orderData.customerEmail || '',
-          description: orderData.description || `Order ${dto.externalOrderId}`,
-          weight: orderData.weight ? parseFloat(orderData.weight) : null,
-          status: 'PENDING',
-        },
+      // Waybill, sync log and counter are one transaction. Previously they were
+      // three independent writes: a crash between the first and the second left a
+      // waybill with no log entry, so the retry above could not tell it had run
+      // and created a duplicate — the failure made itself unrecoverable.
+      const waybillId = await this.prisma.withTenant(companyId, async (tx) => {
+        const waybill = await tx.waybill.create({
+          data: {
+            companyId,
+            trackingNumber: `OF-${dto.externalOrderId}-${Date.now()}`,
+            senderName: orderData.senderName || orderData.shopName || 'External Order',
+            senderAddress: orderData.senderAddress || '',
+            senderPhone: orderData.senderPhone || '',
+            recipientName: orderData.recipientName || orderData.customerName || '',
+            recipientAddress: orderData.recipientAddress || orderData.shippingAddress || '',
+            recipientPhone: orderData.recipientPhone || orderData.customerPhone || '',
+            recipientEmail: orderData.recipientEmail || orderData.customerEmail || '',
+            description: orderData.description || `Order ${dto.externalOrderId}`,
+            weight,
+            status: 'PENDING',
+          },
+        });
+
+        await tx.orderSyncLog.create({
+          data: {
+            integrationId: dto.integrationId,
+            companyId,
+            externalOrderId: dto.externalOrderId,
+            waybillId: waybill.id,
+            status: 'SUCCESS',
+            payload: orderData as any,
+          },
+        });
+
+        await tx.orderFlowIntegration.update({
+          where: { id: dto.integrationId },
+          data: { totalOrders: { increment: 1 }, lastSyncAt: new Date() },
+        });
+
+        return waybill.id;
       });
 
-      // Log successful sync
-      await this.prisma.orderSyncLog.create({
-        data: {
-          integrationId: dto.integrationId,
-          companyId,
-          externalOrderId: dto.externalOrderId,
-          waybillId: waybill.id,
-          status: 'SUCCESS',
-          payload: orderData as any,
-        },
-      });
-
-      // Update integration stats
-      await this.prisma.orderFlowIntegration.update({
-        where: { id: dto.integrationId },
-        data: {
-          totalOrders: { increment: 1 },
-          lastSyncAt: new Date(),
-        },
-      });
-
-      // Auto-dispatch if enabled
+      // Best-effort and deliberately outside the transaction: a dispatch failure
+      // must not roll back a waybill that was successfully created.
       if (integration.autoDispatch) {
-        await this.autoDispatchWaybill(waybill.id, companyId, integration.dispatchRules as any);
+        await this.autoDispatchWaybill(waybillId, companyId, integration.dispatchRules as any);
       }
 
-      return { success: true, waybillId: waybill.id, externalOrderId: dto.externalOrderId };
-    } catch (error) {
-      // Log failed sync
-      await this.prisma.orderSyncLog.create({
-        data: {
-          integrationId: dto.integrationId,
-          companyId,
-          externalOrderId: dto.externalOrderId,
-          status: 'FAILED',
-          errorMessage: error.message,
-          payload: dto.orderData as any,
-        },
-      });
+      return {
+        success: true,
+        duplicate: false,
+        waybillId,
+        externalOrderId: dto.externalOrderId,
+      };
+    } catch (error: any) {
+      const message = error?.message ?? String(error);
+      await this.recordFailure(companyId, dto, message);
+      throw new BadRequestException(`Order ingestion failed: ${message}`);
+    }
+  }
 
-      await this.prisma.orderFlowIntegration.update({
-        where: { id: dto.integrationId },
-        data: { failedOrders: { increment: 1 } },
+  /**
+   * Record a failed ingestion. Deliberately not part of the caller's transaction
+   * — that one has rolled back, so this has to stand on its own. If it also
+   * fails there is nowhere useful to report it, so it is logged and swallowed
+   * rather than masking the original error.
+   */
+  private async recordFailure(companyId: string, dto: IngestOrderDto, message: string) {
+    try {
+      await this.prisma.withTenant(companyId, async (tx) => {
+        await tx.orderSyncLog.create({
+          data: {
+            integrationId: dto.integrationId,
+            companyId,
+            externalOrderId: dto.externalOrderId,
+            status: 'FAILED',
+            errorMessage: message,
+            payload: (dto.orderData ?? {}) as any,
+          },
+        });
+        await tx.orderFlowIntegration.update({
+          where: { id: dto.integrationId },
+          data: { failedOrders: { increment: 1 } },
+        });
       });
-
-      throw new BadRequestException(`Order ingestion failed: ${error.message}`);
+    } catch (logError: any) {
+      this.logger.error(
+        `Could not record failed order ${dto.externalOrderId}: ${logError?.message ?? logError}`,
+      );
     }
   }
 

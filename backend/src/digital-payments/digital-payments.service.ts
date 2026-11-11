@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { claimTransition } from '../common/state-transition';
+import { Money } from '../common/money.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto, ConfirmPaymentDto } from './dto/digital-payment.dto';
 import { randomBytes } from 'crypto';
@@ -10,29 +11,42 @@ export class DigitalPaymentsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** A payment may only be confirmed from one of these; see confirmPayment. */
+  private static readonly CONFIRMABLE = ['PENDING', 'PROCESSING'];
+
   async createPayment(companyId: string, dto: CreatePaymentDto) {
-    if (dto.amount <= 0) {
+    if (!Number.isFinite(dto.amount)) {
+      throw new BadRequestException('Amount must be a number');
+    }
+    // Round at the boundary, like every other money path on the platform. A
+    // payment for R10.005 is a payment for R10.01, and storing the raw float
+    // pushes the error into every sum taken over it later.
+    const amount = Money.round(dto.amount);
+    if (amount <= 0) {
+      // Catches 0.004 as well: it is not negative, but it is not money either.
       throw new BadRequestException('Amount must be greater than 0');
     }
 
     const reference = `PAY-${randomBytes(6).toString('hex').toUpperCase()}`;
 
-    return this.prisma.digitalPayment.create({
-      data: {
-        companyId,
-        amount: dto.amount,
-        currency: dto.currency || 'ZAR',
-        method: dto.method,
-        status: 'PENDING',
-        reference,
-        waybillId: dto.waybillId,
-        driverId: dto.driverId,
-        payerName: dto.payerName,
-        payerPhone: dto.payerPhone,
-        payerEmail: dto.payerEmail,
-        gateway: dto.gateway || 'MANUAL',
-      },
-    });
+    return this.prisma.withTenant(companyId, (tx) =>
+      tx.digitalPayment.create({
+        data: {
+          companyId,
+          amount,
+          currency: dto.currency || 'ZAR',
+          method: dto.method,
+          status: 'PENDING',
+          reference,
+          waybillId: dto.waybillId,
+          driverId: dto.driverId,
+          payerName: dto.payerName,
+          payerPhone: dto.payerPhone,
+          payerEmail: dto.payerEmail,
+          gateway: dto.gateway || 'MANUAL',
+        },
+      }),
+    );
   }
 
   async confirmPayment(companyId: string, dto: ConfirmPaymentDto) {
@@ -43,11 +57,24 @@ export class DigitalPaymentsService {
     if (payment.status === 'SUCCESS') {
       throw new BadRequestException('Payment already confirmed');
     }
+    // Only a payment still in flight may be confirmed. The guard used to be
+    // `status !== 'SUCCESS'`, which also matched FAILED and REFUNDED — so a
+    // payment the gateway had rejected, or money already paid back out, could be
+    // flipped to SUCCESS by a second confirm and re-enter totalRevenue.
+    if (!DigitalPaymentsService.CONFIRMABLE.includes(payment.status)) {
+      throw new BadRequestException(
+        `A ${payment.status.toLowerCase()} payment cannot be confirmed`,
+      );
+    }
 
     await this.prisma.withTenant(companyId, (tx) =>
       claimTransition(
         () => tx.digitalPayment.updateMany({
-          where: { id: payment.id, companyId, status: { not: 'SUCCESS' } },
+          where: {
+            id: payment.id,
+            companyId,
+            status: { in: DigitalPaymentsService.CONFIRMABLE },
+          },
           data: { status: 'SUCCESS', externalId: dto.externalId, paidAt: new Date() },
         }),
         'Payment was confirmed by someone else.',
@@ -137,7 +164,9 @@ export class DigitalPaymentsService {
       successful,
       failed,
       refunded,
-      totalRevenue: totalRevenue._sum.amount || 0,
+      // Summing floats accumulates their representation error: 0.1 + 0.2 + 10.15
+      // + 20.25 comes back as 30.700000000000003. Round the total, not each row.
+      totalRevenue: Money.round(totalRevenue._sum.amount ?? 0),
       successRate: total ? Math.round((successful / total) * 100) : 0,
     };
   }
