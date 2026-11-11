@@ -117,7 +117,7 @@ export class PaystackController {
    *       No Paystack transaction created.
    *
    *   { planCode: 'PLN_l3kobthzahnkpf3' }   ← Professional (ZAR 19,999/month)
-   *   { planCode: 'PLN_9at9kn2ra8jtae0' }   ← Enterprise   (Custom, ZAR 100,000/month)
+   *   { planCode: 'PLN_9at9kn2ra8jtae0' }   ← Enterprise   (Custom, ZAR 250,000/month)
    *     → Paid. Creates a Paystack recurring subscription.
    *       Company.plan is updated automatically on success.
    *

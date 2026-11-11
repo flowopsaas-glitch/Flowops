@@ -352,7 +352,9 @@ export class PaystackService {
     // Map plan code to internal name + price for the Payment record
     const planMap: Record<string, { name: string; amountZar: number }> = {
       'PLN_l3kobthzahnkpf3': { name: 'professional', amountZar: 19999 },
-      'PLN_9at9kn2ra8jtae0': { name: 'enterprise', amountZar: 100000 },
+      // Repriced 2026-11-10. The Paystack plan object must carry the same amount in the
+      // dashboard, or the subscription bills at one figure while we record another.
+      'PLN_9at9kn2ra8jtae0': { name: 'enterprise', amountZar: 250000 },
     };
     const planInfo = planMap[params.planCode];
     if (!planInfo) throw new BadRequestException(`Invalid plan code: ${params.planCode}`);
@@ -487,7 +489,7 @@ export class PaystackService {
    *
    * Active plans (Flowops Holdings, Test Mode):
    *   professional → PLN_l3kobthzahnkpf3 (ZAR 19,999 / month)
-   *   enterprise   → PLN_9at9kn2ra8jtae0 (ZAR 100,000 / month — custom/contact sales)
+   *   enterprise   → PLN_9at9kn2ra8jtae0 (ZAR 250,000 / month — custom/contact sales)
    *
    * For the free Starter plan use activateStarterPlan() instead.
    *
