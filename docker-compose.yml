@@ -145,6 +145,20 @@ services:
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       # 32-byte base64/hex key used only for AES-256-GCM encryption of OIDC client secrets.
       SSO_SECRET_ENCRYPTION_KEY: ${SSO_SECRET_ENCRYPTION_KEY:-}
+      # 32-byte base64 key for per-tenant integration secrets at rest
+      # (WhatsApp, Shopify/WooCommerce, and Xero/Sage OAuth tokens).
+      #
+      # THIS LINE IS THE ONLY WAY THE VARIABLE REACHES THE CONTAINER — see the
+      # note on RBAC_STRICT above. It was absent, so a key set in the host .env
+      # was silently dropped and IntegrationCryptoService stayed unconfigured:
+      # saving any integration secret failed with "no integration encryption
+      # key configured", and accounting OAuth could not connect at all.
+      # Default empty on purpose — the service then fails closed with a loud
+      # boot warning rather than persisting secrets in clear.
+      INTEGRATIONS_ENC_KEY: ${INTEGRATIONS_ENC_KEY:-}
+      # Accepted as a fallback by the same service, so installs that already
+      # configured customs EDI keep working without a second key.
+      CUSTOMS_EDI_KEY: ${CUSTOMS_EDI_KEY:-}
 
       # ── Owner seed account ────────────────────────────────────────────
       OWNER_SEED_EMAIL: ${OWNER_SEED_EMAIL:-owner@flowops.local}

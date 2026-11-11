@@ -90,6 +90,25 @@ export const REQUIRED_API_ENV = [
       pattern: /process\.env\.RBAC_STRICT === 'true'/,
     },
   },
+  {
+    // Same failure mode as RBAC_STRICT, different variable. The api service
+    // allowlists `environment:` and declares no env_file, so a key set in the
+    // host .env but missing here never reaches the container — and the symptom
+    // is not "wrong value", it is "feature silently refuses to store secrets".
+    //
+    // Only the unset and empty states are asserted: this is a secret, so there
+    // is no meaningful 'true'/'false' rendering to check. The point is that an
+    // unset or blank host value stays blank rather than rendering to something
+    // that looks like a key.
+    key: 'INTEGRATIONS_ENC_KEY',
+    raw: '${INTEGRATIONS_ENC_KEY:-}',
+    renders: { unset: '', empty: '' },
+    documentedIn: ['.env.example', '.env.production.example'],
+    consumedBy: {
+      file: 'backend/src/integrations/integration-crypto.service.ts',
+      pattern: /loadKey\('INTEGRATIONS_ENC_KEY'\)/,
+    },
+  },
 ];
 
 // ── Compose interpolation (the subset this repo uses) ────────────────────────
