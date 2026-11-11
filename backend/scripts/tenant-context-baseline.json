@@ -1,7 +1,7 @@
 {
   "_why": "Bare tenant operations per module, at the time this was recorded. The invariant enforced by --check is that the TOTAL may never rise. Re-record only when coverage has genuinely improved, and say how in the commit.",
   "recorded": "2026-11-11",
-  "total": 1311,
+  "total": 1310,
   "byModule": {
     "accounting": 42,
     "accounting-integrations": 20,
@@ -32,7 +32,7 @@
     "driver-portal": 66,
     "driver-safety": 39,
     "drivers": 23,
-    "ecommerce": 6,
+    "ecommerce": 5,
     "email-hub": 15,
     "epod": 20,
     "esg": 6,
