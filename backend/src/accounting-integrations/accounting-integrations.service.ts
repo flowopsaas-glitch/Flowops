@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { XeroProvider } from './providers/xero.provider';
@@ -26,7 +26,22 @@ export class AccountingIntegrationsService {
     private sage: SageProvider,
     private pastel: PastelProvider,
   ) {
+    // No fallback. `|| ''` made the signing key an empty string whenever
+    // JWT_SECRET was unset, and HMAC-SHA256 under an empty key is something
+    // anyone can compute offline. The signed state is the only thing telling
+    // this callback which company the connection belongs to, so a forgeable
+    // state means an attacker can name any tenant they like — pair it with an
+    // OAuth code from their own Xero account and the victim's tenant ends up
+    // connected to the attacker's ledger. Every invoice they sync then lands on
+    // the attacker's side. If the key is missing we cannot sign, so we do not
+    // pretend to.
     this.secret = config.get<string>('JWT_SECRET') || '';
+    if (!this.secret) {
+      this.logger.error(
+        'JWT_SECRET is not set — the Accounting Bridge OAuth state cannot be signed. ' +
+          'OAuth connect is disabled until it is configured.',
+      );
+    }
     this.appUrl = config.get<string>('APP_URL', 'https://app.flowop.work');
   }
 
@@ -353,6 +368,18 @@ export class AccountingIntegrationsService {
 
   // ── signed OAuth state ──────────────────────────────────────────────────────
 
+  /**
+   * Constant-time compare. `sig !== expected` returns as soon as the first
+   * differing byte is found, which leaks how much of the signature was right —
+   * the standard setup for recovering a signature one byte at a time.
+   */
+  private safeEqual(a: string, b: string): boolean {
+    const ba = Buffer.from(a);
+    const bb = Buffer.from(b);
+    if (ba.length !== bb.length) return false;
+    return timingSafeEqual(ba, bb);
+  }
+
   private signState(companyId: string, provider: ProviderKey): string {
     const payload = Buffer.from(JSON.stringify({ companyId, provider, ts: Date.now() })).toString('base64url');
     const sig = createHmac('sha256', this.secret).update(payload).digest('base64url');
@@ -360,10 +387,14 @@ export class AccountingIntegrationsService {
   }
 
   private verifyState(state: string): { companyId: string; provider: ProviderKey } | null {
+    // No key, no trust. Refusing outright is the only safe reading of an
+    // unconfigured secret: it is what an attacker would forge against.
+    if (!this.secret) return null;
+
     const [payload, sig] = (state || '').split('.');
     if (!payload || !sig) return null;
     const expected = createHmac('sha256', this.secret).update(payload).digest('base64url');
-    if (sig !== expected) return null;
+    if (!this.safeEqual(expected, sig)) return null;
     try {
       const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
       if (Date.now() - data.ts > 15 * 60 * 1000) return null; // 15-min window
