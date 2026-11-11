@@ -586,8 +586,18 @@ export class AuthService {
     if (user.emailVerified) {
       return { message: 'Email is already verified.' };
     }
-    await this.sendVerificationEmail(user);
-    return { message: 'Verification email resent.' };
+    const delivered = await this.sendVerificationEmail(user);
+    // The old code discarded the result and answered "Verification email
+    // resent." whether or not anything left the building. The token is stored
+    // either way, so the user waits on an inbox that will never receive it.
+    return delivered
+      ? { message: 'Verification email resent.', emailDelivered: true }
+      : {
+          // Additive flag, so nothing that already reads `message` breaks.
+          emailDelivered: false,
+          message:
+            'We could not send the verification email right now. Please try again shortly, or contact support if it keeps failing.',
+        };
   }
 
   // ── Password reset ────────────────────────────────────────────────────
@@ -718,7 +728,8 @@ export class AuthService {
 
   // ── Private helpers ───────────────────────────────────────────────────
 
-  private async sendVerificationEmail(user: any) {
+  /** @returns whether the mail actually left the building. */
+  private async sendVerificationEmail(user: any): Promise<boolean> {
     const token = uuid();
     const expiry = new Date();
     expiry.setHours(expiry.getHours() + 24); // 24 hours
@@ -728,7 +739,17 @@ export class AuthService {
       data: { verifyToken: token, verifyTokenExpiry: expiry },
     });
 
-    await this.email.sendVerificationEmail(user.email, token, user.name);
+    const delivered = await this.email.sendVerificationEmail(user.email, token, user.name);
+    if (!delivered) {
+      // EmailService.send() logs at WARN when unconfigured and swallows
+      // provider errors, so a failure here was invisible above warn level.
+      // This is the one notification a user cannot proceed without.
+      this.logger.error(
+        `Verification email NOT delivered to ${user.email} — provider unconfigured or send rejected. ` +
+          `The verify token was stored, so the user will wait for a mail that will not arrive.`,
+      );
+    }
+    return delivered;
   }
 
   /**

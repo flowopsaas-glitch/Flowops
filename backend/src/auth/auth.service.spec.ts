@@ -22,7 +22,10 @@ function makeHarness() {
     refreshToken: { deleteMany: jest.fn().mockResolvedValue({ count: 2 }) },
     $transaction: jest.fn(async (callback: (client: any) => unknown) => callback(tx)),
   };
-  const email = { sendPasswordResetEmail: jest.fn().mockResolvedValue(true) };
+  const email = {
+    sendPasswordResetEmail: jest.fn().mockResolvedValue(true),
+    sendVerificationEmail: jest.fn().mockResolvedValue(true),
+  };
   const service = new AuthService(prisma as any, {} as any, {} as any, email as any, {} as any);
   return { service, prisma, tx, email };
 }
@@ -89,5 +92,72 @@ describe('AuthService password reset security', () => {
 
     await expect(service.resetPassword('racing-token', 'StrongPassword123!')).rejects.toThrow(BadRequestException);
     expect(tx.refreshToken.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService — resendVerification must not claim a mail it did not send', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const unverified = (over: any = {}) => ({
+    id: 'user-1', companyId: 'co-1', email: 'user@example.com',
+    name: 'Test User', emailVerified: false, ...over,
+  });
+
+  it('reports delivery failure instead of saying "resent"', async () => {
+    // FAILED BEFORE: the boolean was discarded and the endpoint answered
+    // "Verification email resent." whether or not anything left the building.
+    const { service, prisma, email } = makeHarness();
+    (prisma.user.findFirst as jest.Mock).mockResolvedValue(unverified());
+    (email.sendVerificationEmail as jest.Mock).mockResolvedValue(false);
+
+    const out: any = await service.resendVerification('user-1', 'co-1');
+
+    expect(out.emailDelivered).toBe(false);
+    expect(out.message).not.toMatch(/resent/i);
+    expect(out.message).toMatch(/could not send/i);
+  });
+
+  it('reports success honestly when the mail goes out', async () => {
+    const { service, prisma, email } = makeHarness();
+    (prisma.user.findFirst as jest.Mock).mockResolvedValue(unverified());
+    (email.sendVerificationEmail as jest.Mock).mockResolvedValue(true);
+
+    const out: any = await service.resendVerification('user-1', 'co-1');
+
+    expect(out.emailDelivered).toBe(true);
+    expect(out.message).toMatch(/resent/i);
+  });
+
+  it('stores a fresh verify token either way, so a retry can still succeed', async () => {
+    const { service, prisma, email } = makeHarness();
+    (prisma.user.findFirst as jest.Mock).mockResolvedValue(unverified());
+    (email.sendVerificationEmail as jest.Mock).mockResolvedValue(false);
+
+    await service.resendVerification('user-1', 'co-1');
+
+    const data = (prisma.user.update as jest.Mock).mock.calls[0][0].data;
+    expect(data.verifyToken).toBeTruthy();
+    expect(data.verifyTokenExpiry).toBeInstanceOf(Date);
+  });
+
+  it('scopes the lookup to the calling tenant', async () => {
+    const { service, prisma } = makeHarness();
+    (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await expect(service.resendVerification('user-1', 'co-other')).rejects.toThrow();
+
+    expect((prisma.user.findFirst as jest.Mock).mock.calls[0][0].where).toEqual({
+      id: 'user-1', companyId: 'co-other',
+    });
+  });
+
+  it('short-circuits when the address is already verified', async () => {
+    const { service, prisma, email } = makeHarness();
+    (prisma.user.findFirst as jest.Mock).mockResolvedValue(unverified({ emailVerified: true }));
+
+    const out: any = await service.resendVerification('user-1', 'co-1');
+
+    expect(out.message).toMatch(/already verified/i);
+    expect(email.sendVerificationEmail).not.toHaveBeenCalled();
   });
 });
