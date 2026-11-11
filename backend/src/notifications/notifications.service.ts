@@ -17,9 +17,26 @@ export class NotificationsService {
     private whatsapp: WhatsAppService,
   ) {}
 
+  /**
+   * What this user may see: notifications addressed to them, plus the
+   * company-wide broadcasts.
+   *
+   * The schema is explicit that `userId` is optional and means
+   * "null = broadcast to whole company". findAll took a userId and never put
+   * it in the WHERE, so a notification addressed to one person was served to
+   * every user in the company. No writer targets a user yet, so this has not
+   * leaked anything today — but the column and its contract exist, and the
+   * method already accepted the argument for exactly this purpose.
+   */
+  private visibleTo(companyId: string, userId?: string | null) {
+    const scope: any[] = [{ userId: null }];
+    if (userId) scope.push({ userId });
+    return { companyId, OR: scope };
+  }
+
   async findAll(userId: string, companyId: string, query?: any) {
     const take = Number(query?.limit) || 50;
-    const where: any = { companyId };
+    const where: any = this.visibleTo(companyId, userId);
     if (query?.unread === 'true') where.read = false;
 
     const notifications = await this.prisma.notification.findMany({
@@ -30,19 +47,25 @@ export class NotificationsService {
     return notifications;
   }
 
-  async markRead(id: string, companyId: string) {
-    // Tenant-scoped: a user can only mark their own company's notification read.
+  async markRead(id: string, companyId: string, userId?: string | null) {
+    // Tenant-scoped, and limited to what this user can see: their own
+    // notifications and the company broadcasts. Without the second half, any
+    // user in the company could clear a notification addressed to another.
     const res = await this.prisma.notification.updateMany({
-      where: { id, companyId },
+      where: { id, ...this.visibleTo(companyId, userId) },
       data: { read: true, readAt: new Date() },
     });
     if (res.count === 0) throw new NotFoundException('Notification not found');
     return { read: true };
   }
 
-  async markAllRead(companyId: string) {
+  async markAllRead(companyId: string, userId?: string | null) {
+    // Scoped to what this user can see. `where: { companyId, read: false }`
+    // meant one person clicking "mark all read" cleared every unread
+    // notification in the company, including ones addressed to colleagues —
+    // their unread state is not the caller's to destroy.
     await this.prisma.notification.updateMany({
-      where: { companyId, read: false },
+      where: { ...this.visibleTo(companyId, userId), read: false },
       data: { read: true, readAt: new Date() },
     });
     return { message: 'All notifications marked as read' };
