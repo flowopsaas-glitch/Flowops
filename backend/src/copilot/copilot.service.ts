@@ -273,10 +273,30 @@ export class CopilotService {
     const isRevenue = /\b(revenue|sales|invoice|income)\b/.test(q);
     const gte = tf.gte ?? new Date(Date.now() - 7 * 86400000);
     const lte = tf.lte ?? new Date();
+    // A question may ask for a window far wider than the chart can show, and
+    // the bucket loop used to walk FORWARD from `gte` under a 31-iteration cap.
+    // "This year" therefore summed January, and "the last 90 days" summed the
+    // OLDEST 31 days of that window — while the answer text still claimed the
+    // full period. Both wrong in the same way: the number described a window
+    // nobody asked about.
+    //
+    // Anchor to the END of the requested range instead, and say what was
+    // actually measured when the window had to be narrowed.
+    const MAX_BUCKETS = 31;
+    const spanDays = Math.max(1, Math.ceil((lte.getTime() - gte.getTime()) / 86400000));
+    let windowStart = gte;
+    let label = tf.label;
+    if (spanDays > MAX_BUCKETS) {
+      windowStart = new Date(lte);
+      windowStart.setDate(lte.getDate() - (MAX_BUCKETS - 1));
+      windowStart.setHours(0, 0, 0, 0);
+      label = `in the last ${MAX_BUCKETS} days`;
+    }
+
     const buckets: { label: string; value: number }[] = [];
-    const days = Math.min(31, Math.max(1, Math.ceil((lte.getTime() - gte.getTime()) / 86400000)));
+    const days = Math.min(MAX_BUCKETS, Math.max(1, Math.ceil((lte.getTime() - windowStart.getTime()) / 86400000)));
     for (let i = 0; i < days; i++) {
-      const start = new Date(gte); start.setDate(gte.getDate() + i); start.setHours(0, 0, 0, 0);
+      const start = new Date(windowStart); start.setDate(windowStart.getDate() + i); start.setHours(0, 0, 0, 0);
       const end = new Date(start); end.setHours(23, 59, 59, 999);
       if (isRevenue) {
         const agg = await this.prisma.invoice.aggregate({ where: { companyId, status: 'PAID', createdAt: { gte: start, lte: end } }, _sum: { total: true } });
@@ -289,8 +309,8 @@ export class CopilotService {
     const sum = round2(buckets.reduce((s, b) => s + b.value, 0));
     return {
       answer: isRevenue
-        ? `Revenue${tf.label ? ' ' + tf.label : ' (last 7 days)'}: ${money(sum)} total — see the daily trend.`
-        : `Waybills${tf.label ? ' ' + tf.label : ' (last 7 days)'}: ${sum.toLocaleString()} total — see the daily trend.`,
+        ? `Revenue${label ? ' ' + label : ' (last 7 days)'}: ${money(sum)} total — see the daily trend.`
+        : `Waybills${label ? ' ' + label : ' (last 7 days)'}: ${sum.toLocaleString()} total — see the daily trend.`,
       value: sum, unit: isRevenue ? ('currency' as const) : ('count' as const), intent: 'trend',
       chart: { type: 'line' as const, labels: buckets.map((b) => b.label), values: buckets.map((b) => b.value) },
     };

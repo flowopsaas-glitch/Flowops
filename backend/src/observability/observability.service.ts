@@ -90,7 +90,17 @@ export class ObservabilityService {
     });
 
     // Fire-and-forget AI triage; never block the request path.
-    this.triage(fingerprint).catch((e) => this.logger.warn(`Triage failed: ${e.message}`));
+    //
+    // Only for errors this server produced. `client-error` and `integrity-beacon`
+    // are @Public() — anyone can post arbitrary text and mint a fresh
+    // fingerprint, and every new fingerprint used to spend a Groq call. The
+    // message and stack are attacker-controlled, so the model was being paid to
+    // read strings a stranger wrote. Those are still CAPTURED and an operator
+    // can triage them deliberately through `retriage`; they just no longer
+    // trigger an automatic, billable, anonymous request.
+    if ((input.source || 'backend') === 'backend') {
+      this.triage(fingerprint).catch((e) => this.logger.warn(`Triage failed: ${e.message}`));
+    }
     return { fingerprint, isNew: true };
   }
 
@@ -152,7 +162,12 @@ Stack (top): ${String(ev.stack || '').slice(0, 800)}`;
     return (this.prisma as any).errorEvent.findMany({
       where,
       orderBy: [{ resolved: 'asc' }, { lastSeenAt: 'desc' }],
-      take: Math.min(opts.limit || 100, 300),
+      // `opts.limit || 100` read an explicit 0 as "not supplied" and returned a
+      // full page. Default only when the value is not a finite number;
+      // otherwise clamp into [1, 300]. The floor is 1 rather than 0 because
+      // `take: 0` is an empty page, which is never what a caller asking for a
+      // limit means.
+      take: Math.min(Math.max(1, Number.isFinite(opts.limit) ? Number(opts.limit) : 100), 300),
     });
   }
 
