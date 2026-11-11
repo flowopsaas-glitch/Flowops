@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -13,7 +13,27 @@ export class QuotesService {
     // Simple pricing calculation — replace with rate-card lookup in production
     const basePrice = 80;
     const pricePerKg = 15;
-    const price = basePrice + pricePerKg * (dto.weight || 1);
+
+    // `weight` arrives on an untyped body (`@Body() body: any`) and went
+    // straight into the money maths. Two consequences:
+    //   - a negative weight produced a negative quote (-100 kg -> -R1420);
+    //   - `price` used `dto.weight || 1` while the breakdown used the bare
+    //     `dto.weight`, so a weight of 0 produced { base: 80, perKg: 0,
+    //     total: 95 } — a breakdown that does not sum to its own total, shown
+    //     to the customer as the explanation of the price.
+    // Validate once, then use the one value everywhere.
+    // Same rule as rate-cards: a missing/blank weight is absent, not zero.
+    // `Number(null)` and `Number('')` are both 0, which would otherwise price
+    // an unspecified weight as a free 0 kg shipment.
+    const raw: unknown = dto?.weight;
+    const weight = Number(typeof raw === 'string' ? raw.trim() : raw);
+    const blank = raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '');
+    if (blank || !Number.isFinite(weight) || weight < 0) {
+      throw new BadRequestException('weight must be a non-negative number');
+    }
+
+    const perKg = pricePerKg * weight;
+    const price = basePrice + perKg;
 
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 48);
@@ -22,12 +42,12 @@ export class QuotesService {
       data: {
         fromAddress: dto.fromAddress,
         toAddress:   dto.toAddress,
-        weight:      dto.weight,
+        weight,
         clientName:  dto.clientName ?? null,
         price,
         expiresAt,
         companyId,
-        breakdown: { base: basePrice, perKg: pricePerKg * dto.weight, total: price },
+        breakdown: { base: basePrice, perKg, total: price },
       },
     });
   }
