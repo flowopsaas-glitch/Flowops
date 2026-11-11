@@ -37,26 +37,37 @@ export class CourierManagementService {
   // ── Orders ──────────────────────────────────────────────────────────────────
   async createOrder(companyId: string, dto: CreateCourierOrderDto) {
     await this.assertEntitled(companyId);
-    const reference = await this.nextReference(companyId);
-    return (this.prisma as any).courierOrder.create({
-      data: {
-        companyId,
-        reference,
-        clientName: dto.clientName,
-        clientId: dto.clientId || null,
-        pickupAddress: dto.pickupAddress,
-        dropoffAddress: dto.dropoffAddress,
-        contactName: dto.contactName || null,
-        contactPhone: dto.contactPhone || null,
-        itemsDesc: dto.itemsDesc || null,
-        pieces: dto.pieces ?? 1,
-        weightKg: dto.weightKg ?? null,
-        priority: dto.priority || 'NORMAL',
-        windowStart: dto.windowStart ? new Date(dto.windowStart) : null,
-        windowEnd: dto.windowEnd ? new Date(dto.windowEnd) : null,
-        notes: dto.notes || null,
-        status: 'NEW',
-      },
+    // Lock, count and insert in ONE transaction. Doing the allocation in its own
+    // transaction would release the advisory lock the moment it committed — before
+    // the row that consumed the number was written — which fixes nothing.
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const year = new Date().getFullYear();
+      await this.lockReferenceSpace(tx, companyId, year);
+      const count = await (tx as any).courierOrder.count({
+        where: { companyId, createdAt: { gte: new Date(year, 0, 1) } },
+      });
+      const reference = `ORD-${year}-${String(count + 1).padStart(5, '0')}`;
+
+      return (tx as any).courierOrder.create({
+        data: {
+          companyId,
+          reference,
+          clientName: dto.clientName,
+          clientId: dto.clientId || null,
+          pickupAddress: dto.pickupAddress,
+          dropoffAddress: dto.dropoffAddress,
+          contactName: dto.contactName || null,
+          contactPhone: dto.contactPhone || null,
+          itemsDesc: dto.itemsDesc || null,
+          pieces: dto.pieces ?? 1,
+          weightKg: dto.weightKg ?? null,
+          priority: dto.priority || 'NORMAL',
+          windowStart: dto.windowStart ? new Date(dto.windowStart) : null,
+          windowEnd: dto.windowEnd ? new Date(dto.windowEnd) : null,
+          notes: dto.notes || null,
+          status: 'NEW',
+        },
+      });
     });
   }
 
@@ -150,12 +161,27 @@ export class CourierManagementService {
     if (!ok) throw new ForbiddenException('The Courier Management Suite is available on the Enterprise plan. Upgrade to unlock it.');
   }
 
-  private async nextReference(companyId: string): Promise<string> {
-    const year = new Date().getFullYear();
-    const count = await (this.prisma as any).courierOrder.count({
-      where: { companyId, createdAt: { gte: new Date(year, 0, 1) } },
-    });
-    return `ORD-${year}-${String(count + 1).padStart(5, '0')}`;
+  /**
+   * Serialise reference allocation for one company and year.
+   *
+   * Counting rows and adding one is not allocation: two callers read the same
+   * count and are handed the same number. `reference` carries no unique
+   * constraint, so nothing rejected the duplicate either — two different orders
+   * ended up unidentifiable by the number a customer would quote.
+   *
+   * `pg_advisory_xact_lock` is released when the transaction ends, so callers
+   * queue instead of colliding and nothing leaks if a request dies mid-flight.
+   * The lock key is scoped per company and year, so one tenant's allocation never
+   * blocks another's.
+   *
+   * NOTE — a unique constraint on (companyId, reference) is the real backstop,
+   * but it can only be added once existing duplicates are known not to exist:
+   * the index build fails on a table that already has them. Flagged rather than
+   * attempted blind.
+   */
+  private async lockReferenceSpace(tx: any, companyId: string, year: number): Promise<void> {
+    const key = `courier-ref:${companyId}:${year}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
   }
 
   private async attachDriverNames(companyId: string, orders: any[]) {

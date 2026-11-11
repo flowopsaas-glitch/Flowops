@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { claimTransition } from '../common/state-transition';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoutePlanDto, UpdateRoutePlanDto } from './dto/smart-routing.dto';
 
@@ -87,15 +88,35 @@ export class SmartRoutingService {
     return this.prisma.routePlan.update({ where: { id }, data });
   }
 
+  /**
+   * Lifecycle transitions.
+   *
+   * Each one used to read the status, decide in application code, then write
+   * keyed on id alone. Two overlapping callers both read the same committed row
+   * and both pass the check, so the second write landed as though the first never
+   * happened. The expectation now lives in the WHERE, which the database
+   * evaluates against the committed row, so exactly one caller can match — the
+   * other gets a 409 instead of silently overwriting.
+   *
+   * See src/common/state-transition.ts.
+   */
   async activatePlan(id: string, companyId: string) {
     const plan = await this.findOne(id, companyId);
     if (plan.status !== 'DRAFT') {
       throw new BadRequestException('Only draft plans can be activated');
     }
-    return this.prisma.routePlan.update({
-      where: { id },
-      data: { status: 'ACTIVE', startTime: new Date() },
-    });
+    const startTime = new Date();
+    await this.prisma.withTenant(companyId, (tx) =>
+      claimTransition(
+        () =>
+          tx.routePlan.updateMany({
+            where: { id, companyId, status: 'DRAFT' },
+            data: { status: 'ACTIVE', startTime },
+          }),
+        'Plan was activated by someone else.',
+      ),
+    );
+    return this.findOne(id, companyId);
   }
 
   async completePlan(id: string, companyId: string) {
@@ -106,10 +127,17 @@ export class SmartRoutingService {
     const startTime = plan.startTime || plan.createdAt;
     const actualTime = (Date.now() - startTime.getTime()) / 60000; // minutes
 
-    return this.prisma.routePlan.update({
-      where: { id },
-      data: { status: 'COMPLETED', endTime: new Date(), actualTime },
-    });
+    await this.prisma.withTenant(companyId, (tx) =>
+      claimTransition(
+        () =>
+          tx.routePlan.updateMany({
+            where: { id, companyId, status: 'ACTIVE' },
+            data: { status: 'COMPLETED', endTime: new Date(), actualTime },
+          }),
+        'Plan was completed by someone else.',
+      ),
+    );
+    return { ...plan, status: 'COMPLETED', endTime: new Date(), actualTime };
   }
 
   async cancelPlan(id: string, companyId: string) {
@@ -117,10 +145,17 @@ export class SmartRoutingService {
     if (plan.status === 'COMPLETED') {
       throw new BadRequestException('Cannot cancel a completed plan');
     }
-    return this.prisma.routePlan.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
-    });
+    await this.prisma.withTenant(companyId, (tx) =>
+      claimTransition(
+        () =>
+          tx.routePlan.updateMany({
+            where: { id, companyId, status: { not: 'COMPLETED' } },
+            data: { status: 'CANCELLED' },
+          }),
+        'Plan was cancelled by someone else.',
+      ),
+    );
+    return { ...plan, status: 'CANCELLED' };
   }
 
   async getSchedule(companyId: string, date: string) {

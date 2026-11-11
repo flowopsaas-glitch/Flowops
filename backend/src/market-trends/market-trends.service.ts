@@ -121,6 +121,87 @@ Respond in JSON format: { "answer": string, "confidence": number, "keyPoints": s
     }
   }
 
+  /**
+   * Narrow an untrusted AI payload to the declared contract, or return null.
+   *
+   * Deliberately strict and deliberately verbose: this is the boundary between a
+   * language model and a screen a customer is looking at. Every field the UI
+   * reads is checked, and unknown top-level keys are dropped rather than
+   * forwarded — a model-supplied `generatedAt` must not shadow the real one.
+   */
+  private toMarketTrendData(raw: any): Omit<MarketTrendData, 'generatedAt' | 'model'> | null {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+    const str = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+    const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+    const level = (v: unknown): v is 'LOW' | 'MEDIUM' | 'HIGH' =>
+      v === 'LOW' || v === 'MEDIUM' || v === 'HIGH';
+
+    const ov = raw.overview;
+    if (!ov || typeof ov !== 'object') return null;
+    if (!str(ov.marketSize) || !str(ov.growthRate) || !str(ov.projectedGrowth)) return null;
+    if (!Array.isArray(ov.keyDrivers) || !ov.keyDrivers.every(str)) return null;
+
+    if (!Array.isArray(raw.segments)) return null;
+    const segments = raw.segments.filter(
+      (x: any) => x && str(x.name) && num(x.share) && str(x.growth) && str(x.outlook),
+    );
+    if (!segments.length) return null;
+
+    if (!Array.isArray(raw.competitors)) return null;
+    const competitors = raw.competitors.filter(
+      (x: any) => x && str(x.name) && str(x.strength) && str(x.recentMove) && level(x.threat),
+    );
+    if (!competitors.length) return null;
+
+    if (!Array.isArray(raw.opportunities)) return null;
+    const opportunities = raw.opportunities.filter(
+      (x: any) => x && str(x.title) && str(x.description) && level(x.impact) && str(x.timeframe),
+    );
+    if (!opportunities.length) return null;
+
+    if (!Array.isArray(raw.predictions)) return null;
+    const predictions = raw.predictions.filter(
+      (x: any) => x && str(x.title) && num(x.confidence) && str(x.description) && str(x.timeHorizon),
+    );
+    if (!predictions.length) return null;
+
+    // Rebuild field by field. No spread, so nothing the model invented can ride
+    // along or shadow a field the contract owns.
+    return {
+      overview: {
+        marketSize: ov.marketSize,
+        growthRate: ov.growthRate,
+        projectedGrowth: ov.projectedGrowth,
+        keyDrivers: ov.keyDrivers,
+      },
+      segments: segments.map((x: any) => ({
+        name: x.name,
+        share: x.share,
+        growth: x.growth,
+        outlook: x.outlook,
+      })),
+      competitors: competitors.map((x: any) => ({
+        name: x.name,
+        strength: x.strength,
+        recentMove: x.recentMove,
+        threat: x.threat,
+      })),
+      opportunities: opportunities.map((x: any) => ({
+        title: x.title,
+        description: x.description,
+        impact: x.impact,
+        timeframe: x.timeframe,
+      })),
+      predictions: predictions.map((x: any) => ({
+        title: x.title,
+        confidence: x.confidence,
+        description: x.description,
+        timeHorizon: x.timeHorizon,
+      })),
+    };
+  }
+
   private async fetchAITrends(
     apiKey: string,
     company: any,
@@ -164,8 +245,20 @@ Focus on real South African market dynamics: Aramex, The Courier Guy, Fastway, D
       const data = await response.json();
       const content = JSON.parse(data.choices[0].message.content);
 
+      // AI output is INPUT. It was previously spread straight into the return
+      // value, so the declared MarketTrendData type was a claim nothing enforced:
+      // `segments` could arrive as an object, `share` as "about forty", and the
+      // caller could not tell a bad model day from a broken product. Anything
+      // that does not match the contract falls back to the static dataset, which
+      // exists for exactly this.
+      const validated = this.toMarketTrendData(content);
+      if (!validated) {
+        this.logger.warn('AI trends response did not match the contract; using static data');
+        return this.getStaticMarketData(query);
+      }
+
       return {
-        ...content,
+        ...validated,
         generatedAt: new Date().toISOString(),
         model: GROQ_MODEL,
       };
