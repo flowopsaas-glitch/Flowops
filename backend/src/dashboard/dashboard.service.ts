@@ -157,7 +157,12 @@ export class DashboardService {
    * waybill reached that status (updatedAt), consistent with the KPI window.
    */
   async getTrends(companyId: string, days = 30) {
-    const n = Math.min(90, Math.max(7, Math.floor(days) || 30));
+    // `Math.floor(days) || 30` treated a legitimate 0 as "unset" and silently
+    // widened the window from the 7-day minimum to 30 days. Default only when
+    // the value is not a finite number; otherwise clamp into the supported
+    // range so an explicit request is honoured rather than replaced.
+    const parsedDays = Number(days);
+    const n = Number.isFinite(parsedDays) ? Math.min(90, Math.max(7, Math.floor(parsedDays))) : 30;
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const start = new Date(today);

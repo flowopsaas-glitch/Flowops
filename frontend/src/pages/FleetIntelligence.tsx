@@ -12,12 +12,12 @@ function cn(...c: Array<string | false | null | undefined>) { return c.filter(Bo
 
 type ZoneData = {
   zone: string; pickups: number; deliveries: number; total: number;
-  growthPct: number; trend: string;
+  growthPct: number | null; trend: string;
 };
 type DriverStat = {
   id: string; name: string; phone: string | null; vehicleType: string | null;
   delivered7d: number; delivered30d: number; avgPerDay: number;
-  successRate: number; utilization: number; rating: string;
+  successRate: number | null; utilization: number; rating: string;
 };
 type IdleDriver = {
   id: string; name: string; phone: string | null; vehicleType: string | null;
@@ -242,7 +242,7 @@ export default function FleetIntelligence() {
                     zone.growthPct < -20 ? "bg-rose-500/20 text-rose-300" :
                     "bg-white/10 text-white/50"
                   )}>
-                    {zone.growthPct > 0 ? "+" : ""}{zone.growthPct}%
+                    {zone.growthPct == null ? "new" : `${zone.growthPct > 0 ? "+" : ""}${zone.growthPct}%`}
                   </span>
                 </div>
               </div>
@@ -279,7 +279,7 @@ export default function FleetIntelligence() {
                 <div className="flex justify-between mt-1.5 text-[10px] text-white/40">
                   <span>{driver.avgPerDay} stops/day</span>
                   <span>{driver.delivered7d} this week</span>
-                  <span>{driver.successRate}% success</span>
+                  <span>{driver.successRate == null ? "no data yet" : `${driver.successRate}% success`}</span>
                 </div>
               </div>
             ))}
