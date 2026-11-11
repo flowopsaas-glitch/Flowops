@@ -29,6 +29,12 @@ export class TariffRequestDto {
   @RawNumber() @IsNumber() @Min(0.1) @Max(10_000) distanceKm!: number;
   /** "2026/27". Defaults to the financial year of the consignment's planned departure. */
   @RawString() @IsOptional() @IsString() @Matches(/^\d{4}\/\d{2}$/, { message: 'financialYear must look like 2026/27' }) financialYear?: string;
+  /**
+   * The traffic category as the network publishes it — for Transnet, a Table 17 commodity
+   * group such as "OreCor (Iron Ore)" or "Grain & Tankers". Transnet charges by commodity,
+   * not by corridor, so without this a Transnet consignment usually cannot be priced.
+   */
+  @RawString() @IsOptional() @IsString() @MaxLength(120) commodityCategory?: string;
   @RawBoolean() @IsOptional() @IsBoolean() includeEmptyReturn?: boolean;
   /** Opt in to escalating the latest earlier VERIFIED year's rates by the brief's percentages. */
   @RawBoolean() @IsOptional() @IsBoolean() allowEscalation?: boolean;

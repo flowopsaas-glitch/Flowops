@@ -79,7 +79,7 @@ export const PRICING_SOURCE_CATALOG: readonly PricingSourceEntry[] = [
     sourceDocument: `${CH5} §5.2.3 Table 17 — SUPPLIED`,
     sourceSection: 'Table 17: Rail Access Fees applicable for 2026/27 (p157), effective 1 Aug 2026',
     formula: 'amount = rate(c/GTK)/100 × GTK; GTK = gross t × km; rounded once to cent',
-    notes: 'SUPPLIED at CATEGORY level, not per corridor. Table 17 is a commodity table: 3.54 c/GTK iron ore, 5.53 manganese, 6.03 coal, 4.41 intermodal, 9.00 mineral exports, 6.96 grain & tankers, 9.50 other general traffic (0.0 for the three passenger/loose-loco categories). Only two labels name a corridor (OreCor, NorthCor); see access-tariffs.catalog.ts. A per-corridor rate still needs the commodity→corridor mapping the document does not give, so TARIFF_SCHEDULE_CATALOG stays empty rather than being filled by inference.',
+    notes: 'SUPPLIED at CATEGORY level, not per corridor. Table 17 is a commodity table: 3.54 c/GTK iron ore, 5.53 manganese, 6.03 coal, 4.41 intermodal, 9.00 mineral exports, 6.96 grain & tankers, 9.50 other general traffic (0.0 for the three passenger/loose-loco categories). Only two labels name a corridor (OreCor, NorthCor); see access-tariffs.catalog.ts. A per-corridor rate still needs the commodity→corridor mapping the document does not give, so TARIFF_SCHEDULE_CATALOG stays empty rather than being filled by inference. The commodity-level Table 17 rates are now live via catalog/tariff-rate-cards.ts, which resolves CORRIDOR -> COMMODITY -> NETWORK.',
   }),
   U('Infrastructure access — empty-return rate (c/GTK), per corridor per FY', 'c/GTK', {
     id: 'P-02', currency: 'ZAR (cents)',
@@ -93,7 +93,7 @@ export const PRICING_SOURCE_CATALOG: readonly PricingSourceEntry[] = [
     sourceDocument: `${CH5} §5.2.3 — SUPPLIED`,
     sourceSection: 'Table 17 "Tariff per Trainkm (Rand)"; §5.2.3: "a two-part tariff where one tariff is based on train kms and the other on GTKs"',
     formula: 'amount = R/train-km × train-km, charged IN ADDITION to the GTK component (not instead of it)',
-    notes: 'EXISTENCE NOW CONFIRMED — it is not GTK-only. R/train-km: 680 iron ore & manganese, 260 coal, 30 intermodal/grain/other general, 30.75 mineral exports, 50 metro & passenger <12 wagons, 60 passenger >12 wagons, 12 loose locomotives. Gap C-05 stands: the calculator still models GTK ONLY and therefore under-charges every category. See access-tariffs.catalog.ts.'
+    notes: 'EXISTENCE NOW CONFIRMED — it is not GTK-only. R/train-km: 680 iron ore & manganese, 260 coal, 30 intermodal/grain/other general, 30.75 mineral exports, 50 metro & passenger <12 wagons, 60 passenger >12 wagons, 12 loose locomotives. CLOSED 2026-11-11: the calculator now charges both components (see catalog/tariff-rate-cards.ts). Both figures are live rates, not reference data.'
   }),
   U('Corridor length / section distances for GTK', 'km', {
     id: 'P-04', currency: 'n/a (quantity)',

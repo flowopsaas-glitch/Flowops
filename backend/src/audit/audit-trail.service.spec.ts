@@ -14,7 +14,18 @@ import { decodeCursor, encodeCursor } from './audit-trail.cursor';
  */
 
 const HOUR = 60 * 60 * 1000;
-const T0 = new Date('2026-11-04T08:00:00.000Z');
+/**
+ * The fixtures are anchored 24 hours before "now", NOT to a fixed calendar date.
+ *
+ * They were previously pinned to 2026-11-04T08:00Z while `summary` asserts a rolling
+ * 7-day window. Seven days later — from 2026-11-11 — every seeded event sat outside that
+ * window, the counts collapsed to 1, and the suite failed on every run in perpetuity. A
+ * test that passes or fails according to the date it is run on is not testing behaviour.
+ *
+ * Anchoring relative to now keeps the things these tests actually assert — the ordering
+ * between fixtures, pagination, cursor boundaries and window edges — intact and stable.
+ */
+const T0 = new Date(Date.now() - 24 * HOUR);
 
 function event(id: string, waybillId: string, companyId: string, offsetHours: number, over: Record<string, any> = {}) {
   return {
