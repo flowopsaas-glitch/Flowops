@@ -21,6 +21,7 @@ import { GeocodingService } from '../geocoding/geocoding.service';
  * - Scope 3 reporting for corporate clients
  * - Carbon offset cost estimation
  */
+import { Money } from '../common/money.util';
 
 // Emission factors in kg CO2 per km (includes well-to-wheel)
 const EMISSION_FACTORS: Record<string, number> = {
@@ -197,7 +198,7 @@ export class CarbonService {
 
     const co2Kg = Math.round(distanceKm * factor * weightMultiplier * 1000) / 1000;
     const co2Tonnes = Math.round(co2Kg / 1000 * 10000) / 10000;
-    const offsetCostZar = Math.round(co2Tonnes * OFFSET_PRICE_USD_PER_TONNE * USD_TO_ZAR * 100) / 100;
+    const offsetCostZar = Money.round(co2Tonnes * OFFSET_PRICE_USD_PER_TONNE * USD_TO_ZAR);
 
     return {
       distanceKm: Math.round(distanceKm * 100) / 100,
@@ -320,7 +321,7 @@ export class CarbonService {
     }
 
     const totalTonnes = totalCo2 / 1000;
-    const offsetCost = Math.round(totalTonnes * OFFSET_PRICE_USD_PER_TONNE * USD_TO_ZAR * 100) / 100;
+    const offsetCost = Money.round(totalTonnes * OFFSET_PRICE_USD_PER_TONNE * USD_TO_ZAR);
 
     return {
       period: `Last ${days} days`,

@@ -3,8 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { odometerSpan, type OdometerReading } from './odometer';
 import { CommercialAnalyticsService } from './commercial-analytics.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Money } from '../common/money.util';
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+const round2 = (n: number) => Money.round(n);
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** UTC calendar-day key — driver-day pools bucket by this, on both sides. */

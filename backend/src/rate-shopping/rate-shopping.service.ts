@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SA_VAT_RATE } from '../public-tools/sa-import-duty';
+import { Money } from '../common/money.util';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -101,18 +102,18 @@ const FUEL_SURCHARGE_PCT = 0.185; // 18.5%
 // a rate quote is the easiest kind to forget.
 const VAT_PCT = SA_VAT_RATE;
 
-function calculateTableRate(
+export function calculateTableRate(
   entry: RateTableEntry,
   weightKg: number,
   parcels: number,
   zoneMult: number,
 ): CarrierRate {
   const chargeable = weightKg * parcels;
-  const base    = Math.round((entry.base + entry.perKg * chargeable) * zoneMult * 100) / 100;
-  const fuel    = Math.round(base * FUEL_SURCHARGE_PCT * 100) / 100;
-  const preVat  = base + fuel;
-  const vat     = Math.round(preVat * VAT_PCT * 100) / 100;
-  const total   = Math.round((preVat + vat) * 100) / 100;
+  const base    = Money.round((entry.base + entry.perKg * chargeable) * zoneMult);
+  const fuel    = Money.round(base * FUEL_SURCHARGE_PCT);
+  const preVat  = Money.add(base, fuel);
+  const vat     = Money.percent(preVat, VAT_PCT * 100);
+  const total   = Money.add(preVat, vat);
 
   return {
     carrier: entry.carrier, service: entry.service, serviceCode: entry.serviceCode,
@@ -133,7 +134,7 @@ interface AramexRateResponse {
   Notifications?: Array<{ Message?: string }>;
 }
 
-async function fetchAramexRate(
+export async function fetchAramexRate(
   cfg: { username: string; password: string; accountNumber: string; accountPin: string },
   from: string, to: string, weightKg: number,
   log: Logger,
@@ -169,9 +170,12 @@ async function fetchAramexRate(
     const data: AramexRateResponse = await res.json();
     if (data.HasErrors || !data.TotalAmount?.Value) return null;
 
-    const total = data.TotalAmount.Value;
-    const net   = Math.round(total / (1 + VAT_PCT) * 100) / 100;
-    const vat   = Math.round(total - net) * 100 / 100;
+    const total = Money.round(data.TotalAmount.Value);
+    const net   = Money.round(total / (1 + VAT_PCT));
+    // VAT is the RESIDUAL, so net + vat is exactly the gross the carrier quoted.
+    // (Previously `Math.round(total - net) * 100 / 100`, which operator precedence
+    // turned into plain `Math.round(total - net)` — VAT rounded to whole rands.)
+    const vat   = Money.subtract(total, net);
 
     return [{
       carrier: 'Aramex SA', service: 'Express Priority (Live)', serviceCode: 'ARAMEX-LIVE',
@@ -231,8 +235,8 @@ async function fetchDHLRate(
       // Correct: extract the price directly with proper grouping.
       const total: number = p?.totalPrice?.[0]?.price ?? 0;
       if (!total) return null;
-      const net = Math.round(total / (1 + VAT_PCT) * 100) / 100;
-      const vat = Math.round((total - net) * 100) / 100;
+      const net = Money.round(total / (1 + VAT_PCT));
+      const vat = Money.subtract(total, net);
       return {
         carrier: 'DHL Express', service: `${p.productName} (Live)`, serviceCode: `DHL-${p.productCode}-LIVE`,
         base: net, fuelSurcharge: 0, vat, total,
@@ -307,11 +311,11 @@ export class RateShoppingService {
       // Apply tenant markup
       if (cfg && cfg.markupPct > 0) {
         const markup = cfg.markupPct / 100;
-        rate.base         = Math.round(rate.base * (1 + markup) * 100) / 100;
-        rate.fuelSurcharge = Math.round(rate.base * FUEL_SURCHARGE_PCT * 100) / 100;
+        rate.base         = Money.round(rate.base * (1 + markup));
+        rate.fuelSurcharge = Money.round(rate.base * FUEL_SURCHARGE_PCT);
         const preVat = rate.base + rate.fuelSurcharge;
-        rate.vat   = Math.round(preVat * VAT_PCT * 100) / 100;
-        rate.total = Math.round((preVat + rate.vat) * 100) / 100;
+        rate.vat   = Money.percent(preVat, VAT_PCT * 100);
+        rate.total = Money.add(preVat, rate.vat);
       }
 
       rates.push(rate);

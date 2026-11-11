@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Money } from '../common/money.util';
 
 /**
  * "Ask FlowOps" — a natural-language analytics copilot.
@@ -25,7 +26,7 @@ export interface CopilotAnswer {
 
 const money = (n: number) =>
   `R${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+const round2 = (n: number) => Money.round(n);
 const cap = (s: string) => s.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
 type Timeframe = { gte?: Date; lte?: Date; label: string };

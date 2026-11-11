@@ -5,6 +5,7 @@ import type {
   MaintenanceJobStatus,
   MaintenanceJobType,
 } from '@prisma/client';
+import { Money } from '../common/money.util';
 
 /**
  * The rules of a job card, as pure functions.
@@ -555,7 +556,7 @@ export const COST_KINDS: MaintenanceCostKind[] = [
 ];
 
 export function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return Money.round(value);
 }
 
 /** Quantity × unit cost, to cents. Negative inputs are refused before this runs. */
