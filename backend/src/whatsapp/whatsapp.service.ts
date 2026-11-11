@@ -445,13 +445,23 @@ export class WhatsAppService {
       }
     }
 
-    if (appSecret) {
-      const expected = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
-      const ok = this.safeEqual(expected, signature ?? '');
-      if (!ok) throw new UnauthorizedException('Invalid webhook signature');
-    } else {
-      this.logger.warn('WhatsApp webhook: no app secret available — signature not verified');
+    // Fail closed. The old code verified the signature only `if (appSecret)`,
+    // and otherwise logged a warning and processed the event anyway — so an
+    // unconfigured or unroutable secret turned this public endpoint into an
+    // unauthenticated write path into a tenant's inbox, and through the AI
+    // inbox into real collections. A webhook we cannot authenticate is a
+    // webhook we drop.
+    if (!appSecret) {
+      this.logger.error(
+        'WhatsApp webhook rejected: no app secret configured for this install or tenant. ' +
+          'Set WHATSAPP_APP_SECRET or connect WhatsApp under Settings → Integrations.',
+      );
+      throw new UnauthorizedException('WhatsApp webhook is not configured with an app secret');
     }
+
+    const expected = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+    const ok = this.safeEqual(expected, signature ?? '');
+    if (!ok) throw new UnauthorizedException('Invalid webhook signature');
 
     const entries = payload?.entry ?? [];
     for (const entry of entries) {
@@ -461,7 +471,7 @@ export class WhatsAppService {
 
         // Delivery/read status updates
         for (const status of value.statuses ?? []) {
-          await this.handleStatusUpdate(status);
+          await this.handleStatusUpdate(status, routedCompanyId);
         }
 
         // Incoming messages — route by the receiving phone_number_id
@@ -543,6 +553,24 @@ export class WhatsAppService {
 
     const thread = await this.upsertThread(companyId, phone, msg.profile?.name);
 
+    // Meta retries a webhook until it receives a 200, and does not promise
+    // exactly-once. The retry carries the same waba message id, so that id is
+    // what tells a retry apart from a second message. Without this check one
+    // customer message was stored twice, incremented unread twice, and — because
+    // the AI inbox sits downstream — created two collections and two invoices
+    // for one pickup. wabaMessageId carries no unique constraint, so nothing
+    // downstream caught it either; see the note in the PR about adding one.
+    if (msg.id) {
+      const already = await this.prisma.whatsAppMessage.findFirst({
+        where: { wabaMessageId: msg.id, threadId: thread.id },
+        select: { id: true },
+      });
+      if (already) {
+        this.logger.debug(`Inbound WhatsApp ${msg.id} already recorded — skipping retry`);
+        return;
+      }
+    }
+
     await this.prisma.whatsAppMessage.create({
       data: {
         content: body,
@@ -603,12 +631,20 @@ export class WhatsAppService {
     }
   }
 
-  private async handleStatusUpdate(status: any) {
-    if (status.id && status.status) {
-      await this.prisma.whatsAppMessage.updateMany({
-        where: { wabaMessageId: status.id },
-        data: { status: status.status },
-      });
-    }
+  /**
+   * Apply a delivery/read receipt to the message it refers to.
+   *
+   * Scoped through `thread.companyId`. The message row has no companyId of its
+   * own, so the unscoped `where: { wabaMessageId }` meant a status event
+   * carrying another tenant's waba message id moved that tenant's message to
+   * "read" or "failed". Receipts have to travel with the tenant that owns the
+   * number they arrived on.
+   */
+  private async handleStatusUpdate(status: any, companyId: string | null) {
+    if (!status.id || !status.status || !companyId) return;
+    await this.prisma.whatsAppMessage.updateMany({
+      where: { wabaMessageId: status.id, thread: { companyId } },
+      data: { status: status.status },
+    });
   }
 }

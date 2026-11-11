@@ -214,11 +214,6 @@ export const METHOD_SCOPE = [
   },
   {
     file: 'src/whatsapp/whatsapp.service.ts',
-    method: 'handleStatusUpdate',
-    reason: 'Webhook. Status updates arrive keyed by the external wabaMessageId; there is no tenant JWT on a webhook.',
-  },
-  {
-    file: 'src/whatsapp/whatsapp.service.ts',
     method: 'handleInboundMessage',
     reason:
       'Legacy single-tenant fallback only, gated on !creds.anyConfigured(\'whatsapp\'). In any multi-tenant install the company is resolved from the phone_number_id instead and this branch never runs.',
