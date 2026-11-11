@@ -220,11 +220,6 @@ export const METHOD_SCOPE = [
   },
   {
     file: 'src/push/push.service.ts',
-    method: 'removeSubscription',
-    reason: 'Push endpoint URLs are unguessable capabilities; delete-by-endpoint is the standard pattern and is how a driver unsubscribes.',
-  },
-  {
-    file: 'src/push/push.service.ts',
     method: 'wakeDriver',
     reason: 'Prunes dead push subscriptions by endpoint while iterating the driver’s own subscriptions.',
   },
