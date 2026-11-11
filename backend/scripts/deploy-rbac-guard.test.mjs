@@ -26,6 +26,22 @@
  * These tests pin both assertions and prove the predicate actually separates
  * `true` from the shapes that look like it (`TRUE`, `1`, `"true"`, `truex`,
  * commented out, absent). A guard that passes on `1` is not a guard.
+ *
+ * INTEGRATIONS_ENC_KEY is pinned on the same reasoning, but the predicate is
+ * `decodes to 32 bytes`, not `is present`. Presence is not the test here, and
+ * learning that cost a production incident: the committed template ships the
+ * placeholder CHANGE_ME_RUN_openssl_rand_base64_32, and the compose allowlist
+ * interpolates an absent key as an empty one — so the container boots, /health
+ * is ok, the deploy goes green, and integration-crypto.service.ts fails closed.
+ * `printenv INTEGRATIONS_ENC_KEY | wc -c` returning 1 instead of 45 was the
+ * only symptom, and it read as a pass to anyone who did not know the scale.
+ *
+ * One deliberate difference from RBAC_STRICT is pinned too: a trailing \r is
+ * STRIPPED here rather than rejected. Node's base64 decoder ignores it, so a
+ * CRLF-edited .env still yields a working key — blocking a healthy deploy over
+ * a line ending would be the wrong trade. RBAC_STRICT compares a literal, so it
+ * must reject the same byte. Same file, two answers, both because the consumer
+ * differs.
  */
 
 import { test } from 'node:test';
@@ -157,4 +173,113 @@ test('no overlay hardcodes RBAC_STRICT — .env plus the base allowlist is the o
   }
   const base = readFileSync(path.join(REPO_ROOT, 'docker-compose.yml'), 'utf8');
   assert.match(base, /RBAC_STRICT:\s*\$\{RBAC_STRICT:-false\}/);
+});
+
+// ── INTEGRATIONS_ENC_KEY: the same pre-flight idea, a harder predicate ──────
+
+/**
+ * The line vps-deploy.sh actually runs, extracted so it is tested, not
+ * described. `rstrip('\\')` drops the line continuation that joins it to the
+ * `|| die` on the next line.
+ */
+const ENC_PREFLIGHT_LINE = script
+  .split('\n')
+  .find((l) => l.startsWith('INTEGRATIONS_ENC_KEY="$(grep'));
+
+const ENC_PREDICATE = ENC_PREFLIGHT_LINE
+  ? ENC_PREFLIGHT_LINE.replace(/\s*\\$/, '')
+  : '';
+
+/** Generate a key the way the runbook does, so no fixture is hand-written. */
+function realKey() {
+  return execFileSync('openssl', ['rand', '-base64', '32'], { encoding: 'utf8' }).trim();
+}
+
+/** True when the deploy script's own predicate would accept this .env. */
+function encPreflightAccepts(dir, envBody) {
+  writeFileSync(path.join(dir, '.env'), envBody);
+  try {
+    execFileSync('sh', ['-c', ENC_PREDICATE], { cwd: dir, stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test('vps-deploy.sh carries the INTEGRATIONS_ENC_KEY pre-flight at all', () => {
+  assert.ok(
+    ENC_PREFLIGHT_LINE,
+    'no INTEGRATIONS_ENC_KEY pre-flight found in deploy/vps-deploy.sh',
+  );
+});
+
+test('pre-flight accepts a real 32-byte base64 key', (t) => {
+  const dir = workspace(t);
+  assert.equal(encPreflightAccepts(dir, `INTEGRATIONS_ENC_KEY=${realKey()}\n`), true);
+});
+
+test('pre-flight rejects present-but-useless values — the incident shapes', (t) => {
+  // Every one of these leaves the stack looking healthy while the crypto
+  // service refuses to store a single integration secret.
+  const dir = workspace(t);
+  const rejected = [
+    ['absent entirely', ''],
+    ['empty', 'INTEGRATIONS_ENC_KEY=\n'],
+    ['commented out', `#INTEGRATIONS_ENC_KEY=${realKey()}\n`],
+    // The placeholder the committed template ships. This is the one that
+    // mattered: it is present, so any presence-only check waves it through.
+    ['the template placeholder', 'INTEGRATIONS_ENC_KEY=CHANGE_ME_RUN_openssl_rand_base64_32\n'],
+    ['valid base64, wrong length', 'INTEGRATIONS_ENC_KEY=c2hvcnQ=\n'],
+    ['not base64 at all', 'INTEGRATIONS_ENC_KEY=notbase64!!\n'],
+    ['quoted', `INTEGRATIONS_ENC_KEY="${realKey()}"\n`],
+    ['prefixed key name', `XINTEGRATIONS_ENC_KEY=${realKey()}\n`],
+  ];
+  for (const [label, body] of rejected) {
+    assert.equal(encPreflightAccepts(dir, body), false, `accepted: ${label}`);
+  }
+});
+
+test('pre-flight accepts a CRLF key, unlike RBAC_STRICT — and says why', (t) => {
+  // NOT a loophole. Node's base64 decoder ignores a stray \r, so this key
+  // works. RBAC_STRICT compares against the literal 'true', so the same byte
+  // must fail there. Rejecting a working key here would block a healthy deploy.
+  const dir = workspace(t);
+  assert.equal(encPreflightAccepts(dir, `INTEGRATIONS_ENC_KEY=${realKey()}\r\n`), true);
+});
+
+test('the INTEGRATIONS_ENC_KEY pre-flight runs before the pull and the build', () => {
+  const preflight = script.indexOf(ENC_PREFLIGHT_LINE);
+  const firstPull = script.indexOf('git pull --ff-only');
+  const firstBuild = script.indexOf('Building images');
+  assert.ok(preflight > 0, 'INTEGRATIONS_ENC_KEY assertion is missing');
+  assert.ok(
+    preflight < firstPull && preflight < firstBuild,
+    'INTEGRATIONS_ENC_KEY must be asserted BEFORE the pull and the build',
+  );
+});
+
+test('vps-deploy.sh proves the CONTAINER has the key, not just the file', () => {
+  // The incident: .env held nothing, the container held an empty string, and
+  // the API reported healthy. A file check alone would have gone green.
+  // Match the ASSIGNMENT, not the bare command. The pre-flight's own die
+  // message tells the operator to run `exec -T api printenv ... | wc -c`, so a
+  // plain indexOf finds that documentation and sits happily before the stack is
+  // even up — a guard's error text satisfying the test for that guard.
+  assert.match(
+    script,
+    /ENC_LIVE="\$\(\$COMPOSE exec -T api printenv INTEGRATIONS_ENC_KEY/,
+    'the deploy must read the key from inside the api container',
+  );
+  assert.match(
+    script,
+    /ENC_LIVE_BYTES.*!=.*"32"/s,
+    'the deploy must FAIL when the container does not hold a 32-byte key',
+  );
+});
+
+test('the container key check runs after the stack is up', () => {
+  const started = script.indexOf('Starting stack');
+  const printenv = script.indexOf('$COMPOSE exec -T api printenv INTEGRATIONS_ENC_KEY');
+  assert.ok(started > 0 && printenv > 0);
+  assert.ok(printenv > started, 'the container check must come after the stack is up');
 });
