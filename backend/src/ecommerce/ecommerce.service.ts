@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -108,6 +108,41 @@ export class EcommerceService {
     return ok;
   }
 
+  /**
+   * Create the waybill for an e-commerce order.
+   *
+   * `trackingNumber` is unique per company (`@@unique([trackingNumber, companyId])`)
+   * but is derived from `count(waybills) + 1`. Two orders landing together
+   * therefore compute the same number, and the second insert fails with P2002.
+   * Unhandled, that turned an ordinary burst of webhooks into a 500 and a lost
+   * order — and the retry that followed hit the same collision again.
+   *
+   * On collision we re-check the idempotency marker: if the same order won the
+   * race this is a duplicate, otherwise we take a fresh number and try again.
+   */
+  private async createOrderWaybill(
+    companyId: string,
+    marker: string,
+    data: (trackingNumber: string) => any,
+  ): Promise<{ status: string; waybillId: string; trackingNumber?: string }> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const count = await this.prisma.waybill.count({ where: { companyId } });
+      const yr = new Date().getFullYear().toString().slice(-2);
+      const trackingNumber = `FO${yr}${String(count + 1).padStart(6, '0')}`;
+      try {
+        const waybill = await this.prisma.waybill.create({ data: data(trackingNumber) });
+        return { status: 'created', waybillId: waybill.id, trackingNumber };
+      } catch (err: any) {
+        if (err?.code !== 'P2002') throw err;
+        const existing = await this.prisma.waybill.findFirst({
+          where: { companyId, description: { contains: marker } },
+        });
+        if (existing) return { status: 'duplicate', waybillId: existing.id };
+      }
+    }
+    throw new ConflictException('Could not allocate a tracking number for this order.');
+  }
+
   // ── Shopify order → waybill ───────────────────────────────────────────────
 
   async processShopifyOrder(order: any, companyId: string) {
@@ -127,30 +162,31 @@ export class EcommerceService {
     const totalAmount = parseFloat(order.total_price ?? '0') || 0;
     const codAmount   = order.payment_gateway === 'cod' ? totalAmount : null;
 
-    // Idempotency: skip if a waybill for this Shopify order already exists
+    // Idempotency: skip if a waybill for this Shopify order already exists.
+    // The marker carries the " #" that always follows the id. Without it a bare
+    // `shopify:<id>` prefix match made order 12 collide with order 123, so a
+    // retry of 12 arriving after 123 had landed was silently dropped — the
+    // duplicate check firing precisely when it should not.
+    const marker = `shopify:${order.id} #`;
     const existing = await this.prisma.waybill.findFirst({
-      where: { companyId, description: { contains: `shopify:${order.id}` } },
+      where: { companyId, description: { contains: marker } },
     });
     if (existing) return { status: 'duplicate', waybillId: existing.id };
 
-    const count = await this.prisma.waybill.count({ where: { companyId } });
-    const yr = new Date().getFullYear().toString().slice(-2);
-    const trackingNumber = `FO${yr}${String(count + 1).padStart(6, '0')}`;
+    const result = await this.createOrderWaybill(companyId, marker, (trackingNumber) => ({
+      companyId, trackingNumber, status: 'PENDING',
+      senderName, senderPhone: '', senderAddress: 'Store',
+      recipientName, recipientPhone, recipientAddress,
+      weight: this.totalWeightKg(order.line_items),
+      description: `shopify:${order.id} #${order.order_number}`,
+      totalAmount,
+      ...(codAmount != null && { codAmount }),
+    }));
 
-    const waybill = await this.prisma.waybill.create({
-      data: {
-        companyId, trackingNumber, status: 'PENDING',
-        senderName, senderPhone: '', senderAddress: 'Store',
-        recipientName, recipientPhone, recipientAddress,
-        weight: this.totalWeightKg(order.line_items),
-        description: `shopify:${order.id} #${order.order_number}`,
-        totalAmount,
-        ...(codAmount != null && { codAmount }),
-      },
-    });
-
-    this.logger.log(`Shopify order ${order.id} → waybill ${trackingNumber}`);
-    return { status: 'created', waybillId: waybill.id, trackingNumber };
+    if (result.status === 'created') {
+      this.logger.log(`Shopify order ${order.id} → waybill ${result.trackingNumber}`);
+    }
+    return result;
   }
 
   // ── WooCommerce order → waybill ───────────────────────────────────────────
@@ -171,29 +207,27 @@ export class EcommerceService {
     const totalAmount = parseFloat(order.total ?? '0') || 0;
     const codAmount   = order.payment_method === 'cod' ? totalAmount : null;
 
+    // Anchored the same way as the Shopify marker, for the same reason.
+    const marker = `woo:${order.id} #`;
     const existing = await this.prisma.waybill.findFirst({
-      where: { companyId, description: { contains: `woo:${order.id}` } },
+      where: { companyId, description: { contains: marker } },
     });
     if (existing) return { status: 'duplicate', waybillId: existing.id };
 
-    const count = await this.prisma.waybill.count({ where: { companyId } });
-    const yr    = new Date().getFullYear().toString().slice(-2);
-    const trackingNumber = `FO${yr}${String(count + 1).padStart(6, '0')}`;
+    const result = await this.createOrderWaybill(companyId, marker, (trackingNumber) => ({
+      companyId, trackingNumber, status: 'PENDING',
+      senderName, senderPhone: '', senderAddress: 'Store',
+      recipientName, recipientPhone, recipientAddress,
+      weight: this.totalWeightWoo(order.line_items),
+      description: `woo:${order.id} #${order.number}`,
+      totalAmount,
+      ...(codAmount != null && { codAmount }),
+    }));
 
-    const waybill = await this.prisma.waybill.create({
-      data: {
-        companyId, trackingNumber, status: 'PENDING',
-        senderName, senderPhone: '', senderAddress: 'Store',
-        recipientName, recipientPhone, recipientAddress,
-        weight: this.totalWeightWoo(order.line_items),
-        description: `woo:${order.id} #${order.number}`,
-        totalAmount,
-        ...(codAmount != null && { codAmount }),
-      },
-    });
-
-    this.logger.log(`WooCommerce order ${order.id} → waybill ${trackingNumber}`);
-    return { status: 'created', waybillId: waybill.id, trackingNumber };
+    if (result.status === 'created') {
+      this.logger.log(`WooCommerce order ${order.id} → waybill ${result.trackingNumber}`);
+    }
+    return result;
   }
 
   // ── Status push-back to Shopify ───────────────────────────────────────────
