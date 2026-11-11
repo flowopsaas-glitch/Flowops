@@ -156,6 +156,7 @@ function makePrisma(seed: {
     return out;
   };
 
+  const boundTenants: string[] = [];
   const prisma: any = {
     maintenanceAsset: {
       findFirst: async ({ where, include }: any = {}) => {
@@ -278,9 +279,18 @@ function makePrisma(seed: {
       findMany: async ({ where, orderBy }: any = {}) =>
         sortRows(state.events.filter((e) => match(e, where)), orderBy),
     },
+
+    // Mirrors PrismaService.withTenant: binds app.company_id, then hands the callback
+    // a client. This mock has no separate transaction client and shares one in-memory
+    // `state` either way, so it passes itself — which is what the specs already assert
+    // against. The companyId is recorded so a spec can check the tenant was bound.
+    withTenant: async (companyId: string, fn: (client: any) => Promise<any>) => {
+      boundTenants.push(companyId);
+      return fn(prisma);
+    },
   };
 
-  return { prisma, state };
+  return { prisma, state, boundTenants };
 }
 
 function asset(overrides: Record<string, any> = {}) {

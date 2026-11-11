@@ -854,7 +854,12 @@ export class WaybillsService {
     // AI extraction — uses Groq Vision (llama-3.2-90b-vision) to extract waybill fields
     await this.aiExtract(item.id, fileUrl);
 
-    const ready = await this.prisma.waybillInboxItem.findUnique({ where: { id: item.id } });
+    // The item was created in this method for this company, but re-read it WITH the
+    // companyId: the row has been through aiExtract since, and a by-id re-read is
+    // exactly the shape that lets one tenant's id resolve another tenant's row.
+    const ready = await this.prisma.waybillInboxItem.findFirst({
+      where: { id: item.id, companyId },
+    });
 
     // Live-refresh the Waybill Inbox UI (frontend listens for these).
     this.safeEmit(() => this.gateway.emitWaybillInboxChanged(companyId, ready));

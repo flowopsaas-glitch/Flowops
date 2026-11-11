@@ -713,19 +713,24 @@ export class DriverPortalService {
    * everything it implied (job scoping, checklist) changes with it.
    */
   async startDuty(driverId: string, companyId: string, dto: { mode: DriverMode; vehicleReg?: string; note?: string }) {
-    const driver = await this.prisma.driver.findUnique({
-      where: { id: driverId }, select: { allowedModes: true, vehicleReg: true },
-    });
-    if (!driver) throw new NotFoundException('Driver not found');
-
-    const check = checkStartDuty({
-      mode: dto.mode,
-      vehicleReg: dto.vehicleReg?.trim() || driver.vehicleReg,
-      allowedModes: driver.allowedModes,
-    });
-    if (!check.ok) throw new BadRequestException(check.blockers.join(' '));
-
+    // The driver read used to sit OUTSIDE the transaction and keyed on id alone, so a
+    // driver id from another tenant resolved and its allowedModes/vehicleReg were
+    // copied onto a duty in THIS tenant. Reading it inside withTenant scopes it to
+    // companyId (and lets RLS back the filter up).
     return this.prisma.withTenant(companyId, async (tx) => {
+      const driver = await tx.driver.findFirst({
+        where: { id: driverId, companyId },
+        select: { allowedModes: true, vehicleReg: true },
+      });
+      if (!driver) throw new NotFoundException('Driver not found');
+
+      const check = checkStartDuty({
+        mode: dto.mode,
+        vehicleReg: dto.vehicleReg?.trim() || driver.vehicleReg,
+        allowedModes: driver.allowedModes,
+      });
+      if (!check.ok) throw new BadRequestException(check.blockers.join(' '));
+
       const previous = await tx.driverDuty.findFirst({ where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
       let previousEnded: { id: string; mode: DriverMode; endedAt: Date } | null = null;
       if (previous) {
@@ -755,9 +760,11 @@ export class DriverPortalService {
 
   /** POST /driver-portal/duty/end — stand down from the shift. */
   async endDuty(driverId: string, companyId: string, note?: string) {
-    const active = await this.prisma.driverDuty.findFirst({ where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
-    if (!canEndDuty(active)) throw new BadRequestException('No active duty to end.');
     return this.prisma.withTenant(companyId, async (tx) => {
+      // Read the active duty INSIDE the tenant transaction, so ending a shift cannot
+      // pick up (or close) another tenant's duty record.
+      const active = await tx.driverDuty.findFirst({ where: { driverId, companyId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
+      if (!canEndDuty(active)) throw new BadRequestException('No active duty to end.');
       const endedAt = new Date();
       const duty = await tx.driverDuty.update({
         where: { id: active!.id }, data: { status: 'COMPLETED', endedAt, note: note ?? active!.note },

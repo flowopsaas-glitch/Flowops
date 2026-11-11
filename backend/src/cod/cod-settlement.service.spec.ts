@@ -1,3 +1,4 @@
+import { withTenantMock } from '../test/tenant-prisma-mock';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CodSettlementService } from './cod-settlement.service';
 
@@ -80,6 +81,29 @@ function makeHarness() {
     },
   };
 
+  // The waybill, billing and driver reads now happen INSIDE the tenant transaction, so
+  // the tx client must expose them as well — EXTEND, never overwrite, the models the tx
+  // already defines (waybill.updateMany is the compare-and-set the specs assert on).
+  //
+  // These DELEGATE to the outer mocks rather than returning canned values, because
+  // several specs simulate a cross-tenant read by overriding prisma.<model>.findFirst.
+  // A canned copy here would quietly ignore that override and the test would pass for
+  // the wrong reason. The arrow functions resolve `prisma` lazily at call time.
+  (tx as any).waybill = Object.assign({}, (tx as any).waybill, {
+    findFirst: jest.fn(async (...args: any[]) => (prisma as any).waybill.findFirst(...args)),
+  });
+  (tx as any).invoiceItem = Object.assign({}, (tx as any).invoiceItem, {
+    findFirst: jest.fn(async (...args: any[]) => (prisma as any).invoiceItem.findFirst(...args)),
+  });
+  (tx as any).driver = Object.assign({}, (tx as any).driver, {
+    findFirst: jest.fn(async (...args: any[]) => (prisma as any).driver.findFirst(...args)),
+    findMany: jest.fn(async (...args: any[]) => (prisma as any).driver.findMany?.(...args)),
+  });
+  // settleDriver now reads the wallet and the company inside the tenant tx too.
+  (tx as any).driverWallet = Object.assign({}, (tx as any).driverWallet, {
+    findUnique: jest.fn(async (...args: any[]) => (prisma as any).driverWallet.findUnique(...args)),
+  });
+
   const prisma = {
     waybill: { findFirst: jest.fn(async () => waybill) },
     invoiceItem: { findFirst: jest.fn(async () => ({ id: 'ii-1', invoice: { id: 'inv-1', status: 'SENT' } })) },
@@ -93,9 +117,12 @@ function makeHarness() {
     },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
+  // The service now runs inside withTenant(); give the mock a faithful one and record
+  // the tenant it binds so the specs can assert RLS was actually engaged.
+  const tenant = withTenantMock(prisma, tx);
 
   const svc = new CodSettlementService(prisma as any);
-  return { svc, prisma, tx, db, waybill };
+  return { svc, prisma, tx, db, waybill, tenant };
 }
 
 describe('CodSettlementService.recordCollection', () => {

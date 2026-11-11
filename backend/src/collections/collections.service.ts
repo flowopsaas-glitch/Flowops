@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { CollectionStatus } from '@prisma/client';
+import { CollectionStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
@@ -140,8 +140,13 @@ export class CollectionsService {
     };
   }
 
-  async findOne(id: string, companyId: string) {
-    const c = await this.prisma.collection.findFirst({
+  /**
+   * `tx` lets a caller pass the transaction client from `withTenant`, so the read runs
+   * inside the same tenant context (and the same snapshot) as the writes that follow it.
+   */
+  async findOne(id: string, companyId: string, tx?: Prisma.TransactionClient) {
+    const db = tx ?? this.prisma;
+    const c = await db.collection.findFirst({
       where: { id, companyId },
       include: { driver: true, agent: { select: { id: true, name: true } } },
     });
@@ -276,12 +281,13 @@ export class CollectionsService {
       // A stale cancel/release must not clear a driver assigned by a concurrent edit.
       updateWhere.driverId = current.driverId;
     }
-    const updated = await this.prisma.collection.updateMany({
-      where: updateWhere,
-      data,
+    // Tenant context + one atomic snapshot: the guard read and the write now agree on
+    // what the row looked like, instead of racing another request between the two.
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const updated = await tx.collection.updateMany({ where: updateWhere, data });
+      if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
+      return this.findOne(id, companyId, tx);
     });
-    if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
-    return this.findOne(id, companyId);
   }
 
   async cancel(id: string, companyId: string) {
@@ -294,25 +300,33 @@ export class CollectionsService {
    * must belong to the same company.
    */
   async assignDriver(id: string, companyId: string, driverId: string) {
-    const collection = await this.findOne(id, companyId);
-    if (!ASSIGNABLE_COLLECTION_STATUSES.includes(collection.status)) {
-      throw new BadRequestException(`A ${collection.status.toLowerCase()} collection cannot be assigned`);
-    }
-    const driver = await this.prisma.driver.findFirst({ where: { id: driverId, companyId } });
-    if (!driver) throw new NotFoundException('Driver not found');
-    const updated = await this.prisma.collection.updateMany({
-      where: {
-        id,
-        companyId,
-        driverId: collection.driverId,
-        status: { in: ASSIGNABLE_COLLECTION_STATUSES },
-      },
-      data: { driverId, status: CollectionStatus.ASSIGNED },
+    // Custody is a read-modify-write: the collection and the driver are both read, then
+    // the collection is written. Inside withTenant the whole thing is one atomic
+    // snapshot AND runs with app.company_id set, so RLS applies as a second line of
+    // defence behind the explicit companyId filters.
+    const assigned = await this.prisma.withTenant(companyId, async (tx) => {
+      const collection = await this.findOne(id, companyId, tx);
+      if (!ASSIGNABLE_COLLECTION_STATUSES.includes(collection.status)) {
+        throw new BadRequestException(`A ${collection.status.toLowerCase()} collection cannot be assigned`);
+      }
+      const driver = await tx.driver.findFirst({ where: { id: driverId, companyId } });
+      if (!driver) throw new NotFoundException('Driver not found');
+      const updated = await tx.collection.updateMany({
+        where: {
+          id,
+          companyId,
+          driverId: collection.driverId,
+          status: { in: ASSIGNABLE_COLLECTION_STATUSES },
+        },
+        data: { driverId, status: CollectionStatus.ASSIGNED },
+      });
+      if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
+      return this.findOne(id, companyId, tx);
     });
-    if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
-    // Wake the driver's phone: "new job". Best-effort, never blocks the assign.
+    // Wake the driver's phone: "new job". Best-effort, never blocks the assign, and
+    // deliberately OUTSIDE the transaction — a push call must not hold a tx open.
     void this.push.notifyDriver(driverId);
-    return this.findOne(id, companyId);
+    return assigned;
   }
 
   /**
@@ -321,16 +335,18 @@ export class CollectionsService {
    * don't clobber downstream state.
    */
   async releaseDriver(id: string, companyId: string) {
-    const collection = await this.findOne(id, companyId);
-    if (collection.status !== CollectionStatus.ASSIGNED) {
-      throw new BadRequestException('Only assigned collections can be released');
-    }
-    const updated = await this.prisma.collection.updateMany({
-      where: { id, companyId, driverId: collection.driverId, status: CollectionStatus.ASSIGNED },
-      data: { driverId: null, status: CollectionStatus.PENDING },
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const collection = await this.findOne(id, companyId, tx);
+      if (collection.status !== CollectionStatus.ASSIGNED) {
+        throw new BadRequestException('Only assigned collections can be released');
+      }
+      const updated = await tx.collection.updateMany({
+        where: { id, companyId, driverId: collection.driverId, status: CollectionStatus.ASSIGNED },
+        data: { driverId: null, status: CollectionStatus.PENDING },
+      });
+      if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
+      return this.findOne(id, companyId, tx);
     });
-    if (updated.count !== 1) throw new ConflictException('Collection changed; refresh and try again');
-    return this.findOne(id, companyId);
   }
 
   /**

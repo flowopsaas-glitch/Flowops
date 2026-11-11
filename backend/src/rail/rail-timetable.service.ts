@@ -66,8 +66,13 @@ export class RailTimetableService {
     }
 
     const sourceHash = createHash('sha256').update(file.buffer).digest('hex');
+    // Scope the dedupe to the same companyId the create below writes. scopeKey is
+    // already the companyId for the tenant path (or the literal 'shared-transnet'
+    // for the owner path), but filtering on the column as well means a tenant can
+    // never collide with — or be blocked by — another tenant's import of the same
+    // file, and it is the column RLS actually reads.
     const existing = await this.prisma.railScheduleImport.findFirst({
-      where: { scopeKey, sourceHash },
+      where: { scopeKey, sourceHash, companyId },
       select: { id: true },
     });
     if (existing) throw new ConflictException('This timetable file has already been published or imported');

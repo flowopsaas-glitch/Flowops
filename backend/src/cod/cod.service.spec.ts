@@ -1,3 +1,4 @@
+import { delegatingTxClient, withTenantMock } from '../test/tenant-prisma-mock';
 import { Test } from '@nestjs/testing';
 import { CodService } from './cod.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,7 +21,7 @@ const makeWallet = (balance = 0) => ({
 });
 
 function makePrisma(overrides: Record<string, unknown> = {}) {
-  return {
+  const prisma: any = {
     driver: {
       // Default: driver exists in the caller's company (tenant check passes).
       findFirst: jest.fn().mockResolvedValue({ id: 'drv1' }),
@@ -55,22 +56,38 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     // Inner tx: settleDriver reads the wallet, does a guarded updateMany, then
     // re-reads. recordCollection upserts + re-reads. Defaults model a
     // sufficient balance so the guarded decrement succeeds (count: 1).
-    $transaction: jest.fn(async (fn: any) => fn({
-      driverWallet: {
-        upsert:           jest.fn().mockResolvedValue(makeWallet(250)),
-        findUnique:       jest.fn().mockResolvedValue(makeWallet(300)),
-        findUniqueOrThrow: jest.fn().mockResolvedValue(makeWallet(250)),
-        updateMany:       jest.fn().mockResolvedValue({ count: 1 }),
-        update:           jest.fn().mockResolvedValue(makeWallet(0)),
-      },
-      codTransaction: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ id: 'ct1' }),
-      },
-      waybill: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
-    })),
     ...overrides,
-  } as unknown as PrismaService;
+  };
+
+  // Hoisted so withTenant can hand the SAME client to the callback. Inlining it inside
+  // $transaction meant every call built a fresh object, so no spec could assert on it.
+  const tx = {
+    driverWallet: {
+      upsert:           jest.fn().mockResolvedValue(makeWallet(250)),
+      findUnique:       jest.fn().mockResolvedValue(makeWallet(300)),
+      findUniqueOrThrow: jest.fn().mockResolvedValue(makeWallet(250)),
+      updateMany:       jest.fn().mockResolvedValue({ count: 1 }),
+      update:           jest.fn().mockResolvedValue(makeWallet(0)),
+    },
+    codTransaction: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'ct1' }),
+    },
+    waybill: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    // settleDriver now reads the driver inside the tenant transaction, so the tx
+    // client needs it too — delegating to the outer mock so per-test overrides hold.
+    driver: {
+      findFirst: jest.fn(async (...args: any[]) => prisma.driver.findFirst(...args)),
+    },
+  };
+
+  // Wrap so any model the converted service newly reads on `tx` still resolves to the
+  // outer mock — including the per-test overrides that simulate cross-tenant reads.
+  const resolvedTx = delegatingTxClient(tx, prisma);
+  prisma.$transaction = jest.fn(async (fn: any) => fn(resolvedTx));
+  withTenantMock(prisma, resolvedTx, { delegate: true });
+  (prisma as any).tx = resolvedTx;
+  return prisma as unknown as PrismaService;
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

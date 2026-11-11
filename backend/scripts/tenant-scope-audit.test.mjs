@@ -132,3 +132,149 @@ test('policy entries are unique', () => {
   ];
   assert.equal(new Set(keys).size, keys.length, 'duplicate policy entries');
 });
+
+// ── Blind-spot regression tests ──────────────────────────────────────────────
+// These pin the failure found in the real tree: `guardedByRead` accepted ANY
+// earlier statement that merely MENTIONED companyId alongside an identifier —
+// including the method signature itself and parameter destructuring. Neither
+// performs a read, so neither can protect a write. 182 of 226 "guarded-by-read"
+// classifications in the real tree were justified that way.
+
+test('declaring companyId as a parameter does not excuse an unscoped write', () => {
+  const result = auditSnippet(`
+export class SampleService {
+  async updateThing(id: string, companyId: string, data: any) {
+    return this.prisma.thing.update({ where: { id }, data });
+  }
+}
+  `);
+
+  const finding = result.findings.find((f) => f.model === 'thing');
+  assert.ok(finding, 'expected the update to be reported');
+  // 'tenant-in-method' is the honest answer: companyId IS in scope, but nothing ties
+  // it to the query. Critically it is NOT 'guarded-by-read' — a parameter list names
+  // companyId and reads nothing, so it cannot guard anything.
+  assert.equal(
+    finding.class,
+    'tenant-in-method',
+    'a parameter list names companyId but reads nothing — it cannot guard the write',
+  );
+});
+
+test('destructuring a dto alongside companyId does not excuse an unscoped write', () => {
+  const result = auditSnippet(`
+export class SampleService {
+  async updateThing(companyId: string, dto: any) {
+    const { id, ...data } = dto;
+    return this.prisma.thing.update({ where: { id }, data });
+  }
+}
+  `);
+
+  const finding = result.findings.find((f) => f.model === 'thing');
+  assert.ok(finding, 'expected the update to be reported');
+  assert.equal(finding.class, 'tenant-in-method');
+});
+
+test('a comment mentioning companyId does not excuse an unscoped write', () => {
+  const result = auditSnippet(`
+export class SampleService {
+  async updateThing(id: string, data: any) {
+    // Re-fetch with companyId before trusting this row.
+    return this.prisma.thing.update({ where: { id }, data });
+  }
+}
+  `);
+
+  const finding = result.findings.find((f) => f.model === 'thing');
+  assert.ok(finding, 'expected the update to be reported');
+  assert.equal(finding.class, 'unscoped');
+});
+
+test('a tenant-scoped helper call still counts as a guard', () => {
+  // Not every read is inline: many services re-fetch through a private helper.
+  // That must remain accepted, or the fix would just trade one blind spot for a
+  // wall of false positives.
+  const result = auditSnippet(`
+export class SampleService {
+  private async getThing(id: string, companyId: string) {
+    return this.prisma.thing.findFirst({ where: { id, companyId } });
+  }
+  async updateThing(id: string, companyId: string, data: any) {
+    const row = await this.getThing(id, companyId);
+    return this.prisma.thing.update({ where: { id: row.id }, data });
+  }
+}
+  `);
+
+  const finding = result.findings.find((f) => f.op === 'update');
+  assert.ok(finding, 'expected the update to be reported and classified');
+  assert.equal(finding.class, 'guarded-by-read');
+});
+
+test('an operation inside withTenant is classified as RLS-protected', () => {
+  // withTenant sets app.company_id, so Postgres enforces the boundary even when
+  // the where clause omits companyId. That is strictly stronger than an
+  // application filter, and the scanner must say so rather than falling through
+  // to the weaker (and now tighter) guarded-by-read rule.
+  const result = auditSnippet(`
+export class SampleService {
+  async updateThing(id: string, companyId: string, data: any) {
+    return this.prisma.withTenant(companyId, async (tx) => {
+      return tx.thing.update({ where: { id }, data });
+    });
+  }
+}
+  `);
+
+  const finding = result.findings.find((f) => f.model === 'thing');
+  assert.ok(finding, 'expected the update to be reported');
+  assert.equal(finding.class, 'rls-protected');
+});
+
+test('an operation AFTER the withTenant block is not excused by it', () => {
+  const result = auditSnippet(`
+export class SampleService {
+  async updateThing(id: string, companyId: string, data: any) {
+    await this.prisma.withTenant(companyId, async (tx) => {
+      await tx.thing.findFirst({ where: { id } });
+    });
+    return this.prisma.thing.update({ where: { id }, data });
+  }
+}
+  `);
+
+  const finding = result.findings.find((f) => f.model === 'thing' && f.op === 'update');
+  assert.ok(finding, 'expected the update to be reported');
+  // NOT 'rls-protected': the block has closed, so RLS no longer covers this update.
+  // It lands on 'guarded-by-read' instead, which is the correct answer for a subtler
+  // reason: the preceding statement IS the withTenant(...) call, and that statement
+  // really did perform a tenant-scoped read, so the id it produced is trustworthy.
+  // Asserting the exact class rather than `notEqual(..., 'rls-protected')` is what makes
+  // this test worth having — the weak form would pass for a dozen wrong reasons.
+  assert.equal(finding.class, 'guarded-by-read');
+});
+
+test('a method PASSED INTO withTenant is RLS-protected for its whole body', () => {
+  // `withTenant(companyId, (tx) => this.ingest(tx, ...))` runs the entire method in
+  // the tenant context, but the method is defined elsewhere in the file, so a purely
+  // lexical range check cannot see it. Real case: rail-telemetry.service.ts.
+  const result = auditSnippet(`
+export class SampleService {
+  async run(companyId: string, id: string) {
+    return this.prisma.withTenant(companyId, (tx) => this.ingest(tx, companyId, id));
+  }
+  private async ingest(tx: any, companyId: string, id: string) {
+    const row = await tx.device.findUnique({ where: { id } });
+    await tx.device.update({ where: { id }, data: { seen: true } });
+    return row;
+  }
+}
+  `);
+
+  for (const op of ['findUnique', 'update']) {
+    const finding = result.findings.find((f) => f.model === 'device' && f.op === op);
+    assert.ok(finding, `expected the ${op} to be reported`);
+    assert.equal(finding.class, 'rls-protected', `${op} should inherit the tenant context`);
+  }
+});

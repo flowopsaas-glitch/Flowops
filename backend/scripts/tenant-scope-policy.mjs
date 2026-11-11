@@ -167,12 +167,6 @@ export const METHOD_SCOPE = [
     reason: 'Private. Refreshes a connection the caller loaded for its own company; the id never comes from a request.',
   },
   {
-    file: 'src/cod/cod-settlement.service.ts',
-    method: 'settlementReplay',
-    reason:
-      'Private idempotency guard inside settleDriver(companyId, …). Looked up by (walletId, idempotencyKey) where the wallet was resolved for that company.',
-  },
-  {
     file: 'src/forwarding/customs-declaration.service.ts',
     method: 'buildForFile',
     reason: 'Private. Operates on the draft declaration found for the tenant-scoped file in the same call.',
@@ -181,6 +175,12 @@ export const METHOD_SCOPE = [
     file: 'src/rail/rail.service.ts',
     method: 'gatherHandoffEvidence',
     reason: 'Private evidence gatherer; the handoff was resolved with companyId by its caller.',
+  },
+  {
+    file: 'src/rail/rail.service.ts',
+    method: 'findHandoffApproval',
+    reason:
+      'Reads AuditLog, which has no companyId column — it is the platform-wide immutable trail, so there is no tenant column to filter on. The key is targetId = legId, and every caller resolves that leg with companyId before asking for its approvals. The boundary is enforced one call up, not here.',
   },
 
   // ── Platform sweeps: iterate tenants, they are not inside one ────────────
