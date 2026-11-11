@@ -12,6 +12,6 @@ import { IntegrationCredentialController } from './integration-credential.contro
 @Module({
   controllers: [IntegrationCredentialController],
   providers: [IntegrationCryptoService, IntegrationCredentialService],
-  exports: [IntegrationCredentialService],
+  exports: [IntegrationCredentialService, IntegrationCryptoService],
 })
 export class IntegrationsModule {}

@@ -2,11 +2,13 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { IntegrationCryptoService } from '../integrations/integration-crypto.service';
 import { BillingService } from '../billing/billing.service';
 import { XeroProvider } from './providers/xero.provider';
 import { SageProvider } from './providers/sage.provider';
 import { PastelProvider } from './providers/pastel.provider';
 import { AccountingDoc, AccountingProviderAdapter, ProviderConnection } from './providers/types';
+import { decodeEnvelope, encodeEnvelope, isSealedToken } from './accounting-token-cipher';
 
 type ProviderKey = 'XERO' | 'SAGE' | 'PASTEL';
 const money = (n: number) =>
@@ -25,6 +27,7 @@ export class AccountingIntegrationsService {
     private xero: XeroProvider,
     private sage: SageProvider,
     private pastel: PastelProvider,
+    private crypto: IntegrationCryptoService,
   ) {
     // No fallback. `|| ''` made the signing key an empty string whenever
     // JWT_SECRET was unset, and HMAC-SHA256 under an empty key is something
@@ -43,6 +46,66 @@ export class AccountingIntegrationsService {
       );
     }
     this.appUrl = config.get<string>('APP_URL', 'https://app.flowop.work');
+  }
+
+  // ── OAuth tokens at rest ──────────────────────────────────────────────────
+
+  /**
+   * Seal a token for storage. Absent tokens stay absent, so `disconnect` and a
+   * provider that omits a refresh token behave exactly as they did before.
+   *
+   * Throws when no encryption key is configured. That is deliberate: the same
+   * posture IntegrationCredentialService already takes for WhatsApp and Shopify
+   * secrets. A connection holding a clear token is worse than no connection.
+   */
+  private seal(plain: string | null | undefined): string | null {
+    if (plain === null || plain === undefined || plain === '') return null;
+    return encodeEnvelope(this.crypto.encrypt(plain));
+  }
+
+  /**
+   * Read both tokens off a row.
+   *
+   * A value that is not an envelope was written by a build predating encryption
+   * at rest. It is returned as-is so existing connections keep syncing, and
+   * flagged so the caller can re-seal it — no customer has to re-authorise
+   * their ledger to get the benefit of the change.
+   */
+  private readTokens(row: any): { accessToken: string | null; refreshToken: string | null; legacy: boolean } {
+    let legacy = false;
+    const open = (stored: any): string | null => {
+      if (stored === null || stored === undefined || stored === '') return null;
+      if (!isSealedToken(stored)) {
+        legacy = true;
+        return stored;
+      }
+      try {
+        return this.crypto.decrypt(decodeEnvelope(stored));
+      } catch (e: any) {
+        // GCM authenticates the ciphertext, so a tampered or truncated value
+        // throws rather than decrypting into something that looks like a token.
+        this.logger.error(
+          `Stored OAuth token for accounting connection ${row.id} failed authentication — treating it as absent. ${e?.message}`,
+        );
+        return null;
+      }
+    };
+    return { accessToken: open(row.accessToken), refreshToken: open(row.refreshToken), legacy };
+  }
+
+  /** Re-seal a clear row in place. Never fatal — syncing has to carry on. */
+  private async reseal(connId: string, companyId: string, accessToken: string | null, refreshToken: string | null): Promise<void> {
+    try {
+      await this.prisma.withTenant(companyId, (tx) =>
+        tx.accountingConnection.updateMany({
+          where: { id: connId },
+          data: { accessToken: this.seal(accessToken), refreshToken: this.seal(refreshToken) },
+        }),
+      );
+      this.logger.log(`Re-encrypted OAuth tokens left in the clear by an earlier build for accounting connection ${connId}.`);
+    } catch (e: any) {
+      this.logger.warn(`Could not re-encrypt clear tokens for accounting connection ${connId}: ${e?.message}`);
+    }
   }
 
   /**
@@ -127,13 +190,13 @@ export class AccountingIntegrationsService {
         where: { companyId_provider: { companyId, provider } },
         create: {
           companyId, provider, status: 'CONNECTED',
-          accessToken: tokens.accessToken, refreshToken: tokens.refreshToken ?? null,
+          accessToken: this.seal(tokens.accessToken), refreshToken: this.seal(tokens.refreshToken),
           tokenExpiresAt: tokens.expiresInSec ? new Date(Date.now() + tokens.expiresInSec * 1000) : null,
           externalTenantId: tokens.tenantId ?? null, externalTenantName: tokens.tenantName ?? null,
         },
         update: {
-          status: 'CONNECTED', accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken ?? null,
+          status: 'CONNECTED', accessToken: this.seal(tokens.accessToken),
+          refreshToken: this.seal(tokens.refreshToken),
           tokenExpiresAt: tokens.expiresInSec ? new Date(Date.now() + tokens.expiresInSec * 1000) : null,
           externalTenantId: tokens.tenantId ?? null, externalTenantName: tokens.tenantName ?? null,
           lastError: null,
@@ -183,7 +246,7 @@ export class AccountingIntegrationsService {
     for (const conn of conns) {
       const a = this.adapter(conn.provider as ProviderKey);
       try {
-        const fresh = await this.ensureFreshToken(conn.id);
+        const fresh = await this.ensureFreshToken(conn.id, companyId);
         const pc: ProviderConnection = {
           id: fresh.id, accessToken: fresh.accessToken, refreshToken: fresh.refreshToken,
           externalTenantId: fresh.externalTenantId, settings: fresh.settings,
@@ -201,20 +264,32 @@ export class AccountingIntegrationsService {
     return { document: doc.number, results };
   }
 
-  private async ensureFreshToken(connId: string) {
-    const conn = await this.prisma.accountingConnection.findUniqueOrThrow({ where: { id: connId } });
-    const a = this.adapter(conn.provider as ProviderKey);
+  private async ensureFreshToken(connId: string, companyId: string) {
+    const row = await this.prisma.accountingConnection.findFirst({ where: { id: connId, companyId } });
+    if (!row) throw new NotFoundException('Connection not found');
+    const a = this.adapter(row.provider as ProviderKey);
+    const { accessToken, refreshToken, legacy } = this.readTokens(row);
+    if (legacy) {
+      // Written before tokens were sealed. Rather than wait for a refresh that
+      // may never come for a token with no expiry pressure, close the window
+      // the first time the row is actually used.
+      await this.reseal(connId, companyId, accessToken, refreshToken);
+    }
+    const conn = { ...row, accessToken, refreshToken };
     if (!a.usesOAuth || !conn.refreshToken || !a.refresh) return conn;
     const stale = conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now() + 60_000;
     if (!stale) return conn;
     const t = await a.refresh(conn.refreshToken);
-    return this.prisma.accountingConnection.update({
-      where: { id: connId },
+    const nextRefresh = t.refreshToken ?? refreshToken;
+    await this.prisma.accountingConnection.updateMany({
+      where: { id: connId, companyId },
       data: {
-        accessToken: t.accessToken, refreshToken: t.refreshToken ?? conn.refreshToken,
+        accessToken: this.seal(t.accessToken), refreshToken: this.seal(nextRefresh),
         tokenExpiresAt: t.expiresInSec ? new Date(Date.now() + t.expiresInSec * 1000) : conn.tokenExpiresAt,
       },
     });
+    // The row now holds sealed tokens; hand back the clear ones the caller needs.
+    return { ...conn, accessToken: t.accessToken, refreshToken: nextRefresh };
   }
 
   private log(companyId: string, connectionId: string, docType: 'INVOICE' | 'CREDIT_NOTE', doc: AccountingDoc, status: any, externalId?: string, error?: string) {
