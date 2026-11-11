@@ -550,7 +550,11 @@ export class EmailHubService {
     }
 
     if (Object.keys(data).length) {
-      await this.prisma.emailHubItem.update({ where: { id: itemId }, data });
+      // Inside withTenant so the item is confirmed to belong to this company rather
+      // than taken on trust from the caller's itemId.
+      await this.prisma.withTenant(companyId, async (tx) => {
+        await tx.emailHubItem.update({ where: { id: itemId }, data });
+      });
     }
   }
 

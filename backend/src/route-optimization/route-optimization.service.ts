@@ -71,8 +71,11 @@ export class RouteOptimizationService {
   }
 
   private async runOptimization(optimizationId: string, companyId: string) {
-    const opt = await this.prisma.routeOptimization.findUnique({
-      where: { id: optimizationId },
+    // Was findUnique({ id }) — which resolves an optimisation belonging to ANY
+    // tenant. Scoping the read to companyId also feeds the guarded-by-read rule
+    // for the updates that follow, and lets RLS back it up.
+    const opt = await this.prisma.routeOptimization.findFirst({
+      where: { id: optimizationId, companyId },
     });
     if (!opt) return;
 

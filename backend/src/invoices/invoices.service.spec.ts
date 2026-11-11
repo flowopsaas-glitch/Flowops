@@ -48,6 +48,11 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
       findUnique: jest.fn().mockResolvedValue({ id: 'co1', name: 'Acme' }),
     },
     $transaction: jest.fn(async (callback: (client: any) => unknown) => callback(tx)),
+    // withTenant forwards to $transaction (including the { maxWait, timeout } options),
+    // so the specs that assert on transaction options keep testing the real thing.
+    withTenant: jest.fn(async (companyId: string, callback: (client: any) => unknown, opts?: any) =>
+      (prisma as any).$transaction(callback, opts),
+    ),
     __tx: tx,
     ...overrides,
   } as unknown as PrismaService & { __tx: typeof tx };

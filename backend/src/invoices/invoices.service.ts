@@ -764,7 +764,9 @@ export class InvoicesService {
     name: string;
     tradingName?: string | null;
   }) {
-    const generated = await this.prisma.$transaction(async (tx: any) => {
+    // withTenant, not a bare $transaction: every statement in this block concerns
+    // one company, and RLS then enforces that regardless of the filters.
+    const generated = await this.prisma.withTenant(company.id, async (tx: any) => {
       await this.lockInvoiceSequence(tx, company.id);
       let page = await this.getUnbilledWaybillPage(company.id, tx);
       if (!page.length) return null;

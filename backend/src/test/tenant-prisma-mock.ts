@@ -48,9 +48,9 @@ export interface TenantContextLog {
 export function withTenantMock<T extends Record<string, any>>(
   prisma: T,
   tx: any,
-  options: { delegate?: boolean } = {},
+  config: { delegate?: boolean } = {},
 ): TenantContextLog {
-  if (tx === undefined && !options.delegate) {
+  if (tx === undefined && !config.delegate) {
     throw new Error(
       'withTenantMock requires an explicit tx client, or { delegate: true }. ' +
         'See the docs comment above: inferring the tx from $transaction consumes ' +
@@ -60,7 +60,14 @@ export function withTenantMock<T extends Record<string, any>>(
   const log: TenantContextLog = { companies: [], calls: 0 };
 
   (prisma as any).withTenant = jest.fn(
-    async (companyId: string, callback: (client: any) => unknown) => {
+    async (
+      companyId: string,
+      callback: (client: any) => unknown,
+      // PrismaService.withTenant takes { maxWait, timeout } and forwards them to
+      // $transaction. Forward them here too, or a spec asserting on transaction
+      // options silently tests nothing.
+      opts?: { maxWait?: number; timeout?: number },
+    ) => {
       log.calls += 1;
       log.companies.push(companyId);
       // `delegate: true` routes the callback through prisma.$transaction, so any
@@ -69,9 +76,10 @@ export function withTenantMock<T extends Record<string, any>>(
       // applies now that the service calls withTenant instead of $transaction.
       // It consumes exactly one queued implementation, which is correct: the service
       // is performing exactly one transaction.
-      if (options.delegate) {
-        return (prisma as any).$transaction((client: any) =>
-          callback(delegatingTxClient({}, client ?? {}, prisma)),
+      if (config.delegate) {
+        return (prisma as any).$transaction(
+          (client: any) => callback(delegatingTxClient({}, client ?? {}, prisma)),
+          opts,
         );
       }
       return callback(tx);

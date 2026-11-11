@@ -1221,19 +1221,24 @@ export class MaintenanceService {
     jobId: string | null,
     actor: MaintenanceActor,
   ) {
-    await this.prisma.maintenanceMeterReading.create({
-      data: {
-        companyId,
-        assetId,
-        reading,
-        source,
-        jobId,
-        recordedByName: actor.name ?? null,
-      },
-    });
-    await this.prisma.maintenanceAsset.update({
-      where: { id: assetId },
-      data: { meterReading: reading, meterReadAt: new Date() },
+    // Two writes that must agree: the reading and the asset's meter. Inside
+    // withTenant they are one atomic unit AND the asset update is scoped to the
+    // company, instead of trusting that `assetId` was validated by the caller.
+    await this.prisma.withTenant(companyId, async (tx) => {
+      await tx.maintenanceMeterReading.create({
+        data: {
+          companyId,
+          assetId,
+          reading,
+          source,
+          jobId,
+          recordedByName: actor.name ?? null,
+        },
+      });
+      await tx.maintenanceAsset.update({
+        where: { id: assetId },
+        data: { meterReading: reading, meterReadAt: new Date() },
+      });
     });
   }
 

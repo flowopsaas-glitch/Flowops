@@ -74,7 +74,9 @@ describe('RailTimetableService', () => {
     })).rejects.toThrow(ConflictException);
     expect(prisma.withTenant).not.toHaveBeenCalled();
     expect(prisma.railScheduleImport.findFirst).toHaveBeenCalledWith({
-      where: { scopeKey: 'tenant-1', sourceHash: expect.any(String) },
+      // companyId is now part of the dedupe key, so one tenant's import of a file
+      // cannot be blocked by — or leak — another tenant's import of the same file.
+      where: { scopeKey: 'tenant-1', sourceHash: expect.any(String), companyId: 'tenant-1' },
       select: { id: true },
     });
   });
@@ -94,7 +96,9 @@ describe('RailTimetableService', () => {
     });
 
     expect(prisma.railScheduleImport.findFirst).toHaveBeenCalledWith({
-      where: { scopeKey: 'shared-transnet', sourceHash: expect.any(String) },
+      // Owner path: companyId is null, and `companyId: null` correctly matches only
+      // the shared rows the owner path also writes.
+      where: { scopeKey: 'shared-transnet', sourceHash: expect.any(String), companyId: null },
       select: { id: true },
     });
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({

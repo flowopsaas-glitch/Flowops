@@ -8,19 +8,36 @@
  * and then decides WHY, because "no companyId" is not the same as "wrong".
  *
  * Classes, in the order they are decided:
+ *   rls-protected   — the call sits inside a `withTenant(companyId, ...)` block,
+ *                     so Postgres enforces the boundary regardless of the where
+ *                     clause. Strictly stronger than an application filter.
  *   platform        — a file listed in the policy as cross-tenant by design
  *   reviewed        — a method listed in the policy, with the reason recorded
  *   housekeeping    — credential/token cleanup that is platform-wide
  *   identity        — a lookup by email/token/reference, which is how the
  *                     tenant is discovered in the first place
- *   guarded-by-read — a preceding STATEMENT names both companyId and the
- *                     identifier this write is keyed on: a scoped read feeding
- *                     the write. Proven mechanically, not assumed.
+ *   guarded-by-read — a preceding STATEMENT performs an actual DATABASE READ
+ *                     naming both companyId and the identifier this write is
+ *                     keyed on. The statement must really read: merely
+ *                     mentioning companyId (a parameter list, a destructuring
+ *                     line) is NOT a guard. See the note below.
  *   tenant-in-method — companyId exists in the method but no statement ties it
  *                     to this call. Suspicious; needs a human or a policy entry.
  *   unscoped        — no tenant anywhere in the enclosing method.
  *
- * The last two fail --check. Every exemption carries a written reason, and an
+ * The last two fail --check.
+ *
+ * WHY `guarded-by-read` DEMANDS A REAL READ
+ * -----------------------------------------
+ * The original rule accepted any earlier statement that merely MENTIONED
+ * companyId alongside an identifier. In the real tree that was satisfied by the
+ * method signature itself — `async updateThing(id: string, companyId: string)`
+ * names both `id` and `companyId` and reads nothing — so 182 of 226
+ * classifications were justified by a parameter list. The scanner reported
+ * `unscoped: 0` while being unable to see a missing companyId filter. A guard
+ * has to be a read: a statement that performs a query, or a call to a helper
+ * that is handed companyId. Comments are stripped first, so a comment saying
+ * "re-fetch with companyId" cannot act as the guard it only describes. Every exemption carries a written reason, and an
  * exemption that stops matching anything fails the build too, so the allowlist
  * cannot quietly rot into a place where bugs hide.
  *
@@ -152,6 +169,34 @@ function isDeclaration(line) {
 const escapeId = (id) => id.replace(/\$/g, '\\$');
 
 /**
+ * Drop `//` and `/* *\/` comments. Without this, a comment that merely MENTIONS
+ * companyId counts as "companyId is in scope" and upgrades a genuinely unscoped
+ * call to `tenant-in-method`; worse, a comment could have satisfied the old
+ * guarded-by-read rule outright.
+ */
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+}
+
+// A read is either an inline Prisma query or a helper call handed companyId.
+const CLIENT = '(?:this\\.)?(?:prisma|tx|db|trx)';
+const READ_OPS =
+  'findFirst|findUnique|findMany|findFirstOrThrow|findUniqueOrThrow|count|aggregate|groupBy';
+const INLINE_READ = new RegExp(`${CLIENT}\\.[\\w$]+\\.(?:${READ_OPS})\\s*\\(`);
+// `await this.getThing(id, companyId)` — the tenant check lives in the helper.
+const HELPER_READ = /await[^\n]*this\.[A-Za-z_$][\w$]*\s*\([^)]*\bcompanyId\b/;
+
+/**
+ * True only when the statement actually fetches something tenant-scoped.
+ * A parameter list, a destructuring line, an assignment or a comment does not
+ * read, so it cannot protect the operation that follows it.
+ */
+function isReadStatement(stmt) {
+  if (!/\bawait\b/.test(stmt)) return false;
+  return INLINE_READ.test(stmt) || HELPER_READ.test(stmt);
+}
+
+/**
  * A write is protected when an earlier STATEMENT in the same method mentions
  * both companyId and an identifier this write is keyed on. Statement-level
  * rather than line-level because a Prisma `where` routinely spans lines:
@@ -165,7 +210,11 @@ function guardedByRead(method, whereText) {
   const statements = prefix.split(';');
   for (let i = statements.length - 1; i >= 0; i--) {
     const stmt = statements[i];
-    if (!/\bcompanyId\b/.test(stmt)) continue;
+    if (!/\bcompanyId\b/.test(stripComments(stmt))) continue;
+    // The statement must actually READ. A signature, a destructuring line or an
+    // assignment can name companyId and the identifier while fetching nothing,
+    // which is precisely how this rule used to be satisfied 182 times over.
+    if (!isReadStatement(stripComments(stmt))) continue;
     for (const id of idents) {
       if (new RegExp(`\\b${escapeId(id)}\\b`).test(stmt)) return id;
     }
@@ -184,6 +233,57 @@ const reviewedByMethod = new Map(
   METHOD_SCOPE.map((p) => [`${p.file}#${p.method}`, p.reason]),
 );
 
+/**
+ * Character ranges covered by `withTenant(companyId, (tx) => { ... })` blocks.
+ *
+ * Inside one of these, app.company_id is set and Postgres RLS enforces the
+ * tenant boundary even when the where clause omits companyId. That is a
+ * stronger guarantee than an application filter, so the scanner must recognise
+ * it rather than falling through to the weaker heuristics.
+ */
+function withTenantRanges(source) {
+  const ranges = [];
+  const re = /\bwithTenant\s*\(/g;
+  let m;
+  while ((m = re.exec(source)) !== null) {
+    const open = source.indexOf('(', m.index);
+    if (open < 0) continue;
+    let depth = 0;
+    let close = open;
+    for (let i = open; i < source.length; i++) {
+      const ch = source[i];
+      if (ch === '(') depth++;
+      else if (ch === ')') {
+        depth--;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    ranges.push([m.index, close]);
+  }
+  return ranges;
+}
+
+/**
+ * Names of methods that are INVOKED from inside a withTenant block, e.g.
+ * `return this.prisma.withTenant(companyId, (tx) => this.ingestPointsIn(tx, ...))`.
+ *
+ * The whole body of such a method runs in the tenant context, but the method is
+ * DEFINED elsewhere in the file, so a purely lexical range check cannot see it.
+ * Without this, passing a method into withTenant — the tidiest way to reuse a
+ * transaction body — reports the method's every query as unscoped.
+ */
+function tenantBoundMethods(source, ranges) {
+  const names = new Set();
+  for (const [a, b] of ranges) {
+    const body = source.slice(a, b);
+    for (const m of body.matchAll(/this\.([A-Za-z_$][\w$]*)\s*\(/g)) names.add(m[1]);
+  }
+  return names;
+}
+
 const files = walk(ROOT).filter((f) => /\.service\.ts$/.test(f));
 const findings = [];
 
@@ -201,23 +301,41 @@ for (const file of files) {
   }
   const platformReason = platformByFile.get(rel);
 
+  const tenantRanges = withTenantRanges(source);
+  const tenantBound = tenantBoundMethods(source, tenantRanges);
+
   for (const match of source.matchAll(CALL)) {
     const args = extractArgs(source, match.index);
     const where = /where\s*:\s*/.test(args) ? args.slice(args.search(/where\s*:\s*/)) : args;
-
-    if (/companyId/.test(where)) continue; // already scoped: nothing to decide
 
     const model = match[1];
     const op = match[2];
     const line = source.slice(0, match.index).split('\n').length;
     const method = enclosingMethod(lines, lineOffsets, line, match.index);
     const name = methodName(lines, method.start);
+
+    // RLS beats everything: inside withTenant the database enforces the boundary
+    // whether or not the where clause repeats companyId. Checked BEFORE the
+    // companyId early-exit so these operations are counted, not silently skipped.
+    // `tenantBound` covers a method that was PASSED INTO withTenant, whose body
+    // therefore runs in the tenant context although it is defined elsewhere.
+    const inTenant =
+      tenantRanges.some(([a, b]) => match.index >= a && match.index <= b) ||
+      tenantBound.has(name);
+
+    if (!inTenant && /companyId/.test(where)) continue; // already scoped: nothing to decide
+
     const reviewed = reviewedByMethod.get(`${rel}#${name}`);
 
     let cls = null;
     let detail = '';
 
-    if (platformReason) {
+    if (inTenant) {
+      cls = 'rls-protected';
+      detail = /companyId/.test(where)
+        ? 'inside withTenant and the where clause also names companyId'
+        : 'inside withTenant; Postgres RLS scopes it, so the where clause need not';
+    } else if (platformReason) {
       cls = 'platform';
       detail = platformReason;
     } else if (reviewed) {
@@ -242,9 +360,9 @@ for (const file of files) {
         if (guard) {
           cls = 'guarded-by-read';
           detail = `a scoped read names \`${guard}\` with companyId`;
-        } else if (/\bcompanyId\b/.test(method.text)) {
+        } else if (/\bcompanyId\b/.test(stripComments(method.text))) {
           cls = 'tenant-in-method';
-          detail = 'method has companyId in scope but no statement ties it to this call';
+          detail = 'method has companyId in scope but no read ties it to this call';
         } else {
           cls = 'unscoped';
           detail = 'no companyId anywhere in the enclosing method';
@@ -269,6 +387,7 @@ const byClass = (c) => findings.filter((f) => f.class === c).length;
 const summary = {
   serviceFiles: files.length,
   findings: findings.length,
+  rlsProtected: byClass('rls-protected'),
   platform: byClass('platform'),
   reviewed: byClass('reviewed'),
   housekeeping: byClass('housekeeping'),
@@ -315,6 +434,8 @@ if (format === 'json') {
 }
 
 if (process.argv.includes('--check')) {
+  // rls-protected passes: the database enforces the boundary, which is stronger
+  // than the application filter this scanner was originally written to demand.
   const unreviewed = findings.filter((f) => f.class === 'unscoped' || f.class === 'tenant-in-method');
   const problems = [];
   if (unreviewed.length) {
@@ -337,7 +458,7 @@ if (process.argv.includes('--check')) {
   }
   console.log(
     `Tenant-scope audit: ${findings.length} id-only operations, all explained ` +
-      `(${summary.guardedByRead} guarded by a scoped read, ${summary.platform} platform, ` +
+      `(${summary.rlsProtected} RLS-protected by withTenant, ${summary.guardedByRead} guarded by a scoped read, ${summary.platform} platform, ` +
       `${summary.reviewed} reviewed, ${summary.identity} identity lookups, ${summary.housekeeping} housekeeping).`,
   );
 }
