@@ -104,6 +104,7 @@ services:
 
       # ── Security posture ────────────────────
       RBAC_STRICT: \${RBAC_STRICT:-false}
+      INTEGRATIONS_ENC_KEY: \${INTEGRATIONS_ENC_KEY:-}
       DATABASE_URL: postgresql://u:\${POSTGRES_PASSWORD:?set it}@postgres:5432/db
     depends_on:
       postgres:
@@ -116,7 +117,7 @@ volumes:
   postgres-data:
 `;
 
-function fixture({ base = BASE_FIXTURE, overlays = {}, templates = {}, guard = null } = {}) {
+function fixture({ base = BASE_FIXTURE, overlays = {}, templates = {}, guard = null, crypto = null } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'flowops-compose-env-'));
   writeFileSync(path.join(root, BASE_COMPOSE), base);
   for (const [rel, text] of Object.entries(overlays)) {
@@ -134,12 +135,18 @@ function fixture({ base = BASE_FIXTURE, overlays = {}, templates = {}, guard = n
     guardAbs,
     guard ?? "if (process.env.RBAC_STRICT === 'true') { throw new ForbiddenException(); }\n",
   );
+  const cryptoAbs = path.join(root, 'backend/src/integrations/integration-crypto.service.ts');
+  mkdirSync(path.dirname(cryptoAbs), { recursive: true });
+  writeFileSync(
+    cryptoAbs,
+    crypto ?? "this.key = this.loadKey('INTEGRATIONS_ENC_KEY') ?? this.loadKey('CUSTOMS_EDI_KEY');\n",
+  );
   return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 const GOOD_TEMPLATES = {
-  '.env.example': 'JWT_SECRET=x\nRBAC_STRICT=false\n',
-  '.env.production.example': 'JWT_SECRET=x\nRBAC_STRICT=true\n',
+  '.env.example': 'JWT_SECRET=x\nRBAC_STRICT=false\nINTEGRATIONS_ENC_KEY=\n',
+  '.env.production.example': 'JWT_SECRET=x\nRBAC_STRICT=true\nINTEGRATIONS_ENC_KEY=\n',
 };
 
 test('readServiceEnvironment finds the api allowlist and ignores comment/blank lines', () => {
@@ -150,7 +157,7 @@ test('readServiceEnvironment finds the api allowlist and ignores comment/blank l
   assert.equal(env.replaceTag, null);
   assert.deepEqual(
     env.entries.map((e) => e.key),
-    ['NODE_ENV', 'PORT', 'RBAC_STRICT', 'DATABASE_URL'],
+    ['NODE_ENV', 'PORT', 'RBAC_STRICT', 'INTEGRATIONS_ENC_KEY', 'DATABASE_URL'],
   );
   assert.equal(env.entries.find((e) => e.key === 'RBAC_STRICT').raw, '${RBAC_STRICT:-false}');
 });
@@ -531,5 +538,28 @@ console.log(JSON.stringify({services: {api: {environment: {RBAC_STRICT: process.
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('GAP: the integration encryption key missing from the allowlist', () => {
+  // The second instance of the RBAC_STRICT production bug, found by tracing a
+  // real deploy rather than by reading code: INTEGRATIONS_ENC_KEY is set in the
+  // host .env, but the api service allowlists `environment:` and declares no
+  // env_file, so without this line the container never sees it and
+  // IntegrationCryptoService stays unconfigured. The symptom is not a wrong
+  // value — it is every integration-secret save refusing to work.
+  const f = fixture({
+    base: BASE_FIXTURE.replace('      INTEGRATIONS_ENC_KEY: ${INTEGRATIONS_ENC_KEY:-}\n', ''),
+    templates: GOOD_TEMPLATES,
+  });
+  try {
+    const result = checkComposeEnvAllowlist(f.root);
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.gaps.some((g) => g.includes('INTEGRATIONS_ENC_KEY')),
+      `expected a gap naming INTEGRATIONS_ENC_KEY, got ${JSON.stringify(result.gaps)}`,
+    );
+  } finally {
+    f.cleanup();
   }
 });
