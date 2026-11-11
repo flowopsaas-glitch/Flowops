@@ -263,3 +263,105 @@ test('a missing baseline fails loudly rather than passing vacuously', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ── Blind-spot regressions found during the 2026-11-11 audit ────────────────
+
+test('a code example inside a comment is not counted as an operation', () => {
+  // src/waybills/waybill-status.machine.ts documents the anti-pattern the module
+  // exists to prevent — "* `prisma.waybill.update({ data: { status }})` jumps." —
+  // and that line was reported as a genuine unguarded status write. Phantom
+  // findings inflate the counts and move the ratchet when someone edits prose.
+  const documented = scan(`
+/**
+ * The codebase stops doing arbitrary
+ * \`prisma.waybill.update({ data: { status }})\` jumps.
+ */
+export class SampleService {
+  async ok(id: string, companyId: string) {
+    return this.prisma.waybill.findFirst({ where: { id, companyId } });
+  }
+}
+`);
+  const withCode = scan(`
+export class SampleService {
+  async ok(id: string, companyId: string) {
+    return this.prisma.waybill.findFirst({ where: { id, companyId } });
+  }
+}
+`);
+
+  assert.equal(
+    documented.findings.length,
+    withCode.findings.length,
+    'the commented-out example was counted as a real database operation',
+  );
+  assert.ok(!documented.findings.some((f) => f.op === 'update'), 'phantom update found');
+});
+
+test('the ratchet fails on a per-module regression even with headroom in the baseline', () => {
+  // The original gate only failed when the TOTAL rose above the baseline. Because
+  // the baseline is a historical high-water mark and coverage improves over time,
+  // that left slack — 19 operations at the time this was fixed — so a new
+  // unwrapped tenant query was invisible, and every improvement silently banked
+  // MORE room for future regressions. Plant a baseline with deliberate headroom
+  // and prove a single new bare operation is still caught.
+  const dir = mkdtempSync(join(tmpdir(), 'tenant-ctx-ratchet-'));
+  mkdirSync(join(dir, 'src', 'alpha'), { recursive: true });
+  writeFileSync(
+    join(dir, 'src', 'alpha', 'alpha.service.ts'),
+    `export class A { async f(id: string, companyId: string) {
+       return this.prisma.waybill.findFirst({ where: { id, companyId } });
+     } }`,
+  );
+  const baselinePath = join(dir, 'baseline.json');
+  try {
+    // Record a baseline for the EXISTING tree, then artificially lower the module
+    // count to manufacture headroom: 3 bare ops recorded, real count is 1.
+    run(['--root', join(dir, 'src'), '--baseline', baselinePath, '--update-baseline']);
+    const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+    const realTotal = baseline.total;
+    baseline.total = realTotal + 10; // headroom, as the stale baseline had
+    writeFileSync(baselinePath, JSON.stringify(baseline, null, 2));
+
+    // Add one more bare operation. Total is still well under the padded baseline.
+    writeFileSync(
+      join(dir, 'src', 'alpha', 'beta.service.ts'),
+      `export class B { async g(id: string) {
+         return this.prisma.waybill.findFirst({ where: { id } });
+       } }`,
+    );
+
+    let failed = false;
+    try {
+      run(['--root', join(dir, 'src'), '--baseline', baselinePath, '--check']);
+    } catch {
+      failed = true;
+    }
+    assert.ok(
+      failed,
+      'the ratchet passed despite a new bare tenant operation — headroom is being ' +
+        'absorbed instead of failing',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the committed baseline leaves no headroom', () => {
+  // Recorded 2026-11-09 at 1348 while the real count was 1329: 19 unprotected
+  // queries could be added before CI noticed. Re-recording is legitimate when
+  // coverage genuinely improves, but the baseline must be re-recorded to the
+  // CURRENT number, not a padded one.
+  const baseline = JSON.parse(readFileSync(BASELINE, 'utf8'));
+  const current = JSON.parse(run(['--format', 'json']));
+  assert.ok(
+    current.summary.bare <= baseline.total,
+    `bare operations (${current.summary.bare}) exceed the baseline (${baseline.total})`,
+  );
+  assert.equal(
+    baseline.total,
+    current.summary.bare,
+    `baseline total ${baseline.total} is padded above the real count ${current.summary.bare}; ` +
+      'that gap is silent headroom for regressions. Re-record with --update-baseline.',
+  );
+});
