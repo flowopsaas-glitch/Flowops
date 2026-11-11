@@ -217,8 +217,16 @@ export class ShipmentsService {
   }
 
   async recalculateRisk(companyId: string, dto: any) {
+    // Without this, `{}` leaves `waybillId` undefined — and Prisma treats an
+    // undefined filter as absent, so `findFirst({ id: undefined, companyId })`
+    // silently returns the company's FIRST waybill. The "not found" guard below
+    // then passes on a waybill nobody asked for, and the write at the end
+    // targets whatever that row happened to be. Require it explicitly.
+    const waybillId = typeof dto?.waybillId === 'string' ? dto.waybillId.trim() : '';
+    if (!waybillId) throw new BadRequestException('waybillId is required');
+
     const waybill = await this.prisma.waybill.findFirst({
-      where: { id: dto.waybillId, companyId },
+      where: { id: waybillId, companyId },
     });
     if (!waybill) throw new NotFoundException('Waybill not found');
 
@@ -252,7 +260,7 @@ export class ShipmentsService {
     const riskNotes = notes.length > 0 ? notes.join('; ') : 'No risk factors detected';
 
     const updated = await this.prisma.waybill.update({
-      where: { id: dto.waybillId },
+      where: { id: waybillId },
       data: { riskScore, riskLevel, riskNotes },
     });
 
