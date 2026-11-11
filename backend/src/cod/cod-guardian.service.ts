@@ -30,6 +30,7 @@ import { ConfigService } from '@nestjs/config';
  *    → Average time from collection to settlement per driver
  *    → Fastest/slowest settlers → identify patterns
  */
+import { Money } from '../common/money.util';
 
 export interface DriverCashRisk {
   driverId: string;
@@ -174,9 +175,9 @@ export class CodGuardianService {
     return {
       generatedAt: new Date().toISOString(),
       companyName: company?.brandName || company?.name || '',
-      cashOnRoad: Math.round(cashOnRoad * 100) / 100,
-      cashDepositedToday: Math.round((todaySettlements._sum.amount || 0) * 100) / 100,
-      cashCollectedToday: Math.round((todayCollections._sum.amount || 0) * 100) / 100,
+      cashOnRoad: Money.round(cashOnRoad),
+      cashDepositedToday: Money.round(todaySettlements._sum.amount || 0),
+      cashCollectedToday: Money.round(todayCollections._sum.amount || 0),
       driversHoldingCash,
       highRiskDrivers,
       lockRecommendations,
@@ -240,7 +241,7 @@ export class CodGuardianService {
       driverId: driver.id,
       driverName: driver.name,
       driverPhone: driver.phone,
-      balance: Math.round(balance * 100) / 100,
+      balance: Money.round(balance),
       riskScore: Math.min(100, score),
       riskLevel,
       factors,

@@ -1,3 +1,5 @@
+import { Money } from '../common/money.util';
+
 /**
  * Goods receipt reconciliation policy (pure).
  *
@@ -221,5 +223,5 @@ export function receiptIncidentSeverityToProcess(severity: ReceiptIncident['seve
 }
 
 function round2(value: number): number {
-  return Math.round(value * 100) / 100;
+  return Money.round(value);
 }

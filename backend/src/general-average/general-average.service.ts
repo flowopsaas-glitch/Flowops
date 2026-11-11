@@ -6,6 +6,7 @@ import {
   RecordAwardDto,
   UpdateGaEventDto,
 } from './dto/general-average.dto';
+import { Money } from '../common/money.util';
 
 /**
  * General Average.
@@ -472,4 +473,4 @@ export class GeneralAverageService {
   }
 }
 
-const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const round2 = (n: number): number => Money.round(n);

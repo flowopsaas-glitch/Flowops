@@ -1,3 +1,4 @@
+import { Money } from '../common/money.util';
 import {
   BadRequestException,
   ConflictException,
@@ -1014,7 +1015,7 @@ export class MaintenanceService {
     if (start === null || end === null) return null;
     const delta = end - start;
     if (!Number.isFinite(delta) || delta <= 0) return null;
-    return Math.round((total / delta) * 100) / 100;
+    return Money.round(total / delta);
   }
 
   // ── The fleet verdict ────────────────────────────────────────────────────

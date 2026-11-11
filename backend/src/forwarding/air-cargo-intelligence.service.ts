@@ -27,6 +27,7 @@ import { ConfigService } from '@nestjs/config';
  * - Tertiary: IATA ONE Record API (future)
  * - Fallback: Manual milestone updates from operators
  */
+import { Money } from '../common/money.util';
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -658,7 +659,7 @@ export class AirCargoIntelligenceService {
       airOption: {
         transitDays: airRate.transitDays,
         costPerKg: airRate.ratePerKg,
-        totalCost: Math.round(airTotalCost * 100) / 100,
+        totalCost: Money.round(airTotalCost),
         currency: 'USD',
         carrier: 'Market rate (best available)',
         co2Kg: Math.round(airCo2 * 10) / 10,
@@ -667,7 +668,7 @@ export class AirCargoIntelligenceService {
       oceanOption: {
         transitDays: oceanRate.transitDays,
         costPerCbm: oceanRate.ratePerCbm,
-        totalCost: Math.round(oceanTotalCost * 100) / 100,
+        totalCost: Money.round(oceanTotalCost),
         currency: 'USD',
         carrier: 'Market rate (best available)',
         co2Kg: Math.round(oceanCo2 * 10) / 10,
@@ -676,8 +677,8 @@ export class AirCargoIntelligenceService {
       recommendation,
       reasoning,
       savingsDays,
-      savingsCost: Math.round(costDiff * 100) / 100,
-      costPerDaySaved: Math.round(costPerDaySaved * 100) / 100,
+      savingsCost: Money.round(costDiff),
+      costPerDaySaved: Money.round(costPerDaySaved),
     };
   }
 
@@ -755,7 +756,7 @@ export class AirCargoIntelligenceService {
       volumeCbm: file.volumeCbm || 0,
       rateClass,
       ratePerKg,
-      totalCharge: Math.round(totalCharge * 100) / 100,
+      totalCharge: Money.round(totalCharge),
       currency: 'USD',
       goodsDescription: file.goodsDescription || '',
       handlingCodes,

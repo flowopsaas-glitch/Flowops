@@ -22,12 +22,39 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Round a scaled value half-AWAY-FROM-ZERO, symmetrically.
+ *
+ * WHY NOT `Math.round`. `Math.round` is half-UP (it is `floor(x + 0.5)`, so it rounds
+ * toward +∞): `Math.round(267.5)` is 268 but `Math.round(-267.5)` is -267. So it rounds
+ * a positive half away from zero and a negative half TOWARD zero. On a credit note that
+ * is a one-cent error in the bank's favour, every time.
+ *
+ * WHY NOT THE EPSILON TRICK. The previous implementation nudged by `Number.EPSILON`
+ * before rounding. `Number.EPSILON` is the ULP of 1.0 — the spacing of floating-point
+ * numbers AT 1.0. At any magnitude of 2 or more the spacing is wider than EPSILON, so
+ * the addition rounds straight back to the original value and does nothing at all:
+ * `(2.675 + Number.EPSILON) === 2.675` is `true`. The correction silently stopped
+ * working above R2, which is most invoices.
+ *
+ * So instead: take the magnitude, find the fractional part, and treat a value that is
+ * within a float-tolerance of exactly one half as a half. Symmetric by construction,
+ * because the sign is applied after the magnitude is rounded.
+ */
+function roundHalfAwayFromZero(x: number): number {
+  const sign = x < 0 ? -1 : 1;
+  const abs = Math.abs(x);
+  const floor = Math.floor(abs);
+  const frac = abs - floor;
+  // Tolerance scales with magnitude: at 1e8 cents the float spacing is ~2e-8, so a
+  // fixed 1e-9 would be smaller than the representation error itself.
+  const tol = Math.max(1e-9, abs * Number.EPSILON * 4);
+  return sign * (frac >= 0.5 - tol ? floor + 1 : floor);
+}
+
 /** Convert rands → integer cents (half-away-from-zero rounding). */
 function toCents(v: unknown): number {
-  const n = num(v);
-  // Add a tiny epsilon in the value's own direction before rounding so that
-  // e.g. 1.005 → 101 cents rather than 100 due to binary representation.
-  return Math.round((n + (n >= 0 ? Number.EPSILON : -Number.EPSILON)) * 100);
+  return roundHalfAwayFromZero(num(v) * 100);
 }
 
 /** Convert integer cents → rands (plain number, 2dp). */

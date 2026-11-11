@@ -1,4 +1,5 @@
 import type { ClaimStatus, ClaimLiability } from '@prisma/client';
+import { Money } from '../common/money.util';
 
 /**
  * The claim lifecycle, in one place.
@@ -58,7 +59,7 @@ export function liabilityIsAssessed(liability: ClaimLiability, basis: string | n
 }
 
 export function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return Money.round(value);
 }
 
 export interface ApprovalCheck {

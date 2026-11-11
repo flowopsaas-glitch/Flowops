@@ -24,6 +24,7 @@
  * origin (SADC / EU / AfCFTA), anti-dumping duties and a dozen other things
  * this deliberately does not attempt to model.
  */
+import { Money } from '../common/money.util';
 
 export const SA_VAT_RATE = 0.15;
 export const SA_IMPORT_UPLIFTMENT = 0.10;
@@ -65,7 +66,7 @@ export type DutyEstimate = {
   };
 };
 
-const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const r2 = (n: number): number => Money.round(n);
 
 /** Money-safe coercion: blank, null and NaN all mean zero, never NaN. */
 function money(v: unknown): number {

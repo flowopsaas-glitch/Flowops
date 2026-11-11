@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
+import { Money } from '../common/money.util';
 
 @Injectable()
 export class LogisticsAnalyticsService {
@@ -117,7 +118,7 @@ export class LogisticsAnalyticsService {
     const revenue = revenueAgg._sum.total || 0;
 
     const costPerDelivery = totalDeliveries > 0
-      ? Math.round((revenue / totalDeliveries) * 100) / 100
+      ? Money.round(revenue / totalDeliveries)
       : null;
 
     const codAgg = await this.prisma.waybill.aggregate({

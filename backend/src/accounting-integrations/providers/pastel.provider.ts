@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import {
   AccountingProviderAdapter, AccountingDoc, ProviderConnection, PushResult,
 } from './types';
+import { Money } from '../../common/money.util';
 
 /**
  * Sage Pastel Partner/Xpress adapter. Pastel desktop has no live API, so this
@@ -61,5 +62,5 @@ export class PastelProvider implements AccountingProviderAdapter {
 }
 
 function round2(n: number) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
+  return Money.round(n);
 }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { DriverComplianceService } from '../common/compliance/driver-compliance.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
+import { Money } from '../common/money.util';
 
 export type Stop = {
   id: string;
@@ -295,8 +296,8 @@ export class RoutingService {
     const savedKm = Math.max(0, Math.round((unoptKm - totalKm) * 100) / 100);
     const savedMin = Math.max(0, Math.round((unoptMin - totalMin) * 10) / 10);
     const savedPct = unoptKm > 0 ? Math.round((savedKm / unoptKm) * 100) : 0;
-    const fuelCost = Math.round(totalKm * (this.CONSUMPTION / 100) * this.FUEL_RATE * 100) / 100;
-    const savedFuel = Math.round(savedKm * (this.CONSUMPTION / 100) * this.FUEL_RATE * 100) / 100;
+    const fuelCost = Money.round(totalKm * (this.CONSUMPTION / 100) * this.FUEL_RATE);
+    const savedFuel = Money.round(savedKm * (this.CONSUMPTION / 100) * this.FUEL_RATE);
 
     totalKm = Math.round(totalKm * 100) / 100;
     totalMin = Math.round(totalMin * 10) / 10;

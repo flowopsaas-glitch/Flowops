@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
 import { withCompanyId } from '../common/security/tenant.util';
+import { Money } from '../common/money.util';
 
 @Injectable()
 export class CommercialAnalyticsService {
@@ -84,7 +85,7 @@ export class CommercialAnalyticsService {
       ? Math.round((grossProfit / totalRevenue) * 1000) / 10 : 0;
 
     const avgRevenuePerDel = deliveryCount > 0
-      ? Math.round((totalRevenue / deliveryCount) * 100) / 100 : 0;
+      ? Money.round(totalRevenue / deliveryCount) : 0;
     const revenueDelta = prevRevenue > 0
       ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 1000) / 10
       : null;
@@ -99,7 +100,7 @@ export class CommercialAnalyticsService {
         marginPct,
         deliveryCount,
         avgRevenuePerDel,
-        avgCostPerDel: Math.round(avgCostPerDel * 100) / 100,
+        avgCostPerDel: Money.round(avgCostPerDel),
         revenueDelta,
         targetMarginPct: cfg.targetMarginPct,
         marginHealth: marginPct >= cfg.targetMarginPct ? 'HEALTHY'
@@ -173,7 +174,7 @@ export class CommercialAnalyticsService {
         revenue: Math.round(c.revenue),
         deliveryCount: c.deliveryCount,
         avgRevenuePerDel: c.deliveryCount > 0
-          ? Math.round((c.revenue / c.deliveryCount) * 100) / 100 : 0,
+          ? Money.round(c.revenue / c.deliveryCount) : 0,
         estimatedCost: Math.round(cost),
         grossProfit: Math.round(profit),
         marginPct: margin,
@@ -265,7 +266,7 @@ export class CommercialAnalyticsService {
         deliveries: l.count,
         revenue: Math.round(l.revenue),
         avgRevenue: l.count > 0
-          ? Math.round((l.revenue / l.count) * 100) / 100 : 0,
+          ? Money.round(l.revenue / l.count) : 0,
         estimatedCost: Math.round(cost),
         grossProfit: Math.round(profit),
         marginPct: margin,
