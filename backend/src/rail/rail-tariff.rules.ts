@@ -17,6 +17,10 @@ import { Money } from '../common/money.util';
  */
 
 import { commercialThreshold } from './catalog/commercial-thresholds.catalog';
+import { CHARGING_BASE_LABEL, QUANTITY_UNIT, ChargingBase, computeQuantities } from './catalog/charging-bases';
+import {
+  RateResolution, TariffRateCard, componentAmount, quantityForComponent, rateUnitFor, resolveRateCard,
+} from './catalog/tariff-rate-cards';
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -209,7 +213,19 @@ export function deriveHold(readings: readonly ReadingLike[]): HoldDecision {
 
 // ── the calculator ───────────────────────────────────────────────────────────
 
-export type TariffLineKind = 'GTK_LOADED' | 'GTK_EMPTY' | 'TRACTION_ENERGY' | 'ANCILLARY' | 'OVERLOAD_PENALTY';
+/** Which TariffLine kind each charging base produces. */
+const LINE_KIND: Record<ChargingBase, TariffLineKind> = {
+  TRAIN_KM: 'TRAIN_KM', PATH_KM: 'PATH_KM', GTK: 'GTK_LOADED', NTK: 'NTK', AXLE_KM: 'AXLE_KM', FLAT: 'FLAT',
+};
+
+/**
+ * The GTK kinds are the legacy per-corridor model. The rest are charging bases: a network
+ * publishes whichever it uses, and the calculator charges those and only those.
+ */
+export type TariffLineKind =
+  | 'GTK_LOADED' | 'GTK_EMPTY'
+  | 'TRAIN_KM' | 'PATH_KM' | 'NTK' | 'AXLE_KM' | 'FLAT'
+  | 'TRACTION_ENERGY' | 'ANCILLARY' | 'OVERLOAD_PENALTY';
 export type TariffStatus = 'PRICED' | 'INCOMPLETE' | 'BLOCKED';
 
 export interface TariffLine {
@@ -269,6 +285,20 @@ export interface TariffRequest {
   corridorCode: string | null;
   financialYear: string;
   distanceKm: number;
+  /** Which infrastructure manager's tariff applies. Defaults to 'transnet'. */
+  networkCode?: string;
+  /** The corridor AS TYPED on the consignment, used to explain a corridor that resolved to none. */
+  corridorText?: string | null;
+  /**
+   * The traffic category as the network publishes it (Table 17 prints commodity groups such
+   * as "OreCor (Iron Ore)"). Transnet charges by commodity, not by corridor, so this is how
+   * most Transnet traffic resolves to a rate.
+   */
+  commodityCategory?: string | null;
+  /** ISO-4217 the calculation is raised in. Defaults to ZAR. Never converted. */
+  currency?: string;
+  /** How many trains this consignment ran as. Defaults to 1. */
+  trainCount?: number;
   includeEmptyReturn?: boolean;
   /** Opt in to escalating the latest earlier VERIFIED year's rates by the brief's percentages. */
   allowEscalation?: boolean;
@@ -284,6 +314,12 @@ export interface TariffContext {
   correctedOverloads?: readonly { wagonNumber: string; excessTonnes: number }[];
   schedules: readonly ScheduleLike[];
   ancillaryCatalog: readonly AncillaryLike[];
+  /**
+   * Published rate cards (see `catalog/tariff-rate-cards.ts`). When these are supplied the
+   * calculator prices from the network's own published charging bases; when they are not it
+   * falls back to the legacy per-corridor GTK schedule.
+   */
+  rateCards?: readonly TariffRateCard[];
 }
 
 export interface TariffResult {
@@ -303,7 +339,14 @@ export interface TariffResult {
   lines: TariffLine[];
   /** Sum of the PRICED lines only. Not an invoice total unless status is PRICED. */
   subtotalZar: number;
-  currency: 'ZAR';
+  /**
+   * The currency every amount on this result is denominated in. Never converted: a rate card
+   * published in another currency is refused rather than exchanged at a rate this system
+   * does not hold.
+   */
+  currency: string;
+  /** How the rate was resolved, so an invoice can say where its rate came from. */
+  rateResolution?: RateResolution | null;
   /** What stops this being a priced total: the reasons nothing could be priced (BLOCKED) or the unpriced lines (INCOMPLETE). */
   blockers: string[];
   warnings: string[];
@@ -350,8 +393,9 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
   const warnings: string[] = [];
   const lines: TariffLine[] = [];
   const hold = deriveHold(ctx.latestReadings);
+  const currency = String(req.currency ?? 'ZAR').toUpperCase();
   const base = {
-    formulaVersion: TARIFF_FORMULA_VERSION, corridorCode: req.corridorCode, financialYear: req.financialYear, currency: 'ZAR' as const, hold,
+    formulaVersion: TARIFF_FORMULA_VERSION, corridorCode: req.corridorCode, financialYear: req.financialYear, currency, hold,
   };
 
   // ── weights: a weighbridge reading beats the nominal tare + loaded ─────────
@@ -364,17 +408,53 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
     return { wagonNumber: w.wagonNumber, source: 'UNKNOWN' as const, grossTonnes: null, tareTonnes: tare };
   });
 
-  // ── core inputs: without these nothing can be priced ───────────────────────
-  if (!req.corridorCode) blockers.push('The consignment\'s corridor does not match a corridor in the catalogue, so no rate can be selected. Set it to a catalogue corridor.');
-  if (!isPos(req.distanceKm)) blockers.push('A distance in km is required: corridor lengths were not supplied, so GTK cannot be worked out without it.');
+  // ── core inputs ───────────────────────────────────────────────────────────
+  /**
+   * Which published tariff applies. A rate card is what a network actually publishes
+   * (Transnet: by commodity; most European IMs: by route). The per-corridor GTK schedule is
+   * the legacy model and is used only when no rate card is supplied, so existing behaviour
+   * is untouched.
+   */
+  const useCards = (ctx.rateCards?.length ?? 0) > 0;
+
+  if (!isPos(req.distanceKm)) blockers.push('A distance in km is required: corridor lengths were not supplied, so no distance-based charge can be worked out without it.');
   if (parseFinancialYear(req.financialYear) === null) blockers.push(`"${req.financialYear}" is not a financial year (expected e.g. 2026/27).`);
-  if (ctx.wagons.length === 0) blockers.push('The consignment has no wagons registered, so the weight of the train is unknown.');
-  const unknown = weightSources.filter((w) => w.source === 'UNKNOWN').map((w) => w.wagonNumber);
-  if (unknown.length) blockers.push(`Weight unknown for wagon(s) ${unknown.join(', ')}: register tare and loaded tonnes, or record a weighbridge reading.`);
+
+  if (!useCards) {
+    // The legacy model charges on gross tonne-kilometres, so it needs a corridor and a train.
+    if (!req.corridorCode) blockers.push('The consignment\'s corridor does not match a corridor in the catalogue, so no rate can be selected. Set it to a catalogue corridor.');
+    if (ctx.wagons.length === 0) blockers.push('The consignment has no wagons registered, so the weight of the train is unknown.');
+    const unknown = weightSources.filter((w) => w.source === 'UNKNOWN').map((w) => w.wagonNumber);
+    if (unknown.length) blockers.push(`Weight unknown for wagon(s) ${unknown.join(', ')}: register tare and loaded tonnes, or record a weighbridge reading.`);
+  }
 
   let schedule: ScheduleLike | null = null;
+  let card: TariffRateCard | null = null;
+  let resolution: RateResolution | null = null;
   let years = 0;
-  if (req.corridorCode && parseFinancialYear(req.financialYear) !== null) {
+
+  if (useCards) {
+    const picked = resolveRateCard(ctx.rateCards as readonly TariffRateCard[], {
+      networkCode: req.networkCode ?? 'transnet',
+      financialYear: req.financialYear,
+      corridorCode: req.corridorCode,
+      commodityCategory: req.commodityCategory,
+      allowEscalation: !!req.allowEscalation,
+    });
+    card = picked.card;
+    years = picked.years;
+    resolution = picked.resolution;
+    if (picked.blocker) blockers.push(picked.blocker);
+    // A corridor was named but matched nothing — say so, rather than a generic "no rate".
+    if (!req.corridorCode && String(req.corridorText ?? '').trim()) {
+      blockers.push(`The consignment's corridor "${req.corridorText}" does not match a corridor in the catalogue, so no corridor rate can be selected. Set it to a catalogue corridor, or name the network's traffic category.`);
+    }
+    // Never mix currencies and never invent an exchange rate.
+    if (card && String(card.currency).toUpperCase() !== currency) {
+      blockers.push(`The published rate card for this traffic is denominated in ${card.currency} but this calculation is in ${currency}. No exchange rate is loaded in this system and none is inferred, so the two are not converted: raise this calculation in ${card.currency}, or load an agreed exchange rate first.`);
+      card = null;
+    }
+  } else if (req.corridorCode && parseFinancialYear(req.financialYear) !== null) {
     const picked = pickSchedule(ctx.schedules, req.corridorCode, req.financialYear, !!req.allowEscalation);
     schedule = picked.schedule;
     years = picked.years;
@@ -390,30 +470,85 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
   }
 
   const blocked: TariffResult = {
-    ...base, status: 'BLOCKED', scheduleId: schedule?.id ?? null, scheduleFinancialYear: schedule?.financialYear ?? null, escalationYears: years,
+    ...base, status: 'BLOCKED', scheduleId: schedule?.id ?? card?.id ?? null,
+    scheduleFinancialYear: schedule?.financialYear ?? card?.financialYear ?? null,
+    escalationYears: years, rateResolution: resolution,
     grossTonnesLoaded: null, grossTonnesEmpty: null, gtkLoaded: null, gtkEmpty: null, lines: [], subtotalZar: 0, blockers, warnings, weightSources,
   };
-  if (blockers.length || !schedule) return blocked;
+  if (blockers.length || (!schedule && !card)) return blocked;
 
-  // ── weights → GTK ──────────────────────────────────────────────────────────
+  // ── weights → quantities for every charging base ──────────────────────────
   const grossTonnesLoaded = round3(weightSources.reduce((n, w) => n + (w.grossTonnes ?? 0), 0));
   const gtkLoaded = round3(grossTonnesLoaded * req.distanceKm);
   const weighed = weightSources.filter((w) => w.source === 'WEIGHBRIDGE').length;
   const massSource = weighed === weightSources.length ? 'weighbridge' : weighed === 0 ? 'registered tare + loaded' : 'weighbridge and registered';
-  const scheduleEvidence = `schedule ${schedule.corridorCode} ${schedule.financialYear}${schedule.sourceRef ? ` (${schedule.sourceRef})` : ''}`;
+  const allMassesKnown = weightSources.length > 0 && weightSources.every((w) => w.grossTonnes !== null && w.tareTonnes !== null);
+  const netTonnesLoaded = allMassesKnown
+    ? round3(weightSources.reduce((n, w) => n + ((w.grossTonnes as number) - (w.tareTonnes as number)), 0))
+    : null;
+
+  /** The charges that ride along with access. Present on both a rate card and a schedule. */
+  const aux = (card ?? (schedule as ScheduleLike)) as ScheduleLike;
+  const scheduleEvidence = card
+    ? `rate card ${card.id}${card.sourceRef ? ` (${card.sourceRef})` : ''}`
+    : `schedule ${aux.corridorCode} ${aux.financialYear}${aux.sourceRef ? ` (${aux.sourceRef})` : ''}`;
 
   const infraPct = RAIL_TARIFF_CONSTANTS.infrastructureEscalationPct;
-  const escEvidence = years > 0 ? [`escalated ${years} year(s) from ${schedule.financialYear} at ${infraPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}`] : [];
-  if (years > 0) warnings.push(`Rates are from the ${schedule.financialYear} schedule, escalated ${years} year(s) by ${infraPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}.`);
+  const escEvidence = years > 0 ? [`escalated ${years} year(s) from ${aux.financialYear} at ${infraPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}`] : [];
+  if (years > 0) warnings.push(`Rates are from the ${aux.financialYear} published tariff, escalated ${years} year(s) by ${infraPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}.`);
   if (weighed > 0 && weighed < weightSources.length) warnings.push(`${weighed} of ${weightSources.length} wagon(s) use a weighbridge mass; the rest use tare + loaded as registered.`);
 
-  const loadedRate = escalate(schedule.loadedCentsPerGtk as number, infraPct, years);
-  lines.push({
-    kind: 'GTK_LOADED', description: `Infrastructure access — loaded train (${req.corridorCode})`, quantity: gtkLoaded, unit: 'GTK', rate: loadedRate, rateUnit: 'c/GTK',
-    amountZar: amount(loadedRate / 100, gtkLoaded),
-    basis: `${grossTonnesLoaded} gross t (${massSource} masses) × ${req.distanceKm} km = ${gtkLoaded} GTK × ${round3(loadedRate)} c/GTK`,
-    evidence: [scheduleEvidence, ...escEvidence],
+  /** Every quantity a charging base could consume. null where it cannot be worked out. */
+  const quantities = computeQuantities({
+    distanceKm: req.distanceKm,
+    grossTonnes: grossTonnesLoaded > 0 ? grossTonnesLoaded : null,
+    netTonnes: netTonnesLoaded !== null && netTonnesLoaded > 0 ? netTonnesLoaded : null,
+    trainCount: req.trainCount,
   });
+
+  if (card) {
+    // ── the network's own published charging bases ────────────────────────────
+    // Every base the card publishes is charged. A base it does NOT publish is skipped
+    // outright; a base it publishes whose quantity cannot be worked out is left UNPRICED,
+    // never charged at zero. This is what closes gap C-05: Transnet's two-part tariff
+    // charges train-km AND GTK, and the three categories Table 17 prints as 0.0 c/GTK are
+    // carried entirely by their train-km component.
+    for (const comp of card.components) {
+      if (comp.rate === null) continue;
+      const q = quantityForComponent(comp.base, quantities);
+      const rate = escalate(comp.rate, infraPct, years);
+      const unit = QUANTITY_UNIT[comp.base];
+      const rateUnit = rateUnitFor(comp.base, comp.scale, card.currency);
+      const label = CHARGING_BASE_LABEL[comp.base];
+      const trains = isPos(req.trainCount) ? Math.floor(req.trainCount) : 1;
+      const quantityWords = comp.base === 'FLAT'
+        ? `${trains} train${trains === 1 ? '' : 's'}`
+        : comp.base === 'GTK' || comp.base === 'NTK'
+          ? `${comp.base === 'GTK' ? grossTonnesLoaded : netTonnesLoaded} ${comp.base === 'GTK' ? 'gross' : 'net'} t (${massSource} masses) × ${req.distanceKm} km = ${q} ${unit}`
+          : `${req.distanceKm} km × ${trains} train${trains === 1 ? '' : 's'} = ${q} ${unit}`;
+      lines.push({
+        kind: LINE_KIND[comp.base],
+        description: card.lineDescription ?? `${label} access charge`,
+        quantity: q, unit, rate: round3(rate), rateUnit,
+        amountZar: q === null ? null : componentAmount(rate, comp.scale, q),
+        basis: q === null
+          ? `${label}: the quantity cannot be worked out from what was supplied (${massSource} masses), so this line is not priced.`
+          : `${quantityWords} × ${round3(rate)} ${rateUnit}`,
+        evidence: [scheduleEvidence, ...escEvidence],
+      });
+      if (q === null) warnings.push(`${label} is published at ${round3(rate)} ${rateUnit} but its quantity cannot be worked out from this consignment, so it is not priced.`);
+    }
+    if (years > 0) warnings.push(`Every component was escalated by the infrastructure rate of ${infraPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}, because the published tariff states no separate escalation per charging base.`);
+  } else {
+    // ── legacy per-corridor GTK model (unchanged) ─────────────────────────────
+    const loadedRate = escalate(aux.loadedCentsPerGtk as number, infraPct, years);
+    lines.push({
+      kind: 'GTK_LOADED', description: `Infrastructure access — loaded train (${req.corridorCode})`, quantity: gtkLoaded, unit: 'GTK', rate: loadedRate, rateUnit: 'c/GTK',
+      amountZar: amount(loadedRate / 100, gtkLoaded),
+      basis: `${grossTonnesLoaded} gross t (${massSource} masses) × ${req.distanceKm} km = ${gtkLoaded} GTK × ${round3(loadedRate)} c/GTK`,
+      evidence: [scheduleEvidence, ...escEvidence],
+    });
+  }
 
   // ── empty return (opt-in) ──────────────────────────────────────────────────
   let grossTonnesEmpty: number | null = null;
@@ -428,12 +563,12 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
     } else {
       grossTonnesEmpty = round3((tares as number[]).reduce((n, t) => n + t, 0));
       gtkEmpty = round3(grossTonnesEmpty * req.distanceKm);
-      const emptyRate = isPos(schedule.emptyCentsPerGtk) ? escalate(schedule.emptyCentsPerGtk, infraPct, years) : null;
+      const emptyRate = isPos(aux.emptyCentsPerGtk) ? escalate(aux.emptyCentsPerGtk, infraPct, years) : null;
       lines.push({
         kind: 'GTK_EMPTY', description: `Infrastructure access — empty return (${req.corridorCode})`, quantity: gtkEmpty, unit: 'GTK', rate: emptyRate, rateUnit: 'c/GTK',
         amountZar: emptyRate === null ? null : amount(emptyRate / 100, gtkEmpty),
         basis: emptyRate === null
-          ? `${grossTonnesEmpty} t tare × ${req.distanceKm} km = ${gtkEmpty} GTK; no empty-return rate is loaded for ${schedule.corridorCode} ${schedule.financialYear}, so it is not priced.`
+          ? `${grossTonnesEmpty} t tare × ${req.distanceKm} km = ${gtkEmpty} GTK; no empty-return rate is loaded for ${aux.corridorCode} ${aux.financialYear}, so it is not priced.`
           : `${grossTonnesEmpty} t tare × ${req.distanceKm} km = ${gtkEmpty} GTK × ${round3(emptyRate)} c/GTK`,
         evidence: emptyRate === null ? [] : [scheduleEvidence, ...escEvidence],
       });
@@ -445,10 +580,10 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
   if (t) {
     if (t.type === 'DIESEL') {
       const given = isPos(t.litres) ? t.litres : null;
-      const factor = isPos(schedule.dieselLitresPer1000Gtk) ? schedule.dieselLitresPer1000Gtk : null;
+      const factor = isPos(aux.dieselLitresPer1000Gtk) ? aux.dieselLitresPer1000Gtk : null;
       const litres = given ?? (factor !== null ? round3((factor * gtkLoaded) / 1000) : null);
       const explicitPrice = isPos(t.pricePerUnitZar) ? t.pricePerUnitZar : null;
-      const schedulePrice = isPos(schedule.dieselPricePerLitreZar) ? schedule.dieselPricePerLitreZar : null;
+      const schedulePrice = isPos(aux.dieselPricePerLitreZar) ? aux.dieselPricePerLitreZar : null;
       const price = explicitPrice ?? schedulePrice ?? RAIL_TARIFF_CONSTANTS.dieselBasePricePerLitreZar;
       const priceEvidence = explicitPrice !== null ? ['price entered with the request'] : schedulePrice !== null ? [scheduleEvidence]
         : [`diesel BASE price R${RAIL_TARIFF_CONSTANTS.dieselBasePricePerLitreZar.toFixed(2)}/L ${TARIFF_CONSTANT_SOURCE}; a base price, not today's pump price`];
@@ -465,13 +600,13 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
       });
     } else {
       const given = isPos(t.kWh) ? t.kWh : null;
-      const factor = isPos(schedule.electricKwhPer1000Gtk) ? schedule.electricKwhPer1000Gtk : null;
+      const factor = isPos(aux.electricKwhPer1000Gtk) ? aux.electricKwhPer1000Gtk : null;
       const kWh = given ?? (factor !== null ? round3((factor * gtkLoaded) / 1000) : null);
       const explicitPrice = isPos(t.pricePerUnitZar) ? t.pricePerUnitZar : null;
       const elecPct = RAIL_TARIFF_CONSTANTS.electricityEscalationPct;
-      const schedulePrice = isPos(schedule.electricityPricePerKwhZar) ? escalate(schedule.electricityPricePerKwhZar, elecPct, years) : null;
+      const schedulePrice = isPos(aux.electricityPricePerKwhZar) ? escalate(aux.electricityPricePerKwhZar, elecPct, years) : null;
       const price = explicitPrice ?? schedulePrice;
-      if (schedulePrice !== null && explicitPrice === null && years > 0) warnings.push(`The electricity price is from the ${schedule.financialYear} schedule, escalated ${years} year(s) by ${elecPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}.`);
+      if (schedulePrice !== null && explicitPrice === null && years > 0) warnings.push(`The electricity price is from the ${aux.financialYear} schedule, escalated ${years} year(s) by ${elecPct.toFixed(2)}% a year ${TARIFF_CONSTANT_SOURCE}.`);
       lines.push({
         kind: 'TRACTION_ENERGY', description: 'Traction energy — electric', quantity: kWh, unit: 'kWh', rate: price, rateUnit: 'ZAR/kWh',
         amountZar: kWh === null || price === null ? null : amount(price, kWh),
@@ -502,7 +637,7 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
 
   // ── weighbridge overload: a penalty line for every wagon that is STILL overloaded ──
   if (hold.held) {
-    const rate = isNonNeg(schedule.overloadPenaltyPerTonneZar) ? schedule.overloadPenaltyPerTonneZar : null;
+    const rate = isNonNeg(aux.overloadPenaltyPerTonneZar) ? aux.overloadPenaltyPerTonneZar : null;
     lines.push({
       kind: 'OVERLOAD_PENALTY', description: 'Weighbridge overload penalty', quantity: hold.totalExcessTonnes, unit: 't over the limit', rate, rateUnit: rate === null ? null : 'ZAR/t',
       amountZar: rate === null ? null : amount(rate, hold.totalExcessTonnes),
@@ -511,7 +646,7 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
         : `${hold.totalExcessTonnes} t over the limit × R${rate}/t (${hold.wagons.map((w) => w.wagonNumber).join(', ')})`,
       evidence: ['weighbridge overload rule [BRIEF]: actual tonnes > max axle load × axles', ...(rate === null ? [] : [scheduleEvidence])],
     });
-    if (years > 0 && rate !== null) warnings.push(`The overload penalty rate is from the ${schedule.financialYear} schedule and was NOT escalated.`);
+    if (years > 0 && rate !== null) warnings.push(`The overload penalty rate is from the ${aux.financialYear} schedule and was NOT escalated.`);
   }
   for (const c of ctx.correctedOverloads ?? []) {
     warnings.push(`${c.wagonNumber} was recorded ${c.excessTonnes} t over its limit and later re-weighed within it, so no penalty line was added. Confirm whether the tariff charges an overload that was corrected before departure.`);
@@ -520,7 +655,8 @@ export function calculateTariff(req: TariffRequest, ctx: TariffContext): TariffR
   const subtotalZar = Money.sum(lines.map((l) => l.amountZar ?? 0));
   const pending = lines.filter((l) => l.amountZar === null).map((l) => `${l.description}${l.code ? ` (${l.code})` : ''}: ${l.basis}`);
   return {
-    ...base, status: pending.length ? 'INCOMPLETE' : 'PRICED', scheduleId: schedule.id, scheduleFinancialYear: schedule.financialYear, escalationYears: years,
+    ...base, status: pending.length ? 'INCOMPLETE' : 'PRICED', scheduleId: schedule?.id ?? (card as TariffRateCard).id,
+    scheduleFinancialYear: schedule?.financialYear ?? (card as TariffRateCard).financialYear, escalationYears: years, rateResolution: resolution,
     grossTonnesLoaded, grossTonnesEmpty, gtkLoaded, gtkEmpty, lines, subtotalZar, blockers: pending, warnings, weightSources,
   };
 }

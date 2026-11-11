@@ -3,10 +3,19 @@ import { FINANCIAL_YEAR_PATTERN, parseFinancialYear } from '../rail-tariff.rules
 /**
  * Tariff schedules (c/GTK and the related rates), one entry per corridor and financial year.
  *
- * THIS CATALOGUE IS DELIBERATELY EMPTY. The Network Statement's tariff tables (Section 5) were never supplied; the brief
- * gives only two escalation percentages and a diesel BASE price (those live in `rail-tariff.rules.ts`, tagged [BRIEF]).
- * No rate has been invented, estimated or "typical-valued" — a corridor with no entry here cannot be priced, and the
- * calculator says so instead of defaulting.
+ * THIS CATALOGUE IS EMPTY, AND THAT IS CORRECT — but the reason changed on 2026-11-11.
+ *
+ * It is NOT that no tariff was supplied. Network Statement V4 Chapter 5 WAS supplied and its
+ * Table 17 rates are live (see `access-tariffs.catalog.ts` and `tariff-rate-cards.ts`). The
+ * reason this catalogue is empty is granularity: Table 17 publishes rates by COMMODITY, and
+ * only two of its ten categories name a corridor. A per-CORRIDOR rate would need a
+ * commodity-to-corridor mapping that no supplied document gives, and that mapping is never
+ * inferred — guessing it would put a wrong access fee on a real invoice.
+ *
+ * Transnet traffic therefore prices from the commodity rate card. This catalogue remains for
+ * networks that DO publish per-route rates (most European infrastructure managers do), and it
+ * takes precedence when it is populated, because a corridor rate is more specific than a
+ * commodity rate.
  *
  * To load a rate: add an entry below, citing the published tariff in `sourceRef`, set `dataStatus: 'VERIFIED'`, get it
  * code-reviewed, then run the gated seeder (`node prisma/seed-rail-reference.js --plan`, then `--apply`). The validator

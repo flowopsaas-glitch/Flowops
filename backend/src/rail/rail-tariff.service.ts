@@ -8,6 +8,7 @@ import {
 } from './rail-audit';
 import { InvoiceDraftDto, TariffRequestDto } from './dto/rail-tariff.dto';
 import { ANCILLARY_SERVICE_CATALOG } from './catalog/ancillary-services.catalog';
+import { TRANSNET_TABLE_17_RATE_CARDS, scheduleToRateCard } from './catalog/tariff-rate-cards';
 import { CORRIDOR_CATALOG } from './catalog/corridors.catalog';
 import { CorridorIdentity, resolveCorridor } from './rail-reference';
 import {
@@ -196,7 +197,10 @@ export class RailTariffService {
     const ancillaryCatalog = requestedAncillary.length ? await this.ancillaryRows(companyId) : [];
 
     const request: TariffRequest = {
-      corridorCode: corridor?.code ?? null, financialYear, distanceKm: dto.distanceKm, includeEmptyReturn: !!dto.includeEmptyReturn, allowEscalation: !!dto.allowEscalation,
+      corridorCode: corridor?.code ?? null, corridorText: consignment.corridor ?? null,
+      financialYear, distanceKm: dto.distanceKm,
+      commodityCategory: dto.commodityCategory?.trim() || null,
+      includeEmptyReturn: !!dto.includeEmptyReturn, allowEscalation: !!dto.allowEscalation,
       traction: dto.traction ? { type: dto.traction.type, litres: dto.traction.litres ?? null, kWh: dto.traction.kWh ?? null, pricePerUnitZar: dto.traction.pricePerUnitZar ?? null } : null,
       ancillary: requestedAncillary,
     };
@@ -205,6 +209,14 @@ export class RailTariffService {
       latestReadings: latest,
       correctedOverloads: Array.from(corrected, ([wagonNumber, excessTonnes]) => ({ wagonNumber, excessTonnes })),
       schedules: schedules as unknown as ScheduleLike[],
+      // The published tariff, both models at once. A corridor schedule becomes a CORRIDOR
+      // card and outranks the commodity cards, so any per-route rate already loaded keeps
+      // being used; Transnet traffic, which publishes no corridor rates, falls through to
+      // the Table 17 commodity cards rather than sitting BLOCKED on an empty catalogue.
+      rateCards: [
+        ...(schedules as unknown as Parameters<typeof scheduleToRateCard>[0][]).map(scheduleToRateCard),
+        ...TRANSNET_TABLE_17_RATE_CARDS,
+      ],
       ancillaryCatalog,
     });
     return { consignment, corridor, financialYear, request, result };

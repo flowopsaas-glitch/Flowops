@@ -73,7 +73,7 @@ describe('entitlement', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('status — what can be priced today', () => {
-  it('with no rate loaded (today\'s truth) NO corridor can be priced, and it says so', async () => {
+  it('no CORRIDOR has a rate loaded (Transnet publishes by commodity, not by corridor), and it says so', async () => {
     const h = make();
     const s = await h.svc.status('A');
     expect(s.summary).toMatchObject({ corridors: 6, withVerifiedRate: 0 });
@@ -134,7 +134,7 @@ describe('preview', () => {
     const out = await h.svc.preview('A', body(c.id) as any);
     expect(out.result.status).toBe('BLOCKED');
     expect(out.result.lines).toEqual([]);
-    expect(out.result.blockers.join(' ')).toMatch(/No loaded c\/GTK rate exists for COR-ORE.*never defaulted/);
+    expect(out.result.blockers.join(' ')).toMatch(/No rate is published for corridor COR-ORE.*never inferred/);
     expect(snapshot(h.calcs, h.drafts)).toBe(before);
     expect(h.audit.record).not.toHaveBeenCalled();
   });
@@ -148,6 +148,34 @@ describe('preview', () => {
     expect(out.corridor).toEqual({ code: 'COR-ORE', name: 'Ore' });
     expect(out.financialYear).toBe('2026/27');
     expect(out.constants.source).toMatch(/\[BRIEF\]/);
+  });
+
+  it('prices Transnet traffic from the published Table 17 commodity rate when NO corridor rate is loaded', async () => {
+    // The point of the rate-card model. Table 17 publishes rates by COMMODITY and ties only
+    // two of its ten categories to a corridor, so a consignment used to sit BLOCKED while
+    // the real published rate was loaded in the catalogue beside it.
+    const h = make(); // deliberately no schedules at all
+    const c = h.seedConsignment();
+    const out = await h.svc.preview('A', body(c.id, { commodityCategory: 'OreCor (Iron Ore)' }) as any);
+
+    expect(out.result.status).toBe('PRICED');
+    expect(out.result.rateResolution).toBe('COMMODITY');
+
+    const byKind = new Map(out.result.lines.map((l) => [l.kind, l]));
+    // §5.2.3: both halves of the two-part tariff are charged.
+    expect(byKind.get('TRAIN_KM')!.amountZar).toBe(68_000);    // 100 train-km × R680
+    expect(byKind.get('GTK_LOADED')!.amountZar).toBe(573.48);  // 16,200 GTK × 3.54 c
+    expect(out.result.subtotalZar).toBe(68_573.48);
+  });
+
+  it('does not price passenger traffic at zero just because Table 17 prints 0.0 c/GTK', async () => {
+    // The under-charging bug this closes: metro, passenger and loose locomotives carry a
+    // published GTK rate of 0.0 and are charged entirely on the train-km component.
+    const h = make();
+    const c = h.seedConsignment();
+    const out = await h.svc.preview('A', body(c.id, { commodityCategory: 'Passenger Trains > 12 Wagons' }) as any);
+    expect(out.result.status).toBe('PRICED');
+    expect(out.result.subtotalZar).toBe(6_000); // 100 train-km × R60, plus R0 GTK
   });
 
   it('the financial year comes from the planned departure (South African calendar), unless one is given', async () => {
@@ -252,7 +280,7 @@ describe('calculate (saving)', () => {
     const h = make();
     const c = h.seedConsignment();
     const before = snapshot(h.calcs);
-    await expect(h.svc.calculate('A', body(c.id) as any, MANAGER)).rejects.toThrow(/This consignment cannot be priced: .*No loaded c\/GTK rate exists for COR-ORE/);
+    await expect(h.svc.calculate('A', body(c.id) as any, MANAGER)).rejects.toThrow(/This consignment cannot be priced: .*No rate is published for corridor COR-ORE/);
     await expect(h.svc.calculate('A', body(c.id) as any, MANAGER)).rejects.toBeInstanceOf(BadRequestException);
     expect(snapshot(h.calcs)).toBe(before);
     expect(h.audit.record).not.toHaveBeenCalled();
