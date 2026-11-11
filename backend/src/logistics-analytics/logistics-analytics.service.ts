@@ -115,7 +115,12 @@ export class LogisticsAnalyticsService {
       where: { companyId, status: 'PAID', paidAt: { gte: start, lt: end } },
       _sum: { total: true },
     });
-    const revenue = revenueAgg._sum.total || 0;
+    // A SQL SUM over a Float column of rands comes back with binary-float
+    // noise (0.1 + 0.2 -> 0.30000000000000004). costPerDelivery was already
+    // rounded on the next line; revenue and codCollected were stored raw, so
+    // the same period could show R 3070.0000000000005 on one card and a clean
+    // R 3070 on the one beside it.
+    const revenue = Money.round(revenueAgg._sum.total || 0);
 
     const costPerDelivery = totalDeliveries > 0
       ? Money.round(revenue / totalDeliveries)
@@ -125,7 +130,7 @@ export class LogisticsAnalyticsService {
       where: { companyId, codCollected: true, codCollectedAt: { gte: start, lt: end } },
       _sum: { codAmount: true },
     });
-    const codCollected = codAgg._sum.codAmount || 0;
+    const codCollected = Money.round(codAgg._sum.codAmount || 0);
 
     // ── Fleet KPIs ──────────────────────────────────────────────────────
     const activeDrivers = await this.prisma.driver.count({
@@ -173,6 +178,34 @@ export class LogisticsAnalyticsService {
       create: { companyId, period, ...data },
       update: data,
     });
+  }
+
+  /**
+   * Keep only a payload shaped like the insights the dashboard renders.
+   *
+   * Anything else — a bare string, an array, an object whose `trends` is an
+   * object rather than a list — is dropped rather than stored. Returning null
+   * is the honest outcome: the screen shows no insights, instead of breaking on
+   * a shape the frontend never agreed to.
+   */
+  private toInsights(parsed: any): { summary: string | null; trends: string[]; recommendations: string[] } | null {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+    // Field by field, not all or nothing. A model that gets `trends` wrong but
+    // returns a good summary should still surface that summary; dropping the
+    // whole payload for one bad field loses a usable answer. So a malformed
+    // field becomes its empty value, and only a payload that is not an object
+    // at all is rejected outright.
+    const strings = (v: any): string[] => {
+      if (!Array.isArray(v)) return [];
+      return v.filter((x) => typeof x === 'string');
+    };
+
+    return {
+      summary: typeof parsed.summary === 'string' ? parsed.summary : null,
+      trends: strings(parsed.trends),
+      recommendations: strings(parsed.recommendations),
+    };
   }
 
   /**
@@ -237,7 +270,7 @@ Return ONLY valid JSON in this format:
 
       // Parse the JSON response from the AI
       const parsed = JSON.parse(content.trim());
-      return parsed;
+      return this.toInsights(parsed);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(`Failed to generate AI logistics insights: ${msg}`);
