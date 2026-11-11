@@ -6,22 +6,47 @@ import { StartTrackingDto, UpdateLocationDto, StopCompletedDto } from './dto/liv
 export class LiveTrackingService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Start a tracking session, ending any session already running for the driver.
+   *
+   * The rule is one active session per driver, and it has to be enforced by the
+   * transaction, not by ordering two statements. Ending the old session and
+   * creating the new one used to be two independent calls: two overlapping
+   * starts both ended the old row and both inserted a new one, leaving the
+   * driver live twice — two rows accumulating distance and a dispatch board
+   * showing the same driver in two places.
+   *
+   * Inside withTenant they are one unit of work, and the driver's other sessions
+   * cannot start one of their own in between.
+   */
   async startSession(companyId: string, dto: StartTrackingDto) {
-    // End any existing active session for this driver
-    await this.prisma.liveTrackingSession.updateMany({
-      where: { companyId, driverId: dto.driverId, isActive: true },
-      data: { isActive: false, endedAt: new Date() },
-    });
+    return this.prisma.withTenant(companyId, async (tx) => {
+      // A transaction on its own is not enough here. Two concurrent transactions
+      // can both run the updateMany, both see nothing active, and both insert —
+      // the default isolation level does not make the pair atomic against each
+      // other. Serialise on the driver first.
+      //
+      // The durable fix is a partial unique index on (companyId, driverId) WHERE
+      // is_active, which would make the second insert fail outright. That needs a
+      // migration and a check for existing duplicates first; flagged, not done
+      // blind. The lock gives the same guarantee today.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`live-track:${companyId}:${dto.driverId}`}))`;
 
-    return this.prisma.liveTrackingSession.create({
-      data: {
-        companyId,
-        driverId: dto.driverId,
-        vehicleId: dto.vehicleId,
-        manifestId: dto.manifestId,
-        isActive: true,
-        totalStops: dto.totalStops || 0,
-      },
+      await tx.liveTrackingSession.updateMany({
+        where: { companyId, driverId: dto.driverId, isActive: true },
+        data: { isActive: false, endedAt: new Date() },
+      });
+
+      return tx.liveTrackingSession.create({
+        data: {
+          companyId,
+          driverId: dto.driverId,
+          vehicleId: dto.vehicleId,
+          manifestId: dto.manifestId,
+          isActive: true,
+          totalStops: dto.totalStops || 0,
+        },
+      });
     });
   }
 
