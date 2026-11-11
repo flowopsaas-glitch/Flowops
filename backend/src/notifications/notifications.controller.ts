@@ -18,12 +18,12 @@ export class NotificationsController {
 
   @Patch('notifications/:id/read')
   markRead(@Param('id') id: string, @CurrentUser() u: any) {
-    return this.svc.markRead(id, u.companyId);
+    return this.svc.markRead(id, u.companyId, u.id);
   }
 
   @Post('notifications/mark-all-read')
   markAllRead(@CurrentUser() u: any) {
-    return this.svc.markAllRead(u.companyId);
+    return this.svc.markAllRead(u.companyId, u.id);
   }
 
   @Get('me/notification-preferences')
