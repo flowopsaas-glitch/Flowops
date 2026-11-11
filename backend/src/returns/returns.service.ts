@@ -304,7 +304,7 @@ export class ReturnsService {
     const data: any = {};
     // The statuses this action is legal from. Kept alongside `data` because the
     // write below has to claim on it, not just the check above.
-    let allowed: string[] = [];
+    let allowed: ReturnStatus[] = [];
 
     switch (action) {
       case 'approve':
