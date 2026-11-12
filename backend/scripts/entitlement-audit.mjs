@@ -29,6 +29,7 @@ const ROOT = join(process.cwd(), "src");
 /** Feature → backend controllers that must declare it. */
 export const EXPECTED = {
   "warehouse-management/warehouse.controller.ts": "warehouseManagement",
+  "dock/dock.controller.ts": "warehouseManagement",
   "process-control/process-control.controller.ts": "warehouseManagement",
   "product-master/product-master.controller.ts": "warehouseManagement",
   "commercial-analytics/commercial-analytics.controller.ts": "commercialAnalytics",
