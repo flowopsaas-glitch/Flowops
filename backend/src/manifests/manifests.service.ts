@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -94,18 +99,34 @@ export class ManifestsService {
       const count = await tx.manifest.count({ where: { companyId } });
       const code = `MAN-${String(count + 1).padStart(5, '0')}`;
 
-      return tx.manifest.create({
-        data: {
-          code,
-          companyId,
-          branchId: dto.branchId,
-          driverId: dto.driverId,
-          waybills: {
-            create: dto.waybillIds.map((waybillId, i) => ({ waybillId, sortOrder: i })),
+      return tx.manifest
+        .create({
+          data: {
+            code,
+            companyId,
+            branchId: dto.branchId,
+            driverId: dto.driverId,
+            waybills: {
+              create: dto.waybillIds.map((waybillId, i) => ({ waybillId, sortOrder: i })),
+            },
           },
-        },
-        include: { waybills: { include: { waybill: true } } },
-      });
+          include: { waybills: { include: { waybill: true } } },
+        })
+        .catch((e: any) => {
+          if (e?.code !== 'P2002') throw e;
+          // (companyId, code) is unique as of migration
+          // 20261113090000_unique_business_references. The advisory lock above
+          // stops two concurrent creates colliding, so reaching here means the
+          // code was ALREADY on a row: the allocation is COUNT()+1, so deleting
+          // a manifest reissues its code. The transaction is already aborted,
+          // so this translates rather than retries — and says so plainly,
+          // because a bare 500 here would look like an outage.
+          throw new ConflictException(
+            `Manifest code ${code} is already in use by this company, so no manifest was created. ` +
+              'The code sequence counts existing rows, so deleting a manifest can reissue its ' +
+              'code. Please retry; if it repeats, a manifest code has drifted out of step.',
+          );
+        });
     });
   }
 

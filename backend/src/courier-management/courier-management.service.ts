@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
@@ -48,26 +54,41 @@ export class CourierManagementService {
       });
       const reference = `ORD-${year}-${String(count + 1).padStart(5, '0')}`;
 
-      return (tx as any).courierOrder.create({
-        data: {
-          companyId,
-          reference,
-          clientName: dto.clientName,
-          clientId: dto.clientId || null,
-          pickupAddress: dto.pickupAddress,
-          dropoffAddress: dto.dropoffAddress,
-          contactName: dto.contactName || null,
-          contactPhone: dto.contactPhone || null,
-          itemsDesc: dto.itemsDesc || null,
-          pieces: dto.pieces ?? 1,
-          weightKg: dto.weightKg ?? null,
-          priority: dto.priority || 'NORMAL',
-          windowStart: dto.windowStart ? new Date(dto.windowStart) : null,
-          windowEnd: dto.windowEnd ? new Date(dto.windowEnd) : null,
-          notes: dto.notes || null,
-          status: 'NEW',
-        },
-      });
+      return (tx as any).courierOrder
+        .create({
+          data: {
+            companyId,
+            reference,
+            clientName: dto.clientName,
+            clientId: dto.clientId || null,
+            pickupAddress: dto.pickupAddress,
+            dropoffAddress: dto.dropoffAddress,
+            contactName: dto.contactName || null,
+            contactPhone: dto.contactPhone || null,
+            itemsDesc: dto.itemsDesc || null,
+            pieces: dto.pieces ?? 1,
+            weightKg: dto.weightKg ?? null,
+            priority: dto.priority || 'NORMAL',
+            windowStart: dto.windowStart ? new Date(dto.windowStart) : null,
+            windowEnd: dto.windowEnd ? new Date(dto.windowEnd) : null,
+            notes: dto.notes || null,
+            status: 'NEW',
+          },
+        })
+        .catch((e: any) => {
+          if (e?.code !== 'P2002') throw e;
+          // (companyId, reference) is unique as of migration
+          // 20261113090000_unique_business_references. Same reasoning as
+          // Manifest.code: the allocation is a count over rows created this
+          // year, so deleting an order can reissue its reference. The
+          // transaction is already aborted, so this translates rather than
+          // retries.
+          throw new ConflictException(
+            `Order reference ${reference} is already in use by this company, so no order was created. ` +
+              'The reference sequence counts this year\'s rows, so deleting an order can reissue ' +
+              'its reference. Please retry; if it repeats, a reference has drifted out of step.',
+          );
+        });
     });
   }
 

@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ManifestsService } from './manifests.service';
 
 /**
@@ -202,5 +202,45 @@ describe('ManifestsService — update / receiveManifest', () => {
 
     await expect(build(prisma).receiveManifest('man-1', COMPANY)).rejects.toThrow(NotFoundException);
     expect(prisma.__waybills.find((w) => w.id === 'wb-1').status).toEqual('AT_ORIGIN_HUB');
+  });
+});
+
+describe('ManifestsService — a code that is already taken', () => {
+  // (companyId, code) became unique in migration
+  // 20261113090000_unique_business_references. The advisory lock stops two
+  // concurrent creates colliding, but the code is COUNT()+1 — so deleting a
+  // manifest lowers the count and reissues a code that is still on a live row.
+  // Before the constraint that produced two manifests sharing a printed code;
+  // with the constraint it produces a P2002, which has to be translated or it
+  // surfaces as a 500 that looks like an outage.
+
+  const p2002 = () => Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+
+  it('reports a reused code as a conflict, not a server error', async () => {
+    const prisma = makePrisma({ waybills: readyWaybills(['wb-1']) });
+    prisma.manifest.create.mockRejectedValueOnce(p2002());
+
+    await expect(build(prisma).create(COMPANY, { waybillIds: ['wb-1'] })).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it('names the code and says nothing was created', async () => {
+    const prisma = makePrisma({ waybills: readyWaybills(['wb-1']) });
+    prisma.manifest.create.mockRejectedValueOnce(p2002());
+
+    await expect(build(prisma).create(COMPANY, { waybillIds: ['wb-1'] })).rejects.toThrow(
+      /MAN-00001.*no manifest was created/s,
+    );
+  });
+
+  it('does not swallow any other database error', async () => {
+    // Over-catching would turn a dead database into a polite 409.
+    const prisma = makePrisma({ waybills: readyWaybills(['wb-1']) });
+    prisma.manifest.create.mockRejectedValueOnce(new Error('connection terminated'));
+
+    await expect(build(prisma).create(COMPANY, { waybillIds: ['wb-1'] })).rejects.toThrow(
+      'connection terminated',
+    );
   });
 });

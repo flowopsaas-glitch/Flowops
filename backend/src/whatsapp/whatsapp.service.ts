@@ -558,8 +558,13 @@ export class WhatsAppService {
     // what tells a retry apart from a second message. Without this check one
     // customer message was stored twice, incremented unread twice, and — because
     // the AI inbox sits downstream — created two collections and two invoices
-    // for one pickup. wabaMessageId carries no unique constraint, so nothing
-    // downstream caught it either; see the note in the PR about adding one.
+    // for one pickup. wabaMessageId carried no unique constraint, so nothing
+    // downstream caught it either.
+    //
+    // It does now: migration 20261113090000_unique_business_references. This
+    // check is still worth keeping as the cheap fast path, but the constraint
+    // is what makes it true — and the catch below is what stops the constraint
+    // from turning a duplicate into a 500 that Meta would retry forever.
     if (msg.id) {
       const already = await this.prisma.whatsAppMessage.findFirst({
         where: { wabaMessageId: msg.id, threadId: thread.id },
@@ -571,16 +576,34 @@ export class WhatsAppService {
       }
     }
 
-    await this.prisma.whatsAppMessage.create({
-      data: {
-        content: body,
-        direction: 'INBOUND',
-        wabaMessageId: msg.id,
-        status: 'delivered',
-        mediaType: msg.type !== 'text' ? msg.type : undefined,
-        threadId: thread.id,
-      },
-    });
+    try {
+      await this.prisma.whatsAppMessage.create({
+        data: {
+          content: body,
+          direction: 'INBOUND',
+          wabaMessageId: msg.id,
+          status: 'delivered',
+          mediaType: msg.type !== 'text' ? msg.type : undefined,
+          threadId: thread.id,
+        },
+      });
+    } catch (e: any) {
+      if (e?.code !== 'P2002') throw e;
+      // The check above and this insert are not atomic, and wabaMessageId is
+      // now @unique. Two retries of the same delivery overlap, both find
+      // nothing, both insert, and the loser throws P2002.
+      //
+      // Unhandled, that is a 500 — and Meta retries a webhook until it gets a
+      // 200, so returning 500 for a message that was already stored correctly
+      // buys an endless retry loop for every duplicate from here on. Adding
+      // the constraint without this catch would have caused the very incident
+      // it exists to prevent.
+      //
+      // Losing the race is not an error. It means the other attempt already
+      // recorded the message, which is the outcome we wanted.
+      this.logger.debug(`Inbound WhatsApp ${msg.id} recorded concurrently — skipping retry`);
+      return;
+    }
 
     await this.prisma.whatsAppThread.update({
       where: { id: thread.id },
