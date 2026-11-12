@@ -9,6 +9,13 @@ import { ObservabilityService } from '../observability/observability.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { OwnerOnly } from '../common/decorators/owner-only.decorator';
+import {
+  CreateTenantAdminDto,
+  CreateTenantInvoiceDto,
+  CreateTenantQuoteDto,
+  DraftTenantDto,
+  UpdateSubscriptionOverrideDto,
+} from './dto/owner.dto';
 
 /**
  * All owner routes require the platform-owner JWT.
@@ -63,7 +70,7 @@ export class OwnerController {
   }
 
   @Post('tenants/draft')
-  draftTenant(@Body() body: any) {
+  draftTenant(@Body() body: DraftTenantDto) {
     return this.svc.draftTenant(body);
   }
 
@@ -87,7 +94,7 @@ export class OwnerController {
   }
 
   @Post('tenants/:id/users')
-  createTenantUser(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+  createTenantUser(@Param('id') id: string, @Body() body: CreateTenantAdminDto, @CurrentUser() owner: any) {
     return this.svc.createTenantAdmin(id, body, owner);
   }
 
@@ -345,17 +352,17 @@ export class OwnerController {
   }
 
   @Post('tenants/:id/subscription-override')
-  updateSubscriptionOverride(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+  updateSubscriptionOverride(@Param('id') id: string, @Body() body: UpdateSubscriptionOverrideDto, @CurrentUser() owner: any) {
     return this.svc.updateSubscriptionOverride(id, body, owner);
   }
 
   @Post('tenants/:id/quotes')
-  createTenantQuote(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+  createTenantQuote(@Param('id') id: string, @Body() body: CreateTenantQuoteDto, @CurrentUser() owner: any) {
     return this.svc.createTenantQuote(id, body, owner);
   }
 
   @Post('tenants/:id/invoices')
-  createTenantInvoice(@Param('id') id: string, @Body() body: any, @CurrentUser() owner: any) {
+  createTenantInvoice(@Param('id') id: string, @Body() body: CreateTenantInvoiceDto, @CurrentUser() owner: any) {
     return this.svc.createTenantInvoice(id, body, owner);
   }
 }

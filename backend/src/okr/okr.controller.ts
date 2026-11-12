@@ -3,6 +3,12 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OkrService } from './okr.service';
 import { OwnerAuthGuard } from '../common/guards/owner-auth.guard';
 import { OwnerOnly } from '../common/decorators/owner-only.decorator';
+import {
+  AddKeyResultDto,
+  CreateObjectiveDto,
+  UpdateKeyResultDto,
+  UpdateObjectiveDto,
+} from './dto/okr.dto';
 
 /**
  * OKR routes — platform-owner only. Mirrors the OwnerController auth pattern:
@@ -28,12 +34,12 @@ export class OkrController {
   }
 
   @Post()
-  createObjective(@Body() body: any) {
+  createObjective(@Body() body: CreateObjectiveDto) {
     return this.svc.createObjective(body);
   }
 
   @Patch(':id')
-  updateObjective(@Param('id') id: string, @Body() body: any) {
+  updateObjective(@Param('id') id: string, @Body() body: UpdateObjectiveDto) {
     return this.svc.updateObjective(id, body);
   }
 
@@ -44,12 +50,12 @@ export class OkrController {
 
   // ── Key results ──────────────────────────────────────────────────────────
   @Post(':id/key-results')
-  addKeyResult(@Param('id') id: string, @Body() body: any) {
+  addKeyResult(@Param('id') id: string, @Body() body: AddKeyResultDto) {
     return this.svc.addKeyResult(id, body);
   }
 
   @Patch('key-results/:krId')
-  updateKeyResult(@Param('krId') krId: string, @Body() body: any) {
+  updateKeyResult(@Param('krId') krId: string, @Body() body: UpdateKeyResultDto) {
     return this.svc.updateKeyResult(krId, body);
   }
 

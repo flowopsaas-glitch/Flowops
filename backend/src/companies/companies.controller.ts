@@ -116,7 +116,7 @@ export class CompaniesController {
   update(
     @Param('id') id: string,
     @CurrentUser() user: { companyId: string },
-    @Body() body: any,
+    @Body() body: UpdateCompanyDto,
   ) {
     if (!user?.companyId || id !== user.companyId) {
       throw new ForbiddenException('You may only update your own company');

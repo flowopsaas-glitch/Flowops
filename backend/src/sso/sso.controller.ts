@@ -11,6 +11,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { UpsertSsoConfigDto } from './dto/sso.dto';
 
 const BINDING_COOKIE = 'flowops_sso_binding';
 
@@ -35,7 +36,7 @@ export class SsoController {
   @RequireFeature('sso')
   @Put('config')
   @ApiOperation({ summary: 'Create/update SSO config (Enterprise)' })
-  setConfig(@CurrentUser() u: any, @Body() dto: any) {
+  setConfig(@CurrentUser() u: any, @Body() dto: UpsertSsoConfigDto) {
     return this.sso.upsertConfig(u.companyId, dto ?? {});
   }
 

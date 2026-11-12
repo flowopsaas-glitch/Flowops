@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { RequireFeature } from '../billing/require-feature.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { CalculateRateDto, CreateRateCardDto, UpdateRateCardDto } from './dto/rate-card.dto';
 const RATE_CARD_READ_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
   UserRole.VIEWER,
@@ -26,18 +27,18 @@ export class RateCardsController {
 
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post()
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateRateCardDto) {
     return this.svc.create(u.companyId, body);
   }
 
   @Post('calculate')
-  calculate(@CurrentUser() u: any, @Body() body: any) {
+  calculate(@CurrentUser() u: any, @Body() body: CalculateRateDto) {
     return this.svc.calculate(u.companyId, body);
   }
 
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch(':id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateRateCardDto) {
     return this.svc.update(id, u.companyId, body);
   }
 

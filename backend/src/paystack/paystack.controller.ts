@@ -10,6 +10,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { CreatePlanDto, InitializePaymentDto } from './dto/paystack.dto';
 
 @ApiTags('Paystack')
 @ApiBearerAuth()
@@ -22,7 +23,7 @@ export class PaystackController {
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('initialize')
   @ApiOperation({ summary: 'Initialize a Paystack payment' })
-  initializePayment(@CurrentUser() u: any, @Body() body: any) {
+  initializePayment(@CurrentUser() u: any, @Body() body: InitializePaymentDto) {
     return this.svc.initializePayment({
       email: body.email ?? u.email,
       amount: body.amount,
@@ -58,7 +59,7 @@ export class PaystackController {
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Post('plans')
   @ApiOperation({ summary: 'Create a new Paystack billing plan' })
-  createPlan(@Body() body: any) {
+  createPlan(@Body() body: CreatePlanDto) {
     return this.svc.createPlan(body);
   }
 

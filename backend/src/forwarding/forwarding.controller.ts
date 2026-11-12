@@ -20,6 +20,14 @@ import { ConsolidationService } from './consolidation.service';
 import { ForwardingOverviewService } from './forwarding-overview.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
 import { UpdateShipmentFileDto } from './dto/update-shipment-file.dto';
+import {
+  AddCargoDto,
+  AddChargeDto,
+  AddContainerDto,
+  SetDemurrageTermsDto,
+  UpdateCargoDto,
+  UpsertEdiCredentialDto,
+} from './dto/forwarding-operations.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -112,7 +120,7 @@ export class ForwardingController {
   // ── Containers & cargo ───────────────────────────────────────────────────────
 
   @Post('files/:id/containers')
-  addContainer(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: any) {
+  addContainer(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: AddContainerDto) {
     return this.containers.addContainer(u.companyId, id, dto);
   }
 
@@ -122,7 +130,7 @@ export class ForwardingController {
   }
 
   @Post('files/:id/cargo')
-  addCargo(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: any) {
+  addCargo(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: AddCargoDto) {
     return this.containers.addCargo(u.companyId, id, dto);
   }
 
@@ -132,7 +140,7 @@ export class ForwardingController {
   }
 
   @Patch('files/:id/cargo/:cid')
-  updateCargo(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Param('cid') cid: string, @Body() dto: any) {
+  updateCargo(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Param('cid') cid: string, @Body() dto: UpdateCargoDto) {
     return this.containers.updateCargo(u.companyId, id, cid, dto);
   }
 
@@ -192,7 +200,7 @@ export class ForwardingController {
 
   @Put('customs/edi/credential')
   @ApiOperation({ summary: 'Configure the SARS transmission path (DIRECT_EDI | SERVICE_PROVIDER | CLEARING_AGENT_HANDOFF)' })
-  upsertEdiCredential(@CurrentUser() u: AuthenticatedUser, @Body() dto: any) {
+  upsertEdiCredential(@CurrentUser() u: AuthenticatedUser, @Body() dto: UpsertEdiCredentialDto) {
     return this.ediCredentials.upsert(u.companyId, u.id, dto);
   }
 
@@ -206,7 +214,7 @@ export class ForwardingController {
 
   @Patch('files/:id/containers/:cid/demurrage')
   @ApiOperation({ summary: 'Set demurrage/detention terms on a container' })
-  setDemurrage(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Param('cid') cid: string, @Body() dto: any) {
+  setDemurrage(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Param('cid') cid: string, @Body() dto: SetDemurrageTermsDto) {
     return this.demurrage.setTerms(u.companyId, id, cid, dto);
   }
 
@@ -297,7 +305,7 @@ export class ForwardingController {
   // ── Charges, totals & invoicing ──────────────────────────────────────────────
 
   @Post('files/:id/charges')
-  addCharge(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: any) {
+  addCharge(@CurrentUser() u: AuthenticatedUser, @Param('id') id: string, @Body() dto: AddChargeDto) {
     return this.charges.addCharge(u.companyId, id, dto);
   }
 

@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { WaybillsService } from '../waybills/waybills.service';
 import { Public } from '../common/decorators/public.decorator';
 import { ApiKeyGuard } from './api-key.guard';
+import { CreateWaybillDto } from '../waybills/dto/waybill.dto';
 
 /**
  * Public REST API for tenant integrations (e.g. a Shopify app creating waybills
@@ -19,7 +20,7 @@ export class PublicApiController {
 
   /** Create a waybill (e.g. from a Shopify order). */
   @Post('waybills')
-  createWaybill(@Req() req: any, @Body() body: any) {
+  createWaybill(@Req() req: any, @Body() body: CreateWaybillDto) {
     return this.waybills.create(req.apiCompanyId, body);
   }
 
