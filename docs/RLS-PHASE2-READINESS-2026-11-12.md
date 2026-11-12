@@ -4,9 +4,82 @@
 **Question this document answers:** can `app.rls_strict` be turned on, and if not,
 what is the cheapest safe route to a position where it can be?
 
-**Short answer: not yet, and the fix is not to wrap 1,308 call sites.** The 9.2%
-figure is real but it is measuring the *second* line of defence. The first line is
-complete. Read the two layers section before reading the number.
+**Short answer: not yet — and coverage is not the main reason.** The 9.2% figure is
+real but it is measuring the *second* line of defence; the first line is complete.
+The harder problem is that 114 operations **cannot** have a tenant context, and the
+migration provides no way for them to run anyway. See the blocking finding below
+before spending effort on coverage.
+
+---
+
+## BLOCKING FINDING: Phase 2 as written is unreachable, not merely premature
+
+Turning `rls_strict` on does not just fail the operations that lack context — it
+fails the operations that *cannot have* context. There are 114 of them, and there
+is currently no mechanism that would let them run.
+
+| File | Ops | Why it has no tenant |
+|---|---|---|
+| `owner/owner.service.ts` | 57 | the module exists to act across tenants |
+| `auth/auth.service.ts` | 18 | identity is resolved here — there is no tenant yet |
+| `paystack/paystack.service.ts` | 14 | callbacks arrive with a reference and no tenant |
+| `ai/platform-protection.service.ts` | 8 | platform-wide credential sweeps |
+| `alerting/alerting.service.ts` | 7 | `platformAlert` is platform-level |
+| `webhooks/webhooks.service.ts` | 6 | dispatched by the platform, keyed by endpoint |
+| `common/guards/api-health-monitor.service.ts` | 4 | a health probe has no tenant |
+
+These are not "not yet wrapped". They are cross-tenant by design, and setting a
+`company_id` for them would be meaningless — `platformMetrics()` counts *every*
+user, waybill and collection in the database.
+
+**Two facts make this fatal rather than merely inconvenient:**
+
+1. **There is no bypass.** The migration contains no `BYPASSRLS` role, no
+   `app.rls_bypass` setting, and no `GRANT` statements. `app_tenant_guard()` has
+   exactly two branches — matching tenant, or no-tenant-and-not-strict. Under
+   Phase 2 the second branch is false for every row.
+
+2. **`FORCE ROW LEVEL SECURITY` is set on all 112 tenant tables.** Normally
+   PostgreSQL exempts the table owner from its own policies; `FORCE` removes that
+   exemption. So the application's database user cannot accidentally escape — which
+   is the right choice for safety, and precisely why there is no way out.
+
+The migration header says *"Flip once every call site establishes tenant context."*
+That condition cannot be met: these 114 call sites cannot establish one by
+definition.
+
+### The fix is a role split, not an application change
+
+The migration header already hints at the answer — *"or set `app.rls_strict` per
+role/session"*. Taken literally, it resolves the whole problem:
+
+```sql
+ALTER ROLE flowops_app  SET app.rls_strict = 'on';   -- tenant-facing traffic
+-- flowops_platform keeps the default 'off'
+```
+
+`app_tenant_guard()` reads `current_setting('app.rls_strict', true)`, which honours
+role-level defaults, so connections as the app role get fail-closed RLS while
+connections as the platform role keep today's behaviour. No application code
+changes, no coverage work required to make it safe, and the 114 operations carry on
+working.
+
+Today everything connects as one role (`DATABASE_URL` in `docker-compose.yml:136`
+uses `POSTGRES_USER:-flowops` for the app), so this needs:
+
+1. a second role, `flowops_platform`, with the same table grants;
+2. a second Prisma client for the platform paths — the set of files that may use it
+   is already enumerated in `PLATFORM_SCOPE` (`scripts/tenant-scope-policy.mjs`),
+   and that list already fails the build if an entry stops matching;
+3. `app.rls_strict = 'on'` on `flowops_app` only.
+
+The one risk to weigh: a second role that bypasses RLS is a powerful thing. It is
+safe here only because step 2 pins *which files* may use it, and an unreviewed
+addition to `PLATFORM_SCOPE` is the failure mode to guard in review.
+
+**Ordering matters:** the role split is worth doing *before* growing coverage,
+because it is what makes the flag flippable at all, and because it means coverage
+work can proceed incrementally afterwards instead of as one big-bang cutover.
 
 ---
 
@@ -109,23 +182,36 @@ sets `app.company_id` once, and runs the whole request inside it.
 
 ## Recommendation
 
-1. **Do not start Route A.** It is the intuitive reading of the coverage number and
+1. **Split the database role first.** It is the item that makes the flag flippable
+   at all, it needs no application change, and it lets everything below proceed
+   incrementally instead of as one big-bang cutover. See the blocking finding.
+2. **Do not start Route A.** It is the intuitive reading of the coverage number and
    it costs ~4x round trips for no additional safety over Route C.
-2. **Decide between B and C, and pick C.** B only works once it grows an
-   ambient-context check, at which point it is C.
-3. **Before flipping `rls_strict`, enumerate the 114 exempt operations** and confirm
-   each is genuinely cross-tenant by design. They are recorded with reasons in
-   `scripts/tenant-scope-policy.mjs`, and an exemption that stops matching anything
-   fails the build, so the list cannot rot — but the list has never been reviewed
-   against a world where the flag is on.
-4. **Flip it as a setting, in a maintenance window, and be ready to flip it back.**
-   It is `ALTER DATABASE flowops SET app.rls_strict = 'on';` — reversible in one
-   statement with no migration. That is the safety property that makes this whole
-   exercise low-risk, and it is worth preserving: do not fold Phase 2 into a
-   migration.
+3. **Decide between B and C, and pick C.** B only works once it grows an
+   ambient-context check, at which point it is C. With the role split done, C can be
+   rolled out module by module rather than all at once.
+4. **Flip `rls_strict` on the app role only**, in a maintenance window, ready to
+   flip it back. It is one reversible `ALTER ROLE` — no migration. That reversibility
+   is the property that makes this whole exercise low-risk, and it is worth
+   preserving: do not fold Phase 2 into a migration.
 
 The flag appears in no deploy script, no compose file and no env template. That is
 correct — it should stay manual until steps 1–3 are done.
+
+### What was checked to reach the blocking finding
+
+- `app_tenant_guard()` in `20261012210000_rls_tenant_isolation` — two branches only,
+  no bypass, no role test.
+- No `BYPASSRLS`, no bypass setting and no `GRANT` anywhere in the migration or in
+  `scripts/generate-rls-migration.py`.
+- `FORCE ROW LEVEL SECURITY` on all 112 tenant tables, so the table owner is subject
+  to the policy too.
+- `PLATFORM_SCOPE` in `scripts/tenant-scope-policy.mjs` — 7 files, each with a
+  written reason, covering the 114 operations.
+- `owner.service.ts` `platformMetrics()` reads `user.count()`, `waybill.count()` and
+  `collection.count()` with no tenant predicate: genuinely cross-tenant, not merely
+  unwrapped.
+- `docker-compose.yml:136` — one role, `flowops`, for every connection.
 
 ---
 
