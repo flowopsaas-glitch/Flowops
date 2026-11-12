@@ -1,5 +1,9 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+// Vite's ?raw imports, not node:fs. tsconfig.app.json pins types to
+// ["vite/client"] — the app is browser code — so a test that reaches for
+// node:fs fails the TypeScript check even though vitest runs it happily.
+import appSource from "../App.tsx?raw";
+import layoutSource from "../components/layout/AppLayout.tsx?raw";
+import permsSource from "./tenantUserPermissions.ts?raw";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -30,17 +34,8 @@ import { describe, expect, it } from "vitest";
  * Rule 1 starts biting the moment any of them is given one.
  */
 
-// Vitest rewrites import.meta.url to a non-file: URL, so resolve against the
-// project root instead — the test runner is always invoked from here.
-const app = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf8");
-const layout = readFileSync(
-  resolve(process.cwd(), "src/components/layout/AppLayout.tsx"),
-  "utf8",
-);
-const permsSource = readFileSync(
-  resolve(process.cwd(), "src/lib/tenantUserPermissions.ts"),
-  "utf8",
-);
+const app = appSource;
+const layout = layoutSource;
 
 /** Nav entries: { label, to, perm? } from the sidebar's page list. */
 type NavEntry = { label: string; to: string; perm?: string };
