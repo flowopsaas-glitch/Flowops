@@ -82,6 +82,68 @@ export class PrismaService
   async onModuleInit() {
     await this.$connect();
     this.logger.log('Database connected');
+    await this.warnIfRlsIsInert();
+  }
+
+  /**
+   * Say out loud when row-level security is present but not in force.
+   *
+   * PostgreSQL exempts superusers — and roles with BYPASSRLS — from RLS
+   * entirely. `FORCE ROW LEVEL SECURITY` binds the table owner; it does not bind
+   * a superuser. So a deployment that connects as `POSTGRES_USER` on the
+   * official image has every policy in
+   * `20261012210000_rls_tenant_isolation` installed, correct, and never
+   * consulted: `withTenant()` sets `app.company_id`, and nothing reads it.
+   *
+   * That is silent. The coverage audit still reports how much of the codebase
+   * calls `withTenant`, which makes the deployment look protected when the
+   * database is not isolating anything. Failing closed here would take the API
+   * down over a configuration issue, so this warns instead — but warns in the
+   * startup log, where someone deploying will see it, rather than in a document
+   * nobody reads.
+   *
+   * Never throws: a startup probe must not be able to stop the API booting.
+   */
+  private async warnIfRlsIsInert(): Promise<void> {
+    try {
+      const rows = await this.$queryRawUnsafe<Array<{ is_superuser: string; has_bypassrls: string }>>(
+        `SELECT current_setting('is_superuser') AS is_superuser,
+                (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user)::text AS has_bypassrls`,
+      );
+      const row = rows?.[0];
+
+      // A row that is missing, or whose answers are not the two shapes this
+      // asks for, means "not determined" — which must be reported, not treated
+      // as a clean bill of health. Silence here reads as "checked, it's fine".
+      if (!row || !['on', 'off'].includes(row.is_superuser) || !['true', 'false'].includes(row.has_bypassrls)) {
+        this.logger.warn(
+          'Could not determine whether row-level security is in force; treating it as ' +
+            'unknown rather than safe. If this connection is a superuser or holds ' +
+            'BYPASSRLS, every tenant isolation policy is installed but bypassed. ' +
+            'See docs/RLS-PHASE2-READINESS-2026-11-12.md.',
+        );
+        return;
+      }
+
+      const bypasses = row.is_superuser === 'on' || row.has_bypassrls === 'true';
+      if (!bypasses) return;
+
+      this.logger.warn(
+        `Connected as "${row.is_superuser === 'on' ? 'a superuser' : 'a BYPASSRLS role'}" — ` +
+          'row-level security is NOT in force on this connection. Every tenant isolation ' +
+          'policy is installed but being bypassed, so withTenant() sets app.company_id that ' +
+          'nothing reads, and cross-tenant isolation rests on application filters alone. ' +
+          'Point DATABASE_URL at a role that is neither a superuser nor BYPASSRLS. ' +
+          'See docs/RLS-PHASE2-READINESS-2026-11-12.md.',
+      );
+    } catch (e) {
+      // A probe that cannot run must not stop the boot, and must not pretend the
+      // answer was "fine" either — say what happened and move on.
+      this.logger.warn(
+        `Could not determine whether RLS is in force (${(e as Error)?.message ?? e}); ` +
+          'treating it as unknown rather than safe.',
+      );
+    }
   }
 
   async onModuleDestroy() {
