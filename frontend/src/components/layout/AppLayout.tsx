@@ -420,7 +420,7 @@ export default function AppLayout() {
     { section: "RAIL", label: "Coverage & Gaps", desc: "Which of the 49 annexures are built, and what each gap blocks", to: "/rail/coverage", icon: ClipboardCheck, perm: "rail", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
-    { section: "OPS", label: "Border Dwell", desc: "Border dwell sessions & dwell monitoring", to: "/border-dwell", icon: MapPin },
+    { section: "OPS", label: "Border Dwell", desc: "Border dwell sessions & dwell monitoring", to: "/border-dwell", icon: MapPin, perm: "borderDwell" },
     // Claims are operational before they are financial: the person who sees the
     // damage raises the claim, finance decides it. Gated on `claims`, which the
     // role matrix grants to ADMIN, COMPANY_ADMIN, MANAGER, DISPATCH, WAREHOUSE

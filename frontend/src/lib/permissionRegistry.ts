@@ -139,5 +139,6 @@ export const PERMISSION_REGISTRY = [
   { key: "settings", label: "Settings", section: "ADMIN", roles: ["ADMIN", "COMPANY_ADMIN"] },
   { key: "fleetIntelligence", label: "Fleet Intelligence", section: "AI", roles: ["ADMIN", "COMPANY_ADMIN", "MANAGER", "DISPATCH"] },
   { key: "safetyZones", label: "Safety Zones", section: "AI", roles: ["ADMIN", "COMPANY_ADMIN", "MANAGER", "DISPATCH", "WAREHOUSE"] },
+  { key: "borderDwell", label: "Border Dwell", section: "OPS", roles: ["ADMIN", "COMPANY_ADMIN", "MANAGER", "DISPATCH", "WAREHOUSE"] },
   { key: "tripLegs", label: "Trip Legs", section: "AI", roles: ["ADMIN", "COMPANY_ADMIN", "MANAGER", "DISPATCH", "WAREHOUSE", "DRIVER"] },
 ] as const satisfies readonly PermissionDefinition[];

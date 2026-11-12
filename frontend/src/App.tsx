@@ -397,7 +397,7 @@ export default function App() {
               <Route path="/fleet-intelligence" element={<RequirePermission perm="fleetIntelligence"><FleetIntelligence /></RequirePermission>} />
               <Route path="/safety-zones" element={<RequirePermission perm="safetyZones"><SafetyZones /></RequirePermission>} />
               <Route path="/trip-legs" element={<RequirePermission perm="tripLegs"><TripLegsBoard /></RequirePermission>} />
-              <Route path="/border-dwell" element={<BorderDwellBoard />} />
+              <Route path="/border-dwell" element={<RequirePermission perm="borderDwell"><BorderDwellBoard /></RequirePermission>} />
               <Route path="/safety-incident-dispatch" element={<SafetyIncidentDispatch />} />
               <Route path="/safety-incident-report" element={<SafetyIncidentReport />} />
               <Route path="/trip-document-pack" element={<TripDocumentPack />} />

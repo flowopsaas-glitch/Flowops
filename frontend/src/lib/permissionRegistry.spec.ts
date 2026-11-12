@@ -173,6 +173,13 @@ describe("permission registry", () => {
     ]);
   });
 
+  it("mirrors the backend role set for border dwell", () => {
+    // backend: GET /border-dwell/sessions (border-dwell.controller.ts)
+    expect(PERMISSION_REGISTRY.find((p) => p.key === "borderDwell")!.roles).toEqual([
+      "ADMIN", "COMPANY_ADMIN", "MANAGER", "DISPATCH", "WAREHOUSE",
+    ]);
+  });
+
   it("mirrors the backend role set for trip legs", () => {
     // backend: GET /trip-legs/trips (trip-leg.controller.ts) — DRIVER included
     expect(PERMISSION_REGISTRY.find((p) => p.key === "tripLegs")!.roles).toEqual([
