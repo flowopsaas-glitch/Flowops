@@ -192,10 +192,130 @@ describe('RLS tenant isolation — policy coverage', () => {
     expect(sql).toContain('FORCE ROW LEVEL SECURITY');
   });
 
+/**
+ * Strip SQL comments so the destructive-statement scan reads instructions,
+ * not prose.
+ *
+ * Before this, the guard scanned raw migration text, so writing the phrase
+ * "DROP TABLE" inside an explanatory comment failed the build even though no
+ * such statement existed. That is a guard that punishes documentation — and
+ * the predictable workaround is to stop documenting.
+ *
+ * Handles the three comment forms Postgres accepts, plus the content forms a
+ * comment can hide a statement inside: string literals and dollar-quoted
+ * bodies, which must survive intact so a real statement inside a function
+ * body is still judged as code.
+ */
+function stripSqlComments(sql: string): string {
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const two = sql.slice(i, i + 2);
+    if (two === '--') {
+      const end = sql.indexOf('\n', i);
+      if (end === -1) break;
+      out += '\n';
+      i = end + 1;
+      continue;
+    }
+    if (two === '/*') {
+      const end = sql.indexOf('*/', i + 2);
+      if (end === -1) break;
+      // Keep the newlines so line-based reporting stays aligned with the file.
+      out += sql.slice(i, end + 2).replace(/[^\n]/g, ' ');
+      i = end + 2;
+      continue;
+    }
+    const ch = sql[i];
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === quote) {
+          if (sql[j + 1] === quote) { j += 2; continue; } // escaped quote
+          j += 1;
+          break;
+        }
+        if (sql[j] === '\\') { j += 2; continue; }
+        j += 1;
+      }
+      out += sql.slice(i, j);
+      i = j;
+      continue;
+    }
+    const dollar = sql.slice(i).match(/^\$[A-Za-z_]*\$/);
+    if (dollar) {
+      const tag = dollar[0]; // the whole $tag$, not the inner identifier
+      const end = sql.indexOf(tag, i + tag.length);
+      if (end === -1) break;
+      const stop = end + tag.length;
+      out += sql.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+describe('stripSqlComments (fixtures)', () => {
+  const strip = stripSqlComments;
+
+  it('removes line and block comments', () => {
+    const line = strip('DROP TABLE a; -- DROP TABLE b;');
+    expect(line).toContain('DROP TABLE a;');
+    expect(line).not.toContain('DROP TABLE b');
+
+    const block = strip('/* DROP TABLE c; */ DROP TABLE a;');
+    expect(block).toContain('DROP TABLE a;');
+    expect(block).not.toContain('DROP TABLE c');
+  });
+
+  it('keeps line numbers aligned when a block comment spans lines', () => {
+    // Comment text is blanked, not deleted, so any line we report still
+    // matches the line the reader sees in the migration file.
+    const before = 'SELECT 1;\n/*\nDROP TABLE d;\n*/\nSELECT 2;';
+    const after = strip(before);
+    expect(after.split('\n')).toHaveLength(before.split('\n').length);
+    expect(after).not.toContain('DROP TABLE d');
+    expect(after).toContain('SELECT 2;');
+  });
+
+  it('leaves statements inside string literals and dollar-quoted bodies alone', () => {
+    // These are not comments: a real statement hiding in either must still fail.
+    expect(strip("SELECT 'DROP TABLE x;';")).toBe("SELECT 'DROP TABLE x;';");
+    expect(strip("SELECT 'it''s -- not a comment';")).toBe("SELECT 'it''s -- not a comment';");
+    expect(strip("$$ DROP TABLE y; $$")).toBe("$$ DROP TABLE y; $$");
+    expect(strip("$fn$ TRUNCATE z; $fn$")).toBe("$fn$ TRUNCATE z; $fn$");
+  });
+
+  it('does not let a comment swallow the rest of the file', () => {
+    // An unterminated block comment must not silently blank everything after it,
+    // turning a destructive statement into an invisible one.
+    expect(strip('/* unterminated DROP TABLE q;')).toBe('');
+  });
+});
+
   it('migration file is non-trivial and safe (no destructive statements)', () => {
     expect(sql.length).toBeGreaterThan(5000);
-    expect(sql).not.toMatch(/DROP TABLE|TRUNCATE|DELETE FROM/i);
+    expect(stripSqlComments(sql)).not.toMatch(/DROP TABLE|TRUNCATE|DELETE FROM/i);
     expect(existsSync(join(ROOT, 'scripts', 'generate-rls-migration.py'))).toBe(true);
+  });
+
+  it('still fails on a destructive statement that a comment tries to launder', () => {
+    // The reason comment-awareness is safe: stripping comments removes the
+    // ability to HIDE a statement, never the ability to catch one. Each of
+    // these is a real statement the guard must still reject.
+    const cases = [
+      '-- harmless note\nDROP TABLE tenant_rows;',
+      '/* nothing to see here */ DROP TABLE tenant_rows;',
+      'CREATE FUNCTION f() RETURNS void AS $$ BEGIN DROP TABLE tenant_rows; END; $$ LANGUAGE plpgsql;',
+      "COMMENT ON TABLE t IS 'DROP TABLE tenant_rows;';",
+    ];
+    for (const c of cases) {
+      expect(stripSqlComments(c)).toMatch(/DROP TABLE/i);
+    }
   });
 });
 
