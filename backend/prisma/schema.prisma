@@ -302,6 +302,10 @@ model Company {
   @@map("companies")
   generalAverageEvents        GeneralAverageEvent[]
   generalAverageContributors  GeneralAverageContributor[]
+
+  // Field records: safety incidents and trip document packs
+  safetyIncidents            SafetyIncident[]
+  tripDocuments              TripDocument[]
 }
 
 // ─── Integration credentials (per-tenant, encrypted) ────────────────────────
