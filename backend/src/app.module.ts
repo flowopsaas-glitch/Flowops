@@ -56,6 +56,7 @@ import { ClaimsModule } from './claims/claims.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { DriverPortalModule } from './driver-portal/driver-portal.module';
 import { JourneysModule } from './journeys/journeys.module';
+import { DockModule } from './dock/dock.module';
 import { PushModule } from './push/push.module';
 import { AlertingModule } from './alerting/alerting.module';
 import { EmailHubModule } from './email-hub/email-hub.module';
@@ -150,6 +151,7 @@ import { GeneralAverageModule } from './general-average/general-average.module';
     CodModule,
     DriverPortalModule,
     JourneysModule,
+    DockModule,
     PushModule,
 
     // Route optimization (nearest-neighbour + 2-opt over geocoded stops)

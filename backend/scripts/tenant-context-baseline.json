@@ -1,7 +1,7 @@
 {
-  "_why": "Bare tenant operations per module, at the time this was recorded. The invariant enforced by --check is that the TOTAL may never rise. Re-record only when coverage has genuinely improved, and say how in the commit.\n2026-11-12: journey.service.ts moved from driver-portal/ to journeys/; its 23 bare\noperations moved with it (driver-portal 66 -> 43, journeys 0 -> 23). Total unchanged.",
-  "recorded": "2026-11-11",
-  "total": 1310,
+  "_why": "Bare tenant operations per module, at the time this was recorded. The invariant enforced by --check is that the TOTAL may never rise. Re-record only when coverage has genuinely improved, and say how in the commit.\n2026-11-12: journey.service.ts moved from driver-portal/ to journeys/; its 23 bare\noperations moved with it (driver-portal 66 -> 43, journeys 0 -> 23). Total unchanged.\n2026-11-12: dock scheduling added (src/dock/). Total 1310 -> 1315. This is new surface, not a regression: no existing module's count moved. Of the 14 tenant operations the module performs, 9 are contextualised because every write (create, reschedule, transition) runs inside withTenant(), which sets app.company_id so row-level security backs the WHERE clause rather than relying on it alone. The 5 that remain bare are reads: listing appointments, fetching one by id, computing a dock's free windows, checking for future bookings before deactivation, and resolving the warehouse. Each filters on companyId explicitly. They are bare because withTenant() is a transaction, costing a set_config round trip per call, and these are hot read paths. Two of them (getAppointment, availability) are also the guard in front of the writes, so an unscoped read there would 404 rather than leak.",
+  "recorded": "2026-11-12",
+  "total": 1315,
   "byModule": {
     "accounting": 42,
     "accounting-integrations": 20,
@@ -29,6 +29,7 @@
     "digital-payments": 13,
     "disbursements": 13,
     "dispatch": 19,
+    "dock": 5,
     "driver-portal": 43,
     "driver-safety": 39,
     "drivers": 23,
