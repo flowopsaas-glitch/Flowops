@@ -14,7 +14,7 @@ import {
   JourneyUpdateType,
   JourneyStageType,
 } from '@prisma/client';
-import { chatMessageKey } from './chat-idempotency';
+import { chatMessageKey } from '../driver-portal/chat-idempotency';
 
 type UpdatePayload = {
   type: JourneyUpdateType;
@@ -205,6 +205,60 @@ export class JourneyService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * The driver's own journeys.
+   *
+   * Scoped by companyId AND the assigned driver, so a driver sees their work
+   * and nothing else. Unassigned journeys are not listed here: a journey only
+   * becomes a driver's when dispatch assigns it.
+   */
+  /**
+   * The driver's own journeys.
+   *
+   * Scoped by companyId AND the assigned driver, so a driver sees their work
+   * and nothing else. Unassigned journeys are not listed here: a journey only
+   * becomes a driver's when dispatch assigns it.
+   *
+   * Runs inside withTenant so the session carries app.company_id alongside the
+   * explicit where clause. The where clause is what isolates today; the context
+   * is what lets this query keep working once RLS is enforced under a
+   * non-superuser role. New tenant queries are required to be contextualised —
+   * see scripts/tenant-context-coverage.mjs.
+   */
+  async listDriverJourneys(driverId: string, companyId: string, status?: JourneyStatus) {
+    return this.prisma.withTenant(companyId, (tx) =>
+      tx.journey.findMany({
+        where: {
+          companyId,
+          driverId,
+          ...(status ? { status } : {}),
+          // Completed and cancelled journeys stay readable for the shift so the
+          // driver can still read back what they ran. Filtering is the caller's
+          // choice, not ours.
+        },
+        include: {
+          stages: {
+            orderBy: { stageNumber: 'asc' },
+            // Field names must match the model exactly: a `select` naming a
+            // column that does not exist is a type error under the real
+            // client, but not under the offline stub — so it would otherwise
+            // reach production and quietly evaluate to undefined.
+            select: {
+              id: true,
+              stageNumber: true,
+              type: true,
+              locationName: true,
+              plannedAt: true,
+              status: true,
+            },
+          },
+          _count: { select: { updates: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
   }
 
   // ── Driver-originated update (with idempotency + time provenance) ────────

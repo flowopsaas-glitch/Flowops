@@ -134,6 +134,7 @@ export const EXEMPT = {
   "invoices/public-invoice.controller.ts": "public customer token surface",
   "returns/returns-portal.controller.ts": "public customer token surface",
   "driver-portal/driver-portal.controller.ts": "driver token surface (not a tenant plan feature)",
+  "journeys/journeys.controller.ts": "core driver-journey workflow on every plan (roles-guarded); no journeys plan feature exists in FEATURE_KEYS",
   "owner/owner.controller.ts": "platform-owner surface (owner-guarded)",
   "okr/okr.controller.ts": "platform-owner surface (owner-guarded)",
   "observability/observability.controller.ts": "platform observability (owner/guarded)",
