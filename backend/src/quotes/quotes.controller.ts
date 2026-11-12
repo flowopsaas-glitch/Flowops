@@ -4,6 +4,7 @@ import { QuotesService } from './quotes.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { CreateQuoteDto } from './dto/create-quote.dto';
 const QUOTE_READ_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
   UserRole.DISPATCH, UserRole.VIEWER,
@@ -29,8 +30,8 @@ export class QuotesController {
 
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post()
-  create(@CurrentUser() u: any, @Body() body: any) {
-    return this.svc.create(u.companyId, body);
+  create(@CurrentUser() u: any, @Body() dto: CreateQuoteDto) {
+    return this.svc.create(u.companyId, dto);
   }
 
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
