@@ -11,12 +11,18 @@ import { DriverSafetyModule } from '../driver-safety/driver-safety.module';
 import { EpodModule } from '../epod/epod.module';
 import { ComplianceModule } from '../common/compliance/compliance.module';
 import { RailModule } from '../rail/rail.module';
+import { JourneysModule } from '../journeys/journeys.module';
 
 @Module({
   imports: [ComplianceModule,
     // RailModule exports RailTruckWindowChangesService: the driver side of the
     // terminal gate-window closed loop (read the current window, confirm it).
     RailModule,
+    // JourneysModule exports JourneyService: the driver side of the journey
+    // slice (read assigned journeys, send stage updates). The dispatch side
+    // lives in JourneysController on the same service, so there is one
+    // implementation rather than two that drift.
+    JourneysModule,
     ConfigModule,
     AuthModule,
     NotificationsModule,

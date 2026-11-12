@@ -11,6 +11,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole, TruckWindowAckSource } from '@prisma/client';
 import { RailTruckWindowChangesService } from '../rail/rail-truck-window-changes.service';
 import { LogDriverCostDto } from './dto/driver-portal.dto';
+import { JourneyService } from '../journeys/journey.service';
+import { SendJourneyUpdateDto } from '../journeys/dto/journey.dto';
 
 /** Real client IP behind Cloudflare -> nginx -> Docker (see auth.controller). */
 function clientIp(req: any): string | undefined {
@@ -27,6 +29,7 @@ export class DriverPortalController {
     private readonly svc: DriverPortalService,
     private readonly auth: AuthService,
     private readonly windowChanges: RailTruckWindowChangesService,
+    private readonly journeys: JourneyService,
   ) {}
 
   // ── Auth (public) ────────────────────────────────────────────────────────────
@@ -332,5 +335,47 @@ export class DriverPortalController {
     @Body() body: { message: string },
   ) {
     return this.svc.dispatchSend(driverId, u.companyId, body.message);
+  }
+
+  // ── Journeys (WP2 slice) ─────────────────────────────────────────────────
+  // The driver's side of the journey slice. Dispatch works the same journeys
+  // through JourneysController; both call one JourneyService.
+
+  /**
+   * GET /driver-portal/journeys — this driver's assigned journeys.
+   *
+   * Scoped three ways over: by the token's companyId, by the driver id from
+   * the token, and again inside the service. A driver can never enumerate a
+   * colleague's journeys by changing a query parameter.
+   */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Get('journeys')
+  listMyJourneys(@Req() req: any) {
+    return this.journeys.listDriverJourneys(req.driver.id, req.driver.companyId);
+  }
+
+  /**
+   * POST /driver-portal/journeys/:id/updates — report against a stage.
+   *
+   * clientMessageId makes a retry safe: sending the same key twice returns the
+   * first update instead of duplicating it, which is what lets the app retry
+   * on a flaky connection without spamming dispatch.
+   */
+  @Public()
+  @UseGuards(DriverAuthGuard)
+  @Post('journeys/:id/updates')
+  sendJourneyUpdate(
+    @Req() req: any,
+    @Param('id') journeyId: string,
+    @Body() body: SendJourneyUpdateDto,
+  ) {
+    return this.journeys.sendUpdate(req.driver.id, req.driver.companyId, journeyId, {
+      type: body.type,
+      message: body.message,
+      clientMessageId: body.clientMessageId,
+      deviceOccurredAt: body.deviceOccurredAt ? new Date(body.deviceOccurredAt) : null,
+      stageId: body.stageId ?? null,
+    });
   }
 }

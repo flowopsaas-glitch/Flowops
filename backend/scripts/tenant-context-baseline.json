@@ -1,5 +1,5 @@
 {
-  "_why": "Bare tenant operations per module, at the time this was recorded. The invariant enforced by --check is that the TOTAL may never rise. Re-record only when coverage has genuinely improved, and say how in the commit.",
+  "_why": "Bare tenant operations per module, at the time this was recorded. The invariant enforced by --check is that the TOTAL may never rise. Re-record only when coverage has genuinely improved, and say how in the commit.\n2026-11-12: journey.service.ts moved from driver-portal/ to journeys/; its 23 bare\noperations moved with it (driver-portal 66 -> 43, journeys 0 -> 23). Total unchanged.",
   "recorded": "2026-11-11",
   "total": 1310,
   "byModule": {
@@ -29,7 +29,7 @@
     "digital-payments": 13,
     "disbursements": 13,
     "dispatch": 19,
-    "driver-portal": 66,
+    "driver-portal": 43,
     "driver-safety": 39,
     "drivers": 23,
     "ecommerce": 5,
@@ -42,6 +42,7 @@
     "geocoding": 4,
     "intelligence": 9,
     "invoices": 30,
+    "journeys": 23,
     "live-tracking": 10,
     "logistics-analytics": 16,
     "logistics-ops": 35,
