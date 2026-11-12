@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard';
 import DeliveryDetail from './pages/DeliveryDetail';
 import Chat from './pages/Chat';
 import Costs from './pages/Costs';
+import Journeys from './pages/Journeys';
+import JourneyDetail from './pages/JourneyDetail';
 import { getToken } from './services/auth';
 
 function RequireDriver({ children }: { children: ReactNode }) {
@@ -19,6 +21,8 @@ export default function App() {
       <Route path="/delivery/:id" element={<RequireDriver><DeliveryDetail /></RequireDriver>} />
       <Route path="/chat" element={<RequireDriver><Chat /></RequireDriver>} />
       <Route path="/costs" element={<RequireDriver><Costs /></RequireDriver>} />
+      <Route path="/journeys" element={<RequireDriver><Journeys /></RequireDriver>} />
+      <Route path="/journey/:id" element={<RequireDriver><JourneyDetail /></RequireDriver>} />
       <Route path="*" element={<Navigate to={getToken() ? '/dashboard' : '/login'} replace />} />
     </Routes>
   );
