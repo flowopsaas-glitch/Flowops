@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { CourierManagementService } from './courier-management.service';
 
 /**
@@ -201,5 +201,43 @@ describe('CourierManagementService — tenant isolation', () => {
     const prisma = makePrisma();
     await build(prisma).createOrder(COMPANY, ORDER as any);
     expect(prisma.__tenants).toContain(COMPANY);
+  });
+});
+
+describe('CourierManagementService — a reference that is already taken', () => {
+  // (companyId, reference) became unique in migration
+  // 20261113090000_unique_business_references. Same generator shape as
+  // Manifest.code: a count over rows created this year, so deleting an order
+  // reissues its reference. The constraint turns silent duplication into a
+  // P2002, which has to be translated or it reads as a server error.
+
+  const p2002 = () => Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+
+  it('reports a reused reference as a conflict, not a server error', async () => {
+    const prisma = makePrisma();
+    prisma.courierOrder.create.mockRejectedValueOnce(p2002());
+
+    await expect(build(prisma).createOrder('co-1', ORDER as any)).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it('names the reference and says nothing was created', async () => {
+    const prisma = makePrisma();
+    prisma.courierOrder.create.mockRejectedValueOnce(p2002());
+    const year = new Date().getFullYear();
+
+    await expect(build(prisma).createOrder('co-1', ORDER as any)).rejects.toThrow(
+      new RegExp(`ORD-${year}-00001.*no order was created`, 's'),
+    );
+  });
+
+  it('does not swallow any other database error', async () => {
+    const prisma = makePrisma();
+    prisma.courierOrder.create.mockRejectedValueOnce(new Error('connection terminated'));
+
+    await expect(build(prisma).createOrder('co-1', ORDER as any)).rejects.toThrow(
+      'connection terminated',
+    );
   });
 });

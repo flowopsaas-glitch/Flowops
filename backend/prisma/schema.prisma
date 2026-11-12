@@ -1490,6 +1490,12 @@ model Manifest {
 
     // predicate on every row access. Without a leading index both are seq scans.
 
+    /// Per-tenant sequence (MAN-00001), so tenant A's MAN-00001 and tenant B's
+    /// are both legitimate — the constraint has to be company-scoped or it
+    /// would reject valid data. The allocation is serialised by an advisory
+    /// lock, which closes the concurrent window; this closes the one the lock
+    /// cannot: a deleted manifest lowers the count and reuses a code.
+    @@unique([companyId, code])
     @@index([companyId])
 
   @@map("manifests")
@@ -1704,7 +1710,14 @@ model WhatsAppMessage {
   direction MessageDirection
 
   // Meta WABA tracking
-  wabaMessageId String?
+  /// Meta's message id. Meta retries a webhook until it gets a 200 and does
+  /// not promise exactly-once, and the retry carries the SAME id — so this is
+  /// what tells a retry apart from a second message. It was unenforced, and a
+  /// retry that slipped past the application-level check stored one customer
+  /// message twice, which created two collections and two invoices downstream.
+  /// Nullable on purpose: outbound rows that failed to send have no provider
+  /// id, and Postgres lets a unique index hold any number of NULLs.
+  wabaMessageId String? @unique
   // sent | delivered | read | failed
   status        String  @default("sent")
 
@@ -2790,6 +2803,10 @@ model CourierOrder {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
+  /// Per-tenant, per-year sequence (ORD-2026-00001) — company-scoped for the
+  /// same reason as Manifest.code. Same residual gap as well: the count is
+  /// taken over rows created this year, so a deletion reuses a reference.
+  @@unique([companyId, reference])
   @@index([companyId, status])
   @@map("courier_orders")
 }

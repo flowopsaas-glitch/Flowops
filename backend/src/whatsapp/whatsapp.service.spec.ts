@@ -236,6 +236,64 @@ describe('WhatsAppService — a retried delivery is processed once', () => {
   });
 });
 
+describe('WhatsAppService — losing the insert race to a unique constraint', () => {
+  // wabaMessageId became @unique in migration
+  // 20261113090000_unique_business_references. The findFirst check above and
+  // the insert below are not atomic, so two overlapping retries both find
+  // nothing and both insert; the loser now throws P2002 where it previously
+  // succeeded and stored a duplicate.
+  //
+  // These tests exist because adding the constraint without handling P2002
+  // would be a regression: the handler would throw, the endpoint would 500,
+  // and Meta retries until it gets a 200 — so every duplicate from then on
+  // would retry forever against a message that was already stored correctly.
+
+  /** Prisma's error shape for a unique violation. */
+  const p2002 = () => Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+
+  // Local copy: the `deliver` in the suite above is scoped to it and returns
+  // nothing, and these tests need the handler's result.
+  const deliver = async (h: any, wabaId: string) => {
+    const body = JSON.stringify(inboundEnvelope(wabaId));
+    return h.svc.handleWebhookEvent(JSON.parse(body), Buffer.from(body), sign(body, SECRET));
+  };
+
+  const losing = (h: any) => {
+    h.prisma.whatsAppMessage.create.mockRejectedValueOnce(p2002());
+    return h;
+  };
+
+  it('treats a P2002 on insert as an already-recorded retry, not a failure', async () => {
+    const h = makeHarness();
+    await expect(deliver(losing(h), 'waba-race')).resolves.toEqual({ received: true });
+  });
+
+  it('does not create a collection when the insert loses the race', async () => {
+    // The whole point: the other attempt already created it.
+    const h = makeHarness();
+    await deliver(losing(h), 'waba-race');
+
+    expect(h.collectionsCreated).toHaveLength(0);
+  });
+
+  it('does not increment unread when the insert loses the race', async () => {
+    // Threads start at 0, so the assertion is that it never moved.
+    const h = makeHarness();
+    await deliver(losing(h), 'waba-race');
+
+    expect(h.prisma.__threads[0].unreadCount).toEqual(0);
+  });
+
+  it('does not swallow an error that is not a unique violation', async () => {
+    // Over-catching would hide real failures — a dead database would look
+    // exactly like a benign retry.
+    const h = makeHarness();
+    h.prisma.whatsAppMessage.create.mockRejectedValueOnce(new Error('connection terminated'));
+
+    await expect(deliver(h, 'waba-race')).rejects.toThrow('connection terminated');
+  });
+});
+
 describe('WhatsAppService — status updates stay inside the tenant', () => {
   const statusEnvelope = (wabaId: string, status: string) => ({
     entry: [{ changes: [{ value: { metadata: { phone_number_id: 'phone-1' }, statuses: [{ id: wabaId, status }] } }] }],
