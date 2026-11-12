@@ -55,7 +55,7 @@
   "logistics-ops/logistics-ops.controller.ts": 2,
   "maintenance/maintenance.controller.ts": 0,
   "manifests/load-scan.controller.ts": 0,
-  "manifests/manifests.controller.ts": 3,
+  "manifests/manifests.controller.ts": 0,
   "market-trends/market-trends.controller.ts": 0,
   "notifications/notifications.controller.ts": 1,
   "observability/observability.controller.ts": 0,
@@ -97,7 +97,7 @@
   "trip-costs/trip-costs.controller.ts": 0,
   "users/users.controller.ts": 2,
   "warehouse-management/warehouse.controller.ts": 16,
-  "waybills/waybills.controller.ts": 4,
+  "waybills/waybills.controller.ts": 0,
   "webhooks/webhooks.controller.ts": 0,
   "whatsapp/whatsapp.controller.ts": 1
 }

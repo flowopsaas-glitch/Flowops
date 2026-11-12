@@ -465,7 +465,10 @@ export default function App() {
               <Route path="/ai/control-tower" element={<RequirePermission perm="aiControlTower"><RequireFeature feature="aiControlTower" name="AI Control Tower"><AIControlTower /></RequireFeature></RequirePermission>} />
               <Route path="/depots" element={<RequirePermission perm="driverDispatch"><DepotsPage /></RequirePermission>} />
               <Route path="/onboarding" element={<OnboardingWizard />} />
-              <Route path="/esg" element={<EsgDashboard />} />
+              {/* The sidebar has always filtered this behind "driverDispatch".
+                  The route did not, so anyone who typed the URL saw ESG &
+                  Carbon regardless of their permissions. */}
+              <Route path="/esg" element={<RequirePermission perm="driverDispatch"><EsgDashboard /></RequirePermission>} />
               <Route path="/admin/approvals" element={<RequirePermission adminOnly><AdminApprovalDashboard /></RequirePermission>} />
               <Route path="/forwarding/sars-edi" element={<RequirePermission adminOnly><RequireFeature feature="freightForwarding" name="SARS EDI Setup"><SarsEdiSetup /></RequireFeature></RequirePermission>} />
               <Route path="/settings" element={<RequirePermission perm="settings"><SettingsPage /></RequirePermission>} />
