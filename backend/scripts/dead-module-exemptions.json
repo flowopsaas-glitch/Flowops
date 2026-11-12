@@ -1,0 +1,23 @@
+{
+  "_comment": "Files that are unreachable from the application entry point, and why that is a decision rather than an oversight. Every reason must be at least 40 characters, because an exemption that cannot be argued with is not a decision. An exemption that stops matching anything fails the audit — including when a module finally gets wired up, which is the good outcome and means this entry should be deleted.",
+
+  "backend:src/rail/catalog/pricing-sources.catalog.ts": "Controlled pricing-source register: the typed equivalent of docs/RAIL-PRICING-SOURCE-MATRIX-2026-10-02.md. Every row is deliberately UNVERIFIED with value null — never 0, never estimated — and a row can only be promoted with owner plus independent sign-off. It has no consumers because no rate has been signed off yet, which is the state it exists to enforce.",
+
+  "backend:src/driver-portal/journey.service.ts": "Half-built WP3 vertical slice: the Journey and JourneyStage models exist and are RLS-protected, the service and its spec exist, but it is registered in no Nest module and the driver-portal controller exposes no journey endpoints. Deleting it alone would leave two tenant-isolated tables with no writer. Needs a product decision: finish the API or remove the whole slice.",
+
+  "backend:src/driver-portal/chat-idempotency.ts": "Used only by journey.service.ts, which is itself unwired. It dies with that service and should be removed in the same change as the journey slice, whichever way that decision goes.",
+
+  "backend:src/testing/fake-prisma.ts": "Test infrastructure. An in-memory Prisma stand-in that is intentionally imported only by specs; it must never be reachable from main.ts, and reaching it would be the bug.",
+
+  "backend:src/test/tenant-prisma-mock.ts": "Test infrastructure. Builds a tenant-scoped Prisma double for specs. Reaching it from main.ts would mean test scaffolding had leaked into the runtime.",
+
+  "backend:src/audit/audit-trail.testkit.ts": "Test infrastructure. Helpers for asserting audit-trail writes in specs; referenced by scripts/local-prisma-stub.mjs. It belongs to the test world, not the runtime graph.",
+
+  "frontend:src/lib/railKpi.ts": "Typed encoding of TRIM Annexure 43 (KPI framework, baselines, targets) from docs/TRIM-ANNEXURE-43-40-SUPPLIED-SOURCE-2026-10-04.md, with the source's recorded ambiguities preserved. Reference data awaiting a consumer; deleting it would discard a careful transcription of an authoritative document.",
+
+  "frontend:src/lib/railRunningTimes.ts": "Typed encoding of TRIM Annexure 33a (point-to-point running times) from the supplied 2026-10-04 source. This is what makes 'late' measurable, so it is the reference the schedule comparisons will need. No consumer yet.",
+
+  "frontend:src/lib/railAncillaryServices.ts": "Typed encoding of the TRIM Annexure 40 ancillary services catalogue, transcribed from the supplied source and deliberately carrying no prices. Reference data awaiting a consumer, not abandoned scaffolding.",
+
+  "frontend:src/utils/aiHeuristics.ts": "Speculative helper with a passing spec and no production consumer. Not hazardous and not duplicative, so it is exempted rather than deleted — but it is the weakest claim on this list and the first candidate to remove if it stays unused."
+}
