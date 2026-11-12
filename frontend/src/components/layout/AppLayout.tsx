@@ -380,7 +380,13 @@ export default function AppLayout() {
     { section: "OPS", label: "Driver Chat",          desc: "Message drivers in the field",  to: "/driver-chat",        icon: MessageCircle, perm: "driverDispatch" },
     { section: "OPS", label: "Driver Home",         desc: "My jobs, pickups & portal",     to: "/driver-home",        icon: Truck,    perm: "podDeliveries" },
     { section: "OPS", label: "Drivers",             desc: "Add drivers, PINs & fleet",     to: "/drivers",            icon: Users,    perm: "driverDispatch" },
-    { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "driverDispatch" },
+    // perm follows the ROUTE, not the label. App.tsx has always enforced
+    // /field-delivery with podDeliveries; the sidebar asked for driverDispatch,
+    // so the two surfaces disagreed. Aligning the route to driverDispatch
+    // instead would have locked WAREHOUSE and DRIVER out of a page they can
+    // open today (both have podDeliveries: true, driverDispatch: false), so the
+    // sidebar moves to the enforcement layer rather than the other way round.
+    { section: "OPS", label: "Field Delivery",      desc: "Live fleet & driver portal",    to: "/field-delivery",     icon: Truck,    perm: "podDeliveries" },
     { section: "OPS", label: "Collections", desc: "AI-Ranked scheduling", to: "/collections", icon: Truck, perm: "collections" },
     { section: "OPS", label: "Courier Management", desc: "Client orders + AI orchestration (Enterprise)", to: "/couriers", icon: PackageCheck, entitlement: "courierManagement" },
     { section: "OPS", label: "Carriers & Procurement", desc: "Lines, airlines & buy-rate contracts", to: "/carriers", icon: Ship, perm: "rateCards" },

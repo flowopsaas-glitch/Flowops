@@ -6,6 +6,12 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { Response } from 'express';
 import { UserRole } from '@prisma/client';
+import {
+  CreateWaybillDto,
+  UpdateWaybillDto,
+  RecordDeliveryDto,
+  CommitInboxDto,
+} from './dto/waybill.dto';
 import { WaybillsService } from './waybills.service';
 import { LabelService } from './label.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -124,7 +130,7 @@ export class WaybillsController {
   )
   @Post('waybills')
   @HttpCode(HttpStatus.CREATED)
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateWaybillDto) {
     return this.svc.create(u.companyId, body);
   }
 
@@ -179,7 +185,7 @@ export class WaybillsController {
     UserRole.DISPATCH, UserRole.AGENT,
   )
   @Patch('waybills/:id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateWaybillDto) {
     return this.svc.update(id, u.companyId, body);
   }
 
@@ -249,7 +255,7 @@ export class WaybillsController {
   deliver(
     @Param('id') id: string,
     @CurrentUser() u: any,
-    @Body() body: any,
+    @Body() body: RecordDeliveryDto,
     @UploadedFile() photo?: Express.Multer.File,
   ) {
     return this.svc.recordDelivery(id, u.companyId, body, photo);
@@ -311,7 +317,7 @@ export class WaybillsController {
 
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('waybills/inbox/:id/commit')
-  commitInbox(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  commitInbox(@Param('id') id: string, @CurrentUser() u: any, @Body() body: CommitInboxDto) {
     return this.svc.commitInboxItem(id, u.companyId, body);
   }
 

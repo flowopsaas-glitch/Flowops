@@ -1,6 +1,11 @@
 import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ManifestsService } from './manifests.service';
+import {
+  CreateManifestDto,
+  UpdateManifestDto,
+  CreateLinehaulDto,
+} from './dto/manifest.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { RequireFeature } from '../billing/require-feature.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -25,7 +30,7 @@ export class ManifestsController {
   }
 
   @Post('manifests/create')
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateManifestDto) {
     return this.svc.create(u.companyId, body);
   }
 
@@ -35,7 +40,7 @@ export class ManifestsController {
   }
 
   @Patch('manifests/:id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateManifestDto) {
     return this.svc.update(id, u.companyId, body);
   }
 
@@ -47,7 +52,7 @@ export class ManifestsController {
 
   /** POST /branches/linehaul — create an inter-branch transfer manifest */
   @Post('branches/linehaul')
-  createLinehaul(@CurrentUser() u: any, @Body() body: any) {
+  createLinehaul(@CurrentUser() u: any, @Body() body: CreateLinehaulDto) {
     return this.svc.createLinehaul(u.companyId, body);
   }
 
