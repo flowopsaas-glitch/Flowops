@@ -4,15 +4,75 @@
 **Question this document answers:** can `app.rls_strict` be turned on, and if not,
 what is the cheapest safe route to a position where it can be?
 
-**Short answer: not yet — and coverage is not the main reason.** The 9.2% figure is
-real but it is measuring the *second* line of defence; the first line is complete.
-The harder problem is that 114 operations **cannot** have a tenant context, and the
-migration provides no way for them to run anyway. See the blocking finding below
-before spending effort on coverage.
+**Short answer: not yet — and coverage is not the main reason.** Two findings
+outrank it, and both are about whether the mechanism works at all rather than how
+much of the codebase uses it:
+
+1. **As deployed, RLS is inert.** The application connects as a superuser, and a
+   superuser bypasses row-level security unconditionally — `FORCE ROW LEVEL
+   SECURITY` and all. Demonstrated, not inferred, below.
+2. **Phase 2 as written is unreachable.** 114 operations cannot have a tenant
+   context, and the migration gives them no way to run.
+
+Fix (1) before anything else: until the connection is not a superuser, the 9.2%
+measures how much of the codebase *would* be isolated if the policy were live.
 
 ---
 
-## BLOCKING FINDING: Phase 2 as written is unreachable, not merely premature
+## BLOCKING FINDING 1: the policy is not in force, because the app connects as a superuser
+
+PostgreSQL exempts superusers (and roles with `BYPASSRLS`) from row-level security.
+This is not affected by `ENABLE ROW LEVEL SECURITY`, and — the part that matters
+here — **not by `FORCE ROW LEVEL SECURITY` either**. `FORCE` binds the table *owner*.
+It does not bind a superuser.
+
+Every compose file in this repo does this:
+
+```yaml
+# docker-compose.yml:301, docker-compose.vps.yml:152, deploy/.env.production:39
+POSTGRES_USER: ${POSTGRES_USER:-flowops}
+```
+
+with `postgres:16-alpine` and **no init script creating an application role**. The
+official image makes `POSTGRES_USER` the initdb superuser, and the backend connects
+as it (`DATABASE_URL` at `docker-compose.yml:136`). So the connection that runs
+every tenant query is a superuser connection, and the policy is never consulted.
+
+Demonstrated on real PostgreSQL 18.6 (PGlite), with the policy functions read
+verbatim from the migration, in `backend/scripts/rls-semantics.test.mjs`:
+
+```
+As a NORMAL role:
+  no context,    strict off    (today)            2 rows  acme, globex
+  context = '',  strict off    (the old hole)     2 rows  acme, globex
+  context='acme', strict off   (withTenant)       1 row   acme
+  no context,    strict ON     (PHASE 2)          0 rows
+  context='globex', strict ON                     1 row   globex
+
+As a SUPERUSER (what docker-compose connects as):
+  no context,    strict ON                        2 rows  acme, globex
+  context='acme', strict ON                       2 rows  acme, globex
+```
+
+The last two lines are the finding. Flag on, context set, and both tenants still
+visible.
+
+**Consequence:** the 144 "contextualised" operations are not actually
+database-isolated today either, and the 9.2% figure is a measure of intent rather
+than of protection. The layer that *is* holding is the application-filter layer
+(`tenant-scope-audit`: `unscoped: 0`).
+
+**Fix:** create a dedicated application role that is neither a superuser nor
+`BYPASSRLS`, grant it the table privileges, and point `DATABASE_URL` at it. No
+application code changes. This is a prerequisite for everything else in this
+document — including the coverage work, which is otherwise measuring nothing.
+
+Note that this also makes the role split in finding 2 necessary for a second,
+independent reason.
+
+---
+
+## BLOCKING FINDING 2: Phase 2 as written is unreachable, not merely premature
 
 Turning `rls_strict` on does not just fail the operations that lack context — it
 fails the operations that *cannot have* context. There are 114 of them, and there
@@ -87,8 +147,13 @@ work can proceed incrementally afterwards instead of as one big-bang cutover.
 
 | Layer | What it is | State |
 |---|---|---|
-| 1. Application filters | every tenant query carries `where: { companyId }` | **Complete.** `tenant-scope-audit` reports `unscoped: 0` |
-| 2. Postgres RLS | policies bound to `app.company_id`, set by `withTenant()` | **9.2%.** 144 of 1,568 operations |
+| 1. Application filters | every tenant query carries `where: { companyId }` | **Complete and in force.** `tenant-scope-audit` reports `unscoped: 0` |
+| 2. Postgres RLS | policies bound to `app.company_id`, set by `withTenant()` | **Policies written and correct; in force for 0% of traffic** — the connection is a superuser, so they are never consulted. Intent coverage is 9.2% (144 of 1,568 operations) |
+
+Layer 2 is the net underneath layer 1, and right now the net has not been hung.
+Both facts are needed: the policies are right, *and* they are doing nothing. A
+report that said only "9.2%" would have invited work that measured nothing; a
+report that said only "RLS is inert" would have invited deleting the policies.
 
 Layer 2 is not a replacement for layer 1 — it is the net underneath it. What a bare
 operation means is *"one forgotten filter here is a silent cross-tenant read, with
@@ -182,15 +247,18 @@ sets `app.company_id` once, and runs the whole request inside it.
 
 ## Recommendation
 
-1. **Split the database role first.** It is the item that makes the flag flippable
-   at all, it needs no application change, and it lets everything below proceed
-   incrementally instead of as one big-bang cutover. See the blocking finding.
-2. **Do not start Route A.** It is the intuitive reading of the coverage number and
+1. **Stop connecting as a superuser.** Non-superuser application role, grants,
+   `DATABASE_URL` pointed at it. Until this is done nothing else in this document
+   has any effect, because the policy is not being consulted at all.
+2. **Then split the platform role.** It is what makes the flag flippable, it needs
+   no application change, and it lets everything below proceed incrementally
+   instead of as one big-bang cutover. See blocking finding 2.
+3. **Do not start Route A.** It is the intuitive reading of the coverage number and
    it costs ~4x round trips for no additional safety over Route C.
-3. **Decide between B and C, and pick C.** B only works once it grows an
+4. **Decide between B and C, and pick C.** B only works once it grows an
    ambient-context check, at which point it is C. With the role split done, C can be
    rolled out module by module rather than all at once.
-4. **Flip `rls_strict` on the app role only**, in a maintenance window, ready to
+5. **Flip `rls_strict` on the app role only**, in a maintenance window, ready to
    flip it back. It is one reversible `ALTER ROLE` — no migration. That reversibility
    is the property that makes this whole exercise low-risk, and it is worth
    preserving: do not fold Phase 2 into a migration.
@@ -212,6 +280,11 @@ correct — it should stay manual until steps 1–3 are done.
   `collection.count()` with no tenant predicate: genuinely cross-tenant, not merely
   unwrapped.
 - `docker-compose.yml:136` — one role, `flowops`, for every connection.
+- Executed the migration's own policy functions against PostgreSQL 18.6 and
+  observed a superuser session returning both tenants' rows with the flag on and
+  a context set: `backend/scripts/rls-semantics.test.mjs`, wired into
+  `release:safety:test`. Mutating `app_tenant()` or the strict-flag check in the
+  migration fails it, so it is pinned to the real SQL rather than to a copy.
 
 ---
 
