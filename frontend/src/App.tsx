@@ -394,9 +394,9 @@ export default function App() {
               <Route path="/couriers" element={<RequireFeature feature="courierManagement" name="Courier Management"><CourierManagement /></RequireFeature>} />
               <Route path="/logistics-analytics" element={<RequireFeature feature="logisticsAnalytics" name="Logistics Analytics"><LogisticsAnalytics /></RequireFeature>} />
               <Route path="/commercial-analytics" element={<RequireFeature feature="commercialAnalytics" name="Commercial Analytics"><CommercialAnalytics /></RequireFeature>} />
-              <Route path="/fleet-intelligence" element={<FleetIntelligence />} />
-              <Route path="/safety-zones" element={<SafetyZones />} />
-              <Route path="/trip-legs" element={<TripLegsBoard />} />
+              <Route path="/fleet-intelligence" element={<RequirePermission perm="fleetIntelligence"><FleetIntelligence /></RequirePermission>} />
+              <Route path="/safety-zones" element={<RequirePermission perm="safetyZones"><SafetyZones /></RequirePermission>} />
+              <Route path="/trip-legs" element={<RequirePermission perm="tripLegs"><TripLegsBoard /></RequirePermission>} />
               <Route path="/border-dwell" element={<BorderDwellBoard />} />
               <Route path="/safety-incident-dispatch" element={<SafetyIncidentDispatch />} />
               <Route path="/safety-incident-report" element={<SafetyIncidentReport />} />
